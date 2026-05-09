@@ -94,6 +94,8 @@ This directory is an AgentWorkspace managed by forge.
 - ` + "`task.json`" + ` records structured facts only, not workflow status.
 - ` + "`task.md`" + ` is free-form task context.
 - ` + "`work.md`" + ` records current state for interruption recovery.
+- Before starting any meaningful step, update the current task's ` + "`work.md`" + ` with the step you are about to take.
+- Immediately after completing any meaningful step, update ` + "`work.md`" + ` with what changed and the next step, so an interrupted task can always resume.
 - ` + "`log.md`" + ` records append-oriented execution history.
 - Prefer forge commands for creating, listing, and archiving tasks.
 
