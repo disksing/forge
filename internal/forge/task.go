@@ -353,6 +353,10 @@ func defaultWorkMD(task Task) string {
 
 Task %s has been created. No work has started yet.
 
+## Recovery Rule
+
+Before starting any meaningful step, update this file with the step you are about to take. Immediately after completing the step, update this file with what changed and the next step, so the task can resume from any interruption.
+
 ## Next Steps
 
 - Read task.json, task.md, and log.md.
@@ -394,6 +398,8 @@ You are working inside a single AgentWorkspace task directory.
 - Keep task.json focused on structured facts.
 - Use task.md for free-form task intent, notes, plans, and acceptance details.
 - Use work.md for current state and interruption recovery.
+- Before starting any meaningful step, update work.md with the step you are about to take.
+- Immediately after completing any meaningful step, update work.md with what changed and the next step, so the task can resume from any interruption.
 - Append important execution events to log.md.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 ` + extra
