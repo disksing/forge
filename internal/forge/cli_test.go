@@ -93,6 +93,68 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
+func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Archive after merge")
+		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "task1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1", worktreePath, "master")
+		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+
+		archived := run(t, "task", "archive", "task1")
+		if !strings.Contains(archived, "archive/task1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+		assertDir(t, filepath.Join(root, archiveDir, "task1"))
+	})
+}
+
+func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Archive before merge")
+		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "task1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1", worktreePath, "master")
+		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, worktreePath, "add", "feature.txt")
+		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
+		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+
+		out, err := runErr(t, "task", "archive", "task1")
+		if err == nil {
+			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "feature work") {
+			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
+		}
+		assertDir(t, filepath.Join(root, "task1"))
+		if pathExists(filepath.Join(root, archiveDir, "task1")) {
+			t.Fatal("task1 should not have been archived")
+		}
+	})
+}
+
+func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Archive without a checkout")
+		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
+		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+
+		archived := run(t, "task", "archive", "task1")
+		if !strings.Contains(archived, "archive/task1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+		assertDir(t, filepath.Join(root, archiveDir, "task1"))
+	})
+}
+
 func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -262,6 +324,15 @@ func withTempCwd(t *testing.T, fn func(root string)) {
 
 func run(t *testing.T, args ...string) string {
 	t.Helper()
+	out, err := runErr(t, args...)
+	if err != nil {
+		t.Fatalf("Run(%q) failed: %v\nstdout:\n%s", args, err, out)
+	}
+	return out
+}
+
+func runErr(t *testing.T, args ...string) (string, error) {
+	t.Helper()
 	var buf bytes.Buffer
 	stdout := os.Stdout
 	reader, writer, err := os.Pipe()
@@ -280,10 +351,7 @@ func run(t *testing.T, args ...string) string {
 	if closeErr := reader.Close(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
-	if err != nil {
-		t.Fatalf("Run(%q) failed: %v\nstdout:\n%s", args, err, buf.String())
-	}
-	return buf.String()
+	return buf.String(), err
 }
 
 func assertDir(t *testing.T, path string) {
@@ -332,6 +400,19 @@ func writeFakeBareRepo(t *testing.T, path, branch string) {
 	if err := os.WriteFile(filepath.Join(path, "HEAD"), []byte("ref: refs/heads/"+branch+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func writeGitRepo(t *testing.T, path, branch string) {
+	t.Helper()
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, path, "init", "-b", branch)
+	if err := os.WriteFile(filepath.Join(path, "README.md"), []byte("# test repo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, path, "add", "README.md")
+	runGit(t, path, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "initial")
 }
 
 func runGit(t *testing.T, dir string, args ...string) {
