@@ -392,7 +392,7 @@ You are working inside a single AgentWorkspace task directory.
 - Treat this directory as the current task boundary.
 - You may read other task directories for reference.
 - Only update files inside this task directory and its worktrees.
-- Do not modify bare repositories under ../repos/ directly.
+- Treat repositories under ../repos/ as shared source caches; make code changes in task worktrees.
 - If code changes are needed, create Git worktrees under worktree/.
 - If the task involves a new repository, update this task's task.json.
 - Keep task.json focused on structured facts.
