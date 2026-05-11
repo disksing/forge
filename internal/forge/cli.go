@@ -35,10 +35,7 @@ func runRepo(args []string) error {
 	}
 	switch args[0] {
 	case "add":
-		if len(args) != 3 {
-			return errors.New("usage: forge repo add <name> <url>")
-		}
-		return repoAdd(args[1], args[2])
+		return repoAdd(args[1:])
 	case "list":
 		if len(args) != 1 {
 			return errors.New("usage: forge repo list")
@@ -128,7 +125,7 @@ func printUsage() {
 
 Usage:
   forge init
-  forge repo add <name> <url>
+  forge repo add [--bare] <name> <url>
   forge repo list
   forge task create <description>
   forge task list
@@ -145,12 +142,13 @@ Commands:
     Initialize the current directory as an AgentWorkspace. Creates forge.json,
     repos/, archive/, and a forge-managed block in AGENTS.md. Safe to rerun.
 
-  forge repo add <name> <url>
-    Clone <url> into repos/<name>.git as a bare repository. <name> may include
-    path segments, for example disksing/forge.
+  forge repo add [--bare] <name> <url>
+    Clone <url> into repos/<name> as a normal checkout by default. <name> may
+    include path segments, for example disksing/forge. Use --bare to clone into
+    repos/<name>.git as a bare repository.
 
   forge repo list
-    List bare repositories known to the workspace.
+    List repositories known to the workspace.
 
   forge task create <description>
     Create the next top-level task directory, including task.json, task.md,
@@ -167,7 +165,7 @@ Commands:
 
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge
-    records repos/<repo-name>.git and <task>/worktree/<repo-leaf>. Optional flags
+    records repos/<repo-name> and <task>/worktree/<repo-leaf>. Optional flags
     let agents record the actual worktree path and branch metadata.
 
   forge task repo list <task-id>

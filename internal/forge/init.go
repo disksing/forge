@@ -85,8 +85,8 @@ This directory is an AgentWorkspace managed by forge.
 
 - Open tasks live directly under this workspace as ` + "`taskN/`" + ` directories.
 - Archived tasks live under ` + "`archive/`" + `.
-- Bare Git repositories live under ` + "`repos/`" + `.
-- Do not modify bare repositories directly.
+- Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
+- Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Each task owns its own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Agents may read other task directories for reference.
@@ -105,7 +105,7 @@ Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
 forge init
-forge repo add <name> <url>
+forge repo add [--bare] <name> <url>
 forge repo list
 forge task create <description>
 forge task list
@@ -121,7 +121,7 @@ forge subtask list <task-id>
 Notes:
 
 - ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + `.
-- ` + "`forge repo add`" + ` creates a bare repository with ` + "`git clone --bare`" + `.
+- ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
 - ` + "`forge task create`" + ` creates a new open task directory in the workspace.
 - ` + "`forge task archive`" + ` moves an open task into ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.

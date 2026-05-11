@@ -17,7 +17,8 @@ type Task struct {
 
 type TaskRepo struct {
 	Name         string `json:"name"`
-	BarePath     string `json:"barePath"`
+	RepoPath     string `json:"repoPath,omitempty"`
+	BarePath     string `json:"barePath,omitempty"`
 	WorktreePath string `json:"worktreePath"`
 	Branch       string `json:"branch"`
 	TargetBranch string `json:"targetBranch"`

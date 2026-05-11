@@ -1,6 +1,6 @@
 # forge
 
-forge is a small CLI for a local AgentWorkspace: a filesystem-based task workflow for AI agents, bare Git repositories, and per-task Git worktrees.
+forge is a small CLI for a local AgentWorkspace: a filesystem-based task workflow for AI agents, shared Git checkouts, and per-task Git worktrees.
 
 The design is intentionally simple. forge creates and moves task directories; agents decide how to plan and execute work inside those directories.
 
@@ -11,7 +11,7 @@ AgentWorkspace/
   AGENTS.md
   forge.json
   repos/
-    owner/repo.git
+    owner/repo/
   task1/
     AGENTS.md
     task.json
@@ -29,7 +29,7 @@ Open tasks live directly under the workspace. Archived tasks live under `archive
 
 ```bash
 forge init
-forge repo add <name> <url>
+forge repo add [--bare] <name> <url>
 forge repo list
 forge task create <description>
 forge task list
@@ -44,9 +44,9 @@ forge subtask list <task-id>
 
 `forge init` initializes the current directory as an AgentWorkspace. It creates `forge.json`, `repos/`, `archive/`, and a forge-managed block in `AGENTS.md`. It is safe to rerun.
 
-`forge repo add <name> <url>` clones a bare repository into `repos/<name>.git`. Repository names may include path segments such as `disksing/forge`.
+`forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
-`forge repo list` lists bare repositories known to the workspace.
+`forge repo list` lists repositories known to the workspace.
 
 `forge task create <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`.
 
@@ -76,7 +76,7 @@ forge subtask list <task-id>
 
 Content outside that block belongs to people and agents and is preserved.
 
-`forge repo add` uses `git clone --bare`. forge does not create mirror repositories.
+`forge repo add` uses normal `git clone` by default so source code is readable under `repos/`. forge does not create mirror repositories. Use `--bare` only when a bare repository is explicitly needed.
 
 Repository names may include path segments:
 
@@ -85,6 +85,18 @@ forge repo add disksing/forge https://github.com/disksing/forge.git
 ```
 
 This creates:
+
+```text
+repos/disksing/forge/
+```
+
+The legacy bare form is still available:
+
+```bash
+forge repo add --bare disksing/forge https://github.com/disksing/forge.git
+```
+
+That creates:
 
 ```text
 repos/disksing/forge.git
@@ -109,7 +121,7 @@ Use `forge task repo add` for those structured updates:
 forge task repo add task3 disksing/forge --branch agent/task3-task-repos --target master
 ```
 
-If `--worktree` is omitted, forge records `taskN/worktree/<repo>` by default. If `--branch` or `--target` is omitted, forge tries to infer the current worktree branch and the bare repository default branch.
+If `--worktree` is omitted, forge records `taskN/worktree/<repo>` by default. If `--branch` or `--target` is omitted, forge tries to infer the current worktree branch and repository default branch.
 
 ## Development
 

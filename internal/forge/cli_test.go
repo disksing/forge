@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,19 +93,49 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
-func TestRepoListFindsBareRepositories(t *testing.T) {
+func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		repoPath := filepath.Join(root, reposDir, "disksing", "forge.git")
-		if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		source := filepath.Join(root, "source")
+		if err := os.MkdirAll(source, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(repoPath, "HEAD"), []byte("ref: refs/heads/master\n"), 0o644); err != nil {
+		runGit(t, source, "init", "-b", "main")
+		if err := os.WriteFile(filepath.Join(source, "README.md"), []byte("# source\n"), 0o644); err != nil {
 			t.Fatal(err)
+		}
+		runGit(t, source, "add", "README.md")
+		runGit(t, source, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "initial")
+
+		added := run(t, "repo", "add", "disksing/forge", source)
+		if !strings.Contains(added, "repos/disksing/forge") {
+			t.Fatalf("expected normal repo path, got:\n%s", added)
+		}
+		assertDir(t, filepath.Join(root, reposDir, "disksing", "forge", ".git"))
+		assertFile(t, filepath.Join(root, reposDir, "disksing", "forge", "README.md"))
+		if pathExists(filepath.Join(root, reposDir, "disksing", "forge.git")) {
+			t.Fatal("default repo add should not create a bare .git repository")
 		}
 
+		bare := run(t, "repo", "add", "--bare", "disksing/forge-bare", source)
+		if !strings.Contains(bare, "repos/disksing/forge-bare.git") {
+			t.Fatalf("expected bare repo path, got:\n%s", bare)
+		}
+		assertFile(t, filepath.Join(root, reposDir, "disksing", "forge-bare.git", "HEAD"))
+	})
+}
+
+func TestRepoListFindsRepositories(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
+		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "legacy.git"), "master")
+
 		listed := run(t, "repo", "list")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git") {
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge") {
+			t.Fatalf("expected repo list to include fake normal repo, got:\n%s", listed)
+		}
+		if !strings.Contains(listed, "disksing/legacy\trepos/disksing/legacy.git") {
 			t.Fatalf("expected repo list to include fake bare repo, got:\n%s", listed)
 		}
 	})
@@ -114,21 +145,21 @@ func TestTaskRepoLifecycle(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "task", "create", "Wire repo metadata into task json")
-		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "forge.git"), "master")
+		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
 
 		added := run(t, "task", "repo", "add", "task1", "disksing/forge", "--branch", "agent/task1", "--target", "master", "--base", "master")
 		if !strings.Contains(added, `"name": "disksing/forge"`) {
 			t.Fatalf("expected task JSON to include repo, got:\n%s", added)
 		}
-		if !strings.Contains(added, `"barePath": "repos/disksing/forge.git"`) {
-			t.Fatalf("expected task JSON to include bare path, got:\n%s", added)
+		if !strings.Contains(added, `"repoPath": "repos/disksing/forge"`) {
+			t.Fatalf("expected task JSON to include repo path, got:\n%s", added)
 		}
 		if !strings.Contains(added, `"worktreePath": "task1/worktree/forge"`) {
 			t.Fatalf("expected default worktree path, got:\n%s", added)
 		}
 
 		listed := run(t, "task", "repo", "list", "task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\ttask1/worktree/forge\tagent/task1\tmaster\tmaster") {
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\ttask1/worktree/forge\tagent/task1\tmaster\tmaster") {
 			t.Fatalf("expected repo list to include metadata, got:\n%s", listed)
 		}
 
@@ -146,6 +177,26 @@ func TestTaskRepoLifecycle(t *testing.T) {
 		removed := run(t, "task", "repo", "remove", "task1", "disksing/forge")
 		if strings.Contains(removed, `"name": "disksing/forge"`) {
 			t.Fatalf("expected repo to be removed, got:\n%s", removed)
+		}
+	})
+}
+
+func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Wire legacy bare repo metadata into task json")
+		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "forge.git"), "master")
+
+		added := run(t, "task", "repo", "add", "task1", "disksing/forge", "--branch", "agent/task1")
+		if !strings.Contains(added, `"barePath": "repos/disksing/forge.git"`) {
+			t.Fatalf("expected task JSON to include legacy bare path, got:\n%s", added)
+		}
+		if strings.Contains(added, `"repoPath"`) {
+			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", added)
+		}
+		listed := run(t, "task", "repo", "list", "task1")
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\ttask1/worktree/forge\tagent/task1\tmaster") {
+			t.Fatalf("expected legacy bare repo metadata, got:\n%s", listed)
 		}
 	})
 }
@@ -266,6 +317,13 @@ func readFile(t *testing.T, path string) string {
 	return string(data)
 }
 
+func writeFakeRepo(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func writeFakeBareRepo(t *testing.T, path, branch string) {
 	t.Helper()
 	if err := os.MkdirAll(path, 0o755); err != nil {
@@ -273,5 +331,15 @@ func writeFakeBareRepo(t *testing.T, path, branch string) {
 	}
 	if err := os.WriteFile(filepath.Join(path, "HEAD"), []byte("ref: refs/heads/"+branch+"\n"), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func runGit(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s failed: %v\n%s", strings.Join(args, " "), err, string(out))
 	}
 }

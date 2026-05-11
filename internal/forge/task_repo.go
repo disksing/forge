@@ -38,9 +38,9 @@ func taskRepoAdd(args []string) error {
 	if err := ensureInsideName(name); err != nil {
 		return err
 	}
-	barePath := filepath.Join(root, reposDir, filepath.FromSlash(name)+".git")
-	if !isDir(barePath) || !pathExists(filepath.Join(barePath, "HEAD")) {
-		return fmt.Errorf("bare repository not found: %s", relPath(root, barePath))
+	storagePath, bare := resolveRepoStoragePath(root, name)
+	if storagePath == "" {
+		return fmt.Errorf("repository not found: %s or %s", relPath(root, repoPath(root, name, false)), relPath(root, repoPath(root, name, true)))
 	}
 
 	worktreeAbs := ""
@@ -66,16 +66,20 @@ func taskRepoAdd(args []string) error {
 	}
 	targetBranch := opts.targetBranch
 	if targetBranch == "" {
-		targetBranch = bareDefaultBranch(barePath)
+		targetBranch = repoDefaultBranch(storagePath, bare)
 	}
 
 	repo := TaskRepo{
 		Name:         name,
-		BarePath:     relPath(root, barePath),
+		RepoPath:     relPath(root, storagePath),
 		WorktreePath: worktreeRel,
 		Branch:       branch,
 		TargetBranch: targetBranch,
 		BaseBranch:   opts.baseBranch,
+	}
+	if bare {
+		repo.BarePath = repo.RepoPath
+		repo.RepoPath = ""
 	}
 	upsertTaskRepo(&task, repo)
 	return saveAndPrintTask(taskPath, task)
@@ -91,7 +95,7 @@ func taskRepoList(id string) error {
 		return err
 	}
 	for _, repo := range task.Repos {
-		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, repo.BarePath, repo.WorktreePath, repo.Branch, repo.TargetBranch)
+		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, taskRepoStoragePath(repo), repo.WorktreePath, repo.Branch, repo.TargetBranch)
 		if repo.BaseBranch != "" {
 			fmt.Printf("\t%s", repo.BaseBranch)
 		}
@@ -242,6 +246,48 @@ func currentGitBranch(worktreePath string) string {
 		return ""
 	}
 	return branch
+}
+
+func resolveRepoStoragePath(root, name string) (string, bool) {
+	normalPath := repoPath(root, name, false)
+	if isDir(normalPath) && isGitCheckout(normalPath) {
+		return normalPath, false
+	}
+	barePath := repoPath(root, name, true)
+	if isDir(barePath) && pathExists(filepath.Join(barePath, "HEAD")) {
+		return barePath, true
+	}
+	return "", false
+}
+
+func taskRepoStoragePath(repo TaskRepo) string {
+	if repo.RepoPath != "" {
+		return repo.RepoPath
+	}
+	return repo.BarePath
+}
+
+func repoDefaultBranch(storagePath string, bare bool) string {
+	if bare {
+		return bareDefaultBranch(storagePath)
+	}
+	if branch := gitOutput(storagePath, "rev-parse", "--abbrev-ref", "origin/HEAD"); branch != "" {
+		return strings.TrimPrefix(branch, "origin/")
+	}
+	return currentGitBranch(storagePath)
+}
+
+func gitOutput(path string, args ...string) string {
+	if !isDir(path) {
+		return ""
+	}
+	cmdArgs := append([]string{"-C", path}, args...)
+	cmd := exec.Command("git", cmdArgs...)
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func bareDefaultBranch(barePath string) string {
