@@ -123,7 +123,7 @@ Notes:
 - ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + `.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
 - ` + "`forge task create`" + ` creates a new open task directory in the workspace.
-- ` + "`forge task archive`" + ` moves an open task into ` + "`archive/`" + `.
+- ` + "`forge task archive`" + ` moves an open top-level task into workspace ` + "`archive/`" + `, or an open subtask into its parent task's ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
 - ` + "`forge subtask create`" + ` creates a direct child task directory under the parent task.
 `
