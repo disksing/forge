@@ -161,7 +161,8 @@ Commands:
     Print the task.json for a task or subtask as formatted JSON.
 
   forge task archive <id>
-    Move an open top-level task from taskN/ to archive/taskN/.
+    Move an open task into its archive. Top-level tasks move to archive/taskN/.
+    Subtasks move to their parent task's archive directory.
 
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge
