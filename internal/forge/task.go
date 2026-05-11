@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -85,6 +86,13 @@ func taskArchive(id string) error {
 	if pathExists(dst) {
 		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
 	}
+	var task Task
+	if err := readJSON(filepath.Join(src, "task.json"), &task); err != nil {
+		return err
+	}
+	if err := ensureTaskRepoWorktreesMerged(root, task); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -92,6 +100,44 @@ func taskArchive(id string) error {
 		return err
 	}
 	fmt.Printf("%s\n", relPath(root, dst))
+	return nil
+}
+
+func ensureTaskRepoWorktreesMerged(root string, task Task) error {
+	for _, repo := range task.Repos {
+		if strings.TrimSpace(repo.WorktreePath) == "" {
+			continue
+		}
+		worktreePath := repo.WorktreePath
+		if !filepath.IsAbs(worktreePath) {
+			worktreePath = filepath.Join(root, worktreePath)
+		}
+		if !isDir(worktreePath) {
+			continue
+		}
+
+		target := strings.TrimSpace(repo.TargetBranch)
+		if target == "" {
+			return fmt.Errorf("cannot archive %s: repo %q worktree %s has no target branch recorded", task.ID, repo.Name, relPath(root, worktreePath))
+		}
+		cmd := exec.Command("git", "-C", worktreePath, "merge-base", "--is-ancestor", "HEAD", target)
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			continue
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			commits := strings.TrimSpace(gitOutput(worktreePath, "log", "--oneline", "-n", "5", target+"..HEAD"))
+			if commits != "" {
+				return fmt.Errorf("cannot archive %s: repo %q worktree %s has commits not merged into target branch %q:\n%s", task.ID, repo.Name, relPath(root, worktreePath), target, commits)
+			}
+			return fmt.Errorf("cannot archive %s: repo %q worktree %s has commits not merged into target branch %q", task.ID, repo.Name, relPath(root, worktreePath), target)
+		}
+		detail := strings.TrimSpace(string(out))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("cannot archive %s: cannot verify repo %q worktree %s against target branch %q: %s", task.ID, repo.Name, relPath(root, worktreePath), target, detail)
+	}
 	return nil
 }
 
