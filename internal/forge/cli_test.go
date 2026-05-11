@@ -155,6 +155,66 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 	})
 }
 
+func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "Child task")
+
+		archived := run(t, "task", "archive", "task1.1")
+		if !strings.Contains(archived, "task1/archive/task1.1") {
+			t.Fatalf("expected parent-local archive path, got:\n%s", archived)
+		}
+		assertDir(t, filepath.Join(root, "task1", archiveDir, "task1.1"))
+		if pathExists(filepath.Join(root, archiveDir, "task1.1")) {
+			t.Fatal("subtask should not have moved to the workspace archive")
+		}
+		if pathExists(filepath.Join(root, "task1", "task1.1")) {
+			t.Fatal("subtask should have moved out of the parent task's open subtasks")
+		}
+
+		children := run(t, "subtask", "list", "task1")
+		if strings.Contains(children, "task1.1") {
+			t.Fatalf("archived subtask should not be listed as open, got:\n%s", children)
+		}
+
+		next := run(t, "subtask", "create", "task1", "Next child")
+		if !strings.Contains(next, `"id": "task1.2"`) {
+			t.Fatalf("expected archived subtask ids not to be reused, got:\n%s", next)
+		}
+	})
+}
+
+func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "Child task")
+		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "task1", "task1.1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1.1", worktreePath, "master")
+		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, worktreePath, "add", "feature.txt")
+		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
+		run(t, "task", "repo", "add", "task1.1", "disksing/forge", "--worktree", "task1/task1.1/worktree/forge", "--branch", "agent/task1.1", "--target", "master")
+
+		out, err := runErr(t, "task", "archive", "task1.1")
+		if err == nil {
+			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "child feature work") {
+			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
+		}
+		assertDir(t, filepath.Join(root, "task1", "task1.1"))
+		if pathExists(filepath.Join(root, "task1", archiveDir, "task1.1")) {
+			t.Fatal("unmerged subtask should not have been archived")
+		}
+	})
+}
+
 func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
