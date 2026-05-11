@@ -23,7 +23,7 @@ AgentWorkspace/
   archive/
 ```
 
-Open tasks live directly under the workspace. Archived tasks live under `archive/`. Task state is represented by location rather than a status field in `task.json`.
+Open top-level tasks live directly under the workspace. Archived top-level tasks live under `archive/`. Archived subtasks live under their parent task's `archive/` directory. Task state is represented by location rather than a status field in `task.json`.
 
 ## Commands
 
@@ -54,7 +54,7 @@ forge subtask list <task-id>
 
 `forge task show <id>` prints a task or subtask's `task.json`.
 
-`forge task archive <id>` moves an open top-level task into `archive/`.
+`forge task archive <id>` moves an open task into its archive. Top-level tasks move into workspace `archive/`; subtasks move into their parent task's `archive/` directory.
 
 `forge task repo add <task-id> <repo-name>` adds or updates a repository entry in the task's `task.json`. Optional `--worktree`, `--branch`, `--target`, and `--base` flags record the exact worktree and branch metadata.
 

@@ -74,21 +74,17 @@ func taskArchive(id string) error {
 		return err
 	}
 	id = cleanID(id)
-	if !topTaskName.MatchString(id) {
-		return fmt.Errorf("only top-level task ids can be archived with forge task archive: %s", id)
-	}
 
-	src := filepath.Join(root, id)
-	if !isDir(src) {
-		return fmt.Errorf("open task not found: %s", id)
+	src, task, err := loadOpenTask(root, id)
+	if err != nil {
+		return err
 	}
-	dst := filepath.Join(root, archiveDir, id)
+	dst, err := taskArchiveDestination(root, src, task)
+	if err != nil {
+		return err
+	}
 	if pathExists(dst) {
 		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
-	}
-	var task Task
-	if err := readJSON(filepath.Join(src, "task.json"), &task); err != nil {
-		return err
 	}
 	if err := ensureTaskRepoWorktreesMerged(root, task); err != nil {
 		return err
@@ -101,6 +97,17 @@ func taskArchive(id string) error {
 	}
 	fmt.Printf("%s\n", relPath(root, dst))
 	return nil
+}
+
+func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
+	if topTaskName.MatchString(task.ID) {
+		return filepath.Join(root, archiveDir, task.ID), nil
+	}
+	if task.Type == "subtask" && task.Parent != nil && *task.Parent != "" {
+		parentPath := filepath.Dir(taskPath)
+		return filepath.Join(parentPath, archiveDir, task.ID), nil
+	}
+	return "", fmt.Errorf("unsupported task id for archive: %s", task.ID)
 }
 
 func ensureTaskRepoWorktreesMerged(root string, task Task) error {
@@ -264,21 +271,26 @@ func nextTaskID(root string) (string, error) {
 func nextSubtaskID(parentPath, parentID string) (string, error) {
 	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
 	maxID := 0
-	entries, err := os.ReadDir(parentPath)
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
+	for _, dir := range []string{parentPath, filepath.Join(parentPath, archiveDir)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", err
 		}
-		match := pattern.FindStringSubmatch(entry.Name())
-		if match == nil {
-			continue
-		}
-		n, _ := strconv.Atoi(match[1])
-		if n > maxID {
-			maxID = n
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			match := pattern.FindStringSubmatch(entry.Name())
+			if match == nil {
+				continue
+			}
+			n, _ := strconv.Atoi(match[1])
+			if n > maxID {
+				maxID = n
+			}
 		}
 	}
 	return fmt.Sprintf("%s.%d", parentID, maxID+1), nil
@@ -349,7 +361,15 @@ func findTaskDir(root, id string) (string, error) {
 
 func isArchivedPath(root, path string) bool {
 	rel := relPath(root, path)
-	return rel == archiveDir || strings.HasPrefix(rel, archiveDir+"/")
+	if rel == archiveDir || strings.HasPrefix(rel, archiveDir+"/") {
+		return true
+	}
+	for _, part := range strings.Split(rel, "/") {
+		if part == archiveDir {
+			return true
+		}
+	}
+	return false
 }
 
 func taskSortKey(id string) string {
