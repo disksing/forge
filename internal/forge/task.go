@@ -37,12 +37,16 @@ func taskCreate(description string) error {
 	return printTaskJSON(task)
 }
 
-func taskList() error {
+func taskList(includeArchived bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
-	tasks, err := readTasksInDir(root, topTaskName)
+	dirs := []string{root}
+	if includeArchived {
+		dirs = append(dirs, filepath.Join(root, archiveDir))
+	}
+	tasks, err := readTasksInDirs(dirs, topTaskName)
 	if err != nil {
 		return err
 	}
@@ -178,7 +182,7 @@ func subtaskCreate(parentID, description string) error {
 	return printTaskJSON(task)
 }
 
-func subtaskList(parentID string) error {
+func subtaskList(parentID string, includeArchived bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -189,7 +193,11 @@ func subtaskList(parentID string) error {
 		return err
 	}
 	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
-	tasks, err := readTasksInDir(parentPath, pattern)
+	dirs := []string{parentPath}
+	if includeArchived {
+		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
+	}
+	tasks, err := readTasksInDirs(dirs, pattern)
 	if err != nil {
 		return err
 	}
@@ -311,6 +319,24 @@ func readTasksInDir(dir string, pattern *regexp.Regexp) ([]Task, error) {
 			continue
 		}
 		tasks = append(tasks, task)
+	}
+	sort.Slice(tasks, func(i, j int) bool {
+		return taskSortKey(tasks[i].ID) < taskSortKey(tasks[j].ID)
+	})
+	return tasks, nil
+}
+
+func readTasksInDirs(dirs []string, pattern *regexp.Regexp) ([]Task, error) {
+	var tasks []Task
+	for _, dir := range dirs {
+		dirTasks, err := readTasksInDir(dir, pattern)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		tasks = append(tasks, dirTasks...)
 	}
 	sort.Slice(tasks, func(i, j int) bool {
 		return taskSortKey(tasks[i].ID) < taskSortKey(tasks[j].ID)
