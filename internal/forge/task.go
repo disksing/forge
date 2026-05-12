@@ -493,20 +493,24 @@ Use this file for task intent, requirements, plans, acceptance notes, and any ot
 func defaultWorkMD(task Task) string {
 	return fmt.Sprintf(`# Work
 
+## Current Step
+
+No work has started yet.
+
 ## Current State
 
-Task %s has been created. No work has started yet.
+Task %s has been created. No blockers are known.
 
-## Recovery Rule
-
-Before starting any meaningful step, update this file with the step you are about to take. Immediately after completing the step, update this file with what changed and the next step, so the task can resume from any interruption.
-
-## Next Steps
+## Next Step
 
 - Read task.json, task.md, and log.md.
 - Decide which repositories are involved.
 - Update task.json if new repositories are discovered.
 - Create any needed worktrees under worktree/.
+
+## Recovery Rule
+
+Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.md.
 `, task.ID)
 }
 
@@ -541,9 +545,10 @@ You are working inside a single AgentWorkspace task directory.
 - If the task involves a new repository, update this task's task.json.
 - Keep task.json focused on structured facts.
 - Use task.md for free-form task intent, notes, plans, and acceptance details.
-- Use work.md for current state and interruption recovery.
-- Before starting any meaningful step, update work.md with the step you are about to take.
-- Immediately after completing any meaningful step, update work.md with what changed and the next step, so the task can resume from any interruption.
+- Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
+- Before starting any meaningful step, replace stale work.md content with the step you are about to take.
+- Immediately after completing any meaningful step, replace stale work.md content with the updated current state and next step.
+- Do not append timeline history to work.md. Put chronological events, command results, and completed-step history in log.md.
 - Append important execution events to log.md.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 ` + extra
