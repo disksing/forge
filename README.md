@@ -108,8 +108,8 @@ Each task directory contains:
 
 - `task.json`: structured facts such as task id, parent id, description, and involved repositories.
 - `task.md`: free-form task context, requirements, plans, and acceptance notes.
-- `work.md`: current state for interruption recovery.
-- `log.md`: append-oriented execution log.
+- `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
+- `log.md`: append-oriented execution log for chronological events, command results, and completed-step history.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 - `worktree/`: Git worktrees for code changes.
 

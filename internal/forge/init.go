@@ -122,9 +122,10 @@ This directory is an AgentWorkspace managed by forge.
 - Agents should only update files inside the task they are currently handling and its worktrees.
 - ` + "`task.json`" + ` records structured facts only, not workflow status.
 - ` + "`task.md`" + ` is free-form task context.
-- ` + "`work.md`" + ` records current state for interruption recovery.
-- Before starting any meaningful step, update the current task's ` + "`work.md`" + ` with the step you are about to take.
-- Immediately after completing any meaningful step, update ` + "`work.md`" + ` with what changed and the next step, so an interrupted task can always resume.
+- ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
+- Before starting any meaningful step, replace stale ` + "`work.md`" + ` content with the step you are about to take.
+- Immediately after completing any meaningful step, replace stale ` + "`work.md`" + ` content with the updated current state and next step.
+- Do not append timeline history to ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.md`" + `.
 - ` + "`log.md`" + ` records append-oriented execution history.
 - Prefer forge commands for creating, listing, and archiving tasks.
 

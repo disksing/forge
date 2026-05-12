@@ -35,18 +35,18 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(taskAgents, forgePromptStart) != 1 || strings.Count(taskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected task AGENTS.md to contain one managed block, got:\n%s", taskAgents)
 		}
-		if !strings.Contains(taskAgents, "Before starting any meaningful step, update work.md") {
-			t.Fatalf("expected task AGENTS.md to require pre-step work.md updates, got:\n%s", taskAgents)
+		if !strings.Contains(taskAgents, "Use work.md as a mutable recovery snapshot, not a chronological log.") {
+			t.Fatalf("expected task AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", taskAgents)
 		}
-		if !strings.Contains(taskAgents, "Immediately after completing any meaningful step, update work.md") {
-			t.Fatalf("expected task AGENTS.md to require post-step work.md updates, got:\n%s", taskAgents)
+		if !strings.Contains(taskAgents, "Do not append timeline history to work.md.") {
+			t.Fatalf("expected task AGENTS.md to forbid timeline history in work.md, got:\n%s", taskAgents)
 		}
 		taskWork := readFile(t, filepath.Join(root, "task1", "work.md"))
 		if !strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md to include recovery rule, got:\n%s", taskWork)
 		}
-		if !strings.Contains(taskWork, "Before starting any meaningful step") || !strings.Contains(taskWork, "Immediately after completing the step") {
-			t.Fatalf("expected work.md to describe before/after step updates, got:\n%s", taskWork)
+		if !strings.Contains(taskWork, "Keep this file as a mutable recovery snapshot, not a chronological log.") || !strings.Contains(taskWork, "Put dated events, command results, completed-step history, and other timeline entries in log.md.") {
+			t.Fatalf("expected work.md to distinguish snapshot from timeline history, got:\n%s", taskWork)
 		}
 		if strings.Contains(taskAgents, "This is a subtask") {
 			t.Fatalf("top-level task AGENTS.md should not contain subtask-only guidance, got:\n%s", taskAgents)
@@ -382,11 +382,11 @@ func TestInitUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, original) {
 			t.Fatalf("expected human content to be preserved, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Before starting any meaningful step, update the current task's `work.md`") {
-			t.Fatalf("expected workspace AGENTS.md to require pre-step work.md updates, got:\n%s", first)
+		if !strings.Contains(first, "`work.md` is a mutable recovery snapshot, not a chronological log.") {
+			t.Fatalf("expected workspace AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Immediately after completing any meaningful step, update `work.md`") {
-			t.Fatalf("expected workspace AGENTS.md to require post-step work.md updates, got:\n%s", first)
+		if !strings.Contains(first, "Do not append timeline history to `work.md`.") {
+			t.Fatalf("expected workspace AGENTS.md to forbid timeline history in work.md, got:\n%s", first)
 		}
 		if strings.Count(first, forgePromptStart) != 1 || strings.Count(first, forgePromptEnd) != 1 {
 			t.Fatalf("expected one forge managed block, got:\n%s", first)
