@@ -168,6 +168,18 @@ func TestInitWorkflowFilesCreatePreserveAndReset(t *testing.T) {
 	})
 }
 
+func TestInitRejectsWorkflowFile(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		if err := os.WriteFile(filepath.Join(root, workflowDir), []byte("not a directory\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runErr(t, "init")
+		if err == nil {
+			t.Fatalf("expected init to fail when workflow path is a file, got stdout:\n%s", out)
+		}
+	})
+}
+
 func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")

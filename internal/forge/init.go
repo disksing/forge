@@ -55,7 +55,7 @@ func runInit(args []string) error {
 
 func ensureWorkflowFiles(root string, reset bool) error {
 	dir := filepath.Join(root, workflowDir)
-	if !reset && pathExists(dir) {
+	if !reset && isDir(dir) {
 		return nil
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
