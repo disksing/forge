@@ -16,6 +16,11 @@ func runInit(args []string) error {
 	if err != nil {
 		return err
 	}
+	if existingRoot, err := findEnclosingWorkspaceRoot(root); err != nil {
+		return err
+	} else if existingRoot != "" {
+		root = existingRoot
+	}
 
 	if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
 		return err
@@ -29,12 +34,19 @@ func runInit(args []string) error {
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
 		return err
 	}
+	if err := updateOpenTaskAgentsMD(root); err != nil {
+		return err
+	}
 
 	fmt.Printf("initialized AgentWorkspace at %s\n", root)
 	return nil
 }
 
 func updateAgentsMD(path string) error {
+	return updateAgentsMDWithBlock(path, forgePromptBlock())
+}
+
+func updateAgentsMDWithBlock(path, block string) error {
 	content := ""
 	if data, err := os.ReadFile(path); err == nil {
 		content = string(data)
@@ -42,7 +54,7 @@ func updateAgentsMD(path string) error {
 		return err
 	}
 
-	updated, err := upsertManagedBlock(content, forgePromptBlock())
+	updated, err := upsertManagedBlock(content, block)
 	if err != nil {
 		return err
 	}
@@ -72,6 +84,23 @@ func upsertManagedBlock(content, block string) (string, error) {
 
 func forgePromptBlock() string {
 	return forgePromptStart + "\n" + workspaceAgentsPrompt + forgePromptEnd
+}
+
+func findEnclosingWorkspaceRoot(start string) (string, error) {
+	cwd, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	for {
+		if pathExists(filepath.Join(cwd, configFile)) || isDir(filepath.Join(cwd, reposDir)) {
+			return cwd, nil
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			return "", nil
+		}
+		cwd = parent
+	}
 }
 
 const (

@@ -42,7 +42,7 @@ forge subtask create <task-id> <description>
 forge subtask list <task-id> [--all]
 ```
 
-`forge init` initializes the current directory as an AgentWorkspace. It creates `forge.json`, `repos/`, `archive/`, and a forge-managed block in `AGENTS.md`. It is safe to rerun.
+`forge init` initializes the current directory as an AgentWorkspace, or refreshes the enclosing workspace when run from inside an existing task/subtask. It creates `forge.json`, `repos/`, `archive/`, and forge-managed blocks in `AGENTS.md` files. It is safe to rerun.
 
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
@@ -66,7 +66,7 @@ forge subtask list <task-id> [--all]
 
 `forge subtask list <task-id>` lists open direct subtasks of a task. Use `--all` to include archived subtasks.
 
-`forge init` is safe to run multiple times. It creates or updates workspace scaffolding and rewrites only the forge-managed prompt block in `AGENTS.md`:
+`forge init` is safe to run multiple times. It creates or updates workspace scaffolding, rewrites only the forge-managed prompt block in the workspace `AGENTS.md`, and refreshes forge-managed prompt blocks for open task/subtask `AGENTS.md` files:
 
 ```md
 <!-- managed by forge cli -->

@@ -246,7 +246,7 @@ func createTaskFiles(dir string, task Task) error {
 	if err := os.WriteFile(filepath.Join(dir, "log.md"), []byte(defaultLogMD()), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsMD(task)), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task)+"\n"), 0o644)
 }
 
 func nextTaskID(root string) (string, error) {
@@ -398,6 +398,58 @@ func isArchivedPath(root, path string) bool {
 	return false
 }
 
+func updateOpenTaskAgentsMD(root string) error {
+	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		if path != root {
+			switch entry.Name() {
+			case ".git", reposDir, archiveDir, "worktree", "artifacts":
+				return filepath.SkipDir
+			}
+		}
+
+		taskJSON := filepath.Join(path, "task.json")
+		if !pathExists(taskJSON) {
+			return nil
+		}
+		var task Task
+		if err := readJSON(taskJSON, &task); err != nil {
+			return nil
+		}
+		return updateTaskAgentsMD(path, task)
+	})
+}
+
+func updateTaskAgentsMD(dir string, task Task) error {
+	path := filepath.Join(dir, "AGENTS.md")
+	block := taskAgentsBlock(task)
+
+	content := ""
+	if data, err := os.ReadFile(path); err == nil {
+		content = string(data)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(task)) {
+		content = ""
+	}
+
+	updated, err := upsertManagedBlock(content, block)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(updated), 0o644)
+}
+
+func taskAgentsBlock(task Task) string {
+	return forgePromptStart + "\n" + taskAgentsPrompt(task) + forgePromptEnd
+}
+
 func taskSortKey(id string) string {
 	parts := strings.Split(strings.TrimPrefix(id, "task"), ".")
 	var b strings.Builder
@@ -467,7 +519,7 @@ func defaultLogMD() string {
 `, time.Now().Format("2006-01-02 15:04:05 -0700"))
 }
 
-func taskAgentsMD(task Task) string {
+func taskAgentsPrompt(task Task) string {
 	extra := ""
 	if task.Parent != nil {
 		extra = `
