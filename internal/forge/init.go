@@ -8,8 +8,16 @@ import (
 )
 
 func runInit(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: forge init")
+	resetWorkflows := false
+	switch len(args) {
+	case 0:
+	case 1:
+		if args[0] != "--reset-workflows" {
+			return fmt.Errorf("usage: forge init [--reset-workflows]")
+		}
+		resetWorkflows = true
+	default:
+		return fmt.Errorf("usage: forge init [--reset-workflows]")
 	}
 
 	root, err := os.Getwd()
@@ -31,6 +39,9 @@ func runInit(args []string) error {
 	if err := writeJSON(filepath.Join(root, configFile), Config{Version: 1}); err != nil {
 		return err
 	}
+	if err := ensureWorkflowFiles(root, resetWorkflows); err != nil {
+		return err
+	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
 		return err
 	}
@@ -39,6 +50,26 @@ func runInit(args []string) error {
 	}
 
 	fmt.Printf("initialized AgentWorkspace at %s\n", root)
+	return nil
+}
+
+func ensureWorkflowFiles(root string, reset bool) error {
+	dir := filepath.Join(root, workflowDir)
+	if !reset && pathExists(dir) {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	for name, content := range builtinWorkflows {
+		path := filepath.Join(dir, name+".md")
+		if !reset && pathExists(path) {
+			continue
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -114,13 +145,14 @@ This directory is an AgentWorkspace managed by forge.
 
 - Open tasks live directly under this workspace as ` + "`taskN/`" + ` directories.
 - Archived tasks live under ` + "`archive/`" + `.
+- Workflow section files live under ` + "`workflow/`" + `.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Each task owns its own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the task they are currently handling and its worktrees.
-- ` + "`task.json`" + ` records structured facts only, not workflow status.
+- ` + "`task.json`" + ` records structured facts only, not progress notes.
 - ` + "`task.md`" + ` is free-form task context.
 - ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale ` + "`work.md`" + ` content with the step you are about to take.
@@ -134,10 +166,10 @@ This directory is an AgentWorkspace managed by forge.
 Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
-forge init
+forge init [--reset-workflows]
 forge repo add [--bare] <name> <url>
 forge repo list
-forge task create <description>
+forge task create [--workflow=<name>] <description>
 forge task list
 forge task show <id>
 forge task archive <id>
@@ -150,9 +182,9 @@ forge subtask list <task-id>
 
 Notes:
 
-- ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + `.
+- ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + ` and does not overwrite existing workflow files unless ` + "`--reset-workflows`" + ` is used.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
-- ` + "`forge task create`" + ` creates a new open task directory in the workspace.
+- ` + "`forge task create`" + ` creates a new open task directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select a workflow section file.
 - ` + "`forge task archive`" + ` moves an open top-level task into workspace ` + "`archive/`" + `, or an open subtask into its parent task's ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
 - ` + "`forge subtask create`" + ` creates a direct child task directory under the parent task.

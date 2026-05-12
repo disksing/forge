@@ -10,6 +10,7 @@ type Task struct {
 	Parent      *string    `json:"parent"`
 	Title       string     `json:"title"`
 	Description string     `json:"description"`
+	Workflow    string     `json:"workflow,omitempty"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
 	Repos       []TaskRepo `json:"repos"`
