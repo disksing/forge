@@ -53,9 +53,13 @@ func runTask(args []string) error {
 	switch args[0] {
 	case "create":
 		if len(args) < 2 {
-			return errors.New("usage: forge task create <description>")
+			return errors.New("usage: forge task create [--workflow=<name>] <description>")
 		}
-		return taskCreate(strings.Join(args[1:], " "))
+		workflow, explicitWorkflow, description, err := parseTaskCreateArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return taskCreate(description, workflow, !explicitWorkflow)
 	case "list":
 		all, err := parseOptionalAll(args[1:], "usage: forge task list [--all]")
 		if err != nil {
@@ -126,10 +130,10 @@ func printUsage() {
 	fmt.Println(`forge manages a local AgentWorkspace.
 
 Usage:
-  forge init
+  forge init [--reset-workflows]
   forge repo add [--bare] <name> <url>
   forge repo list
-  forge task create <description>
+  forge task create [--workflow=<name>] <description>
   forge task list [--all]
   forge task show <id>
   forge task archive <id>
@@ -140,11 +144,11 @@ Usage:
   forge subtask list <task-id> [--all]
 
 Commands:
-  forge init
+  forge init [--reset-workflows]
     Initialize the current directory as an AgentWorkspace, or refresh the
     enclosing workspace when run inside an existing task/subtask. Creates
-    forge.json, repos/, archive/, and forge-managed AGENTS.md blocks. Safe to
-    rerun.
+    forge.json, repos/, archive/, workflow/, and forge-managed AGENTS.md blocks.
+    Safe to rerun. Use --reset-workflows to rewrite the built-in workflow files.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -154,9 +158,11 @@ Commands:
   forge repo list
     List repositories known to the workspace.
 
-  forge task create <description>
+  forge task create [--workflow=<name>] <description>
     Create the next top-level task directory, including task.json, task.md,
-    work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md.
+    work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md. By
+    default, task.md uses workflow/default.md for its Workflow section. Use
+    --workflow=<name> to select workflow/<name>.md.
 
   forge task list [--all]
     List open top-level tasks. Use --all to include archived tasks.
@@ -184,6 +190,31 @@ Commands:
 
   forge subtask list <task-id> [--all]
     List open direct subtasks of a task. Use --all to include archived subtasks.`)
+}
+
+func parseTaskCreateArgs(args []string) (string, bool, string, error) {
+	workflow := defaultWorkflowName
+	explicitWorkflow := false
+	var description []string
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "--workflow=") {
+			value := strings.TrimPrefix(arg, "--workflow=")
+			if value == "" {
+				return "", false, "", errors.New("workflow cannot be empty")
+			}
+			workflow = value
+			explicitWorkflow = true
+			continue
+		}
+		if arg == "--workflow" || strings.HasPrefix(arg, "--workflow") {
+			return "", false, "", errors.New("usage: forge task create [--workflow=<name>] <description>")
+		}
+		description = append(description, arg)
+	}
+	if len(description) == 0 {
+		return "", false, "", errors.New("usage: forge task create [--workflow=<name>] <description>")
+	}
+	return workflow, explicitWorkflow, strings.Join(description, " "), nil
 }
 
 func parseOptionalAll(args []string, usage string) (bool, error) {

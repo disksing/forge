@@ -10,6 +10,9 @@ The design is intentionally simple. forge creates and moves task directories; ag
 AgentWorkspace/
   AGENTS.md
   forge.json
+  workflow/
+    default.md
+    project.md
   repos/
     owner/repo/
   task1/
@@ -28,10 +31,10 @@ Open top-level tasks live directly under the workspace. Archived top-level tasks
 ## Commands
 
 ```bash
-forge init
+forge init [--reset-workflows]
 forge repo add [--bare] <name> <url>
 forge repo list
-forge task create <description>
+forge task create [--workflow=<name>] <description>
 forge task list [--all]
 forge task show <id>
 forge task archive <id>
@@ -42,13 +45,13 @@ forge subtask create <task-id> <description>
 forge subtask list <task-id> [--all]
 ```
 
-`forge init` initializes the current directory as an AgentWorkspace, or refreshes the enclosing workspace when run from inside an existing task/subtask. It creates `forge.json`, `repos/`, `archive/`, and forge-managed blocks in `AGENTS.md` files. It is safe to rerun.
+`forge init` initializes the current directory as an AgentWorkspace, or refreshes the enclosing workspace when run from inside an existing task/subtask. It creates `forge.json`, `repos/`, `archive/`, `workflow/`, and forge-managed blocks in `AGENTS.md` files. It is safe to rerun. Use `--reset-workflows` to rewrite Forge's built-in `workflow/default.md` and `workflow/project.md` while preserving custom workflow files.
 
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
 `forge repo list` lists repositories known to the workspace.
 
-`forge task create <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`.
+`forge task create [--workflow=<name>] <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`. By default, Forge inserts `workflow/default.md` into the generated `task.md` `## Workflow` section; `--workflow=<name>` uses `workflow/<name>.md`.
 
 `forge task list` lists open top-level tasks. Use `--all` to include archived tasks.
 
@@ -66,7 +69,7 @@ forge subtask list <task-id> [--all]
 
 `forge subtask list <task-id>` lists open direct subtasks of a task. Use `--all` to include archived subtasks.
 
-`forge init` is safe to run multiple times. It creates or updates workspace scaffolding, rewrites only the forge-managed prompt block in the workspace `AGENTS.md`, and refreshes forge-managed prompt blocks for open task/subtask `AGENTS.md` files:
+`forge init` is safe to run multiple times. It creates or updates workspace scaffolding, writes built-in workflow files only when `workflow/` does not already exist, rewrites only the forge-managed prompt block in the workspace `AGENTS.md`, and refreshes forge-managed prompt blocks for open task/subtask `AGENTS.md` files:
 
 ```md
 <!-- managed by forge cli -->
@@ -106,8 +109,8 @@ repos/disksing/forge.git
 
 Each task directory contains:
 
-- `task.json`: structured facts such as task id, parent id, description, and involved repositories.
-- `task.md`: free-form task context, requirements, plans, and acceptance notes.
+- `task.json`: structured facts such as task id, parent id, description, selected workflow, and involved repositories.
+- `task.md`: free-form task context, requirements, workflow, plans, and acceptance notes.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
 - `log.md`: append-oriented execution log for chronological events, command results, and completed-step history.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.

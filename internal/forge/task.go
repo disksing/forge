@@ -14,8 +14,43 @@ import (
 )
 
 var topTaskName = regexp.MustCompile(`^task([0-9]+)$`)
+var workflowName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
-func taskCreate(description string) error {
+const (
+	workflowDir         = "workflow"
+	defaultWorkflowName = "default"
+	projectWorkflowName = "project"
+)
+
+var builtinWorkflows = map[string]string{
+	defaultWorkflowName: `普通任务工作流。先明确需求和验收标准，再实施、测试，并记录结果。
+
+### Steps
+
+1. 阅读 task.json、task.md、work.md 和 log.md，确认任务边界和验收标准。
+2. 如果需求、风险或验收标准不明确，先向用户澄清，并把确认结果更新回 task.md。
+3. 在任务自己的 worktree/ 中完成需要的代码或文档修改。
+4. 运行相关测试和检查，记录重要结果。
+5. 总结改动、验证结果、剩余风险和后续建议。
+`,
+	projectWorkflowName: `本任务是项目管理任务，只负责需求澄清、拆分、协调、review、合并和收尾。具体实现工作应放入直接子任务，由 sub agent 在子任务自己的 worktree/branch 中完成。
+
+### Steps
+
+1. 收到新需求后，先和用户讨论并明确需求边界、验收标准和风险。
+2. 需求明确后，在当前任务下创建新的 subtask，并把需求、验收点和必要背景写入该 subtask 的 task.md。
+3. 为 subtask 启动 sub agent。sub agent 应在该 subtask 目录内工作，创建独立 worktree/branch，按子任务要求实现、测试并提交。
+4. sub agent 完成后，由主任务进行 review：检查 diff、确认需求覆盖、运行必要测试。
+5. review 和测试通过后，把 subtask 分支合入目标分支。
+6. 按已确认的收尾要求完成后续操作，并归档 subtask。
+
+### Pending Decisions
+
+- subtask 完成后是否需要自动做其它操作？例如更新环境、重新运行集成测试、push 远端等。
+`,
+}
+
+func taskCreate(description, workflow string, allowBuiltinFallback bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -24,14 +59,18 @@ func taskCreate(description string) error {
 	if description == "" {
 		return fmt.Errorf("description cannot be empty")
 	}
+	workflowContent, err := resolveWorkflow(root, workflow, allowBuiltinFallback && workflow == defaultWorkflowName)
+	if err != nil {
+		return err
+	}
 
 	id, err := nextTaskID(root)
 	if err != nil {
 		return err
 	}
 	taskPath := filepath.Join(root, id)
-	task := newTask(id, nil, description)
-	if err := createTaskFiles(taskPath, task); err != nil {
+	task := newTask(id, nil, description, workflow)
+	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -175,8 +214,12 @@ func subtaskCreate(parentID, description string) error {
 		return err
 	}
 	taskPath := filepath.Join(parentPath, id)
-	task := newTask(id, &parentID, description)
-	if err := createTaskFiles(taskPath, task); err != nil {
+	workflowContent, err := resolveWorkflow(root, defaultWorkflowName, true)
+	if err != nil {
+		return err
+	}
+	task := newTask(id, &parentID, description, defaultWorkflowName)
+	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -207,7 +250,7 @@ func subtaskList(parentID string, includeArchived bool) error {
 	return nil
 }
 
-func newTask(id string, parent *string, description string) Task {
+func newTask(id string, parent *string, description string, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
 	taskType := "task"
 	if parent != nil {
@@ -219,13 +262,14 @@ func newTask(id string, parent *string, description string) Task {
 		Parent:      parent,
 		Title:       titleFromDescription(description),
 		Description: description,
+		Workflow:    workflow,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Repos:       []TaskRepo{},
 	}
 }
 
-func createTaskFiles(dir string, task Task) error {
+func createTaskFiles(dir string, task Task, workflowContent string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
@@ -237,7 +281,7 @@ func createTaskFiles(dir string, task Task) error {
 	if err := writeJSON(filepath.Join(dir, "task.json"), task); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task, workflowContent)), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
@@ -247,6 +291,30 @@ func createTaskFiles(dir string, task Task) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task)+"\n"), 0o644)
+}
+
+func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("workflow cannot be empty")
+	}
+	if !workflowName.MatchString(name) {
+		return "", fmt.Errorf("invalid workflow name %q: use only letters, numbers, dot, underscore, or hyphen", name)
+	}
+	path := filepath.Join(root, workflowDir, name+".md")
+	data, err := os.ReadFile(path)
+	if err == nil {
+		return strings.TrimRight(string(data), " \t\r\n") + "\n", nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+	if fallbackToBuiltin {
+		if content, ok := builtinWorkflows[name]; ok {
+			return strings.TrimRight(content, " \t\r\n") + "\n", nil
+		}
+	}
+	return "", fmt.Errorf("workflow not found: %s", filepath.ToSlash(filepath.Join(workflowDir, name+".md")))
 }
 
 func nextTaskID(root string) (string, error) {
@@ -479,15 +547,18 @@ func printTaskJSON(task Task) error {
 	return encoder.Encode(task)
 }
 
-func defaultTaskMD(task Task) string {
+func defaultTaskMD(task Task, workflowContent string) string {
 	return fmt.Sprintf(`# %s
 
 %s
 
+## Workflow
+
+%s
 ## Notes
 
 Use this file for task intent, requirements, plans, acceptance notes, and any other free-form context useful to the agent.
-`, task.Title, task.Description)
+`, task.Title, task.Description, workflowContent)
 }
 
 func defaultWorkMD(task Task) string {
@@ -545,6 +616,7 @@ You are working inside a single AgentWorkspace task directory.
 - If the task involves a new repository, update this task's task.json.
 - Keep task.json focused on structured facts.
 - Use task.md for free-form task intent, notes, plans, and acceptance details.
+- If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers.
 - Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale work.md content with the step you are about to take.
 - Immediately after completing any meaningful step, replace stale work.md content with the updated current state and next step.

@@ -15,12 +15,18 @@ func TestTaskLifecycle(t *testing.T) {
 		run(t, "init")
 		assertDir(t, filepath.Join(root, reposDir))
 		assertDir(t, filepath.Join(root, archiveDir))
+		assertDir(t, filepath.Join(root, workflowDir))
 		assertFile(t, filepath.Join(root, configFile))
 		assertFile(t, filepath.Join(root, "AGENTS.md"))
+		assertFile(t, filepath.Join(root, workflowDir, "default.md"))
+		assertFile(t, filepath.Join(root, workflowDir, "project.md"))
 
 		created := run(t, "task", "create", "Implement the forge MVP")
 		if !strings.Contains(created, `"id": "task1"`) {
 			t.Fatalf("expected task1 JSON, got:\n%s", created)
+		}
+		if !strings.Contains(created, `"workflow": "default"`) {
+			t.Fatalf("expected task JSON to record default workflow, got:\n%s", created)
 		}
 		assertFile(t, filepath.Join(root, "task1", "task.json"))
 		assertFile(t, filepath.Join(root, "task1", "task.md"))
@@ -40,6 +46,13 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(taskAgents, "Do not append timeline history to work.md.") {
 			t.Fatalf("expected task AGENTS.md to forbid timeline history in work.md, got:\n%s", taskAgents)
+		}
+		if !strings.Contains(taskAgents, "If task.md contains pending decisions or unresolved items") {
+			t.Fatalf("expected task AGENTS.md to include generic pending-item guidance, got:\n%s", taskAgents)
+		}
+		taskMD := readFile(t, filepath.Join(root, "task1", "task.md"))
+		if !strings.Contains(taskMD, "## Workflow") || !strings.Contains(taskMD, "普通任务工作流") {
+			t.Fatalf("expected task.md to include default workflow section, got:\n%s", taskMD)
 		}
 		taskWork := readFile(t, filepath.Join(root, "task1", "work.md"))
 		if !strings.Contains(taskWork, "## Recovery Rule") {
@@ -72,6 +85,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
 		}
+		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
+			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
+		}
 
 		children := run(t, "subtask", "list", "task1")
 		if !strings.Contains(children, "task1.1\tAdd task commands") {
@@ -103,6 +119,129 @@ func TestTaskLifecycle(t *testing.T) {
 		next := run(t, "task", "create", "Second task")
 		if !strings.Contains(next, `"id": "task2"`) {
 			t.Fatalf("expected archived task ids not to be reused, got:\n%s", next)
+		}
+	})
+}
+
+func TestInitWorkflowFilesCreatePreserveAndReset(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		defaultPath := filepath.Join(root, workflowDir, "default.md")
+		projectPath := filepath.Join(root, workflowDir, "project.md")
+		customPath := filepath.Join(root, workflowDir, "custom.md")
+
+		if !strings.Contains(readFile(t, defaultPath), "普通任务工作流") {
+			t.Fatalf("expected built-in default workflow, got:\n%s", readFile(t, defaultPath))
+		}
+		if !strings.Contains(readFile(t, projectPath), "本任务是项目管理任务") {
+			t.Fatalf("expected built-in project workflow, got:\n%s", readFile(t, projectPath))
+		}
+
+		if err := os.WriteFile(defaultPath, []byte("custom default\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(projectPath, []byte("custom project\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(customPath, []byte("custom workflow\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		run(t, "init")
+		if got := readFile(t, defaultPath); got != "custom default\n" {
+			t.Fatalf("plain init should preserve existing default workflow, got:\n%s", got)
+		}
+		if got := readFile(t, projectPath); got != "custom project\n" {
+			t.Fatalf("plain init should preserve existing project workflow, got:\n%s", got)
+		}
+
+		run(t, "init", "--reset-workflows")
+		if got := readFile(t, defaultPath); !strings.Contains(got, "普通任务工作流") || strings.Contains(got, "custom default") {
+			t.Fatalf("reset should rewrite built-in default workflow, got:\n%s", got)
+		}
+		if got := readFile(t, projectPath); !strings.Contains(got, "本任务是项目管理任务") || strings.Contains(got, "custom project") {
+			t.Fatalf("reset should rewrite built-in project workflow, got:\n%s", got)
+		}
+		if got := readFile(t, customPath); got != "custom workflow\n" {
+			t.Fatalf("reset should preserve custom workflow files, got:\n%s", got)
+		}
+	})
+}
+
+func TestInitRejectsWorkflowFile(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		if err := os.WriteFile(filepath.Join(root, workflowDir), []byte("not a directory\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		out, err := runErr(t, "init")
+		if err == nil {
+			t.Fatalf("expected init to fail when workflow path is a file, got stdout:\n%s", out)
+		}
+	})
+}
+
+func TestTaskCreateUsesWorkflowSections(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		defaultPath := filepath.Join(root, workflowDir, "default.md")
+		projectPath := filepath.Join(root, workflowDir, "project.md")
+		if err := os.WriteFile(defaultPath, []byte("Default body {{title}}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(projectPath, []byte("Project body {{description}}\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		defaultCreated := run(t, "task", "create", "Default task")
+		if !strings.Contains(defaultCreated, `"workflow": "default"`) {
+			t.Fatalf("expected default workflow in task JSON, got:\n%s", defaultCreated)
+		}
+		defaultTaskMD := readFile(t, filepath.Join(root, "task1", "task.md"))
+		if !strings.Contains(defaultTaskMD, "# Default task") || !strings.Contains(defaultTaskMD, "Default body {{title}}") {
+			t.Fatalf("expected task.md skeleton with literal default workflow body, got:\n%s", defaultTaskMD)
+		}
+		if strings.Contains(defaultTaskMD, "# Default body") {
+			t.Fatalf("workflow file should not be treated as a full task.md template, got:\n%s", defaultTaskMD)
+		}
+
+		projectCreated := run(t, "task", "create", "--workflow=project", "Project task")
+		if !strings.Contains(projectCreated, `"workflow": "project"`) {
+			t.Fatalf("expected project workflow in task JSON, got:\n%s", projectCreated)
+		}
+		projectTaskMD := readFile(t, filepath.Join(root, "task2", "task.md"))
+		if !strings.Contains(projectTaskMD, "# Project task") || !strings.Contains(projectTaskMD, "Project body {{description}}") {
+			t.Fatalf("expected task.md skeleton with literal project workflow body, got:\n%s", projectTaskMD)
+		}
+
+		if err := os.Remove(defaultPath); err != nil {
+			t.Fatal(err)
+		}
+		fallbackCreated := run(t, "task", "create", "Fallback task")
+		if !strings.Contains(fallbackCreated, `"workflow": "default"`) {
+			t.Fatalf("expected fallback task JSON to record default workflow, got:\n%s", fallbackCreated)
+		}
+		fallbackTaskMD := readFile(t, filepath.Join(root, "task3", "task.md"))
+		if !strings.Contains(fallbackTaskMD, "普通任务工作流") {
+			t.Fatalf("expected missing default workflow to fallback to built-in content, got:\n%s", fallbackTaskMD)
+		}
+
+		out, err := runErr(t, "task", "create", "--workflow=default", "Explicit default missing task")
+		if err == nil {
+			t.Fatalf("expected missing explicit default workflow to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), "workflow not found: workflow/default.md") {
+			t.Fatalf("expected missing explicit default workflow error, got: %v\nstdout:\n%s", err, out)
+		}
+
+		out, err = runErr(t, "task", "create", "--workflow=missing", "Missing workflow task")
+		if err == nil {
+			t.Fatalf("expected missing explicit workflow to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), "workflow not found: workflow/missing.md") {
+			t.Fatalf("expected missing workflow error, got: %v\nstdout:\n%s", err, out)
+		}
+		if pathExists(filepath.Join(root, "task4")) {
+			t.Fatal("task should not be created when explicit workflow is missing")
 		}
 	})
 }
