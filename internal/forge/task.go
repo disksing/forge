@@ -23,30 +23,30 @@ const (
 )
 
 var builtinWorkflows = map[string]string{
-	defaultWorkflowName: `普通任务工作流。先明确需求和验收标准，再实施、测试，并记录结果。
+	defaultWorkflowName: `Standard task workflow. Clarify the requirements and acceptance criteria first, then implement, test, and record the result.
 
 ### Steps
 
-1. 阅读 task.json、task.md、work.md 和 log.md，确认任务边界和验收标准。
-2. 如果需求、风险或验收标准不明确，先向用户澄清，并把确认结果更新回 task.md。
-3. 在任务自己的 worktree/ 中完成需要的代码或文档修改。
-4. 运行相关测试和检查，记录重要结果。
-5. 总结改动、验证结果、剩余风险和后续建议。
+1. Read task.json, task.md, work.md, and log.md to confirm the task boundary and acceptance criteria.
+2. If requirements, risks, or acceptance criteria are unclear, clarify them with the user and update task.md with the confirmed answers.
+3. Make the required code or documentation changes in the task-owned worktree/.
+4. Run relevant tests and checks, then record important results.
+5. Summarize the changes, verification results, remaining risks, and recommended next steps.
 `,
-	projectWorkflowName: `本任务是项目管理任务，只负责需求澄清、拆分、协调、review、合并和收尾。具体实现工作应放入直接子任务，由 sub agent 在子任务自己的 worktree/branch 中完成。
+	projectWorkflowName: `This is a project-management task. Keep this task focused on clarifying requirements, splitting work into subtasks, coordinating implementation, reviewing, merging, and closing out. Put implementation work in direct subtasks, with each sub agent working in its own subtask-owned worktree/branch.
 
 ### Steps
 
-1. 收到新需求后，先和用户讨论并明确需求边界、验收标准和风险。
-2. 需求明确后，在当前任务下创建新的 subtask，并把需求、验收点和必要背景写入该 subtask 的 task.md。
-3. 为 subtask 启动 sub agent。sub agent 应在该 subtask 目录内工作，创建独立 worktree/branch，按子任务要求实现、测试并提交。
-4. sub agent 完成后，由主任务进行 review：检查 diff、确认需求覆盖、运行必要测试。
-5. review 和测试通过后，把 subtask 分支合入目标分支。
-6. 按已确认的收尾要求完成后续操作，并归档 subtask。
+1. When a new request arrives, discuss it with the user and clarify the task boundary, acceptance criteria, and risks.
+2. After the requirement is clear, create a new subtask under the current task and write the requirement, acceptance criteria, and necessary context into that subtask's task.md.
+3. Start a sub agent for the subtask. The sub agent should work inside that subtask directory, create an independent worktree/branch, then implement, test, and commit according to the subtask requirements.
+4. After the sub agent finishes, review from the parent task: inspect the diff, confirm requirement coverage, and run necessary tests.
+5. After review and tests pass, merge the subtask branch into the target branch.
+6. Complete the confirmed closeout steps and archive the subtask.
 
 ### Pending Decisions
 
-- subtask 完成后是否需要自动做其它操作？例如更新环境、重新运行集成测试、push 远端等。
+- Should any additional closeout steps run after a subtask is complete, such as updating the local environment, rerunning integration tests, or pushing to the remote?
 `,
 }
 

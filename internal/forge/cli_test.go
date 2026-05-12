@@ -8,6 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
+)
+
+const (
+	defaultWorkflowSnippet = "Standard task workflow. Clarify the requirements and acceptance criteria first"
+	projectWorkflowSnippet = "This is a project-management task."
 )
 
 func TestTaskLifecycle(t *testing.T) {
@@ -50,10 +56,12 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(taskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected task AGENTS.md to include generic pending-item guidance, got:\n%s", taskAgents)
 		}
-		taskMD := readFile(t, filepath.Join(root, "task1", "task.md"))
-		if !strings.Contains(taskMD, "## Workflow") || !strings.Contains(taskMD, "普通任务工作流") {
+		taskMDPath := filepath.Join(root, "task1", "task.md")
+		taskMD := readFile(t, taskMDPath)
+		if !strings.Contains(taskMD, "## Workflow") || !strings.Contains(taskMD, defaultWorkflowSnippet) {
 			t.Fatalf("expected task.md to include default workflow section, got:\n%s", taskMD)
 		}
+		assertNoHan(t, taskMDPath)
 		taskWork := readFile(t, filepath.Join(root, "task1", "work.md"))
 		if !strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md to include recovery rule, got:\n%s", taskWork)
@@ -130,12 +138,16 @@ func TestInitWorkflowFilesCreatePreserveAndReset(t *testing.T) {
 		projectPath := filepath.Join(root, workflowDir, "project.md")
 		customPath := filepath.Join(root, workflowDir, "custom.md")
 
-		if !strings.Contains(readFile(t, defaultPath), "普通任务工作流") {
-			t.Fatalf("expected built-in default workflow, got:\n%s", readFile(t, defaultPath))
+		defaultWorkflow := readFile(t, defaultPath)
+		if !strings.Contains(defaultWorkflow, defaultWorkflowSnippet) {
+			t.Fatalf("expected built-in default workflow, got:\n%s", defaultWorkflow)
 		}
-		if !strings.Contains(readFile(t, projectPath), "本任务是项目管理任务") {
-			t.Fatalf("expected built-in project workflow, got:\n%s", readFile(t, projectPath))
+		assertNoHan(t, defaultPath)
+		projectWorkflow := readFile(t, projectPath)
+		if !strings.Contains(projectWorkflow, projectWorkflowSnippet) {
+			t.Fatalf("expected built-in project workflow, got:\n%s", projectWorkflow)
 		}
+		assertNoHan(t, projectPath)
 
 		if err := os.WriteFile(defaultPath, []byte("custom default\n"), 0o644); err != nil {
 			t.Fatal(err)
@@ -156,12 +168,14 @@ func TestInitWorkflowFilesCreatePreserveAndReset(t *testing.T) {
 		}
 
 		run(t, "init", "--reset-workflows")
-		if got := readFile(t, defaultPath); !strings.Contains(got, "普通任务工作流") || strings.Contains(got, "custom default") {
+		if got := readFile(t, defaultPath); !strings.Contains(got, defaultWorkflowSnippet) || strings.Contains(got, "custom default") {
 			t.Fatalf("reset should rewrite built-in default workflow, got:\n%s", got)
 		}
-		if got := readFile(t, projectPath); !strings.Contains(got, "本任务是项目管理任务") || strings.Contains(got, "custom project") {
+		assertNoHan(t, defaultPath)
+		if got := readFile(t, projectPath); !strings.Contains(got, projectWorkflowSnippet) || strings.Contains(got, "custom project") {
 			t.Fatalf("reset should rewrite built-in project workflow, got:\n%s", got)
 		}
+		assertNoHan(t, projectPath)
 		if got := readFile(t, customPath); got != "custom workflow\n" {
 			t.Fatalf("reset should preserve custom workflow files, got:\n%s", got)
 		}
@@ -220,10 +234,12 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 		if !strings.Contains(fallbackCreated, `"workflow": "default"`) {
 			t.Fatalf("expected fallback task JSON to record default workflow, got:\n%s", fallbackCreated)
 		}
-		fallbackTaskMD := readFile(t, filepath.Join(root, "task3", "task.md"))
-		if !strings.Contains(fallbackTaskMD, "普通任务工作流") {
+		fallbackTaskMDPath := filepath.Join(root, "task3", "task.md")
+		fallbackTaskMD := readFile(t, fallbackTaskMDPath)
+		if !strings.Contains(fallbackTaskMD, defaultWorkflowSnippet) {
 			t.Fatalf("expected missing default workflow to fallback to built-in content, got:\n%s", fallbackTaskMD)
 		}
+		assertNoHan(t, fallbackTaskMDPath)
 
 		out, err := runErr(t, "task", "create", "--workflow=default", "Explicit default missing task")
 		if err == nil {
@@ -700,6 +716,16 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func assertNoHan(t *testing.T, path string) {
+	t.Helper()
+	content := readFile(t, path)
+	for _, r := range content {
+		if unicode.Is(unicode.Han, r) {
+			t.Fatalf("expected %s to contain no Chinese characters, got:\n%s", path, content)
+		}
+	}
 }
 
 func appendFile(t *testing.T, path, content string) {
