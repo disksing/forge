@@ -197,6 +197,34 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 	})
 }
 
+func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		for _, description := range []string{
+			"Archived child one",
+			"Archived child two",
+			"Archived child three",
+			"Open child four",
+			"Open child five",
+		} {
+			run(t, "subtask", "create", "task1", description)
+		}
+		for _, id := range []string{"task1.1", "task1.2", "task1.3"} {
+			run(t, "task", "archive", id)
+			assertDir(t, filepath.Join(root, "task1", archiveDir, id))
+		}
+		assertDir(t, filepath.Join(root, "task1", "task1.4"))
+		assertDir(t, filepath.Join(root, "task1", "task1.5"))
+
+		next := run(t, "subtask", "create", "task1", "Next child")
+		if !strings.Contains(next, `"id": "task1.6"`) {
+			t.Fatalf("expected archived and open subtask ids not to be reused, got:\n%s", next)
+		}
+		assertDir(t, filepath.Join(root, "task1", "task1.6"))
+	})
+}
+
 func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
