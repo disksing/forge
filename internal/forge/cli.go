@@ -141,8 +141,10 @@ Usage:
 
 Commands:
   forge init
-    Initialize the current directory as an AgentWorkspace. Creates forge.json,
-    repos/, archive/, and a forge-managed block in AGENTS.md. Safe to rerun.
+    Initialize the current directory as an AgentWorkspace, or refresh the
+    enclosing workspace when run inside an existing task/subtask. Creates
+    forge.json, repos/, archive/, and forge-managed AGENTS.md blocks. Safe to
+    rerun.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
