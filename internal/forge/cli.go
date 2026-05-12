@@ -57,10 +57,11 @@ func runTask(args []string) error {
 		}
 		return taskCreate(strings.Join(args[1:], " "))
 	case "list":
-		if len(args) != 1 {
-			return errors.New("usage: forge task list")
+		all, err := parseOptionalAll(args[1:], "usage: forge task list [--all]")
+		if err != nil {
+			return err
 		}
-		return taskList()
+		return taskList(all)
 	case "show":
 		if len(args) != 2 {
 			return errors.New("usage: forge task show <id>")
@@ -111,10 +112,11 @@ func runSubtask(args []string) error {
 		}
 		return subtaskCreate(args[1], strings.Join(args[2:], " "))
 	case "list":
-		if len(args) != 2 {
-			return errors.New("usage: forge subtask list <task-id>")
+		parentID, all, err := parseSubtaskListArgs(args[1:])
+		if err != nil {
+			return err
 		}
-		return subtaskList(args[1])
+		return subtaskList(parentID, all)
 	default:
 		return fmt.Errorf("unknown subtask subcommand %q", args[0])
 	}
@@ -128,14 +130,14 @@ Usage:
   forge repo add [--bare] <name> <url>
   forge repo list
   forge task create <description>
-  forge task list
+  forge task list [--all]
   forge task show <id>
   forge task archive <id>
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list <task-id>
   forge task repo remove <task-id> <repo-name>
   forge subtask create <task-id> <description>
-  forge subtask list <task-id>
+  forge subtask list <task-id> [--all]
 
 Commands:
   forge init
@@ -154,8 +156,8 @@ Commands:
     Create the next top-level task directory, including task.json, task.md,
     work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md.
 
-  forge task list
-    List open top-level tasks.
+  forge task list [--all]
+    List open top-level tasks. Use --all to include archived tasks.
 
   forge task show <id>
     Print the task.json for a task or subtask as formatted JSON.
@@ -178,6 +180,30 @@ Commands:
   forge subtask create <task-id> <description>
     Create the next direct child task directory under the parent task.
 
-  forge subtask list <task-id>
-    List direct subtasks of a task.`)
+  forge subtask list <task-id> [--all]
+    List open direct subtasks of a task. Use --all to include archived subtasks.`)
+}
+
+func parseOptionalAll(args []string, usage string) (bool, error) {
+	switch len(args) {
+	case 0:
+		return false, nil
+	case 1:
+		if args[0] == "--all" {
+			return true, nil
+		}
+	}
+	return false, errors.New(usage)
+}
+
+func parseSubtaskListArgs(args []string) (string, bool, error) {
+	switch len(args) {
+	case 1:
+		return args[0], false, nil
+	case 2:
+		if args[1] == "--all" {
+			return args[0], true, nil
+		}
+	}
+	return "", false, errors.New("usage: forge subtask list <task-id> [--all]")
 }
