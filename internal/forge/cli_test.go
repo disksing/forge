@@ -32,6 +32,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(taskAgents, "workspace root AGENTS.md") {
 			t.Fatalf("expected task AGENTS.md to reference workspace AGENTS.md, got:\n%s", taskAgents)
 		}
+		if strings.Count(taskAgents, forgePromptStart) != 1 || strings.Count(taskAgents, forgePromptEnd) != 1 {
+			t.Fatalf("expected task AGENTS.md to contain one managed block, got:\n%s", taskAgents)
+		}
 		if !strings.Contains(taskAgents, "Before starting any meaningful step, update work.md") {
 			t.Fatalf("expected task AGENTS.md to require pre-step work.md updates, got:\n%s", taskAgents)
 		}
@@ -62,6 +65,9 @@ func TestTaskLifecycle(t *testing.T) {
 		subtaskAgents := readFile(t, filepath.Join(root, "task1", "task1.1", "AGENTS.md"))
 		if !strings.Contains(subtaskAgents, "workspace root AGENTS.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference workspace AGENTS.md, got:\n%s", subtaskAgents)
+		}
+		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
+			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
@@ -404,6 +410,78 @@ func TestInitUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 	})
 }
 
+func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "Open child")
+		run(t, "subtask", "create", "task1", "Archived child")
+		run(t, "task", "archive", "task1.2")
+
+		rootAgents := filepath.Join(root, "AGENTS.md")
+		taskAgents := filepath.Join(root, "task1", "AGENTS.md")
+		subtaskAgents := filepath.Join(root, "task1", "task1.1", "AGENTS.md")
+		archivedAgents := filepath.Join(root, "task1", archiveDir, "task1.2", "AGENTS.md")
+
+		writeStaleManagedBlock(t, rootAgents, "This directory is an AgentWorkspace managed by forge.", "old workspace prompt")
+		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
+		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace task directory.", "old task prompt")
+		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
+		writeStaleManagedBlock(t, subtaskAgents, "Read the parent task directory's task.json, task.md, work.md, and log.md", "old child prompt")
+		archivedBefore := readFile(t, archivedAgents)
+
+		if err := os.Chdir(filepath.Join(root, "task1", "task1.1")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "init")
+
+		if pathExists(filepath.Join(root, "task1", "task1.1", configFile)) {
+			t.Fatal("init from subtask should not create nested forge.json")
+		}
+		if pathExists(filepath.Join(root, "task1", "task1.1", reposDir)) {
+			t.Fatal("init from subtask should not create nested repos directory")
+		}
+		if pathExists(filepath.Join(root, "task1", "task1.1", archiveDir)) {
+			t.Fatal("init from subtask should not create nested archive directory")
+		}
+
+		rootAfter := readFile(t, rootAgents)
+		if strings.Contains(rootAfter, "old workspace prompt") || !strings.Contains(rootAfter, "This directory is an AgentWorkspace managed by forge.") {
+			t.Fatalf("expected workspace managed block to refresh, got:\n%s", rootAfter)
+		}
+
+		taskAfter := readFile(t, taskAgents)
+		if strings.Contains(taskAfter, "old task prompt") {
+			t.Fatalf("expected task managed block to refresh, got:\n%s", taskAfter)
+		}
+		if !strings.Contains(taskAfter, "Keep task note.") {
+			t.Fatalf("expected task manual content to survive refresh, got:\n%s", taskAfter)
+		}
+		if strings.Count(taskAfter, forgePromptStart) != 1 || strings.Count(taskAfter, forgePromptEnd) != 1 {
+			t.Fatalf("expected task refresh to keep one managed block, got:\n%s", taskAfter)
+		}
+
+		subtaskAfter := readFile(t, subtaskAgents)
+		if strings.Contains(subtaskAfter, "old child prompt") {
+			t.Fatalf("expected subtask managed block to refresh, got:\n%s", subtaskAfter)
+		}
+		if !strings.Contains(subtaskAfter, "Keep child note.") {
+			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
+		}
+		if !strings.Contains(subtaskAfter, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
+			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
+		}
+		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
+			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)
+		}
+
+		archivedAfter := readFile(t, archivedAgents)
+		if archivedAfter != archivedBefore {
+			t.Fatalf("expected archived subtask AGENTS.md not to change\nbefore:\n%s\nafter:\n%s", archivedBefore, archivedAfter)
+		}
+	})
+}
+
 func withTempCwd(t *testing.T, fn func(root string)) {
 	t.Helper()
 	root := t.TempDir()
@@ -483,6 +561,30 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func appendFile(t *testing.T, path, content string) {
+	t.Helper()
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer file.Close()
+	if _, err := file.WriteString(content); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeStaleManagedBlock(t *testing.T, path, old, replacement string) {
+	t.Helper()
+	content := readFile(t, path)
+	stale := strings.Replace(content, old, replacement, 1)
+	if stale == content {
+		t.Fatalf("could not make %s stale; missing %q in:\n%s", path, old, content)
+	}
+	if err := os.WriteFile(path, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func writeFakeRepo(t *testing.T, path string) {
