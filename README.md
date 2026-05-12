@@ -32,14 +32,14 @@ forge init
 forge repo add [--bare] <name> <url>
 forge repo list
 forge task create <description>
-forge task list
+forge task list [--all]
 forge task show <id>
 forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list <task-id>
 forge task repo remove <task-id> <repo-name>
 forge subtask create <task-id> <description>
-forge subtask list <task-id>
+forge subtask list <task-id> [--all]
 ```
 
 `forge init` initializes the current directory as an AgentWorkspace. It creates `forge.json`, `repos/`, `archive/`, and a forge-managed block in `AGENTS.md`. It is safe to rerun.
@@ -50,7 +50,7 @@ forge subtask list <task-id>
 
 `forge task create <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`.
 
-`forge task list` lists open top-level tasks.
+`forge task list` lists open top-level tasks. Use `--all` to include archived tasks.
 
 `forge task show <id>` prints a task or subtask's `task.json`.
 
@@ -64,7 +64,7 @@ forge subtask list <task-id>
 
 `forge subtask create <task-id> <description>` creates the next direct child task under the parent task.
 
-`forge subtask list <task-id>` lists direct subtasks of a task.
+`forge subtask list <task-id>` lists open direct subtasks of a task. Use `--all` to include archived subtasks.
 
 `forge init` is safe to run multiple times. It creates or updates workspace scaffolding and rewrites only the forge-managed prompt block in `AGENTS.md`:
 

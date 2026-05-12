@@ -85,6 +85,14 @@ func TestTaskLifecycle(t *testing.T) {
 		if pathExists(filepath.Join(root, "task1")) {
 			t.Fatal("task1 should have moved out of the open workspace")
 		}
+		openOnly := run(t, "task", "list")
+		if strings.Contains(openOnly, "task1\tImplement the forge MVP") {
+			t.Fatalf("archived task should not be listed by default, got:\n%s", openOnly)
+		}
+		allTasks := run(t, "task", "list", "--all")
+		if !strings.Contains(allTasks, "task1\tImplement the forge MVP") {
+			t.Fatalf("expected task list --all to include archived task, got:\n%s", allTasks)
+		}
 
 		next := run(t, "task", "create", "Second task")
 		if !strings.Contains(next, `"id": "task2"`) {
@@ -176,6 +184,10 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 		children := run(t, "subtask", "list", "task1")
 		if strings.Contains(children, "task1.1") {
 			t.Fatalf("archived subtask should not be listed as open, got:\n%s", children)
+		}
+		allChildren := run(t, "subtask", "list", "task1", "--all")
+		if !strings.Contains(allChildren, "task1.1\tChild task") {
+			t.Fatalf("expected subtask list --all to include archived subtask, got:\n%s", allChildren)
 		}
 
 		next := run(t, "subtask", "create", "task1", "Next child")
