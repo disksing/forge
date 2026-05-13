@@ -132,3 +132,7 @@ If `--worktree` is omitted, forge records `taskN/worktree/<repo>` by default. If
 go test ./...
 go run ./cmd/forge help
 ```
+
+## Companion Tools
+
+- [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
