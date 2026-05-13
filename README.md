@@ -51,7 +51,7 @@ forge subtask list <task-id> [--all]
 
 `forge repo list` lists repositories known to the workspace.
 
-`forge task create [--workflow=<name>] <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`. By default, Forge inserts `workflow/default.md` into the generated `task.md` `## Workflow` section; `--workflow=<name>` uses `workflow/<name>.md`.
+`forge task create [--workflow=<name>] <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`. By default, Forge inserts `workflow/default.md` into the generated task `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Generated `task.md` contains only the task title and description.
 
 `forge task list` lists open top-level tasks. Use `--all` to include archived tasks.
 
@@ -110,7 +110,7 @@ repos/disksing/forge.git
 Each task directory contains:
 
 - `task.json`: structured facts such as task id, parent id, description, selected workflow, and involved repositories.
-- `task.md`: free-form task context, requirements, workflow, plans, and acceptance notes.
+- `task.md`: task background context generated from the task title and description.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
 - `log.md`: append-oriented execution log for chronological events, command results, and completed-step history.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.

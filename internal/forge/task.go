@@ -281,7 +281,7 @@ func createTaskFiles(dir string, task Task, workflowContent string) error {
 	if err := writeJSON(filepath.Join(dir, "task.json"), task); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task, workflowContent)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task)), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
@@ -290,7 +290,7 @@ func createTaskFiles(dir string, task Task, workflowContent string) error {
 	if err := os.WriteFile(filepath.Join(dir, "log.md"), []byte(defaultLogMD()), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task)+"\n"), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)+"\n"), 0o644)
 }
 
 func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) {
@@ -489,13 +489,21 @@ func updateOpenTaskAgentsMD(root string) error {
 		if err := readJSON(taskJSON, &task); err != nil {
 			return nil
 		}
-		return updateTaskAgentsMD(path, task)
+		return updateTaskAgentsMD(root, path, task)
 	})
 }
 
-func updateTaskAgentsMD(dir string, task Task) error {
+func updateTaskAgentsMD(root, dir string, task Task) error {
 	path := filepath.Join(dir, "AGENTS.md")
-	block := taskAgentsBlock(task)
+	workflow := task.Workflow
+	if workflow == "" {
+		workflow = defaultWorkflowName
+	}
+	workflowContent, err := resolveWorkflow(root, workflow, workflow == defaultWorkflowName)
+	if err != nil {
+		return err
+	}
+	block := taskAgentsBlock(task, workflowContent)
 
 	content := ""
 	if data, err := os.ReadFile(path); err == nil {
@@ -503,7 +511,7 @@ func updateTaskAgentsMD(dir string, task Task) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(task)) {
+	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(task, workflowContent)) {
 		content = ""
 	}
 
@@ -514,8 +522,8 @@ func updateTaskAgentsMD(dir string, task Task) error {
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
-func taskAgentsBlock(task Task) string {
-	return forgePromptStart + "\n" + taskAgentsPrompt(task) + forgePromptEnd
+func taskAgentsBlock(task Task, workflowContent string) string {
+	return forgePromptStart + "\n" + taskAgentsPrompt(task, workflowContent) + "\n" + forgePromptEnd
 }
 
 func taskSortKey(id string) string {
@@ -547,18 +555,11 @@ func printTaskJSON(task Task) error {
 	return encoder.Encode(task)
 }
 
-func defaultTaskMD(task Task, workflowContent string) string {
+func defaultTaskMD(task Task) string {
 	return fmt.Sprintf(`# %s
 
 %s
-
-## Workflow
-
-%s
-## Notes
-
-Use this file for task intent, requirements, plans, acceptance notes, and any other free-form context useful to the agent.
-`, task.Title, task.Description, workflowContent)
+`, task.Title, task.Description)
 }
 
 func defaultWorkMD(task Task) string {
@@ -594,7 +595,7 @@ func defaultLogMD() string {
 `, time.Now().Format("2006-01-02 15:04:05 -0700"))
 }
 
-func taskAgentsPrompt(task Task) string {
+func taskAgentsPrompt(task Task, workflowContent string) string {
 	extra := ""
 	if task.Parent != nil {
 		extra = `
@@ -602,7 +603,7 @@ func taskAgentsPrompt(task Task) string {
 - Parent task files are reference context; keep your edits scoped to this subtask directory and its worktrees unless the user explicitly asks otherwise.
 `
 	}
-	return `# Task Agent Instructions
+	return fmt.Sprintf(`# Task Agent Instructions
 
 You are working inside a single AgentWorkspace task directory.
 
@@ -615,7 +616,7 @@ You are working inside a single AgentWorkspace task directory.
 - If code changes are needed, create Git worktrees under worktree/.
 - If the task involves a new repository, update this task's task.json.
 - Keep task.json focused on structured facts.
-- Use task.md for free-form task intent, notes, plans, and acceptance details.
+- Use task.md for task background context.
 - If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers.
 - Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale work.md content with the step you are about to take.
@@ -623,5 +624,8 @@ You are working inside a single AgentWorkspace task directory.
 - Do not append timeline history to work.md. Put chronological events, command results, and completed-step history in log.md.
 - Append important execution events to log.md.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
-` + extra
+%s
+## Workflow
+
+%s`, extra, strings.TrimRight(workflowContent, " \t\r\n"))
 }
