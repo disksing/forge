@@ -145,7 +145,7 @@ This directory is an AgentWorkspace managed by forge.
 
 - Open tasks live directly under this workspace as ` + "`taskN/`" + ` directories.
 - Archived tasks live under ` + "`archive/`" + `.
-- Workflow section files live under ` + "`workflow/`" + `.
+- Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated task ` + "`AGENTS.md`" + ` files.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
@@ -153,7 +153,7 @@ This directory is an AgentWorkspace managed by forge.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the task they are currently handling and its worktrees.
 - ` + "`task.json`" + ` records structured facts only, not progress notes.
-- ` + "`task.md`" + ` is free-form task context.
+- ` + "`task.md`" + ` is task background context.
 - ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale ` + "`work.md`" + ` content with the step you are about to take.
 - Immediately after completing any meaningful step, replace stale ` + "`work.md`" + ` content with the updated current state and next step.
@@ -184,7 +184,7 @@ Notes:
 
 - ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + ` and does not overwrite existing workflow files unless ` + "`--reset-workflows`" + ` is used.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
-- ` + "`forge task create`" + ` creates a new open task directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select a workflow section file.
+- ` + "`forge task create`" + ` creates a new open task directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the task ` + "`AGENTS.md`" + `.
 - ` + "`forge task archive`" + ` moves an open top-level task into workspace ` + "`archive/`" + `, or an open subtask into its parent task's ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
 - ` + "`forge subtask create`" + ` creates a direct child task directory under the parent task.

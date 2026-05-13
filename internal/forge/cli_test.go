@@ -56,10 +56,16 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(taskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected task AGENTS.md to include generic pending-item guidance, got:\n%s", taskAgents)
 		}
+		if !strings.Contains(taskAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected task AGENTS.md to include default workflow guidance, got:\n%s", taskAgents)
+		}
 		taskMDPath := filepath.Join(root, "task1", "task.md")
 		taskMD := readFile(t, taskMDPath)
-		if !strings.Contains(taskMD, "## Workflow") || !strings.Contains(taskMD, defaultWorkflowSnippet) {
-			t.Fatalf("expected task.md to include default workflow section, got:\n%s", taskMD)
+		if !strings.Contains(taskMD, "# Implement the forge MVP") || !strings.Contains(taskMD, "Implement the forge MVP") {
+			t.Fatalf("expected task.md to contain task background, got:\n%s", taskMD)
+		}
+		if strings.Contains(taskMD, "## Workflow") || strings.Contains(taskMD, defaultWorkflowSnippet) || strings.Contains(taskMD, "## Notes") {
+			t.Fatalf("expected task.md to contain only task background, got:\n%s", taskMD)
 		}
 		assertNoHan(t, taskMDPath)
 		taskWork := readFile(t, filepath.Join(root, "task1", "work.md"))
@@ -95,6 +101,9 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
+		}
+		if !strings.Contains(subtaskAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected subtask AGENTS.md to include default workflow guidance, got:\n%s", subtaskAgents)
 		}
 
 		children := run(t, "subtask", "list", "task1")
@@ -211,11 +220,15 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatalf("expected default workflow in task JSON, got:\n%s", defaultCreated)
 		}
 		defaultTaskMD := readFile(t, filepath.Join(root, "task1", "task.md"))
-		if !strings.Contains(defaultTaskMD, "# Default task") || !strings.Contains(defaultTaskMD, "Default body {{title}}") {
-			t.Fatalf("expected task.md skeleton with literal default workflow body, got:\n%s", defaultTaskMD)
+		if !strings.Contains(defaultTaskMD, "# Default task") {
+			t.Fatalf("expected task.md skeleton with task background, got:\n%s", defaultTaskMD)
 		}
-		if strings.Contains(defaultTaskMD, "# Default body") {
-			t.Fatalf("workflow file should not be treated as a full task.md template, got:\n%s", defaultTaskMD)
+		if strings.Contains(defaultTaskMD, "Default body {{title}}") || strings.Contains(defaultTaskMD, "## Workflow") {
+			t.Fatalf("expected workflow body to stay out of task.md, got:\n%s", defaultTaskMD)
+		}
+		defaultAgents := readFile(t, filepath.Join(root, "task1", "AGENTS.md"))
+		if !strings.Contains(defaultAgents, "Default body {{title}}") {
+			t.Fatalf("expected task AGENTS.md to include literal default workflow body, got:\n%s", defaultAgents)
 		}
 
 		projectCreated := run(t, "task", "create", "--workflow=project", "Project task")
@@ -223,8 +236,15 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatalf("expected project workflow in task JSON, got:\n%s", projectCreated)
 		}
 		projectTaskMD := readFile(t, filepath.Join(root, "task2", "task.md"))
-		if !strings.Contains(projectTaskMD, "# Project task") || !strings.Contains(projectTaskMD, "Project body {{description}}") {
-			t.Fatalf("expected task.md skeleton with literal project workflow body, got:\n%s", projectTaskMD)
+		if !strings.Contains(projectTaskMD, "# Project task") {
+			t.Fatalf("expected task.md skeleton with task background, got:\n%s", projectTaskMD)
+		}
+		if strings.Contains(projectTaskMD, "Project body {{description}}") || strings.Contains(projectTaskMD, "## Workflow") {
+			t.Fatalf("expected project workflow body to stay out of task.md, got:\n%s", projectTaskMD)
+		}
+		projectAgents := readFile(t, filepath.Join(root, "task2", "AGENTS.md"))
+		if !strings.Contains(projectAgents, "Project body {{description}}") {
+			t.Fatalf("expected task AGENTS.md to include literal project workflow body, got:\n%s", projectAgents)
 		}
 
 		if err := os.Remove(defaultPath); err != nil {
@@ -236,10 +256,14 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 		}
 		fallbackTaskMDPath := filepath.Join(root, "task3", "task.md")
 		fallbackTaskMD := readFile(t, fallbackTaskMDPath)
-		if !strings.Contains(fallbackTaskMD, defaultWorkflowSnippet) {
-			t.Fatalf("expected missing default workflow to fallback to built-in content, got:\n%s", fallbackTaskMD)
+		if strings.Contains(fallbackTaskMD, defaultWorkflowSnippet) || strings.Contains(fallbackTaskMD, "## Workflow") {
+			t.Fatalf("expected fallback task.md to contain only task background, got:\n%s", fallbackTaskMD)
 		}
 		assertNoHan(t, fallbackTaskMDPath)
+		fallbackAgents := readFile(t, filepath.Join(root, "task3", "AGENTS.md"))
+		if !strings.Contains(fallbackAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected missing default workflow to fallback to built-in AGENTS.md content, got:\n%s", fallbackAgents)
+		}
 
 		out, err := runErr(t, "task", "create", "--workflow=default", "Explicit default missing task")
 		if err == nil {
@@ -612,6 +636,9 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(taskAfter, "Keep task note.") {
 			t.Fatalf("expected task manual content to survive refresh, got:\n%s", taskAfter)
 		}
+		if !strings.Contains(taskAfter, defaultWorkflowSnippet) {
+			t.Fatalf("expected task workflow guidance to be restored, got:\n%s", taskAfter)
+		}
 		if strings.Count(taskAfter, forgePromptStart) != 1 || strings.Count(taskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected task refresh to keep one managed block, got:\n%s", taskAfter)
 		}
@@ -625,6 +652,9 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 		if !strings.Contains(subtaskAfter, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
+		}
+		if !strings.Contains(subtaskAfter, defaultWorkflowSnippet) {
+			t.Fatalf("expected subtask workflow guidance to be restored, got:\n%s", subtaskAfter)
 		}
 		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)
