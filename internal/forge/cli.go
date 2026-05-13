@@ -161,8 +161,8 @@ Commands:
   forge task create [--workflow=<name>] <description>
     Create the next top-level task directory, including task.json, task.md,
     work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md. By
-    default, task.md uses workflow/default.md for its Workflow section. Use
-    --workflow=<name> to select workflow/<name>.md.
+    default, AGENTS.md uses workflow/default.md for task workflow guidance.
+    Use --workflow=<name> to select workflow/<name>.md.
 
   forge task list [--all]
     List open top-level tasks. Use --all to include archived tasks.
