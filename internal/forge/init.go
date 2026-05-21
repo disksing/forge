@@ -36,7 +36,12 @@ func runInit(args []string) error {
 	if err := os.MkdirAll(filepath.Join(root, archiveDir), 0o755); err != nil {
 		return err
 	}
-	if err := writeJSON(filepath.Join(root, configFile), Config{Version: 1}); err != nil {
+	config := Config{Version: 1}
+	if err := readJSON(filepath.Join(root, configFile), &config); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	config.Version = 1
+	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
 	if err := ensureWorkflowFiles(root, resetWorkflows); err != nil {
@@ -169,6 +174,7 @@ Use forge for deterministic workspace operations:
 forge init [--reset-workflows]
 forge repo add [--bare] <name> <url>
 forge repo list
+forge start <task-id> [-- <agent command...>]
 forge task create [--workflow=<name>] <description>
 forge task list
 forge task show <id>
@@ -184,6 +190,7 @@ Notes:
 
 - ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + ` and does not overwrite existing workflow files unless ` + "`--reset-workflows`" + ` is used.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
+- ` + "`forge start <task-id> [-- <agent command...>]`" + ` runs an agent command in the task directory. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
 - ` + "`forge task create`" + ` creates a new open task directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the task ` + "`AGENTS.md`" + `.
 - ` + "`forge task archive`" + ` moves an open top-level task into workspace ` + "`archive/`" + `, or an open subtask into its parent task's ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
