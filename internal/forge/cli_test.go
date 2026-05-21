@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
@@ -15,6 +16,34 @@ const (
 	defaultWorkflowSnippet = "Standard task workflow. Clarify the requirements and acceptance criteria first"
 	projectWorkflowSnippet = "This is a project-management task."
 )
+
+func TestForgeStartHelper(t *testing.T) {
+	if os.Getenv("FORGE_START_HELPER") != "1" {
+		return
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := os.Args
+	for i, arg := range os.Args {
+		if arg == "--" {
+			args = os.Args[i+1:]
+			break
+		}
+	}
+	output := cwd + "\n" + strings.Join(args, "\n") + "\n"
+	if err := os.WriteFile(os.Getenv("FORGE_START_OUTPUT"), []byte(output), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code := os.Getenv("FORGE_START_EXIT"); code != "" {
+		n, err := strconv.Atoi(code)
+		if err != nil {
+			t.Fatal(err)
+		}
+		os.Exit(n)
+	}
+}
 
 func TestTaskLifecycle(t *testing.T) {
 	withTempCwd(t, func(root string) {
@@ -136,6 +165,136 @@ func TestTaskLifecycle(t *testing.T) {
 		next := run(t, "task", "create", "Second task")
 		if !strings.Contains(next, `"id": "task2"`) {
 			t.Fatalf("expected archived task ids not to be reused, got:\n%s", next)
+		}
+	})
+}
+
+func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Launch agent")
+		output := filepath.Join(root, "start.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+
+		run(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit", "args")
+
+		got := readFile(t, output)
+		want := realPath(t, filepath.Join(root, "task1")) + "\nexplicit\nargs\n"
+		if got != want {
+			t.Fatalf("expected explicit command to run in task dir, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartResolvesNestedTaskID(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "Child task")
+		output := filepath.Join(root, "nested.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+
+		run(t, "start", "task1.1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
+
+		got := readFile(t, output)
+		want := realPath(t, filepath.Join(root, "task1", "task1.1")) + "\nnested\n"
+		if got != want {
+			t.Fatalf("expected nested command to run in subtask dir, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartUsesConfiguredDefaultAgentCommand(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Default launch")
+		output := filepath.Join(root, "default.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":[`+strconv.Quote(os.Args[0])+`,"-test.run=^TestForgeStartHelper$","--","configured"]}`+"\n")
+
+		run(t, "start", "task1")
+
+		got := readFile(t, output)
+		want := realPath(t, filepath.Join(root, "task1")) + "\nconfigured\n"
+		if got != want {
+			t.Fatalf("expected configured default command, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartUsesConfiguredDefaultAgentCommandWithArgs(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Default launch with args")
+		output := filepath.Join(root, "default-args.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		command := os.Args[0] + ` -test.run=^TestForgeStartHelper$ -- "configured arg" second`
+		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":`+strconv.Quote(command)+`}`+"\n")
+
+		run(t, "start", "task1")
+
+		got := readFile(t, output)
+		want := realPath(t, filepath.Join(root, "task1")) + "\nconfigured arg\nsecond\n"
+		if got != want {
+			t.Fatalf("expected configured default command with args, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartExplicitCommandOverridesConfiguredDefault(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Explicit beats default")
+		output := filepath.Join(root, "override.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":["missing-default-command"]}`+"\n")
+
+		run(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit")
+
+		got := readFile(t, output)
+		want := realPath(t, filepath.Join(root, "task1")) + "\nexplicit\n"
+		if got != want {
+			t.Fatalf("expected explicit command to override default, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartMissingCommandError(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "No command")
+
+		out, err := runErr(t, "start", "task1")
+		if err == nil {
+			t.Fatalf("expected start to fail without command, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), "no agent command provided") || !strings.Contains(err.Error(), "agentCommand") {
+			t.Fatalf("expected clear missing command error, got: %v\nstdout:\n%s", err, out)
+		}
+	})
+}
+
+func TestStartPropagatesChildExitStatus(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Exit status")
+		output := filepath.Join(root, "exit.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		t.Setenv("FORGE_START_EXIT", "7")
+
+		out, err := runErr(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "exit")
+		if err == nil {
+			t.Fatalf("expected child exit to fail, got stdout:\n%s", out)
+		}
+		exitErr, ok := err.(interface{ ExitCode() int })
+		if !ok || exitErr.ExitCode() != 7 {
+			t.Fatalf("expected exit code 7, got %T %v\nstdout:\n%s", err, err, out)
 		}
 	})
 }
@@ -746,6 +905,22 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func realPath(t *testing.T, path string) string {
+	t.Helper()
+	real, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return real
 }
 
 func assertNoHan(t *testing.T, path string) {
