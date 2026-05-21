@@ -34,6 +34,7 @@ Open top-level tasks live directly under the workspace. Archived top-level tasks
 forge init [--reset-workflows]
 forge repo add [--bare] <name> <url>
 forge repo list
+forge start <task-id> [-- <agent command...>]
 forge task create [--workflow=<name>] <description>
 forge task list [--all]
 forge task show <id>
@@ -50,6 +51,8 @@ forge subtask list <task-id> [--all]
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
 `forge repo list` lists repositories known to the workspace.
+
+`forge start <task-id> [-- <agent command...>]` runs an agent command in the task directory. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
 `forge task create [--workflow=<name>] <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`. By default, Forge inserts `workflow/default.md` into the generated task `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Generated `task.md` contains only the task title and description.
 

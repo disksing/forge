@@ -17,6 +17,8 @@ func Run(args []string) error {
 		return runInit(args[1:])
 	case "repo":
 		return runRepo(args[1:])
+	case "start":
+		return startTask(args[1:])
 	case "task":
 		return runTask(args[1:])
 	case "subtask":
@@ -133,6 +135,7 @@ Usage:
   forge init [--reset-workflows]
   forge repo add [--bare] <name> <url>
   forge repo list
+  forge start <task-id> [-- <agent command...>]
   forge task create [--workflow=<name>] <description>
   forge task list [--all]
   forge task show <id>
@@ -157,6 +160,10 @@ Commands:
 
   forge repo list
     List repositories known to the workspace.
+
+  forge start <task-id> [-- <agent command...>]
+    Run an agent command in the task directory. Explicit command arguments
+    after -- override the workspace forge.json agentCommand default.
 
   forge task create [--workflow=<name>] <description>
     Create the next top-level task directory, including task.json, task.md,
