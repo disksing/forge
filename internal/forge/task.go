@@ -470,16 +470,9 @@ func printTaskTreeChildren(parentPath, parentID string, includeArchived bool, pr
 	if err != nil {
 		return err
 	}
-	for i, child := range children {
-		last := i == len(children)-1
-		connector := "+-- "
-		nextPrefix := prefix + "|   "
-		if last {
-			connector = "\\-- "
-			nextPrefix = prefix + "    "
-		}
-		fmt.Printf("%s%s%s\t%s\n", prefix, connector, child.Task.ID, child.Task.Title)
-		if err := printTaskTreeChildren(child.Path, child.Task.ID, includeArchived, nextPrefix); err != nil {
+	for _, child := range children {
+		fmt.Printf("%s- %s\t%s\n", prefix, child.Task.ID, child.Task.Title)
+		if err := printTaskTreeChildren(child.Path, child.Task.ID, includeArchived, prefix+"  "); err != nil {
 			return err
 		}
 	}
