@@ -558,9 +558,9 @@ func TestTaskListTreeRecursesIntoOpenSubtasks(t *testing.T) {
 		tree := run(t, "task", "list", "--tree")
 		want := strings.Join([]string{
 			"task1\tParent task",
-			"+-- task1.1\tFirst child",
-			"|   \\-- task1.1.1\tGrandchild",
-			"\\-- task1.2\tSecond child",
+			"- task1.1\tFirst child",
+			"  - task1.1.1\tGrandchild",
+			"- task1.2\tSecond child",
 			"task2\tOther task",
 			"",
 		}, "\n")
@@ -588,16 +588,16 @@ func TestTaskListTreeAllIncludesArchivedSubtasks(t *testing.T) {
 		if strings.Contains(openTree, "task1.1\tArchived child") {
 			t.Fatalf("open task tree should not include archived subtasks, got:\n%s", openTree)
 		}
-		if !strings.Contains(openTree, "\\-- task1.2\tOpen child") || !strings.Contains(openTree, "    \\-- task1.2.1\tOpen grandchild") {
+		if !strings.Contains(openTree, "- task1.2\tOpen child") || !strings.Contains(openTree, "  - task1.2.1\tOpen grandchild") {
 			t.Fatalf("open task tree should include open descendants, got:\n%s", openTree)
 		}
 
 		allTree := run(t, "task", "list", "--all", "--tree")
 		want := strings.Join([]string{
 			"task1\tParent task",
-			"+-- task1.1\tArchived child",
-			"\\-- task1.2\tOpen child",
-			"    \\-- task1.2.1\tOpen grandchild",
+			"- task1.1\tArchived child",
+			"- task1.2\tOpen child",
+			"  - task1.2.1\tOpen grandchild",
 			"",
 		}, "\n")
 		if allTree != want {
