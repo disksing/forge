@@ -50,6 +50,16 @@ var builtinWorkflows = map[string]string{
 `,
 }
 
+type taskListOptions struct {
+	IncludeArchived bool
+	Tree            bool
+}
+
+type taskListEntry struct {
+	Task Task
+	Path string
+}
+
 func taskCreate(description, workflow string, allowBuiltinFallback bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
@@ -76,21 +86,24 @@ func taskCreate(description, workflow string, allowBuiltinFallback bool) error {
 	return printTaskJSON(task)
 }
 
-func taskList(includeArchived bool) error {
+func taskList(options taskListOptions) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
 	dirs := []string{root}
-	if includeArchived {
+	if options.IncludeArchived {
 		dirs = append(dirs, filepath.Join(root, archiveDir))
 	}
-	tasks, err := readTasksInDirs(dirs, topTaskName)
+	entries, err := readTaskEntriesInDirs(dirs, topTaskName)
 	if err != nil {
 		return err
 	}
-	for _, task := range tasks {
-		fmt.Printf("%s\t%s\n", task.ID, task.Title)
+	if options.Tree {
+		return printTaskTree(entries, options.IncludeArchived)
+	}
+	for _, entry := range entries {
+		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
 	}
 	return nil
 }
@@ -373,31 +386,56 @@ func nextSubtaskID(parentPath, parentID string) (string, error) {
 }
 
 func readTasksInDir(dir string, pattern *regexp.Regexp) ([]Task, error) {
+	entries, err := readTaskEntriesInDir(dir, pattern)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]Task, 0, len(entries))
+	for _, entry := range entries {
+		tasks = append(tasks, entry.Task)
+	}
+	return tasks, nil
+}
+
+func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	var tasks []Task
+	var tasks []taskListEntry
 	for _, entry := range entries {
 		if !entry.IsDir() || !pattern.MatchString(entry.Name()) {
 			continue
 		}
 		var task Task
-		if err := readJSON(filepath.Join(dir, entry.Name(), "task.json"), &task); err != nil {
+		taskPath := filepath.Join(dir, entry.Name())
+		if err := readJSON(filepath.Join(taskPath, "task.json"), &task); err != nil {
 			continue
 		}
-		tasks = append(tasks, task)
+		tasks = append(tasks, taskListEntry{Task: task, Path: taskPath})
 	}
 	sort.Slice(tasks, func(i, j int) bool {
-		return taskSortKey(tasks[i].ID) < taskSortKey(tasks[j].ID)
+		return taskSortKey(tasks[i].Task.ID) < taskSortKey(tasks[j].Task.ID)
 	})
 	return tasks, nil
 }
 
 func readTasksInDirs(dirs []string, pattern *regexp.Regexp) ([]Task, error) {
-	var tasks []Task
+	entries, err := readTaskEntriesInDirs(dirs, pattern)
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]Task, 0, len(entries))
+	for _, entry := range entries {
+		tasks = append(tasks, entry.Task)
+	}
+	return tasks, nil
+}
+
+func readTaskEntriesInDirs(dirs []string, pattern *regexp.Regexp) ([]taskListEntry, error) {
+	var tasks []taskListEntry
 	for _, dir := range dirs {
-		dirTasks, err := readTasksInDir(dir, pattern)
+		dirTasks, err := readTaskEntriesInDir(dir, pattern)
 		if err != nil {
 			if os.IsNotExist(err) {
 				continue
@@ -407,9 +445,45 @@ func readTasksInDirs(dirs []string, pattern *regexp.Regexp) ([]Task, error) {
 		tasks = append(tasks, dirTasks...)
 	}
 	sort.Slice(tasks, func(i, j int) bool {
-		return taskSortKey(tasks[i].ID) < taskSortKey(tasks[j].ID)
+		return taskSortKey(tasks[i].Task.ID) < taskSortKey(tasks[j].Task.ID)
 	})
 	return tasks, nil
+}
+
+func printTaskTree(entries []taskListEntry, includeArchived bool) error {
+	for _, entry := range entries {
+		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
+		if err := printTaskTreeChildren(entry.Path, entry.Task.ID, includeArchived, ""); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func printTaskTreeChildren(parentPath, parentID string, includeArchived bool, prefix string) error {
+	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
+	dirs := []string{parentPath}
+	if includeArchived {
+		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
+	}
+	children, err := readTaskEntriesInDirs(dirs, pattern)
+	if err != nil {
+		return err
+	}
+	for i, child := range children {
+		last := i == len(children)-1
+		connector := "+-- "
+		nextPrefix := prefix + "|   "
+		if last {
+			connector = "\\-- "
+			nextPrefix = prefix + "    "
+		}
+		fmt.Printf("%s%s%s\t%s\n", prefix, connector, child.Task.ID, child.Task.Title)
+		if err := printTaskTreeChildren(child.Path, child.Task.ID, includeArchived, nextPrefix); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func findTaskDir(root, id string) (string, error) {
