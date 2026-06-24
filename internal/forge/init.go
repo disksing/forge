@@ -176,7 +176,7 @@ forge repo add [--bare] <name> <url>
 forge repo list
 forge start <task-id> [-- <agent command...>]
 forge task create [--workflow=<name>] <description>
-forge task list
+forge task list [--all] [--tree]
 forge task show <id>
 forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]

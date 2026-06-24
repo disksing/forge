@@ -63,11 +63,11 @@ func runTask(args []string) error {
 		}
 		return taskCreate(description, workflow, !explicitWorkflow)
 	case "list":
-		all, err := parseOptionalAll(args[1:], "usage: forge task list [--all]")
+		options, err := parseTaskListArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		return taskList(all)
+		return taskList(options)
 	case "show":
 		if len(args) != 2 {
 			return errors.New("usage: forge task show <id>")
@@ -137,7 +137,7 @@ Usage:
   forge repo list
   forge start <task-id> [-- <agent command...>]
   forge task create [--workflow=<name>] <description>
-  forge task list [--all]
+  forge task list [--all] [--tree]
   forge task show <id>
   forge task archive <id>
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
@@ -171,8 +171,9 @@ Commands:
     default, AGENTS.md uses workflow/default.md for task workflow guidance.
     Use --workflow=<name> to select workflow/<name>.md.
 
-  forge task list [--all]
-    List open top-level tasks. Use --all to include archived tasks.
+  forge task list [--all] [--tree]
+    List open top-level tasks. Use --all to include archived tasks. Use --tree
+    to recursively include subtasks as a tree.
 
   forge task show <id>
     Print the task.json for a task or subtask as formatted JSON.
@@ -224,16 +225,25 @@ func parseTaskCreateArgs(args []string) (string, bool, string, error) {
 	return workflow, explicitWorkflow, strings.Join(description, " "), nil
 }
 
-func parseOptionalAll(args []string, usage string) (bool, error) {
-	switch len(args) {
-	case 0:
-		return false, nil
-	case 1:
-		if args[0] == "--all" {
-			return true, nil
+func parseTaskListArgs(args []string) (taskListOptions, error) {
+	var options taskListOptions
+	for _, arg := range args {
+		switch arg {
+		case "--all":
+			if options.IncludeArchived {
+				return taskListOptions{}, errors.New("usage: forge task list [--all] [--tree]")
+			}
+			options.IncludeArchived = true
+		case "--tree":
+			if options.Tree {
+				return taskListOptions{}, errors.New("usage: forge task list [--all] [--tree]")
+			}
+			options.Tree = true
+		default:
+			return taskListOptions{}, errors.New("usage: forge task list [--all] [--tree]")
 		}
 	}
-	return false, errors.New(usage)
+	return options, nil
 }
 
 func parseSubtaskListArgs(args []string) (string, bool, error) {

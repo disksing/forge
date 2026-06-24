@@ -36,7 +36,7 @@ forge repo add [--bare] <name> <url>
 forge repo list
 forge start <task-id> [-- <agent command...>]
 forge task create [--workflow=<name>] <description>
-forge task list [--all]
+forge task list [--all] [--tree]
 forge task show <id>
 forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
@@ -56,7 +56,7 @@ forge subtask list <task-id> [--all]
 
 `forge task create [--workflow=<name>] <description>` creates the next top-level task directory with its task files, `artifacts/`, and `worktree/`. By default, Forge inserts `workflow/default.md` into the generated task `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Generated `task.md` contains only the task title and description.
 
-`forge task list` lists open top-level tasks. Use `--all` to include archived tasks.
+`forge task list` lists open top-level tasks. Use `--all` to include archived tasks. Use `--tree` to recursively include subtasks as a tree.
 
 `forge task show <id>` prints a task or subtask's `task.json`.
 

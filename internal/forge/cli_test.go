@@ -541,6 +541,71 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 	})
 }
 
+func TestTaskListTreeRecursesIntoOpenSubtasks(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "First child")
+		run(t, "subtask", "create", "task1.1", "Grandchild")
+		run(t, "subtask", "create", "task1", "Second child")
+		run(t, "task", "create", "Other task")
+
+		listed := run(t, "task", "list")
+		if strings.Contains(listed, "task1.1\tFirst child") {
+			t.Fatalf("default task list should not include subtasks, got:\n%s", listed)
+		}
+
+		tree := run(t, "task", "list", "--tree")
+		want := strings.Join([]string{
+			"task1\tParent task",
+			"+-- task1.1\tFirst child",
+			"|   \\-- task1.1.1\tGrandchild",
+			"\\-- task1.2\tSecond child",
+			"task2\tOther task",
+			"",
+		}, "\n")
+		if tree != want {
+			t.Fatalf("expected recursive task tree, got:\n%s", tree)
+		}
+
+		reversedFlags := run(t, "task", "list", "--tree", "--all")
+		if reversedFlags != tree {
+			t.Fatalf("expected --tree --all to match open tree when nothing is archived, got:\n%s", reversedFlags)
+		}
+	})
+}
+
+func TestTaskListTreeAllIncludesArchivedSubtasks(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "task", "create", "Parent task")
+		run(t, "subtask", "create", "task1", "Archived child")
+		run(t, "subtask", "create", "task1", "Open child")
+		run(t, "subtask", "create", "task1.2", "Open grandchild")
+		run(t, "task", "archive", "task1.1")
+
+		openTree := run(t, "task", "list", "--tree")
+		if strings.Contains(openTree, "task1.1\tArchived child") {
+			t.Fatalf("open task tree should not include archived subtasks, got:\n%s", openTree)
+		}
+		if !strings.Contains(openTree, "\\-- task1.2\tOpen child") || !strings.Contains(openTree, "    \\-- task1.2.1\tOpen grandchild") {
+			t.Fatalf("open task tree should include open descendants, got:\n%s", openTree)
+		}
+
+		allTree := run(t, "task", "list", "--all", "--tree")
+		want := strings.Join([]string{
+			"task1\tParent task",
+			"+-- task1.1\tArchived child",
+			"\\-- task1.2\tOpen child",
+			"    \\-- task1.2.1\tOpen grandchild",
+			"",
+		}, "\n")
+		if allTree != want {
+			t.Fatalf("expected archived subtasks in recursive task tree, got:\n%s", allTree)
+		}
+	})
+}
+
 func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
