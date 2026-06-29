@@ -488,6 +488,12 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 			WorktreePath: "task1/task1.2/worktree/forge",
 			Branch:       "agent/task1.2",
 			TargetBranch: "master",
+		}, {
+			Name:         "disksing/archive-bare",
+			BarePath:     "task1/archive/task1.2/worktree/archive-bare.git",
+			WorktreePath: "",
+			Branch:       "master",
+			TargetBranch: "master",
 		}}
 		if err := createTaskFiles(filepath.Join(root, "task1", archiveDir, "task1.2"), legacyArchivedChild, workflowContent); err != nil {
 			t.Fatal(err)
@@ -496,7 +502,7 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		archivedLegacyProject := newTask("task2", "task", nil, "Archived legacy project", defaultWorkflowName)
 		archivedLegacyProject.Repos = []TaskRepo{{
 			Name:         "disksing/forge",
-			RepoPath:     "repos/disksing/forge",
+			RepoPath:     "task2/worktree/forge",
 			WorktreePath: "task2/worktree/forge",
 			Branch:       "agent/task2",
 			TargetBranch: "master",
@@ -562,6 +568,9 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		if got := archivedChild.Repos[0].WorktreePath; got != "project1/archive/project1.task2/worktree/forge" {
 			t.Fatalf("expected archived task worktree path to update, got %q", got)
 		}
+		if got := archivedChild.Repos[1].BarePath; got != "project1/archive/project1.task2/worktree/archive-bare.git" {
+			t.Fatalf("expected archived task bare path to update, got %q", got)
+		}
 
 		var archivedProject Task
 		if err := readJSON(filepath.Join(root, archiveDir, "project2", "task.json"), &archivedProject); err != nil {
@@ -569,6 +578,9 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		}
 		if got := archivedProject.Repos[0].WorktreePath; got != "archive/project2/worktree/forge" {
 			t.Fatalf("expected archived project worktree path to update, got %q", got)
+		}
+		if got := archivedProject.Repos[0].RepoPath; got != "archive/project2/worktree/forge" {
+			t.Fatalf("expected archived project repo path to update, got %q", got)
 		}
 
 		tree := run(t, "project", "list", "--tree")
