@@ -154,12 +154,13 @@ This directory is an AgentWorkspace managed by forge.
 - Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated project/task ` + "`AGENTS.md`" + ` files.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
-- For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
-- Each project and task owns its own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
+- Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
+- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
+- Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the task they are currently handling and its worktrees.
-- ` + "`task.json`" + ` records structured facts only, not progress notes.
-- ` + "`task.md`" + ` is task background context.
+- ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
+- ` + "`project.md`" + ` and ` + "`task.md`" + ` are background context.
 - ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale ` + "`work.md`" + ` content with the step you are about to take.
 - Immediately after completing any meaningful step, replace stale ` + "`work.md`" + ` content with the updated current state and next step.
@@ -180,9 +181,6 @@ forge project create [--workflow=<name>] <description>
 forge project list [--all] [--tree]
 forge project show <project-id>
 forge project archive <project-id>
-forge project repo add <project-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-forge project repo list <project-id>
-forge project repo remove <project-id> <repo-name>
 forge task create <project-id> <description>
 forge task list <project-id> [--all]
 forge task show <id>
@@ -201,6 +199,6 @@ Notes:
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the project ` + "`AGENTS.md`" + `.
 - ` + "`forge task create`" + ` creates a new open task directory under a project.
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
-- ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
+- ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `. Projects do not store repository metadata.
 - ` + "`forge migrate project-tasks`" + ` rewrites an old task/subtask workspace into the two-level project/task layout.
 `

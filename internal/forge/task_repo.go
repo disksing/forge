@@ -33,6 +33,9 @@ func taskRepoAdd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if isProject(task) {
+		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
+	}
 
 	name := strings.TrimSuffix(strings.TrimSpace(opts.name), ".git")
 	if err := ensureInsideName(name); err != nil {
@@ -94,6 +97,9 @@ func taskRepoList(id string) error {
 	if err != nil {
 		return err
 	}
+	if isProject(task) {
+		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
+	}
 	for _, repo := range task.Repos {
 		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, taskRepoStoragePath(repo), repo.WorktreePath, repo.Branch, repo.TargetBranch)
 		if repo.BaseBranch != "" {
@@ -112,6 +118,9 @@ func taskRepoRemove(id, name string) error {
 	taskPath, task, err := loadOpenTask(root, cleanID(id))
 	if err != nil {
 		return err
+	}
+	if isProject(task) {
+		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
 	}
 	name = strings.TrimSuffix(strings.TrimSpace(name), ".git")
 	if err := ensureInsideName(name); err != nil {
@@ -178,7 +187,7 @@ func loadTask(root, id string) (string, Task, error) {
 		return "", Task{}, err
 	}
 	var task Task
-	if err := readJSON(filepath.Join(taskPath, "task.json"), &task); err != nil {
+	if err := readResourceAtDir(taskPath, &task); err != nil {
 		return "", Task{}, err
 	}
 	return taskPath, task, nil
@@ -197,7 +206,7 @@ func loadOpenTask(root, id string) (string, Task, error) {
 
 func saveAndPrintTask(taskPath string, task Task) error {
 	task.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := writeJSON(filepath.Join(taskPath, "task.json"), task); err != nil {
+	if err := writeResourceMetadata(taskPath, task); err != nil {
 		return err
 	}
 	return printTaskJSON(task)

@@ -21,6 +21,10 @@ const (
 	workflowDir         = "workflow"
 	defaultWorkflowName = "default"
 	projectWorkflowName = "project"
+	projectJSONFile     = "project.json"
+	projectMDFile       = "project.md"
+	taskJSONFile        = "task.json"
+	taskMDFile          = "task.md"
 )
 
 var builtinWorkflows = map[string]string{
@@ -81,7 +85,7 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool) erro
 	}
 	taskPath := filepath.Join(root, id)
 	task := newTask(id, "project", nil, description, workflow)
-	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
+	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -119,7 +123,7 @@ func taskShow(id string) error {
 		return err
 	}
 	var task Task
-	if err := readJSON(filepath.Join(taskPath, "task.json"), &task); err != nil {
+	if err := readResourceAtDir(taskPath, &task); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -224,7 +228,7 @@ func projectTaskCreate(parentID, description string) error {
 		return fmt.Errorf("cannot create task under archived project: %s", parentID)
 	}
 	var parent Task
-	if err := readJSON(filepath.Join(parentPath, "task.json"), &parent); err != nil {
+	if err := readResourceAtDir(parentPath, &parent); err != nil {
 		return err
 	}
 	if !isProject(parent) {
@@ -240,7 +244,7 @@ func projectTaskCreate(parentID, description string) error {
 		return err
 	}
 	task := newTask(id, "task", &parentID, description, defaultWorkflowName)
-	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
+	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -273,7 +277,7 @@ func projectTaskList(parentID string, includeArchived bool) error {
 
 func newTask(id string, taskType string, parent *string, description string, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
-	return Task{
+	task := Task{
 		ID:          id,
 		Type:        taskType,
 		Parent:      parent,
@@ -282,23 +286,30 @@ func newTask(id string, taskType string, parent *string, description string, wor
 		Workflow:    workflow,
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		Repos:       []TaskRepo{},
 	}
+	if taskType != "project" {
+		task.Repos = []TaskRepo{}
+	}
+	return task
 }
 
-func createTaskFiles(dir string, task Task, workflowContent string) error {
+func createResourceFiles(dir string, task Task, workflowContent string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
-	for _, subdir := range []string{"artifacts", "worktree"} {
+	subdirs := []string{"artifacts"}
+	if !isProject(task) {
+		subdirs = append(subdirs, "worktree")
+	}
+	for _, subdir := range subdirs {
 		if err := os.MkdirAll(filepath.Join(dir, subdir), 0o755); err != nil {
 			return err
 		}
 	}
-	if err := writeJSON(filepath.Join(dir, "task.json"), task); err != nil {
+	if err := writeResourceMetadata(dir, task); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, markdownFileName(task)), []byte(defaultTaskMD(task)), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
@@ -308,6 +319,51 @@ func createTaskFiles(dir string, task Task, workflowContent string) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)+"\n"), 0o644)
+}
+
+func createTaskFiles(dir string, task Task, workflowContent string) error {
+	return createResourceFiles(dir, task, workflowContent)
+}
+
+func metadataFileName(task Task) string {
+	if isProject(task) {
+		return projectJSONFile
+	}
+	return taskJSONFile
+}
+
+func markdownFileName(task Task) string {
+	if isProject(task) {
+		return projectMDFile
+	}
+	return taskMDFile
+}
+
+func writeResourceMetadata(dir string, task Task) error {
+	if isProject(task) {
+		task.Repos = nil
+	}
+	path := filepath.Join(dir, metadataFileName(task))
+	if err := writeJSON(path, task); err != nil {
+		return err
+	}
+	stale := taskJSONFile
+	if !isProject(task) {
+		stale = projectJSONFile
+	}
+	if err := os.Remove(filepath.Join(dir, stale)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+func readResourceAtDir(dir string, task *Task) error {
+	if err := readJSON(filepath.Join(dir, projectJSONFile), task); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	return readJSON(filepath.Join(dir, taskJSONFile), task)
 }
 
 func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) {
@@ -416,7 +472,7 @@ func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, 
 		}
 		var task Task
 		taskPath := filepath.Join(dir, entry.Name())
-		if err := readJSON(filepath.Join(taskPath, "task.json"), &task); err != nil {
+		if err := readResourceAtDir(taskPath, &task); err != nil {
 			continue
 		}
 		tasks = append(tasks, taskListEntry{Task: task, Path: taskPath})
@@ -501,12 +557,11 @@ func findTaskDir(root, id string) (string, error) {
 				return filepath.SkipDir
 			}
 		}
-		taskJSON := filepath.Join(path, "task.json")
-		if !pathExists(taskJSON) {
+		if !pathExists(filepath.Join(path, projectJSONFile)) && !pathExists(filepath.Join(path, taskJSONFile)) {
 			return nil
 		}
 		var task Task
-		if err := readJSON(taskJSON, &task); err != nil {
+		if err := readResourceAtDir(path, &task); err != nil {
 			return nil
 		}
 		if task.ID == id {
@@ -552,12 +607,11 @@ func updateOpenTaskAgentsMD(root string) error {
 			}
 		}
 
-		taskJSON := filepath.Join(path, "task.json")
-		if !pathExists(taskJSON) {
+		if !pathExists(filepath.Join(path, projectJSONFile)) && !pathExists(filepath.Join(path, taskJSONFile)) {
 			return nil
 		}
 		var task Task
-		if err := readJSON(taskJSON, &task); err != nil {
+		if err := readResourceAtDir(path, &task); err != nil {
 			return nil
 		}
 		return updateTaskAgentsMD(root, path, task)
@@ -652,8 +706,15 @@ func defaultTaskMD(task Task) string {
 
 func defaultWorkMD(task Task) string {
 	label := "Task"
+	next := `- Read task.json, task.md, and log.md.
+- Decide which repositories are involved.
+- Update task.json if new repositories are discovered.
+- Create any needed worktrees under worktree/.`
 	if isProject(task) {
 		label = "Project"
+		next = `- Read project.json, project.md, and log.md.
+- Create project tasks for implementation work.
+- Keep repository and worktree state in task directories, not in the project.`
 	}
 	return fmt.Sprintf(`# Work
 
@@ -667,15 +728,12 @@ No work has started yet.
 
 ## Next Step
 
-- Read task.json, task.md, and log.md.
-- Decide which repositories are involved.
-- Update task.json if new repositories are discovered.
-- Create any needed worktrees under worktree/.
+%s
 
 ## Recovery Rule
 
 Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.md.
-`, label, task.ID)
+`, label, task.ID, next)
 }
 
 func defaultLogMD() string {
@@ -697,28 +755,40 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 		title = "Project Agent Instructions"
 		scope = "single AgentWorkspace project directory"
 		boundary = "Treat this directory as the current project boundary."
-		repoGuidance = "For code changes in this project, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
+		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
 	} else if task.Parent != nil {
 		extra = `
-- This task belongs to a project. Read the parent project directory's task.json, task.md, work.md, and log.md when you need broader context.
+- This task belongs to a project. Read the parent project directory's project.json, project.md, work.md, and log.md when you need broader context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
 `
+	}
+	readLine := "Read task.json, task.md, work.md, and log.md before acting."
+	updateLine := "If the task involves a new repository, update this task's task.json."
+	structuredLine := "Keep task.json focused on structured facts."
+	backgroundLine := "Use task.md for task background context."
+	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
+	if isProject(task) {
+		readLine = "Read project.json, project.md, work.md, and log.md before acting."
+		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
+		structuredLine = "Keep project.json focused on project-level structured facts."
+		backgroundLine = "Use project.md for project background context."
+		pendingLine = "If project.md contains pending decisions or unresolved items, ask the user to clarify them, then update project.md with the confirmed answers."
 	}
 	return fmt.Sprintf(`# %s
 
 You are working inside a %s.
 
 - For the overall forge workflow and CLI usage, read the workspace root AGENTS.md file.
-- Read task.json, task.md, work.md, and log.md before acting.
+- %s
 - %s
 - You may read other task directories for reference.
 - Only update files inside this task directory and its worktrees.
 - Treat repositories under ../repos/ as shared source caches; make code changes in task worktrees.
 - %s
-- If the task involves a new repository, update this task's task.json.
-- Keep task.json focused on structured facts.
-- Use task.md for task background context.
-- If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers.
+- %s
+- %s
+- %s
+- %s
 - Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale work.md content with the step you are about to take.
 - Immediately after completing any meaningful step, replace stale work.md content with the updated current state and next step.
@@ -728,5 +798,5 @@ You are working inside a %s.
 %s
 ## Workflow
 
-%s`, title, scope, boundary, repoGuidance, extra, strings.TrimRight(workflowContent, " \t\r\n"))
+%s`, title, scope, readLine, boundary, repoGuidance, updateLine, structuredLine, backgroundLine, pendingLine, extra, strings.TrimRight(workflowContent, " \t\r\n"))
 }
