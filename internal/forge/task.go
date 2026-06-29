@@ -194,7 +194,7 @@ func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
 	}
 	if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
 		parentPath := filepath.Dir(taskPath)
-		return filepath.Join(parentPath, archiveDir, task.ID), nil
+		return filepath.Join(parentPath, archiveDir, taskDirectoryName(task.ID)), nil
 	}
 	return "", fmt.Errorf("unsupported task id for archive: %s", task.ID)
 }
@@ -266,7 +266,7 @@ func projectTaskCreate(parentID, description string) error {
 	if err != nil {
 		return err
 	}
-	taskPath := filepath.Join(parentPath, id)
+	taskPath := filepath.Join(parentPath, taskDirectoryName(id))
 	workflowContent, err := resolveWorkflow(root, defaultWorkflowName, true)
 	if err != nil {
 		return err
@@ -449,28 +449,21 @@ func nextProjectID(root string) (string, error) {
 }
 
 func nextProjectTaskID(parentPath, parentID string) (string, error) {
-	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.task([0-9]+)$`)
+	pattern := projectTaskName(parentID)
 	maxID := 0
-	for _, dir := range []string{parentPath, filepath.Join(parentPath, archiveDir)} {
-		entries, err := os.ReadDir(dir)
+	entries, err := readTaskEntriesInDirs([]string{parentPath, filepath.Join(parentPath, archiveDir)}, pattern)
+	if err != nil {
+		return "", err
+	}
+	for _, entry := range entries {
+		suffix := strings.TrimPrefix(entry.Task.ID, parentID+".task")
+		parts := strings.Split(suffix, ".")
+		n, err := strconv.Atoi(parts[0])
 		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return "", err
+			continue
 		}
-		for _, entry := range entries {
-			if !entry.IsDir() {
-				continue
-			}
-			match := pattern.FindStringSubmatch(entry.Name())
-			if match == nil {
-				continue
-			}
-			n, _ := strconv.Atoi(match[1])
-			if n > maxID {
-				maxID = n
-			}
+		if n > maxID {
+			maxID = n
 		}
 	}
 	return fmt.Sprintf("%s.task%d", parentID, maxID+1), nil
@@ -495,12 +488,15 @@ func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, 
 	}
 	var tasks []taskListEntry
 	for _, entry := range entries {
-		if !entry.IsDir() || !pattern.MatchString(entry.Name()) {
+		if !entry.IsDir() {
 			continue
 		}
 		var task Task
 		taskPath := filepath.Join(dir, entry.Name())
 		if err := readResourceAtDir(taskPath, &task); err != nil {
+			continue
+		}
+		if !pattern.MatchString(entry.Name()) && !pattern.MatchString(task.ID) {
 			continue
 		}
 		tasks = append(tasks, taskListEntry{Task: task, Path: taskPath})
@@ -681,6 +677,14 @@ func taskAgentsBlock(task Task, workflowContent string) string {
 
 func projectTaskName(projectID string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(projectID) + `\.task([0-9]+(?:\.[0-9]+)*)$`)
+}
+
+func taskDirectoryName(id string) string {
+	projectID, suffix, ok := strings.Cut(id, ".task")
+	if ok && topProjectName.MatchString(projectID) && suffix != "" {
+		return "task" + suffix
+	}
+	return id
 }
 
 func looksLikeProjectID(id string) bool {

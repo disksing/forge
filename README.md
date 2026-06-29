@@ -22,7 +22,7 @@ AgentWorkspace/
     work.md
     log.md
     artifacts/
-    project1.task1/
+    task1/
       AGENTS.md
       task.json
       task.md
@@ -33,7 +33,7 @@ AgentWorkspace/
   archive/
 ```
 
-Open projects live directly under the workspace. Open project tasks live directly under their project directories. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. State is represented by location rather than a status field in `project.json` or `task.json`.
+Open projects live directly under the workspace. Open project tasks live directly under their project directories with short names such as `task1/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. State is represented by location rather than a status field in `project.json` or `task.json`.
 
 ## Commands
 
@@ -68,7 +68,7 @@ forge migrate project-tasks
 
 `forge project list` lists open projects. Use `--all` to include archived projects. Use `--tree` to include open tasks under each project.
 
-`forge task create <project-id> <description>` creates the next task under a project, using IDs such as `project1.task1`.
+`forge task create <project-id> <description>` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/`.
 
 `forge task list <project-id>` lists open tasks under a project. Use `--all` to include archived tasks.
 
@@ -82,7 +82,7 @@ forge migrate project-tasks
 
 `forge task repo remove <task-id> <repo-name>` removes a repository entry from a task's `task.json`.
 
-`forge migrate project-tasks` rewrites an old task/subtask workspace into the two-level project/task layout: old `taskN/` directories become `projectN/`, old child task directories are promoted to direct project tasks such as `projectN.taskM/`, and legacy project-level repository metadata or `worktree/` directories are moved into a generated task under that project.
+`forge migrate project-tasks` rewrites an old task/subtask workspace into the two-level project/task layout: old `taskN/` directories become `projectN/`, old child task directories are promoted to direct project tasks with short directories such as `projectN/taskM/`, legacy project-level repository metadata or `worktree/` directories are moved into a generated task under that project, and older full task directory names such as `projectN/projectN.taskM/` are shortened.
 
 `forge init` is safe to run multiple times. It creates or updates workspace scaffolding, writes built-in workflow files only when `workflow/` does not already exist, rewrites only the forge-managed prompt block in the workspace `AGENTS.md`, and refreshes forge-managed prompt blocks for open project/task `AGENTS.md` files:
 
@@ -147,7 +147,7 @@ Use `forge task repo add` for those structured updates:
 forge task repo add project3.task1 disksing/forge --branch agent/project3-task1-repos --target master
 ```
 
-If `--worktree` is omitted, forge records `<project-id>/<task-id>/worktree/<repo>` by default. If `--branch` or `--target` is omitted, forge tries to infer the current worktree branch and repository default branch.
+If `--worktree` is omitted, forge records `<project-id>/taskN/worktree/<repo>` by default. If `--branch` or `--target` is omitted, forge tries to infer the current worktree branch and repository default branch.
 
 ## Development
 

@@ -240,8 +240,9 @@ Commands:
     to include project tasks.
 
   forge task create <project-id> <description>
-    Create the next task directory under the project, including task.json,
-    task.md, work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md.
+    Create the next task under the project in a short taskN/ directory,
+    including task.json, task.md, work.md, log.md, artifacts/, worktree/,
+    and task-local AGENTS.md.
 
   forge task list <project-id> [--all]
     List open tasks in a project. Use --all to include archived tasks.
