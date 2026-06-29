@@ -14,7 +14,7 @@ import (
 
 const (
 	defaultWorkflowSnippet = "Standard task workflow. Clarify the requirements and acceptance criteria first"
-	projectWorkflowSnippet = "This is a project-management task."
+	projectWorkflowSnippet = "This is a project-management project."
 )
 
 func TestForgeStartHelper(t *testing.T) {
@@ -56,20 +56,20 @@ func TestTaskLifecycle(t *testing.T) {
 		assertFile(t, filepath.Join(root, workflowDir, "default.md"))
 		assertFile(t, filepath.Join(root, workflowDir, "project.md"))
 
-		created := run(t, "task", "create", "Implement the forge MVP")
-		if !strings.Contains(created, `"id": "task1"`) {
-			t.Fatalf("expected task1 JSON, got:\n%s", created)
+		created := run(t, "project", "create", "Implement the forge MVP")
+		if !strings.Contains(created, `"id": "project1"`) {
+			t.Fatalf("expected project1 JSON, got:\n%s", created)
 		}
 		if !strings.Contains(created, `"workflow": "default"`) {
 			t.Fatalf("expected task JSON to record default workflow, got:\n%s", created)
 		}
-		assertFile(t, filepath.Join(root, "task1", "task.json"))
-		assertFile(t, filepath.Join(root, "task1", "task.md"))
-		assertFile(t, filepath.Join(root, "task1", "work.md"))
-		assertFile(t, filepath.Join(root, "task1", "log.md"))
-		assertDir(t, filepath.Join(root, "task1", "artifacts"))
-		assertDir(t, filepath.Join(root, "task1", "worktree"))
-		taskAgents := readFile(t, filepath.Join(root, "task1", "AGENTS.md"))
+		assertFile(t, filepath.Join(root, "project1", "task.json"))
+		assertFile(t, filepath.Join(root, "project1", "task.md"))
+		assertFile(t, filepath.Join(root, "project1", "work.md"))
+		assertFile(t, filepath.Join(root, "project1", "log.md"))
+		assertDir(t, filepath.Join(root, "project1", "artifacts"))
+		assertDir(t, filepath.Join(root, "project1", "worktree"))
+		taskAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
 		if !strings.Contains(taskAgents, "workspace root AGENTS.md") {
 			t.Fatalf("expected task AGENTS.md to reference workspace AGENTS.md, got:\n%s", taskAgents)
 		}
@@ -88,7 +88,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(taskAgents, defaultWorkflowSnippet) {
 			t.Fatalf("expected task AGENTS.md to include default workflow guidance, got:\n%s", taskAgents)
 		}
-		taskMDPath := filepath.Join(root, "task1", "task.md")
+		taskMDPath := filepath.Join(root, "project1", "task.md")
 		taskMD := readFile(t, taskMDPath)
 		if !strings.Contains(taskMD, "# Implement the forge MVP") || !strings.Contains(taskMD, "Implement the forge MVP") {
 			t.Fatalf("expected task.md to contain task background, got:\n%s", taskMD)
@@ -97,7 +97,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected task.md to contain only task background, got:\n%s", taskMD)
 		}
 		assertNoHan(t, taskMDPath)
-		taskWork := readFile(t, filepath.Join(root, "task1", "work.md"))
+		taskWork := readFile(t, filepath.Join(root, "project1", "work.md"))
 		if !strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md to include recovery rule, got:\n%s", taskWork)
 		}
@@ -108,24 +108,24 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("top-level task AGENTS.md should not contain subtask-only guidance, got:\n%s", taskAgents)
 		}
 
-		listed := run(t, "task", "list")
-		if !strings.Contains(listed, "task1\tImplement the forge MVP") {
-			t.Fatalf("expected task list to include task1, got:\n%s", listed)
+		listed := run(t, "project", "list")
+		if !strings.Contains(listed, "project1\tImplement the forge MVP") {
+			t.Fatalf("expected task list to include project1, got:\n%s", listed)
 		}
 
-		child := run(t, "subtask", "create", "task1", "Add task commands")
-		if !strings.Contains(child, `"id": "task1.1"`) {
-			t.Fatalf("expected task1.1 JSON, got:\n%s", child)
+		child := run(t, "task", "create", "project1", "Add task commands")
+		if !strings.Contains(child, `"id": "project1.task1"`) {
+			t.Fatalf("expected project1.task1 JSON, got:\n%s", child)
 		}
-		assertFile(t, filepath.Join(root, "task1", "task1.1", "task.json"))
-		subtaskAgents := readFile(t, filepath.Join(root, "task1", "task1.1", "AGENTS.md"))
+		assertFile(t, filepath.Join(root, "project1", "project1.task1", "task.json"))
+		subtaskAgents := readFile(t, filepath.Join(root, "project1", "project1.task1", "AGENTS.md"))
 		if !strings.Contains(subtaskAgents, "workspace root AGENTS.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference workspace AGENTS.md, got:\n%s", subtaskAgents)
 		}
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
+		if !strings.Contains(subtaskAgents, "Read the parent project directory's task.json, task.md, work.md, and log.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
@@ -135,35 +135,35 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected subtask AGENTS.md to include default workflow guidance, got:\n%s", subtaskAgents)
 		}
 
-		children := run(t, "subtask", "list", "task1")
-		if !strings.Contains(children, "task1.1\tAdd task commands") {
-			t.Fatalf("expected subtask list to include task1.1, got:\n%s", children)
+		children := run(t, "task", "list", "project1")
+		if !strings.Contains(children, "project1.task1\tAdd task commands") {
+			t.Fatalf("expected subtask list to include project1.task1, got:\n%s", children)
 		}
 
-		shown := run(t, "task", "show", "task1.1")
-		if !strings.Contains(shown, `"parent": "task1"`) {
+		shown := run(t, "task", "show", "project1.task1")
+		if !strings.Contains(shown, `"parent": "project1"`) {
 			t.Fatalf("expected show to find subtask, got:\n%s", shown)
 		}
 
-		archived := run(t, "task", "archive", "task1")
-		if !strings.Contains(archived, "archive/task1") {
+		archived := run(t, "task", "archive", "project1")
+		if !strings.Contains(archived, "archive/project1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "task1"))
-		if pathExists(filepath.Join(root, "task1")) {
-			t.Fatal("task1 should have moved out of the open workspace")
+		assertDir(t, filepath.Join(root, archiveDir, "project1"))
+		if pathExists(filepath.Join(root, "project1")) {
+			t.Fatal("project1 should have moved out of the open workspace")
 		}
-		openOnly := run(t, "task", "list")
-		if strings.Contains(openOnly, "task1\tImplement the forge MVP") {
+		openOnly := run(t, "project", "list")
+		if strings.Contains(openOnly, "project1\tImplement the forge MVP") {
 			t.Fatalf("archived task should not be listed by default, got:\n%s", openOnly)
 		}
-		allTasks := run(t, "task", "list", "--all")
-		if !strings.Contains(allTasks, "task1\tImplement the forge MVP") {
+		allTasks := run(t, "project", "list", "--all")
+		if !strings.Contains(allTasks, "project1\tImplement the forge MVP") {
 			t.Fatalf("expected task list --all to include archived task, got:\n%s", allTasks)
 		}
 
-		next := run(t, "task", "create", "Second task")
-		if !strings.Contains(next, `"id": "task2"`) {
+		next := run(t, "project", "create", "Second project")
+		if !strings.Contains(next, `"id": "project2"`) {
 			t.Fatalf("expected archived task ids not to be reused, got:\n%s", next)
 		}
 	})
@@ -172,15 +172,15 @@ func TestTaskLifecycle(t *testing.T) {
 func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Launch agent")
+		run(t, "project", "create", "Launch agent")
 		output := filepath.Join(root, "start.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 
-		run(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit", "args")
+		run(t, "start", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit", "args")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "task1")) + "\nexplicit\nargs\n"
+		want := realPath(t, filepath.Join(root, "project1")) + "\nexplicit\nargs\n"
 		if got != want {
 			t.Fatalf("expected explicit command to run in task dir, got:\n%s", got)
 		}
@@ -190,16 +190,16 @@ func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
 func TestStartResolvesNestedTaskID(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "Child task")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Child task")
 		output := filepath.Join(root, "nested.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 
-		run(t, "start", "task1.1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
+		run(t, "start", "project1.task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "task1", "task1.1")) + "\nnested\n"
+		want := realPath(t, filepath.Join(root, "project1", "project1.task1")) + "\nnested\n"
 		if got != want {
 			t.Fatalf("expected nested command to run in subtask dir, got:\n%s", got)
 		}
@@ -209,16 +209,16 @@ func TestStartResolvesNestedTaskID(t *testing.T) {
 func TestStartUsesConfiguredDefaultAgentCommand(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Default launch")
+		run(t, "project", "create", "Default launch")
 		output := filepath.Join(root, "default.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":[`+strconv.Quote(os.Args[0])+`,"-test.run=^TestForgeStartHelper$","--","configured"]}`+"\n")
 
-		run(t, "start", "task1")
+		run(t, "start", "project1")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "task1")) + "\nconfigured\n"
+		want := realPath(t, filepath.Join(root, "project1")) + "\nconfigured\n"
 		if got != want {
 			t.Fatalf("expected configured default command, got:\n%s", got)
 		}
@@ -228,17 +228,17 @@ func TestStartUsesConfiguredDefaultAgentCommand(t *testing.T) {
 func TestStartUsesConfiguredDefaultAgentCommandWithArgs(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Default launch with args")
+		run(t, "project", "create", "Default launch with args")
 		output := filepath.Join(root, "default-args.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 		command := os.Args[0] + ` -test.run=^TestForgeStartHelper$ -- "configured arg" second`
 		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":`+strconv.Quote(command)+`}`+"\n")
 
-		run(t, "start", "task1")
+		run(t, "start", "project1")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "task1")) + "\nconfigured arg\nsecond\n"
+		want := realPath(t, filepath.Join(root, "project1")) + "\nconfigured arg\nsecond\n"
 		if got != want {
 			t.Fatalf("expected configured default command with args, got:\n%s", got)
 		}
@@ -248,16 +248,16 @@ func TestStartUsesConfiguredDefaultAgentCommandWithArgs(t *testing.T) {
 func TestStartExplicitCommandOverridesConfiguredDefault(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Explicit beats default")
+		run(t, "project", "create", "Explicit beats default")
 		output := filepath.Join(root, "override.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":["missing-default-command"]}`+"\n")
 
-		run(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit")
+		run(t, "start", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "task1")) + "\nexplicit\n"
+		want := realPath(t, filepath.Join(root, "project1")) + "\nexplicit\n"
 		if got != want {
 			t.Fatalf("expected explicit command to override default, got:\n%s", got)
 		}
@@ -267,9 +267,9 @@ func TestStartExplicitCommandOverridesConfiguredDefault(t *testing.T) {
 func TestStartMissingCommandError(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "No command")
+		run(t, "project", "create", "No command")
 
-		out, err := runErr(t, "start", "task1")
+		out, err := runErr(t, "start", "project1")
 		if err == nil {
 			t.Fatalf("expected start to fail without command, got stdout:\n%s", out)
 		}
@@ -282,13 +282,13 @@ func TestStartMissingCommandError(t *testing.T) {
 func TestStartPropagatesChildExitStatus(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Exit status")
+		run(t, "project", "create", "Exit status")
 		output := filepath.Join(root, "exit.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 		t.Setenv("FORGE_START_EXIT", "7")
 
-		out, err := runErr(t, "start", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "exit")
+		out, err := runErr(t, "start", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "exit")
 		if err == nil {
 			t.Fatalf("expected child exit to fail, got stdout:\n%s", out)
 		}
@@ -374,34 +374,34 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		defaultCreated := run(t, "task", "create", "Default task")
+		defaultCreated := run(t, "project", "create", "Default project")
 		if !strings.Contains(defaultCreated, `"workflow": "default"`) {
 			t.Fatalf("expected default workflow in task JSON, got:\n%s", defaultCreated)
 		}
-		defaultTaskMD := readFile(t, filepath.Join(root, "task1", "task.md"))
-		if !strings.Contains(defaultTaskMD, "# Default task") {
+		defaultTaskMD := readFile(t, filepath.Join(root, "project1", "task.md"))
+		if !strings.Contains(defaultTaskMD, "# Default project") {
 			t.Fatalf("expected task.md skeleton with task background, got:\n%s", defaultTaskMD)
 		}
 		if strings.Contains(defaultTaskMD, "Default body {{title}}") || strings.Contains(defaultTaskMD, "## Workflow") {
 			t.Fatalf("expected workflow body to stay out of task.md, got:\n%s", defaultTaskMD)
 		}
-		defaultAgents := readFile(t, filepath.Join(root, "task1", "AGENTS.md"))
+		defaultAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
 		if !strings.Contains(defaultAgents, "Default body {{title}}") {
 			t.Fatalf("expected task AGENTS.md to include literal default workflow body, got:\n%s", defaultAgents)
 		}
 
-		projectCreated := run(t, "task", "create", "--workflow=project", "Project task")
+		projectCreated := run(t, "project", "create", "--workflow=project", "Project task")
 		if !strings.Contains(projectCreated, `"workflow": "project"`) {
 			t.Fatalf("expected project workflow in task JSON, got:\n%s", projectCreated)
 		}
-		projectTaskMD := readFile(t, filepath.Join(root, "task2", "task.md"))
+		projectTaskMD := readFile(t, filepath.Join(root, "project2", "task.md"))
 		if !strings.Contains(projectTaskMD, "# Project task") {
 			t.Fatalf("expected task.md skeleton with task background, got:\n%s", projectTaskMD)
 		}
 		if strings.Contains(projectTaskMD, "Project body {{description}}") || strings.Contains(projectTaskMD, "## Workflow") {
 			t.Fatalf("expected project workflow body to stay out of task.md, got:\n%s", projectTaskMD)
 		}
-		projectAgents := readFile(t, filepath.Join(root, "task2", "AGENTS.md"))
+		projectAgents := readFile(t, filepath.Join(root, "project2", "AGENTS.md"))
 		if !strings.Contains(projectAgents, "Project body {{description}}") {
 			t.Fatalf("expected task AGENTS.md to include literal project workflow body, got:\n%s", projectAgents)
 		}
@@ -409,22 +409,22 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 		if err := os.Remove(defaultPath); err != nil {
 			t.Fatal(err)
 		}
-		fallbackCreated := run(t, "task", "create", "Fallback task")
+		fallbackCreated := run(t, "project", "create", "Fallback project")
 		if !strings.Contains(fallbackCreated, `"workflow": "default"`) {
 			t.Fatalf("expected fallback task JSON to record default workflow, got:\n%s", fallbackCreated)
 		}
-		fallbackTaskMDPath := filepath.Join(root, "task3", "task.md")
+		fallbackTaskMDPath := filepath.Join(root, "project3", "task.md")
 		fallbackTaskMD := readFile(t, fallbackTaskMDPath)
 		if strings.Contains(fallbackTaskMD, defaultWorkflowSnippet) || strings.Contains(fallbackTaskMD, "## Workflow") {
 			t.Fatalf("expected fallback task.md to contain only task background, got:\n%s", fallbackTaskMD)
 		}
 		assertNoHan(t, fallbackTaskMDPath)
-		fallbackAgents := readFile(t, filepath.Join(root, "task3", "AGENTS.md"))
+		fallbackAgents := readFile(t, filepath.Join(root, "project3", "AGENTS.md"))
 		if !strings.Contains(fallbackAgents, defaultWorkflowSnippet) {
 			t.Fatalf("expected missing default workflow to fallback to built-in AGENTS.md content, got:\n%s", fallbackAgents)
 		}
 
-		out, err := runErr(t, "task", "create", "--workflow=default", "Explicit default missing task")
+		out, err := runErr(t, "project", "create", "--workflow=default", "Explicit default missing task")
 		if err == nil {
 			t.Fatalf("expected missing explicit default workflow to fail, got stdout:\n%s", out)
 		}
@@ -432,15 +432,128 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatalf("expected missing explicit default workflow error, got: %v\nstdout:\n%s", err, out)
 		}
 
-		out, err = runErr(t, "task", "create", "--workflow=missing", "Missing workflow task")
+		out, err = runErr(t, "project", "create", "--workflow=missing", "Missing workflow task")
 		if err == nil {
 			t.Fatalf("expected missing explicit workflow to fail, got stdout:\n%s", out)
 		}
 		if !strings.Contains(err.Error(), "workflow not found: workflow/missing.md") {
 			t.Fatalf("expected missing workflow error, got: %v\nstdout:\n%s", err, out)
 		}
-		if pathExists(filepath.Join(root, "task4")) {
+		if pathExists(filepath.Join(root, "project4")) {
 			t.Fatal("task should not be created when explicit workflow is missing")
+		}
+	})
+}
+
+func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		workflowContent := builtinWorkflows[defaultWorkflowName]
+
+		legacyProject := newTask("task1", "task", nil, "Legacy project", defaultWorkflowName)
+		legacyProject.Repos = []TaskRepo{{
+			Name:         "disksing/forge",
+			RepoPath:     "repos/disksing/forge",
+			WorktreePath: "task1/worktree/forge",
+			Branch:       "agent/task1",
+			TargetBranch: "master",
+		}}
+		if err := createTaskFiles(filepath.Join(root, "task1"), legacyProject, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		parent := "task1"
+		legacyChild := newTask("task1.1", "subtask", &parent, "Legacy child", defaultWorkflowName)
+		legacyChild.Repos = []TaskRepo{{
+			Name:         "disksing/forge",
+			RepoPath:     "repos/disksing/forge",
+			WorktreePath: "task1/task1.1/worktree/forge",
+			Branch:       "agent/task1.1",
+			TargetBranch: "master",
+		}}
+		if err := createTaskFiles(filepath.Join(root, "task1", "task1.1"), legacyChild, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		childParent := "task1.1"
+		legacyGrandchild := newTask("task1.1.1", "subtask", &childParent, "Legacy grandchild", defaultWorkflowName)
+		if err := createTaskFiles(filepath.Join(root, "task1", "task1.1", "task1.1.1"), legacyGrandchild, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		legacyArchivedChild := newTask("task1.2", "subtask", &parent, "Archived legacy child", defaultWorkflowName)
+		if err := createTaskFiles(filepath.Join(root, "task1", archiveDir, "task1.2"), legacyArchivedChild, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		archivedLegacyProject := newTask("task2", "task", nil, "Archived legacy project", defaultWorkflowName)
+		if err := createTaskFiles(filepath.Join(root, archiveDir, "task2"), archivedLegacyProject, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		migrated := run(t, "migrate", "project-tasks")
+		if !strings.Contains(migrated, "migrated 2 projects and 3 tasks") {
+			t.Fatalf("expected migration summary, got:\n%s", migrated)
+		}
+
+		if pathExists(filepath.Join(root, "task1")) {
+			t.Fatal("legacy task1 directory should be renamed")
+		}
+		assertDir(t, filepath.Join(root, "project1"))
+		assertDir(t, filepath.Join(root, "project1", "project1.task1"))
+		assertDir(t, filepath.Join(root, "project1", "project1.task1.1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task2"))
+		assertDir(t, filepath.Join(root, archiveDir, "project2"))
+		if pathExists(filepath.Join(root, "project1", "project1.task1", "project1.task1.1")) {
+			t.Fatal("legacy grandchild should have been promoted to a direct project task")
+		}
+
+		var project Task
+		if err := readJSON(filepath.Join(root, "project1", "task.json"), &project); err != nil {
+			t.Fatal(err)
+		}
+		if project.ID != "project1" || project.Type != "project" || project.Parent != nil {
+			t.Fatalf("expected migrated project JSON, got: %+v", project)
+		}
+		if got := project.Repos[0].WorktreePath; got != "project1/worktree/forge" {
+			t.Fatalf("expected project repo worktree path to update, got %q", got)
+		}
+
+		var child Task
+		if err := readJSON(filepath.Join(root, "project1", "project1.task1", "task.json"), &child); err != nil {
+			t.Fatal(err)
+		}
+		if child.ID != "project1.task1" || child.Type != "task" || child.Parent == nil || *child.Parent != "project1" {
+			t.Fatalf("expected promoted task JSON, got: %+v", child)
+		}
+		if got := child.Repos[0].WorktreePath; got != "project1/project1.task1/worktree/forge" {
+			t.Fatalf("expected task repo worktree path to update, got %q", got)
+		}
+		childAgents := readFile(t, filepath.Join(root, "project1", "project1.task1", "AGENTS.md"))
+		if !strings.Contains(childAgents, "This task belongs to a project.") || strings.Contains(childAgents, "This is a subtask.") {
+			t.Fatalf("expected migrated task AGENTS.md to use project/task wording, got:\n%s", childAgents)
+		}
+
+		var grandchild Task
+		if err := readJSON(filepath.Join(root, "project1", "project1.task1.1", "task.json"), &grandchild); err != nil {
+			t.Fatal(err)
+		}
+		if grandchild.ID != "project1.task1.1" || grandchild.Type != "task" || grandchild.Parent == nil || *grandchild.Parent != "project1" {
+			t.Fatalf("expected promoted grandchild JSON, got: %+v", grandchild)
+		}
+
+		tree := run(t, "project", "list", "--tree")
+		if !strings.Contains(tree, "project1\tLegacy project") || !strings.Contains(tree, "- project1.task1\tLegacy child") || !strings.Contains(tree, "- project1.task1.1\tLegacy grandchild") {
+			t.Fatalf("expected migrated open project tree, got:\n%s", tree)
+		}
+		allTasks := run(t, "task", "list", "project1", "--all")
+		if !strings.Contains(allTasks, "project1.task2\tArchived legacy child") {
+			t.Fatalf("expected migrated archived task in task list --all, got:\n%s", allTasks)
+		}
+
+		again := run(t, "migrate", "project-tasks")
+		if !strings.Contains(again, "no legacy task directories found") {
+			t.Fatalf("expected idempotent no-op on second migration, got:\n%s", again)
 		}
 	})
 }
@@ -448,46 +561,46 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Archive after merge")
+		run(t, "project", "create", "Archive after merge")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "task1", "worktree", "forge")
-		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1", worktreePath, "master")
-		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+		worktreePath := filepath.Join(root, "project1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1", worktreePath, "master")
+		run(t, "task", "repo", "add", "project1", "disksing/forge", "--worktree", "project1/worktree/forge", "--branch", "agent/project1", "--target", "master")
 
-		archived := run(t, "task", "archive", "task1")
-		if !strings.Contains(archived, "archive/task1") {
+		archived := run(t, "task", "archive", "project1")
+		if !strings.Contains(archived, "archive/project1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "task1"))
+		assertDir(t, filepath.Join(root, archiveDir, "project1"))
 	})
 }
 
 func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Archive before merge")
+		run(t, "project", "create", "Archive before merge")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "task1", "worktree", "forge")
-		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1", worktreePath, "master")
+		worktreePath := filepath.Join(root, "project1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
-		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1", "disksing/forge", "--worktree", "project1/worktree/forge", "--branch", "agent/project1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "task1")
+		out, err := runErr(t, "task", "archive", "project1")
 		if err == nil {
 			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
 		}
 		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "feature work") {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
-		assertDir(t, filepath.Join(root, "task1"))
-		if pathExists(filepath.Join(root, archiveDir, "task1")) {
-			t.Fatal("task1 should not have been archived")
+		assertDir(t, filepath.Join(root, "project1"))
+		if pathExists(filepath.Join(root, archiveDir, "project1")) {
+			t.Fatal("project1 should not have been archived")
 		}
 	})
 }
@@ -495,113 +608,125 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Archive without a checkout")
+		run(t, "project", "create", "Archive without a checkout")
 		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
-		run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/forge", "--branch", "agent/task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1", "disksing/forge", "--worktree", "project1/worktree/forge", "--branch", "agent/project1", "--target", "master")
 
-		archived := run(t, "task", "archive", "task1")
-		if !strings.Contains(archived, "archive/task1") {
+		archived := run(t, "task", "archive", "project1")
+		if !strings.Contains(archived, "archive/project1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "task1"))
+		assertDir(t, filepath.Join(root, archiveDir, "project1"))
 	})
 }
 
 func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "Child task")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Child task")
 
-		archived := run(t, "task", "archive", "task1.1")
-		if !strings.Contains(archived, "task1/archive/task1.1") {
+		archived := run(t, "task", "archive", "project1.task1")
+		if !strings.Contains(archived, "project1/archive/project1.task1") {
 			t.Fatalf("expected parent-local archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "task1", archiveDir, "task1.1"))
-		if pathExists(filepath.Join(root, archiveDir, "task1.1")) {
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task1"))
+		if pathExists(filepath.Join(root, archiveDir, "project1.task1")) {
 			t.Fatal("subtask should not have moved to the workspace archive")
 		}
-		if pathExists(filepath.Join(root, "task1", "task1.1")) {
+		if pathExists(filepath.Join(root, "project1", "project1.task1")) {
 			t.Fatal("subtask should have moved out of the parent task's open subtasks")
 		}
 
-		children := run(t, "subtask", "list", "task1")
-		if strings.Contains(children, "task1.1") {
+		children := run(t, "task", "list", "project1")
+		if strings.Contains(children, "project1.task1") {
 			t.Fatalf("archived subtask should not be listed as open, got:\n%s", children)
 		}
-		allChildren := run(t, "subtask", "list", "task1", "--all")
-		if !strings.Contains(allChildren, "task1.1\tChild task") {
+		allChildren := run(t, "task", "list", "project1", "--all")
+		if !strings.Contains(allChildren, "project1.task1\tChild task") {
 			t.Fatalf("expected subtask list --all to include archived subtask, got:\n%s", allChildren)
 		}
 
-		next := run(t, "subtask", "create", "task1", "Next child")
-		if !strings.Contains(next, `"id": "task1.2"`) {
+		next := run(t, "task", "create", "project1", "Next child")
+		if !strings.Contains(next, `"id": "project1.task2"`) {
 			t.Fatalf("expected archived subtask ids not to be reused, got:\n%s", next)
 		}
 	})
 }
 
-func TestTaskListTreeRecursesIntoOpenSubtasks(t *testing.T) {
+func TestProjectListTreeIncludesOpenTasks(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "First child")
-		run(t, "subtask", "create", "task1.1", "Grandchild")
-		run(t, "subtask", "create", "task1", "Second child")
-		run(t, "task", "create", "Other task")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "First child")
+		run(t, "task", "create", "project1", "Second child")
+		run(t, "project", "create", "Other project")
 
-		listed := run(t, "task", "list")
-		if strings.Contains(listed, "task1.1\tFirst child") {
-			t.Fatalf("default task list should not include subtasks, got:\n%s", listed)
+		listed := run(t, "project", "list")
+		if strings.Contains(listed, "project1.task1\tFirst child") {
+			t.Fatalf("default project list should not include tasks, got:\n%s", listed)
 		}
 
-		tree := run(t, "task", "list", "--tree")
+		tree := run(t, "project", "list", "--tree")
 		want := strings.Join([]string{
-			"task1\tParent task",
-			"- task1.1\tFirst child",
-			"  - task1.1.1\tGrandchild",
-			"- task1.2\tSecond child",
-			"task2\tOther task",
+			"project1\tParent project",
+			"- project1.task1\tFirst child",
+			"- project1.task2\tSecond child",
+			"project2\tOther project",
 			"",
 		}, "\n")
 		if tree != want {
-			t.Fatalf("expected recursive task tree, got:\n%s", tree)
+			t.Fatalf("expected project task tree, got:\n%s", tree)
 		}
 
-		reversedFlags := run(t, "task", "list", "--tree", "--all")
+		reversedFlags := run(t, "project", "list", "--tree", "--all")
 		if reversedFlags != tree {
 			t.Fatalf("expected --tree --all to match open tree when nothing is archived, got:\n%s", reversedFlags)
 		}
 	})
 }
 
-func TestTaskListTreeAllIncludesArchivedSubtasks(t *testing.T) {
+func TestTaskCreateRejectsNestedTasks(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "Archived child")
-		run(t, "subtask", "create", "task1", "Open child")
-		run(t, "subtask", "create", "task1.2", "Open grandchild")
-		run(t, "task", "archive", "task1.1")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Child task")
 
-		openTree := run(t, "task", "list", "--tree")
-		if strings.Contains(openTree, "task1.1\tArchived child") {
-			t.Fatalf("open task tree should not include archived subtasks, got:\n%s", openTree)
+		out, err := runErr(t, "task", "create", "project1.task1", "Nested task")
+		if err == nil {
+			t.Fatalf("expected nested task creation to fail, got stdout:\n%s", out)
 		}
-		if !strings.Contains(openTree, "- task1.2\tOpen child") || !strings.Contains(openTree, "  - task1.2.1\tOpen grandchild") {
-			t.Fatalf("open task tree should include open descendants, got:\n%s", openTree)
+		if !strings.Contains(err.Error(), "cannot create task under non-project resource") {
+			t.Fatalf("expected non-project parent error, got: %v\nstdout:\n%s", err, out)
+		}
+	})
+}
+
+func TestProjectListTreeAllIncludesArchivedTasks(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Archived child")
+		run(t, "task", "create", "project1", "Open child")
+		run(t, "task", "archive", "project1.task1")
+
+		openTree := run(t, "project", "list", "--tree")
+		if strings.Contains(openTree, "project1.task1\tArchived child") {
+			t.Fatalf("open project tree should not include archived tasks, got:\n%s", openTree)
+		}
+		if !strings.Contains(openTree, "- project1.task2\tOpen child") {
+			t.Fatalf("open project tree should include open tasks, got:\n%s", openTree)
 		}
 
-		allTree := run(t, "task", "list", "--all", "--tree")
+		allTree := run(t, "project", "list", "--all", "--tree")
 		want := strings.Join([]string{
-			"task1\tParent task",
-			"- task1.1\tArchived child",
-			"- task1.2\tOpen child",
-			"  - task1.2.1\tOpen grandchild",
+			"project1\tParent project",
+			"- project1.task1\tArchived child",
+			"- project1.task2\tOpen child",
 			"",
 		}, "\n")
 		if allTree != want {
-			t.Fatalf("expected archived subtasks in recursive task tree, got:\n%s", allTree)
+			t.Fatalf("expected archived tasks in project tree, got:\n%s", allTree)
 		}
 	})
 }
@@ -609,7 +734,7 @@ func TestTaskListTreeAllIncludesArchivedSubtasks(t *testing.T) {
 func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
+		run(t, "project", "create", "Parent project")
 		for _, description := range []string{
 			"Archived child one",
 			"Archived child two",
@@ -617,48 +742,48 @@ func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 			"Open child four",
 			"Open child five",
 		} {
-			run(t, "subtask", "create", "task1", description)
+			run(t, "task", "create", "project1", description)
 		}
-		for _, id := range []string{"task1.1", "task1.2", "task1.3"} {
+		for _, id := range []string{"project1.task1", "project1.task2", "project1.task3"} {
 			run(t, "task", "archive", id)
-			assertDir(t, filepath.Join(root, "task1", archiveDir, id))
+			assertDir(t, filepath.Join(root, "project1", archiveDir, id))
 		}
-		assertDir(t, filepath.Join(root, "task1", "task1.4"))
-		assertDir(t, filepath.Join(root, "task1", "task1.5"))
+		assertDir(t, filepath.Join(root, "project1", "project1.task4"))
+		assertDir(t, filepath.Join(root, "project1", "project1.task5"))
 
-		next := run(t, "subtask", "create", "task1", "Next child")
-		if !strings.Contains(next, `"id": "task1.6"`) {
+		next := run(t, "task", "create", "project1", "Next child")
+		if !strings.Contains(next, `"id": "project1.task6"`) {
 			t.Fatalf("expected archived and open subtask ids not to be reused, got:\n%s", next)
 		}
-		assertDir(t, filepath.Join(root, "task1", "task1.6"))
+		assertDir(t, filepath.Join(root, "project1", "project1.task6"))
 	})
 }
 
 func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "Child task")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Child task")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "task1", "task1.1", "worktree", "forge")
-		runGit(t, repoPath, "worktree", "add", "-b", "agent/task1.1", worktreePath, "master")
+		worktreePath := filepath.Join(root, "project1", "project1.task1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
-		run(t, "task", "repo", "add", "task1.1", "disksing/forge", "--worktree", "task1/task1.1/worktree/forge", "--branch", "agent/task1.1", "--target", "master")
+		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "task1.1")
+		out, err := runErr(t, "task", "archive", "project1.task1")
 		if err == nil {
 			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
 		}
 		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "child feature work") {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
-		assertDir(t, filepath.Join(root, "task1", "task1.1"))
-		if pathExists(filepath.Join(root, "task1", archiveDir, "task1.1")) {
+		assertDir(t, filepath.Join(root, "project1", "project1.task1"))
+		if pathExists(filepath.Join(root, "project1", archiveDir, "project1.task1")) {
 			t.Fatal("unmerged subtask should not have been archived")
 		}
 	})
@@ -715,37 +840,37 @@ func TestRepoListFindsRepositories(t *testing.T) {
 func TestTaskRepoLifecycle(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Wire repo metadata into task json")
+		run(t, "project", "create", "Wire repo metadata into task json")
 		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
 
-		added := run(t, "task", "repo", "add", "task1", "disksing/forge", "--branch", "agent/task1", "--target", "master", "--base", "master")
+		added := run(t, "project", "repo", "add", "project1", "disksing/forge", "--branch", "agent/project1", "--target", "master", "--base", "master")
 		if !strings.Contains(added, `"name": "disksing/forge"`) {
 			t.Fatalf("expected task JSON to include repo, got:\n%s", added)
 		}
 		if !strings.Contains(added, `"repoPath": "repos/disksing/forge"`) {
 			t.Fatalf("expected task JSON to include repo path, got:\n%s", added)
 		}
-		if !strings.Contains(added, `"worktreePath": "task1/worktree/forge"`) {
+		if !strings.Contains(added, `"worktreePath": "project1/worktree/forge"`) {
 			t.Fatalf("expected default worktree path, got:\n%s", added)
 		}
 
-		listed := run(t, "task", "repo", "list", "task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\ttask1/worktree/forge\tagent/task1\tmaster\tmaster") {
+		listed := run(t, "project", "repo", "list", "project1")
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\tproject1/worktree/forge\tagent/project1\tmaster\tmaster") {
 			t.Fatalf("expected repo list to include metadata, got:\n%s", listed)
 		}
 
-		updated := run(t, "task", "repo", "add", "task1", "disksing/forge", "--worktree", "task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
+		updated := run(t, "project", "repo", "add", "project1", "disksing/forge", "--worktree", "project1/worktree/custom", "--branch", "agent/updated", "--target", "main")
 		if strings.Count(updated, `"name": "disksing/forge"`) != 1 {
 			t.Fatalf("expected repo add to update existing entry, got:\n%s", updated)
 		}
-		if !strings.Contains(updated, `"worktreePath": "task1/worktree/custom"`) {
+		if !strings.Contains(updated, `"worktreePath": "project1/worktree/custom"`) {
 			t.Fatalf("expected updated worktree path, got:\n%s", updated)
 		}
 		if !strings.Contains(updated, `"branch": "agent/updated"`) {
 			t.Fatalf("expected updated branch, got:\n%s", updated)
 		}
 
-		removed := run(t, "task", "repo", "remove", "task1", "disksing/forge")
+		removed := run(t, "project", "repo", "remove", "project1", "disksing/forge")
 		if strings.Contains(removed, `"name": "disksing/forge"`) {
 			t.Fatalf("expected repo to be removed, got:\n%s", removed)
 		}
@@ -755,18 +880,18 @@ func TestTaskRepoLifecycle(t *testing.T) {
 func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Wire legacy bare repo metadata into task json")
+		run(t, "project", "create", "Wire legacy bare repo metadata into task json")
 		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "forge.git"), "master")
 
-		added := run(t, "task", "repo", "add", "task1", "disksing/forge", "--branch", "agent/task1")
+		added := run(t, "project", "repo", "add", "project1", "disksing/forge", "--branch", "agent/project1")
 		if !strings.Contains(added, `"barePath": "repos/disksing/forge.git"`) {
 			t.Fatalf("expected task JSON to include legacy bare path, got:\n%s", added)
 		}
 		if strings.Contains(added, `"repoPath"`) {
 			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", added)
 		}
-		listed := run(t, "task", "repo", "list", "task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\ttask1/worktree/forge\tagent/task1\tmaster") {
+		listed := run(t, "project", "repo", "list", "project1")
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\tproject1/worktree/forge\tagent/project1\tmaster") {
 			t.Fatalf("expected legacy bare repo metadata, got:\n%s", listed)
 		}
 	})
@@ -816,35 +941,35 @@ func TestInitUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "task", "create", "Parent task")
-		run(t, "subtask", "create", "task1", "Open child")
-		run(t, "subtask", "create", "task1", "Archived child")
-		run(t, "task", "archive", "task1.2")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Open child")
+		run(t, "task", "create", "project1", "Archived child")
+		run(t, "task", "archive", "project1.task2")
 
 		rootAgents := filepath.Join(root, "AGENTS.md")
-		taskAgents := filepath.Join(root, "task1", "AGENTS.md")
-		subtaskAgents := filepath.Join(root, "task1", "task1.1", "AGENTS.md")
-		archivedAgents := filepath.Join(root, "task1", archiveDir, "task1.2", "AGENTS.md")
+		taskAgents := filepath.Join(root, "project1", "AGENTS.md")
+		subtaskAgents := filepath.Join(root, "project1", "project1.task1", "AGENTS.md")
+		archivedAgents := filepath.Join(root, "project1", archiveDir, "project1.task2", "AGENTS.md")
 
 		writeStaleManagedBlock(t, rootAgents, "This directory is an AgentWorkspace managed by forge.", "old workspace prompt")
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
-		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace task directory.", "old task prompt")
+		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "Read the parent task directory's task.json, task.md, work.md, and log.md", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's task.json, task.md, work.md, and log.md", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
-		if err := os.Chdir(filepath.Join(root, "task1", "task1.1")); err != nil {
+		if err := os.Chdir(filepath.Join(root, "project1", "project1.task1")); err != nil {
 			t.Fatal(err)
 		}
 		run(t, "init")
 
-		if pathExists(filepath.Join(root, "task1", "task1.1", configFile)) {
+		if pathExists(filepath.Join(root, "project1", "project1.task1", configFile)) {
 			t.Fatal("init from subtask should not create nested forge.json")
 		}
-		if pathExists(filepath.Join(root, "task1", "task1.1", reposDir)) {
+		if pathExists(filepath.Join(root, "project1", "project1.task1", reposDir)) {
 			t.Fatal("init from subtask should not create nested repos directory")
 		}
-		if pathExists(filepath.Join(root, "task1", "task1.1", archiveDir)) {
+		if pathExists(filepath.Join(root, "project1", "project1.task1", archiveDir)) {
 			t.Fatal("init from subtask should not create nested archive directory")
 		}
 
@@ -854,7 +979,7 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 
 		taskAfter := readFile(t, taskAgents)
-		if strings.Contains(taskAfter, "old task prompt") {
+		if strings.Contains(taskAfter, "old project prompt") {
 			t.Fatalf("expected task managed block to refresh, got:\n%s", taskAfter)
 		}
 		if !strings.Contains(taskAfter, "Keep task note.") {
@@ -874,7 +999,7 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Keep child note.") {
 			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, "Read the parent task directory's task.json, task.md, work.md, and log.md") {
+		if !strings.Contains(subtaskAfter, "Read the parent project directory's task.json, task.md, work.md, and log.md") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
 		}
 		if !strings.Contains(subtaskAfter, defaultWorkflowSnippet) {
