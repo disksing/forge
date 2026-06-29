@@ -32,7 +32,15 @@ func migrateProjectTasks() error {
 		return err
 	}
 	if len(projects) == 0 {
-		fmt.Println("no legacy task directories found")
+		updated, err := normalizeMigratedWorktreeReferences(root)
+		if err != nil {
+			return err
+		}
+		if updated == 0 {
+			fmt.Println("no legacy task directories found")
+			return nil
+		}
+		fmt.Printf("updated %d migrated worktree references\n", updated)
 		return nil
 	}
 
@@ -53,7 +61,14 @@ func migrateProjectTasks() error {
 		}
 		totalTasks += count
 	}
+	updated, err := normalizeMigratedWorktreeReferences(root)
+	if err != nil {
+		return err
+	}
 	fmt.Printf("migrated %d projects and %d tasks\n", len(projects), totalTasks)
+	if updated > 0 {
+		fmt.Printf("updated %d migrated worktree references\n", updated)
+	}
 	return nil
 }
 
@@ -238,6 +253,107 @@ func migratePathReference(root, value, oldRel, newRel string) string {
 	return value
 }
 
+func normalizeMigratedWorktreeReferences(root string) (int, error) {
+	resources, err := collectProjectResources(root)
+	if err != nil {
+		return 0, err
+	}
+	relMap := map[string]string{}
+	for _, resource := range resources {
+		if oldRel := legacyOpenRelForProjectResource(resource.NewID); oldRel != "" {
+			relMap[oldRel] = resource.NewRel
+		}
+	}
+	if len(relMap) == 0 {
+		return 0, nil
+	}
+
+	keys := make([]string, 0, len(relMap))
+	for key := range relMap {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		return len(keys[i]) > len(keys[j])
+	})
+
+	updated := 0
+	for _, resource := range resources {
+		taskJSON := filepath.Join(root, resource.NewRel, "task.json")
+		var task Task
+		if err := readJSON(taskJSON, &task); err != nil {
+			return updated, err
+		}
+		changed := false
+		for i := range task.Repos {
+			next := migrateMappedPathReference(root, task.Repos[i].WorktreePath, relMap, keys)
+			if next != task.Repos[i].WorktreePath {
+				task.Repos[i].WorktreePath = next
+				changed = true
+			}
+		}
+		if !changed {
+			continue
+		}
+		task.UpdatedAt = time.Now().Format(time.RFC3339)
+		if err := writeJSON(taskJSON, task); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	return updated, nil
+}
+
+func collectProjectResources(root string) ([]migrationResource, error) {
+	var resources []migrationResource
+	for _, dir := range []string{root, filepath.Join(root, archiveDir)} {
+		entries, err := readTaskEntriesInDir(dir, topProjectName)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		for _, entry := range entries {
+			resources = append(resources, migrationResource{
+				NewID:  entry.Task.ID,
+				NewRel: relPath(root, entry.Path),
+			})
+			taskEntries, err := readTaskEntriesInDirs([]string{entry.Path, filepath.Join(entry.Path, archiveDir)}, projectTaskName(entry.Task.ID))
+			if err != nil {
+				return nil, err
+			}
+			for _, taskEntry := range taskEntries {
+				resources = append(resources, migrationResource{
+					NewID:  taskEntry.Task.ID,
+					NewRel: relPath(root, taskEntry.Path),
+				})
+			}
+		}
+	}
+	return resources, nil
+}
+
+func migrateMappedPathReference(root, value string, relMap map[string]string, keys []string) string {
+	if value == "" {
+		return value
+	}
+	valueSlash := filepath.ToSlash(value)
+	for _, oldRel := range keys {
+		newRel := relMap[oldRel]
+		if strings.HasPrefix(valueSlash, oldRel+"/") || valueSlash == oldRel {
+			return newRel + strings.TrimPrefix(valueSlash, oldRel)
+		}
+		if filepath.IsAbs(value) {
+			oldAbs := filepath.ToSlash(filepath.Join(root, oldRel))
+			newAbs := filepath.ToSlash(filepath.Join(root, newRel))
+			if strings.HasPrefix(valueSlash, oldAbs+"/") || valueSlash == oldAbs {
+				return newAbs + strings.TrimPrefix(valueSlash, oldAbs)
+			}
+		}
+	}
+	return value
+}
+
 func repairRepoWorktree(root string, repo TaskRepo) error {
 	if repo.WorktreePath == "" {
 		return nil
@@ -279,6 +395,25 @@ func legacyProjectIDToProjectID(id string) string {
 func legacyTaskIDToProjectTaskID(id, oldProjectID, newProjectID string) string {
 	suffix := strings.TrimPrefix(id, oldProjectID+".")
 	return newProjectID + ".task" + suffix
+}
+
+func legacyOpenRelForProjectResource(id string) string {
+	if !topProjectName.MatchString(id) {
+		projectID, suffix, ok := strings.Cut(id, ".task")
+		if !ok || !topProjectName.MatchString(projectID) || suffix == "" {
+			return ""
+		}
+		legacyProjectID := "task" + strings.TrimPrefix(projectID, "project")
+		parts := strings.Split(suffix, ".")
+		relParts := []string{legacyProjectID}
+		current := legacyProjectID
+		for _, part := range parts {
+			current += "." + part
+			relParts = append(relParts, current)
+		}
+		return strings.Join(relParts, "/")
+	}
+	return "task" + strings.TrimPrefix(id, "project")
 }
 
 func pathDepth(path string) int {

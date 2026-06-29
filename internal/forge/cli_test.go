@@ -482,11 +482,25 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		}
 
 		legacyArchivedChild := newTask("task1.2", "subtask", &parent, "Archived legacy child", defaultWorkflowName)
+		legacyArchivedChild.Repos = []TaskRepo{{
+			Name:         "disksing/forge",
+			RepoPath:     "repos/disksing/forge",
+			WorktreePath: "task1/task1.2/worktree/forge",
+			Branch:       "agent/task1.2",
+			TargetBranch: "master",
+		}}
 		if err := createTaskFiles(filepath.Join(root, "task1", archiveDir, "task1.2"), legacyArchivedChild, workflowContent); err != nil {
 			t.Fatal(err)
 		}
 
 		archivedLegacyProject := newTask("task2", "task", nil, "Archived legacy project", defaultWorkflowName)
+		archivedLegacyProject.Repos = []TaskRepo{{
+			Name:         "disksing/forge",
+			RepoPath:     "repos/disksing/forge",
+			WorktreePath: "task2/worktree/forge",
+			Branch:       "agent/task2",
+			TargetBranch: "master",
+		}}
 		if err := createTaskFiles(filepath.Join(root, archiveDir, "task2"), archivedLegacyProject, workflowContent); err != nil {
 			t.Fatal(err)
 		}
@@ -540,6 +554,21 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		}
 		if grandchild.ID != "project1.task1.1" || grandchild.Type != "task" || grandchild.Parent == nil || *grandchild.Parent != "project1" {
 			t.Fatalf("expected promoted grandchild JSON, got: %+v", grandchild)
+		}
+		var archivedChild Task
+		if err := readJSON(filepath.Join(root, "project1", archiveDir, "project1.task2", "task.json"), &archivedChild); err != nil {
+			t.Fatal(err)
+		}
+		if got := archivedChild.Repos[0].WorktreePath; got != "project1/archive/project1.task2/worktree/forge" {
+			t.Fatalf("expected archived task worktree path to update, got %q", got)
+		}
+
+		var archivedProject Task
+		if err := readJSON(filepath.Join(root, archiveDir, "project2", "task.json"), &archivedProject); err != nil {
+			t.Fatal(err)
+		}
+		if got := archivedProject.Repos[0].WorktreePath; got != "archive/project2/worktree/forge" {
+			t.Fatalf("expected archived project worktree path to update, got %q", got)
 		}
 
 		tree := run(t, "project", "list", "--tree")
