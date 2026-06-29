@@ -1,14 +1,14 @@
 # Forge iTerm2 Toolbelt
 
 `forge_toolbelt.py` is an iTerm2 Python API companion script. It registers a
-Toolbelt web view named `Forge` that lists AgentWorkspace tasks and launches
-task sessions in iTerm2.
+Toolbelt web view named `Forge` that lists AgentWorkspace projects/tasks and
+launches project or task sessions in iTerm2.
 
 The script does not change the Forge CLI. It shells out to:
 
 ```bash
-forge task list
-forge subtask list <task-id>
+forge project list
+forge task list <project-id>
 ```
 
 ## Install
@@ -71,10 +71,10 @@ Each workspace may override the Codex command:
 
 ## Actions
 
-For every task or subtask, the Toolbelt shows four actions:
+For every project or task, the Toolbelt shows four actions:
 
-- `New Window`: open a login shell in the task directory.
-- `Split Shell`: split the current pane and `cd` into the task directory.
+- `New Window`: open a login shell in the selected directory.
+- `Split Shell`: split the current pane and `cd` into the selected directory.
 - `Window Codex`: open a new window and run the configured Codex command.
 - `Split Codex`: split the current pane and run the configured Codex command.
 
@@ -89,9 +89,9 @@ That mode intentionally bypasses Codex approvals and sandboxing. Use a safer
 
 ## Notes
 
-- Only open tasks are listed. Archived tasks remain available on disk but are
+- Only open projects and tasks are listed. Archived items remain available on disk but are
   not shown by this companion.
-- Subtask directories are resolved from dotted task ids, for example
-  `task6.10` maps to `AgentWorkspace/task6/task6.10`.
+- Task directories are resolved from project/task ids, for example
+  `project6.task10` maps to `AgentWorkspace/project6/project6.task10`.
 - The local web server binds to `127.0.0.1`. If the configured port is busy,
   the script tries the next 19 ports.

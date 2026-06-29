@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""iTerm2 Toolbelt companion for Forge AgentWorkspace tasks.
+"""iTerm2 Toolbelt companion for Forge AgentWorkspace projects and tasks.
 
 Install this as an iTerm2 Python API full-environment script. It starts a small
 localhost web app, registers it as an iTerm2 Toolbelt web view, lists Forge
-tasks/subtasks, and launches shells or Codex sessions for selected task dirs.
+projects/tasks, and launches shells or Codex sessions for selected dirs.
 """
 
 from __future__ import annotations
@@ -121,26 +121,23 @@ def parse_task_list(output: str) -> list[TaskRow]:
     return rows
 
 
-async def list_tasks(config: Config, workspace: Workspace) -> list[TaskRow]:
-    output = await run_forge(config, workspace, ["task", "list"])
+async def list_projects(config: Config, workspace: Workspace) -> list[TaskRow]:
+    output = await run_forge(config, workspace, ["project", "list"])
     return parse_task_list(output)
 
 
-async def list_subtasks(
-    config: Config, workspace: Workspace, task_id: str
+async def list_project_tasks(
+    config: Config, workspace: Workspace, project_id: str
 ) -> list[TaskRow]:
-    output = await run_forge(config, workspace, ["subtask", "list", task_id])
+    output = await run_forge(config, workspace, ["task", "list", project_id])
     return parse_task_list(output)
 
 
 def task_dir(workspace: Workspace, task_id: str) -> Path:
-    parts = task_id.split(".")
-    current = parts[0]
-    path = workspace.path / current
-    for part in parts[1:]:
-        current = f"{current}.{part}"
-        path = path / current
-    return path
+    project_id, sep, _ = task_id.partition(".")
+    if not sep:
+        return workspace.path / project_id
+    return workspace.path / project_id / task_id
 
 
 def shell_command(shell_path: str, task_path: Path, inner_command: str | None) -> str:
@@ -247,7 +244,7 @@ def task_actions(workspace_index: int, task_id: str) -> str:
 def render_task_rows(
     workspace_index: int,
     rows: list[TaskRow],
-    include_subtask_link: bool,
+    include_task_link: bool,
 ) -> str:
     if not rows:
         return '<p class="muted">No open items.</p>'
@@ -255,16 +252,16 @@ def render_task_rows(
     for row in rows:
         title = html.escape(row.title or row.task_id)
         task_id = html.escape(row.task_id)
-        subtask_link = ""
-        if include_subtask_link:
-            subtask_link = " · " + link(
-                f"/subtasks?workspace={workspace_index}&task={html.escape(row.task_id, quote=True)}",
-                "subtasks",
+        task_link = ""
+        if include_task_link:
+            task_link = " · " + link(
+                f"/project-tasks?workspace={workspace_index}&project={html.escape(row.task_id, quote=True)}",
+                "tasks",
             )
         chunks.append(
             f"""<section class="row">
   <div class="title">{task_id}</div>
-  <div>{title}{subtask_link}</div>
+  <div>{title}{task_link}</div>
   {task_actions(workspace_index, row.task_id)}
 </section>"""
         )
@@ -296,7 +293,7 @@ async def handle_index(request: web.Request) -> web.Response:
             f"""<section class="row">
   <div class="title">{html.escape(workspace.name)}</div>
   <div><code>{html.escape(str(workspace.path))}</code></div>
-  <p>{link(f"/tasks?workspace={index}", "Open tasks")}</p>
+  <p>{link(f"/projects?workspace={index}", "Open projects")}</p>
 </section>"""
         )
 
@@ -311,42 +308,42 @@ async def handle_index(request: web.Request) -> web.Response:
     return web.Response(text=page("Forge Toolbelt", body), content_type="text/html")
 
 
-async def handle_tasks(request: web.Request) -> web.Response:
+async def handle_projects(request: web.Request) -> web.Response:
     state: ToolbeltState = request.app["state"]
     workspace_index = int(request.query.get("workspace", "0"))
     workspace = state.config.workspaces[workspace_index]
     try:
-        rows = await list_tasks(state.config, workspace)
-        content = render_task_rows(workspace_index, rows, include_subtask_link=True)
+        rows = await list_projects(state.config, workspace)
+        content = render_task_rows(workspace_index, rows, include_task_link=True)
     except Exception as exc:  # noqa: BLE001 - render toolbelt errors in UI.
         content = f'<p class="message danger">{html.escape(str(exc))}</p>'
     body = f"""<header>
   <h1>{html.escape(workspace.name)}</h1>
   {link("/", "Workspaces")}
 </header>
-<h2>Open Tasks</h2>
+<h2>Open Projects</h2>
 {content}"""
-    return web.Response(text=page("Forge Tasks", body), content_type="text/html")
+    return web.Response(text=page("Forge Projects", body), content_type="text/html")
 
 
-async def handle_subtasks(request: web.Request) -> web.Response:
+async def handle_project_tasks(request: web.Request) -> web.Response:
     state: ToolbeltState = request.app["state"]
     workspace_index = int(request.query.get("workspace", "0"))
-    task_id = request.query.get("task", "")
+    project_id = request.query.get("project", "")
     workspace = state.config.workspaces[workspace_index]
     try:
-        rows = await list_subtasks(state.config, workspace, task_id)
-        content = render_task_rows(workspace_index, rows, include_subtask_link=False)
+        rows = await list_project_tasks(state.config, workspace, project_id)
+        content = render_task_rows(workspace_index, rows, include_task_link=False)
     except Exception as exc:  # noqa: BLE001 - render toolbelt errors in UI.
         content = f'<p class="message danger">{html.escape(str(exc))}</p>'
     body = f"""<header>
-  <h1>{html.escape(task_id)} subtasks</h1>
-  {link(f"/tasks?workspace={workspace_index}", "Tasks")}
+  <h1>{html.escape(project_id)} tasks</h1>
+  {link(f"/projects?workspace={workspace_index}", "Projects")}
 </header>
-{task_actions(workspace_index, task_id)}
-<h2>Open Subtasks</h2>
+{task_actions(workspace_index, project_id)}
+<h2>Open Tasks</h2>
 {content}"""
-    return web.Response(text=page("Forge Subtasks", body), content_type="text/html")
+    return web.Response(text=page("Forge Tasks", body), content_type="text/html")
 
 
 async def handle_launch(request: web.Request) -> web.Response:
@@ -361,7 +358,7 @@ async def handle_launch(request: web.Request) -> web.Response:
         state.last_message = f"Launched {task_id} as {target} {command_kind}."
     except Exception as exc:  # noqa: BLE001 - render toolbelt errors in UI.
         state.last_message = f"Launch failed: {exc}"
-    raise web.HTTPFound(f"/tasks?workspace={workspace_index}")
+    raise web.HTTPFound(f"/projects?workspace={workspace_index}")
 
 
 async def start_site(app: web.Application, host: str, port: int) -> tuple[web.AppRunner, int]:
@@ -384,8 +381,8 @@ async def main(connection: iterm2.Connection) -> None:
     app = web.Application()
     app["state"] = state
     app.router.add_get("/", handle_index)
-    app.router.add_get("/tasks", handle_tasks)
-    app.router.add_get("/subtasks", handle_subtasks)
+    app.router.add_get("/projects", handle_projects)
+    app.router.add_get("/project-tasks", handle_project_tasks)
     app.router.add_post("/launch", handle_launch)
 
     _runner, port = await start_site(app, config.host, config.port)
