@@ -122,10 +122,10 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(child, `"id": "project1.task1"`) {
 			t.Fatalf("expected project1.task1 JSON, got:\n%s", child)
 		}
-		assertFile(t, filepath.Join(root, "project1", "project1.task1", "task.json"))
-		assertFile(t, filepath.Join(root, "project1", "project1.task1", "task.md"))
-		assertDir(t, filepath.Join(root, "project1", "project1.task1", "worktree"))
-		subtaskAgents := readFile(t, filepath.Join(root, "project1", "project1.task1", "AGENTS.md"))
+		assertFile(t, filepath.Join(root, "project1", "task1", "task.json"))
+		assertFile(t, filepath.Join(root, "project1", "task1", "task.md"))
+		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
+		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
 		if !strings.Contains(subtaskAgents, "workspace root AGENTS.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference workspace AGENTS.md, got:\n%s", subtaskAgents)
 		}
@@ -206,7 +206,7 @@ func TestStartResolvesNestedTaskID(t *testing.T) {
 		run(t, "start", "project1.task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
 
 		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "project1", "project1.task1")) + "\nnested\n"
+		want := realPath(t, filepath.Join(root, "project1", "task1")) + "\nnested\n"
 		if got != want {
 			t.Fatalf("expected nested command to run in subtask dir, got:\n%s", got)
 		}
@@ -527,18 +527,18 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 			t.Fatal("legacy task1 directory should be renamed")
 		}
 		assertDir(t, filepath.Join(root, "project1"))
-		assertDir(t, filepath.Join(root, "project1", "project1.task1"))
-		assertDir(t, filepath.Join(root, "project1", "project1.task1.1"))
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task2"))
-		assertDir(t, filepath.Join(root, "project1", "project1.task3"))
+		assertDir(t, filepath.Join(root, "project1", "task1"))
+		assertDir(t, filepath.Join(root, "project1", "task1.1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task2"))
+		assertDir(t, filepath.Join(root, "project1", "task3"))
 		assertDir(t, filepath.Join(root, archiveDir, "project2"))
-		assertDir(t, filepath.Join(root, archiveDir, "project2", "project2.task1"))
+		assertDir(t, filepath.Join(root, archiveDir, "project2", "task1"))
 		assertMissing(t, filepath.Join(root, "project1", "task.json"))
 		assertMissing(t, filepath.Join(root, "project1", "task.md"))
 		assertMissing(t, filepath.Join(root, "project1", "worktree"))
 		assertFile(t, filepath.Join(root, "project1", "project.json"))
 		assertFile(t, filepath.Join(root, "project1", "project.md"))
-		if pathExists(filepath.Join(root, "project1", "project1.task1", "project1.task1.1")) {
+		if pathExists(filepath.Join(root, "project1", "task1", "project1.task1.1")) {
 			t.Fatal("legacy grandchild should have been promoted to a direct project task")
 		}
 
@@ -558,52 +558,52 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		}
 
 		var child Task
-		if err := readJSON(filepath.Join(root, "project1", "project1.task1", "task.json"), &child); err != nil {
+		if err := readJSON(filepath.Join(root, "project1", "task1", "task.json"), &child); err != nil {
 			t.Fatal(err)
 		}
 		if child.ID != "project1.task1" || child.Type != "task" || child.Parent == nil || *child.Parent != "project1" {
 			t.Fatalf("expected promoted task JSON, got: %+v", child)
 		}
-		if got := child.Repos[0].WorktreePath; got != "project1/project1.task1/worktree/forge" {
+		if got := child.Repos[0].WorktreePath; got != "project1/task1/worktree/forge" {
 			t.Fatalf("expected task repo worktree path to update, got %q", got)
 		}
-		childAgents := readFile(t, filepath.Join(root, "project1", "project1.task1", "AGENTS.md"))
+		childAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
 		if !strings.Contains(childAgents, "This task belongs to a project.") || strings.Contains(childAgents, "This is a subtask.") {
 			t.Fatalf("expected migrated task AGENTS.md to use project/task wording, got:\n%s", childAgents)
 		}
 
 		var grandchild Task
-		if err := readJSON(filepath.Join(root, "project1", "project1.task1.1", "task.json"), &grandchild); err != nil {
+		if err := readJSON(filepath.Join(root, "project1", "task1.1", "task.json"), &grandchild); err != nil {
 			t.Fatal(err)
 		}
 		if grandchild.ID != "project1.task1.1" || grandchild.Type != "task" || grandchild.Parent == nil || *grandchild.Parent != "project1" {
 			t.Fatalf("expected promoted grandchild JSON, got: %+v", grandchild)
 		}
 		var archivedChild Task
-		if err := readJSON(filepath.Join(root, "project1", archiveDir, "project1.task2", "task.json"), &archivedChild); err != nil {
+		if err := readJSON(filepath.Join(root, "project1", archiveDir, "task2", "task.json"), &archivedChild); err != nil {
 			t.Fatal(err)
 		}
-		if got := archivedChild.Repos[0].WorktreePath; got != "project1/archive/project1.task2/worktree/forge" {
+		if got := archivedChild.Repos[0].WorktreePath; got != "project1/archive/task2/worktree/forge" {
 			t.Fatalf("expected archived task worktree path to update, got %q", got)
 		}
-		if got := archivedChild.Repos[1].BarePath; got != "project1/archive/project1.task2/worktree/archive-bare.git" {
+		if got := archivedChild.Repos[1].BarePath; got != "project1/archive/task2/worktree/archive-bare.git" {
 			t.Fatalf("expected archived task bare path to update, got %q", got)
 		}
 
 		var splitTask Task
-		if err := readJSON(filepath.Join(root, "project1", "project1.task3", "task.json"), &splitTask); err != nil {
+		if err := readJSON(filepath.Join(root, "project1", "task3", "task.json"), &splitTask); err != nil {
 			t.Fatal(err)
 		}
 		if splitTask.ID != "project1.task3" || splitTask.Type != "task" || splitTask.Parent == nil || *splitTask.Parent != "project1" {
 			t.Fatalf("expected split task JSON, got: %+v", splitTask)
 		}
-		if got := splitTask.Repos[0].WorktreePath; got != "project1/project1.task3/worktree/forge" {
+		if got := splitTask.Repos[0].WorktreePath; got != "project1/task3/worktree/forge" {
 			t.Fatalf("expected split task worktree path to update, got %q", got)
 		}
 		if got := splitTask.Repos[0].RepoPath; got != "repos/disksing/forge" {
 			t.Fatalf("expected split task repo path to preserve shared repo cache, got %q", got)
 		}
-		splitMD := readFile(t, filepath.Join(root, "project1", "project1.task3", "task.md"))
+		splitMD := readFile(t, filepath.Join(root, "project1", "task3", "task.md"))
 		if !strings.Contains(splitMD, "This task was created during project/task migration") || !strings.Contains(splitMD, "Legacy project") {
 			t.Fatalf("expected split task.md to keep legacy notes, got:\n%s", splitMD)
 		}
@@ -620,13 +620,13 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 		assertMissing(t, filepath.Join(root, archiveDir, "project2", "worktree"))
 
 		var archivedSplit Task
-		if err := readJSON(filepath.Join(root, archiveDir, "project2", "project2.task1", "task.json"), &archivedSplit); err != nil {
+		if err := readJSON(filepath.Join(root, archiveDir, "project2", "task1", "task.json"), &archivedSplit); err != nil {
 			t.Fatal(err)
 		}
-		if got := archivedSplit.Repos[0].WorktreePath; got != "archive/project2/project2.task1/worktree/forge" {
+		if got := archivedSplit.Repos[0].WorktreePath; got != "archive/project2/task1/worktree/forge" {
 			t.Fatalf("expected archived split task worktree path to update, got %q", got)
 		}
-		if got := archivedSplit.Repos[0].RepoPath; got != "archive/project2/project2.task1/worktree/forge" {
+		if got := archivedSplit.Repos[0].RepoPath; got != "archive/project2/task1/worktree/forge" {
 			t.Fatalf("expected archived split task repo path to update, got %q", got)
 		}
 
@@ -646,6 +646,89 @@ func TestMigrateProjectTasksPromotesLegacySubtasks(t *testing.T) {
 	})
 }
 
+func TestMigrateProjectTasksShortensExistingProjectTaskDirs(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Parent project")
+		run(t, "task", "create", "project1", "Open child")
+		run(t, "task", "create", "project1", "Archived child")
+		run(t, "task", "archive", "project1.task2")
+
+		openShort := filepath.Join(root, "project1", "task1")
+		openFull := filepath.Join(root, "project1", "project1.task1")
+		var openTask Task
+		if err := readJSON(filepath.Join(openShort, "task.json"), &openTask); err != nil {
+			t.Fatal(err)
+		}
+		openTask.Repos = []TaskRepo{{
+			Name:         "disksing/forge",
+			RepoPath:     "repos/disksing/forge",
+			WorktreePath: "project1/project1.task1/worktree/forge",
+			Branch:       "agent/project1.task1",
+			TargetBranch: "master",
+		}}
+		if err := writeJSON(filepath.Join(openShort, "task.json"), openTask); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(openShort, openFull); err != nil {
+			t.Fatal(err)
+		}
+
+		archivedShort := filepath.Join(root, "project1", archiveDir, "task2")
+		archivedFull := filepath.Join(root, "project1", archiveDir, "project1.task2")
+		var archivedTask Task
+		if err := readJSON(filepath.Join(archivedShort, "task.json"), &archivedTask); err != nil {
+			t.Fatal(err)
+		}
+		archivedTask.Repos = []TaskRepo{{
+			Name:         "disksing/archive-bare",
+			BarePath:     "project1/archive/project1.task2/worktree/archive-bare.git",
+			WorktreePath: "",
+			Branch:       "master",
+			TargetBranch: "master",
+		}}
+		if err := writeJSON(filepath.Join(archivedShort, "task.json"), archivedTask); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(archivedShort, archivedFull); err != nil {
+			t.Fatal(err)
+		}
+
+		migrated := run(t, "migrate", "project-tasks")
+		if !strings.Contains(migrated, "migrated 2 task directories") {
+			t.Fatalf("expected task directory migration summary, got:\n%s", migrated)
+		}
+
+		assertDir(t, openShort)
+		assertMissing(t, openFull)
+		assertDir(t, archivedShort)
+		assertMissing(t, archivedFull)
+
+		if err := readJSON(filepath.Join(openShort, "task.json"), &openTask); err != nil {
+			t.Fatal(err)
+		}
+		if got := openTask.Repos[0].WorktreePath; got != "project1/task1/worktree/forge" {
+			t.Fatalf("expected open task worktree path to update, got %q", got)
+		}
+		if err := readJSON(filepath.Join(archivedShort, "task.json"), &archivedTask); err != nil {
+			t.Fatal(err)
+		}
+		if got := archivedTask.Repos[0].BarePath; got != "project1/archive/task2/worktree/archive-bare.git" {
+			t.Fatalf("expected archived task bare path to update, got %q", got)
+		}
+
+		children := run(t, "task", "list", "project1", "--all")
+		if !strings.Contains(children, "project1.task1\tOpen child") || !strings.Contains(children, "project1.task2\tArchived child") {
+			t.Fatalf("expected migrated tasks to remain listable by id, got:\n%s", children)
+		}
+
+		again := run(t, "migrate", "project-tasks")
+		if !strings.Contains(again, "no legacy task directories found") {
+			t.Fatalf("expected idempotent no-op on second migration, got:\n%s", again)
+		}
+	})
+}
+
 func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -653,20 +736,20 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		run(t, "task", "create", "project1", "Code task")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "project1.task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
-		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "project1.task1")
-		if !strings.Contains(archived, "project1/archive/project1.task1") {
+		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
 		var archivedTask Task
-		if err := readJSON(filepath.Join(root, "project1", archiveDir, "project1.task1", "task.json"), &archivedTask); err != nil {
+		if err := readJSON(filepath.Join(root, "project1", archiveDir, "task1", "task.json"), &archivedTask); err != nil {
 			t.Fatal(err)
 		}
-		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/project1.task1/worktree/forge" {
+		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/task1/worktree/forge" {
 			t.Fatalf("expected archived task worktree path to update, got %q", got)
 		}
 	})
@@ -679,14 +762,14 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 		run(t, "task", "create", "project1", "Code task")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "project1.task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
-		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		out, err := runErr(t, "task", "archive", "project1.task1")
 		if err == nil {
@@ -695,8 +778,8 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "feature work") {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
-		assertDir(t, filepath.Join(root, "project1", "project1.task1"))
-		if pathExists(filepath.Join(root, "project1", archiveDir, "project1.task1")) {
+		assertDir(t, filepath.Join(root, "project1", "task1"))
+		if pathExists(filepath.Join(root, "project1", archiveDir, "task1")) {
 			t.Fatal("project1.task1 should not have been archived")
 		}
 	})
@@ -708,13 +791,13 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 		run(t, "project", "create", "Archive without a checkout")
 		run(t, "task", "create", "project1", "Code task")
 		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
-		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "project1.task1")
-		if !strings.Contains(archived, "project1/archive/project1.task1") {
+		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
 	})
 }
 
@@ -725,14 +808,14 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 		run(t, "task", "create", "project1", "Child task")
 
 		archived := run(t, "task", "archive", "project1.task1")
-		if !strings.Contains(archived, "project1/archive/project1.task1") {
+		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected parent-local archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
 		if pathExists(filepath.Join(root, archiveDir, "project1.task1")) {
 			t.Fatal("subtask should not have moved to the workspace archive")
 		}
-		if pathExists(filepath.Join(root, "project1", "project1.task1")) {
+		if pathExists(filepath.Join(root, "project1", "task1")) {
 			t.Fatal("subtask should have moved out of the parent task's open subtasks")
 		}
 
@@ -869,16 +952,18 @@ func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 		}
 		for _, id := range []string{"project1.task1", "project1.task2", "project1.task3"} {
 			run(t, "task", "archive", id)
-			assertDir(t, filepath.Join(root, "project1", archiveDir, id))
 		}
-		assertDir(t, filepath.Join(root, "project1", "project1.task4"))
-		assertDir(t, filepath.Join(root, "project1", "project1.task5"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task2"))
+		assertDir(t, filepath.Join(root, "project1", archiveDir, "task3"))
+		assertDir(t, filepath.Join(root, "project1", "task4"))
+		assertDir(t, filepath.Join(root, "project1", "task5"))
 
 		next := run(t, "task", "create", "project1", "Next child")
 		if !strings.Contains(next, `"id": "project1.task6"`) {
 			t.Fatalf("expected archived and open subtask ids not to be reused, got:\n%s", next)
 		}
-		assertDir(t, filepath.Join(root, "project1", "project1.task6"))
+		assertDir(t, filepath.Join(root, "project1", "task6"))
 	})
 }
 
@@ -889,14 +974,14 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		run(t, "task", "create", "project1", "Child task")
 		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
-		worktreePath := filepath.Join(root, "project1", "project1.task1", "worktree", "forge")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 		if err := os.WriteFile(filepath.Join(worktreePath, "feature.txt"), []byte("feature\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
-		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
+		run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		out, err := runErr(t, "task", "archive", "project1.task1")
 		if err == nil {
@@ -905,8 +990,8 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "child feature work") {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
-		assertDir(t, filepath.Join(root, "project1", "project1.task1"))
-		if pathExists(filepath.Join(root, "project1", archiveDir, "project1.task1")) {
+		assertDir(t, filepath.Join(root, "project1", "task1"))
+		if pathExists(filepath.Join(root, "project1", archiveDir, "task1")) {
 			t.Fatal("unmerged subtask should not have been archived")
 		}
 	})
@@ -990,20 +1075,20 @@ func TestTaskRepoLifecycle(t *testing.T) {
 		if !strings.Contains(added, `"repoPath": "repos/disksing/forge"`) {
 			t.Fatalf("expected task JSON to include repo path, got:\n%s", added)
 		}
-		if !strings.Contains(added, `"worktreePath": "project1/project1.task1/worktree/forge"`) {
+		if !strings.Contains(added, `"worktreePath": "project1/task1/worktree/forge"`) {
 			t.Fatalf("expected default worktree path, got:\n%s", added)
 		}
 
 		listed := run(t, "task", "repo", "list", "project1.task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\tproject1/project1.task1/worktree/forge\tagent/project1.task1\tmaster\tmaster") {
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge\tproject1/task1/worktree/forge\tagent/project1.task1\tmaster\tmaster") {
 			t.Fatalf("expected repo list to include metadata, got:\n%s", listed)
 		}
 
-		updated := run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/project1.task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
+		updated := run(t, "task", "repo", "add", "project1.task1", "disksing/forge", "--worktree", "project1/task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
 		if strings.Count(updated, `"name": "disksing/forge"`) != 1 {
 			t.Fatalf("expected repo add to update existing entry, got:\n%s", updated)
 		}
-		if !strings.Contains(updated, `"worktreePath": "project1/project1.task1/worktree/custom"`) {
+		if !strings.Contains(updated, `"worktreePath": "project1/task1/worktree/custom"`) {
 			t.Fatalf("expected updated worktree path, got:\n%s", updated)
 		}
 		if !strings.Contains(updated, `"branch": "agent/updated"`) {
@@ -1032,7 +1117,7 @@ func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
 			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", added)
 		}
 		listed := run(t, "task", "repo", "list", "project1.task1")
-		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\tproject1/project1.task1/worktree/forge\tagent/project1.task1\tmaster") {
+		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge.git\tproject1/task1/worktree/forge\tagent/project1.task1\tmaster") {
 			t.Fatalf("expected legacy bare repo metadata, got:\n%s", listed)
 		}
 	})
@@ -1089,8 +1174,8 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 
 		rootAgents := filepath.Join(root, "AGENTS.md")
 		taskAgents := filepath.Join(root, "project1", "AGENTS.md")
-		subtaskAgents := filepath.Join(root, "project1", "project1.task1", "AGENTS.md")
-		archivedAgents := filepath.Join(root, "project1", archiveDir, "project1.task2", "AGENTS.md")
+		subtaskAgents := filepath.Join(root, "project1", "task1", "AGENTS.md")
+		archivedAgents := filepath.Join(root, "project1", archiveDir, "task2", "AGENTS.md")
 
 		writeStaleManagedBlock(t, rootAgents, "This directory is an AgentWorkspace managed by forge.", "old workspace prompt")
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
@@ -1099,18 +1184,18 @@ func TestInitRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.md", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
-		if err := os.Chdir(filepath.Join(root, "project1", "project1.task1")); err != nil {
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
 			t.Fatal(err)
 		}
 		run(t, "init")
 
-		if pathExists(filepath.Join(root, "project1", "project1.task1", configFile)) {
+		if pathExists(filepath.Join(root, "project1", "task1", configFile)) {
 			t.Fatal("init from subtask should not create nested forge.json")
 		}
-		if pathExists(filepath.Join(root, "project1", "project1.task1", reposDir)) {
+		if pathExists(filepath.Join(root, "project1", "task1", reposDir)) {
 			t.Fatal("init from subtask should not create nested repos directory")
 		}
-		if pathExists(filepath.Join(root, "project1", "project1.task1", archiveDir)) {
+		if pathExists(filepath.Join(root, "project1", "task1", archiveDir)) {
 			t.Fatal("init from subtask should not create nested archive directory")
 		}
 

@@ -27,6 +27,10 @@ type projectFileMigrationResult struct {
 	SplitTasks int
 }
 
+type taskDirMigrationResult struct {
+	Tasks int
+}
+
 func migrateProjectTasks() error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
@@ -41,11 +45,15 @@ func migrateProjectTasks() error {
 		if err != nil {
 			return err
 		}
+		dirResult, err := migrateProjectTaskDirs(root)
+		if err != nil {
+			return err
+		}
 		updated, err := normalizeMigratedWorktreeReferences(root)
 		if err != nil {
 			return err
 		}
-		if updated == 0 && fileResult.Projects == 0 && fileResult.SplitTasks == 0 {
+		if updated == 0 && fileResult.Projects == 0 && fileResult.SplitTasks == 0 && dirResult.Tasks == 0 {
 			fmt.Println("no legacy task directories found")
 			return nil
 		}
@@ -55,6 +63,9 @@ func migrateProjectTasks() error {
 				fmt.Printf(" and created %d task migration records", fileResult.SplitTasks)
 			}
 			fmt.Println()
+		}
+		if dirResult.Tasks > 0 {
+			fmt.Printf("migrated %d task directories\n", dirResult.Tasks)
 		}
 		fmt.Printf("updated %d migrated worktree references\n", updated)
 		return nil
@@ -81,6 +92,10 @@ func migrateProjectTasks() error {
 	if err != nil {
 		return err
 	}
+	dirResult, err := migrateProjectTaskDirs(root)
+	if err != nil {
+		return err
+	}
 	updated, err := normalizeMigratedWorktreeReferences(root)
 	if err != nil {
 		return err
@@ -92,6 +107,9 @@ func migrateProjectTasks() error {
 			fmt.Printf(" and created %d task migration records", fileResult.SplitTasks)
 		}
 		fmt.Println()
+	}
+	if dirResult.Tasks > 0 {
+		fmt.Printf("migrated %d task directories\n", dirResult.Tasks)
 	}
 	if updated > 0 {
 		fmt.Printf("updated %d migrated worktree references\n", updated)
@@ -163,7 +181,7 @@ func migrateLegacyProject(root, staging, oldProjectPath string) (int, error) {
 		if resource.Archived {
 			dstDir = filepath.Join(newProjectPath, archiveDir)
 		}
-		dst := filepath.Join(dstDir, resource.NewID)
+		dst := filepath.Join(dstDir, taskDirectoryName(resource.NewID))
 		if pathExists(dst) {
 			return 0, fmt.Errorf("migration destination already exists: %s", relPath(root, dst))
 		}
@@ -213,9 +231,9 @@ func collectLegacyProjectTasks(root, oldProjectPath, oldProjectID, newProjectID,
 		}
 		newID := legacyTaskIDToProjectTaskID(task.ID, oldProjectID, newProjectID)
 		archived := isArchivedPath(root, path)
-		newPath := filepath.Join(newProjectPath, newID)
+		newPath := filepath.Join(newProjectPath, taskDirectoryName(newID))
 		if archived {
-			newPath = filepath.Join(newProjectPath, archiveDir, newID)
+			newPath = filepath.Join(newProjectPath, archiveDir, taskDirectoryName(newID))
 		}
 		resources = append(resources, migrationResource{
 			OldID:     task.ID,
@@ -283,6 +301,71 @@ func migrateProjectFiles(root string) (projectFileMigrationResult, error) {
 	return result, nil
 }
 
+func migrateProjectTaskDirs(root string) (taskDirMigrationResult, error) {
+	var result taskDirMigrationResult
+	projectPaths, err := projectDirs(root)
+	if err != nil {
+		return result, err
+	}
+	for _, projectPath := range projectPaths {
+		projectID := filepath.Base(projectPath)
+		for _, dir := range []string{projectPath, filepath.Join(projectPath, archiveDir)} {
+			entries, err := readTaskEntriesInDir(dir, projectTaskName(projectID))
+			if err != nil {
+				if os.IsNotExist(err) {
+					continue
+				}
+				return result, err
+			}
+			for _, entry := range entries {
+				nextName := taskDirectoryName(entry.Task.ID)
+				if filepath.Base(entry.Path) == nextName {
+					continue
+				}
+				nextPath := filepath.Join(filepath.Dir(entry.Path), nextName)
+				if pathExists(nextPath) {
+					return result, fmt.Errorf("migration destination already exists: %s", relPath(root, nextPath))
+				}
+				oldRel := relPath(root, entry.Path)
+				newRel := relPath(root, nextPath)
+				if err := os.Rename(entry.Path, nextPath); err != nil {
+					return result, err
+				}
+				if err := rewriteResourcePathReferences(root, nextPath, entry.Task, oldRel, newRel); err != nil {
+					return result, err
+				}
+				result.Tasks++
+			}
+		}
+	}
+	return result, nil
+}
+
+func rewriteResourcePathReferences(root, path string, task Task, oldRel, newRel string) error {
+	changed := false
+	for i := range task.Repos {
+		before := task.Repos[i]
+		task.Repos[i].WorktreePath = migratePathReference(root, task.Repos[i].WorktreePath, oldRel, newRel)
+		task.Repos[i].RepoPath = migratePathReference(root, task.Repos[i].RepoPath, oldRel, newRel)
+		task.Repos[i].BarePath = migratePathReference(root, task.Repos[i].BarePath, oldRel, newRel)
+		if task.Repos[i] != before {
+			changed = true
+		}
+	}
+	if changed {
+		task.UpdatedAt = time.Now().Format(time.RFC3339)
+		if err := writeResourceMetadata(path, task); err != nil {
+			return err
+		}
+	}
+	for _, repo := range task.Repos {
+		if err := repairRepoWorktree(root, repo); err != nil {
+			return fmt.Errorf("repair migrated worktree for %s repo %q: %w", task.ID, repo.Name, err)
+		}
+	}
+	return nil
+}
+
 func projectDirs(root string) ([]string, error) {
 	var paths []string
 	for _, dir := range []string{root, filepath.Join(root, archiveDir)} {
@@ -336,7 +419,7 @@ func migrateOneProjectFile(root, projectPath string) (bool, bool, error) {
 			return false, false, err
 		}
 		splitID = id
-		taskPath := filepath.Join(projectPath, id)
+		taskPath := filepath.Join(projectPath, taskDirectoryName(id))
 		parent := projectID
 		description := fmt.Sprintf("Migrated legacy work from %s", projectID)
 		task := newTask(id, "task", &parent, description, defaultWorkflowName)
@@ -652,6 +735,8 @@ func legacyRelCandidatesForProjectResource(id string) []string {
 		if !ok || !topProjectName.MatchString(projectID) || suffix == "" {
 			return nil
 		}
+		add(filepath.ToSlash(filepath.Join(projectID, id)))
+		add(filepath.ToSlash(filepath.Join(projectID, archiveDir, id)))
 		legacyProjectID := "task" + strings.TrimPrefix(projectID, "project")
 		parts := strings.Split(suffix, ".")
 		relParts := []string{legacyProjectID}

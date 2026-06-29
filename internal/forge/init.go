@@ -149,7 +149,7 @@ const workspaceAgentsPrompt = `# AgentWorkspace
 This directory is an AgentWorkspace managed by forge.
 
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` directories.
-- Project tasks live directly under their project directories as ` + "`projectN.taskM/`" + ` directories.
+- Project tasks live directly under their project directories as short ` + "`taskM/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
 - Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated project/task ` + "`AGENTS.md`" + ` files.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
