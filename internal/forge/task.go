@@ -611,7 +611,7 @@ func isProject(task Task) bool {
 }
 
 func isProjectTask(task Task) bool {
-	return task.Type == "task" && task.Parent != nil && *task.Parent != ""
+	return (task.Type == "task" || task.Type == "subtask") && task.Parent != nil && *task.Parent != ""
 }
 
 func taskSortKey(id string) string {

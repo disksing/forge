@@ -654,6 +654,31 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 	})
 }
 
+func TestTaskArchiveLegacySubtaskMovesToParentArchive(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		workflowContent := builtinWorkflows[defaultWorkflowName]
+		legacyParent := newTask("task1", "task", nil, "Legacy parent", defaultWorkflowName)
+		if err := createTaskFiles(filepath.Join(root, "task1"), legacyParent, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+		parentID := "task1"
+		legacyChild := newTask("task1.1", "subtask", &parentID, "Legacy child", defaultWorkflowName)
+		if err := createTaskFiles(filepath.Join(root, "task1", "task1.1"), legacyChild, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+
+		archived := run(t, "task", "archive", "task1.1")
+		if !strings.Contains(archived, "task1/archive/task1.1") {
+			t.Fatalf("expected parent-local archive path, got:\n%s", archived)
+		}
+		assertDir(t, filepath.Join(root, "task1", archiveDir, "task1.1"))
+		if pathExists(filepath.Join(root, "task1", "task1.1")) {
+			t.Fatal("legacy subtask should have moved out of the parent task's open children")
+		}
+	})
+}
+
 func TestProjectListTreeIncludesOpenTasks(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
