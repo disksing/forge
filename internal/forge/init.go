@@ -148,13 +148,14 @@ const workspaceAgentsPrompt = `# AgentWorkspace
 
 This directory is an AgentWorkspace managed by forge.
 
-- Open tasks live directly under this workspace as ` + "`taskN/`" + ` directories.
-- Archived tasks live under ` + "`archive/`" + `.
-- Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated task ` + "`AGENTS.md`" + ` files.
+- Open projects live directly under this workspace as ` + "`projectN/`" + ` directories.
+- Project tasks live directly under their project directories as ` + "`projectN.taskM/`" + ` directories.
+- Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
+- Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated project/task ` + "`AGENTS.md`" + ` files.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
-- Each task owns its own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
+- Each project and task owns its own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the task they are currently handling and its worktrees.
 - ` + "`task.json`" + ` records structured facts only, not progress notes.
@@ -174,25 +175,32 @@ Use forge for deterministic workspace operations:
 forge init [--reset-workflows]
 forge repo add [--bare] <name> <url>
 forge repo list
-forge start <task-id> [-- <agent command...>]
-forge task create [--workflow=<name>] <description>
-forge task list [--all] [--tree]
+forge start <resource-id> [-- <agent command...>]
+forge project create [--workflow=<name>] <description>
+forge project list [--all] [--tree]
+forge project show <project-id>
+forge project archive <project-id>
+forge project repo add <project-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+forge project repo list <project-id>
+forge project repo remove <project-id> <repo-name>
+forge task create <project-id> <description>
+forge task list <project-id> [--all]
 forge task show <id>
 forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list <task-id>
 forge task repo remove <task-id> <repo-name>
-forge subtask create <task-id> <description>
-forge subtask list <task-id>
+forge migrate project-tasks
 ` + "```" + `
 
 Notes:
 
 - ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + ` and does not overwrite existing workflow files unless ` + "`--reset-workflows`" + ` is used.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
-- ` + "`forge start <task-id> [-- <agent command...>]`" + ` runs an agent command in the task directory. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
-- ` + "`forge task create`" + ` creates a new open task directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the task ` + "`AGENTS.md`" + `.
-- ` + "`forge task archive`" + ` moves an open top-level task into workspace ` + "`archive/`" + `, or an open subtask into its parent task's ` + "`archive/`" + `.
+- ` + "`forge start <resource-id> [-- <agent command...>]`" + ` runs an agent command in the project or task directory. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
+- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the project ` + "`AGENTS.md`" + `.
+- ` + "`forge task create`" + ` creates a new open task directory under a project.
+- ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `.
-- ` + "`forge subtask create`" + ` creates a direct child task directory under the parent task.
+- ` + "`forge migrate project-tasks`" + ` rewrites an old task/subtask workspace into the two-level project/task layout.
 `

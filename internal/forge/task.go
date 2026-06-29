@@ -13,7 +13,8 @@ import (
 	"time"
 )
 
-var topTaskName = regexp.MustCompile(`^task([0-9]+)$`)
+var topProjectName = regexp.MustCompile(`^project([0-9]+)$`)
+var legacyTopTaskName = regexp.MustCompile(`^task([0-9]+)$`)
 var workflowName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 const (
@@ -33,20 +34,20 @@ var builtinWorkflows = map[string]string{
 4. Run relevant tests and checks, then record important results.
 5. Summarize the changes, verification results, remaining risks, and recommended next steps.
 `,
-	projectWorkflowName: `This is a project-management task. Keep this task focused on clarifying requirements, splitting work into subtasks, coordinating implementation, reviewing, merging, and closing out. Put implementation work in direct subtasks, with each sub agent working in its own subtask-owned worktree/branch.
+	projectWorkflowName: `This is a project-management project. Keep this project focused on clarifying requirements, splitting work into tasks, coordinating implementation, reviewing, merging, and closing out. Put implementation work in direct tasks, with each agent working in its own task-owned worktree/branch.
 
 ### Steps
 
 1. When a new request arrives, discuss it with the user and clarify the task boundary, acceptance criteria, and risks.
-2. After the requirement is clear, create a new subtask under the current task and write the requirement, acceptance criteria, and necessary context into that subtask's task.md.
-3. Start a sub agent for the subtask. The sub agent should work inside that subtask directory, create an independent worktree/branch, then implement, test, and commit according to the subtask requirements.
-4. After the sub agent finishes, review from the parent task: inspect the diff, confirm requirement coverage, and run necessary tests.
-5. After review and tests pass, merge the subtask branch into the target branch.
-6. Complete the confirmed closeout steps and archive the subtask.
+2. After the requirement is clear, create a new task under the current project and write the requirement, acceptance criteria, and necessary context into that task's task.md.
+3. Start an agent for the task. The agent should work inside that task directory, create an independent worktree/branch, then implement, test, and commit according to the task requirements.
+4. After the agent finishes, review from the project: inspect the diff, confirm requirement coverage, and run necessary tests.
+5. After review and tests pass, merge the task branch into the target branch.
+6. Complete the confirmed closeout steps and archive the task.
 
 ### Pending Decisions
 
-- Should any additional closeout steps run after a subtask is complete, such as updating the local environment, rerunning integration tests, or pushing to the remote?
+- Should any additional closeout steps run after a task is complete, such as updating the local environment, rerunning integration tests, or pushing to the remote?
 `,
 }
 
@@ -60,7 +61,7 @@ type taskListEntry struct {
 	Path string
 }
 
-func taskCreate(description, workflow string, allowBuiltinFallback bool) error {
+func projectCreate(description, workflow string, allowBuiltinFallback bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -74,19 +75,19 @@ func taskCreate(description, workflow string, allowBuiltinFallback bool) error {
 		return err
 	}
 
-	id, err := nextTaskID(root)
+	id, err := nextProjectID(root)
 	if err != nil {
 		return err
 	}
 	taskPath := filepath.Join(root, id)
-	task := newTask(id, nil, description, workflow)
+	task := newTask(id, "project", nil, description, workflow)
 	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
 }
 
-func taskList(options taskListOptions) error {
+func projectList(options taskListOptions) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -95,12 +96,12 @@ func taskList(options taskListOptions) error {
 	if options.IncludeArchived {
 		dirs = append(dirs, filepath.Join(root, archiveDir))
 	}
-	entries, err := readTaskEntriesInDirs(dirs, topTaskName)
+	entries, err := readTaskEntriesInDirs(dirs, topProjectName)
 	if err != nil {
 		return err
 	}
 	if options.Tree {
-		return printTaskTree(entries, options.IncludeArchived)
+		return printProjectTree(entries, options.IncludeArchived)
 	}
 	for _, entry := range entries {
 		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
@@ -156,10 +157,10 @@ func taskArchive(id string) error {
 }
 
 func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
-	if topTaskName.MatchString(task.ID) {
+	if isProject(task) {
 		return filepath.Join(root, archiveDir, task.ID), nil
 	}
-	if task.Type == "subtask" && task.Parent != nil && *task.Parent != "" {
+	if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
 		parentPath := filepath.Dir(taskPath)
 		return filepath.Join(parentPath, archiveDir, task.ID), nil
 	}
@@ -204,7 +205,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func subtaskCreate(parentID, description string) error {
+func projectTaskCreate(parentID, description string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -220,9 +221,16 @@ func subtaskCreate(parentID, description string) error {
 		return err
 	}
 	if isArchivedPath(root, parentPath) {
-		return fmt.Errorf("cannot create subtask under archived task: %s", parentID)
+		return fmt.Errorf("cannot create task under archived project: %s", parentID)
 	}
-	id, err := nextSubtaskID(parentPath, parentID)
+	var parent Task
+	if err := readJSON(filepath.Join(parentPath, "task.json"), &parent); err != nil {
+		return err
+	}
+	if !isProject(parent) {
+		return fmt.Errorf("cannot create task under non-project resource: %s", parentID)
+	}
+	id, err := nextProjectTaskID(parentPath, parentID)
 	if err != nil {
 		return err
 	}
@@ -231,14 +239,14 @@ func subtaskCreate(parentID, description string) error {
 	if err != nil {
 		return err
 	}
-	task := newTask(id, &parentID, description, defaultWorkflowName)
+	task := newTask(id, "task", &parentID, description, defaultWorkflowName)
 	if err := createTaskFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
 }
 
-func subtaskList(parentID string, includeArchived bool) error {
+func projectTaskList(parentID string, includeArchived bool) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -248,7 +256,7 @@ func subtaskList(parentID string, includeArchived bool) error {
 	if err != nil {
 		return err
 	}
-	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
+	pattern := projectTaskName(parentID)
 	dirs := []string{parentPath}
 	if includeArchived {
 		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
@@ -263,12 +271,8 @@ func subtaskList(parentID string, includeArchived bool) error {
 	return nil
 }
 
-func newTask(id string, parent *string, description string, workflow string) Task {
+func newTask(id string, taskType string, parent *string, description string, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
-	taskType := "task"
-	if parent != nil {
-		taskType = "subtask"
-	}
 	return Task{
 		ID:          id,
 		Type:        taskType,
@@ -330,7 +334,7 @@ func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) 
 	return "", fmt.Errorf("workflow not found: %s", filepath.ToSlash(filepath.Join(workflowDir, name+".md")))
 }
 
-func nextTaskID(root string) (string, error) {
+func nextProjectID(root string) (string, error) {
 	maxID := 0
 	for _, dir := range []string{root, filepath.Join(root, archiveDir)} {
 		entries, err := os.ReadDir(dir)
@@ -344,7 +348,10 @@ func nextTaskID(root string) (string, error) {
 			if !entry.IsDir() {
 				continue
 			}
-			match := topTaskName.FindStringSubmatch(entry.Name())
+			match := topProjectName.FindStringSubmatch(entry.Name())
+			if match == nil {
+				match = legacyTopTaskName.FindStringSubmatch(entry.Name())
+			}
 			if match == nil {
 				continue
 			}
@@ -354,11 +361,11 @@ func nextTaskID(root string) (string, error) {
 			}
 		}
 	}
-	return fmt.Sprintf("task%d", maxID+1), nil
+	return fmt.Sprintf("project%d", maxID+1), nil
 }
 
-func nextSubtaskID(parentPath, parentID string) (string, error) {
-	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
+func nextProjectTaskID(parentPath, parentID string) (string, error) {
+	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.task([0-9]+)$`)
 	maxID := 0
 	for _, dir := range []string{parentPath, filepath.Join(parentPath, archiveDir)} {
 		entries, err := os.ReadDir(dir)
@@ -382,7 +389,7 @@ func nextSubtaskID(parentPath, parentID string) (string, error) {
 			}
 		}
 	}
-	return fmt.Sprintf("%s.%d", parentID, maxID+1), nil
+	return fmt.Sprintf("%s.task%d", parentID, maxID+1), nil
 }
 
 func readTasksInDir(dir string, pattern *regexp.Regexp) ([]Task, error) {
@@ -450,18 +457,18 @@ func readTaskEntriesInDirs(dirs []string, pattern *regexp.Regexp) ([]taskListEnt
 	return tasks, nil
 }
 
-func printTaskTree(entries []taskListEntry, includeArchived bool) error {
+func printProjectTree(entries []taskListEntry, includeArchived bool) error {
 	for _, entry := range entries {
 		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
-		if err := printTaskTreeChildren(entry.Path, entry.Task.ID, includeArchived, ""); err != nil {
+		if err := printProjectTasks(entry.Path, entry.Task.ID, includeArchived); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func printTaskTreeChildren(parentPath, parentID string, includeArchived bool, prefix string) error {
-	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(parentID) + `\.([0-9]+)$`)
+func printProjectTasks(parentPath, parentID string, includeArchived bool) error {
+	pattern := projectTaskName(parentID)
 	dirs := []string{parentPath}
 	if includeArchived {
 		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
@@ -471,10 +478,7 @@ func printTaskTreeChildren(parentPath, parentID string, includeArchived bool, pr
 		return err
 	}
 	for _, child := range children {
-		fmt.Printf("%s- %s\t%s\n", prefix, child.Task.ID, child.Task.Title)
-		if err := printTaskTreeChildren(child.Path, child.Task.ID, includeArchived, prefix+"  "); err != nil {
-			return err
-		}
+		fmt.Printf("- %s\t%s\n", child.Task.ID, child.Task.Title)
 	}
 	return nil
 }
@@ -593,8 +597,25 @@ func taskAgentsBlock(task Task, workflowContent string) string {
 	return forgePromptStart + "\n" + taskAgentsPrompt(task, workflowContent) + "\n" + forgePromptEnd
 }
 
+func projectTaskName(projectID string) *regexp.Regexp {
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(projectID) + `\.task([0-9]+(?:\.[0-9]+)*)$`)
+}
+
+func looksLikeProjectID(id string) bool {
+	id = cleanID(id)
+	return topProjectName.MatchString(id) || legacyTopTaskName.MatchString(id)
+}
+
+func isProject(task Task) bool {
+	return task.Type == "project" || (task.Parent == nil && (topProjectName.MatchString(task.ID) || legacyTopTaskName.MatchString(task.ID)))
+}
+
+func isProjectTask(task Task) bool {
+	return task.Type == "task" && task.Parent != nil && *task.Parent != ""
+}
+
 func taskSortKey(id string) string {
-	parts := strings.Split(strings.TrimPrefix(id, "task"), ".")
+	parts := regexp.MustCompile(`[0-9]+`).FindAllString(id, -1)
 	var b strings.Builder
 	for _, part := range parts {
 		n, err := strconv.Atoi(part)
@@ -630,6 +651,10 @@ func defaultTaskMD(task Task) string {
 }
 
 func defaultWorkMD(task Task) string {
+	label := "Task"
+	if isProject(task) {
+		label = "Project"
+	}
 	return fmt.Sprintf(`# Work
 
 ## Current Step
@@ -638,7 +663,7 @@ No work has started yet.
 
 ## Current State
 
-Task %s has been created. No blockers are known.
+%s %s has been created. No blockers are known.
 
 ## Next Step
 
@@ -650,7 +675,7 @@ Task %s has been created. No blockers are known.
 ## Recovery Rule
 
 Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.md.
-`, task.ID)
+`, label, task.ID)
 }
 
 func defaultLogMD() string {
@@ -664,23 +689,32 @@ func defaultLogMD() string {
 
 func taskAgentsPrompt(task Task, workflowContent string) string {
 	extra := ""
-	if task.Parent != nil {
+	title := "Task Agent Instructions"
+	scope := "single AgentWorkspace task directory"
+	boundary := "Treat this directory as the current task boundary."
+	repoGuidance := "For code changes, create Git worktrees under worktree/."
+	if isProject(task) {
+		title = "Project Agent Instructions"
+		scope = "single AgentWorkspace project directory"
+		boundary = "Treat this directory as the current project boundary."
+		repoGuidance = "For code changes in this project, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
+	} else if task.Parent != nil {
 		extra = `
-- This is a subtask. Read the parent task directory's task.json, task.md, work.md, and log.md when you need broader context.
-- Parent task files are reference context; keep your edits scoped to this subtask directory and its worktrees unless the user explicitly asks otherwise.
+- This task belongs to a project. Read the parent project directory's task.json, task.md, work.md, and log.md when you need broader context.
+- Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
 `
 	}
-	return fmt.Sprintf(`# Task Agent Instructions
+	return fmt.Sprintf(`# %s
 
-You are working inside a single AgentWorkspace task directory.
+You are working inside a %s.
 
 - For the overall forge workflow and CLI usage, read the workspace root AGENTS.md file.
 - Read task.json, task.md, work.md, and log.md before acting.
-- Treat this directory as the current task boundary.
+- %s
 - You may read other task directories for reference.
 - Only update files inside this task directory and its worktrees.
 - Treat repositories under ../repos/ as shared source caches; make code changes in task worktrees.
-- If code changes are needed, create Git worktrees under worktree/.
+- %s
 - If the task involves a new repository, update this task's task.json.
 - Keep task.json focused on structured facts.
 - Use task.md for task background context.
@@ -694,5 +728,5 @@ You are working inside a single AgentWorkspace task directory.
 %s
 ## Workflow
 
-%s`, extra, strings.TrimRight(workflowContent, " \t\r\n"))
+%s`, title, scope, boundary, repoGuidance, extra, strings.TrimRight(workflowContent, " \t\r\n"))
 }
