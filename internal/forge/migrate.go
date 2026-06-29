@@ -246,7 +246,9 @@ func repairRepoWorktree(root string, repo TaskRepo) error {
 	if !filepath.IsAbs(worktreePath) {
 		worktreePath = filepath.Join(root, worktreePath)
 	}
-	if !pathExists(filepath.Join(worktreePath, ".git")) {
+	gitPath := filepath.Join(worktreePath, ".git")
+	info, err := os.Stat(gitPath)
+	if err != nil || info.IsDir() {
 		return nil
 	}
 	storage := taskRepoStoragePath(repo)
