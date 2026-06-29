@@ -156,7 +156,35 @@ func taskArchive(id string) error {
 	if err := os.Rename(src, dst); err != nil {
 		return err
 	}
+	if err := rewriteArchivedTaskReferences(root, dst, task, relPath(root, src), relPath(root, dst)); err != nil {
+		return err
+	}
 	fmt.Printf("%s\n", relPath(root, dst))
+	return nil
+}
+
+func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, newRel string) error {
+	changed := false
+	for i := range task.Repos {
+		before := task.Repos[i]
+		task.Repos[i].WorktreePath = migratePathReference(root, task.Repos[i].WorktreePath, oldRel, newRel)
+		task.Repos[i].RepoPath = migratePathReference(root, task.Repos[i].RepoPath, oldRel, newRel)
+		task.Repos[i].BarePath = migratePathReference(root, task.Repos[i].BarePath, oldRel, newRel)
+		if task.Repos[i] != before {
+			changed = true
+		}
+	}
+	if changed {
+		task.UpdatedAt = time.Now().Format(time.RFC3339)
+		if err := writeResourceMetadata(taskPath, task); err != nil {
+			return err
+		}
+	}
+	for _, repo := range task.Repos {
+		if err := repairRepoWorktree(root, repo); err != nil {
+			return fmt.Errorf("repair archived worktree for %s repo %q: %w", task.ID, repo.Name, err)
+		}
+	}
 	return nil
 }
 

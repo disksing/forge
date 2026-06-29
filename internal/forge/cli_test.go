@@ -662,6 +662,13 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", archiveDir, "project1.task1"))
+		var archivedTask Task
+		if err := readJSON(filepath.Join(root, "project1", archiveDir, "project1.task1", "task.json"), &archivedTask); err != nil {
+			t.Fatal(err)
+		}
+		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/project1.task1/worktree/forge" {
+			t.Fatalf("expected archived task worktree path to update, got %q", got)
+		}
 	})
 }
 
