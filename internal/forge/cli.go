@@ -83,7 +83,7 @@ func runProject(args []string) error {
 		}
 		return taskArchive(args[1])
 	case "repo":
-		return runProjectRepo(args[1:])
+		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> <task-id> ...")
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
@@ -136,28 +136,6 @@ func runTask(args []string) error {
 		return runTaskRepo(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
-	}
-}
-
-func runProjectRepo(args []string) error {
-	if len(args) == 0 {
-		return errors.New("project repo requires a subcommand")
-	}
-	switch args[0] {
-	case "add":
-		return taskRepoAdd(args[1:])
-	case "list":
-		if len(args) != 2 {
-			return errors.New("usage: forge project repo list <project-id>")
-		}
-		return taskRepoList(args[1])
-	case "remove":
-		if len(args) != 3 {
-			return errors.New("usage: forge project repo remove <project-id> <repo-name>")
-		}
-		return taskRepoRemove(args[1], args[2])
-	default:
-		return fmt.Errorf("unknown project repo subcommand %q", args[0])
 	}
 }
 
@@ -223,9 +201,6 @@ Usage:
   forge project list [--all] [--tree]
   forge project show <project-id>
   forge project archive <project-id>
-  forge project repo add <project-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-  forge project repo list <project-id>
-  forge project repo remove <project-id> <repo-name>
   forge task create <project-id> <description>
   forge task list <project-id> [--all]
   forge task show <id>
@@ -255,8 +230,8 @@ Commands:
     after -- override the workspace forge.json agentCommand default.
 
   forge project create [--workflow=<name>] <description>
-    Create the next top-level project directory, including task.json, task.md,
-    work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md. By
+    Create the next top-level project directory, including project.json,
+    project.md, work.md, log.md, artifacts/, and project-local AGENTS.md. By
     default, AGENTS.md uses workflow/default.md for project workflow guidance.
     Use --workflow=<name> to select workflow/<name>.md.
 
@@ -265,17 +240,18 @@ Commands:
     to include project tasks.
 
   forge task create <project-id> <description>
-    Create the next task directory under the project.
+    Create the next task directory under the project, including task.json,
+    task.md, work.md, log.md, artifacts/, worktree/, and task-local AGENTS.md.
 
   forge task list <project-id> [--all]
     List open tasks in a project. Use --all to include archived tasks.
 
   forge task show <id>
-    Print the task.json for a project or task as formatted JSON.
+    Print project.json or task.json for a resource as formatted JSON.
 
   forge task archive <id>
-    Move an open project or task into its archive. Projects move to archive/projectN/.
-    Tasks move to their project archive directory.
+    Move an open task into its project archive. Use forge project archive
+    <project-id> to archive a project into workspace archive/.
 
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge

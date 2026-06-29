@@ -93,7 +93,7 @@ type Task struct {
 	Workflow    string     `json:"workflow,omitempty"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
-	Repos       []TaskRepo `json:"repos"`
+	Repos       []TaskRepo `json:"repos,omitempty"`
 }
 
 type TaskRepo struct {
