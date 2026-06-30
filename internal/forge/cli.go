@@ -6,6 +6,18 @@ import (
 	"strings"
 )
 
+const (
+	projectCreateUsage = "usage: forge project create [--workflow=<name>] [--slug <slug>] <description>"
+	taskCreateUsage    = "usage: forge task create [<project-id>] <description> [--slug <slug>]"
+)
+
+type createResourceOptions struct {
+	Workflow         string
+	ExplicitWorkflow bool
+	Slug             string
+	Description      string
+}
+
 func Run(args []string) error {
 	if len(args) == 0 {
 		printUsage()
@@ -57,13 +69,13 @@ func runProject(args []string) error {
 	switch args[0] {
 	case "create":
 		if len(args) < 2 {
-			return errors.New("usage: forge project create [--workflow=<name>] <description>")
+			return errors.New(projectCreateUsage)
 		}
-		workflow, explicitWorkflow, description, err := parseProjectCreateArgs(args[1:])
+		options, err := parseProjectCreateArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		return projectCreate(description, workflow, !explicitWorkflow)
+		return projectCreate(options.Description, options.Workflow, !options.ExplicitWorkflow, options.Slug)
 	case "list":
 		options, err := parseProjectListArgs(args[1:])
 		if err != nil {
@@ -94,19 +106,34 @@ func runTask(args []string) error {
 	switch args[0] {
 	case "create":
 		if len(args) < 2 {
-			return errors.New("usage: forge task create <project-id> <description>")
+			return errors.New(taskCreateUsage)
 		}
 		if looksLikeProjectID(args[1]) || strings.Contains(args[1], ".") {
 			if len(args) < 3 {
-				return errors.New("usage: forge task create <project-id> <description>")
+				return errors.New(taskCreateUsage)
 			}
-			return projectTaskCreate(args[1], strings.Join(args[2:], " "))
+			options, err := parseTaskCreateArgs(args[1:])
+			if err != nil {
+				return err
+			}
+			return projectTaskCreate(options.ParentID, options.Description, options.Slug)
 		}
-		workflow, explicitWorkflow, description, err := parseProjectCreateArgs(args[1:])
+		parentID, ok, err := inferCurrentProjectID()
 		if err != nil {
 			return err
 		}
-		return projectCreate(description, workflow, !explicitWorkflow)
+		if ok {
+			options, err := parseTaskCreateArgsForParent(parentID, args[1:])
+			if err != nil {
+				return err
+			}
+			return projectTaskCreate(options.ParentID, options.Description, options.Slug)
+		}
+		options, err := parseProjectCreateArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return projectCreate(options.Description, options.Workflow, !options.ExplicitWorkflow, options.Slug)
 	case "list":
 		if len(args) > 1 && looksLikeProjectID(args[1]) {
 			projectID, all, err := parseTaskListArgs(args[1:])
@@ -171,11 +198,11 @@ Usage:
   forge repo add [--bare] <name> <url>
   forge repo list
   forge start <resource-id> [-- <agent command...>]
-  forge project create [--workflow=<name>] <description>
+  forge project create [--workflow=<name>] [--slug <slug>] <description>
   forge project list [--all] [--tree]
   forge project show <project-id>
   forge project archive <project-id>
-  forge task create <project-id> <description>
+  forge task create [<project-id>] <description> [--slug <slug>]
   forge task list <project-id> [--all]
   forge task show <id>
   forge task archive <id>
@@ -201,20 +228,22 @@ Commands:
     Run an agent command in the project or task directory. Explicit command arguments
     after -- override the workspace forge.json agentCommand default.
 
-  forge project create [--workflow=<name>] <description>
+  forge project create [--workflow=<name>] [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
     project.md, work.md, log.md, artifacts/, and project-local AGENTS.md. By
     default, AGENTS.md uses workflow/default.md for project workflow guidance.
-    Use --workflow=<name> to select workflow/<name>.md.
+    Use --workflow=<name> to select workflow/<name>.md. Use --slug <slug> to
+    append a human-readable suffix to the directory name.
 
   forge project list [--all] [--tree]
     List open projects. Use --all to include archived projects. Use --tree
     to include project tasks.
 
-  forge task create <project-id> <description>
-    Create the next task under the project in a short taskN/ directory,
-    including task.json, task.md, work.md, log.md, artifacts/, worktree/,
-    and task-local AGENTS.md.
+  forge task create [<project-id>] <description> [--slug <slug>]
+    Create the next task under the project in a short taskN/ or taskN-<slug>/
+    directory, including task.json, task.md, work.md, log.md, artifacts/,
+    worktree/, and task-local AGENTS.md. When run from inside a project or
+    task directory, <project-id> may be omitted.
 
   forge task list <project-id> [--all]
     List open tasks in a project. Use --all to include archived tasks.
@@ -242,29 +271,98 @@ Commands:
     the enclosing workspace.`)
 }
 
-func parseProjectCreateArgs(args []string) (string, bool, string, error) {
-	workflow := defaultWorkflowName
-	explicitWorkflow := false
+func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
+	options := createResourceOptions{Workflow: defaultWorkflowName}
 	var description []string
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		if strings.HasPrefix(arg, "--workflow=") {
 			value := strings.TrimPrefix(arg, "--workflow=")
 			if value == "" {
-				return "", false, "", errors.New("workflow cannot be empty")
+				return createResourceOptions{}, errors.New("workflow cannot be empty")
 			}
-			workflow = value
-			explicitWorkflow = true
+			options.Workflow = value
+			options.ExplicitWorkflow = true
 			continue
 		}
 		if arg == "--workflow" || strings.HasPrefix(arg, "--workflow") {
-			return "", false, "", errors.New("usage: forge project create [--workflow=<name>] <description>")
+			return createResourceOptions{}, errors.New(projectCreateUsage)
+		}
+		if strings.HasPrefix(arg, "--slug=") {
+			value := strings.TrimPrefix(arg, "--slug=")
+			if value == "" {
+				return createResourceOptions{}, errors.New("slug cannot be empty")
+			}
+			options.Slug = value
+			continue
+		}
+		if arg == "--slug" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return createResourceOptions{}, errors.New(projectCreateUsage)
+			}
+			options.Slug = args[i+1]
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--slug") {
+			return createResourceOptions{}, errors.New(projectCreateUsage)
 		}
 		description = append(description, arg)
 	}
 	if len(description) == 0 {
-		return "", false, "", errors.New("usage: forge project create [--workflow=<name>] <description>")
+		return createResourceOptions{}, errors.New(projectCreateUsage)
 	}
-	return workflow, explicitWorkflow, strings.Join(description, " "), nil
+	options.Description = strings.Join(description, " ")
+	return options, nil
+}
+
+type taskCreateOptions struct {
+	ParentID    string
+	Description string
+	Slug        string
+}
+
+func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
+	if len(args) < 2 {
+		return taskCreateOptions{}, errors.New(taskCreateUsage)
+	}
+	return parseTaskCreateArgsForParent(args[0], args[1:])
+}
+
+func parseTaskCreateArgsForParent(parentID string, args []string) (taskCreateOptions, error) {
+	if len(args) == 0 {
+		return taskCreateOptions{}, errors.New(taskCreateUsage)
+	}
+	options := taskCreateOptions{ParentID: parentID}
+	var description []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--slug=") {
+			value := strings.TrimPrefix(arg, "--slug=")
+			if value == "" {
+				return taskCreateOptions{}, errors.New("slug cannot be empty")
+			}
+			options.Slug = value
+			continue
+		}
+		if arg == "--slug" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.Slug = args[i+1]
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--") {
+			return taskCreateOptions{}, errors.New(taskCreateUsage)
+		}
+		description = append(description, arg)
+	}
+	if len(description) == 0 {
+		return taskCreateOptions{}, errors.New(taskCreateUsage)
+	}
+	options.Description = strings.Join(description, " ")
+	return options, nil
 }
 
 func parseProjectListArgs(args []string) (taskListOptions, error) {
