@@ -61,7 +61,6 @@ var builtinWorkflows = map[string]string{
 
 type taskListOptions struct {
 	IncludeArchived bool
-	Tree            bool
 }
 
 type taskListEntry struct {
@@ -111,9 +110,6 @@ func projectList(options taskListOptions) error {
 	entries, err := readTaskEntriesInDirs(dirs, topProjectName)
 	if err != nil {
 		return err
-	}
-	if options.Tree {
-		return printProjectTree(entries, options.IncludeArchived)
 	}
 	for _, entry := range entries {
 		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
@@ -549,32 +545,6 @@ func readTaskEntriesInDirs(dirs []string, pattern *regexp.Regexp) ([]taskListEnt
 	return tasks, nil
 }
 
-func printProjectTree(entries []taskListEntry, includeArchived bool) error {
-	for _, entry := range entries {
-		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
-		if err := printProjectTasks(entry.Path, entry.Task.ID, includeArchived); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func printProjectTasks(parentPath, parentID string, includeArchived bool) error {
-	pattern := projectTaskName(parentID)
-	dirs := []string{parentPath}
-	if includeArchived {
-		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
-	}
-	children, err := readTaskEntriesInDirs(dirs, pattern)
-	if err != nil {
-		return err
-	}
-	for _, child := range children {
-		fmt.Printf("- %s\t%s\n", child.Task.ID, child.Task.Title)
-	}
-	return nil
-}
-
 func findTaskDir(root, id string) (string, error) {
 	if id == "" {
 		return "", fmt.Errorf("task id cannot be empty")
@@ -637,6 +607,36 @@ func inferCurrentProjectID() (string, bool, error) {
 				if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
 					return *task.Parent, true, nil
 				}
+			}
+		}
+		if cwd == root {
+			return "", false, nil
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			return "", false, nil
+		}
+		cwd = parent
+	}
+}
+
+func inferCurrentTaskID() (string, bool, error) {
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return "", false, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false, err
+	}
+	for {
+		if pathExists(filepath.Join(cwd, taskJSONFile)) {
+			var task Task
+			if err := readResourceAtDir(cwd, &task); err != nil {
+				return "", false, err
+			}
+			if resourceDirNameMatches(filepath.Base(cwd), task) && isProjectTask(task) && !isArchivedPath(root, cwd) {
+				return task.ID, true, nil
 			}
 		}
 		if cwd == root {
@@ -782,11 +782,6 @@ func resourceDirNameID(name string, pattern *regexp.Regexp, prefix string) strin
 		return ""
 	}
 	return prefix + match[1]
-}
-
-func looksLikeProjectID(id string) bool {
-	id = cleanID(id)
-	return topProjectName.MatchString(id) || legacyTopTaskName.MatchString(id)
 }
 
 func isProject(task Task) bool {
