@@ -908,6 +908,20 @@ func TestTaskCreateRejectsNestedTasks(t *testing.T) {
 	})
 }
 
+func TestSubtaskCommandRemoved(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+
+		out, err := runErr(t, "subtask", "list", "project1")
+		if err == nil {
+			t.Fatalf("expected subtask command to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), `unknown command "subtask"`) {
+			t.Fatalf("expected unknown command error, got: %v\nstdout:\n%s", err, out)
+		}
+	})
+}
+
 func TestProjectListTreeAllIncludesArchivedTasks(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
