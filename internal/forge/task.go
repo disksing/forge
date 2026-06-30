@@ -306,7 +306,7 @@ func projectTaskList(parentID string, includeArchived bool) error {
 		return err
 	}
 	for _, task := range tasks {
-		fmt.Printf("%s\t%s\n", task.ID, task.Title)
+		fmt.Printf("%s\t%s\n", taskDirectoryName(task.ID), task.Title)
 	}
 	return nil
 }

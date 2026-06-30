@@ -143,8 +143,11 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 
 		children := run(t, "task", "list", "--project=project1")
-		if !strings.Contains(children, "project1.task1\tAdd task commands") {
-			t.Fatalf("expected subtask list to include project1.task1, got:\n%s", children)
+		if !strings.Contains(children, "task1\tAdd task commands") {
+			t.Fatalf("expected subtask list to include task1, got:\n%s", children)
+		}
+		if strings.Contains(children, "project1.task1") {
+			t.Fatalf("task list should display short task ids, got:\n%s", children)
 		}
 
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
@@ -234,8 +237,8 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 			t.Fatalf("expected project list to include only slugged project by stable id, got:\n%s", listed)
 		}
 		children := run(t, "task", "list", "--project=1")
-		if !strings.Contains(children, "project1.task1\tdevelop forge") {
-			t.Fatalf("expected task list to include slugged task by stable id, got:\n%s", children)
+		if !strings.Contains(children, "task1\tdevelop forge") {
+			t.Fatalf("expected task list to include slugged task by short id, got:\n%s", children)
 		}
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
 		if !strings.Contains(shown, `"parent": "project1"`) {
@@ -306,7 +309,7 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 			t.Fatal(err)
 		}
 		children := run(t, "task", "list", "--project=project1", "--all")
-		if strings.Contains(children, "project1.task8") {
+		if strings.Contains(children, "task8\tMalformed task") {
 			t.Fatalf("malformed task directory should not be listed, got:\n%s", children)
 		}
 
@@ -705,11 +708,11 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 		}
 
 		children := run(t, "task", "list", "--project=project1")
-		if strings.Contains(children, "project1.task1") {
+		if strings.Contains(children, "task1\tChild task") {
 			t.Fatalf("archived subtask should not be listed as open, got:\n%s", children)
 		}
 		allChildren := run(t, "task", "list", "--project=project1", "--all")
-		if !strings.Contains(allChildren, "project1.task1\tChild task") {
+		if !strings.Contains(allChildren, "task1\tChild task") {
 			t.Fatalf("expected subtask list --all to include archived subtask, got:\n%s", allChildren)
 		}
 
@@ -751,7 +754,7 @@ func TestProjectListOnlyIncludesProjects(t *testing.T) {
 		}
 
 		children := run(t, "task", "list", "--project=project1")
-		if !strings.Contains(children, "project1.task1\tFirst child") || !strings.Contains(children, "project1.task2\tSecond child") {
+		if !strings.Contains(children, "task1\tFirst child") || !strings.Contains(children, "task2\tSecond child") {
 			t.Fatalf("expected task list to include project tasks, got:\n%s", children)
 		}
 
@@ -823,7 +826,7 @@ func TestProjectListAllIncludesArchivedProjectsOnly(t *testing.T) {
 		}
 
 		allTasks := run(t, "task", "list", "--project=project1", "--all")
-		if !strings.Contains(allTasks, "project1.task1\tArchived child") || !strings.Contains(allTasks, "project1.task2\tOpen child") {
+		if !strings.Contains(allTasks, "task1\tArchived child") || !strings.Contains(allTasks, "task2\tOpen child") {
 			t.Fatalf("task list --all should include archived and open tasks, got:\n%s", allTasks)
 		}
 
@@ -879,7 +882,7 @@ func TestProjectAndTaskFlagSelection(t *testing.T) {
 			t.Fatalf("expected task show to infer task from cwd, got:\n%s", taskFromCwd)
 		}
 		listFromCwd := run(t, "task", "list")
-		if !strings.Contains(listFromCwd, "project1.task1\tFirst task") || !strings.Contains(listFromCwd, "project1.task2\tSecond task") {
+		if !strings.Contains(listFromCwd, "task1\tFirst task") || !strings.Contains(listFromCwd, "task2\tSecond task") {
 			t.Fatalf("expected task list to infer project from cwd, got:\n%s", listFromCwd)
 		}
 		createdFromCwd := run(t, "task", "create", "Third task")
