@@ -160,17 +160,14 @@ func runTaskRepo(args []string) error {
 }
 
 func runMigrate(args []string) error {
-	if len(args) != 1 || args[0] != "project-tasks" {
-		return errors.New("usage: forge migrate project-tasks")
-	}
-	return migrateProjectTasks()
+	return runWorkspaceMigrate(args)
 }
 
 func printUsage() {
 	fmt.Println(`forge manages a local AgentWorkspace.
 
 Usage:
-  forge init [--reset-workflows]
+  forge init
   forge repo add [--bare] <name> <url>
   forge repo list
   forge start <resource-id> [-- <agent command...>]
@@ -185,14 +182,12 @@ Usage:
   forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list <task-id>
   forge task repo remove <task-id> <repo-name>
-  forge migrate project-tasks
+  forge migrate
 
 Commands:
-  forge init [--reset-workflows]
-    Initialize the current directory as an AgentWorkspace, or refresh the
-    enclosing workspace when run inside an existing project/task. Creates
-    forge.json, repos/, archive/, workflow/, and forge-managed AGENTS.md blocks.
-    Safe to rerun. Use --reset-workflows to rewrite the built-in workflow files.
+  forge init
+    Initialize the current directory as a new AgentWorkspace. Fails when run
+    from inside an existing workspace.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -242,8 +237,9 @@ Commands:
   forge task repo remove <task-id> <repo-name>
     Remove a repository entry from a task's task.json.
 
-  forge migrate project-tasks
-    Rewrite an old task/subtask workspace into the two-level project/task layout.`)
+  forge migrate
+    Refresh built-in workflow templates and forge-managed AGENTS.md blocks in
+    the enclosing workspace.`)
 }
 
 func parseProjectCreateArgs(args []string) (string, bool, string, error) {
