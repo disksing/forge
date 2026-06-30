@@ -23,8 +23,6 @@ func Run(args []string) error {
 		return runProject(args[1:])
 	case "task":
 		return runTask(args[1:])
-	case "subtask":
-		return runSubtask(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
 	case "help", "-h", "--help":
@@ -158,27 +156,6 @@ func runTaskRepo(args []string) error {
 		return taskRepoRemove(args[1], args[2])
 	default:
 		return fmt.Errorf("unknown task repo subcommand %q", args[0])
-	}
-}
-
-func runSubtask(args []string) error {
-	if len(args) == 0 {
-		return errors.New("subtask requires a subcommand")
-	}
-	switch args[0] {
-	case "create":
-		if len(args) < 3 {
-			return errors.New("usage: forge subtask create <task-id> <description>")
-		}
-		return projectTaskCreate(args[1], strings.Join(args[2:], " "))
-	case "list":
-		parentID, all, err := parseSubtaskListArgs(args[1:])
-		if err != nil {
-			return err
-		}
-		return projectTaskList(parentID, all)
-	default:
-		return fmt.Errorf("unknown subtask subcommand %q", args[0])
 	}
 }
 
@@ -325,16 +302,4 @@ func parseTaskListArgs(args []string) (string, bool, error) {
 		}
 	}
 	return "", false, errors.New("usage: forge task list <project-id> [--all]")
-}
-
-func parseSubtaskListArgs(args []string) (string, bool, error) {
-	switch len(args) {
-	case 1:
-		return args[0], false, nil
-	case 2:
-		if args[1] == "--all" {
-			return args[0], true, nil
-		}
-	}
-	return "", false, errors.New("usage: forge subtask list <task-id> [--all]")
 }
