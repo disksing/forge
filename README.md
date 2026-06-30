@@ -38,7 +38,7 @@ Open projects live directly under the workspace. Open project tasks live directl
 ## Commands
 
 ```bash
-forge init [--reset-workflows]
+forge init
 forge repo add [--bare] <name> <url>
 forge repo list
 forge start <resource-id> [-- <agent command...>]
@@ -53,10 +53,10 @@ forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list <task-id>
 forge task repo remove <task-id> <repo-name>
-forge migrate project-tasks
+forge migrate
 ```
 
-`forge init` initializes the current directory as an AgentWorkspace, or refreshes the enclosing workspace when run from inside an existing project/task. It creates `forge.json`, `repos/`, `archive/`, `workflow/`, and forge-managed blocks in `AGENTS.md` files. It is safe to rerun. Use `--reset-workflows` to rewrite Forge's built-in `workflow/default.md` and `workflow/project.md` while preserving custom workflow files.
+`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `workflow/`, and a forge-managed block in `AGENTS.md`.
 
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
@@ -82,9 +82,9 @@ forge migrate project-tasks
 
 `forge task repo remove <task-id> <repo-name>` removes a repository entry from a task's `task.json`.
 
-`forge migrate project-tasks` rewrites an old task/subtask workspace into the two-level project/task layout: old `taskN/` directories become `projectN/`, old child task directories are promoted to direct project tasks with short directories such as `projectN/taskM/`, legacy project-level repository metadata or `worktree/` directories are moved into a generated task under that project, and older full task directory names such as `projectN/projectN.taskM/` are shortened.
+`forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
 
-`forge init` is safe to run multiple times. It creates or updates workspace scaffolding, writes built-in workflow files only when `workflow/` does not already exist, rewrites only the forge-managed prompt block in the workspace `AGENTS.md`, and refreshes forge-managed prompt blocks for open project/task `AGENTS.md` files:
+`forge migrate` is safe to run multiple times. It rewrites built-in workflow templates, rewrites only forge-managed prompt blocks, and preserves content outside managed blocks:
 
 ```md
 <!-- managed by forge cli -->

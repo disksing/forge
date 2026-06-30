@@ -8,16 +8,8 @@ import (
 )
 
 func runInit(args []string) error {
-	resetWorkflows := false
-	switch len(args) {
-	case 0:
-	case 1:
-		if args[0] != "--reset-workflows" {
-			return fmt.Errorf("usage: forge init [--reset-workflows]")
-		}
-		resetWorkflows = true
-	default:
-		return fmt.Errorf("usage: forge init [--reset-workflows]")
+	if len(args) != 0 {
+		return fmt.Errorf("usage: forge init")
 	}
 
 	root, err := os.Getwd()
@@ -27,7 +19,7 @@ func runInit(args []string) error {
 	if existingRoot, err := findEnclosingWorkspaceRoot(root); err != nil {
 		return err
 	} else if existingRoot != "" {
-		root = existingRoot
+		return fmt.Errorf("cannot initialize workspace inside existing workspace: %s", existingRoot)
 	}
 
 	if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
@@ -44,7 +36,7 @@ func runInit(args []string) error {
 	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
-	if err := ensureWorkflowFiles(root, resetWorkflows); err != nil {
+	if err := ensureWorkflowFiles(root, false); err != nil {
 		return err
 	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
@@ -55,6 +47,27 @@ func runInit(args []string) error {
 	}
 
 	fmt.Printf("initialized AgentWorkspace at %s\n", root)
+	return nil
+}
+
+func runWorkspaceMigrate(args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("usage: forge migrate")
+	}
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	if err := ensureWorkflowFiles(root, true); err != nil {
+		return err
+	}
+	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
+		return err
+	}
+	if err := updateOpenTaskAgentsMD(root); err != nil {
+		return err
+	}
+	fmt.Printf("migrated AgentWorkspace at %s\n", root)
 	return nil
 }
 
@@ -173,7 +186,7 @@ This directory is an AgentWorkspace managed by forge.
 Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
-forge init [--reset-workflows]
+forge init
 forge repo add [--bare] <name> <url>
 forge repo list
 forge start <resource-id> [-- <agent command...>]
@@ -188,17 +201,17 @@ forge task archive <id>
 forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list <task-id>
 forge task repo remove <task-id> <repo-name>
-forge migrate project-tasks
+forge migrate
 ` + "```" + `
 
 Notes:
 
-- ` + "`forge init`" + ` is safe to run multiple times. It updates only the forge-managed block in ` + "`AGENTS.md`" + ` and does not overwrite existing workflow files unless ` + "`--reset-workflows`" + ` is used.
+- ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace.
+- ` + "`forge migrate`" + ` refreshes built-in workflow templates and forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
 - ` + "`forge start <resource-id> [-- <agent command...>]`" + ` runs an agent command in the project or task directory. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the project ` + "`AGENTS.md`" + `.
 - ` + "`forge task create`" + ` creates a new open task directory under a project.
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task repo add`" + ` records an involved repository in a task's ` + "`task.json`" + `. Projects do not store repository metadata.
-- ` + "`forge migrate project-tasks`" + ` rewrites an old task/subtask workspace into the two-level project/task layout.
 `
