@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 )
 
@@ -187,6 +188,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] <description>",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]",
 		"  forge start <resource-id> [-- <agent command...>]",
 		"Commands:",
 		"  forge init",
@@ -194,6 +196,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] <description>",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]",
 		"  forge start <resource-id> [-- <agent command...>]",
 	}
 	offset := 0
@@ -316,6 +319,189 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 		child := run(t, "task", "create", "--project=project1", "First valid task")
 		if !strings.Contains(child, `"id": "project1.task1"`) {
 			t.Fatalf("malformed task directory should not affect next id, got:\n%s", child)
+		}
+	})
+}
+
+func TestSessionNewLockShowListAndUnlock(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		if id == "" || !strings.HasPrefix(id, "session-") {
+			t.Fatalf("expected session new to print generated id, got %q", id)
+		}
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+			t.Fatal(err)
+		}
+
+		locked := run(t, "session", "lock", "--id", id)
+		if !strings.Contains(locked, `"id": "`+id+`"`) || !strings.Contains(locked, `"resourceId": "project1.task1"`) {
+			t.Fatalf("expected lock to infer current task, got:\n%s", locked)
+		}
+
+		listed := run(t, "session", "list")
+		if !strings.Contains(listed, id+"\theartbeat:") || !strings.Contains(listed, "project1.task1:project1/task1") {
+			t.Fatalf("expected session list to show active task control, got:\n%s", listed)
+		}
+
+		shown := run(t, "session", "show", "--id", id)
+		if !strings.Contains(shown, `"id": "`+id+`"`) || !strings.Contains(shown, `"resourceId": "project1.task1"`) {
+			t.Fatalf("expected show to print session JSON, got:\n%s", shown)
+		}
+
+		unlocked := run(t, "session", "unlock", "--id", id)
+		if strings.Contains(unlocked, `"resourceId": "project1.task1"`) || !strings.Contains(unlocked, `"controls": []`) {
+			t.Fatalf("expected unlock to remove current task control, got:\n%s", unlocked)
+		}
+	})
+}
+
+func TestSessionCommandsPruneExpiredSessions(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		stale := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "stale",
+				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1s"},
+				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: "2026-01-01T00:00:00Z",
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), stale); err != nil {
+			t.Fatal(err)
+		}
+
+		id := strings.TrimSpace(run(t, "session", "new"))
+		locked := run(t, "session", "lock", "--id", id, "--project", "project1", "--task", "task1")
+		if strings.Contains(locked, "stale") || !strings.Contains(locked, `"id": "`+id+`"`) {
+			t.Fatalf("expected lock to prune stale conflicting session, got:\n%s", locked)
+		}
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, "stale") || !strings.Contains(listed, id) {
+			t.Fatalf("expected stale session to be pruned and active session to remain, got:\n%s", listed)
+		}
+	})
+}
+
+func TestSessionNewSupportsPIDLiveness(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		id := strings.TrimSpace(run(t, "session", "new", "--pid", strconv.Itoa(os.Getpid())))
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+
+		listed := run(t, "session", "list")
+		if !strings.Contains(listed, id+"\tpid:") || !strings.Contains(listed, "project1:project1") {
+			t.Fatalf("expected pid liveness session in list, got:\n%s", listed)
+		}
+		shown := run(t, "session", "show", "--id", id)
+		if !strings.Contains(shown, `"type": "pid"`) || !strings.Contains(shown, `"pid": `+strconv.Itoa(os.Getpid())) {
+			t.Fatalf("expected pid liveness in show JSON, got:\n%s", shown)
+		}
+	})
+}
+
+func TestSessionListPrunesDeadPIDSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		store := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "dead-pid",
+				Liveness:  SessionLiveness{Type: "pid", PID: 99999999},
+				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, "dead-pid") {
+			t.Fatalf("expected dead pid session to be pruned, got:\n%s", listed)
+		}
+	})
+}
+
+func TestSessionRegisterRejectsActiveOverlappingControl(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		alpha := strings.TrimSpace(run(t, "session", "new"))
+		beta := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", alpha, "--project", "project1")
+
+		out, err := runErr(t, "session", "lock", "--id", beta, "--project", "project1", "--task", "task1")
+		if err == nil {
+			t.Fatalf("expected overlapping session lock to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), "control conflict") || !strings.Contains(err.Error(), alpha) {
+			t.Fatalf("expected conflict error naming active session, got: %v\nstdout:\n%s", err, out)
+		}
+	})
+}
+
+func TestSessionHeartbeatExtendsSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		id := strings.TrimSpace(run(t, "session", "new", "--timeout", "1h"))
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldTime := time.Now().Add(-time.Minute).Format(time.RFC3339)
+		store.Sessions[0].UpdatedAt = oldTime
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+
+		heartbeat := run(t, "session", "heartbeat", "--id", id)
+		if !strings.Contains(heartbeat, `"id": "`+id+`"`) || strings.Contains(heartbeat, oldTime) {
+			t.Fatalf("expected heartbeat to refresh timestamp, got:\n%s", heartbeat)
+		}
+	})
+}
+
+func TestSessionLockSelectorRulesAndWorkspaceRootNoop(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		id := strings.TrimSpace(run(t, "session", "new"))
+
+		noLock := run(t, "session", "lock", "--id", id)
+		if !strings.Contains(noLock, workspaceNoLockMessage) {
+			t.Fatalf("expected workspace root lock to be a no-op, got:\n%s", noLock)
+		}
+
+		projectLocked := run(t, "session", "lock", "--id", id, "--project", "project1")
+		if !strings.Contains(projectLocked, `"resourceId": "project1"`) {
+			t.Fatalf("expected --project to lock project, got:\n%s", projectLocked)
+		}
+		projectUnlocked := run(t, "session", "unlock", "--id", id, "--project", "project1")
+		if strings.Contains(projectUnlocked, `"resourceId": "project1"`) {
+			t.Fatalf("expected --project unlock to release project, got:\n%s", projectUnlocked)
+		}
+
+		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
+			t.Fatal(err)
+		}
+		taskLocked := run(t, "session", "lock", "--id", id, "--task", "task1")
+		if !strings.Contains(taskLocked, `"resourceId": "project1.task1"`) {
+			t.Fatalf("expected --task to infer current project, got:\n%s", taskLocked)
 		}
 	})
 }

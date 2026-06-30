@@ -38,6 +38,8 @@ func Run(args []string) error {
 		return runProject(args[1:])
 	case "task":
 		return runTask(args[1:])
+	case "session":
+		return runSession(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
 	case "help", "-h", "--help":
@@ -197,6 +199,13 @@ Usage:
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+  forge session heartbeat --id=<id>
+  forge session lock --id=<id> [--project=<project>] [--task=<task>]
+  forge session unlock --id=<id> [--project=<project>] [--task=<task>]
+  forge session list
+  forge session show --id=<id>
+
   forge start <resource-id> [-- <agent command...>]
 
 Commands:
@@ -272,6 +281,28 @@ Commands:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
+
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+    Create a session and print its unique id. Heartbeat liveness is the
+    default and can use --timeout. PID liveness stays active while the process
+    exists.
+
+  forge session heartbeat --id=<id>
+    Update a session's heartbeat timestamp.
+
+  forge session lock --id=<id> [--project=<project>] [--task=<task>]
+    Lock a project or task for a session. With no selector, Forge uses the
+    current task when inside a task, otherwise the current project. With only
+    --task, Forge uses the current project. Workspace root does not need a lock.
+
+  forge session unlock --id=<id> [--project=<project>] [--task=<task>]
+    Release a project or task lock using the same selector rules as lock.
+
+  forge session list
+    List active sessions after automatically pruning stale sessions.
+
+  forge session show --id=<id>
+    Print one active session as formatted JSON after pruning stale sessions.
 
   forge start <resource-id> [-- <agent command...>]
     Run an agent command in the project or task directory. Explicit command arguments

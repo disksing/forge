@@ -57,6 +57,13 @@ forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktre
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 
+forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+forge session heartbeat --id=<id>
+forge session lock --id=<id> [--project=<project>] [--task=<task>]
+forge session unlock --id=<id> [--project=<project>] [--task=<task>]
+forge session list
+forge session show --id=<id>
+
 forge start <resource-id> [-- <agent command...>]
 ```
 
@@ -89,6 +96,12 @@ forge start <resource-id> [-- <agent command...>]
 `forge task repo list [--project=<project>] [--task=<task>]` lists repositories recorded in a task's `task.json`. Task selection follows `forge task show`.
 
 `forge task repo remove [--project=<project>] [--task=<task>] <repo-name>` removes a repository entry from a task's `task.json`. Task selection follows `forge task show`.
+
+`forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]` creates a session in `forge-sessions.json` and prints its unique id. Heartbeat liveness is the default and uses a default timeout unless `--timeout` is provided. PID liveness stays active while the process exists. `forge session heartbeat --id=<id>` refreshes the timestamp. All session commands prune stale sessions before acting.
+
+`forge session lock --id=<id> [--project=<project>] [--task=<task>]` records project or task control for a session. With no selector, Forge locks the current task when run under a task directory, otherwise the current project. With only `--project`, Forge locks that project. With only `--task`, Forge uses the current project and locks that task. Workspace root does not need a lock. `forge session unlock` uses the same selector rules to release control.
+
+`forge session list` lists active sessions after automatically pruning stale sessions. `forge session show --id=<id>` prints one active session as formatted JSON.
 
 `forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
 
