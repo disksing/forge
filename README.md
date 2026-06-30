@@ -39,21 +39,25 @@ Open projects live directly under the workspace with names such as `project1/` o
 
 ```bash
 forge init
+forge migrate
+
 forge repo add [--bare] <name> <url>
 forge repo list
-forge start <resource-id> [-- <agent command...>]
+
 forge project create [--workflow=<name>] [--slug <slug>] <description>
-forge project list [--all] [--tree]
-forge project show <project-id>
-forge project archive <project-id>
-forge task create [<project-id>] <description> [--slug <slug>]
-forge task list <project-id> [--all]
-forge task show <id>
-forge task archive <id>
-forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-forge task repo list <task-id>
-forge task repo remove <task-id> <repo-name>
-forge migrate
+forge project list [--all]
+forge project show [--project=<project>]
+forge project archive [--project=<project>]
+
+forge task create [--project=<project>] [--slug <slug>] <description>
+forge task list [--project=<project>] [--all]
+forge task show [--project=<project>] [--task=<task>]
+forge task archive [--project=<project>] [--task=<task>]
+forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+forge task repo list [--project=<project>] [--task=<task>]
+forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+
+forge start <resource-id> [-- <agent command...>]
 ```
 
 `forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `workflow/`, and a forge-managed block in `AGENTS.md`.
@@ -66,21 +70,25 @@ forge migrate
 
 `forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.md`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
-`forge project list` lists open projects. Use `--all` to include archived projects. Use `--tree` to include open tasks under each project.
+`forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
 
-`forge task create [<project-id>] <description> [--slug <slug>]` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. When the command runs from inside a project or task directory, `<project-id>` may be omitted.
+`forge project show [--project=<project>]` prints a project's `project.json`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
 
-`forge task list <project-id>` lists open tasks under a project. Use `--all` to include archived tasks.
+`forge project archive [--project=<project>]` moves a project into workspace `archive/`. `<project>` follows the same rules as `forge project show`.
 
-`forge task show <id>` prints a project's `project.json` or a task's `task.json`.
+`forge task create [--project=<project>] [--slug <slug>] <description>` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
 
-`forge task archive <id>` moves an open task into its project archive. Use `forge project archive <project-id>` to archive a project into workspace `archive/`.
+`forge task list [--project=<project>] [--all]` lists open tasks under a project. Use `--all` to include archived tasks. `<project>` follows the same rules as `forge task create`; when omitted, Forge uses the project containing the current working directory.
 
-`forge task repo add <task-id> <repo-name>` adds or updates a repository entry in the task's `task.json`. Optional `--worktree`, `--branch`, `--target`, and `--base` flags record the exact worktree and branch metadata.
+`forge task show [--project=<project>] [--task=<task>]` prints a task's `task.json`. `<task>` may be a short id such as `task4` or just a number such as `4`. Forge combines it with `--project` when provided, otherwise the current directory's project. When `--task` is omitted, Forge uses the task containing the current working directory.
 
-`forge task repo list <task-id>` lists repositories recorded in a task's `task.json`.
+`forge task archive [--project=<project>] [--task=<task>]` moves an open task into its project archive. `<task>` follows the same rules as `forge task show`.
 
-`forge task repo remove <task-id> <repo-name>` removes a repository entry from a task's `task.json`.
+`forge task repo add [--project=<project>] [--task=<task>] <repo-name>` adds or updates a repository entry in the task's `task.json`. Optional `--worktree`, `--branch`, `--target`, and `--base` flags record the exact worktree and branch metadata. Task selection follows `forge task show`.
+
+`forge task repo list [--project=<project>] [--task=<task>]` lists repositories recorded in a task's `task.json`. Task selection follows `forge task show`.
+
+`forge task repo remove [--project=<project>] [--task=<task>] <repo-name>` removes a repository entry from a task's `task.json`. Task selection follows `forge task show`.
 
 `forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
 

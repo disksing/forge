@@ -8,7 +8,10 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--workflow=<name>] [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [<project-id>] <description> [--slug <slug>]"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] <description>"
+	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
+	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
+	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
 )
 
 type createResourceOptions struct {
@@ -83,17 +86,19 @@ func runProject(args []string) error {
 		}
 		return projectList(options)
 	case "show":
-		if len(args) != 2 {
-			return errors.New("usage: forge project show <project-id>")
+		projectID, err := resolveProjectArg(args[1:], "show")
+		if err != nil {
+			return err
 		}
-		return taskShow(args[1])
+		return taskShow(projectID)
 	case "archive":
-		if len(args) != 2 {
-			return errors.New("usage: forge project archive <project-id>")
+		projectID, err := resolveProjectArg(args[1:], "archive")
+		if err != nil {
+			return err
 		}
-		return taskArchive(args[1])
+		return taskArchive(projectID)
 	case "repo":
-		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> <task-id> ...")
+		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> [--project=<project>] [--task=<task>] ...")
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
@@ -108,55 +113,40 @@ func runTask(args []string) error {
 		if len(args) < 2 {
 			return errors.New(taskCreateUsage)
 		}
-		if looksLikeProjectID(args[1]) || strings.Contains(args[1], ".") {
-			if len(args) < 3 {
-				return errors.New(taskCreateUsage)
-			}
-			options, err := parseTaskCreateArgs(args[1:])
-			if err != nil {
-				return err
-			}
-			return projectTaskCreate(options.ParentID, options.Description, options.Slug)
-		}
-		parentID, ok, err := inferCurrentProjectID()
+		options, err := parseTaskCreateArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		if ok {
-			options, err := parseTaskCreateArgsForParent(parentID, args[1:])
+		parentID := options.ParentID
+		if parentID == "" {
+			var ok bool
+			parentID, ok, err = inferCurrentProjectID()
 			if err != nil {
 				return err
 			}
-			return projectTaskCreate(options.ParentID, options.Description, options.Slug)
+			if !ok {
+				return errors.New("could not infer current project; use forge task create --project=<project> <description>")
+			}
 		}
-		options, err := parseProjectCreateArgs(args[1:])
-		if err != nil {
-			return err
-		}
-		return projectCreate(options.Description, options.Workflow, !options.ExplicitWorkflow, options.Slug)
+		return projectTaskCreate(parentID, options.Description, options.Slug)
 	case "list":
-		if len(args) > 1 && looksLikeProjectID(args[1]) {
-			projectID, all, err := parseTaskListArgs(args[1:])
-			if err != nil {
-				return err
-			}
-			return projectTaskList(projectID, all)
-		}
-		options, err := parseProjectListArgs(args[1:])
+		projectID, all, err := resolveTaskListArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		return projectList(options)
+		return projectTaskList(projectID, all)
 	case "show":
-		if len(args) != 2 {
-			return errors.New("usage: forge task show <id>")
+		taskID, err := resolveTaskArg(args[1:], "show")
+		if err != nil {
+			return err
 		}
-		return taskShow(args[1])
+		return taskShow(taskID)
 	case "archive":
-		if len(args) != 2 {
-			return errors.New("usage: forge task archive <id>")
+		taskID, err := resolveTaskArg(args[1:], "archive")
+		if err != nil {
+			return err
 		}
-		return taskArchive(args[1])
+		return taskArchive(taskID)
 	case "repo":
 		return runTaskRepo(args[1:])
 	default:
@@ -172,15 +162,9 @@ func runTaskRepo(args []string) error {
 	case "add":
 		return taskRepoAdd(args[1:])
 	case "list":
-		if len(args) != 2 {
-			return errors.New("usage: forge task repo list <task-id>")
-		}
-		return taskRepoList(args[1])
+		return taskRepoList(args[1:])
 	case "remove":
-		if len(args) != 3 {
-			return errors.New("usage: forge task repo remove <task-id> <repo-name>")
-		}
-		return taskRepoRemove(args[1], args[2])
+		return taskRepoRemove(args[1:])
 	default:
 		return fmt.Errorf("unknown task repo subcommand %q", args[0])
 	}
@@ -195,26 +179,34 @@ func printUsage() {
 
 Usage:
   forge init
+  forge migrate
+
   forge repo add [--bare] <name> <url>
   forge repo list
-  forge start <resource-id> [-- <agent command...>]
+
   forge project create [--workflow=<name>] [--slug <slug>] <description>
-  forge project list [--all] [--tree]
-  forge project show <project-id>
-  forge project archive <project-id>
-  forge task create [<project-id>] <description> [--slug <slug>]
-  forge task list <project-id> [--all]
-  forge task show <id>
-  forge task archive <id>
-  forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-  forge task repo list <task-id>
-  forge task repo remove <task-id> <repo-name>
-  forge migrate
+  forge project list [--all]
+  forge project show [--project=<project>]
+  forge project archive [--project=<project>]
+
+  forge task create [--project=<project>] [--slug <slug>] <description>
+  forge task list [--project=<project>] [--all]
+  forge task show [--project=<project>] [--task=<task>]
+  forge task archive [--project=<project>] [--task=<task>]
+  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+  forge task repo list [--project=<project>] [--task=<task>]
+  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+
+  forge start <resource-id> [-- <agent command...>]
 
 Commands:
   forge init
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace.
+
+  forge migrate
+    Refresh built-in workflow templates and forge-managed AGENTS.md blocks in
+    the enclosing workspace.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -224,10 +216,6 @@ Commands:
   forge repo list
     List repositories known to the workspace.
 
-  forge start <resource-id> [-- <agent command...>]
-    Run an agent command in the project or task directory. Explicit command arguments
-    after -- override the workspace forge.json agentCommand default.
-
   forge project create [--workflow=<name>] [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
     project.md, work.md, log.md, artifacts/, and project-local AGENTS.md. By
@@ -235,40 +223,59 @@ Commands:
     Use --workflow=<name> to select workflow/<name>.md. Use --slug <slug> to
     append a human-readable suffix to the directory name.
 
-  forge project list [--all] [--tree]
-    List open projects. Use --all to include archived projects. Use --tree
-    to include project tasks.
+  forge project list [--all]
+    List open projects. Use --all to include archived projects.
 
-  forge task create [<project-id>] <description> [--slug <slug>]
+  forge project show [--project=<project>]
+    Print a project's project.json as formatted JSON. <project> may be a full
+    id such as project22 or just a number such as 22. When omitted, Forge uses
+    the project containing the current working directory.
+
+  forge project archive [--project=<project>]
+    Move a project into workspace archive/. <project> may be a full id such as
+    project22 or just a number such as 22. When omitted, Forge uses the project
+    containing the current working directory.
+
+  forge task create [--project=<project>] [--slug <slug>] <description>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.md, artifacts/,
-    worktree/, and task-local AGENTS.md. When run from inside a project or
-    task directory, <project-id> may be omitted.
+    worktree/, and task-local AGENTS.md. <project> may be a full id such as
+    project22 or just a number such as 22. When omitted, Forge uses the
+    project containing the current working directory.
 
-  forge task list <project-id> [--all]
+  forge task list [--project=<project>] [--all]
     List open tasks in a project. Use --all to include archived tasks.
+    <project> may be a full id such as project22 or just a number such as 22.
+    When omitted, Forge uses the project containing the current working
+    directory.
 
-  forge task show <id>
-    Print project.json or task.json for a resource as formatted JSON.
+  forge task show [--project=<project>] [--task=<task>]
+    Print a task's task.json as formatted JSON. <task> may be a short id such
+    as task4, or just a number such as 4. Forge combines it with --project when
+    provided, otherwise the current directory's project. When <task> is omitted,
+    Forge uses the task containing the current working directory.
 
-  forge task archive <id>
-    Move an open task into its project archive. Use forge project archive
-    <project-id> to archive a project into workspace archive/.
+  forge task archive [--project=<project>] [--task=<task>]
+    Move an open task into its project archive. <task> follows the same rules
+    as forge task show.
 
-  forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge
     records repos/<repo-name> and <task>/worktree/<repo-leaf>. Optional flags
-    let agents record the actual worktree path and branch metadata.
+    let agents record the actual worktree path and branch metadata. Task
+    selection follows forge task show.
 
-  forge task repo list <task-id>
-    List repositories recorded in a task's task.json.
+  forge task repo list [--project=<project>] [--task=<task>]
+    List repositories recorded in a task's task.json. Task selection follows
+    forge task show.
 
-  forge task repo remove <task-id> <repo-name>
-    Remove a repository entry from a task's task.json.
+  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+    Remove a repository entry from a task's task.json. Task selection follows
+    forge task show.
 
-  forge migrate
-    Refresh built-in workflow templates and forge-managed AGENTS.md blocks in
-    the enclosing workspace.`)
+  forge start <resource-id> [-- <agent command...>]
+    Run an agent command in the project or task directory. Explicit command arguments
+    after -- override the workspace forge.json agentCommand default.`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
@@ -323,20 +330,43 @@ type taskCreateOptions struct {
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
-	if len(args) < 2 {
-		return taskCreateOptions{}, errors.New(taskCreateUsage)
-	}
-	return parseTaskCreateArgsForParent(args[0], args[1:])
-}
-
-func parseTaskCreateArgsForParent(parentID string, args []string) (taskCreateOptions, error) {
 	if len(args) == 0 {
 		return taskCreateOptions{}, errors.New(taskCreateUsage)
 	}
-	options := taskCreateOptions{ParentID: parentID}
+	var options taskCreateOptions
 	var description []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if strings.HasPrefix(arg, "--project=") {
+			value := strings.TrimPrefix(arg, "--project=")
+			if value == "" {
+				return taskCreateOptions{}, errors.New("project cannot be empty")
+			}
+			if options.ParentID != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			projectID, err := normalizeProjectArg(value)
+			if err != nil {
+				return taskCreateOptions{}, err
+			}
+			options.ParentID = projectID
+			continue
+		}
+		if arg == "--project" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			if options.ParentID != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			projectID, err := normalizeProjectArg(args[i+1])
+			if err != nil {
+				return taskCreateOptions{}, err
+			}
+			options.ParentID = projectID
+			i++
+			continue
+		}
 		if strings.HasPrefix(arg, "--slug=") {
 			value := strings.TrimPrefix(arg, "--slug=")
 			if value == "" {
@@ -371,29 +401,256 @@ func parseProjectListArgs(args []string) (taskListOptions, error) {
 		switch arg {
 		case "--all":
 			if options.IncludeArchived {
-				return taskListOptions{}, errors.New("usage: forge project list [--all] [--tree]")
+				return taskListOptions{}, errors.New("usage: forge project list [--all]")
 			}
 			options.IncludeArchived = true
-		case "--tree":
-			if options.Tree {
-				return taskListOptions{}, errors.New("usage: forge project list [--all] [--tree]")
-			}
-			options.Tree = true
 		default:
-			return taskListOptions{}, errors.New("usage: forge project list [--all] [--tree]")
+			return taskListOptions{}, errors.New("usage: forge project list [--all]")
 		}
 	}
 	return options, nil
 }
 
-func parseTaskListArgs(args []string) (string, bool, error) {
-	switch len(args) {
-	case 1:
-		return args[0], false, nil
-	case 2:
-		if args[1] == "--all" {
-			return args[0], true, nil
+func resolveProjectArg(args []string, command string) (string, error) {
+	projectID, err := parseProjectArg(args, command)
+	if err != nil {
+		return "", err
+	}
+	if projectID != "" {
+		return projectID, nil
+	}
+	inferred, ok, err := inferCurrentProjectID()
+	if err != nil {
+		return "", err
+	}
+	if !ok {
+		return "", fmt.Errorf("could not infer current project; use forge project %s --project=<project>", command)
+	}
+	return inferred, nil
+}
+
+func parseProjectArg(args []string, command string) (string, error) {
+	usage := fmt.Sprintf("usage: forge project %s [--project=<project>]", command)
+	var project string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "--project=") {
+			value := strings.TrimPrefix(arg, "--project=")
+			if value == "" {
+				return "", errors.New("project cannot be empty")
+			}
+			if project != "" {
+				return "", errors.New(usage)
+			}
+			project = value
+			continue
+		}
+		if arg == "--project" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", errors.New(usage)
+			}
+			if project != "" {
+				return "", errors.New(usage)
+			}
+			project = args[i+1]
+			i++
+			continue
+		}
+		return "", errors.New(usage)
+	}
+	return normalizeProjectArg(project)
+}
+
+func normalizeProjectArg(project string) (string, error) {
+	project = strings.TrimSpace(project)
+	if project == "" {
+		return "", nil
+	}
+	if topProjectName.MatchString(project) {
+		return project, nil
+	}
+	if isASCIIInteger(project) {
+		return "project" + project, nil
+	}
+	return "", fmt.Errorf("invalid project %q: use projectN or N", project)
+}
+
+func isASCIIInteger(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
 		}
 	}
-	return "", false, errors.New("usage: forge task list <project-id> [--all]")
+	return true
+}
+
+func resolveTaskListArgs(args []string) (string, bool, error) {
+	projectID, includeArchived, err := parseTaskListArgs(args)
+	if err != nil {
+		return "", false, err
+	}
+	if projectID != "" {
+		return projectID, includeArchived, nil
+	}
+	inferred, ok, err := inferCurrentProjectID()
+	if err != nil {
+		return "", false, err
+	}
+	if !ok {
+		return "", false, errors.New("could not infer current project; use forge task list --project=<project>")
+	}
+	return inferred, includeArchived, nil
+}
+
+func resolveTaskArg(args []string, command string) (string, error) {
+	projectID, task, err := parseTaskArg(args, command)
+	if err != nil {
+		return "", err
+	}
+	if task == "" {
+		inferred, ok, err := inferCurrentTaskID()
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("could not infer current task; use forge task %s --task=<task>", command)
+		}
+		return inferred, nil
+	}
+	return normalizeTaskArg(projectID, task)
+}
+
+func parseTaskArg(args []string, command string) (string, string, error) {
+	usage := taskShowUsage
+	if command == "archive" {
+		usage = taskArchiveUsage
+	}
+	var projectID string
+	var task string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case strings.HasPrefix(arg, "--project="):
+			value := strings.TrimPrefix(arg, "--project=")
+			if value == "" {
+				return "", "", errors.New("project cannot be empty")
+			}
+			if projectID != "" {
+				return "", "", errors.New(usage)
+			}
+			normalized, err := normalizeProjectArg(value)
+			if err != nil {
+				return "", "", err
+			}
+			projectID = normalized
+		case arg == "--project":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", "", errors.New(usage)
+			}
+			if projectID != "" {
+				return "", "", errors.New(usage)
+			}
+			normalized, err := normalizeProjectArg(args[i+1])
+			if err != nil {
+				return "", "", err
+			}
+			projectID = normalized
+			i++
+		case strings.HasPrefix(arg, "--task="):
+			value := strings.TrimPrefix(arg, "--task=")
+			if value == "" {
+				return "", "", errors.New("task cannot be empty")
+			}
+			if task != "" {
+				return "", "", errors.New(usage)
+			}
+			task = value
+		case arg == "--task":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", "", errors.New(usage)
+			}
+			if task != "" {
+				return "", "", errors.New(usage)
+			}
+			task = args[i+1]
+			i++
+		default:
+			return "", "", errors.New(usage)
+		}
+	}
+	return projectID, strings.TrimSpace(task), nil
+}
+
+func normalizeTaskArg(projectID, task string) (string, error) {
+	task = strings.TrimSpace(task)
+	if task == "" {
+		return "", errors.New("task cannot be empty")
+	}
+	if strings.Contains(task, ".") {
+		return "", fmt.Errorf("invalid task %q: use taskM or M", task)
+	}
+	if projectID == "" {
+		inferred, ok, err := inferCurrentProjectID()
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", errors.New("could not infer current project; use --project=<project>")
+		}
+		projectID = inferred
+	}
+	if legacyTopTaskName.MatchString(task) {
+		return projectID + "." + task, nil
+	}
+	if isASCIIInteger(task) {
+		return projectID + ".task" + task, nil
+	}
+	return "", fmt.Errorf("invalid task %q: use taskM or M", task)
+}
+
+func parseTaskListArgs(args []string) (string, bool, error) {
+	var projectID string
+	includeArchived := false
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--all":
+			if includeArchived {
+				return "", false, errors.New(taskListUsage)
+			}
+			includeArchived = true
+		case strings.HasPrefix(arg, "--project="):
+			value := strings.TrimPrefix(arg, "--project=")
+			if value == "" {
+				return "", false, errors.New("project cannot be empty")
+			}
+			if projectID != "" {
+				return "", false, errors.New(taskListUsage)
+			}
+			normalized, err := normalizeProjectArg(value)
+			if err != nil {
+				return "", false, err
+			}
+			projectID = normalized
+		case arg == "--project":
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", false, errors.New(taskListUsage)
+			}
+			if projectID != "" {
+				return "", false, errors.New(taskListUsage)
+			}
+			normalized, err := normalizeProjectArg(args[i+1])
+			if err != nil {
+				return "", false, err
+			}
+			projectID = normalized
+			i++
+		default:
+			return "", false, errors.New(taskListUsage)
+		}
+	}
+	return projectID, includeArchived, nil
 }

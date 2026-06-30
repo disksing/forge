@@ -88,12 +88,58 @@ func taskRepoAdd(args []string) error {
 	return saveAndPrintTask(taskPath, task)
 }
 
-func taskRepoList(id string) error {
+func parseTaskRepoAdd(args []string) (taskRepoAddOptions, error) {
+	const usage = "usage: forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]"
+	opts := taskRepoAddOptions{}
+	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, next func() (string, bool)) error {
+		if !strings.HasPrefix(arg, "--") {
+			if opts.name != "" {
+				return fmt.Errorf("unexpected positional argument %q", arg)
+			}
+			opts.name = arg
+			return nil
+		}
+		value, ok := next()
+		if !ok {
+			return fmt.Errorf("%s requires a value", arg)
+		}
+		switch arg {
+		case "--worktree":
+			opts.worktreePath = value
+		case "--branch":
+			opts.branch = value
+		case "--target":
+			opts.targetBranch = value
+		case "--base":
+			opts.baseBranch = value
+		default:
+			return fmt.Errorf("unknown task repo add option %q", arg)
+		}
+		return nil
+	})
+	if err != nil {
+		return taskRepoAddOptions{}, err
+	}
+	if opts.name == "" {
+		return taskRepoAddOptions{}, fmt.Errorf(usage)
+	}
+	opts.taskID, err = resolveTaskSelector(projectID, task, "repo add")
+	if err != nil {
+		return taskRepoAddOptions{}, err
+	}
+	return opts, nil
+}
+
+func taskRepoList(args []string) error {
+	taskID, err := parseTaskRepoTarget(args, "list")
+	if err != nil {
+		return err
+	}
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
-	_, task, err := loadTask(root, cleanID(id))
+	_, task, err := loadTask(root, taskID)
 	if err != nil {
 		return err
 	}
@@ -110,7 +156,124 @@ func taskRepoList(id string) error {
 	return nil
 }
 
-func taskRepoRemove(id, name string) error {
+func taskRepoRemove(args []string) error {
+	const usage = "usage: forge task repo remove [--project=<project>] [--task=<task>] <repo-name>"
+	var name string
+	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, _ func() (string, bool)) error {
+		if strings.HasPrefix(arg, "--") {
+			return fmt.Errorf("unknown task repo remove option %q", arg)
+		}
+		if name != "" {
+			return fmt.Errorf("unexpected positional argument %q", arg)
+		}
+		name = arg
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		return fmt.Errorf(usage)
+	}
+	taskID, err := resolveTaskSelector(projectID, task, "repo remove")
+	if err != nil {
+		return err
+	}
+	return removeTaskRepo(taskID, name)
+}
+
+func parseTaskRepoTarget(args []string, command string) (string, error) {
+	usage := fmt.Sprintf("usage: forge task repo %s [--project=<project>] [--task=<task>]", command)
+	projectID, task, err := parseTaskSelectorAndApply(args, usage, func(arg string, _ func() (string, bool)) error {
+		return fmt.Errorf("unknown task repo %s option %q", command, arg)
+	})
+	if err != nil {
+		return "", err
+	}
+	return resolveTaskSelector(projectID, task, "repo "+command)
+}
+
+func parseTaskSelectorAndApply(args []string, usage string, apply func(string, func() (string, bool)) error) (string, string, error) {
+	var projectID string
+	var task string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		next := func() (string, bool) {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return "", false
+			}
+			i++
+			return args[i], true
+		}
+		switch {
+		case strings.HasPrefix(arg, "--project="):
+			value := strings.TrimPrefix(arg, "--project=")
+			if value == "" {
+				return "", "", fmt.Errorf("project cannot be empty")
+			}
+			if projectID != "" {
+				return "", "", fmt.Errorf(usage)
+			}
+			normalized, err := normalizeProjectArg(value)
+			if err != nil {
+				return "", "", err
+			}
+			projectID = normalized
+		case arg == "--project":
+			value, ok := next()
+			if !ok {
+				return "", "", fmt.Errorf(usage)
+			}
+			if projectID != "" {
+				return "", "", fmt.Errorf(usage)
+			}
+			normalized, err := normalizeProjectArg(value)
+			if err != nil {
+				return "", "", err
+			}
+			projectID = normalized
+		case strings.HasPrefix(arg, "--task="):
+			value := strings.TrimPrefix(arg, "--task=")
+			if value == "" {
+				return "", "", fmt.Errorf("task cannot be empty")
+			}
+			if task != "" {
+				return "", "", fmt.Errorf(usage)
+			}
+			task = value
+		case arg == "--task":
+			value, ok := next()
+			if !ok {
+				return "", "", fmt.Errorf(usage)
+			}
+			if task != "" {
+				return "", "", fmt.Errorf(usage)
+			}
+			task = value
+		default:
+			if err := apply(arg, next); err != nil {
+				return "", "", err
+			}
+		}
+	}
+	return projectID, strings.TrimSpace(task), nil
+}
+
+func resolveTaskSelector(projectID, task, command string) (string, error) {
+	if task == "" {
+		inferred, ok, err := inferCurrentTaskID()
+		if err != nil {
+			return "", err
+		}
+		if !ok {
+			return "", fmt.Errorf("could not infer current task; use forge task %s --task=<task>", command)
+		}
+		return inferred, nil
+	}
+	return normalizeTaskArg(projectID, task)
+}
+
+func removeTaskRepo(id, name string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -141,44 +304,6 @@ func taskRepoRemove(id, name string) error {
 	}
 	task.Repos = next
 	return saveAndPrintTask(taskPath, task)
-}
-
-func parseTaskRepoAdd(args []string) (taskRepoAddOptions, error) {
-	if len(args) < 2 {
-		return taskRepoAddOptions{}, fmt.Errorf("usage: forge task repo add <task-id> <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]")
-	}
-	opts := taskRepoAddOptions{
-		taskID: cleanID(args[0]),
-		name:   args[1],
-	}
-	for i := 2; i < len(args); i++ {
-		arg := args[i]
-		if !strings.HasPrefix(arg, "--") {
-			if opts.worktreePath != "" {
-				return taskRepoAddOptions{}, fmt.Errorf("unexpected positional argument %q", arg)
-			}
-			opts.worktreePath = arg
-			continue
-		}
-		if i+1 >= len(args) {
-			return taskRepoAddOptions{}, fmt.Errorf("%s requires a value", arg)
-		}
-		value := args[i+1]
-		i++
-		switch arg {
-		case "--worktree":
-			opts.worktreePath = value
-		case "--branch":
-			opts.branch = value
-		case "--target":
-			opts.targetBranch = value
-		case "--base":
-			opts.baseBranch = value
-		default:
-			return taskRepoAddOptions{}, fmt.Errorf("unknown task repo add option %q", arg)
-		}
-	}
-	return opts, nil
 }
 
 func loadTask(root, id string) (string, Task, error) {
