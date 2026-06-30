@@ -14,8 +14,12 @@ import (
 )
 
 var topProjectName = regexp.MustCompile(`^project([0-9]+)$`)
+var topProjectDirName = regexp.MustCompile(`^project([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
 var legacyTopTaskName = regexp.MustCompile(`^task([0-9]+)$`)
+var legacyTopTaskDirName = regexp.MustCompile(`^task([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
+var taskDirName = regexp.MustCompile(`^task([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
 var workflowName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var resourceSlugName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 const (
 	workflowDir         = "workflow"
@@ -65,7 +69,7 @@ type taskListEntry struct {
 	Path string
 }
 
-func projectCreate(description, workflow string, allowBuiltinFallback bool) error {
+func projectCreate(description, workflow string, allowBuiltinFallback bool, slug string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -73,6 +77,10 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool) erro
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return fmt.Errorf("description cannot be empty")
+	}
+	slug, err = normalizeResourceSlug(slug)
+	if err != nil {
+		return err
 	}
 	workflowContent, err := resolveWorkflow(root, workflow, allowBuiltinFallback && workflow == defaultWorkflowName)
 	if err != nil {
@@ -83,7 +91,7 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool) erro
 	if err != nil {
 		return err
 	}
-	taskPath := filepath.Join(root, id)
+	taskPath := filepath.Join(root, projectDirectoryName(id, slug))
 	task := newTask(id, "project", nil, description, workflow)
 	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
 		return err
@@ -190,11 +198,11 @@ func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, new
 
 func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
 	if isProject(task) {
-		return filepath.Join(root, archiveDir, task.ID), nil
+		return filepath.Join(root, archiveDir, filepath.Base(taskPath)), nil
 	}
 	if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
 		parentPath := filepath.Dir(taskPath)
-		return filepath.Join(parentPath, archiveDir, taskDirectoryName(task.ID)), nil
+		return filepath.Join(parentPath, archiveDir, filepath.Base(taskPath)), nil
 	}
 	return "", fmt.Errorf("unsupported task id for archive: %s", task.ID)
 }
@@ -237,7 +245,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, description string) error {
+func projectTaskCreate(parentID, description string, slug string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -246,6 +254,10 @@ func projectTaskCreate(parentID, description string) error {
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return fmt.Errorf("description cannot be empty")
+	}
+	slug, err = normalizeResourceSlug(slug)
+	if err != nil {
+		return err
 	}
 
 	parentPath, err := findTaskDir(root, parentID)
@@ -266,7 +278,7 @@ func projectTaskCreate(parentID, description string) error {
 	if err != nil {
 		return err
 	}
-	taskPath := filepath.Join(parentPath, taskDirectoryName(id))
+	taskPath := filepath.Join(parentPath, taskDirectoryName(id, slug))
 	workflowContent, err := resolveWorkflow(root, defaultWorkflowName, true)
 	if err != nil {
 		return err
@@ -432,9 +444,9 @@ func nextProjectID(root string) (string, error) {
 			if !entry.IsDir() {
 				continue
 			}
-			match := topProjectName.FindStringSubmatch(entry.Name())
+			match := topProjectDirName.FindStringSubmatch(entry.Name())
 			if match == nil {
-				match = legacyTopTaskName.FindStringSubmatch(entry.Name())
+				match = legacyTopTaskDirName.FindStringSubmatch(entry.Name())
 			}
 			if match == nil {
 				continue
@@ -496,7 +508,7 @@ func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, 
 		if err := readResourceAtDir(taskPath, &task); err != nil {
 			continue
 		}
-		if !pattern.MatchString(entry.Name()) && !pattern.MatchString(task.ID) {
+		if !pattern.MatchString(task.ID) || !resourceDirNameMatches(entry.Name(), task) {
 			continue
 		}
 		tasks = append(tasks, taskListEntry{Task: task, Path: taskPath})
@@ -588,7 +600,7 @@ func findTaskDir(root, id string) (string, error) {
 		if err := readResourceAtDir(path, &task); err != nil {
 			return nil
 		}
-		if task.ID == id {
+		if task.ID == id && resourceDirNameMatches(entry.Name(), task) {
 			found = path
 			return filepath.SkipAll
 		}
@@ -601,6 +613,41 @@ func findTaskDir(root, id string) (string, error) {
 		return "", fmt.Errorf("task not found: %s", id)
 	}
 	return found, nil
+}
+
+func inferCurrentProjectID() (string, bool, error) {
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return "", false, err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false, err
+	}
+	for {
+		if pathExists(filepath.Join(cwd, projectJSONFile)) || pathExists(filepath.Join(cwd, taskJSONFile)) {
+			var task Task
+			if err := readResourceAtDir(cwd, &task); err != nil {
+				return "", false, err
+			}
+			if resourceDirNameMatches(filepath.Base(cwd), task) && !isArchivedPath(root, cwd) {
+				if isProject(task) {
+					return task.ID, true, nil
+				}
+				if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
+					return *task.Parent, true, nil
+				}
+			}
+		}
+		if cwd == root {
+			return "", false, nil
+		}
+		parent := filepath.Dir(cwd)
+		if parent == cwd {
+			return "", false, nil
+		}
+		cwd = parent
+	}
 }
 
 func isArchivedPath(root, path string) bool {
@@ -679,12 +726,62 @@ func projectTaskName(projectID string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(projectID) + `\.task([0-9]+(?:\.[0-9]+)*)$`)
 }
 
-func taskDirectoryName(id string) string {
+func projectDirectoryName(id, slug string) string {
+	return withResourceSlug(id, slug)
+}
+
+func taskDirectoryName(id string, slug ...string) string {
 	projectID, suffix, ok := strings.Cut(id, ".task")
+	name := id
 	if ok && topProjectName.MatchString(projectID) && suffix != "" {
-		return "task" + suffix
+		name = "task" + suffix
 	}
-	return id
+	if len(slug) > 0 {
+		return withResourceSlug(name, slug[0])
+	}
+	return name
+}
+
+func withResourceSlug(name, slug string) string {
+	if slug == "" {
+		return name
+	}
+	return name + "-" + slug
+}
+
+func normalizeResourceSlug(slug string) (string, error) {
+	slug = strings.TrimSpace(slug)
+	if slug == "" {
+		return "", nil
+	}
+	if !resourceSlugName.MatchString(slug) {
+		return "", fmt.Errorf("invalid slug %q: use only letters, numbers, dot, underscore, or hyphen, and start with a letter or number", slug)
+	}
+	return slug, nil
+}
+
+func resourceDirNameMatches(name string, task Task) bool {
+	if isProject(task) {
+		if resourceDirNameID(name, topProjectDirName, "project") == task.ID {
+			return true
+		}
+		return resourceDirNameID(name, legacyTopTaskDirName, "task") == task.ID
+	}
+	if isProjectTask(task) {
+		if name == task.ID {
+			return true
+		}
+		return resourceDirNameID(name, taskDirName, "task") == taskDirectoryName(task.ID)
+	}
+	return false
+}
+
+func resourceDirNameID(name string, pattern *regexp.Regexp, prefix string) string {
+	match := pattern.FindStringSubmatch(name)
+	if match == nil {
+		return ""
+	}
+	return prefix + match[1]
 }
 
 func looksLikeProjectID(id string) bool {

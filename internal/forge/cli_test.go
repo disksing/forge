@@ -176,6 +176,116 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
+func TestSluggedProjectAndTaskDirectories(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+
+		created := run(t, "project", "create", "--slug", "forge-dev", "Develop forge")
+		if !strings.Contains(created, `"id": "project1"`) {
+			t.Fatalf("expected project id to remain project1, got:\n%s", created)
+		}
+		projectPath := filepath.Join(root, "project1-forge-dev")
+		assertFile(t, filepath.Join(projectPath, "project.json"))
+		assertMissing(t, filepath.Join(root, "project1", "project.json"))
+
+		if err := os.Chdir(projectPath); err != nil {
+			t.Fatal(err)
+		}
+		child := run(t, "task", "create", "develop forge", "--slug", "develop-forge")
+		if err := os.Chdir(root); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(child, `"id": "project1.task1"`) {
+			t.Fatalf("expected task id to remain project1.task1, got:\n%s", child)
+		}
+		taskPath := filepath.Join(projectPath, "task1-develop-forge")
+		assertFile(t, filepath.Join(taskPath, "task.json"))
+		assertMissing(t, filepath.Join(projectPath, "task1", "task.json"))
+
+		listed := run(t, "project", "list", "--tree")
+		if !strings.Contains(listed, "project1\tDevelop forge") || !strings.Contains(listed, "- project1.task1\tdevelop forge") {
+			t.Fatalf("expected slugged resources to list by stable ids, got:\n%s", listed)
+		}
+		shown := run(t, "task", "show", "project1.task1")
+		if !strings.Contains(shown, `"parent": "project1"`) {
+			t.Fatalf("expected show to resolve slugged task by id, got:\n%s", shown)
+		}
+
+		output := filepath.Join(root, "start.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		run(t, "start", "project1.task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "slugged")
+		got := readFile(t, output)
+		want := realPath(t, taskPath) + "\nslugged\n"
+		if got != want {
+			t.Fatalf("expected start to run in slugged task dir, got:\n%s", got)
+		}
+
+		archivedTask := run(t, "task", "archive", "project1.task1")
+		if !strings.Contains(archivedTask, "project1-forge-dev/archive/task1-develop-forge") {
+			t.Fatalf("expected task archive to preserve slugged directory name, got:\n%s", archivedTask)
+		}
+		assertDir(t, filepath.Join(projectPath, archiveDir, "task1-develop-forge"))
+
+		nextChild := run(t, "task", "create", "project1", "Next task")
+		if !strings.Contains(nextChild, `"id": "project1.task2"`) {
+			t.Fatalf("expected next task id to account for archived slugged task, got:\n%s", nextChild)
+		}
+
+		nextProject := run(t, "project", "create", "Next project")
+		if !strings.Contains(nextProject, `"id": "project2"`) {
+			t.Fatalf("expected next project id to account for slugged project, got:\n%s", nextProject)
+		}
+
+		archivedProject := run(t, "project", "archive", "project1")
+		if !strings.Contains(archivedProject, "archive/project1-forge-dev") {
+			t.Fatalf("expected project archive to preserve slugged directory name, got:\n%s", archivedProject)
+		}
+		assertDir(t, filepath.Join(root, archiveDir, "project1-forge-dev"))
+	})
+}
+
+func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		workflowContent := builtinWorkflows[defaultWorkflowName]
+
+		malformedProject := newTask("project9", "project", nil, "Malformed project", defaultWorkflowName)
+		if err := createResourceFiles(filepath.Join(root, "project9--bad"), malformedProject, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+		listed := run(t, "project", "list")
+		if strings.Contains(listed, "project9") {
+			t.Fatalf("malformed project directory should not be listed, got:\n%s", listed)
+		}
+		out, err := runErr(t, "project", "show", "project9")
+		if err == nil {
+			t.Fatalf("malformed project directory should not resolve by id, got stdout:\n%s", out)
+		}
+
+		next := run(t, "project", "create", "First valid project")
+		if !strings.Contains(next, `"id": "project1"`) {
+			t.Fatalf("malformed project directory should not affect next id, got:\n%s", next)
+		}
+
+		parentPath := filepath.Join(root, "project1")
+		parentID := "project1"
+		malformedTask := newTask("project1.task8", "task", &parentID, "Malformed task", defaultWorkflowName)
+		if err := createResourceFiles(filepath.Join(parentPath, "task8--bad"), malformedTask, workflowContent); err != nil {
+			t.Fatal(err)
+		}
+		children := run(t, "task", "list", "project1", "--all")
+		if strings.Contains(children, "project1.task8") {
+			t.Fatalf("malformed task directory should not be listed, got:\n%s", children)
+		}
+
+		child := run(t, "task", "create", "project1", "First valid task")
+		if !strings.Contains(child, `"id": "project1.task1"`) {
+			t.Fatalf("malformed task directory should not affect next id, got:\n%s", child)
+		}
+	})
+}
+
 func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")

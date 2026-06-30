@@ -33,7 +33,7 @@ AgentWorkspace/
   archive/
 ```
 
-Open projects live directly under the workspace. Open project tasks live directly under their project directories with short names such as `task1/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. State is represented by location rather than a status field in `project.json` or `task.json`.
+Open projects live directly under the workspace with names such as `project1/` or `project1-forge-dev/`. Open project tasks live directly under their project directories with short names such as `task1/` or `task1-develop-forge/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. State is represented by location rather than a status field in `project.json` or `task.json`.
 
 ## Commands
 
@@ -42,11 +42,11 @@ forge init
 forge repo add [--bare] <name> <url>
 forge repo list
 forge start <resource-id> [-- <agent command...>]
-forge project create [--workflow=<name>] <description>
+forge project create [--workflow=<name>] [--slug <slug>] <description>
 forge project list [--all] [--tree]
 forge project show <project-id>
 forge project archive <project-id>
-forge task create <project-id> <description>
+forge task create [<project-id>] <description> [--slug <slug>]
 forge task list <project-id> [--all]
 forge task show <id>
 forge task archive <id>
@@ -64,11 +64,11 @@ forge migrate
 
 `forge start <resource-id> [-- <agent command...>]` runs an agent command in the project or task directory. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
-`forge project create [--workflow=<name>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.md`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Generated `project.md` contains only the project title and description.
+`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.md`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
 `forge project list` lists open projects. Use `--all` to include archived projects. Use `--tree` to include open tasks under each project.
 
-`forge task create <project-id> <description>` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/`.
+`forge task create [<project-id>] <description> [--slug <slug>]` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. When the command runs from inside a project or task directory, `<project-id>` may be omitted.
 
 `forge task list <project-id>` lists open tasks under a project. Use `--all` to include archived tasks.
 
