@@ -34,6 +34,10 @@ func TestForgeStartHelper(t *testing.T) {
 		}
 	}
 	output := cwd + "\n" + strings.Join(args, "\n") + "\n"
+	if os.Getenv("FORGE_START_RECORD_SESSION") == "1" {
+		output += "session=" + os.Getenv("FORGE_SESSION_ID") + "\n"
+		output += "pid=" + strconv.Itoa(os.Getpid()) + "\n"
+	}
 	if err := os.WriteFile(os.Getenv("FORGE_START_OUTPUT"), []byte(output), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -91,6 +95,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "If project.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
 		}
+		if !strings.Contains(projectAgents, "if FORGE_SESSION_ID is set, reuse it") || !strings.Contains(projectAgents, "forge session lock --id=$FORGE_SESSION_ID") || !strings.Contains(projectAgents, "forge session unlock --id=$FORGE_SESSION_ID") {
+			t.Fatalf("expected project AGENTS.md to include session lock guidance, got:\n%s", projectAgents)
+		}
 		if !strings.Contains(projectAgents, defaultWorkflowSnippet) {
 			t.Fatalf("expected project AGENTS.md to include default workflow guidance, got:\n%s", projectAgents)
 		}
@@ -139,6 +146,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
 		}
+		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "FORGE_SESSION_ID") {
+			t.Fatalf("expected subtask AGENTS.md to include direct-start session registration guidance, got:\n%s", subtaskAgents)
+		}
 		if !strings.Contains(subtaskAgents, defaultWorkflowSnippet) {
 			t.Fatalf("expected subtask AGENTS.md to include default workflow guidance, got:\n%s", subtaskAgents)
 		}
@@ -183,6 +193,12 @@ func TestTaskLifecycle(t *testing.T) {
 func TestHelpGroupsCommandSections(t *testing.T) {
 	help := run(t, "help")
 	expected := []string{
+		"How Forge works:",
+		"All workspace data lives on the filesystem",
+		"Agents coordinate\n  writes by creating a session and locking the project or task they will\n  update",
+		"Agents may read other\n  projects and tasks freely for context",
+		"forge start creates a session automatically and injects\n  FORGE_SESSION_ID",
+		"The workspace root does not require a lock.",
 		"Usage:",
 		"  forge init\n  forge migrate",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
@@ -520,6 +536,50 @@ func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
 		want := realPath(t, filepath.Join(root, "project1")) + "\nexplicit\nargs\n"
 		if got != want {
 			t.Fatalf("expected explicit command to run in task dir, got:\n%s", got)
+		}
+	})
+}
+
+func TestStartRegistersSessionAndInjectsEnvironment(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Launch agent")
+		output := filepath.Join(root, "session-start.out")
+		t.Setenv("FORGE_START_HELPER", "1")
+		t.Setenv("FORGE_START_OUTPUT", output)
+		t.Setenv("FORGE_START_RECORD_SESSION", "1")
+		t.Setenv("FORGE_SESSION_ID", "old-session")
+
+		run(t, "start", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "session")
+
+		got := readFile(t, output)
+		if !strings.Contains(got, "session=") || strings.Contains(got, "session=old-session") {
+			t.Fatalf("expected start helper to receive a new FORGE_SESSION_ID, got:\n%s", got)
+		}
+		var sessionID string
+		for _, line := range strings.Split(got, "\n") {
+			if strings.HasPrefix(line, "session=") {
+				sessionID = strings.TrimPrefix(line, "session=")
+			}
+		}
+		if !strings.HasPrefix(sessionID, "session-") {
+			t.Fatalf("expected generated session id in helper output, got:\n%s", got)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index := findSessionIndex(store.Sessions, sessionID)
+		if index < 0 {
+			t.Fatalf("expected session store to include %q, got: %#v", sessionID, store.Sessions)
+		}
+		session := store.Sessions[index]
+		if session.Liveness.Type != "pid" || session.Liveness.PID != os.Getpid() {
+			t.Fatalf("expected start session to use forge start pid liveness, got: %#v", session.Liveness)
+		}
+		if len(session.Controls) != 0 {
+			t.Fatalf("forge start should not lock automatically, got controls: %#v", session.Controls)
 		}
 	})
 }

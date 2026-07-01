@@ -92,9 +92,18 @@ func sessionNew(args []string) error {
 	if err != nil {
 		return err
 	}
-	id, err := newSessionID()
+	id, err := createSession(root, liveness)
 	if err != nil {
 		return err
+	}
+	fmt.Println(id)
+	return nil
+}
+
+func createSession(root string, liveness SessionLiveness) (string, error) {
+	id, err := newSessionID()
+	if err != nil {
+		return "", err
 	}
 	if err := withLockedSessionStore(root, func(store *SessionStore) error {
 		pruneStaleSessions(store)
@@ -108,10 +117,9 @@ func sessionNew(args []string) error {
 		})
 		return nil
 	}); err != nil {
-		return err
+		return "", err
 	}
-	fmt.Println(id)
-	return nil
+	return id, nil
 }
 
 func sessionHeartbeat(args []string) error {

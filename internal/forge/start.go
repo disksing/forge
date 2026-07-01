@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type exitCodeError struct {
@@ -46,12 +47,21 @@ func startTask(args []string) error {
 		return errors.New("no agent command provided; use forge start <task-id> -- <command> or set agentCommand in forge.json")
 	}
 
+	sessionID, err := createSession(root, SessionLiveness{Type: "pid", PID: os.Getpid()})
+	if err != nil {
+		return err
+	}
+
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = taskPath
+	cmd.Env = appendSessionEnv(os.Environ(), sessionID)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	if err := cmd.Wait(); err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
 			return exitCodeError{code: exitErr.ExitCode()}
@@ -59,6 +69,17 @@ func startTask(args []string) error {
 		return err
 	}
 	return nil
+}
+
+func appendSessionEnv(env []string, sessionID string) []string {
+	filtered := make([]string, 0, len(env)+1)
+	for _, entry := range env {
+		if strings.HasPrefix(entry, "FORGE_SESSION_ID=") {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return append(filtered, "FORGE_SESSION_ID="+sessionID)
 }
 
 func parseStartArgs(args []string) (string, []string, error) {

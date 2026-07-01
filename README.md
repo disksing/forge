@@ -2,7 +2,7 @@
 
 forge is a small CLI for a local AgentWorkspace: a filesystem-based project/task workflow for AI agents, shared Git checkouts, and per-task Git worktrees.
 
-The design is intentionally simple. forge creates and moves task directories; agents decide how to plan and execute work inside those directories.
+The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate writes by creating a session and locking the project or task they will update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update the resource they have locked. When an agent is started through `forge start`, Forge creates the session automatically and injects `FORGE_SESSION_ID`. The workspace root does not require a lock.
 
 ## Workspace Layout
 
@@ -73,7 +73,7 @@ forge start <resource-id> [-- <agent command...>]
 
 `forge repo list` lists repositories known to the workspace.
 
-`forge start <resource-id> [-- <agent command...>]` runs an agent command in the project or task directory. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
+`forge start <resource-id> [-- <agent command...>]` creates a session, injects `FORGE_SESSION_ID` into the agent environment, and runs an agent command in the project or task directory. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
 `forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.md`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
@@ -102,6 +102,8 @@ forge start <resource-id> [-- <agent command...>]
 `forge session lock --id=<id> [--project=<project>] [--task=<task>]` records project or task control for a session. With no selector, Forge locks the current task when run under a task directory, otherwise the current project. With only `--project`, Forge locks that project. With only `--task`, Forge uses the current project and locks that task. Workspace root does not need a lock. `forge session unlock` uses the same selector rules to release control.
 
 `forge session list` lists active sessions after automatically pruning stale sessions. `forge session show --id=<id>` prints one active session as formatted JSON.
+
+Agents started directly should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, and then use that id for `forge session lock` and `forge session unlock`. Agents started through `forge start` should reuse the injected `FORGE_SESSION_ID` and skip self-registration.
 
 `forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
 

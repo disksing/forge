@@ -905,6 +905,9 @@ You are working inside a %s.
 - For the overall forge workflow and CLI usage, read the workspace root AGENTS.md file.
 - %s
 - %s
+- Before updating project/task data, ensure you have a Forge session: if FORGE_SESSION_ID is set, reuse it; otherwise detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, and export the printed id as `+"`FORGE_SESSION_ID`"+`.
+- Before making changes in a project or task directory, lock it with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` from that directory or pass explicit `+"`--project`"+`/`+"`--task`"+` selectors.
+- When finished updating that project or task directory, unlock it with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` using the same selector rules.
 - You may read other task directories for reference.
 - Only update files inside this task directory and its worktrees.
 - Treat repositories under ../repos/ as shared source caches; make code changes in task worktrees.

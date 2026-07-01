@@ -179,6 +179,15 @@ func runMigrate(args []string) error {
 func printUsage() {
 	fmt.Println(`forge manages a local AgentWorkspace.
 
+How Forge works:
+  All workspace data lives on the filesystem as project/task directories,
+  JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate
+  writes by creating a session and locking the project or task they will
+  update; stale locks are pruned from session liveness. Agents may read other
+  projects and tasks freely for context, but should only update the resource
+  they have locked. forge start creates a session automatically and injects
+  FORGE_SESSION_ID. The workspace root does not require a lock.
+
 Usage:
   forge init
   forge migrate
@@ -306,7 +315,8 @@ Commands:
 
   forge start <resource-id> [-- <agent command...>]
     Run an agent command in the project or task directory. Explicit command arguments
-    after -- override the workspace forge.json agentCommand default.`)
+    after -- override the workspace forge.json agentCommand default. forge start
+    creates a session and injects FORGE_SESSION_ID into the agent environment.`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
