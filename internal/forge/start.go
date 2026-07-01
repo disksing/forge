@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+const startUsage = "usage: forge start [--project=<project>] [--task=<task>] [-- <agent command...>]"
+
 type exitCodeError struct {
 	code int
 }
@@ -21,8 +23,14 @@ func (err exitCodeError) ExitCode() int {
 	return err.code
 }
 
+type startOptions struct {
+	Project string
+	Task    string
+	Command []string
+}
+
 func startTask(args []string) error {
-	taskID, command, err := parseStartArgs(args)
+	options, err := parseStartArgs(args)
 	if err != nil {
 		return err
 	}
@@ -31,11 +39,16 @@ func startTask(args []string) error {
 	if err != nil {
 		return err
 	}
-	taskPath, err := findTaskDir(root, cleanID(taskID))
+	resourceID, err := resolveStartResourceID(options)
+	if err != nil {
+		return err
+	}
+	taskPath, err := findTaskDir(root, resourceID)
 	if err != nil {
 		return err
 	}
 
+	command := options.Command
 	if len(command) == 0 {
 		config, err := readConfig(root)
 		if err != nil {
@@ -44,7 +57,7 @@ func startTask(args []string) error {
 		command = []string(config.AgentCommand)
 	}
 	if len(command) == 0 {
-		return errors.New("no agent command provided; use forge start <task-id> -- <command> or set agentCommand in forge.json")
+		return errors.New("no agent command provided; use forge start [--project=<project>] [--task=<task>] -- <command> or set agentCommand in forge.json")
 	}
 
 	sessionID, err := createSession(root, SessionLiveness{Type: "pid", PID: os.Getpid()})
@@ -82,20 +95,75 @@ func appendSessionEnv(env []string, sessionID string) []string {
 	return append(filtered, "FORGE_SESSION_ID="+sessionID)
 }
 
-func parseStartArgs(args []string) (string, []string, error) {
-	if len(args) == 0 {
-		return "", nil, errors.New("usage: forge start <task-id> [-- <agent command...>]")
+func parseStartArgs(args []string) (startOptions, error) {
+	var options startOptions
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--":
+			if i+1 >= len(args) {
+				return startOptions{}, errors.New("agent command after -- cannot be empty")
+			}
+			options.Command = args[i+1:]
+			return options, nil
+		case strings.HasPrefix(arg, "--project="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--project="))
+			if value == "" || options.Project != "" {
+				return startOptions{}, errors.New(startUsage)
+			}
+			options.Project = value
+		case arg == "--project":
+			value, ok := nextFlagValue(args, &i)
+			if !ok || strings.TrimSpace(value) == "" || options.Project != "" {
+				return startOptions{}, errors.New(startUsage)
+			}
+			options.Project = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--task="):
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--task="))
+			if value == "" || options.Task != "" {
+				return startOptions{}, errors.New(startUsage)
+			}
+			options.Task = value
+		case arg == "--task":
+			value, ok := nextFlagValue(args, &i)
+			if !ok || strings.TrimSpace(value) == "" || options.Task != "" {
+				return startOptions{}, errors.New(startUsage)
+			}
+			options.Task = strings.TrimSpace(value)
+		default:
+			return startOptions{}, errors.New(startUsage)
+		}
 	}
-	if len(args) == 1 {
-		return args[0], nil, nil
+	return options, nil
+}
+
+func resolveStartResourceID(options startOptions) (string, error) {
+	if options.Project == "" && options.Task == "" {
+		taskID, ok, err := inferCurrentTaskID()
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return taskID, nil
+		}
+		projectID, ok, err := inferCurrentProjectID()
+		if err != nil {
+			return "", err
+		}
+		if ok {
+			return projectID, nil
+		}
+		return "", errors.New("could not infer current project or task; use forge start --project=<project> [--task=<task>]")
 	}
-	if args[1] != "--" {
-		return "", nil, errors.New("usage: forge start <task-id> [-- <agent command...>]")
+
+	projectID, err := normalizeProjectArg(options.Project)
+	if err != nil {
+		return "", err
 	}
-	if len(args) == 2 {
-		return "", nil, errors.New("agent command after -- cannot be empty")
+	if options.Task == "" {
+		return projectID, nil
 	}
-	return args[0], args[2:], nil
+	return normalizeTaskArg(projectID, options.Task)
 }
 
 func readConfig(root string) (Config, error) {

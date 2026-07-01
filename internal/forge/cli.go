@@ -215,7 +215,7 @@ Usage:
   forge session list
   forge session show --id=<id>
 
-  forge start <resource-id> [-- <agent command...>]
+  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Commands:
   forge init
@@ -313,10 +313,13 @@ Commands:
   forge session show --id=<id>
     Print one active session as formatted JSON after pruning stale sessions.
 
-  forge start <resource-id> [-- <agent command...>]
-    Run an agent command in the project or task directory. Explicit command arguments
-    after -- override the workspace forge.json agentCommand default. forge start
-    creates a session and injects FORGE_SESSION_ID into the agent environment.`)
+  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+    Run an agent command in the selected project or task directory. When
+    selectors are omitted, Forge uses the current task, otherwise the current
+    project. With only --task, Forge uses the current project. Explicit command
+    arguments after -- override the workspace forge.json agentCommand default.
+    forge start creates a session and injects FORGE_SESSION_ID into the agent
+    environment.`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {

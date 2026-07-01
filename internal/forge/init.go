@@ -218,7 +218,7 @@ forge session unlock --id=<id> [--project=<project>] [--task=<task>]
 forge session list
 forge session show --id=<id>
 
-forge start <resource-id> [-- <agent command...>]
+forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ` + "```" + `
 
 Notes:
@@ -235,5 +235,5 @@ Notes:
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
 - ` + "`forge session new`" + ` creates a session and prints a unique id. Use heartbeat liveness by default or explicitly with ` + "`--heartbeat [--timeout <duration>]`" + `; use ` + "`--pid <pid>`" + ` for process liveness. ` + "`forge session heartbeat --id=<id>`" + ` refreshes its timestamp. ` + "`forge session lock/unlock --id=<id>`" + ` records or releases project/task control, inferring the current task or project when selectors are omitted; workspace root does not need a lock. ` + "`forge session list`" + ` lists active sessions after pruning stale sessions, and ` + "`forge session show --id=<id>`" + ` prints one session as JSON.
-- ` + "`forge start <resource-id> [-- <agent command...>]`" + ` creates a session, injects ` + "`FORGE_SESSION_ID`" + ` into the agent environment, and runs an agent command in the project or task directory. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
+- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` creates a session, injects ` + "`FORGE_SESSION_ID`" + ` into the agent environment, and runs an agent command in the selected project or task directory. When selectors are omitted, it uses the current task, otherwise the current project. With only ` + "`--task`" + `, it uses the current project. Without an explicit command, it uses ` + "`agentCommand`" + ` from workspace ` + "`forge.json`" + `.
 `
