@@ -1358,12 +1358,21 @@ function renderTTYComposer() {
     composer.innerHTML = `
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
-        <input id="ttyInput" type="text" autocomplete="off" value="${escapeHTML(state.agent.ttyDraft)}" placeholder="Send input to the selected Codex session" />
+        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected Codex session">${escapeHTML(state.agent.ttyDraft)}</textarea>
+        <button type="submit" class="tty-send-button" title="Send input" aria-label="Send input">${icon("send")}</button>
       </form>
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       state.agent.ttyDraft = event.target.value;
+      resizeTTYInput(event.target);
     });
+    $("ttyInput")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        $("ttyForm")?.requestSubmit();
+      }
+    });
+    resizeTTYInput($("ttyInput"));
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
     return;
   }
@@ -1781,16 +1790,26 @@ function isLiveAgentRun(run) {
 async function submitTTYInput(event) {
   event.preventDefault();
   const input = $("ttyInput");
-  const text = input?.value.trim() || "";
-  if (!text) return;
-  state.agent.ttyDraft = input?.value || "";
+  const rawText = input?.value || "";
+  if (!rawText.trim()) return;
+  state.agent.ttyDraft = rawText;
   try {
-    await sendAgentInput(text);
+    await sendAgentInput(rawText);
     state.agent.ttyDraft = "";
     input.value = "";
+    resizeTTYInput(input);
   } catch (err) {
     toast(err.message);
   }
+}
+
+function resizeTTYInput(input) {
+  if (!input) return;
+  const maxHeight = 160;
+  input.style.height = "auto";
+  const nextHeight = Math.min(input.scrollHeight, maxHeight);
+  input.style.height = `${nextHeight}px`;
+  input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function defaultAgentPrompt() {
