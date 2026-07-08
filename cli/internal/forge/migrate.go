@@ -422,7 +422,7 @@ func migrateOneProjectFile(root, projectPath string) (bool, bool, error) {
 		taskPath := filepath.Join(projectPath, taskDirectoryName(id))
 		parent := projectID
 		description := fmt.Sprintf("Migrated legacy work from %s", projectID)
-		task := newTask(id, "task", &parent, description, defaultWorkflowName)
+		task := newTask(id, "task", &parent, titleFromDescription(description), description, defaultWorkflowName)
 		legacyProjectID := legacyProjectIDForProject(projectID)
 		task.Repos = migrateProjectReposToTask(root, legacyRepos, []string{
 			relPath(root, projectPath),

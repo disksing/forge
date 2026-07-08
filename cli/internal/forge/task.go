@@ -90,7 +90,7 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool, slug
 		return err
 	}
 	taskPath := filepath.Join(root, projectDirectoryName(id, slug))
-	task := newTask(id, "project", nil, description, workflow)
+	task := newTask(id, "project", nil, titleFromDescription(description), description, workflow)
 	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
 		return err
 	}
@@ -260,16 +260,17 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, description string, slug string) error {
+func projectTaskCreate(parentID, title string, detail string, slug string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
 	parentID = cleanID(parentID)
-	description = strings.TrimSpace(description)
-	if description == "" {
-		return fmt.Errorf("description cannot be empty")
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("title cannot be empty")
 	}
+	detail = strings.TrimSpace(detail)
 	slug, err = normalizeResourceSlug(slug)
 	if err != nil {
 		return err
@@ -298,8 +299,8 @@ func projectTaskCreate(parentID, description string, slug string) error {
 	if err != nil {
 		return err
 	}
-	task := newTask(id, "task", &parentID, description, defaultWorkflowName)
-	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
+	task := newTask(id, "task", &parentID, title, "", defaultWorkflowName)
+	if err := createResourceFilesWithMarkdown(taskPath, task, workflowContent, taskMarkdown(title, detail)); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -330,13 +331,13 @@ func projectTaskList(parentID string, includeArchived bool) error {
 	return nil
 }
 
-func newTask(id string, taskType string, parent *string, description string, workflow string) Task {
+func newTask(id string, taskType string, parent *string, title string, description string, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
 	task := Task{
 		ID:          id,
 		Type:        taskType,
 		Parent:      parent,
-		Title:       titleFromDescription(description),
+		Title:       strings.TrimSpace(title),
 		Description: description,
 		Workflow:    workflow,
 		CreatedAt:   now,
@@ -349,6 +350,10 @@ func newTask(id string, taskType string, parent *string, description string, wor
 }
 
 func createResourceFiles(dir string, task Task, workflowContent string) error {
+	return createResourceFilesWithMarkdown(dir, task, workflowContent, defaultTaskMD(task))
+}
+
+func createResourceFilesWithMarkdown(dir string, task Task, workflowContent string, markdown string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
@@ -364,7 +369,7 @@ func createResourceFiles(dir string, task Task, workflowContent string) error {
 	if err := writeResourceMetadata(dir, task); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, markdownFileName(task)), []byte(defaultTaskMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, markdownFileName(task)), []byte(markdown), 0o644); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
@@ -843,10 +848,18 @@ func printTaskJSON(task Task) error {
 }
 
 func defaultTaskMD(task Task) string {
+	return taskMarkdown(task.Title, task.Description)
+}
+
+func taskMarkdown(title string, detail string) string {
+	detail = strings.TrimSpace(detail)
+	if detail == "" {
+		return fmt.Sprintf("# %s\n", title)
+	}
 	return fmt.Sprintf(`# %s
 
 %s
-`, task.Title, task.Description)
+`, title, detail)
 }
 
 func defaultWorkMD(task Task) string {

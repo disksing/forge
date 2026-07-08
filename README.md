@@ -51,7 +51,7 @@ forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
 
-forge task create [--project=<project>] [--slug <slug>] <description>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
 forge task list [--project=<project>] [--all]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -90,7 +90,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge project archive [--project=<project>]` moves a project into workspace `archive/`. `<project>` follows the same rules as `forge project show`.
 
-`forge task create [--project=<project>] [--slug <slug>] <description>` creates the next task under a project. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
+`forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
 
 `forge task list [--project=<project>] [--all]` lists open tasks under a project. Use `--all` to include archived tasks. `<project>` follows the same rules as `forge task create`; when omitted, Forge uses the project containing the current working directory.
 
@@ -176,8 +176,8 @@ Each project directory contains:
 
 Each task directory contains:
 
-- `task.json`: structured facts such as id, type, parent id, description, selected workflow, and involved repositories.
-- `task.md`: background context generated from the resource title and description.
+- `task.json`: structured facts such as id, type, parent id, title, selected workflow, and involved repositories.
+- `task.md`: background context generated from the task title and detail.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
 - `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge task log add/list` to write or read task log entries.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.

@@ -10,7 +10,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--workflow=<name>] [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] <description>"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -160,10 +160,10 @@ func runTask(args []string) error {
 				return err
 			}
 			if !ok {
-				return errors.New("could not infer current project; use forge task create --project=<project> <description>")
+				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Description, options.Slug)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug)
 	case "list":
 		projectID, all, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -238,7 +238,7 @@ Usage:
   forge project log add [--project=<project>] [--details <text>|--details -] <title>
   forge project log list [--project=<project>] [--json]
 
-  forge task create [--project=<project>] [--slug <slug>] <description>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
   forge task list [--project=<project>] [--all]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -301,12 +301,13 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] <description>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
-    worktree/, and task-local AGENTS.md. <project> may be a full id such as
-    project22 or just a number such as 22. When omitted, Forge uses the
-    project containing the current working directory.
+    worktree/, and task-local AGENTS.md. <title> is written to task.json and
+    shown by task list. --detail writes the task.md body. <project> may be a
+    full id such as project22 or just a number such as 22. When omitted, Forge
+    uses the project containing the current working directory.
 
   forge task list [--project=<project>] [--all]
     List open tasks in a project. Use --all to include archived tasks.
@@ -444,9 +445,10 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 }
 
 type taskCreateOptions struct {
-	ParentID    string
-	Description string
-	Slug        string
+	ParentID string
+	Title    string
+	Detail   string
+	Slug     string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -454,7 +456,7 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 		return taskCreateOptions{}, errors.New(taskCreateUsage)
 	}
 	var options taskCreateOptions
-	var description []string
+	var title []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if strings.HasPrefix(arg, "--project=") {
@@ -503,15 +505,27 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			i++
 			continue
 		}
+		if strings.HasPrefix(arg, "--detail=") {
+			options.Detail = strings.TrimPrefix(arg, "--detail=")
+			continue
+		}
+		if arg == "--detail" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.Detail = args[i+1]
+			i++
+			continue
+		}
 		if strings.HasPrefix(arg, "--") {
 			return taskCreateOptions{}, errors.New(taskCreateUsage)
 		}
-		description = append(description, arg)
+		title = append(title, arg)
 	}
-	if len(description) == 0 {
+	if len(title) == 0 {
 		return taskCreateOptions{}, errors.New(taskCreateUsage)
 	}
-	options.Description = strings.Join(description, " ")
+	options.Title = strings.Join(title, " ")
 	return options, nil
 }
 

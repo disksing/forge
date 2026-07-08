@@ -294,7 +294,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge init\n  forge migrate",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] <description>",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
@@ -302,7 +302,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge migrate",
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] <description>",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 	}
@@ -314,6 +314,35 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		}
 		offset += index + len(marker)
 	}
+}
+
+func TestTaskCreateUsesTitleAndDetail(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Parent project")
+
+		created := run(t, "task", "create", "Task title", "--project=project1", "--slug=task-title", "--detail=Line one\n\nLine two")
+		var task Task
+		if err := json.Unmarshal([]byte(created), &task); err != nil {
+			t.Fatalf("task create should print task JSON, got error %v and output:\n%s", err, created)
+		}
+		if task.Title != "Task title" {
+			t.Fatalf("expected task title in JSON, got: %+v", task)
+		}
+		if strings.Contains(created, `"description"`) || task.Description != "" {
+			t.Fatalf("new task JSON should not include description, got:\n%s", created)
+		}
+
+		taskMD := readFile(t, filepath.Join(root, "project1", "task1-task-title", "task.md"))
+		if taskMD != "# Task title\n\nLine one\n\nLine two\n" {
+			t.Fatalf("expected detail to initialize task.md, got:\n%s", taskMD)
+		}
+
+		listed := run(t, "task", "list", "--project=project1")
+		if !strings.Contains(listed, "task1\tTask title") {
+			t.Fatalf("expected task list to show title, got:\n%s", listed)
+		}
+	})
 }
 
 func TestSluggedProjectAndTaskDirectories(t *testing.T) {
@@ -398,7 +427,7 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 		run(t, "init")
 		workflowContent := builtinWorkflows[defaultWorkflowName]
 
-		malformedProject := newTask("project9", "project", nil, "Malformed project", defaultWorkflowName)
+		malformedProject := newTask("project9", "project", nil, "Malformed project", "Malformed project", defaultWorkflowName)
 		if err := createResourceFiles(filepath.Join(root, "project9--bad"), malformedProject, workflowContent); err != nil {
 			t.Fatal(err)
 		}
@@ -418,7 +447,7 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 
 		parentPath := filepath.Join(root, "project1")
 		parentID := "project1"
-		malformedTask := newTask("project1.task8", "task", &parentID, "Malformed task", defaultWorkflowName)
+		malformedTask := newTask("project1.task8", "task", &parentID, "Malformed task", "Malformed task", defaultWorkflowName)
 		if err := createResourceFiles(filepath.Join(parentPath, "task8--bad"), malformedTask, workflowContent); err != nil {
 			t.Fatal(err)
 		}

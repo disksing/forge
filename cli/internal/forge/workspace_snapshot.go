@@ -26,7 +26,7 @@ type ResourceDetail struct {
 	ID          string             `json:"id"`
 	Type        string             `json:"type"`
 	Title       string             `json:"title"`
-	Description string             `json:"description"`
+	Description string             `json:"description,omitempty"`
 	Workflow    string             `json:"workflow,omitempty"`
 	CreatedAt   string             `json:"createdAt"`
 	UpdatedAt   string             `json:"updatedAt"`

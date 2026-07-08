@@ -416,6 +416,8 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
 		Project     string `json:"project"`
+		Title       string `json:"title"`
+		Detail      string `json:"detail"`
 		Description string `json:"description"`
 		Slug        string `json:"slug"`
 	}
@@ -423,11 +425,18 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	title := body.Title
+	if strings.TrimSpace(title) == "" {
+		title = body.Description
+	}
 	args := []string{"task", "create", "--project", body.Project}
 	if strings.TrimSpace(body.Slug) != "" {
 		args = append(args, "--slug", body.Slug)
 	}
-	args = append(args, body.Description)
+	if strings.TrimSpace(body.Detail) != "" {
+		args = append(args, "--detail="+body.Detail)
+	}
+	args = append(args, title)
 	result, err := s.runForgeForWorkspace(r.Context(), id, args...)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)

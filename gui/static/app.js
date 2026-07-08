@@ -21,7 +21,9 @@ const state = {
     open: false,
     type: "",
     projectId: "",
+    title: "",
     description: "",
+    detail: "",
     slug: "",
     submitting: false,
   },
@@ -511,10 +513,12 @@ function renderDetails() {
       </div>
     </div>
     ${metrics(detail)}
-    <div class="content-section">
-      <h3>${icon("align-left")}<span>Description</span></h3>
-      <p>${escapeHTML(detail.description || "No description.")}</p>
-    </div>
+    ${selected.type === "project" ? `
+      <div class="content-section">
+        <h3>${icon("align-left")}<span>Description</span></h3>
+        <p>${escapeHTML(detail.description || "No description.")}</p>
+      </div>
+    ` : ""}
     ${fileSection(detail)}
     ${artifactSection("Artifacts", detail.artifacts)}
     ${worktreeSection(detail.repos)}
@@ -2081,7 +2085,9 @@ function openCreateDialog(type, projectId = "") {
     open: true,
     type,
     projectId,
+    title: "",
     description: "",
+    detail: "",
     slug: "",
     submitting: false,
   };
@@ -2094,7 +2100,9 @@ function closeCreateDialog() {
     open: false,
     type: "",
     projectId: "",
+    title: "",
     description: "",
+    detail: "",
     slug: "",
     submitting: false,
   };
@@ -2112,7 +2120,8 @@ function renderCreateDialog() {
   }
   const isTask = dialog.type === "task";
   const title = isTask ? "Create task" : "Create project";
-  const descriptionPlaceholder = isTask ? "Describe the task" : "Describe the project";
+  const descriptionPlaceholder = "Describe the project";
+  const detailPlaceholder = "Task detail";
   const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
@@ -2128,7 +2137,12 @@ function renderCreateDialog() {
           <button class="icon-button" type="button" data-create-dialog-close="true" title="Close" aria-label="Close">${icon("x")}</button>
         </header>
         <form id="createDialogForm" class="details-form create-dialog-form">
-          <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
+          ${isTask ? `
+            <input name="title" required value="${escapeHTML(dialog.title)}" placeholder="Task title" />
+            <textarea name="detail" placeholder="${detailPlaceholder}">${escapeHTML(dialog.detail)}</textarea>
+          ` : `
+            <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
+          `}
           <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
           <div class="form-actions">
             <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
@@ -2148,14 +2162,18 @@ function bindCreateDialogEvents() {
   form.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    if (target.name === "title") state.createDialog.title = target.value;
     if (target.name === "description") state.createDialog.description = target.value;
+    if (target.name === "detail") state.createDialog.detail = target.value;
     if (target.name === "slug") state.createDialog.slug = target.value;
   });
   form.addEventListener("submit", submitCreateDialog);
   document.querySelectorAll("[data-create-dialog-close]").forEach((node) => {
     node.addEventListener("click", closeCreateDialog);
   });
-  if (!state.createDialog.submitting) form.elements.description?.focus();
+  if (!state.createDialog.submitting) {
+    (form.elements.title || form.elements.description)?.focus();
+  }
 }
 
 async function submitCreateDialog(event) {
@@ -2163,7 +2181,9 @@ async function submitCreateDialog(event) {
   const dialog = state.createDialog;
   if (!dialog.open || dialog.submitting) return;
   const form = new FormData(event.currentTarget);
+  dialog.title = String(form.get("title") || "");
   dialog.description = String(form.get("description") || "");
+  dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");
   dialog.submitting = true;
   renderCreateDialog();
@@ -2183,7 +2203,8 @@ async function submitCreateDialog(event) {
         method: "POST",
         body: JSON.stringify({
           project: dialog.projectId,
-          description: dialog.description,
+          title: dialog.title,
+          detail: dialog.detail,
           slug: dialog.slug,
         }),
       });

@@ -89,7 +89,7 @@ type Task struct {
 	Type        string     `json:"type"`
 	Parent      *string    `json:"parent"`
 	Title       string     `json:"title"`
-	Description string     `json:"description"`
+	Description string     `json:"description,omitempty"`
 	Workflow    string     `json:"workflow,omitempty"`
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
