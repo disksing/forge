@@ -197,6 +197,52 @@ exit 1
 	}
 }
 
+func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
+	workspace := t.TempDir()
+	resourceDir := filepath.Join(workspace, "project1", "task1")
+	if err := os.MkdirAll(resourceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tmp := t.TempDir()
+	forgePath := filepath.Join(tmp, "forge-fake")
+	script := `#!/bin/sh
+if [ "$1" = "workspace" ] && [ "$2" = "resource" ]; then
+  printf '{"path":"project1/task1"}\n'
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(&server{forgePath: forgePath})
+
+	got, err := m.agentRunCwd(context.Background(), guiWorkspace{Path: workspace}, "project1.task1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := filepath.Abs(resourceDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("expected empty cwd to default to resource dir %s, got %s", want, got)
+	}
+
+	got, err = m.agentRunCwd(context.Background(), guiWorkspace{Path: workspace}, "project1.task1", "project1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err = filepath.Abs(filepath.Join(workspace, "project1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("expected requested cwd to override resource dir %s, got %s", want, got)
+	}
+}
+
 func TestKeepForgeSessionAliveHeartbeatsImmediately(t *testing.T) {
 	workspace := t.TempDir()
 	tmp := t.TempDir()
