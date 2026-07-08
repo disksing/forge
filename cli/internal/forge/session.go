@@ -182,13 +182,14 @@ func sessionEnd(args []string) error {
 	}
 	var session Session
 	if err := withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
 		index := findSessionIndex(store.Sessions, id)
 		if index < 0 {
+			pruneStaleSessions(store)
 			return fmt.Errorf("session not found: %s", id)
 		}
 		session = store.Sessions[index]
 		store.Sessions = append(store.Sessions[:index], store.Sessions[index+1:]...)
+		pruneStaleSessions(store)
 		return nil
 	}); err != nil {
 		return err
