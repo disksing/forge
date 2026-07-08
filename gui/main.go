@@ -31,11 +31,13 @@ import (
 var staticFiles embed.FS
 
 type config struct {
-	Version       int            `json:"version"`
-	ActiveID      string         `json:"activeId,omitempty"`
-	Workspaces    []guiWorkspace `json:"workspaces"`
-	AgentDefaults agentDefaults  `json:"agentDefaults"`
-	Codex         codexSettings  `json:"codex"`
+	Version        int                   `json:"version"`
+	ActiveID       string                `json:"activeId,omitempty"`
+	Workspaces     []guiWorkspace        `json:"workspaces"`
+	AgentDefaults  agentDefaults         `json:"agentDefaults"`
+	AgentProviders []agentProviderConfig `json:"agentProviders"`
+	Agents         []agentConfig         `json:"agents"`
+	Codex          codexSettings         `json:"codex"`
 }
 
 type agentDefaults struct {
@@ -46,6 +48,22 @@ type agentDefaults struct {
 
 type codexSettings struct {
 	Enabled bool `json:"enabled"`
+}
+
+type agentProviderConfig struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Enabled bool   `json:"enabled"`
+}
+
+type agentConfig struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	ProviderID string `json:"providerId"`
+	Sandbox    string `json:"sandbox"`
+	Approval   string `json:"approval"`
+	Model      string `json:"model,omitempty"`
 }
 
 type guiWorkspace struct {
@@ -958,9 +976,11 @@ func (s *server) loadConfig() (config, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return config{
-				Version:       1,
-				Workspaces:    []guiWorkspace{},
-				AgentDefaults: normalizeAgentDefaults(agentDefaults{}),
+				Version:        1,
+				Workspaces:     []guiWorkspace{},
+				AgentDefaults:  normalizeAgentDefaults(agentDefaults{}),
+				AgentProviders: normalizeAgentProviders(nil),
+				Agents:         normalizeAgents(nil, normalizeAgentDefaults(agentDefaults{})),
 			}, nil
 		}
 		return config{}, err
@@ -975,6 +995,8 @@ func (s *server) loadConfig() (config, error) {
 		cfg.Workspaces = []guiWorkspace{}
 	}
 	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
+	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
+	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
 	return cfg, nil
 }
 
@@ -983,6 +1005,8 @@ func (s *server) saveConfig(cfg config) error {
 		cfg.Version = 1
 	}
 	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
+	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
+	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
 	if err := os.MkdirAll(filepath.Dir(s.config), 0o755); err != nil {
 		return err
 	}

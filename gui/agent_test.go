@@ -89,6 +89,74 @@ func TestIsClosedPipeError(t *testing.T) {
 	}
 }
 
+func TestLoadConfigCreatesDefaultAgentProviderAndAgent(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	provider, ok := findAgentProvider(cfg.AgentProviders, codexProviderID)
+	if !ok {
+		t.Fatalf("expected default Codex provider, got %#v", cfg.AgentProviders)
+	}
+	if !provider.Enabled || provider.Type != codexProviderID {
+		t.Fatalf("unexpected default provider: %#v", provider)
+	}
+	if len(cfg.Agents) != 1 {
+		t.Fatalf("expected one default agent, got %#v", cfg.Agents)
+	}
+	agent := cfg.Agents[0]
+	if agent.ProviderID != codexProviderID || agent.Sandbox != "workspace-write" || agent.Approval != "on-request" {
+		t.Fatalf("unexpected default agent: %#v", agent)
+	}
+}
+
+func TestResolveAgentConfigUsesNamedAgent(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version: 1,
+		AgentProviders: []agentProviderConfig{
+			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
+		},
+		Agents: []agentConfig{
+			{ID: "gpt-5-5", Name: "gpt-5.5", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "on-request", Model: "gpt-5.5"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(s)
+	agent, provider, err := m.resolveAgentConfig(startAgentRequest{AgentID: "gpt-5-5", Model: "ignored", Sandbox: "read-only", Approval: "never"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provider.ID != codexProviderID {
+		t.Fatalf("unexpected provider: %#v", provider)
+	}
+	if agent.Model != "gpt-5.5" || agent.Sandbox != "danger-full-access" || agent.Approval != "on-request" {
+		t.Fatalf("named agent options were not used: %#v", agent)
+	}
+}
+
+func TestResolveAgentConfigRejectsDisabledProvider(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version: 1,
+		AgentProviders: []agentProviderConfig{
+			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: false},
+		},
+		Agents: []agentConfig{
+			{ID: "codex", Name: "Codex", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(s)
+	_, _, err := m.resolveAgentConfig(startAgentRequest{AgentID: "codex"})
+	if err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("expected disabled provider error, got %v", err)
+	}
+}
+
 func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 	workspace := t.TempDir()
 	updatedAt := "2026-07-07T12:00:01+08:00"
