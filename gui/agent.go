@@ -1085,7 +1085,8 @@ func (rt *agentRuntime) withForgeSessionContext(text string) string {
 		b.WriteString(contextPath)
 		b.WriteString("\n")
 	}
-	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use this id explicitly for `forge session` commands instead of creating another Forge session.\n\n")
+	b.WriteString("- This session and the current directory resource are managed by Forge GUI. Do not create another Forge session, do not lock/unlock the current resource, and do not end this session yourself.\n")
+	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use the id above as the managed session id for temporary locks on other resources only.\n\n")
 	b.WriteString("User request:\n")
 	b.WriteString(text)
 	return b.String()

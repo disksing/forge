@@ -180,6 +180,14 @@ func sessionEnd(args []string) error {
 	if err != nil {
 		return err
 	}
+	session, err := endSession(root, id)
+	if err != nil {
+		return err
+	}
+	return printSessionJSON(session)
+}
+
+func endSession(root, id string) (Session, error) {
 	var session Session
 	if err := withLockedSessionStore(root, func(store *SessionStore) error {
 		index := findSessionIndex(store.Sessions, id)
@@ -192,9 +200,9 @@ func sessionEnd(args []string) error {
 		pruneStaleSessions(store)
 		return nil
 	}); err != nil {
-		return err
+		return Session{}, err
 	}
-	return printSessionJSON(session)
+	return session, nil
 }
 
 func sessionList() error {
@@ -277,6 +285,34 @@ func updateSessionLock(options sessionTargetOptions, lock bool) error {
 		return nil
 	}
 	return printSessionJSON(session)
+}
+
+func lockSessionResource(root, sessionID, resourceID string) (Session, error) {
+	control, noLock, err := resolveResourceSessionControl(root, resourceID)
+	if err != nil {
+		return Session{}, err
+	}
+	if noLock {
+		return Session{}, nil
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, sessionID)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", sessionID)
+		}
+		if err := ensureNoSessionControlConflicts(store, sessionID, control); err != nil {
+			return err
+		}
+		store.Sessions[index].Controls = addSessionControl(store.Sessions[index].Controls, control)
+		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return Session{}, err
+	}
+	return session, nil
 }
 
 func parseSessionNewArgs(args []string) (SessionLiveness, error) {

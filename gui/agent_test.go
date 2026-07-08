@@ -429,6 +429,9 @@ exit 1
 	if !strings.Contains(prompt, contextPath) {
 		t.Fatalf("prompt does not include context path:\n%s", prompt)
 	}
+	if !strings.Contains(prompt, "Do not create another Forge session") || !strings.Contains(prompt, "do not lock/unlock the current resource") {
+		t.Fatalf("prompt does not include managed session ownership guidance:\n%s", prompt)
+	}
 	if !strings.Contains(prompt, "User request:\ncontinue the task") {
 		t.Fatalf("prompt does not include user request:\n%s", prompt)
 	}

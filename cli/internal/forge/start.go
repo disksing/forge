@@ -64,7 +64,20 @@ func startTask(args []string) error {
 	if err != nil {
 		return err
 	}
+	if _, err := lockSessionResource(root, sessionID, resourceID); err != nil {
+		_, _ = endSession(root, sessionID)
+		return err
+	}
 
+	runErr := runStartCommand(command, taskPath, sessionID)
+	_, endErr := endSession(root, sessionID)
+	if runErr != nil {
+		return runErr
+	}
+	return endErr
+}
+
+func runStartCommand(command []string, taskPath, sessionID string) error {
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = taskPath
 	cmd.Env = appendSessionEnv(os.Environ(), sessionID)
