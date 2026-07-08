@@ -23,6 +23,7 @@ const (
 	sessionHeartbeatUsage  = "usage: forge session heartbeat --id=<id>"
 	sessionLockUsage       = "usage: forge session lock --id=<id> [--project=<project>] [--task=<task>]"
 	sessionUnlockUsage     = "usage: forge session unlock --id=<id> [--project=<project>] [--task=<task>]"
+	sessionEndUsage        = "usage: forge session end --id=<id>"
 	sessionShowUsage       = "usage: forge session show --id=<id>"
 	workspaceNoLockMessage = "workspace root does not need a lock"
 )
@@ -71,6 +72,8 @@ func runSession(args []string) error {
 		return sessionLock(args[1:])
 	case "unlock":
 		return sessionUnlock(args[1:])
+	case "end":
+		return sessionEnd(args[1:])
 	case "list":
 		if len(args) != 1 {
 			return errors.New("usage: forge session list")
@@ -161,6 +164,31 @@ func sessionUnlock(args []string) error {
 		return err
 	}
 	return updateSessionLock(options, false)
+}
+
+func sessionEnd(args []string) error {
+	id, err := parseSessionIDArg(args, sessionEndUsage)
+	if err != nil {
+		return err
+	}
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", id)
+		}
+		session = store.Sessions[index]
+		store.Sessions = append(store.Sessions[:index], store.Sessions[index+1:]...)
+		return nil
+	}); err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func sessionList() error {

@@ -1,7 +1,6 @@
 package forge
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -151,6 +150,11 @@ func taskArchive(id string) error {
 	if pathExists(dst) {
 		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
 	}
+	if isProject(task) {
+		if err := ensureProjectTasksArchived(src, task); err != nil {
+			return err
+		}
+	}
 	if err := ensureTaskRepoWorktreesMerged(root, task); err != nil {
 		return err
 	}
@@ -190,6 +194,21 @@ func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, new
 		}
 	}
 	return nil
+}
+
+func ensureProjectTasksArchived(projectPath string, project Task) error {
+	openTasks, err := readTaskEntriesInDir(projectPath, projectTaskName(project.ID))
+	if err != nil {
+		return err
+	}
+	if len(openTasks) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(openTasks))
+	for _, entry := range openTasks {
+		names = append(names, taskDirectoryName(entry.Task.ID))
+	}
+	return fmt.Errorf("cannot archive %s: archive all project tasks first: %s", project.ID, strings.Join(names, ", "))
 }
 
 func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
@@ -816,9 +835,7 @@ func titleFromDescription(description string) string {
 }
 
 func printTaskJSON(task Task) error {
-	encoder := json.NewEncoder(os.Stdout)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(task)
+	return printJSON(task)
 }
 
 func defaultTaskMD(task Task) string {

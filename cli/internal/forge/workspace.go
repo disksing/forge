@@ -59,6 +59,12 @@ func readJSON(path string, value any) error {
 	return json.Unmarshal(data, value)
 }
 
+func printJSON(value any) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(value)
+}
+
 func writeFileIfMissing(path, content string) error {
 	if pathExists(path) {
 		return nil

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/disksing/forge/internal/forge"
+	"github.com/disksing/forge/cli/internal/forge"
 )
 
 func main() {

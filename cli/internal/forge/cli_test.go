@@ -2,6 +2,7 @@ package forge
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"os/exec"
@@ -161,11 +162,45 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("task list should display short task ids, got:\n%s", children)
 		}
 
+		if err := os.WriteFile(filepath.Join(root, "project1", "task1", "artifacts", "result.txt"), []byte("ok"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		treeJSON := run(t, "workspace", "tree", "--json")
+		var tree WorkspaceTree
+		if err := json.Unmarshal([]byte(treeJSON), &tree); err != nil {
+			t.Fatalf("workspace tree should print JSON, got error %v and output:\n%s", err, treeJSON)
+		}
+		if tree.Root != slash(realPath(t, root)) || len(tree.Projects) != 1 {
+			t.Fatalf("unexpected workspace tree root/projects: %+v", tree)
+		}
+		if tree.Projects[0].ID != "project1" || tree.Projects[0].Path != "project1" || len(tree.Projects[0].Children) != 1 {
+			t.Fatalf("unexpected project tree item: %+v", tree.Projects[0])
+		}
+		taskItem := tree.Projects[0].Children[0]
+		if taskItem.ID != "project1.task1" || taskItem.Path != "project1/task1" {
+			t.Fatalf("unexpected task tree item: %+v", taskItem)
+		}
+		detailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
+		var detail ResourceDetail
+		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+			t.Fatalf("workspace resource should print JSON, got error %v and output:\n%s", err, detailJSON)
+		}
+		if detail.ID != "project1.task1" || detail.Path != "project1/task1" || len(detail.Files) == 0 {
+			t.Fatalf("unexpected task detail: %+v", detail)
+		}
+		if len(detail.Artifacts) != 1 || detail.Artifacts[0].Name != "result.txt" {
+			t.Fatalf("expected artifact file in task detail, got: %+v", detail.Artifacts)
+		}
+
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
 		if !strings.Contains(shown, `"parent": "project1"`) {
 			t.Fatalf("expected show to find subtask, got:\n%s", shown)
 		}
 
+		archivedTask := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(archivedTask, "project1/archive/task1") {
+			t.Fatalf("expected task archive path before project archive, got:\n%s", archivedTask)
+		}
 		archived := run(t, "project", "archive", "--project=project1")
 		if !strings.Contains(archived, "archive/project1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
@@ -290,6 +325,10 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 			t.Fatalf("expected next project id to account for slugged project, got:\n%s", nextProject)
 		}
 
+		archivedNextTask := run(t, "task", "archive", "--project=project1", "--task=task2")
+		if !strings.Contains(archivedNextTask, "project1-forge-dev/archive/task2") {
+			t.Fatalf("expected second task archive path before project archive, got:\n%s", archivedNextTask)
+		}
 		archivedProject := run(t, "project", "archive", "--project=project1")
 		if !strings.Contains(archivedProject, "archive/project1-forge-dev") {
 			t.Fatalf("expected project archive to preserve slugged directory name, got:\n%s", archivedProject)
@@ -370,6 +409,15 @@ func TestSessionNewLockShowListAndUnlock(t *testing.T) {
 		unlocked := run(t, "session", "unlock", "--id", id)
 		if strings.Contains(unlocked, `"resourceId": "project1.task1"`) || !strings.Contains(unlocked, `"controls": []`) {
 			t.Fatalf("expected unlock to remove current task control, got:\n%s", unlocked)
+		}
+
+		ended := run(t, "session", "end", "--id", id)
+		if !strings.Contains(ended, `"id": "`+id+`"`) {
+			t.Fatalf("expected end to print removed session JSON, got:\n%s", ended)
+		}
+		listed = run(t, "session", "list")
+		if strings.Contains(listed, id) {
+			t.Fatalf("expected ended session to be removed from active list, got:\n%s", listed)
 		}
 	})
 }
@@ -1135,6 +1183,16 @@ func TestProjectListAllIncludesArchivedProjectsOnly(t *testing.T) {
 			t.Fatalf("task list --all should include archived and open tasks, got:\n%s", allTasks)
 		}
 
+		out, err := runErr(t, "project", "archive", "--project=project1")
+		if err == nil {
+			t.Fatalf("expected project archive with open tasks to fail, got stdout:\n%s", out)
+		}
+		if !strings.Contains(err.Error(), "archive all project tasks first: task2") {
+			t.Fatalf("expected open child task in archive error, got error %v and stdout:\n%s", err, out)
+		}
+		assertDir(t, filepath.Join(root, "project1"))
+
+		run(t, "task", "archive", "--project=project1", "--task=task2")
 		run(t, "project", "archive", "--project=project1")
 		openProjects = run(t, "project", "list")
 		if strings.Contains(openProjects, "project1\tParent project") {
@@ -1202,6 +1260,8 @@ func TestProjectAndTaskFlagSelection(t *testing.T) {
 		if !strings.Contains(archived, "project1/archive/task2") {
 			t.Fatalf("expected task archive to accept numeric project/task selectors, got:\n%s", archived)
 		}
+		run(t, "task", "archive", "--project=1", "--task=1")
+		run(t, "task", "archive", "--project=1", "--task=3")
 		projectArchive := run(t, "project", "archive", "--project=1")
 		if !strings.Contains(projectArchive, "archive/project1") {
 			t.Fatalf("expected project archive to accept numeric project selector, got:\n%s", projectArchive)

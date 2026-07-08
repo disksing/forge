@@ -64,6 +64,9 @@ forge session unlock --id=<id> [--project=<project>] [--task=<task>]
 forge session list
 forge session show --id=<id>
 
+forge workspace tree --json
+forge workspace resource --id=<resource> --json
+
 forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ```
 
@@ -102,6 +105,10 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 `forge session lock --id=<id> [--project=<project>] [--task=<task>]` records project or task control for a session. With no selector, Forge locks the current task when run under a task directory, otherwise the current project. With only `--project`, Forge locks that project. With only `--task`, Forge uses the current project and locks that task. Workspace root does not need a lock. `forge session unlock` uses the same selector rules to release control.
 
 `forge session list` lists active sessions after automatically pruning stale sessions. `forge session show --id=<id>` prints one active session as formatted JSON.
+
+`forge workspace tree --json` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
+
+`forge workspace resource --id=<resource> --json` prints detail JSON for one project or task, including common Markdown files, artifacts, worktrees, and task repository metadata.
 
 Agents started directly should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, and then use that id for `forge session lock` and `forge session unlock`. Agents started through `forge start` should reuse the injected `FORGE_SESSION_ID` and skip self-registration.
 
@@ -176,7 +183,7 @@ If `--worktree` is omitted, forge records `<project-id>/taskN/worktree/<repo>` b
 
 ```bash
 go test ./...
-go run ./cmd/forge help
+go run ./cli/cmd/forge help
 ```
 
 ## Companion Tools

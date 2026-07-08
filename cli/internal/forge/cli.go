@@ -40,6 +40,8 @@ func Run(args []string) error {
 		return runTask(args[1:])
 	case "session":
 		return runSession(args[1:])
+	case "workspace":
+		return runWorkspace(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
 	case "help", "-h", "--help":
@@ -47,6 +49,27 @@ func Run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func runWorkspace(args []string) error {
+	if len(args) == 0 {
+		return errors.New("workspace requires a subcommand")
+	}
+	switch args[0] {
+	case "tree":
+		if len(args) != 2 || args[1] != "--json" {
+			return errors.New("usage: forge workspace tree --json")
+		}
+		return workspaceTreeJSON()
+	case "resource":
+		id, err := parseWorkspaceResourceArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return workspaceResourceJSON(id)
+	default:
+		return fmt.Errorf("unknown workspace subcommand %q", args[0])
 	}
 }
 
@@ -212,8 +235,12 @@ Usage:
   forge session heartbeat --id=<id>
   forge session lock --id=<id> [--project=<project>] [--task=<task>]
   forge session unlock --id=<id> [--project=<project>] [--task=<task>]
+  forge session end --id=<id>
   forge session list
   forge session show --id=<id>
+
+  forge workspace tree --json
+  forge workspace resource --id=<resource> --json
 
   forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
@@ -307,11 +334,22 @@ Commands:
   forge session unlock --id=<id> [--project=<project>] [--task=<task>]
     Release a project or task lock using the same selector rules as lock.
 
+  forge session end --id=<id>
+    End a session immediately and remove it from the active session list.
+
   forge session list
     List active sessions after automatically pruning stale sessions.
 
   forge session show --id=<id>
     Print one active session as formatted JSON after pruning stale sessions.
+
+  forge workspace tree --json
+    Print a lightweight JSON tree of open projects, open tasks, and active
+    sessions for GUI and tool integrations.
+
+  forge workspace resource --id=<resource> --json
+    Print detail JSON for one project or task, including common Markdown files,
+    artifacts, worktrees, and task repository metadata.
 
   forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
     Run an agent command in the selected project or task directory. When
