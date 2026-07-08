@@ -8,6 +8,7 @@ const state = {
   selectedId: "",
   expandedProjects: new Set(),
   expandedPaths: new Set(),
+  expandedMarkdownFiles: new Set(),
   preview: null,
   diff: null,
   sessionMenu: null,
@@ -68,6 +69,8 @@ const AGENT_OLDER_VISIBLE_EVENT_COUNT = 50;
 const AGENT_OLDER_RAW_PAGE_LIMIT = 500;
 const AGENT_INITIAL_AUTO_PAGE_LIMIT = 8;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 16;
+const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
+const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -240,6 +243,7 @@ function renderAll() {
   renderSessions();
   renderDetails();
   bindWorkspaceAgentsEvents();
+  bindMarkdownPreviewEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -782,7 +786,7 @@ function renderFileContent(name, content) {
     return renderAgentsFileContent(content);
   }
   if (isMarkdownFile(name)) {
-    return `<div class="markdown-view markdown-rendered">${renderMarkdown(content)}</div>`;
+    return renderMarkdownFileContent(name, content);
   }
   return `<pre class="markdown-view">${escapeHTML(content)}</pre>`;
 }
@@ -798,7 +802,41 @@ function renderAgentsFileContent(content) {
       </div>
     `;
   }
-  return `<div class="markdown-view markdown-rendered">${renderMarkdown(userContent)}</div>`;
+  return renderMarkdownFileContent("AGENTS.md", userContent);
+}
+
+function renderMarkdownFileContent(name, content) {
+  const key = markdownFileKey(name);
+  const canCollapse = isLongMarkdownContent(content);
+  const expanded = !canCollapse || state.expandedMarkdownFiles.has(key);
+  return `
+    <div class="markdown-preview ${expanded ? "expanded" : "collapsed"}">
+      <div class="markdown-view markdown-rendered">${renderMarkdown(content)}</div>
+      ${expanded ? "" : `
+        <button type="button" class="markdown-show-all" data-markdown-toggle="${escapeHTML(key)}" aria-expanded="false">
+          show all
+        </button>
+      `}
+    </div>
+  `;
+}
+
+function markdownFileKey(name) {
+  return `${state.activeWorkspaceId}:${state.selectedId || "workspace"}:${name}`;
+}
+
+function isLongMarkdownContent(content) {
+  const text = String(content ?? "");
+  return text.length > MARKDOWN_PREVIEW_CHAR_LIMIT || text.split(/\r\n|\r|\n/).length > MARKDOWN_PREVIEW_LINE_LIMIT;
+}
+
+function bindMarkdownPreviewEvents() {
+  document.querySelectorAll("[data-markdown-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.expandedMarkdownFiles.add(button.dataset.markdownToggle);
+      renderAll();
+    });
+  });
 }
 
 function stripForgeManagedBlocks(content) {
@@ -2815,6 +2853,7 @@ function optionalAssetLoaded(asset) {
   refreshIcons();
   if (asset === "markdown" && window.marked && window.DOMPurify) {
     renderDetails();
+    bindMarkdownPreviewEvents();
     bindArtifactBrowserEvents();
     bindFileModalEvents();
     bindDiffEvents();
