@@ -172,8 +172,8 @@ Each project directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, and selected workflow file.
 - `project.json`: structured project facts such as id, type, description, and selected workflow.
-- `project.md`: project background context generated from the project title and description.
-- `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
+- `project.md`: durable project brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
+- `work.md`: mutable recovery snapshot generated with default `Status`, `Focus`, `Todo`, and `Blockers` modules. Add optional modules such as `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes` only when useful.
 - `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge project log add/list` to write or read project log entries.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 
@@ -181,8 +181,8 @@ Each task directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, parent project context, and selected workflow file.
 - `task.json`: structured facts such as id, type, parent id, title, selected workflow, and involved repositories.
-- `task.md`: background context generated from the task title and detail.
-- `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
+- `task.md`: durable task brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
+- `work.md`: mutable recovery snapshot generated with default `Status`, `Focus`, `Todo`, and `Blockers` modules. Add optional modules such as `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes` only when useful. Use `Resources` for arbitrary PR links, CI run ids, image tags, deployment URLs, related tasks, and other resource notes that do not need a JSON schema.
 - `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge task log add/list` to write or read task log entries.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 - `worktree/`: Git worktrees for code changes.

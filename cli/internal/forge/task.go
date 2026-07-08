@@ -863,44 +863,72 @@ func defaultTaskMD(task Task) string {
 func taskMarkdown(title string, detail string) string {
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
-		return fmt.Sprintf("# %s\n", title)
+		detail = "<!-- Why this exists. Keep durable context here; put transient progress in work.md. -->"
 	}
 	return fmt.Sprintf(`# %s
 
+## Background
+
 %s
+
+## Scope
+
+<!-- Describe included work. Add optional sections such as Out of Scope, Constraints, Decisions, or Open Questions only when useful. -->
+
+## Acceptance Criteria
+
+<!-- List observable results that mean this is done. -->
+- TBD
 `, title, detail)
 }
 
 func defaultWorkMD(task Task) string {
 	label := "Task"
-	next := `- Read task.json, task.md, and log.jsonl.
-- Decide which repositories are involved.
-- Update task.json if new repositories are discovered.
-- Create any needed worktrees under worktree/.`
+	todo := `- [ ] Read task.json, task.md, and log.jsonl.
+- [ ] Decide which repositories are involved.
+- [ ] Update task.json if new repositories are discovered.
+- [ ] Create any needed worktrees under worktree/.`
 	if isProject(task) {
 		label = "Project"
-		next = `- Read project.json, project.md, and log.jsonl.
-- Create project tasks for implementation work.
-- Keep repository and worktree state in task directories, not in the project.`
+		todo = `- [ ] Read project.json, project.md, and log.jsonl.
+- [ ] Create project tasks for implementation work.
+- [ ] Keep repository and worktree state in task directories, not in the project.`
 	}
 	return fmt.Sprintf(`# Work
 
-## Current Step
+## Status
 
-No work has started yet.
+not_started
 
-## Current State
+<!-- Use one of: not_started, in_progress, blocked, ready_for_review, done. -->
 
-%s %s has been created. No blockers are known.
+## Focus
 
-## Next Step
+%s %s has been created. No active work has started.
 
+## Todo
+
+<!-- Keep only short-term actions needed by the next agent. Put completed history in log.jsonl. -->
 %s
 
-## Recovery Rule
+## Blockers
 
-Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.jsonl via forge task log add or forge project log add.
-`, label, task.ID, next)
+None.
+
+<!-- Optional modules: Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes. Add them only when useful; remove empty modules. Put unpredictable links, PRs, CI runs, image tags, deployment URLs, and related task ids in Resources. -->
+`, label, task.ID, todo)
+}
+
+func workMDGuidance(resourceName string) string {
+	return fmt.Sprintf("Keep %s as the live recovery snapshot: status, focus, short-term todo, blockers, and optional modules only when useful. Delete empty optional modules; put arbitrary resource links or IDs in a Resources module.", resourceName)
+}
+
+func markdownGuidance(resourceName string) string {
+	return fmt.Sprintf("Use %s for the durable brief: background, scope, acceptance criteria, and stable constraints or decisions discovered during the conversation.", resourceName)
+}
+
+func jsonGuidance(resourceName string) string {
+	return fmt.Sprintf("Keep %s focused on structured facts Forge already understands; use Markdown for arbitrary notes, links, IDs, and progress.", resourceName)
 }
 
 func taskAgentsPrompt(task Task, workflowContent string) string {
@@ -925,14 +953,16 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 	}
 	readLine := "Read task.json, task.md, work.md, and log.jsonl before acting."
 	updateLine := "If the task involves a new repository, update this task's task.json."
-	structuredLine := "Keep task.json focused on structured facts."
-	backgroundLine := "Use task.md for task background context."
+	structuredLine := jsonGuidance("task.json")
+	backgroundLine := markdownGuidance("task.md")
+	recoveryLine := workMDGuidance("work.md")
 	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
 	if isProject(task) {
 		readLine = "Read project.json, project.md, work.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
-		structuredLine = "Keep project.json focused on project-level structured facts."
-		backgroundLine = "Use project.md for project background context."
+		structuredLine = jsonGuidance("project.json")
+		backgroundLine = markdownGuidance("project.md")
+		recoveryLine = workMDGuidance("work.md")
 		pendingLine = "If project.md contains pending decisions or unresolved items, ask the user to clarify them, then update project.md with the confirmed answers."
 	}
 	return fmt.Sprintf(`# %s
@@ -953,11 +983,12 @@ You are working inside a %s.
 - %s
 - %s
 - %s
+- %s
 - Follow the selected workflow in %s.
 - Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
-`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, pendingLine, workflowPath, extra)
+`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, workflowPath, extra)
 }
 
 func workflowRelativePath(task Task) string {

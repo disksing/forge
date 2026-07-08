@@ -145,16 +145,24 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectMD, "# Implement the forge MVP") || !strings.Contains(projectMD, "Implement the forge MVP") {
 			t.Fatalf("expected project.md to contain project background, got:\n%s", projectMD)
 		}
+		if !strings.Contains(projectMD, "## Background") || !strings.Contains(projectMD, "## Scope") || !strings.Contains(projectMD, "## Acceptance Criteria") {
+			t.Fatalf("expected project.md to include durable brief modules, got:\n%s", projectMD)
+		}
 		if strings.Contains(projectMD, "## Workflow") || strings.Contains(projectMD, defaultWorkflowSnippet) || strings.Contains(projectMD, "## Notes") {
-			t.Fatalf("expected project.md to contain only project background, got:\n%s", projectMD)
+			t.Fatalf("expected project.md to contain durable brief context only, got:\n%s", projectMD)
 		}
 		assertNoHan(t, projectMDPath)
 		taskWork := readFile(t, filepath.Join(root, "project1", "work.md"))
-		if !strings.Contains(taskWork, "## Recovery Rule") {
-			t.Fatalf("expected work.md to include recovery rule, got:\n%s", taskWork)
+		for _, section := range []string{"## Status", "## Focus", "## Todo", "## Blockers"} {
+			if !strings.Contains(taskWork, section) {
+				t.Fatalf("expected work.md to include %s, got:\n%s", section, taskWork)
+			}
 		}
-		if !strings.Contains(taskWork, "Keep this file as a mutable recovery snapshot, not a chronological log.") || !strings.Contains(taskWork, "Put dated events, command results, completed-step history, and other timeline entries in log.jsonl") {
-			t.Fatalf("expected work.md to distinguish snapshot from timeline history, got:\n%s", taskWork)
+		if strings.Contains(taskWork, "## Recovery Rule") {
+			t.Fatalf("expected work.md not to embed static recovery policy, got:\n%s", taskWork)
+		}
+		if !strings.Contains(taskWork, "Keep only short-term actions needed by the next agent.") || !strings.Contains(taskWork, "Optional modules: Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes.") || !strings.Contains(taskWork, "Put unpredictable links, PRs, CI runs, image tags") {
+			t.Fatalf("expected work.md to include concise self-explanatory comments, got:\n%s", taskWork)
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
@@ -343,7 +351,24 @@ func TestTaskCreateUsesTitleAndDetail(t *testing.T) {
 		}
 
 		taskMD := readFile(t, filepath.Join(root, "project1", "task1-task-title", "task.md"))
-		if taskMD != "# Task title\n\nLine one\n\nLine two\n" {
+		expectedTaskMD := `# Task title
+
+## Background
+
+Line one
+
+Line two
+
+## Scope
+
+<!-- Describe included work. Add optional sections such as Out of Scope, Constraints, Decisions, or Open Questions only when useful. -->
+
+## Acceptance Criteria
+
+<!-- List observable results that mean this is done. -->
+- TBD
+`
+		if taskMD != expectedTaskMD {
 			t.Fatalf("expected detail to initialize task.md, got:\n%s", taskMD)
 		}
 
@@ -1826,6 +1851,15 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		}
 		if !strings.Contains(first, "`work.md` is a mutable recovery snapshot, not a chronological log.") {
 			t.Fatalf("expected workspace AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", first)
+		}
+		if !strings.Contains(first, "`project.md` and `task.md` are durable briefs.") {
+			t.Fatalf("expected workspace AGENTS.md to describe markdown briefs, got:\n%s", first)
+		}
+		if !strings.Contains(first, "optional modules such as `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
+			t.Fatalf("expected workspace AGENTS.md to describe optional work.md modules, got:\n%s", first)
+		}
+		if !strings.Contains(first, "Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related resource notes in Markdown") {
+			t.Fatalf("expected workspace AGENTS.md to keep arbitrary resources in Markdown, got:\n%s", first)
 		}
 		if !strings.Contains(first, "Do not append timeline history to `work.md`.") {
 			t.Fatalf("expected workspace AGENTS.md to forbid timeline history in work.md, got:\n%s", first)

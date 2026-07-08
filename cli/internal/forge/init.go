@@ -177,10 +177,11 @@ This directory is an AgentWorkspace managed by forge.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
-- ` + "`project.md`" + ` and ` + "`task.md`" + ` are background context.
-- ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
-- Before starting any meaningful step, replace stale ` + "`work.md`" + ` content with the step you are about to take.
-- Immediately after completing any meaningful step, replace stale ` + "`work.md`" + ` content with the updated current state and next step.
+- Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related resource notes in Markdown, usually the optional ` + "`Resources`" + ` module in ` + "`work.md`" + `.
+- ` + "`project.md`" + ` and ` + "`task.md`" + ` are durable briefs. Keep background, scope, acceptance criteria, stable constraints, and decisions there.
+- ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep status, focus, short-term todo, blockers, and optional modules such as ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when they are useful.
+- Before starting risky, long-running, or interruptible work, update ` + "`work.md`" + ` with the current focus and todo.
+- Immediately after completing a coherent step, update ` + "`work.md`" + ` with the new status, next todo, blockers, and any useful optional modules; remove empty optional modules.
 - Do not append timeline history to ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.jsonl`" + `.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
