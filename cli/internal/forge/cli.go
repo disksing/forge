@@ -130,6 +130,8 @@ func runProject(args []string) error {
 			return err
 		}
 		return taskArchive(projectID)
+	case "log":
+		return runResourceLog("project", args[1:])
 	case "repo":
 		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> [--project=<project>] [--task=<task>] ...")
 	default:
@@ -182,6 +184,8 @@ func runTask(args []string) error {
 		return taskArchive(taskID)
 	case "repo":
 		return runTaskRepo(args[1:])
+	case "log":
+		return runResourceLog("task", args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -231,11 +235,15 @@ Usage:
   forge project list [--all]
   forge project show [--project=<project>]
   forge project archive [--project=<project>]
+  forge project log add [--project=<project>] [--details <text>|--details -] <title>
+  forge project log list [--project=<project>] [--json]
 
   forge task create [--project=<project>] [--slug <slug>] <description>
   forge task list [--project=<project>] [--all]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
+  forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
+  forge task log list [--project=<project>] [--task=<task>] [--json]
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
@@ -275,7 +283,7 @@ Commands:
 
   forge project create [--workflow=<name>] [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
-    project.md, work.md, log.md, artifacts/, and project-local AGENTS.md. By
+    project.md, work.md, log.jsonl, artifacts/, and project-local AGENTS.md. By
     default, AGENTS.md uses workflow/default.md for project workflow guidance.
     Use --workflow=<name> to select workflow/<name>.md. Use --slug <slug> to
     append a human-readable suffix to the directory name.
@@ -295,7 +303,7 @@ Commands:
 
   forge task create [--project=<project>] [--slug <slug>] <description>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
-    directory, including task.json, task.md, work.md, log.md, artifacts/,
+    directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <project> may be a full id such as
     project22 or just a number such as 22. When omitted, Forge uses the
     project containing the current working directory.
@@ -315,6 +323,23 @@ Commands:
   forge task archive [--project=<project>] [--task=<task>]
     Move an open task into its project archive. <task> follows the same rules
     as forge task show.
+
+  forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
+    Prepend a structured entry to a task's log.jsonl. When --details - is
+    provided, details are read from standard input. Task selection follows
+    forge task show.
+
+  forge task log list [--project=<project>] [--task=<task>] [--json]
+    List a task's structured log entries newest first. Use --json to print
+    entries as formatted JSON. Task selection follows forge task show.
+
+  forge project log add [--project=<project>] [--details <text>|--details -] <title>
+    Prepend a structured entry to a project's log.jsonl. Project selection
+    follows forge project show.
+
+  forge project log list [--project=<project>] [--json]
+    List a project's structured log entries newest first. Use --json to print
+    entries as formatted JSON. Project selection follows forge project show.
 
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge

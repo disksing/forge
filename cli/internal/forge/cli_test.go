@@ -97,7 +97,16 @@ func TestTaskLifecycle(t *testing.T) {
 		assertMissing(t, filepath.Join(root, "project1", "task.json"))
 		assertMissing(t, filepath.Join(root, "project1", "task.md"))
 		assertFile(t, filepath.Join(root, "project1", "work.md"))
-		assertFile(t, filepath.Join(root, "project1", "log.md"))
+		assertFile(t, filepath.Join(root, "project1", "log.jsonl"))
+		assertMissing(t, filepath.Join(root, "project1", "log.md"))
+		projectLogJSON := run(t, "project", "log", "list", "--project=project1", "--json")
+		var projectLogs []LogEntry
+		if err := json.Unmarshal([]byte(projectLogJSON), &projectLogs); err != nil {
+			t.Fatalf("project log list should print JSON, got error %v and output:\n%s", err, projectLogJSON)
+		}
+		if len(projectLogs) != 1 || projectLogs[0].Title != "Project created" {
+			t.Fatalf("expected project creation log, got: %+v", projectLogs)
+		}
 		assertDir(t, filepath.Join(root, "project1", "artifacts"))
 		assertMissing(t, filepath.Join(root, "project1", "worktree"))
 		projectAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
@@ -135,7 +144,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md to include recovery rule, got:\n%s", taskWork)
 		}
-		if !strings.Contains(taskWork, "Keep this file as a mutable recovery snapshot, not a chronological log.") || !strings.Contains(taskWork, "Put dated events, command results, completed-step history, and other timeline entries in log.md.") {
+		if !strings.Contains(taskWork, "Keep this file as a mutable recovery snapshot, not a chronological log.") || !strings.Contains(taskWork, "Put dated events, command results, completed-step history, and other timeline entries in log.jsonl") {
 			t.Fatalf("expected work.md to distinguish snapshot from timeline history, got:\n%s", taskWork)
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
@@ -161,8 +170,11 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.md") {
+		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
+		}
+		if !strings.Contains(subtaskAgents, "forge task log add <title> --details <details>") {
+			t.Fatalf("expected subtask AGENTS.md to mention structured log command, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
@@ -208,8 +220,32 @@ func TestTaskLifecycle(t *testing.T) {
 		if detail.ID != "project1.task1" || detail.Path != "project1/task1" || len(detail.Files) == 0 {
 			t.Fatalf("unexpected task detail: %+v", detail)
 		}
+		if len(detail.Logs) != 1 || detail.Logs[0].Title != "Task created" {
+			t.Fatalf("expected structured task creation log, got: %+v", detail.Logs)
+		}
 		if len(detail.Artifacts) != 1 || detail.Artifacts[0].Name != "result.txt" {
 			t.Fatalf("expected artifact file in task detail, got: %+v", detail.Artifacts)
+		}
+
+		addedLog := run(t, "task", "log", "add", "--project=project1", "--task=task1", "--details", "go test ./... passed", "Ran checks")
+		var addedEntry LogEntry
+		if err := json.Unmarshal([]byte(addedLog), &addedEntry); err != nil {
+			t.Fatalf("task log add should print JSON, got error %v and output:\n%s", err, addedLog)
+		}
+		if addedEntry.Title != "Ran checks" || addedEntry.Details != "go test ./... passed" {
+			t.Fatalf("unexpected added log entry: %+v", addedEntry)
+		}
+		taskLogJSON := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
+		var taskLogs []LogEntry
+		if err := json.Unmarshal([]byte(taskLogJSON), &taskLogs); err != nil {
+			t.Fatalf("task log list should print JSON, got error %v and output:\n%s", err, taskLogJSON)
+		}
+		if len(taskLogs) != 2 || taskLogs[0].Title != "Ran checks" || taskLogs[1].Title != "Task created" {
+			t.Fatalf("expected newest task log first, got: %+v", taskLogs)
+		}
+		rawTaskLog := readFile(t, filepath.Join(root, "project1", "task1", "log.jsonl"))
+		if !strings.Contains(strings.SplitN(rawTaskLog, "\n", 2)[0], `"title":"Ran checks"`) {
+			t.Fatalf("expected log.jsonl to store newest entry first, got:\n%s", rawTaskLog)
 		}
 
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
@@ -1602,7 +1638,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
 		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.md", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
@@ -1646,7 +1682,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Keep child note.") {
 			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, work.md, and log.md") {
+		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
 		}
 		if !strings.Contains(subtaskAfter, defaultWorkflowSnippet) {
@@ -1819,7 +1855,11 @@ func createLegacyTaskFiles(dir string, task Task, workflowContent string) error 
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "log.md"), []byte(defaultLogMD()), 0o644); err != nil {
+	logTitle := "Task created"
+	if isProject(task) {
+		logTitle = "Project created"
+	}
+	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)), 0o644)

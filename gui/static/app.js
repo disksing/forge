@@ -515,6 +515,7 @@ function renderDetails() {
       <h3>${icon("align-left")}<span>Description</span></h3>
       <p>${escapeHTML(detail.description || "No description.")}</p>
     </div>
+    ${logSection(detail)}
     ${fileSection(detail)}
     ${artifactSection("Artifacts", detail.artifacts)}
     ${worktreeSection(detail.repos)}
@@ -592,6 +593,72 @@ function metrics(item) {
       <div class="metric">${icon("folder-git-2")}<div><span>Repos</span><strong>${repoCount}</strong></div></div>
     </div>
   `;
+}
+
+function logSection(item) {
+  const logs = [...(item.logs || [])].sort((a, b) => compareLogTimeDesc(a, b));
+  if (!logs.length) return "";
+  return `
+    <div class="content-section">
+      <h3>${icon("history")}<span>Log</span></h3>
+      <div class="log-timeline">
+        ${logs.map((entry) => logTimelineEntry(entry)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function logTimelineEntry(entry) {
+  const title = entry.title || "Untitled log entry";
+  const details = entry.details || "";
+  return `
+    <details class="log-entry">
+      <summary>
+        <span class="log-time" title="${escapeHTML(entry.time || "")}">
+          <strong>${escapeHTML(relativeTime(entry.time))}</strong>
+          <small>${escapeHTML(entry.time || "")}</small>
+        </span>
+        <span class="log-title">${escapeHTML(title)}</span>
+      </summary>
+      <div class="log-details ${details ? "" : "empty"}">
+        ${details ? renderMarkdown(details) : "No details."}
+      </div>
+    </details>
+  `;
+}
+
+function compareLogTimeDesc(a, b) {
+  const left = Date.parse(a?.time || "");
+  const right = Date.parse(b?.time || "");
+  if (Number.isFinite(left) && Number.isFinite(right) && left !== right) {
+    return right - left;
+  }
+  return String(b?.time || "").localeCompare(String(a?.time || ""));
+}
+
+function relativeTime(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return "unknown";
+  const diffSeconds = Math.round((Date.now() - timestamp) / 1000);
+  const future = diffSeconds < 0;
+  const seconds = Math.abs(diffSeconds);
+  if (seconds < 45) return future ? "soon" : "just now";
+  const units = [
+    ["year", 31536000],
+    ["month", 2592000],
+    ["week", 604800],
+    ["day", 86400],
+    ["hour", 3600],
+    ["min", 60],
+  ];
+  for (const [unit, size] of units) {
+    if (seconds >= size) {
+      const amount = Math.floor(seconds / size);
+      const label = unit === "min" ? "min" : `${unit}${amount === 1 ? "" : "s"}`;
+      return future ? `in ${amount} ${label}` : `${amount} ${label} ago`;
+    }
+  }
+  return future ? "in 1 min" : "1 min ago";
 }
 
 function fileSection(item) {

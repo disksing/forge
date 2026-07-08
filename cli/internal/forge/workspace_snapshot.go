@@ -33,6 +33,7 @@ type ResourceDetail struct {
 	Path        string             `json:"path"`
 	Archived    bool               `json:"archived"`
 	Repos       []TaskRepo         `json:"repos,omitempty"`
+	Logs        []LogEntry         `json:"logs,omitempty"`
 	Files       []ResourceFile     `json:"files,omitempty"`
 	Artifacts   []FileTreeEntry    `json:"artifacts,omitempty"`
 	Worktrees   []FileTreeEntry    `json:"worktrees,omitempty"`
@@ -134,6 +135,11 @@ func buildResourceTreeItem(root string, entry taskListEntry, includeChildren boo
 
 func buildResourceDetailAt(root string, entry taskListEntry) (ResourceDetail, error) {
 	task := entry.Task
+	logs, err := readLogEntries(entry.Path)
+	if err != nil {
+		return ResourceDetail{}, err
+	}
+	sortLogEntries(logs)
 	detail := ResourceDetail{
 		ID:          task.ID,
 		Type:        task.Type,
@@ -145,6 +151,7 @@ func buildResourceDetailAt(root string, entry taskListEntry) (ResourceDetail, er
 		Path:        relPath(root, entry.Path),
 		Archived:    isArchivedPath(root, entry.Path),
 		Repos:       append([]TaskRepo(nil), task.Repos...),
+		Logs:        logs,
 		Files:       readResourceFiles(entry.Path, task),
 		Artifacts:   readFileTree(root, filepath.Join(entry.Path, "artifacts")),
 	}
@@ -207,7 +214,7 @@ func parseWorkspaceResourceArgs(args []string) (string, error) {
 }
 
 func readResourceFiles(dir string, task Task) []ResourceFile {
-	names := []string{markdownFileName(task), "work.md", "log.md", "AGENTS.md"}
+	names := []string{markdownFileName(task), "work.md", "AGENTS.md"}
 	files := make([]ResourceFile, 0, len(names))
 	for _, name := range names {
 		data, err := os.ReadFile(filepath.Join(dir, name))

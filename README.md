@@ -20,14 +20,14 @@ AgentWorkspace/
     project.json
     project.md
     work.md
-    log.md
+    log.jsonl
     artifacts/
     task1/
       AGENTS.md
       task.json
       task.md
       work.md
-      log.md
+      log.jsonl
       artifacts/
       worktree/
   archive/
@@ -82,7 +82,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a session, injects `FORGE_SESSION_ID` into the agent environment, and runs an agent command in the selected project or task directory. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
-`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.md`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
+`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.jsonl`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
 `forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
 
@@ -171,7 +171,7 @@ Each project directory contains:
 - `project.json`: structured project facts such as id, type, description, and selected workflow.
 - `project.md`: project background context generated from the project title and description.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
-- `log.md`: append-oriented execution log for chronological events, command results, and completed-step history.
+- `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge project log add/list` to write or read project log entries.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 
 Each task directory contains:
@@ -179,7 +179,7 @@ Each task directory contains:
 - `task.json`: structured facts such as id, type, parent id, description, selected workflow, and involved repositories.
 - `task.md`: background context generated from the resource title and description.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
-- `log.md`: append-oriented execution log for chronological events, command results, and completed-step history.
+- `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge task log add/list` to write or read task log entries.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 - `worktree/`: Git worktrees for code changes.
 

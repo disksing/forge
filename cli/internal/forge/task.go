@@ -35,7 +35,7 @@ var builtinWorkflows = map[string]string{
 
 ### Steps
 
-1. Read task.json, task.md, work.md, and log.md to confirm the task boundary and acceptance criteria.
+1. Read task.json, task.md, work.md, and log.jsonl to confirm the task boundary and acceptance criteria.
 2. If requirements, risks, or acceptance criteria are unclear, clarify them with the user and update task.md with the confirmed answers.
 3. Make the required code or documentation changes in the task-owned worktree/.
 4. Run relevant tests and checks, then record important results.
@@ -370,7 +370,11 @@ func createResourceFiles(dir string, task Task, workflowContent string) error {
 	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "log.md"), []byte(defaultLogMD()), 0o644); err != nil {
+	logTitle := "Task created"
+	if isProject(task) {
+		logTitle = "Project created"
+	}
+	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)+"\n"), 0o644)
@@ -847,13 +851,13 @@ func defaultTaskMD(task Task) string {
 
 func defaultWorkMD(task Task) string {
 	label := "Task"
-	next := `- Read task.json, task.md, and log.md.
+	next := `- Read task.json, task.md, and log.jsonl.
 - Decide which repositories are involved.
 - Update task.json if new repositories are discovered.
 - Create any needed worktrees under worktree/.`
 	if isProject(task) {
 		label = "Project"
-		next = `- Read project.json, project.md, and log.md.
+		next = `- Read project.json, project.md, and log.jsonl.
 - Create project tasks for implementation work.
 - Keep repository and worktree state in task directories, not in the project.`
 	}
@@ -873,17 +877,8 @@ No work has started yet.
 
 ## Recovery Rule
 
-Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.md.
+Keep this file as a mutable recovery snapshot, not a chronological log. Replace stale content as the task progresses so it only shows the current step, current state, blockers, and next step. Put dated events, command results, completed-step history, and other timeline entries in log.jsonl via forge task log add or forge project log add.
 `, label, task.ID, next)
-}
-
-func defaultLogMD() string {
-	return fmt.Sprintf(`# Log
-
-## %s
-
-- Task created.
-`, time.Now().Format("2006-01-02 15:04:05 -0700"))
 }
 
 func taskAgentsPrompt(task Task, workflowContent string) string {
@@ -899,17 +894,17 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
 	} else if task.Parent != nil {
 		extra = `
-- This task belongs to a project. Read the parent project directory's project.json, project.md, work.md, and log.md when you need broader context.
+- This task belongs to a project. Read the parent project directory's project.json, project.md, work.md, and log.jsonl when you need broader context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
 `
 	}
-	readLine := "Read task.json, task.md, work.md, and log.md before acting."
+	readLine := "Read task.json, task.md, work.md, and log.jsonl before acting."
 	updateLine := "If the task involves a new repository, update this task's task.json."
 	structuredLine := "Keep task.json focused on structured facts."
 	backgroundLine := "Use task.md for task background context."
 	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
 	if isProject(task) {
-		readLine = "Read project.json, project.md, work.md, and log.md before acting."
+		readLine = "Read project.json, project.md, work.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = "Keep project.json focused on project-level structured facts."
 		backgroundLine = "Use project.md for project background context."
@@ -936,8 +931,8 @@ You are working inside a %s.
 - Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
 - Before starting any meaningful step, replace stale work.md content with the step you are about to take.
 - Immediately after completing any meaningful step, replace stale work.md content with the updated current state and next step.
-- Do not append timeline history to work.md. Put chronological events, command results, and completed-step history in log.md.
-- Append important execution events to log.md.
+- Do not append timeline history to work.md. Put chronological events, command results, and completed-step history in log.jsonl.
+- Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
 ## Workflow
