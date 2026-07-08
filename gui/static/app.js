@@ -17,6 +17,14 @@ const state = {
     createWorkspace: false,
     saving: false,
   },
+  createDialog: {
+    open: false,
+    type: "",
+    projectId: "",
+    description: "",
+    slug: "",
+    submitting: false,
+  },
   autoRefreshTimer: null,
   autoRefreshInFlight: false,
   iconRefreshScheduled: false,
@@ -204,6 +212,7 @@ function renderAll() {
   bindAgentEvents();
   refreshIcons();
   renderDiffContent();
+  renderCreateDialog();
   renderSettingsModal();
 }
 
@@ -219,6 +228,7 @@ function renderSelectionPanels() {
   bindAgentEvents();
   refreshIcons();
   renderDiffContent();
+  renderCreateDialog();
 }
 
 function renderWorkspaceSelect() {
@@ -1848,67 +1858,133 @@ function relativeTime(value) {
 }
 
 function showProjectForm() {
-  const panel = $("detailsPanel");
-  panel.innerHTML = `
-    <div class="details-header">
-      <div class="breadcrumb"><span class="current">New Project</span></div>
-      <div class="title-row"><h1>Create project</h1></div>
-    </div>
-    <div class="content-section">
-      <form id="projectForm" class="details-form">
-        <textarea name="description" required placeholder="Describe the project"></textarea>
-        <input name="slug" placeholder="optional-slug" />
-        <div><button type="submit">Create</button> <button type="button" class="secondary" id="cancelForm">Cancel</button></div>
-      </form>
-    </div>
-  `;
-  $("cancelForm").onclick = renderDetails;
-  $("projectForm").onsubmit = async (event) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api(`/api/workspaces/${state.activeWorkspaceId}/projects`, {
-      method: "POST",
-      body: JSON.stringify({
-        description: form.get("description"),
-        slug: form.get("slug"),
-      }),
-    });
-    toast("Project created.");
-    state.selectedId = "";
-    await loadTree();
-  };
+  openCreateDialog("project");
 }
 
 function showTaskForm(projectId) {
-  const panel = $("detailsPanel");
-  panel.innerHTML = `
-    <div class="details-header">
-      <div class="breadcrumb"><span class="current">New Task</span></div>
-      <div class="title-row"><h1>Create task</h1></div>
-    </div>
-    <div class="content-section">
-      <form id="taskForm" class="details-form">
-        <textarea name="description" required placeholder="Describe the task"></textarea>
-        <input name="slug" placeholder="optional-slug" />
-        <div><button type="submit">Create</button> <button type="button" class="secondary" id="cancelForm">Cancel</button></div>
-      </form>
+  openCreateDialog("task", projectId);
+}
+
+function openCreateDialog(type, projectId = "") {
+  state.createDialog = {
+    open: true,
+    type,
+    projectId,
+    description: "",
+    slug: "",
+    submitting: false,
+  };
+  renderCreateDialog();
+}
+
+function closeCreateDialog() {
+  if (state.createDialog.submitting) return;
+  state.createDialog = {
+    open: false,
+    type: "",
+    projectId: "",
+    description: "",
+    slug: "",
+    submitting: false,
+  };
+  renderCreateDialog();
+}
+
+function renderCreateDialog() {
+  const root = $("createDialogRoot");
+  if (!root) return;
+  const dialog = state.createDialog;
+  if (!dialog.open) {
+    root.innerHTML = "";
+    delete root.dataset.createDialogKey;
+    return;
+  }
+  const isTask = dialog.type === "task";
+  const title = isTask ? "Create task" : "Create project";
+  const descriptionPlaceholder = isTask ? "Describe the task" : "Describe the project";
+  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.submitting}`;
+  if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
+  root.dataset.createDialogKey = renderKey;
+  root.innerHTML = `
+    <div class="create-dialog-layer" role="presentation">
+      <div class="create-dialog-backdrop" data-create-dialog-close="true"></div>
+      <section class="create-dialog" role="dialog" aria-modal="true" aria-label="${title}">
+        <header class="create-dialog-header">
+          <div>
+            <strong>${title}</strong>
+            ${isTask ? `<span>${escapeHTML(dialog.projectId)}</span>` : ""}
+          </div>
+          <button class="icon-button" type="button" data-create-dialog-close="true" title="Close" aria-label="Close">${icon("x")}</button>
+        </header>
+        <form id="createDialogForm" class="details-form create-dialog-form">
+          <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
+          <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
+          <div class="form-actions">
+            <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
+            <button type="button" class="secondary" data-create-dialog-close="true" ${dialog.submitting ? "disabled" : ""}>Cancel</button>
+          </div>
+        </form>
+      </section>
     </div>
   `;
-  $("cancelForm").onclick = renderDetails;
-  $("taskForm").onsubmit = async (event) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    await api(`/api/workspaces/${state.activeWorkspaceId}/tasks`, {
-      method: "POST",
-      body: JSON.stringify({
-        project: projectId,
-        description: form.get("description"),
-        slug: form.get("slug"),
-      }),
-    });
-    toast("Task created.");
+  bindCreateDialogEvents();
+  refreshIcons();
+}
+
+function bindCreateDialogEvents() {
+  const form = $("createDialogForm");
+  if (!form) return;
+  form.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    if (target.name === "description") state.createDialog.description = target.value;
+    if (target.name === "slug") state.createDialog.slug = target.value;
+  });
+  form.addEventListener("submit", submitCreateDialog);
+  document.querySelectorAll("[data-create-dialog-close]").forEach((node) => {
+    node.addEventListener("click", closeCreateDialog);
+  });
+  if (!state.createDialog.submitting) form.elements.description?.focus();
+}
+
+async function submitCreateDialog(event) {
+  event.preventDefault();
+  const dialog = state.createDialog;
+  if (!dialog.open || dialog.submitting) return;
+  const form = new FormData(event.currentTarget);
+  dialog.description = String(form.get("description") || "");
+  dialog.slug = String(form.get("slug") || "");
+  dialog.submitting = true;
+  renderCreateDialog();
+  try {
+    if (dialog.type === "project") {
+      await api(`/api/workspaces/${state.activeWorkspaceId}/projects`, {
+        method: "POST",
+        body: JSON.stringify({
+          description: dialog.description,
+          slug: dialog.slug,
+        }),
+      });
+      toast("Project created.");
+      state.selectedId = "";
+    } else {
+      await api(`/api/workspaces/${state.activeWorkspaceId}/tasks`, {
+        method: "POST",
+        body: JSON.stringify({
+          project: dialog.projectId,
+          description: dialog.description,
+          slug: dialog.slug,
+        }),
+      });
+      toast("Task created.");
+    }
+    state.createDialog.open = false;
     await loadTree();
-  };
+  } catch (err) {
+    dialog.submitting = false;
+    renderCreateDialog();
+    toast(err.message);
+  }
 }
 
 async function archiveResource(resourceId) {
@@ -2258,6 +2334,7 @@ $("workspaceSelect").onchange = async (event) => {
   state.activeWorkspaceId = event.target.value;
   state.selectedId = "";
   state.sessionMenu = null;
+  closeCreateDialog();
   resetAgentState();
   await loadUIState();
   await loadTree();
@@ -2274,6 +2351,8 @@ document.addEventListener("keydown", (event) => {
     closeDiff();
   } else if (event.key === "Escape" && state.preview) {
     closePreview();
+  } else if (event.key === "Escape" && state.createDialog.open) {
+    closeCreateDialog();
   } else if (event.key === "Escape" && state.sessionMenu) {
     state.sessionMenu = null;
     renderSessions();
@@ -2319,6 +2398,9 @@ window.addEventListener("popstate", async () => {
 	  state.preview = null;
 	  state.diff = null;
 	  state.sessionMenu = null;
+  if (workspaceChanged) {
+    closeCreateDialog();
+  }
   if (workspaceChanged) {
     resetAgentState();
   }

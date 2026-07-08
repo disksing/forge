@@ -458,6 +458,11 @@ body.resizing-y {
   color: #334155;
 }
 
+.details-form button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
 .details-actions button.danger {
   background: #fee2e2;
   color: var(--red);
@@ -477,6 +482,61 @@ body.resizing-y {
 .details-form textarea {
   min-height: 82px;
   resize: vertical;
+}
+
+.create-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.create-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+.create-dialog {
+  position: relative;
+  width: min(540px, calc(100vw - 48px));
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.3);
+}
+
+.create-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 18px 20px;
+}
+
+.create-dialog-header strong {
+  display: block;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.25;
+}
+
+.create-dialog-header span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.create-dialog-form {
+  max-width: none;
+  padding: 20px;
 }
 
 .agent-panel {
@@ -2630,9 +2690,14 @@ i[data-lucide] {
     width: 100%;
   }
 
+  .create-dialog-layer,
   .diff-modal-layer,
   .file-modal-layer {
     padding: 12px;
+  }
+
+  .create-dialog {
+    width: calc(100vw - 24px);
   }
 
   .diff-modal,
