@@ -585,6 +585,42 @@ func TestSessionListPrunesInactiveForgeGUIRunSession(t *testing.T) {
 	})
 }
 
+func TestSessionEndRemovesInactiveForgeGUIRunSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"active":false}`))
+		}))
+		defer server.Close()
+		store := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "gui-run",
+				Liveness:  SessionLiveness{Type: "forge-gui-run", WorkspaceID: "workspace-one", RunID: "run-one", Endpoint: server.URL},
+				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+
+		ended := run(t, "session", "end", "--id", "gui-run")
+		if !strings.Contains(ended, `"id": "gui-run"`) {
+			t.Fatalf("expected inactive gui session to be ended, got:\n%s", ended)
+		}
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findSessionIndex(store.Sessions, "gui-run") >= 0 {
+			t.Fatalf("expected inactive gui session to be removed, got: %#v", store.Sessions)
+		}
+	})
+}
+
 func TestSessionListPrunesDeadPIDSession(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
