@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
@@ -90,6 +91,7 @@ func TestIsClosedPipeError(t *testing.T) {
 func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 	workspace := t.TempDir()
 	updatedAt := "2026-07-07T12:00:01+08:00"
+	lastOutputAt := "2026-07-07T12:00:02+08:00"
 	runs := []agentRun{
 		{
 			ID:             "run-one",
@@ -104,6 +106,7 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 			Approval:       "on-request",
 			CreatedAt:      "2026-07-07T12:00:00+08:00",
 			UpdatedAt:      updatedAt,
+			LastOutputAt:   lastOutputAt,
 		},
 	}
 	if err := rewriteAgentRuns(workspace, runs); err != nil {
@@ -120,11 +123,117 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := tree.Sessions[0]
-	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.ResourceID != "project1.task1" {
+	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.AgentRunLastOutputAt != lastOutputAt || internal.ResourceID != "project1.task1" {
 		t.Fatalf("internal session was not enriched with agent run state: %#v", internal)
 	}
-	if tree.Sessions[1].Source != "external" || tree.Sessions[1].AgentRunUpdatedAt != "" {
+	if tree.Sessions[1].Source != "external" || tree.Sessions[1].AgentRunUpdatedAt != "" || tree.Sessions[1].AgentRunLastOutputAt != "" {
 		t.Fatalf("external session should only be marked external: %#v", tree.Sessions[1])
+	}
+}
+
+func TestIsAgentOutputEvent(t *testing.T) {
+	outputs := []struct {
+		eventType string
+		method    string
+	}{
+		{eventType: "assistant_delta", method: "item/agentMessage/delta"},
+		{eventType: "tool", method: "item/commandExecution/outputDelta"},
+		{eventType: "tool", method: "command/exec/outputDelta"},
+	}
+	for _, item := range outputs {
+		if !isAgentOutputEvent(item.eventType, item.method) {
+			t.Fatalf("expected output event for %#v", item)
+		}
+	}
+	nonOutputs := []struct {
+		eventType string
+		method    string
+	}{
+		{eventType: "system", method: "turn/completed"},
+		{eventType: "tool", method: "item/started"},
+		{eventType: "user", method: ""},
+	}
+	for _, item := range nonOutputs {
+		if isAgentOutputEvent(item.eventType, item.method) {
+			t.Fatalf("did not expect output event for %#v", item)
+		}
+	}
+}
+
+func TestCreateForgeSessionUsesInternalHeartbeatTimeout(t *testing.T) {
+	workspace := t.TempDir()
+	tmp := t.TempDir()
+	argsPath := filepath.Join(tmp, "args.txt")
+	forgePath := filepath.Join(tmp, "forge-fake")
+	script := `#!/bin/sh
+if [ "$1" = "session" ] && [ "$2" = "new" ]; then
+  printf '%s\n' "$*" > "$FORGE_FAKE_ARGS"
+  printf 'session-created\n'
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FORGE_FAKE_ARGS", argsPath)
+
+	m := newAgentManager(&server{forgePath: forgePath})
+	id, err := m.createForgeSession(context.Background(), guiWorkspace{Path: workspace}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "session-created" {
+		t.Fatalf("unexpected session id: %q", id)
+	}
+	args, err := os.ReadFile(argsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "session new --heartbeat --timeout " + internalForgeSessionTimeout.String() + "\n"
+	if string(args) != expected {
+		t.Fatalf("expected session new args %q, got %q", expected, string(args))
+	}
+}
+
+func TestKeepForgeSessionAliveHeartbeatsImmediately(t *testing.T) {
+	workspace := t.TempDir()
+	tmp := t.TempDir()
+	heartbeatPath := filepath.Join(tmp, "heartbeats.txt")
+	forgePath := filepath.Join(tmp, "forge-fake")
+	script := `#!/bin/sh
+if [ "$1" = "session" ] && [ "$2" = "heartbeat" ]; then
+  printf '%s\n' "$*" >> "$FORGE_FAKE_HEARTBEATS"
+  printf '{"id":"%s"}\n' "$4"
+  exit 0
+fi
+echo "unexpected args: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FORGE_FAKE_HEARTBEATS", heartbeatPath)
+
+	m := newAgentManager(&server{forgePath: forgePath})
+	rt := &agentRuntime{
+		workspace: guiWorkspace{Path: workspace},
+		run:       agentRun{ID: "run-one", ForgeSessionID: "session-one"},
+	}
+	stop := rt.keepForgeSessionAlive(m)
+	defer stop()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		data, _ := os.ReadFile(heartbeatPath)
+		if strings.Contains(string(data), "session heartbeat --id session-one") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected immediate heartbeat, got:\n%s", data)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

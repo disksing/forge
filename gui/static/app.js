@@ -330,6 +330,10 @@ function taskSessions(resourceId) {
 }
 
 function hasRecentAgentOutput(session) {
+  const outputAt = new Date(session.agentRunLastOutputAt || "").getTime();
+  if (Number.isFinite(outputAt)) {
+    return Date.now() - outputAt <= TASK_OUTPUT_ACTIVE_WINDOW_MS;
+  }
   if (!["running", "starting"].includes(session.agentRunStatus)) return false;
   const updatedAt = new Date(session.agentRunUpdatedAt || "").getTime();
   return Number.isFinite(updatedAt) && Date.now() - updatedAt <= TASK_OUTPUT_ACTIVE_WINDOW_MS;

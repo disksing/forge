@@ -39,6 +39,7 @@ type agentRun struct {
 	Approval                string `json:"approval"`
 	CreatedAt               string `json:"createdAt"`
 	UpdatedAt               string `json:"updatedAt"`
+	LastOutputAt            string `json:"lastOutputAt,omitempty"`
 }
 
 type agentEvent struct {
@@ -59,8 +60,10 @@ type agentRunDetail struct {
 }
 
 const (
-	agentEventTailBytes = 1024 * 1024
-	agentEventMaxCount  = 500
+	agentEventTailBytes                   = 1024 * 1024
+	agentEventMaxCount                    = 500
+	internalForgeSessionTimeout           = 30 * time.Minute
+	internalForgeSessionHeartbeatInterval = 30 * time.Second
 )
 
 var agentIndexMu sync.Mutex
@@ -316,7 +319,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, resourceID string) (string, error) {
-	out, err := m.server.runForge(ctx, workspace.Path, "session", "new", "--heartbeat")
+	out, err := m.server.runForge(ctx, workspace.Path, "session", "new", "--heartbeat", "--timeout", internalForgeSessionTimeout.String())
 	if err != nil {
 		return "", err
 	}
@@ -896,15 +899,19 @@ func (rt *agentRuntime) keepForgeSessionAlive(m *agentManager) func() {
 		return func() {}
 	}
 	done := make(chan struct{})
+	heartbeat := func() {
+		if _, err := m.server.runForge(context.Background(), workspace.Path, "session", "heartbeat", "--id", sessionID); err != nil {
+			rt.addEvent(m, "error", "forge/session/heartbeat", err.Error(), nil, "")
+		}
+	}
 	go func() {
-		ticker := time.NewTicker(time.Minute)
+		heartbeat()
+		ticker := time.NewTicker(internalForgeSessionHeartbeatInterval)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				if _, err := m.server.runForge(context.Background(), workspace.Path, "session", "heartbeat", "--id", sessionID); err != nil {
-					rt.addEvent(m, "error", "forge/session/heartbeat", err.Error(), nil, "")
-				}
+				heartbeat()
 			case <-done:
 				return
 			}
@@ -1088,6 +1095,9 @@ func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string
 	rt.nextEventID++
 	rt.events = append(rt.events, event)
 	rt.run.UpdatedAt = event.Time
+	if isAgentOutputEvent(eventType, method) {
+		rt.run.LastOutputAt = event.Time
+	}
 	run := rt.run
 	rt.mu.Unlock()
 	_ = appendAgentEvent(rt.workspace.Path, run.ID, event)
@@ -1102,6 +1112,12 @@ func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+func isAgentOutputEvent(eventType, method string) bool {
+	return eventType == "assistant_delta" ||
+		method == "item/commandExecution/outputDelta" ||
+		method == "command/exec/outputDelta"
 }
 
 func isLiveAgentStatus(status string) bool {
