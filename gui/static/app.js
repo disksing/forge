@@ -45,6 +45,7 @@ const state = {
     sandbox: "workspace-write",
     approval: "on-request",
     optionsOpen: false,
+    agentChooserOpen: false,
     historyOpen: false,
     eventsHasMore: false,
     loadingOlder: false,
@@ -1191,6 +1192,7 @@ function resetAgentState() {
   state.agent.eventsHasMore = false;
   state.agent.loadingOlder = false;
   state.agent.optionsOpen = false;
+  state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
   state.agent.ttyDraft = "";
   clearAgentRenderTimer();
@@ -1385,19 +1387,8 @@ function renderAgent() {
   const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
   const visibleRun = activeRun || state.agent.runs[0] || null;
-  const agents = enabledAgentConfigs();
-  const selectedAgent = selectedAgentConfig();
-  controls.innerHTML = `
-    <h2>Agent</h2>
-    <div class="agent-start-form">
-      <div class="agent-select-stack">
-        <select id="agentSelect" ${agents.length ? "" : "disabled"}>
-          ${agentSelectOptions(agents)}
-        </select>
-        <small>${escapeHTML(selectedAgent ? agentConfigSummary(selectedAgent) : "No enabled agents")}</small>
-      </div>
-    </div>
-  `;
+  controls.hidden = true;
+  controls.innerHTML = "";
   wrap.innerHTML = `
     <div id="agentSessions" class="agent-session-switcher">
       ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start a Codex session from the selected task.</span></div>`}
@@ -1524,14 +1515,14 @@ function renderTTYComposer() {
   const activeRun = currentAgentRun();
   if (!activeRun) {
     state.agent.ttyDraft = "";
-    const key = `none:${state.agent.agentId}`;
+    const key = `none:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = agentComposerActions();
     return;
   }
   if (isLiveAgentRun(activeRun)) {
-    const key = `live:${activeRun.id}:${state.agent.agentId}:${state.agent.sendingInput ? "sending" : "ready"}`;
+    const key = `live:${activeRun.id}:${state.agent.agentId}:${state.agent.sendingInput ? "sending" : "ready"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput ? " disabled" : "";
@@ -1558,7 +1549,7 @@ function renderTTYComposer() {
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
     return;
   }
-  const key = `resume:${activeRun.id}:${state.agent.agentId}`;
+  const key = `resume:${activeRun.id}:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
@@ -1569,13 +1560,39 @@ function renderTTYComposer() {
 
 function agentComposerActions(options = {}) {
   const selectedAgent = selectedAgentConfig();
+  const agents = enabledAgentConfigs();
+  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
+  const agentLabel = selectedAgent ? agentDisplayName(selectedAgent) : "No agent";
   return `
     <div class="tty-session-actions">
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
-      <button type="button" id="agentStartButton" class="tty-primary-action" ${selectedAgent ? "" : "disabled"}>${icon("play")}<span>New Session</span></button>
+      <div class="tty-new-session-control">
+        <button type="button" id="agentStartButton" class="tty-new-session-main" ${selectedAgent ? "" : "disabled"}>
+          <span class="tty-new-session-prompt">&gt;</span>
+          <span>New Session</span>
+        </button>
+        <button type="button" id="agentChooserButton" class="tty-new-session-agent" aria-expanded="${chooserOpen ? "true" : "false"}" ${selectedAgent ? "" : "disabled"}>
+          <span>with ${escapeHTML(agentLabel)}</span>
+          ${icon(chooserOpen ? "chevron-up" : "chevron-down")}
+        </button>
+        ${chooserOpen ? `
+          <div class="tty-agent-menu">
+            ${agents.map((agent) => `
+              <button type="button" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}">
+                <span>${escapeHTML(agentDisplayName(agent))}</span>
+                <small>${escapeHTML(agentConfigSummary(agent))}</small>
+              </button>
+            `).join("")}
+          </div>
+        ` : ""}
+      </div>
       ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
     </div>
   `;
+}
+
+function agentDisplayName(agent) {
+  return agent?.name || agent?.id || "Agent";
 }
 
 function renderSettingsModal() {
@@ -1589,6 +1606,7 @@ function renderSettingsModal() {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
     agentDefaults: currentAgentDefaults(),
+    defaultChatAgentId: state.config?.defaultChatAgentId || "",
     agentProviders: state.config?.agentProviders || [],
     agents: state.config?.agents || [],
     codex: { running: false },
@@ -1675,6 +1693,7 @@ function settingsAgentPanel(data) {
           ${providers.map((provider) => settingsProviderRow(provider, codex)).join("")}
         </div>
       </section>
+      ${settingsDefaultChatAgentSection(data)}
       <form id="agentConfigForm" class="settings-agent-form">
         <section class="settings-agent-section">
           <div class="settings-section-heading">
@@ -1692,6 +1711,32 @@ function settingsAgentPanel(data) {
       </form>
     </div>
   `;
+}
+
+function settingsDefaultChatAgentSection(data) {
+  const agents = settingsEnabledAgents(data);
+  const defaultID = agents.some((agent) => agent.id === data.defaultChatAgentId)
+    ? data.defaultChatAgentId
+    : agents[0]?.id || "";
+  return `
+    <section class="settings-agent-section">
+      <div class="settings-section-heading">
+        <h3>Default Chat Agent</h3>
+        <span>${defaultID ? escapeHTML(agentDisplayName(agents.find((agent) => agent.id === defaultID))) : "None"}</span>
+      </div>
+      <label class="settings-default-agent">
+        <span>Agent</span>
+        <select id="settingsDefaultChatAgent" ${agents.length ? "" : "disabled"}>
+          ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === defaultID ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))}</option>`).join("") || `<option value="">No enabled agents</option>`}
+        </select>
+      </label>
+    </section>
+  `;
+}
+
+function settingsEnabledAgents(data) {
+  const enabledProviders = new Set((data.agentProviders || []).filter((provider) => provider.enabled).map((provider) => provider.id));
+  return (data.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
 }
 
 function settingsProviderRow(provider, codex) {
@@ -1845,6 +1890,9 @@ function bindSettingsEvents() {
     event.preventDefault();
     saveAgents().catch((err) => toast(err.message));
   });
+  $("settingsDefaultChatAgent")?.addEventListener("change", (event) => {
+    saveDefaultChatAgent(event.target.value).catch((err) => toast(err.message));
+  });
   $("settingsAddAgentButton")?.addEventListener("click", () => {
     addSettingsAgent().catch((err) => toast(err.message));
   });
@@ -1949,16 +1997,28 @@ function bindAgentEvents() {
   document.querySelector(".agent-session-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
-  $("agentSelect")?.addEventListener("change", (event) => {
-    state.agent.agentId = event.target.value;
-    applySelectedAgentOptions();
-    renderAgent();
+  $("agentStartButton")?.addEventListener("click", () => {
+    startAgentRun().catch((err) => toast(err.message));
+  });
+  $("agentChooserButton")?.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
   });
-  $("agentStartButton")?.addEventListener("click", () => {
-    startAgentRun().catch((err) => toast(err.message));
+  document.querySelectorAll("[data-agent-choice]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      state.agent.agentId = button.dataset.agentChoice;
+      state.agent.agentChooserOpen = false;
+      applySelectedAgentOptions();
+      renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    });
   });
   $("agentStopButton")?.addEventListener("click", () => {
     stopAgentRun().catch((err) => toast(err.message));
@@ -1974,6 +2034,7 @@ function bindAgentEvents() {
       if (runId === state.agent.activeRunId && button.classList.contains("agent-current-run")) {
         state.agent.historyOpen = !state.agent.historyOpen;
         state.agent.optionsOpen = false;
+        state.agent.agentChooserOpen = false;
         renderAgent();
         bindAgentEvents();
         refreshIcons();
@@ -2007,6 +2068,7 @@ async function startAgentRun() {
   state.agent.draftPrompt = "";
   state.agent.ttyDraft = "";
   state.agent.optionsOpen = false;
+  state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
   state.agent.activeRunId = response.run.id;
   await loadAgentRuns();
@@ -2380,8 +2442,9 @@ function currentAgentDefaults() {
 
 function applyAgentConfig() {
   const agents = enabledAgentConfigs();
+  const defaultAgentId = defaultChatAgentID();
   if (!agents.some((agent) => agent.id === state.agent.agentId)) {
-    state.agent.agentId = agents[0]?.id || "";
+    state.agent.agentId = defaultAgentId;
   }
   applySelectedAgentOptions();
 }
@@ -2395,13 +2458,23 @@ function applySelectedAgentOptions() {
 
 function selectedAgentConfig() {
   const agents = enabledAgentConfigs();
-  return agents.find((agent) => agent.id === state.agent.agentId) || agents[0] || null;
+  const agentId = state.agent.agentId || defaultChatAgentID();
+  return agents.find((agent) => agent.id === agentId) || agents[0] || null;
 }
 
 function enabledAgentConfigs() {
   const providers = state.config?.agentProviders || [];
   const enabledProviders = new Set(providers.filter((provider) => provider.enabled).map((provider) => provider.id));
   return (state.config?.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
+}
+
+function defaultChatAgentID() {
+  const agents = enabledAgentConfigs();
+  const configured = state.config?.defaultChatAgentId || state.settings.data?.defaultChatAgentId || "";
+  if (agents.some((agent) => agent.id === configured)) {
+    return configured;
+  }
+  return agents[0]?.id || "";
 }
 
 async function openSettings(tab = "workspace") {
@@ -2494,13 +2567,37 @@ async function saveAgents() {
     body: JSON.stringify(collectSettingsAgents()),
   });
   if (state.config) state.config.agents = saved;
-  state.settings.data = { ...(state.settings.data || {}), agents: saved };
+  await refreshSettings();
+  if (state.config) {
+    state.config.agents = state.settings.data?.agents || saved;
+    state.config.defaultChatAgentId = state.settings.data?.defaultChatAgentId || "";
+  }
   applyAgentConfig();
   renderAgent();
+  renderTTYComposer();
   bindAgentEvents();
   renderSettingsModal();
   refreshIcons();
   toast("Agents saved.");
+}
+
+async function saveDefaultChatAgent(agentId) {
+  const saved = await api("/api/settings/agent/default-chat", {
+    method: "PUT",
+    body: JSON.stringify({ agentId }),
+  });
+  const defaultChatAgentId = saved.defaultChatAgentId || "";
+  if (state.config) state.config.defaultChatAgentId = defaultChatAgentId;
+  state.settings.data = { ...(state.settings.data || {}), defaultChatAgentId };
+  state.agent.agentId = defaultChatAgentId;
+  state.agent.agentChooserOpen = false;
+  applyAgentConfig();
+  renderAgent();
+  renderTTYComposer();
+  bindAgentEvents();
+  renderSettingsModal();
+  refreshIcons();
+  toast("Default chat agent saved.");
 }
 
 function collectSettingsAgents() {
@@ -2753,10 +2850,12 @@ document.addEventListener("keydown", (event) => {
     refreshIcons();
   } else if (event.key === "Escape" && state.settings.open) {
     closeSettings();
-  } else if (event.key === "Escape" && (state.agent.optionsOpen || state.agent.historyOpen)) {
+  } else if (event.key === "Escape" && (state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen)) {
     state.agent.optionsOpen = false;
+    state.agent.agentChooserOpen = false;
     state.agent.historyOpen = false;
     renderAgent();
+    renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
   }
@@ -2769,10 +2868,12 @@ document.addEventListener("click", (event) => {
     openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource).catch((err) => toast(err.message));
     return;
   }
-  if ((state.agent.optionsOpen || state.agent.historyOpen) && target && !target.closest(".agent-actions") && !target.closest(".agent-sessions")) {
+  if ((state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen) && target && !target.closest(".agent-actions") && !target.closest(".agent-sessions") && !target.closest(".tty-composer")) {
     state.agent.optionsOpen = false;
+    state.agent.agentChooserOpen = false;
     state.agent.historyOpen = false;
     renderAgent();
+    renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
   }

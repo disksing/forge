@@ -109,6 +109,62 @@ func TestLoadConfigCreatesDefaultAgentProviderAndAgent(t *testing.T) {
 	if agent.ProviderID != codexProviderID || agent.Sandbox != "workspace-write" || agent.Approval != "on-request" {
 		t.Fatalf("unexpected default agent: %#v", agent)
 	}
+	if cfg.DefaultChatAgentID != agent.ID {
+		t.Fatalf("expected default chat agent %q, got %q", agent.ID, cfg.DefaultChatAgentID)
+	}
+}
+
+func TestLoadConfigNormalizesDefaultChatAgent(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version:            1,
+		DefaultChatAgentID: "missing",
+		AgentProviders: []agentProviderConfig{
+			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
+		},
+		Agents: []agentConfig{
+			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
+			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "never"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultChatAgentID != "codex-a" {
+		t.Fatalf("expected invalid default chat agent to fall back to first agent, got %q", cfg.DefaultChatAgentID)
+	}
+}
+
+func TestUpdateDefaultChatAgentSetting(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version: 1,
+		AgentProviders: []agentProviderConfig{
+			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
+		},
+		Agents: []agentConfig{
+			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
+			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "never"},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/agent/default-chat", strings.NewReader(`{"agentId":"codex-b"}`))
+	rec := httptest.NewRecorder()
+	s.handleSettings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DefaultChatAgentID != "codex-b" {
+		t.Fatalf("expected default chat agent to be saved, got %q", cfg.DefaultChatAgentID)
+	}
 }
 
 func TestResolveAgentConfigUsesNamedAgent(t *testing.T) {

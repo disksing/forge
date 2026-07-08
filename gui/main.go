@@ -31,13 +31,14 @@ import (
 var staticFiles embed.FS
 
 type config struct {
-	Version        int                   `json:"version"`
-	ActiveID       string                `json:"activeId,omitempty"`
-	Workspaces     []guiWorkspace        `json:"workspaces"`
-	AgentDefaults  agentDefaults         `json:"agentDefaults"`
-	AgentProviders []agentProviderConfig `json:"agentProviders"`
-	Agents         []agentConfig         `json:"agents"`
-	Codex          codexSettings         `json:"codex"`
+	Version            int                   `json:"version"`
+	ActiveID           string                `json:"activeId,omitempty"`
+	Workspaces         []guiWorkspace        `json:"workspaces"`
+	AgentDefaults      agentDefaults         `json:"agentDefaults"`
+	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
+	AgentProviders     []agentProviderConfig `json:"agentProviders"`
+	Agents             []agentConfig         `json:"agents"`
+	Codex              codexSettings         `json:"codex"`
 }
 
 type agentDefaults struct {
@@ -984,12 +985,15 @@ func (s *server) loadConfig() (config, error) {
 	data, err := os.ReadFile(s.config)
 	if err != nil {
 		if os.IsNotExist(err) {
+			defaults := normalizeAgentDefaults(agentDefaults{})
+			agents := normalizeAgents(nil, defaults)
 			return config{
-				Version:        1,
-				Workspaces:     []guiWorkspace{},
-				AgentDefaults:  normalizeAgentDefaults(agentDefaults{}),
-				AgentProviders: normalizeAgentProviders(nil),
-				Agents:         normalizeAgents(nil, normalizeAgentDefaults(agentDefaults{})),
+				Version:            1,
+				Workspaces:         []guiWorkspace{},
+				AgentDefaults:      defaults,
+				DefaultChatAgentID: normalizeDefaultChatAgentID("", agents),
+				AgentProviders:     normalizeAgentProviders(nil),
+				Agents:             agents,
 			}, nil
 		}
 		return config{}, err
@@ -1006,6 +1010,7 @@ func (s *server) loadConfig() (config, error) {
 	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
+	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	return cfg, nil
 }
 
@@ -1016,6 +1021,7 @@ func (s *server) saveConfig(cfg config) error {
 	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
+	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	if err := os.MkdirAll(filepath.Dir(s.config), 0o755); err != nil {
 		return err
 	}

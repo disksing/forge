@@ -14,12 +14,13 @@ import (
 )
 
 type settingsResponse struct {
-	Workspaces     []guiWorkspace        `json:"workspaces"`
-	ActiveID       string                `json:"activeId,omitempty"`
-	AgentDefaults  agentDefaults         `json:"agentDefaults"`
-	AgentProviders []agentProviderConfig `json:"agentProviders"`
-	Agents         []agentConfig         `json:"agents"`
-	Codex          codexStatus           `json:"codex"`
+	Workspaces         []guiWorkspace        `json:"workspaces"`
+	ActiveID           string                `json:"activeId,omitempty"`
+	AgentDefaults      agentDefaults         `json:"agentDefaults"`
+	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
+	AgentProviders     []agentProviderConfig `json:"agentProviders"`
+	Agents             []agentConfig         `json:"agents"`
+	Codex              codexStatus           `json:"codex"`
 }
 
 type codexStatus struct {
@@ -64,6 +65,12 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.updateAgentDefaults(w, r)
+	case "agent/default-chat":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateDefaultChatAgent(w, r)
 	case "agent/providers":
 		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -108,12 +115,13 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		return
 	}
 	writeJSON(w, settingsResponse{
-		Workspaces:     cfg.Workspaces,
-		ActiveID:       cfg.ActiveID,
-		AgentDefaults:  cfg.AgentDefaults,
-		AgentProviders: cfg.AgentProviders,
-		Agents:         cfg.Agents,
-		Codex:          s.codexStatus(),
+		Workspaces:         cfg.Workspaces,
+		ActiveID:           cfg.ActiveID,
+		AgentDefaults:      cfg.AgentDefaults,
+		DefaultChatAgentID: cfg.DefaultChatAgentID,
+		AgentProviders:     cfg.AgentProviders,
+		Agents:             cfg.Agents,
+		Codex:              s.codexStatus(),
 	})
 }
 
@@ -135,6 +143,27 @@ func (s *server) updateAgentDefaults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, cfg.AgentDefaults)
+}
+
+func (s *server) updateDefaultChatAgent(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		AgentID string `json:"agentId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(body.AgentID, cfg.Agents)
+	if err := s.saveConfig(cfg); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, map[string]string{"defaultChatAgentId": cfg.DefaultChatAgentID})
 }
 
 func (s *server) updateAgentProviders(w http.ResponseWriter, r *http.Request) {
@@ -370,6 +399,19 @@ func normalizeAgentDefaults(defaults agentDefaults) agentDefaults {
 	defaults.Approval = normalizeApproval(defaults.Approval)
 	defaults.Model = strings.TrimSpace(defaults.Model)
 	return defaults
+}
+
+func normalizeDefaultChatAgentID(agentID string, agents []agentConfig) string {
+	agentID = strings.TrimSpace(agentID)
+	for _, agent := range agents {
+		if agent.ID == agentID {
+			return agentID
+		}
+	}
+	if len(agents) > 0 {
+		return agents[0].ID
+	}
+	return ""
 }
 
 func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderConfig {
