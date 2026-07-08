@@ -1336,23 +1336,18 @@ function renderAgent() {
   const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
   const visibleRun = activeRun || state.agent.runs[0] || null;
-  const hasClosableRun = activeRun && ["running", "waiting_approval", "starting", "idle"].includes(activeRun.status);
   const agents = enabledAgentConfigs();
   const selectedAgent = selectedAgentConfig();
   controls.innerHTML = `
     <h2>Agent</h2>
-    <form id="agentStartForm" class="agent-start-form">
-      <div class="agent-start-row">
-        <div class="agent-select-stack">
-          <select id="agentSelect" ${agents.length ? "" : "disabled"}>
-            ${agentSelectOptions(agents)}
-          </select>
-          <small>${escapeHTML(selectedAgent ? agentConfigSummary(selectedAgent) : "No enabled agents")}</small>
-        </div>
-        <button type="submit" class="agent-start-button" ${selectedAgent ? "" : "disabled"}>${icon("play")}<span>Start Session</span></button>
+    <div class="agent-start-form">
+      <div class="agent-select-stack">
+        <select id="agentSelect" ${agents.length ? "" : "disabled"}>
+          ${agentSelectOptions(agents)}
+        </select>
+        <small>${escapeHTML(selectedAgent ? agentConfigSummary(selectedAgent) : "No enabled agents")}</small>
       </div>
-      ${hasClosableRun ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
-    </form>
+    </div>
   `;
   wrap.innerHTML = `
     <div id="agentSessions" class="agent-session-switcher">
@@ -1455,7 +1450,7 @@ function renderTTY(options = {}) {
       ? `${olderButton}${events.map(agentEventRow).join("")}`
       : `<div class="tty-empty">${icon("loader-circle")}<strong>Waiting for Codex events</strong></div>`;
   } else {
-    const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start a Codex run above.";
+    const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start a Codex session.";
     log.innerHTML = `<div class="tty-empty">${icon("bot")}<strong>No agent run selected</strong><span>${escapeHTML(text)}</span></div>`;
   }
   log.dataset.agentRunId = nextRunId;
@@ -1480,12 +1475,14 @@ function renderTTYComposer() {
   const activeRun = currentAgentRun();
   if (!activeRun) {
     state.agent.ttyDraft = "";
-    composer.dataset.composerKey = "none";
-    composer.innerHTML = "";
+    const key = `none:${state.agent.agentId}`;
+    if (composer.dataset.composerKey === key) return;
+    composer.dataset.composerKey = key;
+    composer.innerHTML = agentComposerActions();
     return;
   }
   if (isLiveAgentRun(activeRun)) {
-    const key = `live:${activeRun.id}`;
+    const key = `live:${activeRun.id}:${state.agent.agentId}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = `
@@ -1494,6 +1491,7 @@ function renderTTYComposer() {
         <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected Codex session">${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="Send input" aria-label="Send input">${icon("send")}</button>
       </form>
+      ${agentComposerActions({ includeClose: true })}
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       state.agent.ttyDraft = event.target.value;
@@ -1509,18 +1507,24 @@ function renderTTYComposer() {
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
     return;
   }
-  const key = `resume:${activeRun.id}`;
+  const key = `resume:${activeRun.id}:${state.agent.agentId}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
   composer.innerHTML = `
-    <div class="tty-resume">
-      <button type="button" id="agentResumeButton">${icon("rotate-ccw")}<span>Resume to continue</span></button>
+    ${agentComposerActions({ includeResume: true })}
+  `;
+}
+
+function agentComposerActions(options = {}) {
+  const selectedAgent = selectedAgentConfig();
+  return `
+    <div class="tty-session-actions">
+      ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
+      <button type="button" id="agentStartButton" class="tty-primary-action" ${selectedAgent ? "" : "disabled"}>${icon("play")}<span>New Session</span></button>
+      ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
     </div>
   `;
-  $("agentResumeButton")?.addEventListener("click", () => {
-    resumeAgentRun().catch((err) => toast(err.message));
-  });
 }
 
 function renderSettingsModal() {
@@ -1897,13 +1901,19 @@ function bindAgentEvents() {
   $("agentSelect")?.addEventListener("change", (event) => {
     state.agent.agentId = event.target.value;
     applySelectedAgentOptions();
+    renderAgent();
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
   });
-  $("agentStartForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
+  $("agentStartButton")?.addEventListener("click", () => {
     startAgentRun().catch((err) => toast(err.message));
   });
   $("agentStopButton")?.addEventListener("click", () => {
     stopAgentRun().catch((err) => toast(err.message));
+  });
+  $("agentResumeButton")?.addEventListener("click", () => {
+    resumeAgentRun().catch((err) => toast(err.message));
   });
   document.querySelectorAll("[data-agent-run]").forEach((button) => {
     button.addEventListener("click", (event) => {

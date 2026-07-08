@@ -649,7 +649,7 @@ body.resizing-y {
   white-space: nowrap;
 }
 
-.agent-start-button,
+.tty-primary-action,
 .agent-options-button,
 .agent-stop-button,
 .agent-history-button {
@@ -663,14 +663,19 @@ body.resizing-y {
   font-weight: 800;
 }
 
-.agent-start-button {
+.tty-primary-action {
   border: 1px solid #2563eb;
   background: #2563eb;
   color: #fff;
   padding: 0 12px;
 }
 
-.agent-start-button:disabled {
+.tty-primary-action:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
+
+.tty-primary-action:disabled {
   border-color: #cbd5e1;
   background: #e2e8f0;
   color: #64748b;
@@ -1185,31 +1190,27 @@ body.resizing-y {
   flex: 0 0 auto;
 }
 
-.tty-resume {
+.tty-session-actions {
   min-height: 44px;
-  display: flex;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--line);
   background: #fff;
 }
 
-.tty-resume button {
+.tty-session-actions button {
   width: 100%;
   min-height: 32px;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
   border-radius: 6px;
-  background: #2563eb;
-  color: #fff;
   font-size: 13px;
   font-weight: 750;
-}
-
-.tty-resume button:hover {
-  background: #1d4ed8;
 }
 
 .empty-state {
