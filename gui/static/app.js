@@ -254,13 +254,16 @@ function renderTree() {
 
 function treeButton(item, kind) {
   const button = document.createElement("button");
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${state.selectedId === item.id ? "active" : ""}`;
+  const activeSessionCount = kind === "task" ? activeTaskSessionCount(item.id) : 0;
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${activeSessionCount > 0 ? "has-active-session" : ""} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
+  const activeSessionLabel = `${activeSessionCount} active ${activeSessionCount === 1 ? "session" : "sessions"}`;
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
     <span class="name">${escapeHTML(item.title || item.id)}</span>
+    ${activeSessionCount > 0 ? `<span class="task-active-indicator" title="${escapeHTML(activeSessionLabel)}" aria-label="${escapeHTML(activeSessionLabel)}">${icon("circle-dot", "task-active-icon")}</span>` : ""}
   `;
 	  button.onclick = (event) => {
 	    if (event.target.closest("[data-project-toggle]")) {
@@ -271,6 +274,19 @@ function treeButton(item, kind) {
 	  };
 	  return button;
 	}
+
+function activeTaskSessionCount(resourceId) {
+  if (!resourceId) return 0;
+  const activeSessionIds = new Set();
+  for (const session of state.tree?.sessions || []) {
+    const controls = sessionControls(session);
+    const controlsResource = controls.some((control) => control.resourceId === resourceId);
+    if (session.resourceId === resourceId || controlsResource) {
+      activeSessionIds.add(session.id || resourceId);
+    }
+  }
+  return activeSessionIds.size;
+}
 
 async function selectResource(id) {
   const selectionChanged = state.selectedId !== id;

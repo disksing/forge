@@ -1189,7 +1189,7 @@ i[data-lucide] {
 .tree-item {
   min-height: 30px;
   display: grid;
-  grid-template-columns: 16px 16px minmax(0, 1fr);
+  grid-template-columns: 16px 16px minmax(0, 1fr) 16px;
   column-gap: 6px;
   align-items: center;
   padding: 6px 8px;
@@ -1223,6 +1223,16 @@ i[data-lucide] {
 .tree-item.active .tree-icon,
 .tree-item.active .chevron {
   color: #2563eb;
+}
+
+.task-active-indicator {
+  display: grid;
+  place-items: center;
+  color: var(--green);
+}
+
+.tree-item.active .task-active-indicator {
+  color: #059669;
 }
 
 .task-item {
