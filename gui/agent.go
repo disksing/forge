@@ -23,21 +23,22 @@ import (
 )
 
 type agentRun struct {
-	ID             string `json:"id"`
-	WorkspaceID    string `json:"workspaceId"`
-	ResourceID     string `json:"resourceId,omitempty"`
-	ForgeSessionID string `json:"forgeSessionId,omitempty"`
-	Provider       string `json:"provider"`
-	CodexThreadID  string `json:"codexThreadId,omitempty"`
-	CodexTurnID    string `json:"codexTurnId,omitempty"`
-	Title          string `json:"title"`
-	Cwd            string `json:"cwd"`
-	Status         string `json:"status"`
-	Model          string `json:"model,omitempty"`
-	Sandbox        string `json:"sandbox"`
-	Approval       string `json:"approval"`
-	CreatedAt      string `json:"createdAt"`
-	UpdatedAt      string `json:"updatedAt"`
+	ID                      string `json:"id"`
+	WorkspaceID             string `json:"workspaceId"`
+	ResourceID              string `json:"resourceId,omitempty"`
+	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
+	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
+	Provider                string `json:"provider"`
+	CodexThreadID           string `json:"codexThreadId,omitempty"`
+	CodexTurnID             string `json:"codexTurnId,omitempty"`
+	Title                   string `json:"title"`
+	Cwd                     string `json:"cwd"`
+	Status                  string `json:"status"`
+	Model                   string `json:"model,omitempty"`
+	Sandbox                 string `json:"sandbox"`
+	Approval                string `json:"approval"`
+	CreatedAt               string `json:"createdAt"`
+	UpdatedAt               string `json:"updatedAt"`
 }
 
 type agentEvent struct {
@@ -86,6 +87,20 @@ type agentApprovalRequest struct {
 type pendingApproval struct {
 	id     json.RawMessage
 	method string
+}
+
+type forgeSessionContext struct {
+	Version        int    `json:"version"`
+	WorkspaceID    string `json:"workspaceId"`
+	ResourceID     string `json:"resourceId,omitempty"`
+	RunID          string `json:"runId"`
+	ForgeSessionID string `json:"forgeSessionId"`
+	Cwd            string `json:"cwd"`
+	CreatedAt      string `json:"createdAt"`
+}
+
+type resourceDetailPath struct {
+	Path string `json:"path"`
 }
 
 type agentRuntime struct {
@@ -263,6 +278,13 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	if run.Title == "" {
 		run.Title = "Codex run"
 	}
+	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
+	if err != nil {
+		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	run.ForgeSessionContextPath = contextPath
 	rt := &agentRuntime{
 		workspace:   workspace,
 		run:         run,
@@ -271,11 +293,13 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		done:        make(chan struct{}),
 	}
 	if err := ensureAgentDirs(workspace.Path); err != nil {
+		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
 		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
+		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
 		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -322,6 +346,89 @@ func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspa
 	}
 	_, err := m.server.runForge(ctx, workspace.Path, "session", "end", "--id", sessionID)
 	return err
+}
+
+func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace guiWorkspace, run agentRun) (string, error) {
+	sessionID := strings.TrimSpace(run.ForgeSessionID)
+	if sessionID == "" {
+		return "", nil
+	}
+	dir := run.Cwd
+	resourceID := strings.TrimSpace(run.ResourceID)
+	if resourceID != "" {
+		out, err := m.server.runForge(ctx, workspace.Path, "workspace", "resource", "--id", resourceID, "--json")
+		if err != nil {
+			return "", err
+		}
+		var detail resourceDetailPath
+		if err := json.Unmarshal(out, &detail); err != nil {
+			return "", fmt.Errorf("decode resource path: %w", err)
+		}
+		if strings.TrimSpace(detail.Path) == "" {
+			return "", fmt.Errorf("resource %s returned an empty path", resourceID)
+		}
+		dir = filepath.Join(workspace.Path, filepath.FromSlash(detail.Path))
+	}
+	workspaceAbs, err := filepath.Abs(workspace.Path)
+	if err != nil {
+		return "", err
+	}
+	dirAbs, err := filepath.Abs(dir)
+	if err != nil {
+		return "", err
+	}
+	if err := ensurePathInside(workspaceAbs, dirAbs); err != nil {
+		return "", err
+	}
+	contextPath := filepath.Join(dirAbs, ".forge", "codex-session.json")
+	if err := os.MkdirAll(filepath.Dir(contextPath), 0o755); err != nil {
+		return "", err
+	}
+	context := forgeSessionContext{
+		Version:        1,
+		WorkspaceID:    run.WorkspaceID,
+		ResourceID:     resourceID,
+		RunID:          run.ID,
+		ForgeSessionID: sessionID,
+		Cwd:            run.Cwd,
+		CreatedAt:      time.Now().Format(time.RFC3339),
+	}
+	data, err := json.MarshalIndent(context, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(contextPath, data, 0o600); err != nil {
+		return "", err
+	}
+	return contextPath, nil
+}
+
+func (rt *agentRuntime) removeForgeSessionContext() {
+	rt.mu.Lock()
+	contextPath := rt.run.ForgeSessionContextPath
+	sessionID := rt.run.ForgeSessionID
+	rt.mu.Unlock()
+	removeForgeSessionContextFile(contextPath, sessionID)
+}
+
+func removeForgeSessionContextFile(contextPath, sessionID string) {
+	contextPath = strings.TrimSpace(contextPath)
+	if contextPath == "" {
+		return
+	}
+	data, err := os.ReadFile(contextPath)
+	if err != nil {
+		return
+	}
+	var context forgeSessionContext
+	if err := json.Unmarshal(data, &context); err != nil {
+		return
+	}
+	if strings.TrimSpace(context.ForgeSessionID) != strings.TrimSpace(sessionID) {
+		return
+	}
+	_ = os.Remove(contextPath)
 }
 
 func forgeSessionLockArgs(sessionID, resourceID string) ([]string, error) {
@@ -395,7 +502,9 @@ func (s *server) cleanupStaleInternalSessionsForWorkspace(ctx context.Context, w
 				return err
 			}
 		}
+		removeForgeSessionContextFile(runs[i].ForgeSessionContextPath, sessionID)
 		runs[i].ForgeSessionID = ""
+		runs[i].ForgeSessionContextPath = ""
 		runs[i].CodexTurnID = ""
 		if isLiveAgentStatus(runs[i].Status) {
 			runs[i].Status = "stopped"
@@ -546,6 +655,13 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	now := time.Now().Format(time.RFC3339)
 	run.ForgeSessionID = forgeSessionID
+	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
+	if err != nil {
+		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	run.ForgeSessionContextPath = contextPath
 	run.CodexTurnID = ""
 	run.Status = "starting"
 	run.UpdatedAt = now
@@ -558,6 +674,7 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		done:        make(chan struct{}),
 	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
+		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
 		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -691,6 +808,7 @@ func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
 	stopHeartbeat := rt.keepForgeSessionAlive(m)
 	defer func() {
 		stopHeartbeat()
+		rt.removeForgeSessionContext()
 		if err := m.endForgeSession(context.Background(), rt.workspace, rt.run.ForgeSessionID); err != nil {
 			rt.addEvent(m, "error", "forge/session/end", err.Error(), nil, "")
 		} else if rt.run.ForgeSessionID != "" {
@@ -795,6 +913,31 @@ func (rt *agentRuntime) keepForgeSessionAlive(m *agentManager) func() {
 	return func() { close(done) }
 }
 
+func (rt *agentRuntime) withForgeSessionContext(text string) string {
+	rt.mu.Lock()
+	sessionID := strings.TrimSpace(rt.run.ForgeSessionID)
+	contextPath := strings.TrimSpace(rt.run.ForgeSessionContextPath)
+	rt.mu.Unlock()
+	if sessionID == "" {
+		return text
+	}
+	var b strings.Builder
+	b.WriteString("Forge session context:\n")
+	b.WriteString("- This Codex run is managed by Forge GUI.\n")
+	b.WriteString("- FORGE_SESSION_ID=")
+	b.WriteString(sessionID)
+	b.WriteString("\n")
+	if contextPath != "" {
+		b.WriteString("- Session context file: ")
+		b.WriteString(contextPath)
+		b.WriteString("\n")
+	}
+	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use this id explicitly for `forge session` commands instead of creating another Forge session.\n\n")
+	b.WriteString("User request:\n")
+	b.WriteString(text)
+	return b.String()
+}
+
 func (rt *agentRuntime) startTurn(m *agentManager, text string) error {
 	rt.mu.Lock()
 	client := rt.client
@@ -806,6 +949,7 @@ func (rt *agentRuntime) startTurn(m *agentManager, text string) error {
 	if client == nil || threadID == "" {
 		return errors.New("codex thread is not ready")
 	}
+	text = rt.withForgeSessionContext(text)
 	params := map[string]any{
 		"threadId":       threadID,
 		"cwd":            cwd,
@@ -837,7 +981,7 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 		_, err := client.request("turn/steer", map[string]any{
 			"threadId":       threadID,
 			"expectedTurnId": turnID,
-			"input":          []map[string]string{{"type": "text", "text": text}},
+			"input":          []map[string]string{{"type": "text", "text": rt.withForgeSessionContext(text)}},
 		})
 		return err
 	}
