@@ -22,6 +22,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/disksing/forge/internal/buildinfo"
 )
 
 //go:embed static
@@ -128,9 +130,15 @@ const (
 func main() {
 	var addr string
 	var initialWorkspace string
+	var showVersion bool
 	flag.StringVar(&addr, "addr", "127.0.0.1:4936", "local address to listen on")
 	flag.StringVar(&initialWorkspace, "workspace", "", "AgentWorkspace path to add before starting")
+	flag.BoolVar(&showVersion, "version", false, "print build-time branch and sha")
 	flag.Parse()
+	if showVersion {
+		fmt.Print(buildinfo.Text("forge-gui"))
+		return
+	}
 
 	configPath, err := defaultConfigPath()
 	if err != nil {
@@ -864,7 +872,8 @@ func (s *server) prepareForgeCLI() error {
 		}
 		sum := sha1.Sum([]byte(s.repoRoot))
 		out := filepath.Join(outDir, "forge-cli-"+hex.EncodeToString(sum[:6]))
-		cmd := exec.Command("go", "build", "-o", out, "./cli/cmd/forge")
+		buildArgs := []string{"build", "-ldflags", buildinfo.LDFlagsFor(sourceBuildInfo(s.repoRoot)), "-o", out, "./cli/cmd/forge"}
+		cmd := exec.Command("go", buildArgs...)
 		cmd.Dir = s.repoRoot
 		if buildOut, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("build forge cli for gui: %s", strings.TrimSpace(string(buildOut)))
@@ -878,6 +887,26 @@ func (s *server) prepareForgeCLI() error {
 	}
 	s.forgePath = path
 	return nil
+}
+
+func sourceBuildInfo(repoRoot string) buildinfo.Info {
+	info := buildinfo.Current()
+	if branch := gitOutput(repoRoot, "rev-parse", "--abbrev-ref", "HEAD"); branch != "" && branch != "HEAD" {
+		info.Branch = branch
+	}
+	if sha := gitOutput(repoRoot, "rev-parse", "HEAD"); sha != "" {
+		info.SHA = sha
+	}
+	return info
+}
+
+func gitOutput(repoRoot string, args ...string) string {
+	cmdArgs := append([]string{"-C", repoRoot}, args...)
+	out, err := exec.Command("git", cmdArgs...).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
 
 func (s *server) workspace(id string) (guiWorkspace, error) {

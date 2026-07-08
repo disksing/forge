@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+out_dir=${1:-bin}
+
+case "$out_dir" in
+/*) out_path=$out_dir ;;
+*) out_path=$root/$out_dir ;;
+esac
+
+branch=$(git -C "$root" rev-parse --abbrev-ref HEAD 2>/dev/null || printf unknown)
+if [ "$branch" = "HEAD" ] || [ -z "$branch" ]; then
+	branch=unknown
+fi
+
+sha=$(git -C "$root" rev-parse HEAD 2>/dev/null || printf unknown)
+if [ -z "$sha" ]; then
+	sha=unknown
+fi
+
+ldflags="-X github.com/disksing/forge/internal/buildinfo.Branch=$branch -X github.com/disksing/forge/internal/buildinfo.SHA=$sha"
+
+mkdir -p "$out_path"
+cd "$root"
+go build -ldflags "$ldflags" -o "$out_path/forge" ./cli/cmd/forge
+go build -ldflags "$ldflags" -o "$out_path/forge-gui" ./gui

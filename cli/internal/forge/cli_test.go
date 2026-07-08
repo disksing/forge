@@ -12,12 +12,30 @@ import (
 	"testing"
 	"time"
 	"unicode"
+
+	"github.com/disksing/forge/internal/buildinfo"
 )
 
 const (
 	defaultWorkflowSnippet = "Standard task workflow. Clarify the requirements and acceptance criteria first"
 	projectWorkflowSnippet = "This is a project-management project."
 )
+
+func TestVersion(t *testing.T) {
+	oldBranch := buildinfo.Branch
+	oldSHA := buildinfo.SHA
+	buildinfo.Branch = "task-branch"
+	buildinfo.SHA = "abc123"
+	t.Cleanup(func() {
+		buildinfo.Branch = oldBranch
+		buildinfo.SHA = oldSHA
+	})
+
+	out := run(t, "--version")
+	if out != "forge branch=task-branch sha=abc123\n" {
+		t.Fatalf("unexpected version output: %q", out)
+	}
+}
 
 func TestForgeStartHelper(t *testing.T) {
 	if os.Getenv("FORGE_START_HELPER") != "1" {

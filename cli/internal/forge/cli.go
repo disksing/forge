@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/disksing/forge/internal/buildinfo"
 )
 
 const (
@@ -28,6 +30,12 @@ func Run(args []string) error {
 	}
 
 	switch args[0] {
+	case "--version":
+		if len(args) != 1 {
+			return errors.New("usage: forge --version")
+		}
+		fmt.Print(buildinfo.Text("forge"))
+		return nil
 	case "init":
 		return runInit(args[1:])
 	case "repo":
@@ -212,6 +220,7 @@ How Forge works:
   FORGE_SESSION_ID. The workspace root does not require a lock.
 
 Usage:
+  forge --version
   forge init
   forge migrate
 
@@ -245,6 +254,9 @@ Usage:
   forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Commands:
+  forge --version
+    Print the build-time branch and sha.
+
   forge init
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace.

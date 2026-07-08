@@ -38,6 +38,8 @@ Open projects live directly under the workspace with names such as `project1/` o
 ## Commands
 
 ```bash
+forge --version
+
 forge init
 forge migrate
 
@@ -69,6 +71,8 @@ forge workspace resource --id=<resource> --json
 
 forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ```
+
+`forge --version` prints the build-time git branch and sha.
 
 `forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `workflow/`, and a forge-managed block in `AGENTS.md`.
 
@@ -123,6 +127,16 @@ Agents started directly should detect their current process PID, run `forge sess
 ```
 
 Content outside that block belongs to people and agents and is preserved.
+
+## Building
+
+Build both command binaries with git metadata embedded:
+
+```bash
+scripts/build
+```
+
+The output defaults to `bin/forge` and `bin/forge-gui`. Pass a directory to override it, for example `scripts/build /tmp/forge-build`.
 
 `forge repo add` uses normal `git clone` by default so source code is readable under `repos/`. forge does not create mirror repositories. Use `--bare` only when a bare repository is explicitly needed.
 
