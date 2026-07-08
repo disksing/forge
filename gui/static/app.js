@@ -245,7 +245,6 @@ function renderAll() {
   renderSessions();
   renderDetails();
   bindWorkspaceAgentsEvents();
-  bindMarkdownPreviewEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -834,13 +833,19 @@ function isLongMarkdownContent(content) {
   return text.length > MARKDOWN_PREVIEW_CHAR_LIMIT || text.split(/\r\n|\r|\n/).length > MARKDOWN_PREVIEW_LINE_LIMIT;
 }
 
-function bindMarkdownPreviewEvents() {
-  document.querySelectorAll("[data-markdown-toggle]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.expandedMarkdownFiles.add(button.dataset.markdownToggle);
-      renderAll();
-    });
-  });
+function expandMarkdownPreview(button) {
+  const key = button.dataset.markdownToggle;
+  if (key) {
+    state.expandedMarkdownFiles.add(key);
+  }
+  const preview = button.closest(".markdown-preview");
+  if (!preview) {
+    renderDetails();
+    return;
+  }
+  preview.classList.remove("collapsed");
+  preview.classList.add("expanded");
+  button.remove();
 }
 
 function stripForgeManagedBlocks(content) {
@@ -2904,7 +2909,6 @@ function optionalAssetLoaded(asset) {
   refreshIcons();
   if (asset === "markdown" && window.marked && window.DOMPurify) {
     renderDetails();
-    bindMarkdownPreviewEvents();
     bindArtifactBrowserEvents();
     bindFileModalEvents();
     bindDiffEvents();
@@ -3057,6 +3061,12 @@ document.addEventListener("keydown", (event) => {
 
 document.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const markdownToggle = target?.closest("[data-markdown-toggle]");
+  if (markdownToggle) {
+    event.preventDefault();
+    expandMarkdownPreview(markdownToggle);
+    return;
+  }
   const breadcrumbButton = target?.closest("[data-breadcrumb-resource]");
   if (breadcrumbButton) {
     openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource).catch((err) => toast(err.message));
