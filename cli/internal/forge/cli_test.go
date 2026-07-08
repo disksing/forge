@@ -690,6 +690,46 @@ func TestSessionListPrunesDeadPIDSession(t *testing.T) {
 	})
 }
 
+func TestSessionCommandsPruneArchivedResourceSessions(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		run(t, "task", "archive", "--project=project1", "--task=task1")
+		store := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "archived-resource",
+				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1h"},
+				Controls:  []SessionControl{{ResourceID: "project1.task1", Path: "project1/task1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}, {
+				ID:        "archived-path",
+				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1h"},
+				Controls:  []SessionControl{{ResourceID: "legacy", Path: "project1/archive/task1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, "archived-resource") || strings.Contains(listed, "archived-path") {
+			t.Fatalf("expected archived resource sessions to be pruned, got:\n%s", listed)
+		}
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.Sessions) != 0 {
+			t.Fatalf("expected archived resource sessions to be removed, got: %#v", store.Sessions)
+		}
+	})
+}
+
 func TestSessionRegisterRejectsActiveOverlappingControl(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -1299,6 +1339,51 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
+	})
+}
+
+func TestTaskArchiveEndsOpenTaskSessions(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		run(t, "task", "create", "--project=project1", "Session task")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project1", "--task=task1")
+
+		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(archived, "project1/archive/task1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findSessionIndex(store.Sessions, id) >= 0 {
+			t.Fatalf("expected archive to end task session, got: %#v", store.Sessions)
+		}
+	})
+}
+
+func TestProjectArchiveEndsOpenProjectSessions(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project1")
+
+		archived := run(t, "project", "archive", "--project=project1")
+		if !strings.Contains(archived, "archive/project1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findSessionIndex(store.Sessions, id) >= 0 {
+			t.Fatalf("expected archive to end project session, got: %#v", store.Sessions)
+		}
 	})
 }
 

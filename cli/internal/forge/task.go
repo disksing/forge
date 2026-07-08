@@ -158,6 +158,9 @@ func taskArchive(id string) error {
 	if err := ensureTaskRepoWorktreesMerged(root, task); err != nil {
 		return err
 	}
+	if err := endSessionsControllingPath(root, relPath(root, src)); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}

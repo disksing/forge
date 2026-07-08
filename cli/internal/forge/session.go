@@ -701,6 +701,72 @@ func pruneStaleSessions(store *SessionStore) []Session {
 	return removed
 }
 
+func pruneArchivedResourceSessions(root string, store *SessionStore) []Session {
+	var active []Session
+	var removed []Session
+	for _, session := range store.Sessions {
+		if sessionControlsArchivedResource(root, session) {
+			removed = append(removed, session)
+		} else {
+			active = append(active, session)
+		}
+	}
+	store.Sessions = active
+	return removed
+}
+
+func sessionControlsArchivedResource(root string, session Session) bool {
+	for _, control := range session.Controls {
+		if controlPathArchived(root, control.Path) {
+			return true
+		}
+		if strings.TrimSpace(control.ResourceID) == "" {
+			continue
+		}
+		path, err := findTaskDir(root, control.ResourceID)
+		if err == nil && isArchivedPath(root, path) {
+			return true
+		}
+	}
+	return false
+}
+
+func controlPathArchived(root, path string) bool {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return false
+	}
+	if filepath.IsAbs(path) {
+		return isArchivedPath(root, path)
+	}
+	return isArchivedPath(root, filepath.Join(root, filepath.FromSlash(path)))
+}
+
+func endSessionsControllingPath(root, targetRel string) error {
+	return withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		pruneArchivedResourceSessions(root, store)
+		active := store.Sessions[:0]
+		for _, session := range store.Sessions {
+			if sessionControlsPath(session, targetRel) {
+				continue
+			}
+			active = append(active, session)
+		}
+		store.Sessions = active
+		return nil
+	})
+}
+
+func sessionControlsPath(session Session, targetRel string) bool {
+	for _, control := range session.Controls {
+		if sessionPathsOverlap(control.Path, targetRel) {
+			return true
+		}
+	}
+	return false
+}
+
 func sessionActive(session Session) bool {
 	switch session.Liveness.Type {
 	case "pid":
@@ -780,7 +846,13 @@ func withLockedSessionStore(root string, update func(*SessionStore) error) error
 	if err != nil {
 		return err
 	}
+	prunedArchived := len(pruneArchivedResourceSessions(root, &store)) > 0
 	if err := update(&store); err != nil {
+		if prunedArchived {
+			if writeErr := writeSessionStore(root, store); writeErr != nil {
+				return writeErr
+			}
+		}
 		return err
 	}
 	return writeSessionStore(root, store)
