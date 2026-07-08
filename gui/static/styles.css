@@ -1186,6 +1186,16 @@ body.resizing-y {
   border-color: #1d4ed8;
 }
 
+.tty-send-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.tty-send-button:disabled:hover {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
 .tty-composer {
   flex: 0 0 auto;
 }

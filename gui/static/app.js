@@ -48,6 +48,7 @@ const state = {
     historyOpen: false,
     eventsHasMore: false,
     loadingOlder: false,
+    sendingInput: false,
   },
   tty: [
     { type: "system", text: "Forge GUI initialized." },
@@ -1530,14 +1531,16 @@ function renderTTYComposer() {
     return;
   }
   if (isLiveAgentRun(activeRun)) {
-    const key = `live:${activeRun.id}:${state.agent.agentId}`;
+    const key = `live:${activeRun.id}:${state.agent.agentId}:${state.agent.sendingInput ? "sending" : "ready"}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
+    const inputDisabled = state.agent.sendingInput ? " disabled" : "";
+    const sendIcon = state.agent.sendingInput ? icon("loader-circle") : icon("send");
     composer.innerHTML = `
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
-        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected Codex session">${escapeHTML(state.agent.ttyDraft)}</textarea>
-        <button type="submit" class="tty-send-button" title="Send input" aria-label="Send input">${icon("send")}</button>
+        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected Codex session"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
+        <button type="submit" class="tty-send-button" title="${state.agent.sendingInput ? "Sending..." : "Send input"}" aria-label="${state.agent.sendingInput ? "Sending input" : "Send input"}"${inputDisabled}>${sendIcon}</button>
       </form>
       ${agentComposerActions({ includeClose: true })}
     `;
@@ -2076,17 +2079,23 @@ function isLiveAgentRun(run) {
 
 async function submitTTYInput(event) {
   event.preventDefault();
+  if (state.agent.sendingInput) return;
   const input = $("ttyInput");
   const rawText = input?.value || "";
   if (!rawText.trim()) return;
   state.agent.ttyDraft = rawText;
+  state.agent.sendingInput = true;
+  renderTTYComposer();
+  refreshIcons();
   try {
     await sendAgentInput(rawText);
     state.agent.ttyDraft = "";
-    input.value = "";
-    resizeTTYInput(input);
   } catch (err) {
     toast(err.message);
+  } finally {
+    state.agent.sendingInput = false;
+    renderTTYComposer();
+    refreshIcons();
   }
 }
 
