@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
@@ -160,7 +161,7 @@ func TestIsAgentOutputEvent(t *testing.T) {
 	}
 }
 
-func TestCreateForgeSessionUsesInternalHeartbeatTimeout(t *testing.T) {
+func TestCreateForgeSessionUsesGUIRunLiveness(t *testing.T) {
 	workspace := t.TempDir()
 	tmp := t.TempDir()
 	argsPath := filepath.Join(tmp, "args.txt")
@@ -179,8 +180,8 @@ exit 1
 	}
 	t.Setenv("FORGE_FAKE_ARGS", argsPath)
 
-	m := newAgentManager(&server{forgePath: forgePath})
-	id, err := m.createForgeSession(context.Background(), guiWorkspace{Path: workspace}, "")
+	m := newAgentManager(&server{forgePath: forgePath, addr: "127.0.0.1:4936"})
+	id, err := m.createForgeSession(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, "run-one")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +192,7 @@ exit 1
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := "session new --heartbeat --timeout " + internalForgeSessionTimeout.String() + "\n"
+	expected := "session new --gui-run --workspace-id workspace-one --run-id run-one --endpoint http://127.0.0.1:4936\n"
 	if string(args) != expected {
 		t.Fatalf("expected session new args %q, got %q", expected, string(args))
 	}
@@ -243,43 +244,63 @@ exit 1
 	}
 }
 
-func TestKeepForgeSessionAliveHeartbeatsImmediately(t *testing.T) {
+func TestHandleSessionLivenessUsesActiveRuntime(t *testing.T) {
 	workspace := t.TempDir()
 	tmp := t.TempDir()
-	heartbeatPath := filepath.Join(tmp, "heartbeats.txt")
-	forgePath := filepath.Join(tmp, "forge-fake")
-	script := `#!/bin/sh
-if [ "$1" = "session" ] && [ "$2" = "heartbeat" ]; then
-  printf '%s\n' "$*" >> "$FORGE_FAKE_HEARTBEATS"
-  printf '{"id":"%s"}\n' "$4"
-  exit 0
-fi
-echo "unexpected args: $*" >&2
-exit 1
-`
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	configPath := filepath.Join(tmp, "config.json")
+	cfg := config{
+		Version:    1,
+		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_FAKE_HEARTBEATS", heartbeatPath)
-
-	m := newAgentManager(&server{forgePath: forgePath})
-	rt := &agentRuntime{
-		workspace: guiWorkspace{Path: workspace},
-		run:       agentRun{ID: "run-one", ForgeSessionID: "session-one"},
+	if err := os.WriteFile(configPath, data, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	stop := rt.keepForgeSessionAlive(m)
-	defer stop()
 
-	deadline := time.Now().Add(2 * time.Second)
-	for {
-		data, _ := os.ReadFile(heartbeatPath)
-		if strings.Contains(string(data), "session heartbeat --id session-one") {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("expected immediate heartbeat, got:\n%s", data)
-		}
-		time.Sleep(10 * time.Millisecond)
+	s := &server{config: configPath}
+	m := newAgentManager(s)
+	s.agents = m
+	rt := &agentRuntime{
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", ForgeSessionID: "session-one", CodexThreadID: "thread-one", Status: "idle"},
+	}
+	m.registerRuntime(rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/internal/session-liveness?workspaceId=workspace-one&runId=run-one&forgeSessionId=session-one", nil)
+	rec := httptest.NewRecorder()
+	m.handleSessionLiveness(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var active struct {
+		Active        bool   `json:"active"`
+		Status        string `json:"status"`
+		CodexThreadID string `json:"codexThreadId"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &active); err != nil {
+		t.Fatal(err)
+	}
+	if !active.Active || active.Status != "idle" || active.CodexThreadID != "thread-one" {
+		t.Fatalf("unexpected active response: %#v", active)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/internal/session-liveness?workspaceId=workspace-one&runId=run-one&forgeSessionId=different", nil)
+	rec = httptest.NewRecorder()
+	m.handleSessionLiveness(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK for inactive response, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var inactive struct {
+		Active bool `json:"active"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &inactive); err != nil {
+		t.Fatal(err)
+	}
+	if inactive.Active {
+		t.Fatalf("expected mismatched session to be inactive: %s", rec.Body.String())
 	}
 }
 

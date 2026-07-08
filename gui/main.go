@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -185,9 +186,38 @@ func main() {
 	mux.HandleFunc("/api/workspaces/", s.handleWorkspace)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/", s.handleSettings)
+	mux.HandleFunc("/api/internal/", s.handleInternal)
 
 	log.Printf("forge gui listening on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
+}
+
+func (s *server) internalEndpoint() string {
+	addr := strings.TrimSpace(s.addr)
+	if addr == "" {
+		addr = "127.0.0.1:4936"
+	}
+	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
+		return strings.TrimRight(addr, "/")
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err == nil {
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+		return "http://" + net.JoinHostPort(host, port)
+	}
+	return "http://" + strings.TrimRight(addr, "/")
+}
+
+func (s *server) handleInternal(w http.ResponseWriter, r *http.Request) {
+	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/internal"), "/")
+	switch path {
+	case "session-liveness":
+		s.agents.handleSessionLiveness(w, r)
+	default:
+		http.NotFound(w, r)
+	}
 }
 
 func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {

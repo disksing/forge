@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -19,7 +21,7 @@ const (
 	sessionStateFile       = "forge-sessions.json"
 	sessionLockFile        = ".forge-sessions.lock"
 	defaultSessionTimeout  = 5 * time.Minute
-	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]"
+	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]"
 	sessionHeartbeatUsage  = "usage: forge session heartbeat --id=<id>"
 	sessionLockUsage       = "usage: forge session lock --id=<id> [--project=<project>] [--task=<task>]"
 	sessionUnlockUsage     = "usage: forge session unlock --id=<id> [--project=<project>] [--task=<task>]"
@@ -43,9 +45,12 @@ type Session struct {
 }
 
 type SessionLiveness struct {
-	Type    string `json:"type"`
-	PID     int    `json:"pid,omitempty"`
-	Timeout string `json:"timeout,omitempty"`
+	Type        string `json:"type"`
+	PID         int    `json:"pid,omitempty"`
+	Timeout     string `json:"timeout,omitempty"`
+	WorkspaceID string `json:"workspaceId,omitempty"`
+	RunID       string `json:"runId,omitempty"`
+	Endpoint    string `json:"endpoint,omitempty"`
 }
 
 type SessionControl struct {
@@ -277,17 +282,18 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 	liveness := SessionLiveness{Type: "heartbeat", Timeout: defaultSessionTimeout.String()}
 	heartbeatSet := false
 	pidSet := false
+	guiRunSet := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--heartbeat":
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || guiRunSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			heartbeatSet = true
 			liveness = SessionLiveness{Type: "heartbeat", Timeout: liveness.Timeout}
 		case strings.HasPrefix(arg, "--pid="):
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || guiRunSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			pid, err := parseSessionPID(strings.TrimPrefix(arg, "--pid="))
@@ -297,7 +303,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
 		case arg == "--pid":
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || guiRunSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -310,8 +316,68 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			}
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
+		case arg == "--gui-run":
+			if heartbeatSet || pidSet || guiRunSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness = SessionLiveness{Type: "forge-gui-run"}
+		case strings.HasPrefix(arg, "--workspace-id="):
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.WorkspaceID = strings.TrimSpace(strings.TrimPrefix(arg, "--workspace-id="))
+		case arg == "--workspace-id":
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.WorkspaceID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--run-id="):
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.RunID = strings.TrimSpace(strings.TrimPrefix(arg, "--run-id="))
+		case arg == "--run-id":
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.RunID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--endpoint="):
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.Endpoint = strings.TrimSpace(strings.TrimPrefix(arg, "--endpoint="))
+		case arg == "--endpoint":
+			if heartbeatSet || pidSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			guiRunSet = true
+			liveness.Type = "forge-gui-run"
+			liveness.Endpoint = strings.TrimSpace(value)
 		case strings.HasPrefix(arg, "--timeout="):
-			if pidSet {
+			if pidSet || guiRunSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--timeout="))
@@ -322,7 +388,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			liveness.Type = "heartbeat"
 			liveness.Timeout = parsed.String()
 		case arg == "--timeout":
-			if pidSet {
+			if pidSet || guiRunSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -337,6 +403,17 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			liveness.Timeout = parsed.String()
 		default:
 			return SessionLiveness{}, errors.New(sessionNewUsage)
+		}
+	}
+	if guiRunSet {
+		liveness.Type = "forge-gui-run"
+		liveness.PID = 0
+		liveness.Timeout = ""
+		if liveness.WorkspaceID == "" || liveness.RunID == "" || liveness.Endpoint == "" {
+			return SessionLiveness{}, errors.New(sessionNewUsage)
+		}
+		if _, err := url.ParseRequestURI(liveness.Endpoint); err != nil {
+			return SessionLiveness{}, fmt.Errorf("invalid endpoint %q: %w", liveness.Endpoint, err)
 		}
 	}
 	return liveness, nil
@@ -601,9 +678,43 @@ func sessionActive(session Session) bool {
 			return false
 		}
 		return time.Since(updatedAt) <= timeout
+	case "forge-gui-run":
+		return sessionForgeGUIRunActive(session.ID, session.Liveness)
 	default:
 		return false
 	}
+}
+
+func sessionForgeGUIRunActive(sessionID string, liveness SessionLiveness) bool {
+	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(liveness.WorkspaceID) == "" || strings.TrimSpace(liveness.RunID) == "" || strings.TrimSpace(liveness.Endpoint) == "" {
+		return false
+	}
+	endpoint, err := url.Parse(strings.TrimRight(liveness.Endpoint, "/") + "/api/internal/session-liveness")
+	if err != nil {
+		return false
+	}
+	query := endpoint.Query()
+	query.Set("workspaceId", liveness.WorkspaceID)
+	query.Set("runId", liveness.RunID)
+	query.Set("forgeSessionId", sessionID)
+	endpoint.RawQuery = query.Encode()
+
+	client := &http.Client{Timeout: time.Second}
+	resp, err := client.Get(endpoint.String())
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false
+	}
+	var result struct {
+		Active bool `json:"active"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false
+	}
+	return result.Active
 }
 
 func sessionPIDActive(pid int) bool {
@@ -727,6 +838,8 @@ func formatSessionLiveness(liveness SessionLiveness) string {
 		return fmt.Sprintf("pid:%d", liveness.PID)
 	case "heartbeat":
 		return fmt.Sprintf("heartbeat:%s", liveness.Timeout)
+	case "forge-gui-run":
+		return fmt.Sprintf("forge-gui-run:%s", liveness.RunID)
 	default:
 		return "unknown"
 	}

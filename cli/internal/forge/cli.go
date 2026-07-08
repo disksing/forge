@@ -240,7 +240,7 @@ Usage:
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
   forge session heartbeat --id=<id>
   forge session lock --id=<id> [--project=<project>] [--task=<task>]
   forge session unlock --id=<id> [--project=<project>] [--task=<task>]
@@ -330,10 +330,11 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
     Create a session and print its unique id. Heartbeat liveness is the
     default and can use --timeout. PID liveness stays active while the process
-    exists.
+    exists. GUI run liveness stays active while the Forge GUI local endpoint
+    reports that its managed run is active.
 
   forge session heartbeat --id=<id>
     Update a session's heartbeat timestamp.

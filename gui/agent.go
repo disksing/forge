@@ -60,10 +60,8 @@ type agentRunDetail struct {
 }
 
 const (
-	agentEventTailBytes                   = 1024 * 1024
-	agentEventMaxCount                    = 500
-	internalForgeSessionTimeout           = 30 * time.Minute
-	internalForgeSessionHeartbeatInterval = 30 * time.Second
+	agentEventTailBytes = 1024 * 1024
+	agentEventMaxCount  = 500
 )
 
 var agentIndexMu sync.Mutex
@@ -255,39 +253,26 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, strings.TrimSpace(req.ResourceID))
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
 	sandbox := normalizeSandbox(req.Sandbox)
 	approval := normalizeApproval(req.Approval)
 	now := time.Now().Format(time.RFC3339)
 	run := agentRun{
-		ID:             newRunID(),
-		WorkspaceID:    workspace.ID,
-		ResourceID:     strings.TrimSpace(req.ResourceID),
-		ForgeSessionID: forgeSessionID,
-		Provider:       "codex",
-		Title:          strings.TrimSpace(req.Title),
-		Cwd:            cwd,
-		Status:         "starting",
-		Model:          strings.TrimSpace(req.Model),
-		Sandbox:        sandbox,
-		Approval:       approval,
-		CreatedAt:      now,
-		UpdatedAt:      now,
+		ID:          newRunID(),
+		WorkspaceID: workspace.ID,
+		ResourceID:  strings.TrimSpace(req.ResourceID),
+		Provider:    "codex",
+		Title:       strings.TrimSpace(req.Title),
+		Cwd:         cwd,
+		Status:      "starting",
+		Model:       strings.TrimSpace(req.Model),
+		Sandbox:     sandbox,
+		Approval:    approval,
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 	if run.Title == "" {
 		run.Title = "Codex run"
 	}
-	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
-	if err != nil {
-		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	run.ForgeSessionContextPath = contextPath
 	rt := &agentRuntime{
 		workspace:   workspace,
 		run:         run,
@@ -295,21 +280,47 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		pending:     make(map[string]pendingApproval),
 		done:        make(chan struct{}),
 	}
-	if err := ensureAgentDirs(workspace.Path); err != nil {
+	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	run.ForgeSessionID = forgeSessionID
+	rt.setRun(run)
+	m.registerRuntime(rt)
+	registered := true
+	cleanup := func() {
+		if registered {
+			m.removeRuntime(run.ID)
+			registered = false
+		}
 		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
 		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+	}
+	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
+		cleanup()
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
+	if err != nil {
+		cleanup()
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	run.ForgeSessionContextPath = contextPath
+	rt.setRun(run)
+	if err := ensureAgentDirs(workspace.Path); err != nil {
+		cleanup()
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
-		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
-		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+		cleanup()
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	m.mu.Lock()
-	m.runtimes[run.ID] = rt
-	m.mu.Unlock()
+	registered = false
 	rt.addEvent(m, "system", "", "Starting codex app-server.", nil, "")
 	if forgeSessionID != "" {
 		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
@@ -318,8 +329,8 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
 }
 
-func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, resourceID string) (string, error) {
-	out, err := m.server.runForge(ctx, workspace.Path, "session", "new", "--heartbeat", "--timeout", internalForgeSessionTimeout.String())
+func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, runID string) (string, error) {
+	out, err := m.server.runForge(ctx, workspace.Path, "session", "new", "--gui-run", "--workspace-id", workspace.ID, "--run-id", runID, "--endpoint", m.server.internalEndpoint())
 	if err != nil {
 		return "", err
 	}
@@ -327,19 +338,21 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 	if sessionID == "" {
 		return "", errors.New("forge session new returned an empty id")
 	}
+	return sessionID, nil
+}
+
+func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorkspace, sessionID, resourceID string) error {
 	if resourceID == "" {
-		return sessionID, nil
+		return nil
 	}
 	args, err := forgeSessionLockArgs(sessionID, resourceID)
 	if err != nil {
-		_ = m.endForgeSession(context.Background(), workspace, sessionID)
-		return "", err
+		return err
 	}
 	if _, err := m.server.runForge(ctx, workspace.Path, args...); err != nil {
-		_ = m.endForgeSession(context.Background(), workspace, sessionID)
-		return "", err
+		return err
 	}
-	return sessionID, nil
+	return nil
 }
 
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
@@ -566,6 +579,46 @@ func rewriteAgentRuns(workspacePath string, runs []agentRun) error {
 	return writeAgentRunsIndexLocked(workspacePath, runs)
 }
 
+func (m *agentManager) registerRuntime(rt *agentRuntime) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.runtimes[rt.run.ID] = rt
+}
+
+func (m *agentManager) removeRuntime(runID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.runtimes, runID)
+}
+
+func (m *agentManager) handleSessionLiveness(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
+	runID := strings.TrimSpace(r.URL.Query().Get("runId"))
+	sessionID := strings.TrimSpace(r.URL.Query().Get("forgeSessionId"))
+	if workspaceID == "" || runID == "" || sessionID == "" {
+		writeError(w, errors.New("workspaceId, runId, and forgeSessionId are required"), http.StatusBadRequest)
+		return
+	}
+	_, rt, err := m.workspaceRuntime(workspaceID, runID)
+	if err != nil || rt == nil {
+		writeJSON(w, map[string]any{"active": false, "status": "stopped"})
+		return
+	}
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	active := strings.TrimSpace(run.ForgeSessionID) == sessionID && isLiveAgentStatus(run.Status)
+	writeJSON(w, map[string]any{
+		"active":        active,
+		"status":        run.Status,
+		"codexThreadId": run.CodexThreadID,
+	})
+}
+
 func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil {
@@ -674,20 +727,13 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, errors.New("run cannot be resumed because it has no Codex thread id"), http.StatusBadRequest)
 		return
 	}
-	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ResourceID)
+	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	now := time.Now().Format(time.RFC3339)
 	run.ForgeSessionID = forgeSessionID
-	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
-	if err != nil {
-		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	run.ForgeSessionContextPath = contextPath
 	run.CodexTurnID = ""
 	run.Status = "starting"
 	run.UpdatedAt = now
@@ -699,15 +745,35 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		pending:     make(map[string]pendingApproval),
 		done:        make(chan struct{}),
 	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	m.registerRuntime(rt)
+	registered := true
+	cleanup := func() {
+		if registered {
+			m.removeRuntime(run.ID)
+			registered = false
+		}
 		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
 		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+	}
+	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
+		cleanup()
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
+	if err != nil {
+		cleanup()
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	m.mu.Lock()
-	m.runtimes[run.ID] = rt
-	m.mu.Unlock()
+	run.ForgeSessionContextPath = contextPath
+	rt.setRun(run)
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		cleanup()
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	registered = false
 	rt.addEvent(m, "system", "session/resume", "Resuming Codex session.", nil, "")
 	if forgeSessionID != "" {
 		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
@@ -831,18 +897,14 @@ func (m *agentManager) runtimeByThreadID(threadID string) *agentRuntime {
 }
 
 func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
-	stopHeartbeat := rt.keepForgeSessionAlive(m)
 	defer func() {
-		stopHeartbeat()
 		rt.removeForgeSessionContext()
 		if err := m.endForgeSession(context.Background(), rt.workspace, rt.run.ForgeSessionID); err != nil {
 			rt.addEvent(m, "error", "forge/session/end", err.Error(), nil, "")
 		} else if rt.run.ForgeSessionID != "" {
 			rt.addEvent(m, "system", "forge/session/end", "Forge session ended.", nil, "")
 		}
-		m.mu.Lock()
-		delete(m.runtimes, rt.run.ID)
-		m.mu.Unlock()
+		m.removeRuntime(rt.run.ID)
 	}()
 	client, err := startCodexClient(m, rt)
 	if err != nil {
@@ -911,36 +973,6 @@ func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
 	if status == "running" || status == "waiting_approval" || status == "starting" {
 		rt.updateStatus(m, "stopped")
 	}
-}
-
-func (rt *agentRuntime) keepForgeSessionAlive(m *agentManager) func() {
-	rt.mu.Lock()
-	sessionID := rt.run.ForgeSessionID
-	workspace := rt.workspace
-	rt.mu.Unlock()
-	if sessionID == "" {
-		return func() {}
-	}
-	done := make(chan struct{})
-	heartbeat := func() {
-		if _, err := m.server.runForge(context.Background(), workspace.Path, "session", "heartbeat", "--id", sessionID); err != nil {
-			rt.addEvent(m, "error", "forge/session/heartbeat", err.Error(), nil, "")
-		}
-	}
-	go func() {
-		heartbeat()
-		ticker := time.NewTicker(internalForgeSessionHeartbeatInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				heartbeat()
-			case <-done:
-				return
-			}
-		}
-	}()
-	return func() { close(done) }
 }
 
 func (rt *agentRuntime) withForgeSessionContext(text string) string {
@@ -1135,6 +1167,12 @@ func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+func (rt *agentRuntime) setRun(run agentRun) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	rt.run = run
 }
 
 func isAgentOutputEvent(eventType, method string) bool {

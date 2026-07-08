@@ -59,7 +59,7 @@ forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktre
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]
+forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
 forge session heartbeat --id=<id>
 forge session lock --id=<id> [--project=<project>] [--task=<task>]
 forge session unlock --id=<id> [--project=<project>] [--task=<task>]
@@ -104,7 +104,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge task repo remove [--project=<project>] [--task=<task>] <repo-name>` removes a repository entry from a task's `task.json`. Task selection follows `forge task show`.
 
-`forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]` creates a session in `forge-sessions.json` and prints its unique id. Heartbeat liveness is the default and uses a default timeout unless `--timeout` is provided. PID liveness stays active while the process exists. `forge session heartbeat --id=<id>` refreshes the timestamp. All session commands prune stale sessions before acting.
+`forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]` creates a session in `forge-sessions.json` and prints its unique id. Heartbeat liveness is the default and uses a default timeout unless `--timeout` is provided. PID liveness stays active while the process exists. GUI run liveness stays active while the Forge GUI local endpoint reports that its managed run is active. `forge session heartbeat --id=<id>` refreshes a heartbeat session timestamp. All session commands prune stale sessions before acting.
 
 `forge session lock --id=<id> [--project=<project>] [--task=<task>]` records project or task control for a session. With no selector, Forge locks the current task when run under a task directory, otherwise the current project. With only `--project`, Forge locks that project. With only `--task`, Forge uses the current project and locks that task. Workspace root does not need a lock. `forge session unlock` uses the same selector rules to release control.
 

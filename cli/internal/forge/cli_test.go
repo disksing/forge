@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -257,7 +259,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] <description>",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
 		"  forge init",
@@ -265,7 +267,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--workflow=<name>] [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] <description>",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid>]",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 	}
 	offset := 0
@@ -485,6 +487,64 @@ func TestSessionNewSupportsPIDLiveness(t *testing.T) {
 		shown := run(t, "session", "show", "--id", id)
 		if !strings.Contains(shown, `"type": "pid"`) || !strings.Contains(shown, `"pid": `+strconv.Itoa(os.Getpid())) {
 			t.Fatalf("expected pid liveness in show JSON, got:\n%s", shown)
+		}
+	})
+}
+
+func TestSessionNewSupportsForgeGUIRunLiveness(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/internal/session-liveness" {
+				t.Fatalf("unexpected liveness path: %s", r.URL.Path)
+			}
+			if r.URL.Query().Get("workspaceId") != "workspace-one" || r.URL.Query().Get("runId") != "run-one" || !strings.HasPrefix(r.URL.Query().Get("forgeSessionId"), "session-") {
+				t.Fatalf("unexpected liveness query: %s", r.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"active":true}`))
+		}))
+		defer server.Close()
+
+		id := strings.TrimSpace(run(t, "session", "new", "--gui-run", "--workspace-id", "workspace-one", "--run-id", "run-one", "--endpoint", server.URL))
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+
+		listed := run(t, "session", "list")
+		if !strings.Contains(listed, id+"\tforge-gui-run:run-one") || !strings.Contains(listed, "project1:project1") {
+			t.Fatalf("expected forge gui run liveness session in list, got:\n%s", listed)
+		}
+		shown := run(t, "session", "show", "--id", id)
+		if !strings.Contains(shown, `"type": "forge-gui-run"`) || !strings.Contains(shown, `"workspaceId": "workspace-one"`) || !strings.Contains(shown, `"runId": "run-one"`) || !strings.Contains(shown, `"endpoint": "`+server.URL+`"`) {
+			t.Fatalf("expected forge gui liveness in show JSON, got:\n%s", shown)
+		}
+	})
+}
+
+func TestSessionListPrunesInactiveForgeGUIRunSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Session project")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"active":false}`))
+		}))
+		defer server.Close()
+		store := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "gui-run",
+				Liveness:  SessionLiveness{Type: "forge-gui-run", WorkspaceID: "workspace-one", RunID: "run-one", Endpoint: server.URL},
+				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
+				StartedAt: "2026-01-01T00:00:00Z",
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, "gui-run") {
+			t.Fatalf("expected inactive forge gui run session to be pruned, got:\n%s", listed)
 		}
 	})
 }
