@@ -1331,9 +1331,12 @@ function renderAgent() {
     <h2>Agent</h2>
     <form id="agentStartForm" class="agent-start-form">
       <div class="agent-start-row">
-        <select id="agentSelect" ${agents.length ? "" : "disabled"}>
-          ${agentSelectOptions(agents)}
-        </select>
+        <div class="agent-select-stack">
+          <select id="agentSelect" ${agents.length ? "" : "disabled"}>
+            ${agentSelectOptions(agents)}
+          </select>
+          <small>${escapeHTML(selectedAgent ? agentConfigSummary(selectedAgent) : "No enabled agents")}</small>
+        </div>
         <button type="submit" class="agent-start-button" ${selectedAgent ? "" : "disabled"}>${icon("play")}<span>Start Session</span></button>
       </div>
       ${hasClosableRun ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
@@ -1355,6 +1358,34 @@ function agentSelectOptions(agents) {
   return agents.map((agent) => `
     <option value="${escapeHTML(agent.id)}" ${state.agent.agentId === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>
   `).join("") || `<option value="">No enabled agents</option>`;
+}
+
+function agentConfigSummary(agent) {
+  if (!agent) return "";
+  const parts = [
+    providerName(agent.providerId),
+    sandboxLabel(agent.sandbox),
+    approvalLabel(agent.approval),
+  ];
+  if (agent.model) parts.push(agent.model);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function providerName(providerId) {
+  const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
+  return provider?.name || providerId || "Provider";
+}
+
+function sandboxLabel(value) {
+  if (value === "danger-full-access") return "Full Access";
+  if (value === "read-only") return "Read-only";
+  return "Workspace";
+}
+
+function approvalLabel(value) {
+  if (value === "never") return "Never";
+  if (value === "untrusted") return "Untrusted";
+  return "On request";
 }
 
 function agentCurrentSessionRow(run) {
@@ -1565,30 +1596,29 @@ function settingsAgentPanel(data) {
   return `
     <div class="settings-panel">
       <div class="settings-panel-header">
-        <h2>Agent Management</h2>
-        <p>Manage providers and named agents used when starting sessions.</p>
+        <h2>Agents</h2>
+        <p>Providers define available runtimes. Agents package provider options for session start.</p>
       </div>
-      <div class="settings-provider-list">
-        ${providers.map((provider) => settingsProviderRow(provider, codex)).join("")}
-      </div>
+      <section class="settings-agent-section">
+        <div class="settings-section-heading">
+          <h3>Providers</h3>
+          <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
+        </div>
+        <div class="settings-provider-list">
+          ${providers.map((provider) => settingsProviderRow(provider, codex)).join("")}
+        </div>
+      </section>
       <form id="agentConfigForm" class="settings-agent-form">
-        <div class="settings-agent-list">
-          ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("")}
-        </div>
-        <div class="settings-agent-new">
-          <input id="settingsNewAgentName" placeholder="Agent name" />
-          <select id="settingsNewAgentProvider">
-            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.name || provider.id)}</option>`).join("")}
-          </select>
-          <select id="settingsNewAgentSandbox">
-            ${sandboxOptions("workspace-write")}
-          </select>
-          <select id="settingsNewAgentApproval">
-            ${approvalOptions("on-request")}
-          </select>
-          <input id="settingsNewAgentModel" placeholder="Model" />
-          <button type="button" id="settingsAddAgentButton">${icon("plus")}<span>Add Agent</span></button>
-        </div>
+        <section class="settings-agent-section">
+          <div class="settings-section-heading">
+            <h3>Configured Agents</h3>
+            <span>${agents.length} total</span>
+          </div>
+          <div class="settings-agent-list">
+            ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("")}
+          </div>
+        </section>
+        ${settingsNewAgentCard(providers)}
         <div class="settings-form-actions">
           <button type="submit">${icon("save")}<span>Save Agents</span></button>
         </div>
@@ -1606,9 +1636,12 @@ function settingsProviderRow(provider, codex) {
       : "Disabled";
   return `
     <div class="settings-service-row">
-      <div>
-        <strong>${escapeHTML(provider.name || provider.id)}</strong>
-        <span>${status}</span>
+      <div class="settings-provider-main">
+        <span class="settings-provider-mark">${icon(provider.id === "codex" ? "terminal" : "box")}</span>
+        <span>
+          <strong>${escapeHTML(provider.name || provider.id)}</strong>
+          <small>${escapeHTML(provider.type || provider.id)} · ${status}</small>
+        </span>
       </div>
       <button type="button" data-toggle-provider="${escapeHTML(provider.id)}" class="${enabled ? "settings-secondary-button" : ""}">
         ${icon(enabled ? "toggle-right" : "toggle-left")}
@@ -1620,16 +1653,81 @@ function settingsProviderRow(provider, codex) {
 
 function settingsAgentRow(agent, providers, index) {
   return `
-    <div class="settings-agent-row" data-agent-index="${index}">
-      <input data-agent-field="name" value="${escapeHTML(agent.name || "")}" placeholder="Name" />
-      <select data-agent-field="providerId">
-        ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${agent.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
-      </select>
-      <select data-agent-field="sandbox">${sandboxOptions(agent.sandbox)}</select>
-      <select data-agent-field="approval">${approvalOptions(agent.approval)}</select>
-      <input data-agent-field="model" value="${escapeHTML(agent.model || "")}" placeholder="Model" />
-      <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}">${icon("trash-2")}</button>
+    <div class="settings-agent-card settings-agent-row" data-agent-index="${index}">
+      <div class="settings-agent-card-head">
+        <span class="settings-agent-mark">${escapeHTML((agent.name || agent.id || "A").slice(0, 1).toUpperCase())}</span>
+        <label class="settings-agent-name-field">
+          <span>Name</span>
+          <input data-agent-field="name" value="${escapeHTML(agent.name || "")}" placeholder="Agent name" />
+        </label>
+        <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}" title="Delete agent">${icon("trash-2")}</button>
+      </div>
+      <div class="settings-agent-summary">${escapeHTML(agentConfigSummary(agent))}</div>
+      <div class="settings-agent-fields">
+        <label>
+          <span>Provider</span>
+          <select data-agent-field="providerId">
+            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${agent.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
+          </select>
+        </label>
+        <label>
+          <span>Sandbox</span>
+          <select data-agent-field="sandbox">${sandboxOptions(agent.sandbox)}</select>
+        </label>
+        <label>
+          <span>Approval</span>
+          <select data-agent-field="approval">${approvalOptions(agent.approval)}</select>
+        </label>
+        <label>
+          <span>Model</span>
+          <input data-agent-field="model" value="${escapeHTML(agent.model || "")}" placeholder="Default" />
+        </label>
+      </div>
     </div>
+  `;
+}
+
+function settingsNewAgentCard(providers) {
+  return `
+    <section class="settings-agent-section">
+      <div class="settings-section-heading">
+        <h3>New Agent</h3>
+      </div>
+      <div class="settings-agent-card settings-agent-new">
+        <div class="settings-agent-card-head">
+          <span class="settings-agent-mark muted">${icon("plus")}</span>
+          <label class="settings-agent-name-field">
+            <span>Name</span>
+            <input id="settingsNewAgentName" placeholder="Agent name" />
+          </label>
+          <button type="button" id="settingsAddAgentButton">${icon("plus")}<span>Add</span></button>
+        </div>
+        <div class="settings-agent-fields">
+          <label>
+            <span>Provider</span>
+            <select id="settingsNewAgentProvider">
+              ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.name || provider.id)}</option>`).join("")}
+            </select>
+          </label>
+          <label>
+            <span>Sandbox</span>
+            <select id="settingsNewAgentSandbox">
+              ${sandboxOptions("workspace-write")}
+            </select>
+          </label>
+          <label>
+            <span>Approval</span>
+            <select id="settingsNewAgentApproval">
+              ${approvalOptions("on-request")}
+            </select>
+          </label>
+          <label>
+            <span>Model</span>
+            <input id="settingsNewAgentModel" placeholder="Default" />
+          </label>
+        </div>
+      </div>
+    </section>
   `;
 }
 
