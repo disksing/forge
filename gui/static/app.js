@@ -11,6 +11,7 @@ const state = {
   preview: null,
   diff: null,
   sessionMenu: null,
+  taskSessionStateKey: "",
   settings: {
     open: false,
     tab: "workspace",
@@ -223,6 +224,9 @@ async function autoRefresh() {
       }
       changed = true;
     }
+    if (taskSessionStateKey() !== state.taskSessionStateKey) {
+      changed = true;
+    }
     if (changed) {
       renderAll();
     }
@@ -285,6 +289,7 @@ function renderTree() {
   tree.innerHTML = "";
   if (!state.tree) {
     tree.innerHTML = `<div class="empty-state"><div>Add a workspace path to begin.</div></div>`;
+    state.taskSessionStateKey = "";
     return;
   }
   for (const project of state.tree.projects) {
@@ -295,6 +300,7 @@ function renderTree() {
       }
     }
   }
+  state.taskSessionStateKey = taskSessionStateKey();
 }
 
 function treeButton(item, kind) {
@@ -371,6 +377,18 @@ function taskSessions(resourceId) {
     }
   }
   return matched;
+}
+
+function taskSessionStateKey() {
+  if (!state.tree) return "";
+  const parts = [];
+  for (const project of state.tree.projects || []) {
+    for (const task of project.children || []) {
+      const sessionState = taskSessionState(task.id);
+      parts.push(`${task.id}:${sessionState.kind}:${sessionState.iconName}:${sessionState.label}`);
+    }
+  }
+  return parts.join("|");
 }
 
 function hasRecentAgentOutput(session) {
