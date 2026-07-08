@@ -3,6 +3,8 @@ const state = {
   tree: null,
   details: {},
   workspaceAgents: null,
+  workspaceAgentsDraft: "",
+  workspaceAgentsDirty: false,
   workspaceAgentsSaving: false,
   activeWorkspaceId: "",
   selectedId: "",
@@ -530,12 +532,14 @@ function sessionResourceMenu(session, controls) {
 
 function renderDetails() {
   const panel = $("detailsPanel");
+  const workspaceEditorState = captureWorkspaceAgentsEditorState();
   if (!state.tree) {
     panel.innerHTML = emptyDetails();
     return;
   }
   if (state.selectedId === "workspace") {
     panel.innerHTML = workspaceDetails();
+    restoreWorkspaceAgentsEditorState(workspaceEditorState);
     return;
   }
   const selected = findResource(state.selectedId) || state.tree.projects[0];
@@ -657,7 +661,7 @@ function workspaceAgentsSection() {
 }
 
 function workspaceAgentsEditor(content) {
-  const userContent = stripForgeManagedBlocks(content).trim();
+  const userContent = workspaceAgentsEditorContent(content);
   return `
     <form id="workspaceAgentsForm" class="details-form">
       <textarea id="workspaceAgentsContent" rows="10" spellcheck="false" ${state.workspaceAgentsSaving ? "disabled" : ""}>${escapeHTML(userContent)}</textarea>
@@ -859,6 +863,48 @@ function stripForgeManagedBlocks(content) {
     cursor = end + endMarker.length;
   }
   return result;
+}
+
+function workspaceAgentsUserContent(content) {
+  return stripForgeManagedBlocks(content || "").trim();
+}
+
+function workspaceAgentsEditorContent(content) {
+  if (state.workspaceAgentsDirty) return state.workspaceAgentsDraft;
+  return workspaceAgentsUserContent(content);
+}
+
+function syncWorkspaceAgentsDraftFromInput(value) {
+  state.workspaceAgentsDraft = value;
+  state.workspaceAgentsDirty = value !== workspaceAgentsUserContent(state.workspaceAgents?.content || "");
+}
+
+function resetWorkspaceAgentsDraft() {
+  state.workspaceAgentsDraft = "";
+  state.workspaceAgentsDirty = false;
+}
+
+function captureWorkspaceAgentsEditorState() {
+  const textarea = $("workspaceAgentsContent");
+  if (!textarea || textarea.disabled) return null;
+  syncWorkspaceAgentsDraftFromInput(textarea.value);
+  if (document.activeElement !== textarea) return null;
+  return {
+    selectionStart: textarea.selectionStart,
+    selectionEnd: textarea.selectionEnd,
+    scrollTop: textarea.scrollTop,
+  };
+}
+
+function restoreWorkspaceAgentsEditorState(snapshot) {
+  if (!snapshot || state.selectedId !== "workspace") return;
+  const textarea = $("workspaceAgentsContent");
+  if (!textarea || textarea.disabled) return;
+  textarea.focus({ preventScroll: true });
+  const length = textarea.value.length;
+  textarea.selectionStart = Math.min(snapshot.selectionStart ?? length, length);
+  textarea.selectionEnd = Math.min(snapshot.selectionEnd ?? length, length);
+  textarea.scrollTop = snapshot.scrollTop || 0;
 }
 
 function artifactSection(title, entries = []) {
@@ -1084,6 +1130,9 @@ function bindFileModalEvents() {
 }
 
 function bindWorkspaceAgentsEvents() {
+  $("workspaceAgentsContent")?.addEventListener("input", (event) => {
+    syncWorkspaceAgentsDraftFromInput(event.target.value);
+  });
   $("workspaceAgentsForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
     saveWorkspaceAgents().catch((err) => toast(err.message));
@@ -1133,6 +1182,8 @@ async function saveWorkspaceAgents() {
       method: "PUT",
       body: JSON.stringify({ content }),
     });
+    state.workspaceAgentsDraft = workspaceAgentsUserContent(state.workspaceAgents.content || "");
+    state.workspaceAgentsDirty = false;
     toast("Workspace AGENTS.md saved.");
   } finally {
     state.workspaceAgentsSaving = false;
@@ -2967,6 +3018,7 @@ $("workspaceSelect").onchange = async (event) => {
   state.activeWorkspaceId = event.target.value;
   state.selectedId = "";
   state.sessionMenu = null;
+  resetWorkspaceAgentsDraft();
   closeCreateDialog();
   resetAgentState();
   await loadUIState();
@@ -3029,18 +3081,19 @@ document.addEventListener("click", (event) => {
 initPaneResize();
 
 window.addEventListener("popstate", async () => {
-	  const route = parseRoute();
-	  if (!workspaceExists(route.workspaceId)) {
-	    return;
-	  }
-	  const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
-	  const previousSelectedId = state.selectedId;
-	  state.activeWorkspaceId = route.workspaceId;
-	  state.selectedId = route.resourceId || "";
-	  state.preview = null;
-	  state.diff = null;
-	  state.sessionMenu = null;
+  const route = parseRoute();
+  if (!workspaceExists(route.workspaceId)) {
+    return;
+  }
+  const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
+  const previousSelectedId = state.selectedId;
+  state.activeWorkspaceId = route.workspaceId;
+  state.selectedId = route.resourceId || "";
+  state.preview = null;
+  state.diff = null;
+  state.sessionMenu = null;
   if (workspaceChanged) {
+    resetWorkspaceAgentsDraft();
     closeCreateDialog();
   }
   if (workspaceChanged) {
@@ -3054,16 +3107,16 @@ window.addEventListener("popstate", async () => {
     if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
       state.selectedId = "";
     }
-	    if (state.selectedId && state.selectedId !== "workspace") {
-	      ensureSelectedProjectExpanded(false);
-	      await loadDetail(state.selectedId);
-	    }
-	    if (previousSelectedId !== state.selectedId) {
-	      await reloadAgentRunsForSelection();
-	    }
-	    renderAll();
-	  }
-	});
+    if (state.selectedId && state.selectedId !== "workspace") {
+      ensureSelectedProjectExpanded(false);
+      await loadDetail(state.selectedId);
+    }
+    if (previousSelectedId !== state.selectedId) {
+      await reloadAgentRunsForSelection();
+    }
+    renderAll();
+  }
+});
 
 load().catch((err) => {
   toast(err.message);
