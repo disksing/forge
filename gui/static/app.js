@@ -515,7 +515,6 @@ function renderDetails() {
       <h3>${icon("align-left")}<span>Description</span></h3>
       <p>${escapeHTML(detail.description || "No description.")}</p>
     </div>
-    ${logSection(detail)}
     ${fileSection(detail)}
     ${artifactSection("Artifacts", detail.artifacts)}
     ${worktreeSection(detail.repos)}
@@ -663,15 +662,24 @@ function relativeTime(value) {
 
 function fileSection(item) {
   const files = item.files || [];
-  if (!files.length) return "";
-  return files
-    .map((file) => `
+  let insertedLog = false;
+  const sections = files.map((file) => {
+    const section = `
       <div class="content-section">
         <h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span></h3>
         ${renderFileContent(file.name, file.content)}
       </div>
-    `)
-    .join("");
+    `;
+    if (file.name === "work.md") {
+      insertedLog = true;
+      return section + logSection(item);
+    }
+    return section;
+  });
+  if (!insertedLog) {
+    sections.push(logSection(item));
+  }
+  return sections.join("");
 }
 
 function renderFileContent(name, content) {
