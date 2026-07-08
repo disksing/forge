@@ -200,6 +200,66 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 	}
 }
 
+func TestListRunsFiltersWorkspaceScope(t *testing.T) {
+	workspace := t.TempDir()
+	now := "2026-07-07T12:00:00+08:00"
+	runs := []agentRun{
+		{
+			ID:          "run-workspace",
+			WorkspaceID: "workspace-one",
+			Provider:    "codex",
+			Title:       "Workspace Run",
+			Cwd:         workspace,
+			Status:      "completed",
+			Sandbox:     "workspace-write",
+			Approval:    "on-request",
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		{
+			ID:          "run-task",
+			WorkspaceID: "workspace-one",
+			ResourceID:  "project1.task1",
+			Provider:    "codex",
+			Title:       "Task Run",
+			Cwd:         filepath.Join(workspace, "project1", "task1"),
+			Status:      "completed",
+			Sandbox:     "workspace-write",
+			Approval:    "on-request",
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+	}
+	if err := rewriteAgentRuns(workspace, runs); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath}
+	if err := s.saveConfig(config{
+		Version:    1,
+		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(s)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/agent/runs?resourceId=workspace", nil)
+	rec := httptest.NewRecorder()
+	m.listRuns(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Runs []agentRun `json:"runs"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Runs) != 1 || body.Runs[0].ID != "run-workspace" {
+		t.Fatalf("expected only workspace-scoped run, got %#v", body.Runs)
+	}
+}
+
 func TestIsAgentOutputEvent(t *testing.T) {
 	outputs := []struct {
 		eventType string

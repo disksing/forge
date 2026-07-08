@@ -2,6 +2,7 @@ const state = {
   config: null,
   tree: null,
   details: {},
+  workspaceAgents: null,
   activeWorkspaceId: "",
   selectedId: "",
   expandedProjects: new Set(),
@@ -94,6 +95,7 @@ async function load() {
   } else {
     state.tree = null;
     state.details = {};
+    state.workspaceAgents = null;
     state.preview = null;
     state.diff = null;
     resetAgentState();
@@ -105,6 +107,7 @@ async function loadTree(options = {}) {
   if (!state.activeWorkspaceId) return;
   state.tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
   state.details = {};
+  state.workspaceAgents = null;
   state.preview = null;
   state.diff = null;
   if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
@@ -114,7 +117,11 @@ async function loadTree(options = {}) {
     state.selectedId = state.tree.projects[0]?.id || "workspace";
   }
   ensureSelectedProjectExpanded(false);
-  if (state.selectedId && state.selectedId !== "workspace") await loadDetail(state.selectedId);
+  if (state.selectedId === "workspace") {
+    await loadWorkspaceAgents();
+  } else if (state.selectedId) {
+    await loadDetail(state.selectedId);
+  }
   await loadAgentRuns();
   renderAll();
   if (options.updateURL !== false) {
@@ -129,6 +136,19 @@ async function loadDetail(id, options = {}) {
 
 function fetchDetail(id) {
   return api(`/api/workspaces/${state.activeWorkspaceId}/resources/${encodeURIComponent(id)}`);
+}
+
+async function loadWorkspaceAgents(options = {}) {
+  if (!state.activeWorkspaceId || (state.workspaceAgents && !options.force)) return;
+  try {
+    state.workspaceAgents = await api(`/api/workspaces/${state.activeWorkspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`);
+  } catch (err) {
+    state.workspaceAgents = {
+      path: "AGENTS.md",
+      name: "AGENTS.md",
+      error: err.message,
+    };
+  }
 }
 
 async function loadUIState() {
@@ -173,7 +193,13 @@ async function autoRefresh() {
     const expandedCount = state.expandedProjects.size;
     ensureSelectedProjectExpanded(false);
     changed = changed || expandedCount !== state.expandedProjects.size;
-    if (state.selectedId && state.selectedId !== "workspace") {
+    if (state.selectedId === "workspace") {
+      const previousAgents = state.workspaceAgents;
+      await loadWorkspaceAgents({ force: true });
+      if (!sameJSON(previousAgents, state.workspaceAgents)) {
+        changed = true;
+      }
+    } else if (state.selectedId) {
       const detail = await fetchDetail(state.selectedId);
       if (!sameJSON(state.details[state.selectedId], detail)) {
         state.details[state.selectedId] = detail;
@@ -373,7 +399,7 @@ async function selectResource(id, options = {}) {
   syncURL();
   renderSelectionPanels();
   await Promise.all([
-    loadDetail(id, { force: Boolean(options.forceDetail) }),
+    id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: Boolean(options.forceDetail) }),
     selectionChanged ? loadAgentRuns() : Promise.resolve(),
   ]);
   renderSelectionPanels();
@@ -576,6 +602,29 @@ function workspaceDetails() {
       <div class="metric"><span>Projects</span><strong>${state.tree.projects.length}</strong></div>
       <div class="metric"><span>Tasks</span><strong>${state.tree.projects.reduce((n, p) => n + (p.children || []).length, 0)}</strong></div>
       <div class="metric"><span>Sessions</span><strong>${state.tree.sessions.length}</strong></div>
+    </div>
+    ${workspaceAgentsSection()}
+  `;
+}
+
+function workspaceAgentsSection() {
+  const agents = state.workspaceAgents;
+  let body = `<div class="empty-state"><div>Loading AGENTS.md...</div></div>`;
+  if (agents?.error) {
+    body = `
+      <div class="file-modal-empty error-preview">
+        ${icon("triangle-alert")}
+        <strong>AGENTS.md unavailable</strong>
+        <span>${escapeHTML(agents.error)}</span>
+      </div>
+    `;
+  } else if (agents) {
+    body = renderFileContent(agents.name || "AGENTS.md", agents.content || "");
+  }
+  return `
+    <div class="content-section">
+      <h3>${icon("file-text")}<span>AGENTS.md</span></h3>
+      ${body}
     </div>
   `;
 }
@@ -1119,20 +1168,19 @@ function visibleAgentEventCount() {
 function oldestAgentEventID() {
   return state.agent.events.find((event) => event.id > 0)?.id || 0;
 }
-	
-	function fetchAgentRuns() {
-	  const resourceId = selectedAgentResourceId();
-	  const query = resourceId ? `?resourceId=${encodeURIComponent(resourceId)}` : "";
-	  return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs${query}`).then((body) => body.runs || []);
-	}
+function fetchAgentRuns() {
+  const resourceId = selectedAgentResourceId();
+  const query = resourceId ? `?resourceId=${encodeURIComponent(resourceId)}` : "";
+  return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs${query}`).then((body) => body.runs || []);
+}
 
-	async function reloadAgentRunsForSelection() {
-	  closeAgentStream();
-	  state.agent.activeRunId = "";
-	  state.agent.events = [];
-	  state.agent.ttyDraft = "";
-	  await loadAgentRuns();
-	}
+async function reloadAgentRunsForSelection() {
+  closeAgentStream();
+  state.agent.activeRunId = "";
+  state.agent.events = [];
+  state.agent.ttyDraft = "";
+  await loadAgentRuns();
+}
 
 function resetAgentState() {
   closeAgentStream();
@@ -2059,15 +2107,16 @@ function defaultAgentPrompt() {
   return "Inspect this Forge workspace and suggest the next useful implementation step.";
 }
 
-	function agentDefaultCwd() {
-	  const selected = findResource(state.selectedId);
-	  if (!selected) return "";
-	  return selected.path || "";
-	}
+function agentDefaultCwd() {
+  const selected = findResource(state.selectedId);
+  if (!selected) return "";
+  return selected.path || "";
+}
 
-	function selectedAgentResourceId() {
-	  return findResource(state.selectedId)?.id || "";
-	}
+function selectedAgentResourceId() {
+  if (state.selectedId === "workspace") return "workspace";
+  return findResource(state.selectedId)?.id || "";
+}
 
 function relativeTime(value) {
   if (!value) return "unknown";

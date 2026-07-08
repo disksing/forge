@@ -228,13 +228,24 @@ func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspac
 	if resourceID != "" {
 		filtered := runs[:0]
 		for _, run := range runs {
-			if run.ResourceID == resourceID {
+			if agentRunMatchesResource(run, resourceID) {
 				filtered = append(filtered, run)
 			}
 		}
 		runs = filtered
 	}
 	writeJSON(w, map[string]any{"runs": runs})
+}
+
+func agentRunMatchesResource(run agentRun, resourceID string) bool {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" {
+		return true
+	}
+	if resourceID == "workspace" {
+		return strings.TrimSpace(run.ResourceID) == ""
+	}
+	return run.ResourceID == resourceID
 }
 
 func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspaceID string) {
