@@ -1705,7 +1705,6 @@ function bindAgentEvents() {
 async function startAgentRun() {
   if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
   const selected = findResource(state.selectedId);
-  const detail = selected ? state.details[selected.id] : null;
   const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
     method: "POST",
     body: JSON.stringify({
@@ -1715,7 +1714,7 @@ async function startAgentRun() {
       model: state.agent.model.trim(),
       sandbox: state.agent.sandbox,
       approval: state.agent.approval,
-      cwd: agentDefaultCwd(detail),
+      cwd: agentDefaultCwd(),
     }),
   });
   state.agent.draftPrompt = "";
@@ -1824,10 +1823,10 @@ function defaultAgentPrompt() {
   return "Inspect this Forge workspace and suggest the next useful implementation step.";
 }
 
-	function agentDefaultCwd(detail = null) {
+	function agentDefaultCwd() {
 	  const selected = findResource(state.selectedId);
-	  const selectedDetail = detail || (selected ? state.details[selected.id] : null);
-	  return selectedDetail?.repos?.[0]?.worktreePath || "";
+	  if (!selected) return "";
+	  return selected.path || "";
 	}
 
 	function selectedAgentResourceId() {

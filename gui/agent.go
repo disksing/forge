@@ -250,7 +250,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
-	cwd, err := agentCwd(workspace.Path, req.Cwd)
+	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -359,18 +359,11 @@ func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace g
 	dir := run.Cwd
 	resourceID := strings.TrimSpace(run.ResourceID)
 	if resourceID != "" {
-		out, err := m.server.runForge(ctx, workspace.Path, "workspace", "resource", "--id", resourceID, "--json")
+		resourceDir, err := m.resourceDir(ctx, workspace, resourceID)
 		if err != nil {
 			return "", err
 		}
-		var detail resourceDetailPath
-		if err := json.Unmarshal(out, &detail); err != nil {
-			return "", fmt.Errorf("decode resource path: %w", err)
-		}
-		if strings.TrimSpace(detail.Path) == "" {
-			return "", fmt.Errorf("resource %s returned an empty path", resourceID)
-		}
-		dir = filepath.Join(workspace.Path, filepath.FromSlash(detail.Path))
+		dir = resourceDir
 	}
 	workspaceAbs, err := filepath.Abs(workspace.Path)
 	if err != nil {
@@ -405,6 +398,36 @@ func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace g
 		return "", err
 	}
 	return contextPath, nil
+}
+
+func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, resourceID, requested string) (string, error) {
+	if strings.TrimSpace(requested) != "" {
+		return agentCwd(workspace.Path, requested)
+	}
+	if strings.TrimSpace(resourceID) == "" {
+		return agentCwd(workspace.Path, "")
+	}
+	return m.resourceDir(ctx, workspace, resourceID)
+}
+
+func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, resourceID string) (string, error) {
+	resourceID = strings.TrimSpace(resourceID)
+	out, err := m.server.runForge(ctx, workspace.Path, "workspace", "resource", "--id", resourceID, "--json")
+	if err != nil {
+		return "", err
+	}
+	var detail resourceDetailPath
+	if err := json.Unmarshal(out, &detail); err != nil {
+		return "", fmt.Errorf("decode resource path: %w", err)
+	}
+	if strings.TrimSpace(detail.Path) == "" {
+		return "", fmt.Errorf("resource %s returned an empty path", resourceID)
+	}
+	dirAbs, err := safeWorkspacePath(workspace.Path, filepath.FromSlash(detail.Path))
+	if err != nil {
+		return "", err
+	}
+	return dirAbs, nil
 }
 
 func (rt *agentRuntime) removeForgeSessionContext() {
