@@ -353,7 +353,7 @@ function taskSessionLabel(count, description) {
   return `${count} open ${count === 1 ? "session" : "sessions"} ${description}`;
 }
 
-async function selectResource(id) {
+async function selectResource(id, options = {}) {
   const selectionChanged = state.selectedId !== id;
   if (selectionChanged) {
     state.preview = null;
@@ -370,7 +370,7 @@ async function selectResource(id) {
   syncURL();
   renderSelectionPanels();
   await Promise.all([
-    loadDetail(id),
+    loadDetail(id, { force: Boolean(options.forceDetail) }),
     selectionChanged ? loadAgentRuns() : Promise.resolve(),
   ]);
   renderSelectionPanels();
@@ -488,24 +488,19 @@ function renderDetails() {
     return;
   }
   const detail = state.details[selected.id];
-	  if (!detail) {
-	    panel.innerHTML = `
-	      <div class="details-header">
-	        <div class="breadcrumb"><span class="current">${escapeHTML(selected.id)}</span></div>
-	        <div class="title-row"><h1>${escapeHTML(selected.title)}</h1></div>
-	      </div>
-	      <div class="empty-state"><div>Loading details...</div></div>
-	    `;
-	    return;
-	  }
-  const parent = parentProject(selected.id);
+  if (!detail) {
+    panel.innerHTML = `
+      <div class="details-header">
+        ${breadcrumb(selected, selected.title)}
+        <div class="title-row"><h1>${escapeHTML(selected.title)}</h1></div>
+      </div>
+      <div class="empty-state"><div>Loading details...</div></div>
+    `;
+    return;
+  }
   panel.innerHTML = `
     <div class="details-header">
-      <div class="breadcrumb">
-        <span>${escapeHTML(workspaceName())}</span>
-        ${parent && parent.id !== selected.id ? `<span>/</span><span>${escapeHTML(parent.title)}</span>` : ""}
-        <span>/</span><span class="current">${escapeHTML(selected.id)}</span>
-      </div>
+      ${breadcrumb(selected, detail.title)}
       <div class="title-row">
         <h1>${escapeHTML(detail.title)}</h1>
         <div class="details-actions">
@@ -529,6 +524,30 @@ function renderDetails() {
   $("newTaskButton")?.addEventListener("click", () => showTaskForm(selected.id));
 }
 
+function breadcrumb(selected, currentLabel) {
+  const parent = parentProject(selected.id);
+  const parts = [
+    { id: "workspace", label: workspaceName(), current: selected.id === "workspace" },
+  ];
+  if (parent && parent.id !== selected.id) {
+    parts.push({ id: parent.id, label: parent.title || parent.id, current: false });
+  }
+  parts.push({ id: selected.id, label: currentLabel || selected.title || selected.id, current: true });
+  return `
+    <nav class="breadcrumb" aria-label="Location">
+      ${parts.map((part, index) => `
+        ${index > 0 ? `<span class="breadcrumb-separator">/</span>` : ""}
+        <button
+          type="button"
+          class="breadcrumb-link ${part.current ? "current" : ""}"
+          data-breadcrumb-resource="${escapeHTML(part.id)}">
+          ${escapeHTML(part.label)}
+        </button>
+      `).join("")}
+    </nav>
+  `;
+}
+
 function emptyDetails() {
   return `
     <div class="empty-state">
@@ -543,7 +562,9 @@ function emptyDetails() {
 function workspaceDetails() {
   return `
     <div class="details-header">
-      <div class="breadcrumb"><span class="current">${escapeHTML(workspaceName())}</span></div>
+      <nav class="breadcrumb" aria-label="Location">
+        <button type="button" class="breadcrumb-link current" data-breadcrumb-resource="workspace">${escapeHTML(workspaceName())}</button>
+      </nav>
       <div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>
     </div>
     <div class="meta-grid">
@@ -552,6 +573,11 @@ function workspaceDetails() {
       <div class="metric"><span>Sessions</span><strong>${state.tree.sessions.length}</strong></div>
     </div>
   `;
+}
+
+async function openBreadcrumbResource(id) {
+  const forceDetail = id === state.selectedId && id !== "workspace";
+  await selectResource(id, { forceDetail });
 }
 
 function metrics(item) {
@@ -2369,6 +2395,11 @@ document.addEventListener("keydown", (event) => {
 
 document.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const breadcrumbButton = target?.closest("[data-breadcrumb-resource]");
+  if (breadcrumbButton) {
+    openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource).catch((err) => toast(err.message));
+    return;
+  }
   if ((state.agent.optionsOpen || state.agent.historyOpen) && target && !target.closest(".agent-actions") && !target.closest(".agent-sessions")) {
     state.agent.optionsOpen = false;
     state.agent.historyOpen = false;

@@ -350,6 +350,7 @@ body.resizing-y {
 .breadcrumb {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-bottom: 14px;
   color: var(--muted);
@@ -359,8 +360,36 @@ body.resizing-y {
   text-transform: uppercase;
 }
 
-.breadcrumb .current {
+.breadcrumb-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.breadcrumb-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.breadcrumb-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.breadcrumb-link.current {
   color: var(--accent);
+}
+
+.breadcrumb-separator {
+  color: var(--muted);
 }
 
 .title-row {
