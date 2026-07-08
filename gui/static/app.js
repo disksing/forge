@@ -1238,6 +1238,13 @@ function agentRunRow(run) {
 
 function renderTTY(options = {}) {
   const log = $("ttyLog");
+  const previousRunId = log.dataset.agentRunId || "";
+  const nextRunId = state.agent.activeRunId || "";
+  const previousScrollTop = log.scrollTop;
+  const explicitStickToBottom = typeof options.stickToBottom === "boolean";
+  const stickToBottom = explicitStickToBottom
+    ? options.stickToBottom
+    : previousRunId !== nextRunId || isTTYNearBottom(log);
   renderTTYComposer();
   if (state.agent.activeRunId) {
     const events = displayAgentEvents(state.agent.events);
@@ -1251,12 +1258,20 @@ function renderTTY(options = {}) {
     const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start a Codex run above.";
     log.innerHTML = `<div class="tty-empty">${icon("bot")}<strong>No agent run selected</strong><span>${escapeHTML(text)}</span></div>`;
   }
+  log.dataset.agentRunId = nextRunId;
   $("loadOlderAgentEventsButton")?.addEventListener("click", () => {
     loadOlderAgentEvents().catch((err) => toast(err.message));
   });
-  if (options.stickToBottom !== false) {
+  if (stickToBottom) {
     log.scrollTop = log.scrollHeight;
+  } else {
+    log.scrollTop = previousScrollTop;
   }
+}
+
+function isTTYNearBottom(log) {
+  const distanceFromBottom = log.scrollHeight - log.scrollTop - log.clientHeight;
+  return distanceFromBottom <= 32;
 }
 
 function renderTTYComposer() {
