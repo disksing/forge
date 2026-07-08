@@ -42,6 +42,7 @@ type ResourceDetail struct {
 
 type ResourceFile struct {
 	Name    string `json:"name"`
+	Path    string `json:"path,omitempty"`
 	Content string `json:"content"`
 }
 
@@ -152,7 +153,7 @@ func buildResourceDetailAt(root string, entry taskListEntry) (ResourceDetail, er
 		Archived:    isArchivedPath(root, entry.Path),
 		Repos:       append([]TaskRepo(nil), task.Repos...),
 		Logs:        logs,
-		Files:       readResourceFiles(entry.Path, task),
+		Files:       readResourceFiles(root, entry.Path, task),
 		Artifacts:   readFileTree(root, filepath.Join(entry.Path, "artifacts")),
 	}
 	if !isProject(task) {
@@ -213,7 +214,7 @@ func parseWorkspaceResourceArgs(args []string) (string, error) {
 	return id, nil
 }
 
-func readResourceFiles(dir string, task Task) []ResourceFile {
+func readResourceFiles(root, dir string, task Task) []ResourceFile {
 	names := []string{markdownFileName(task), "work.md", "AGENTS.md"}
 	files := make([]ResourceFile, 0, len(names))
 	for _, name := range names {
@@ -221,7 +222,11 @@ func readResourceFiles(dir string, task Task) []ResourceFile {
 		if err != nil {
 			continue
 		}
-		files = append(files, ResourceFile{Name: name, Content: string(data)})
+		files = append(files, ResourceFile{
+			Name:    name,
+			Path:    relPath(root, filepath.Join(dir, name)),
+			Content: string(data),
+		})
 	}
 	return files
 }

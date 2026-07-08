@@ -676,10 +676,6 @@ func (s *server) serveRawFile(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, errors.New("path is required"), http.StatusBadRequest)
 		return
 	}
-	if !isPreviewableImage(relPath) {
-		writeError(w, errors.New("raw preview is only available for common image formats"), http.StatusBadRequest)
-		return
-	}
 	abs, err := safeWorkspacePath(workspace.Path, relPath)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -700,7 +696,21 @@ func (s *server) serveRawFile(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, errors.New("cannot preview a directory"), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", fileMimeType(relPath, nil))
+	sample, err := io.ReadAll(io.LimitReader(file, previewMaxBytes+1))
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if !isPreviewableImage(relPath) && (containsNUL(sample) || !utf8.Valid(sample)) {
+		writeError(w, errors.New("raw preview is only available for text and common image formats"), http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", fileMimeType(relPath, sample))
+	w.Header().Set("Content-Disposition", "inline")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
 }
@@ -1212,6 +1222,10 @@ func containsNUL(data []byte) bool {
 }
 
 func fileMimeType(path string, data []byte) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".md", ".markdown", ".mdown", ".mkdn":
+		return "text/markdown"
+	}
 	if mimeType := mime.TypeByExtension(strings.ToLower(filepath.Ext(path))); mimeType != "" {
 		return strings.Split(mimeType, ";")[0]
 	}

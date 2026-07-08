@@ -237,6 +237,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if detail.ID != "project1.task1" || detail.Path != "project1/task1" || len(detail.Files) == 0 {
 			t.Fatalf("unexpected task detail: %+v", detail)
 		}
+		if detail.Files[0].Name != "task.md" || detail.Files[0].Path != "project1/task1/task.md" {
+			t.Fatalf("expected task file path in detail, got: %+v", detail.Files[0])
+		}
 		if len(detail.Logs) != 1 || detail.Logs[0].Title != "Task created" {
 			t.Fatalf("expected structured task creation log, got: %+v", detail.Logs)
 		}
