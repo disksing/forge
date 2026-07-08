@@ -3,6 +3,7 @@ const state = {
   tree: null,
   details: {},
   workspaceAgents: null,
+  workspaceAgentsSaving: false,
   activeWorkspaceId: "",
   selectedId: "",
   expandedProjects: new Set(),
@@ -234,6 +235,7 @@ function renderAll() {
   renderTree();
   renderSessions();
   renderDetails();
+  bindWorkspaceAgentsEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -250,6 +252,7 @@ function renderAll() {
 function renderSelectionPanels() {
   renderTree();
   renderDetails();
+  bindWorkspaceAgentsEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -621,13 +624,28 @@ function workspaceAgentsSection() {
       </div>
     `;
   } else if (agents) {
-    body = renderFileContent(agents.name || "AGENTS.md", agents.content || "");
+    body = workspaceAgentsEditor(agents.content || "");
   }
   return `
     <div class="content-section">
-      <h3>${icon("file-text")}<span>AGENTS.md</span></h3>
+      <h3>${icon("file-text")}<span>Workspace AGENTS.md</span></h3>
       ${body}
     </div>
+  `;
+}
+
+function workspaceAgentsEditor(content) {
+  const userContent = stripForgeManagedBlocks(content).trim();
+  return `
+    <form id="workspaceAgentsForm" class="details-form">
+      <textarea id="workspaceAgentsContent" rows="10" spellcheck="false" ${state.workspaceAgentsSaving ? "disabled" : ""}>${escapeHTML(userContent)}</textarea>
+      <div class="form-actions">
+        <button type="submit" ${state.workspaceAgentsSaving ? "disabled" : ""}>
+          ${icon(state.workspaceAgentsSaving ? "loader-circle" : "save")}
+          <span>${state.workspaceAgentsSaving ? "Saving" : "Save"}</span>
+        </button>
+      </div>
+    </form>
   `;
 }
 
@@ -716,7 +734,7 @@ function relativeTime(value) {
 }
 
 function fileSection(item) {
-  const files = item.files || [];
+  const files = visibleResourceFiles(item);
   let insertedLog = false;
   const sections = files.map((file) => {
     const section = `
@@ -737,11 +755,54 @@ function fileSection(item) {
   return sections.join("");
 }
 
+function visibleResourceFiles(item) {
+  return (item.files || []).filter((file) => file.name !== "AGENTS.md");
+}
+
 function renderFileContent(name, content) {
+  if (name === "AGENTS.md") {
+    return renderAgentsFileContent(content);
+  }
   if (isMarkdownFile(name)) {
     return `<div class="markdown-view markdown-rendered">${renderMarkdown(content)}</div>`;
   }
   return `<pre class="markdown-view">${escapeHTML(content)}</pre>`;
+}
+
+function renderAgentsFileContent(content) {
+  const userContent = stripForgeManagedBlocks(content).trim();
+  if (!userContent) {
+    return `
+      <div class="file-modal-empty">
+        ${icon("file-text")}
+        <strong>No user AGENTS.md content</strong>
+        <span>Forge-managed instructions are hidden in this view.</span>
+      </div>
+    `;
+  }
+  return `<div class="markdown-view markdown-rendered">${renderMarkdown(userContent)}</div>`;
+}
+
+function stripForgeManagedBlocks(content) {
+  const startMarker = "<!-- managed by forge cli -->";
+  const endMarker = "<!-- end of forge cli prompt -->";
+  let result = "";
+  let cursor = 0;
+  while (cursor < content.length) {
+    const start = content.indexOf(startMarker, cursor);
+    if (start < 0) {
+      result += content.slice(cursor);
+      break;
+    }
+    const end = content.indexOf(endMarker, start + startMarker.length);
+    if (end < 0) {
+      result += content.slice(cursor);
+      break;
+    }
+    result += content.slice(cursor, start);
+    cursor = end + endMarker.length;
+  }
+  return result;
 }
 
 function artifactSection(title, entries = []) {
@@ -966,6 +1027,13 @@ function bindFileModalEvents() {
   });
 }
 
+function bindWorkspaceAgentsEvents() {
+  $("workspaceAgentsForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveWorkspaceAgents().catch((err) => toast(err.message));
+  });
+}
+
 function bindDiffEvents() {
   document.querySelectorAll("[data-diff-path]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -995,6 +1063,23 @@ async function previewFile(section, path) {
     state.preview = { section, path, error: err.message };
     throw err;
   } finally {
+    renderAll();
+  }
+}
+
+async function saveWorkspaceAgents() {
+  if (!state.activeWorkspaceId || state.workspaceAgentsSaving) return;
+  const content = $("workspaceAgentsContent")?.value || "";
+  state.workspaceAgentsSaving = true;
+  renderAll();
+  try {
+    state.workspaceAgents = await api(`/api/workspaces/${state.activeWorkspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`, {
+      method: "PUT",
+      body: JSON.stringify({ content }),
+    });
+    toast("Workspace AGENTS.md saved.");
+  } finally {
+    state.workspaceAgentsSaving = false;
     renderAll();
   }
 }

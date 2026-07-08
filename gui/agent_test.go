@@ -22,6 +22,45 @@ func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
 	}
 }
 
+func TestReplaceAgentsUserContentPreservesManagedBlock(t *testing.T) {
+	current := "# Old Notes\n\n" + agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n\n# Tail\n"
+	got, err := replaceAgentsUserContent(current, "# New Notes\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# New Notes\n\n" + agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n"
+	if got != want {
+		t.Fatalf("unexpected AGENTS.md content\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestReplaceAgentsUserContentCanClearUserContent(t *testing.T) {
+	current := "# Notes\n\n" + agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n"
+	got, err := replaceAgentsUserContent(current, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n"
+	if got != want {
+		t.Fatalf("unexpected AGENTS.md content\nwant:\n%s\ngot:\n%s", want, got)
+	}
+}
+
+func TestReplaceAgentsUserContentRejectsSingleManagedMarker(t *testing.T) {
+	if _, err := replaceAgentsUserContent(agentsManagedStart+"\nsystem\n", "# Notes"); err == nil {
+		t.Fatal("expected single marker to fail")
+	}
+}
+
+func TestIsHiddenAgentsPathKeepsWorkspaceAgentsVisible(t *testing.T) {
+	if isHiddenAgentsPath("AGENTS.md") {
+		t.Fatal("workspace AGENTS.md should stay visible")
+	}
+	if !isHiddenAgentsPath("project1/task1/AGENTS.md") {
+		t.Fatal("project/task AGENTS.md should be hidden")
+	}
+}
+
 func TestEventTextStillFallsBackToMethodForBlankGenericText(t *testing.T) {
 	text := eventText("item/started", json.RawMessage(`{"text":"  "}`))
 	if text != "item/started" {

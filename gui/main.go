@@ -73,6 +73,11 @@ type guiWorkspace struct {
 	Path string `json:"path"`
 }
 
+const (
+	agentsManagedStart = "<!-- managed by forge cli -->"
+	agentsManagedEnd   = "<!-- end of forge cli prompt -->"
+)
+
 type workspaceTree struct {
 	Root     string             `json:"root"`
 	Projects []resourceSnapshot `json:"projects"`
@@ -316,11 +321,11 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeRawJSON(w, detail)
 	case "files":
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
 		if len(parts) == 3 && parts[2] == "raw" {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
 			s.serveRawFile(w, r, id)
 			return
 		}
@@ -328,7 +333,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			http.NotFound(w, r)
 			return
 		}
-		s.previewFile(w, r, id)
+		switch r.Method {
+		case http.MethodGet:
+			s.previewFile(w, r, id)
+		case http.MethodPut:
+			s.saveWorkspaceAgentsFile(w, r, id)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
 	case "diff":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -483,6 +495,11 @@ func (s *server) worktreeDiff(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, errors.New("path is required"), http.StatusBadRequest)
 		return
 	}
+	cleanRelPath := filepath.ToSlash(filepath.Clean(relPath))
+	if isHiddenAgentsPath(cleanRelPath) {
+		writeError(w, errors.New("project and task AGENTS.md files are hidden in Forge GUI"), http.StatusNotFound)
+		return
+	}
 	abs, err := safeWorkspacePath(workspace.Path, relPath)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -580,6 +597,72 @@ func (s *server) previewFile(w http.ResponseWriter, r *http.Request, id string) 
 		preview.Content = string(data)
 	}
 	writeJSON(w, preview)
+}
+
+func (s *server) saveWorkspaceAgentsFile(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	relPath := filepath.ToSlash(filepath.Clean(strings.TrimSpace(r.URL.Query().Get("path"))))
+	if relPath != "AGENTS.md" {
+		writeError(w, errors.New("only workspace AGENTS.md can be edited"), http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Content string `json:"content"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join(workspace.Path, "AGENTS.md")
+	current := ""
+	if data, err := os.ReadFile(path); err == nil {
+		current = string(data)
+	} else if !os.IsNotExist(err) {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	updated, err := replaceAgentsUserContent(current, body.Content)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	s.previewFile(w, r, id)
+}
+
+func replaceAgentsUserContent(current, userContent string) (string, error) {
+	start := strings.Index(current, agentsManagedStart)
+	end := strings.Index(current, agentsManagedEnd)
+	if (start == -1) != (end == -1) {
+		return "", errors.New("AGENTS.md has only one forge managed marker")
+	}
+	userContent = strings.TrimRight(userContent, " \t\r\n")
+	if start == -1 {
+		if userContent == "" {
+			return "", nil
+		}
+		return userContent + "\n", nil
+	}
+	if end < start {
+		return "", errors.New("AGENTS.md forge managed end marker appears before start marker")
+	}
+	end += len(agentsManagedEnd)
+	managedBlock := strings.TrimRight(current[start:end], " \t\r\n")
+	if userContent == "" {
+		return managedBlock + "\n", nil
+	}
+	return userContent + "\n\n" + managedBlock + "\n", nil
+}
+
+func isHiddenAgentsPath(relPath string) bool {
+	return relPath != "AGENTS.md" && urlpath.Base(relPath) == "AGENTS.md"
 }
 
 func (s *server) serveRawFile(w http.ResponseWriter, r *http.Request, id string) {

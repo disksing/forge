@@ -31,13 +31,13 @@ const (
 )
 
 var builtinWorkflows = map[string]string{
-	defaultWorkflowName: `Standard task workflow. Clarify the requirements and acceptance criteria first, then implement, test, and record the result.
+	defaultWorkflowName: `Standard task workflow. Clarify requirements and acceptance criteria first, then implement, test, and record the result.
 
 ### Steps
 
-1. Read task.json, task.md, work.md, and log.jsonl to confirm the task boundary and acceptance criteria.
-2. If requirements, risks, or acceptance criteria are unclear, clarify them with the user and update task.md with the confirmed answers.
-3. Make the required code or documentation changes in the task-owned worktree/.
+1. Confirm the task boundary, acceptance criteria, and relevant risks.
+2. If anything important is unclear, clarify it with the user before changing code or documents.
+3. Make the required code or documentation changes.
 4. Run relevant tests and checks, then record important results.
 5. Summarize the changes, verification results, remaining risks, and recommended next steps.
 `,
@@ -451,6 +451,12 @@ func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) 
 	}
 	if fallbackToBuiltin {
 		if content, ok := builtinWorkflows[name]; ok {
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				return "", err
+			}
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				return "", err
+			}
 			return strings.TrimRight(content, " \t\r\n") + "\n", nil
 		}
 	}
@@ -902,11 +908,14 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
+	writeScope := "Only update files inside this task directory and its worktrees."
 	repoGuidance := "For code changes, create Git worktrees under worktree/."
+	workflowPath := workflowRelativePath(task)
 	if isProject(task) {
 		title = "Project Agent Instructions"
 		scope = "single AgentWorkspace project directory"
 		boundary = "Treat this directory as the current project boundary."
+		writeScope = "Only update files inside this project directory unless a task directory has been explicitly selected."
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
 	} else if task.Parent != nil {
 		extra = `
@@ -930,29 +939,34 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 
 You are working inside a %s.
 
-- For the overall forge workflow and CLI usage, read the workspace root AGENTS.md file.
+- Read the workspace root AGENTS.md file for global Forge workflow, session, lock, and file-role rules.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
 - If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
-- Hold this directory's lock for the whole agent session. If you created the session yourself, release it when the agent session exits with `+"`forge session end --id=$FORGE_SESSION_ID`"+`; do not separately unlock this directory's resource during normal task cleanup.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.
-- Only update files inside this task directory and its worktrees.
-- Treat repositories under ../repos/ as shared source caches; make code changes in task worktrees.
+- %s
+- Treat workspace repos/ checkouts as shared source caches; make code changes in task worktrees.
 - %s
 - %s
 - %s
 - %s
 - %s
-- Use work.md as a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
-- Before starting any meaningful step, replace stale work.md content with the step you are about to take.
-- Immediately after completing any meaningful step, replace stale work.md content with the updated current state and next step.
-- Do not append timeline history to work.md. Put chronological events, command results, and completed-step history in log.jsonl.
+- Follow the selected workflow in %s.
 - Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
-## Workflow
+`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, pendingLine, workflowPath, extra)
+}
 
-%s`, title, scope, readLine, boundary, repoGuidance, updateLine, structuredLine, backgroundLine, pendingLine, extra, strings.TrimRight(workflowContent, " \t\r\n"))
+func workflowRelativePath(task Task) string {
+	workflow := task.Workflow
+	if workflow == "" {
+		workflow = defaultWorkflowName
+	}
+	if task.Parent != nil {
+		return filepath.ToSlash(filepath.Join("..", "..", workflowDir, workflow+".md"))
+	}
+	return filepath.ToSlash(filepath.Join("..", workflowDir, workflow+".md"))
 }

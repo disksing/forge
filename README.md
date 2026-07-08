@@ -82,7 +82,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
-`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.jsonl`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge inserts `workflow/default.md` into the generated project `AGENTS.md` workflow guidance section; `--workflow=<name>` uses `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
+`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.jsonl`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge points the generated project `AGENTS.md` launch card at `workflow/default.md`; `--workflow=<name>` points it at `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
 `forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
 
@@ -128,6 +128,8 @@ Agents started through `forge start` or Forge GUI should reuse the injected `FOR
 
 Content outside that block belongs to people and agents and is preserved.
 
+The Forge GUI treats the workspace `AGENTS.md` as the user-editable instructions surface and hides Forge-managed content while editing it. Project and task `AGENTS.md` files are generated launch cards for agents and are hidden from project/task detail views.
+
 ## Building
 
 Build both command binaries with git metadata embedded:
@@ -168,6 +170,7 @@ repos/disksing/forge.git
 
 Each project directory contains:
 
+- `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, and selected workflow file.
 - `project.json`: structured project facts such as id, type, description, and selected workflow.
 - `project.md`: project background context generated from the project title and description.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.
@@ -176,6 +179,7 @@ Each project directory contains:
 
 Each task directory contains:
 
+- `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, parent project context, and selected workflow file.
 - `task.json`: structured facts such as id, type, parent id, title, selected workflow, and involved repositories.
 - `task.md`: background context generated from the task title and detail.
 - `work.md`: mutable recovery snapshot containing only the current step, current state, blockers, and next step.

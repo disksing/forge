@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	defaultWorkflowSnippet = "Standard task workflow. Clarify the requirements and acceptance criteria first"
+	defaultWorkflowSnippet = "Standard task workflow. Clarify requirements and acceptance criteria first"
 	projectWorkflowSnippet = "This is a project-management project."
 )
 
@@ -131,20 +131,14 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(projectAgents, forgePromptStart) != 1 || strings.Count(projectAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected project AGENTS.md to contain one managed block, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "Use work.md as a mutable recovery snapshot, not a chronological log.") {
-			t.Fatalf("expected project AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", projectAgents)
-		}
-		if !strings.Contains(projectAgents, "Do not append timeline history to work.md.") {
-			t.Fatalf("expected project AGENTS.md to forbid timeline history in work.md, got:\n%s", projectAgents)
-		}
 		if !strings.Contains(projectAgents, "If project.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
 		}
 		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set in the environment or supplied in injected Forge session context, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "When accessing another project/task directory outside this locked resource") {
 			t.Fatalf("expected project AGENTS.md to include managed session guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, defaultWorkflowSnippet) {
-			t.Fatalf("expected project AGENTS.md to include default workflow guidance, got:\n%s", projectAgents)
+		if !strings.Contains(projectAgents, "../workflow/default.md") || strings.Contains(projectAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected project AGENTS.md to point to default workflow without embedding it, got:\n%s", projectAgents)
 		}
 		projectMDPath := filepath.Join(root, "project1", "project.md")
 		projectMD := readFile(t, projectMDPath)
@@ -194,11 +188,11 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") || !strings.Contains(subtaskAgents, "forge session end --id=$FORGE_SESSION_ID") {
+		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") {
 			t.Fatalf("expected subtask AGENTS.md to include direct-start session ownership guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, defaultWorkflowSnippet) {
-			t.Fatalf("expected subtask AGENTS.md to include default workflow guidance, got:\n%s", subtaskAgents)
+		if !strings.Contains(subtaskAgents, "../../workflow/default.md") || strings.Contains(subtaskAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected subtask AGENTS.md to point to default workflow without embedding it, got:\n%s", subtaskAgents)
 		}
 
 		children := run(t, "task", "list", "--project=project1")
@@ -1211,8 +1205,8 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatalf("expected workflow body to stay out of project.md, got:\n%s", defaultProjectMD)
 		}
 		defaultAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
-		if !strings.Contains(defaultAgents, "Default body {{title}}") {
-			t.Fatalf("expected project AGENTS.md to include literal default workflow body, got:\n%s", defaultAgents)
+		if !strings.Contains(defaultAgents, "../workflow/default.md") || strings.Contains(defaultAgents, "Default body {{title}}") {
+			t.Fatalf("expected project AGENTS.md to point to default workflow without embedding it, got:\n%s", defaultAgents)
 		}
 
 		projectCreated := run(t, "project", "create", "--workflow=project", "Project task")
@@ -1227,8 +1221,8 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 			t.Fatalf("expected project workflow body to stay out of project.md, got:\n%s", projectProjectMD)
 		}
 		projectAgents := readFile(t, filepath.Join(root, "project2", "AGENTS.md"))
-		if !strings.Contains(projectAgents, "Project body {{description}}") {
-			t.Fatalf("expected project AGENTS.md to include literal project workflow body, got:\n%s", projectAgents)
+		if !strings.Contains(projectAgents, "../workflow/project.md") || strings.Contains(projectAgents, "Project body {{description}}") {
+			t.Fatalf("expected project AGENTS.md to point to project workflow without embedding it, got:\n%s", projectAgents)
 		}
 
 		if err := os.Remove(defaultPath); err != nil {
@@ -1245,10 +1239,16 @@ func TestTaskCreateUsesWorkflowSections(t *testing.T) {
 		}
 		assertNoHan(t, fallbackProjectMDPath)
 		fallbackAgents := readFile(t, filepath.Join(root, "project3", "AGENTS.md"))
-		if !strings.Contains(fallbackAgents, defaultWorkflowSnippet) {
-			t.Fatalf("expected missing default workflow to fallback to built-in AGENTS.md content, got:\n%s", fallbackAgents)
+		if !strings.Contains(fallbackAgents, "../workflow/default.md") || strings.Contains(fallbackAgents, defaultWorkflowSnippet) {
+			t.Fatalf("expected missing default workflow to be restored and referenced from AGENTS.md, got:\n%s", fallbackAgents)
+		}
+		if fallbackWorkflow := readFile(t, defaultPath); !strings.Contains(fallbackWorkflow, defaultWorkflowSnippet) {
+			t.Fatalf("expected missing default workflow file to be restored, got:\n%s", fallbackWorkflow)
 		}
 
+		if err := os.Remove(defaultPath); err != nil {
+			t.Fatal(err)
+		}
 		out, err := runErr(t, "project", "create", "--workflow=default", "Explicit default missing task")
 		if err == nil {
 			t.Fatalf("expected missing explicit default workflow to fail, got stdout:\n%s", out)
@@ -1899,8 +1899,8 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(taskAfter, "Keep task note.") {
 			t.Fatalf("expected task manual content to survive refresh, got:\n%s", taskAfter)
 		}
-		if !strings.Contains(taskAfter, defaultWorkflowSnippet) {
-			t.Fatalf("expected task workflow guidance to be restored, got:\n%s", taskAfter)
+		if !strings.Contains(taskAfter, "../workflow/default.md") || strings.Contains(taskAfter, defaultWorkflowSnippet) {
+			t.Fatalf("expected task workflow reference to be restored without embedding workflow text, got:\n%s", taskAfter)
 		}
 		if strings.Count(taskAfter, forgePromptStart) != 1 || strings.Count(taskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected task refresh to keep one managed block, got:\n%s", taskAfter)
@@ -1916,8 +1916,8 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, defaultWorkflowSnippet) {
-			t.Fatalf("expected subtask workflow guidance to be restored, got:\n%s", subtaskAfter)
+		if !strings.Contains(subtaskAfter, "../../workflow/default.md") || strings.Contains(subtaskAfter, defaultWorkflowSnippet) {
+			t.Fatalf("expected subtask workflow reference to be restored without embedding workflow text, got:\n%s", subtaskAfter)
 		}
 		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)

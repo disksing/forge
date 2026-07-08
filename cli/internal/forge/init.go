@@ -73,9 +73,6 @@ func runWorkspaceMigrate(args []string) error {
 
 func ensureWorkflowFiles(root string, reset bool) error {
 	dir := filepath.Join(root, workflowDir)
-	if !reset && isDir(dir) {
-		return nil
-	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -163,7 +160,7 @@ This directory is an AgentWorkspace managed by forge.
 
 - All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees.
 - Agents coordinate writes with sessions that lock the project or task they are updating; stale locks are pruned from session liveness.
-- Agents may read other projects and tasks freely for context, but should only update the resource they have locked and the current task's worktrees.
+- Agents may read other projects and tasks freely for context, but should only update the resource they have locked and any task worktrees owned by that resource.
 - When started through ` + "`forge start`" + ` or Forge GUI, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
 - When started directly without ` + "`FORGE_SESSION_ID`" + ` in the environment or injected session context, agents should detect their own PID, run ` + "`forge session new --pid <pid>`" + `, export ` + "`FORGE_SESSION_ID`" + `, lock the current project/task resource once, and end that session when the agent exits.
 - Agents should only use extra lock/unlock pairs for temporary access to other project/task resources outside their starting resource.
@@ -171,14 +168,14 @@ This directory is an AgentWorkspace managed by forge.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
-- Workflow instruction files live under ` + "`workflow/`" + ` and are inserted into generated project/task ` + "`AGENTS.md`" + ` files.
+- Workflow instruction files live under ` + "`workflow/`" + ` and generated project/task ` + "`AGENTS.md`" + ` files point agents to the selected workflow.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
 - Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Agents may read other task directories for reference.
-- Agents should only update files inside the task they are currently handling and its worktrees.
+- Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
 - ` + "`project.md`" + ` and ` + "`task.md`" + ` are background context.
 - ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep only the current step, current state, blockers, and next step.
@@ -187,6 +184,7 @@ This directory is an AgentWorkspace managed by forge.
 - Do not append timeline history to ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.jsonl`" + `.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
+- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, workflow steps in ` + "`workflow/`" + ` files, background context in ` + "`project.md`" + `/` + "`task.md`" + `, current recovery state in ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
 
@@ -235,7 +233,7 @@ Notes:
 - ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace.
 - ` + "`forge migrate`" + ` refreshes built-in workflow templates and forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
-- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file inserted into the project ` + "`AGENTS.md`" + `. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
+- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file that generated project/task ` + "`AGENTS.md`" + ` files point agents to. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
 - ` + "`forge project show`" + ` and ` + "`forge project archive`" + ` accept ` + "`--project=<project>`" + ` where project is a full id like ` + "`project22`" + ` or just a number like ` + "`22`" + `. When omitted, Forge uses the current directory's project.
 - ` + "`forge task create`" + ` creates a new open task directory under a project. Pass ` + "`<title>`" + ` for the task title stored in ` + "`task.json`" + `, and pass ` + "`--detail <detail>`" + ` to write the initial ` + "`task.md`" + ` body. Use ` + "`--project=<project>`" + ` to select a project, or omit it to use the current directory's project. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the task id.
