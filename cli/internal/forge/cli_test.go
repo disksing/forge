@@ -140,7 +140,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "If project.md contains pending decisions or unresolved items") {
 			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "When accessing another project/task directory outside this locked resource") {
+		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set in the environment or supplied in injected Forge session context, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "When accessing another project/task directory outside this locked resource") {
 			t.Fatalf("expected project AGENTS.md to include managed session guidance, got:\n%s", projectAgents)
 		}
 		if !strings.Contains(projectAgents, defaultWorkflowSnippet) {
@@ -820,6 +820,56 @@ func TestStartRegistersLocksAndReleasesSession(t *testing.T) {
 		}
 		if findSessionIndex(store.Sessions, sessionID) >= 0 {
 			t.Fatalf("expected forge start session to be released after command exits, got: %#v", store.Sessions)
+		}
+	})
+}
+
+func TestStartInjectsCodexShellEnvironmentPolicy(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Codex launch")
+		output := filepath.Join(root, "codex-start.out")
+		binDir := filepath.Join(root, "bin")
+		if err := os.MkdirAll(binDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		codexPath := filepath.Join(binDir, "codex")
+		script := `#!/bin/sh
+{
+  printf 'env=%s\n' "$FORGE_SESSION_ID"
+  i=0
+  for arg in "$@"; do
+    printf 'arg%d=%s\n' "$i" "$arg"
+    i=$((i + 1))
+  done
+} > "$FORGE_START_OUTPUT"
+`
+		if err := os.WriteFile(codexPath, []byte(script), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv("FORGE_START_OUTPUT", output)
+
+		run(t, "start", "--project", "project1", "--", codexPath, "--dangerously-bypass-approvals-and-sandbox")
+
+		got := readFile(t, output)
+		var sessionID string
+		for _, line := range strings.Split(got, "\n") {
+			if strings.HasPrefix(line, "env=") {
+				sessionID = strings.TrimPrefix(line, "env=")
+			}
+		}
+		if !strings.HasPrefix(sessionID, "session-") {
+			t.Fatalf("expected fake codex to receive FORGE_SESSION_ID, got:\n%s", got)
+		}
+		expectedConfig := "arg1=shell_environment_policy.set.FORGE_SESSION_ID=" + strconv.Quote(sessionID)
+		for _, want := range []string{
+			"arg0=-c",
+			expectedConfig,
+			"arg2=--dangerously-bypass-approvals-and-sandbox",
+		} {
+			if !strings.Contains(got, want+"\n") {
+				t.Fatalf("expected fake codex args to contain %q, got:\n%s", want, got)
+			}
 		}
 	})
 }

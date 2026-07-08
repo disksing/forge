@@ -78,6 +78,7 @@ func startTask(args []string) error {
 }
 
 func runStartCommand(command []string, taskPath, sessionID string) error {
+	command = startCommandWithSessionContext(command, sessionID)
 	cmd := exec.Command(command[0], command[1:]...)
 	cmd.Dir = taskPath
 	cmd.Env = appendSessionEnv(os.Environ(), sessionID)
@@ -95,6 +96,21 @@ func runStartCommand(command []string, taskPath, sessionID string) error {
 		return err
 	}
 	return nil
+}
+
+func startCommandWithSessionContext(command []string, sessionID string) []string {
+	if len(command) == 0 || !isCodexCommand(command[0]) {
+		return command
+	}
+	config := fmt.Sprintf("shell_environment_policy.set.FORGE_SESSION_ID=%q", sessionID)
+	withContext := make([]string, 0, len(command)+2)
+	withContext = append(withContext, command[0], "-c", config)
+	withContext = append(withContext, command[1:]...)
+	return withContext
+}
+
+func isCodexCommand(command string) bool {
+	return filepath.Base(strings.TrimSpace(command)) == "codex"
 }
 
 func appendSessionEnv(env []string, sessionID string) []string {

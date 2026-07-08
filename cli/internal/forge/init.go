@@ -164,8 +164,8 @@ This directory is an AgentWorkspace managed by forge.
 - All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees.
 - Agents coordinate writes with sessions that lock the project or task they are updating; stale locks are pruned from session liveness.
 - Agents may read other projects and tasks freely for context, but should only update the resource they have locked and the current task's worktrees.
-- When started through ` + "`forge start`" + ` or Forge GUI, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + `, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
-- When started directly without ` + "`FORGE_SESSION_ID`" + `, agents should detect their own PID, run ` + "`forge session new --pid <pid>`" + `, export ` + "`FORGE_SESSION_ID`" + `, lock the current project/task resource once, and end that session when the agent exits.
+- When started through ` + "`forge start`" + ` or Forge GUI, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
+- When started directly without ` + "`FORGE_SESSION_ID`" + ` in the environment or injected session context, agents should detect their own PID, run ` + "`forge session new --pid <pid>`" + `, export ` + "`FORGE_SESSION_ID`" + `, lock the current project/task resource once, and end that session when the agent exits.
 - Agents should only use extra lock/unlock pairs for temporary access to other project/task resources outside their starting resource.
 - The workspace root does not require a lock.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.

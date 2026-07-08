@@ -930,8 +930,8 @@ You are working inside a %s.
 - For the overall forge workflow and CLI usage, read the workspace root AGENTS.md file.
 - %s
 - %s
-- Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- If `+"`FORGE_SESSION_ID`"+` is not set, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
+- Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
+- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 - Hold this directory's lock for the whole agent session. If you created the session yourself, release it when the agent session exits with `+"`forge session end --id=$FORGE_SESSION_ID`"+`; do not separately unlock this directory's resource during normal task cleanup.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.
