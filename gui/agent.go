@@ -67,6 +67,7 @@ const (
 var agentIndexMu sync.Mutex
 
 type startAgentRequest struct {
+	AgentID    string `json:"agentId"`
 	ResourceID string `json:"resourceId"`
 	Title      string `json:"title"`
 	Prompt     string `json:"prompt"`
@@ -248,25 +249,28 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	req.Prompt = strings.TrimSpace(req.Prompt)
+	agent, provider, err := m.resolveAgentConfig(req)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	sandbox := normalizeSandbox(req.Sandbox)
-	approval := normalizeApproval(req.Approval)
 	now := time.Now().Format(time.RFC3339)
 	run := agentRun{
 		ID:          newRunID(),
 		WorkspaceID: workspace.ID,
 		ResourceID:  strings.TrimSpace(req.ResourceID),
-		Provider:    "codex",
+		Provider:    provider.ID,
 		Title:       strings.TrimSpace(req.Title),
 		Cwd:         cwd,
 		Status:      "starting",
-		Model:       strings.TrimSpace(req.Model),
-		Sandbox:     sandbox,
-		Approval:    approval,
+		Model:       agent.Model,
+		Sandbox:     agent.Sandbox,
+		Approval:    agent.Approval,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -327,6 +331,89 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	go rt.startCodex(m, req.Prompt)
 	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
+}
+
+func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, agentProviderConfig, error) {
+	cfg, err := m.server.loadConfig()
+	if err != nil {
+		return agentConfig{}, agentProviderConfig{}, err
+	}
+	agentID := strings.TrimSpace(req.AgentID)
+	if agentID == "" {
+		agent := agentConfig{
+			ID:         "inline",
+			Name:       "Inline Codex",
+			ProviderID: codexProviderID,
+			Model:      strings.TrimSpace(req.Model),
+			Sandbox:    normalizeSandbox(req.Sandbox),
+			Approval:   normalizeApproval(req.Approval),
+		}
+		provider, ok := findAgentProvider(cfg.AgentProviders, codexProviderID)
+		if !ok {
+			return agentConfig{}, agentProviderConfig{}, errors.New("Codex provider is not configured")
+		}
+		if !provider.Enabled {
+			return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
+		}
+		return agent, provider, nil
+	}
+	agent, ok := findAgentConfig(cfg.Agents, agentID)
+	if !ok {
+		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent not found: %s", agentID)
+	}
+	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
+	if !ok {
+		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider not found: %s", agent.ProviderID)
+	}
+	if !provider.Enabled {
+		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
+	}
+	if provider.Type != codexProviderID {
+		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("unsupported agent provider: %s", provider.Name)
+	}
+	return agent, provider, nil
+}
+
+func findAgentConfig(agents []agentConfig, id string) (agentConfig, bool) {
+	id = strings.TrimSpace(id)
+	for _, agent := range agents {
+		if agent.ID == id {
+			return agent, true
+		}
+	}
+	return agentConfig{}, false
+}
+
+func findAgentProvider(providers []agentProviderConfig, id string) (agentProviderConfig, bool) {
+	id = strings.TrimSpace(id)
+	for _, provider := range providers {
+		if provider.ID == id {
+			return provider, true
+		}
+	}
+	return agentProviderConfig{}, false
+}
+
+func (m *agentManager) ensureRunProviderEnabled(run agentRun) error {
+	cfg, err := m.server.loadConfig()
+	if err != nil {
+		return err
+	}
+	providerID := strings.TrimSpace(run.Provider)
+	if providerID == "" {
+		providerID = codexProviderID
+	}
+	provider, ok := findAgentProvider(cfg.AgentProviders, providerID)
+	if !ok {
+		return fmt.Errorf("agent provider not found: %s", providerID)
+	}
+	if !provider.Enabled {
+		return fmt.Errorf("agent provider is disabled: %s", provider.Name)
+	}
+	if provider.Type != codexProviderID {
+		return fmt.Errorf("unsupported agent provider: %s", provider.Name)
+	}
+	return nil
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, runID string) (string, error) {
@@ -725,6 +812,10 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if strings.TrimSpace(run.CodexThreadID) == "" {
 		writeError(w, errors.New("run cannot be resumed because it has no Codex thread id"), http.StatusBadRequest)
+		return
+	}
+	if err := m.ensureRunProviderEnabled(run); err != nil {
+		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)

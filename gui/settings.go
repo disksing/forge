@@ -14,10 +14,12 @@ import (
 )
 
 type settingsResponse struct {
-	Workspaces    []guiWorkspace `json:"workspaces"`
-	ActiveID      string         `json:"activeId,omitempty"`
-	AgentDefaults agentDefaults  `json:"agentDefaults"`
-	Codex         codexStatus    `json:"codex"`
+	Workspaces     []guiWorkspace        `json:"workspaces"`
+	ActiveID       string                `json:"activeId,omitempty"`
+	AgentDefaults  agentDefaults         `json:"agentDefaults"`
+	AgentProviders []agentProviderConfig `json:"agentProviders"`
+	Agents         []agentConfig         `json:"agents"`
+	Codex          codexStatus           `json:"codex"`
 }
 
 type codexStatus struct {
@@ -32,6 +34,12 @@ type codexAppServer struct {
 	client    *codexClient
 	startedAt string
 }
+
+const (
+	codexProviderID   = "codex"
+	codexProviderName = "Codex app-server"
+	defaultAgentID    = "codex-default"
+)
 
 func newCodexAppServer() *codexAppServer {
 	return &codexAppServer{}
@@ -56,6 +64,18 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.updateAgentDefaults(w, r)
+	case "agent/providers":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateAgentProviders(w, r)
+	case "agents":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateAgents(w, r)
 	case "codex/start":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -88,10 +108,12 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		return
 	}
 	writeJSON(w, settingsResponse{
-		Workspaces:    cfg.Workspaces,
-		ActiveID:      cfg.ActiveID,
-		AgentDefaults: cfg.AgentDefaults,
-		Codex:         s.codexStatus(),
+		Workspaces:     cfg.Workspaces,
+		ActiveID:       cfg.ActiveID,
+		AgentDefaults:  cfg.AgentDefaults,
+		AgentProviders: cfg.AgentProviders,
+		Agents:         cfg.Agents,
+		Codex:          s.codexStatus(),
 	})
 }
 
@@ -107,6 +129,7 @@ func (s *server) updateAgentDefaults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.AgentDefaults = normalizeAgentDefaults(defaults)
+	cfg.Agents = updateDefaultAgentFromDefaults(cfg.Agents, cfg.AgentDefaults)
 	if err := s.saveConfig(cfg); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -114,13 +137,65 @@ func (s *server) updateAgentDefaults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, cfg.AgentDefaults)
 }
 
+func (s *server) updateAgentProviders(w http.ResponseWriter, r *http.Request) {
+	var providers []agentProviderConfig
+	if err := json.NewDecoder(r.Body).Decode(&providers); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	cfg.AgentProviders = normalizeAgentProviders(providers)
+	cfg.Codex.Enabled = providerEnabled(cfg.AgentProviders, codexProviderID) && cfg.Codex.Enabled
+	if !providerEnabled(cfg.AgentProviders, codexProviderID) {
+		if err := s.codex.stop(); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+	}
+	if err := s.saveConfig(cfg); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cfg.AgentProviders)
+}
+
+func (s *server) updateAgents(w http.ResponseWriter, r *http.Request) {
+	var agents []agentConfig
+	if err := json.NewDecoder(r.Body).Decode(&agents); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	cfg.Agents = normalizeAgents(agents, cfg.AgentDefaults)
+	if len(cfg.Agents) > 0 {
+		cfg.AgentDefaults = normalizeAgentDefaults(agentDefaults{
+			Sandbox:  cfg.Agents[0].Sandbox,
+			Approval: cfg.Agents[0].Approval,
+			Model:    cfg.Agents[0].Model,
+		})
+	}
+	if err := s.saveConfig(cfg); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cfg.Agents)
+}
+
 func (s *server) codexStatus() codexStatus {
 	cfg, err := s.loadConfig()
 	enabled := false
 	if err == nil {
-		enabled = cfg.Codex.Enabled
+		enabled = providerEnabled(cfg.AgentProviders, codexProviderID)
 	}
-	if enabled {
+	if enabled && cfg.Codex.Enabled {
 		_ = s.codex.start(s.agents)
 	}
 	return s.codex.status(enabled)
@@ -128,7 +203,7 @@ func (s *server) codexStatus() codexStatus {
 
 func (s *server) startCodexIfEnabled() error {
 	cfg, err := s.loadConfig()
-	if err != nil || !cfg.Codex.Enabled {
+	if err != nil || !cfg.Codex.Enabled || !providerEnabled(cfg.AgentProviders, codexProviderID) {
 		return err
 	}
 	return s.codex.start(s.agents)
@@ -139,6 +214,7 @@ func (s *server) setCodexEnabled(enabled bool) error {
 	if err != nil {
 		return err
 	}
+	cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, codexProviderID, enabled)
 	cfg.Codex.Enabled = enabled
 	if enabled {
 		if err := s.codex.start(s.agents); err != nil {
@@ -163,6 +239,7 @@ func (s *server) codexClient(m *agentManager) (*codexClient, error) {
 	}
 	if !cfg.Codex.Enabled {
 		cfg.Codex.Enabled = true
+		cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, codexProviderID, true)
 		if err := s.saveConfig(cfg); err != nil {
 			return nil, err
 		}
@@ -293,4 +370,134 @@ func normalizeAgentDefaults(defaults agentDefaults) agentDefaults {
 	defaults.Approval = normalizeApproval(defaults.Approval)
 	defaults.Model = strings.TrimSpace(defaults.Model)
 	return defaults
+}
+
+func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderConfig {
+	normalized := make([]agentProviderConfig, 0, len(providers)+1)
+	seen := make(map[string]bool, len(providers)+1)
+	for _, provider := range providers {
+		provider.ID = strings.TrimSpace(provider.ID)
+		if provider.ID == "" || seen[provider.ID] {
+			continue
+		}
+		provider.Name = strings.TrimSpace(provider.Name)
+		provider.Type = strings.TrimSpace(provider.Type)
+		if provider.Name == "" {
+			provider.Name = provider.ID
+		}
+		if provider.Type == "" {
+			provider.Type = provider.ID
+		}
+		if provider.ID == codexProviderID {
+			provider.Name = codexProviderName
+			provider.Type = codexProviderID
+		}
+		seen[provider.ID] = true
+		normalized = append(normalized, provider)
+	}
+	if !seen[codexProviderID] {
+		normalized = append([]agentProviderConfig{{
+			ID:      codexProviderID,
+			Name:    codexProviderName,
+			Type:    codexProviderID,
+			Enabled: true,
+		}}, normalized...)
+	}
+	return normalized
+}
+
+func normalizeAgents(agents []agentConfig, defaults agentDefaults) []agentConfig {
+	defaults = normalizeAgentDefaults(defaults)
+	normalized := make([]agentConfig, 0, len(agents)+1)
+	seen := make(map[string]bool, len(agents)+1)
+	for _, agent := range agents {
+		agent.ID = strings.TrimSpace(agent.ID)
+		agent.Name = strings.TrimSpace(agent.Name)
+		agent.ProviderID = strings.TrimSpace(agent.ProviderID)
+		if agent.ID == "" {
+			agent.ID = slugID(agent.Name)
+		}
+		if agent.ID == "" || seen[agent.ID] {
+			continue
+		}
+		if agent.Name == "" {
+			agent.Name = agent.ID
+		}
+		if agent.ProviderID == "" {
+			agent.ProviderID = codexProviderID
+		}
+		agent.Sandbox = normalizeSandbox(agent.Sandbox)
+		agent.Approval = normalizeApproval(agent.Approval)
+		agent.Model = strings.TrimSpace(agent.Model)
+		seen[agent.ID] = true
+		normalized = append(normalized, agent)
+	}
+	if len(normalized) == 0 {
+		name := "Codex"
+		if defaults.Model != "" {
+			name = defaults.Model
+		}
+		normalized = append(normalized, agentConfig{
+			ID:         defaultAgentID,
+			Name:       name,
+			ProviderID: codexProviderID,
+			Sandbox:    defaults.Sandbox,
+			Approval:   defaults.Approval,
+			Model:      defaults.Model,
+		})
+	}
+	return normalized
+}
+
+func updateDefaultAgentFromDefaults(agents []agentConfig, defaults agentDefaults) []agentConfig {
+	agents = normalizeAgents(agents, defaults)
+	agents[0].Sandbox = defaults.Sandbox
+	agents[0].Approval = defaults.Approval
+	agents[0].Model = defaults.Model
+	if agents[0].Name == "" || agents[0].ID == defaultAgentID {
+		agents[0].Name = "Codex"
+		if defaults.Model != "" {
+			agents[0].Name = defaults.Model
+		}
+	}
+	return agents
+}
+
+func providerEnabled(providers []agentProviderConfig, id string) bool {
+	id = strings.TrimSpace(id)
+	for _, provider := range providers {
+		if provider.ID == id {
+			return provider.Enabled
+		}
+	}
+	return false
+}
+
+func setProviderEnabled(providers []agentProviderConfig, id string, enabled bool) []agentProviderConfig {
+	providers = normalizeAgentProviders(providers)
+	for i := range providers {
+		if providers[i].ID == id {
+			providers[i].Enabled = enabled
+			return providers
+		}
+	}
+	return providers
+}
+
+func slugID(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }

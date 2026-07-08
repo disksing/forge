@@ -598,7 +598,7 @@ body.resizing-y {
 
 .agent-start-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
 }
 
@@ -620,6 +620,14 @@ body.resizing-y {
   border: 1px solid #2563eb;
   background: #2563eb;
   color: #fff;
+  padding: 0 12px;
+}
+
+.agent-start-button:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
 }
 
 .agent-options-button,
@@ -2452,7 +2460,9 @@ i[data-lucide] {
 
 .settings-path-form input,
 .settings-form-grid input,
-.settings-form-grid select {
+.settings-form-grid select,
+.settings-agent-form input,
+.settings-agent-form select {
   height: 36px;
   min-width: 0;
   border: 1px solid #cbd5e1;
@@ -2465,7 +2475,9 @@ i[data-lucide] {
 
 .settings-path-form input:focus,
 .settings-form-grid input:focus,
-.settings-form-grid select:focus {
+.settings-form-grid select:focus,
+.settings-agent-form input:focus,
+.settings-agent-form select:focus {
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
   outline: none;
@@ -2473,6 +2485,7 @@ i[data-lucide] {
 
 .settings-path-form button,
 .settings-service-row button,
+.settings-agent-new button,
 .settings-form-actions button {
   height: 36px;
   display: inline-flex;
@@ -2610,6 +2623,11 @@ i[data-lucide] {
   padding: 14px;
 }
 
+.settings-provider-list {
+  display: grid;
+  gap: 8px;
+}
+
 .settings-service-row > div {
   min-width: 0;
 }
@@ -2646,6 +2664,38 @@ i[data-lucide] {
 .settings-form-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+.settings-agent-form {
+  display: grid;
+  gap: 12px;
+}
+
+.settings-agent-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-agent-row,
+.settings-agent-new {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(130px, 1fr) minmax(110px, 0.9fr) minmax(110px, 0.9fr) minmax(100px, 0.8fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.settings-agent-row {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.settings-agent-new {
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
 }
 
 @media (max-width: 980px) {
@@ -2731,7 +2781,9 @@ i[data-lucide] {
   }
 
   .settings-path-form,
-  .settings-form-grid {
+  .settings-form-grid,
+  .settings-agent-row,
+  .settings-agent-new {
     grid-template-columns: 1fr;
   }
 

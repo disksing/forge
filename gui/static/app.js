@@ -37,6 +37,7 @@ const state = {
     renderTimer: null,
     draftPrompt: "",
     ttyDraft: "",
+    agentId: "",
     model: "",
     sandbox: "workspace-write",
     approval: "on-request",
@@ -81,7 +82,7 @@ async function api(path, options = {}) {
 async function load() {
   const route = parseRoute();
   state.config = await api("/api/workspaces");
-  applyAgentDefaults(state.config.agentDefaults || {});
+  applyAgentConfig();
   state.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId : state.config.activeId || state.config.workspaces[0]?.id || "";
   state.selectedId = route.resourceId || "";
   renderWorkspaceSelect();
@@ -1231,14 +1232,17 @@ function renderAgent() {
   const activeRun = currentAgentRun();
   const visibleRun = activeRun || state.agent.runs[0] || null;
   const hasClosableRun = activeRun && ["running", "waiting_approval", "starting", "idle"].includes(activeRun.status);
+  const agents = enabledAgentConfigs();
+  const selectedAgent = selectedAgentConfig();
   controls.innerHTML = `
-    <h2>Codex Agent</h2>
+    <h2>Agent</h2>
     <form id="agentStartForm" class="agent-start-form">
       <div class="agent-start-row">
-        <button type="submit" class="agent-start-button">${icon("play")}<span>Start Session</span></button>
-        <button type="button" id="agentOptionsButton" class="agent-options-button" aria-expanded="${state.agent.optionsOpen ? "true" : "false"}" title="Session options">${icon("ellipsis-vertical")}</button>
+        <select id="agentSelect" ${agents.length ? "" : "disabled"}>
+          ${agentSelectOptions(agents)}
+        </select>
+        <button type="submit" class="agent-start-button" ${selectedAgent ? "" : "disabled"}>${icon("play")}<span>Start Session</span></button>
       </div>
-      ${state.agent.optionsOpen ? agentOptionsMenu() : ""}
       ${hasClosableRun ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
     </form>
   `;
@@ -1254,31 +1258,10 @@ function renderAgent() {
   `;
 }
 
-function agentOptionsMenu() {
-  return `
-    <div class="agent-options-menu">
-      <label>
-        <span>Sandbox</span>
-        <select id="agentSandbox">
-          <option value="workspace-write" ${state.agent.sandbox === "workspace-write" ? "selected" : ""}>Workspace</option>
-          <option value="read-only" ${state.agent.sandbox === "read-only" ? "selected" : ""}>Read-only</option>
-          <option value="danger-full-access" ${state.agent.sandbox === "danger-full-access" ? "selected" : ""}>Full Access</option>
-        </select>
-      </label>
-      <label>
-        <span>Approval</span>
-        <select id="agentApproval">
-          <option value="on-request" ${state.agent.approval === "on-request" ? "selected" : ""}>On request</option>
-          <option value="never" ${state.agent.approval === "never" ? "selected" : ""}>Never</option>
-          <option value="untrusted" ${state.agent.approval === "untrusted" ? "selected" : ""}>Untrusted</option>
-        </select>
-      </label>
-      <label class="agent-options-full">
-        <span>Model</span>
-        <input id="agentModel" value="${escapeHTML(state.agent.model)}" placeholder="System default" />
-      </label>
-    </div>
-  `;
+function agentSelectOptions(agents) {
+  return agents.map((agent) => `
+    <option value="${escapeHTML(agent.id)}" ${state.agent.agentId === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>
+  `).join("") || `<option value="">No enabled agents</option>`;
 }
 
 function agentCurrentSessionRow(run) {
@@ -1415,6 +1398,8 @@ function renderSettingsModal() {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
     agentDefaults: currentAgentDefaults(),
+    agentProviders: state.config?.agentProviders || [],
+    agents: state.config?.agents || [],
     codex: { running: false },
   };
   root.innerHTML = `
@@ -1481,56 +1466,93 @@ function settingsWorkspacePanel(data) {
 }
 
 function settingsAgentPanel(data) {
-  const defaults = data.agentDefaults || currentAgentDefaults();
+  const providers = data.agentProviders || [];
+  const agents = data.agents || [];
   const codex = data.codex || { running: false };
-  const codexEnabled = Boolean(codex.enabled || codex.running);
-  const codexStatusText = codex.running
-    ? `Running · PID ${escapeHTML(String(codex.pid || ""))}`
-    : codexEnabled
-      ? "Enabled · not running"
-      : "Stopped";
   return `
     <div class="settings-panel">
       <div class="settings-panel-header">
         <h2>Agent Management</h2>
-        <p>Manage the shared Codex app-server and defaults used when starting new runs.</p>
+        <p>Manage providers and named agents used when starting sessions.</p>
       </div>
-      <div class="settings-service-row">
-        <div>
-          <strong>Codex app-server</strong>
-          <span>${codexStatusText}</span>
+      <div class="settings-provider-list">
+        ${providers.map((provider) => settingsProviderRow(provider, codex)).join("")}
+      </div>
+      <form id="agentConfigForm" class="settings-agent-form">
+        <div class="settings-agent-list">
+          ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("")}
         </div>
-        <button type="button" id="codexServiceToggle" class="${codexEnabled ? "settings-secondary-button" : ""}">
-          ${icon(codexEnabled ? "square" : "play")}
-          <span>${codexEnabled ? "Stop" : "Start"}</span>
-        </button>
-      </div>
-      <form id="agentDefaultsForm" class="settings-form-grid">
-        <label>
-          <span>Default Sandbox</span>
-          <select id="settingsDefaultSandbox">
-            <option value="workspace-write" ${defaults.sandbox === "workspace-write" ? "selected" : ""}>Workspace</option>
-            <option value="read-only" ${defaults.sandbox === "read-only" ? "selected" : ""}>Read-only</option>
-            <option value="danger-full-access" ${defaults.sandbox === "danger-full-access" ? "selected" : ""}>Full Access</option>
+        <div class="settings-agent-new">
+          <input id="settingsNewAgentName" placeholder="Agent name" />
+          <select id="settingsNewAgentProvider">
+            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.name || provider.id)}</option>`).join("")}
           </select>
-        </label>
-        <label>
-          <span>Default Approval</span>
-          <select id="settingsDefaultApproval">
-            <option value="on-request" ${defaults.approval === "on-request" ? "selected" : ""}>On request</option>
-            <option value="never" ${defaults.approval === "never" ? "selected" : ""}>Never</option>
-            <option value="untrusted" ${defaults.approval === "untrusted" ? "selected" : ""}>Untrusted</option>
+          <select id="settingsNewAgentSandbox">
+            ${sandboxOptions("workspace-write")}
           </select>
-        </label>
-        <label class="settings-full-row">
-          <span>Default Model</span>
-          <input id="settingsDefaultModel" value="${escapeHTML(defaults.model || "")}" placeholder="Use Codex default" />
-        </label>
+          <select id="settingsNewAgentApproval">
+            ${approvalOptions("on-request")}
+          </select>
+          <input id="settingsNewAgentModel" placeholder="Model" />
+          <button type="button" id="settingsAddAgentButton">${icon("plus")}<span>Add Agent</span></button>
+        </div>
         <div class="settings-form-actions">
-          <button type="submit">${icon("save")}<span>Save defaults</span></button>
+          <button type="submit">${icon("save")}<span>Save Agents</span></button>
         </div>
       </form>
     </div>
+  `;
+}
+
+function settingsProviderRow(provider, codex) {
+  const enabled = Boolean(provider.enabled);
+  const status = provider.id === "codex" && codex?.running
+    ? `Enabled · PID ${escapeHTML(String(codex.pid || ""))}`
+    : enabled
+      ? "Enabled"
+      : "Disabled";
+  return `
+    <div class="settings-service-row">
+      <div>
+        <strong>${escapeHTML(provider.name || provider.id)}</strong>
+        <span>${status}</span>
+      </div>
+      <button type="button" data-toggle-provider="${escapeHTML(provider.id)}" class="${enabled ? "settings-secondary-button" : ""}">
+        ${icon(enabled ? "toggle-right" : "toggle-left")}
+        <span>${enabled ? "Disable" : "Enable"}</span>
+      </button>
+    </div>
+  `;
+}
+
+function settingsAgentRow(agent, providers, index) {
+  return `
+    <div class="settings-agent-row" data-agent-index="${index}">
+      <input data-agent-field="name" value="${escapeHTML(agent.name || "")}" placeholder="Name" />
+      <select data-agent-field="providerId">
+        ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${agent.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
+      </select>
+      <select data-agent-field="sandbox">${sandboxOptions(agent.sandbox)}</select>
+      <select data-agent-field="approval">${approvalOptions(agent.approval)}</select>
+      <input data-agent-field="model" value="${escapeHTML(agent.model || "")}" placeholder="Model" />
+      <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}">${icon("trash-2")}</button>
+    </div>
+  `;
+}
+
+function sandboxOptions(value) {
+  return `
+    <option value="workspace-write" ${value === "workspace-write" ? "selected" : ""}>Workspace</option>
+    <option value="read-only" ${value === "read-only" ? "selected" : ""}>Read-only</option>
+    <option value="danger-full-access" ${value === "danger-full-access" ? "selected" : ""}>Full Access</option>
+  `;
+}
+
+function approvalOptions(value) {
+  return `
+    <option value="on-request" ${value === "on-request" ? "selected" : ""}>On request</option>
+    <option value="never" ${value === "never" ? "selected" : ""}>Never</option>
+    <option value="untrusted" ${value === "untrusted" ? "selected" : ""}>Untrusted</option>
   `;
 }
 
@@ -1558,10 +1580,18 @@ function bindSettingsEvents() {
   document.querySelectorAll("[data-remove-workspace]").forEach((button) => {
     button.addEventListener("click", () => removeSettingsWorkspace(button.dataset.removeWorkspace).catch((err) => toast(err.message)));
   });
-  $("codexServiceToggle")?.addEventListener("click", () => toggleCodexService().catch((err) => toast(err.message)));
-  $("agentDefaultsForm")?.addEventListener("submit", (event) => {
+  document.querySelectorAll("[data-toggle-provider]").forEach((button) => {
+    button.addEventListener("click", () => toggleAgentProvider(button.dataset.toggleProvider).catch((err) => toast(err.message)));
+  });
+  $("agentConfigForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
-    saveAgentDefaults().catch((err) => toast(err.message));
+    saveAgents().catch((err) => toast(err.message));
+  });
+  $("settingsAddAgentButton")?.addEventListener("click", () => {
+    addSettingsAgent().catch((err) => toast(err.message));
+  });
+  document.querySelectorAll("[data-remove-agent]").forEach((button) => {
+    button.addEventListener("click", () => removeSettingsAgent(button.dataset.removeAgent).catch((err) => toast(err.message)));
   });
 }
 
@@ -1658,29 +1688,12 @@ function agentEventTitle(event) {
 }
 
 function bindAgentEvents() {
-  $("agentOptionsButton")?.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    state.agent.optionsOpen = !state.agent.optionsOpen;
-    state.agent.historyOpen = false;
-    renderAgent();
-    bindAgentEvents();
-    refreshIcons();
-  });
-  document.querySelector(".agent-options-menu")?.addEventListener("click", (event) => {
-    event.stopPropagation();
-  });
   document.querySelector(".agent-session-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
-  $("agentSandbox")?.addEventListener("change", (event) => {
-    state.agent.sandbox = event.target.value;
-  });
-  $("agentApproval")?.addEventListener("change", (event) => {
-    state.agent.approval = event.target.value;
-  });
-  $("agentModel")?.addEventListener("input", (event) => {
-    state.agent.model = event.target.value;
+  $("agentSelect")?.addEventListener("change", (event) => {
+    state.agent.agentId = event.target.value;
+    applySelectedAgentOptions();
   });
   $("agentStartForm")?.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -1715,15 +1728,15 @@ function bindAgentEvents() {
 async function startAgentRun() {
   if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
   const selected = findResource(state.selectedId);
+  const agent = selectedAgentConfig();
+  if (!agent) throw new Error("Select an enabled agent first.");
   const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
     method: "POST",
     body: JSON.stringify({
+      agentId: agent.id,
       resourceId: selected?.id || "",
       title: selected?.title || workspaceName(),
       prompt: "",
-      model: state.agent.model.trim(),
-      sandbox: state.agent.sandbox,
-      approval: state.agent.approval,
       cwd: agentDefaultCwd(),
     }),
   });
@@ -2069,17 +2082,38 @@ function workspaceName() {
 }
 
 function currentAgentDefaults() {
+  const agent = selectedAgentConfig();
   return {
-    sandbox: state.agent.sandbox || "workspace-write",
-    approval: state.agent.approval || "on-request",
-    model: state.agent.model || "",
+    sandbox: agent?.sandbox || state.agent.sandbox || "workspace-write",
+    approval: agent?.approval || state.agent.approval || "on-request",
+    model: agent?.model || state.agent.model || "",
   };
 }
 
-function applyAgentDefaults(defaults = {}) {
-  state.agent.sandbox = defaults.sandbox || "workspace-write";
-  state.agent.approval = defaults.approval || "on-request";
-  state.agent.model = defaults.model || "";
+function applyAgentConfig() {
+  const agents = enabledAgentConfigs();
+  if (!agents.some((agent) => agent.id === state.agent.agentId)) {
+    state.agent.agentId = agents[0]?.id || "";
+  }
+  applySelectedAgentOptions();
+}
+
+function applySelectedAgentOptions() {
+  const agent = selectedAgentConfig();
+  state.agent.sandbox = agent?.sandbox || "workspace-write";
+  state.agent.approval = agent?.approval || "on-request";
+  state.agent.model = agent?.model || "";
+}
+
+function selectedAgentConfig() {
+  const agents = enabledAgentConfigs();
+  return agents.find((agent) => agent.id === state.agent.agentId) || agents[0] || null;
+}
+
+function enabledAgentConfigs() {
+  const providers = state.config?.agentProviders || [];
+  const enabledProviders = new Set(providers.filter((provider) => provider.enabled).map((provider) => provider.id));
+  return (state.config?.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
 }
 
 async function openSettings(tab = "workspace") {
@@ -2143,32 +2177,105 @@ async function removeSettingsWorkspace(id) {
   toast("Workspace removed from Forge GUI.");
 }
 
-async function toggleCodexService() {
-  const enabled = Boolean(state.settings.data?.codex?.enabled || state.settings.data?.codex?.running);
-  const status = await api(`/api/settings/codex/${enabled ? "stop" : "start"}`, { method: "POST" });
-  state.settings.data = { ...(state.settings.data || {}), codex: status };
-  renderSettingsModal();
-  toast(enabled ? "Codex app-server stopped." : "Codex app-server started.");
-}
-
-async function saveAgentDefaults() {
-  const defaults = {
-    sandbox: $("settingsDefaultSandbox")?.value || "workspace-write",
-    approval: $("settingsDefaultApproval")?.value || "on-request",
-    model: $("settingsDefaultModel")?.value.trim() || "",
-  };
-  const saved = await api("/api/settings/agent/defaults", {
-    method: "PUT",
-    body: JSON.stringify(defaults),
-  });
-  applyAgentDefaults(saved);
-  if (state.config) state.config.agentDefaults = saved;
-  state.settings.data = { ...(state.settings.data || {}), agentDefaults: saved };
+async function toggleAgentProvider(providerId) {
+  const providers = state.settings.data?.agentProviders || [];
+  const provider = providers.find((item) => item.id === providerId);
+  if (!provider) return;
+  const enabled = Boolean(provider.enabled);
+  if (provider.id === "codex") {
+    await api(`/api/settings/codex/${enabled ? "stop" : "start"}`, { method: "POST" });
+  } else {
+    await api("/api/settings/agent/providers", {
+      method: "PUT",
+      body: JSON.stringify(providers.map((item) => item.id === provider.id ? { ...item, enabled: !enabled } : item)),
+    });
+  }
+  await refreshSettings();
+  state.config = await api("/api/workspaces");
+  applyAgentConfig();
   renderAgent();
   bindAgentEvents();
   renderSettingsModal();
   refreshIcons();
-  toast("Agent defaults saved.");
+  toast(enabled ? "Agent provider disabled." : "Agent provider enabled.");
+}
+
+async function saveAgents() {
+  const saved = await api("/api/settings/agents", {
+    method: "PUT",
+    body: JSON.stringify(collectSettingsAgents()),
+  });
+  if (state.config) state.config.agents = saved;
+  state.settings.data = { ...(state.settings.data || {}), agents: saved };
+  applyAgentConfig();
+  renderAgent();
+  bindAgentEvents();
+  renderSettingsModal();
+  refreshIcons();
+  toast("Agents saved.");
+}
+
+function collectSettingsAgents() {
+  const existing = state.settings.data?.agents || [];
+  return Array.from(document.querySelectorAll(".settings-agent-row")).map((row, index) => {
+    const source = existing[index] || {};
+    const field = (name) => row.querySelector(`[data-agent-field="${name}"]`)?.value.trim() || "";
+    return {
+      id: source.id || slugID(field("name")),
+      name: field("name"),
+      providerId: field("providerId"),
+      sandbox: field("sandbox") || "workspace-write",
+      approval: field("approval") || "on-request",
+      model: field("model"),
+    };
+  });
+}
+
+async function addSettingsAgent() {
+  const name = $("settingsNewAgentName")?.value.trim() || "";
+  if (!name) throw new Error("Agent name is required.");
+  const current = collectSettingsAgents();
+  const next = {
+    id: uniqueAgentID(name, current),
+    name,
+    providerId: $("settingsNewAgentProvider")?.value || "codex",
+    sandbox: $("settingsNewAgentSandbox")?.value || "workspace-write",
+    approval: $("settingsNewAgentApproval")?.value || "on-request",
+    model: $("settingsNewAgentModel")?.value.trim() || "",
+  };
+  state.settings.data = {
+    ...(state.settings.data || {}),
+    agents: [...current, next],
+  };
+  renderSettingsModal();
+}
+
+async function removeSettingsAgent(id) {
+  if (!id) return;
+  const current = collectSettingsAgents();
+  state.settings.data = {
+    ...(state.settings.data || {}),
+    agents: current.filter((agent) => agent.id !== id),
+  };
+  renderSettingsModal();
+}
+
+function uniqueAgentID(name, agents) {
+  const base = slugID(name) || "agent";
+  const used = new Set(agents.map((agent) => agent.id));
+  if (!used.has(base)) return base;
+  for (let i = 2; ; i += 1) {
+    const candidate = `${base}-${i}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
+function slugID(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function countFiles(entries = []) {
