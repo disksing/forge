@@ -92,16 +92,17 @@ type guiState struct {
 }
 
 type guiSession struct {
-	ID             string              `json:"id"`
-	Liveness       json.RawMessage     `json:"liveness,omitempty"`
-	Controls       []guiSessionControl `json:"controls"`
-	StartedAt      string              `json:"startedAt"`
-	UpdatedAt      string              `json:"updatedAt"`
-	Source         string              `json:"source"`
-	AgentRunID     string              `json:"agentRunId,omitempty"`
-	AgentRunTitle  string              `json:"agentRunTitle,omitempty"`
-	AgentRunStatus string              `json:"agentRunStatus,omitempty"`
-	ResourceID     string              `json:"resourceId,omitempty"`
+	ID                string              `json:"id"`
+	Liveness          json.RawMessage     `json:"liveness,omitempty"`
+	Controls          []guiSessionControl `json:"controls"`
+	StartedAt         string              `json:"startedAt"`
+	UpdatedAt         string              `json:"updatedAt"`
+	Source            string              `json:"source"`
+	AgentRunID        string              `json:"agentRunId,omitempty"`
+	AgentRunTitle     string              `json:"agentRunTitle,omitempty"`
+	AgentRunStatus    string              `json:"agentRunStatus,omitempty"`
+	AgentRunUpdatedAt string              `json:"agentRunUpdatedAt,omitempty"`
+	ResourceID        string              `json:"resourceId,omitempty"`
 }
 
 type guiSessionControl struct {
@@ -692,6 +693,7 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 			tree.Sessions[i].AgentRunID = run.ID
 			tree.Sessions[i].AgentRunTitle = run.Title
 			tree.Sessions[i].AgentRunStatus = run.Status
+			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
 			tree.Sessions[i].ResourceID = run.ResourceID
 		}
 	}

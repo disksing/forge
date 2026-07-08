@@ -1189,7 +1189,7 @@ i[data-lucide] {
 .tree-item {
   min-height: 30px;
   display: grid;
-  grid-template-columns: 16px 16px minmax(0, 1fr) 16px;
+  grid-template-columns: 16px 16px 16px minmax(0, 1fr);
   column-gap: 6px;
   align-items: center;
   padding: 6px 8px;
@@ -1225,14 +1225,57 @@ i[data-lucide] {
   color: #2563eb;
 }
 
-.task-active-indicator {
+.task-session-indicator-slot,
+.task-session-indicator {
   display: grid;
   place-items: center;
-  color: var(--green);
 }
 
-.tree-item.active .task-active-indicator {
+.task-session-indicator-slot {
+  width: 16px;
+  height: 16px;
+}
+
+.task-session-indicator {
+  width: 16px;
+  height: 16px;
+}
+
+.task-session-active .task-session-indicator {
+  color: var(--green);
+  animation: task-session-pulse 1.1s ease-in-out infinite;
+}
+
+.task-session-quiet .task-session-indicator {
+  color: #f59e0b;
+}
+
+.task-session-waiting .task-session-indicator {
+  color: #0ea5e9;
+}
+
+.tree-item.active.task-session-active .task-session-indicator {
   color: #059669;
+}
+
+.tree-item.active.task-session-quiet .task-session-indicator {
+  color: #d97706;
+}
+
+.tree-item.active.task-session-waiting .task-session-indicator {
+  color: #0284c7;
+}
+
+@keyframes task-session-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
 }
 
 .task-item {

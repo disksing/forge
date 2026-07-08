@@ -87,6 +87,47 @@ func TestIsClosedPipeError(t *testing.T) {
 	}
 }
 
+func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
+	workspace := t.TempDir()
+	updatedAt := "2026-07-07T12:00:01+08:00"
+	runs := []agentRun{
+		{
+			ID:             "run-one",
+			WorkspaceID:    "workspace",
+			ResourceID:     "project1.task1",
+			ForgeSessionID: "session-one",
+			Provider:       "codex",
+			Title:          "Run One",
+			Cwd:            workspace,
+			Status:         "running",
+			Sandbox:        "workspace-write",
+			Approval:       "on-request",
+			CreatedAt:      "2026-07-07T12:00:00+08:00",
+			UpdatedAt:      updatedAt,
+		},
+	}
+	if err := rewriteAgentRuns(workspace, runs); err != nil {
+		t.Fatal(err)
+	}
+	tree := workspaceTree{
+		Sessions: []guiSession{
+			{ID: "session-one", Controls: []guiSessionControl{{ResourceID: "project1.task1", Path: "project1/task1"}}},
+			{ID: "session-external", Controls: []guiSessionControl{{ResourceID: "project1.task2", Path: "project1/task2"}}},
+		},
+	}
+	s := &server{}
+	if err := s.enrichTreeSessions(workspace, &tree); err != nil {
+		t.Fatal(err)
+	}
+	internal := tree.Sessions[0]
+	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.ResourceID != "project1.task1" {
+		t.Fatalf("internal session was not enriched with agent run state: %#v", internal)
+	}
+	if tree.Sessions[1].Source != "external" || tree.Sessions[1].AgentRunUpdatedAt != "" {
+		t.Fatalf("external session should only be marked external: %#v", tree.Sessions[1])
+	}
+}
+
 func TestForgeSessionContextFileAndPrompt(t *testing.T) {
 	workspace := t.TempDir()
 	resourceDir := filepath.Join(workspace, "project1", "task1")

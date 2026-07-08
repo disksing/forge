@@ -45,6 +45,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
+const TASK_OUTPUT_ACTIVE_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 80;
 const AGENT_OLDER_VISIBLE_EVENT_COUNT = 50;
@@ -254,38 +255,88 @@ function renderTree() {
 
 function treeButton(item, kind) {
   const button = document.createElement("button");
-  const activeSessionCount = kind === "task" ? activeTaskSessionCount(item.id) : 0;
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${activeSessionCount > 0 ? "has-active-session" : ""} ${state.selectedId === item.id ? "active" : ""}`;
+  const sessionState = kind === "task" ? taskSessionState(item.id) : noTaskSessionState();
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${sessionState.kind !== "none" ? "has-open-session" : ""} ${sessionState.className} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
-  const activeSessionLabel = `${activeSessionCount} active ${activeSessionCount === 1 ? "session" : "sessions"}`;
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
+    <span class="task-session-indicator-slot">${sessionState.iconName ? `<span class="task-session-indicator" title="${escapeHTML(sessionState.label)}" aria-label="${escapeHTML(sessionState.label)}">${icon(sessionState.iconName, "task-session-icon")}</span>` : ""}</span>
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
     <span class="name">${escapeHTML(item.title || item.id)}</span>
-    ${activeSessionCount > 0 ? `<span class="task-active-indicator" title="${escapeHTML(activeSessionLabel)}" aria-label="${escapeHTML(activeSessionLabel)}">${icon("circle-dot", "task-active-icon")}</span>` : ""}
   `;
-	  button.onclick = (event) => {
-	    if (event.target.closest("[data-project-toggle]")) {
-	      toggleProject(item.id).catch((err) => toast(err.message));
-	      return;
-	    }
-	    selectResource(item.id).catch((err) => toast(err.message));
-	  };
-	  return button;
-	}
+  button.onclick = (event) => {
+    if (event.target.closest("[data-project-toggle]")) {
+      toggleProject(item.id).catch((err) => toast(err.message));
+      return;
+    }
+    selectResource(item.id).catch((err) => toast(err.message));
+  };
+  return button;
+}
 
-function activeTaskSessionCount(resourceId) {
-  if (!resourceId) return 0;
-  const activeSessionIds = new Set();
+function noTaskSessionState() {
+  return { kind: "none", className: "", iconName: "", label: "No open sessions" };
+}
+
+function taskSessionState(resourceId) {
+  const sessions = taskSessions(resourceId);
+  if (sessions.length === 0) return noTaskSessionState();
+
+  const recentOutput = sessions.filter((session) => hasRecentAgentOutput(session));
+  if (recentOutput.length > 0) {
+    return {
+      kind: "active",
+      className: "task-session-active",
+      iconName: "circle-dot",
+      label: taskSessionLabel(recentOutput.length, "output in the last minute"),
+    };
+  }
+
+  const waitingInput = sessions.filter((session) => session.agentRunStatus === "idle");
+  if (waitingInput.length > 0) {
+    return {
+      kind: "waiting",
+      className: "task-session-waiting",
+      iconName: "message-circle",
+      label: taskSessionLabel(waitingInput.length, "waiting for input"),
+    };
+  }
+
+  return {
+    kind: "quiet",
+    className: "task-session-quiet",
+    iconName: "clock",
+    label: taskSessionLabel(sessions.length, "without recent output"),
+  };
+}
+
+function taskSessions(resourceId) {
+  if (!resourceId) return [];
+  const matched = [];
+  const seen = new Set();
   for (const session of state.tree?.sessions || []) {
     const controls = sessionControls(session);
     const controlsResource = controls.some((control) => control.resourceId === resourceId);
     if (session.resourceId === resourceId || controlsResource) {
-      activeSessionIds.add(session.id || resourceId);
+      const key = session.id || `${resourceId}:${matched.length}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        matched.push(session);
+      }
     }
   }
-  return activeSessionIds.size;
+  return matched;
+}
+
+function hasRecentAgentOutput(session) {
+  if (!["running", "starting"].includes(session.agentRunStatus)) return false;
+  const updatedAt = new Date(session.agentRunUpdatedAt || "").getTime();
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt <= TASK_OUTPUT_ACTIVE_WINDOW_MS;
+}
+
+function taskSessionLabel(count, description) {
+  return `${count} open ${count === 1 ? "session" : "sessions"} ${description}`;
 }
 
 async function selectResource(id) {
