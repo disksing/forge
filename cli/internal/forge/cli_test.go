@@ -153,15 +153,20 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertNoHan(t, projectMDPath)
 		taskWork := readFile(t, filepath.Join(root, "project1", "work.md"))
-		for _, section := range []string{"## Status", "## Focus", "## Todo", "## Blockers"} {
+		for _, section := range []string{"## Focus"} {
 			if !strings.Contains(taskWork, section) {
 				t.Fatalf("expected work.md to include %s, got:\n%s", section, taskWork)
+			}
+		}
+		for _, section := range []string{"## Status", "## Todo", "## Blockers"} {
+			if strings.Contains(taskWork, section) {
+				t.Fatalf("expected work.md not to include default %s section, got:\n%s", section, taskWork)
 			}
 		}
 		if strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md not to embed static recovery policy, got:\n%s", taskWork)
 		}
-		if !strings.Contains(taskWork, "Keep only short-term actions needed by the next agent.") || !strings.Contains(taskWork, "Optional modules: Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes.") || !strings.Contains(taskWork, "Put unpredictable links, PRs, CI runs, image tags") {
+		if !strings.Contains(taskWork, "Gather context from workspace, project files, and the user.") || !strings.Contains(taskWork, "Optional modules: Todo, Blockers, Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes.") || !strings.Contains(taskWork, "Use Todo only for short-term actions needed by the next agent") || !strings.Contains(taskWork, "Put unpredictable links, PRs, CI runs, image tags") {
 			t.Fatalf("expected work.md to include concise self-explanatory comments, got:\n%s", taskWork)
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
@@ -1889,7 +1894,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "`project.md` and `task.md` are durable briefs.") {
 			t.Fatalf("expected workspace AGENTS.md to describe markdown briefs, got:\n%s", first)
 		}
-		if !strings.Contains(first, "optional modules such as `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
+		if !strings.Contains(first, "optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
 			t.Fatalf("expected workspace AGENTS.md to describe optional work.md modules, got:\n%s", first)
 		}
 		if !strings.Contains(first, "Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related resource notes in Markdown") {

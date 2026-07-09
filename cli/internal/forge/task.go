@@ -884,43 +884,23 @@ func taskMarkdown(title string, detail string) string {
 
 func defaultWorkMD(task Task) string {
 	label := "Task"
-	todo := `- [ ] Read task.json, task.md, and log.jsonl.
-- [ ] Decide which repositories are involved.
-- [ ] Update task.json if new repositories are discovered.
-- [ ] Create any needed worktrees under worktree/.`
+	focus := "Gather context from workspace, project, task files, and the user. Refine task.md and work.md before starting active work."
 	if isProject(task) {
 		label = "Project"
-		todo = `- [ ] Read project.json, project.md, and log.jsonl.
-- [ ] Create project tasks for implementation work.
-- [ ] Keep repository and worktree state in task directories, not in the project.`
+		focus = "Gather context from workspace, project files, and the user. Refine project.md and work.md before starting active work."
 	}
 	return fmt.Sprintf(`# Work
 
-## Status
-
-not_started
-
-<!-- Use one of: not_started, in_progress, blocked, ready_for_review, done. -->
-
 ## Focus
 
-%s %s has been created. No active work has started.
+%s %s has been created. %s
 
-## Todo
-
-<!-- Keep only short-term actions needed by the next agent. Put completed history in log.jsonl. -->
-%s
-
-## Blockers
-
-None.
-
-<!-- Optional modules: Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes. Add them only when useful; remove empty modules. Put unpredictable links, PRs, CI runs, image tags, deployment URLs, and related task ids in Resources. -->
-`, label, task.ID, todo)
+<!-- Optional modules: Todo, Blockers, Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes. Add them only when useful; remove empty modules. Use Todo only for short-term actions needed by the next agent, and put completed history in log.jsonl. Put unpredictable links, PRs, CI runs, image tags, deployment URLs, and related task ids in Resources. -->
+`, label, task.ID, focus)
 }
 
 func workMDGuidance(resourceName string) string {
-	return fmt.Sprintf("Keep %s as the live recovery snapshot: status, focus, short-term todo, blockers, and optional modules only when useful. Delete empty optional modules; put arbitrary resource links or IDs in a Resources module.", resourceName)
+	return fmt.Sprintf("Keep %s as the live recovery snapshot: focus plus optional modules only when useful. Use Todo only for short-term actions needed by the next agent. Delete empty optional modules; put arbitrary resource links or IDs in a Resources module.", resourceName)
 }
 
 func markdownGuidance(resourceName string) string {
