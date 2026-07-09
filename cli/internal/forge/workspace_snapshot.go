@@ -35,8 +35,8 @@ type ResourceDetail struct {
 	Repos       []TaskRepo         `json:"repos,omitempty"`
 	Logs        []LogEntry         `json:"logs,omitempty"`
 	Files       []ResourceFile     `json:"files,omitempty"`
-	Artifacts   []FileTreeEntry    `json:"artifacts,omitempty"`
-	Worktrees   []FileTreeEntry    `json:"worktrees,omitempty"`
+	Artifacts   []FileTreeEntry    `json:"artifacts"`
+	Worktrees   []FileTreeEntry    `json:"worktrees"`
 	Children    []ResourceTreeItem `json:"children,omitempty"`
 }
 
@@ -155,6 +155,7 @@ func buildResourceDetailAt(root string, entry taskListEntry) (ResourceDetail, er
 		Logs:        logs,
 		Files:       readResourceFiles(root, entry.Path, task),
 		Artifacts:   readFileTree(root, filepath.Join(entry.Path, "artifacts")),
+		Worktrees:   []FileTreeEntry{},
 	}
 	if !isProject(task) {
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
@@ -233,7 +234,11 @@ func readResourceFiles(root, dir string, task Task) []ResourceFile {
 
 func readFileTree(root, dir string) []FileTreeEntry {
 	count := 0
-	return readFileTreeLimited(root, dir, 0, &count)
+	entries := readFileTreeLimited(root, dir, 0, &count)
+	if entries == nil {
+		return []FileTreeEntry{}
+	}
+	return entries
 }
 
 func readFileTreeLimited(root, dir string, depth int, count *int) []FileTreeEntry {

@@ -577,7 +577,7 @@ function renderDetails() {
     ` : ""}
     ${fileSection(detail)}
     ${artifactSection("Artifacts", detail.artifacts)}
-    ${worktreeSection(detail.repos)}
+    ${selected.type === "project" ? "" : worktreeSection(detail.repos)}
     ${fileModal()}
     ${diffModal()}
   `;
@@ -921,13 +921,13 @@ function restoreWorkspaceAgentsEditorState(snapshot) {
 }
 
 function artifactSection(title, entries = []) {
-  if (!entries || entries.length === 0) return "";
+  const safeEntries = Array.isArray(entries) ? entries : [];
   return `
     <div class="content-section">
       <h3>${icon(title === "Worktrees" ? "folder-git-2" : "paperclip")}<span>${title}</span></h3>
       <div class="artifact-browser">
         <div class="artifact-tree" role="tree">
-          ${entries.map((entry) => artifactRow(entry, title, 0)).join("")}
+          ${safeEntries.length > 0 ? safeEntries.map((entry) => artifactRow(entry, title, 0)).join("") : emptyListRow("No artifacts.")}
         </div>
       </div>
     </div>
@@ -961,15 +961,19 @@ function artifactRow(entry, section, depth) {
 }
 
 function worktreeSection(repos = []) {
-  if (!repos || repos.length === 0) return "";
+  const safeRepos = Array.isArray(repos) ? repos : [];
   return `
     <div class="content-section">
       <h3>${icon("folder-git-2")}<span>Worktrees</span></h3>
       <div class="worktree-list">
-        ${repos.map(worktreeRow).join("")}
+        ${safeRepos.length > 0 ? safeRepos.map(worktreeRow).join("") : emptyListRow("No worktrees.")}
       </div>
     </div>
   `;
+}
+
+function emptyListRow(message) {
+  return `<div class="empty-list-row">${escapeHTML(message)}</div>`;
 }
 
 function worktreeRow(repo) {

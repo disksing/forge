@@ -167,6 +167,17 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
 		}
+		if err := os.RemoveAll(filepath.Join(root, "project1", "artifacts")); err != nil {
+			t.Fatal(err)
+		}
+		projectDetailJSON := run(t, "workspace", "resource", "--id", "project1", "--json")
+		var projectDetail ResourceDetail
+		if err := json.Unmarshal([]byte(projectDetailJSON), &projectDetail); err != nil {
+			t.Fatalf("workspace project resource should print JSON, got error %v and output:\n%s", err, projectDetailJSON)
+		}
+		if projectDetail.Artifacts == nil || len(projectDetail.Artifacts) != 0 {
+			t.Fatalf("expected missing project artifacts directory to return an empty list, got: %+v", projectDetail.Artifacts)
+		}
 
 		listed := run(t, "project", "list")
 		if !strings.Contains(listed, "project1\tImplement the forge MVP") {
@@ -209,6 +220,26 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		if strings.Contains(children, "project1.task1") {
 			t.Fatalf("task list should display short task ids, got:\n%s", children)
+		}
+		if err := os.RemoveAll(filepath.Join(root, "project1", "task1", "artifacts")); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.RemoveAll(filepath.Join(root, "project1", "task1", "worktree")); err != nil {
+			t.Fatal(err)
+		}
+		emptyDetailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
+		var emptyDetail ResourceDetail
+		if err := json.Unmarshal([]byte(emptyDetailJSON), &emptyDetail); err != nil {
+			t.Fatalf("workspace task resource should print JSON, got error %v and output:\n%s", err, emptyDetailJSON)
+		}
+		if emptyDetail.Artifacts == nil || len(emptyDetail.Artifacts) != 0 {
+			t.Fatalf("expected missing task artifacts directory to return an empty list, got: %+v", emptyDetail.Artifacts)
+		}
+		if emptyDetail.Worktrees == nil || len(emptyDetail.Worktrees) != 0 {
+			t.Fatalf("expected missing task worktree directory to return an empty list, got: %+v", emptyDetail.Worktrees)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "project1", "task1", "artifacts"), 0o755); err != nil {
+			t.Fatal(err)
 		}
 
 		if err := os.WriteFile(filepath.Join(root, "project1", "task1", "artifacts", "result.txt"), []byte("ok"), 0o644); err != nil {

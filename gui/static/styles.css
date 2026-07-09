@@ -2191,6 +2191,18 @@ i[data-lucide] {
   padding: 6px;
 }
 
+.empty-list-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
 .artifact-node {
   min-width: 0;
 }
