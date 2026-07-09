@@ -153,21 +153,36 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertNoHan(t, projectMDPath)
 		taskWork := readFile(t, filepath.Join(root, "project1", "work.md"))
+		visibleTaskWork := stripHTMLComments(taskWork)
 		for _, section := range []string{"## Focus"} {
-			if !strings.Contains(taskWork, section) {
+			if !strings.Contains(visibleTaskWork, section) {
 				t.Fatalf("expected work.md to include %s, got:\n%s", section, taskWork)
 			}
 		}
 		for _, section := range []string{"## Status", "## Todo", "## Blockers"} {
-			if strings.Contains(taskWork, section) {
+			if strings.Contains(visibleTaskWork, section) {
 				t.Fatalf("expected work.md not to include default %s section, got:\n%s", section, taskWork)
 			}
 		}
 		if strings.Contains(taskWork, "## Recovery Rule") {
 			t.Fatalf("expected work.md not to embed static recovery policy, got:\n%s", taskWork)
 		}
-		if !strings.Contains(taskWork, "Gather context from workspace, project files, and the user.") || !strings.Contains(taskWork, "Optional modules: Todo, Blockers, Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes.") || !strings.Contains(taskWork, "Use Todo only for short-term actions needed by the next agent") || !strings.Contains(taskWork, "Put unpredictable links, PRs, CI runs, image tags") {
-			t.Fatalf("expected work.md to include concise self-explanatory comments, got:\n%s", taskWork)
+		for _, snippet := range []string{
+			"Gather context from workspace, project files, and the user.",
+			"Optional modules. Copy only useful modules below this comment",
+			"## Todo\nUse for short-term actions needed by the next agent.",
+			"## Blockers\nUse only when work cannot continue without user input or an external change.",
+			"## Active Work\nUse when there is an in-progress implementation",
+			"## Paused Work\nUse when temporarily switching away from unfinished work.",
+			"## Resume Plan\nUse after interruption or handoff when order matters.",
+			"## Context\nUse for useful transient context",
+			"## Resources\nUse for unpredictable links and external ids",
+			"## Verification\nUse for checks already run or still needed",
+			"## Notes\nUse sparingly for recovery notes",
+		} {
+			if !strings.Contains(taskWork, snippet) {
+				t.Fatalf("expected work.md to include optional module guidance %q, got:\n%s", snippet, taskWork)
+			}
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
@@ -2091,6 +2106,21 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func stripHTMLComments(s string) string {
+	for {
+		start := strings.Index(s, "<!--")
+		if start < 0 {
+			return s
+		}
+		end := strings.Index(s[start+4:], "-->")
+		if end < 0 {
+			return s[:start]
+		}
+		end += start + 7
+		s = s[:start] + s[end:]
+	}
 }
 
 func writeFile(t *testing.T, path, content string) {

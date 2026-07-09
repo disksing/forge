@@ -895,7 +895,53 @@ func defaultWorkMD(task Task) string {
 
 %s %s has been created. %s
 
-<!-- Optional modules: Todo, Blockers, Active Work, Paused Work, Resume Plan, Context, Resources, Verification, Notes. Add them only when useful; remove empty modules. Use Todo only for short-term actions needed by the next agent, and put completed history in log.jsonl. Put unpredictable links, PRs, CI runs, image tags, deployment URLs, and related task ids in Resources. -->
+<!--
+Optional modules. Copy only useful modules below this comment, keep them current, and delete empty modules.
+
+## Todo
+Use for short-term actions needed by the next agent. Put completed history in log.jsonl.
+- [ ] Next concrete action.
+
+## Blockers
+Use only when work cannot continue without user input or an external change.
+- Blocker: what is blocked, what is needed, and who or what can resolve it.
+
+## Active Work
+Use when there is an in-progress implementation, investigation, or review thread with local state worth preserving.
+- Focus: current thread.
+- Files: relevant paths.
+- Notes: state needed to resume.
+
+## Paused Work
+Use when temporarily switching away from unfinished work.
+- Paused thread: where to resume, why it paused, and what should happen next.
+
+## Resume Plan
+Use after interruption or handoff when order matters.
+1. First recovery step.
+2. Next recovery step.
+
+## Context
+Use for useful transient context that is not durable enough for task.md.
+- Fact, assumption, or constraint relevant to resuming.
+
+## Resources
+Use for unpredictable links and external ids that do not belong in task.json.
+- PR: URL or id.
+- CI: run id or URL.
+- Image: tag.
+- Deployment: URL.
+- Related task: id.
+
+## Verification
+Use for checks already run or still needed when that helps the next agent.
+- [x] Command or check that passed.
+- [ ] Command or check not run yet.
+
+## Notes
+Use sparingly for recovery notes that do not fit another module.
+- Note.
+-->
 `, label, task.ID, focus)
 }
 
