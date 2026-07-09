@@ -2177,10 +2177,6 @@ i[data-lucide] {
   color: #64748b;
 }
 
-.artifact-browser {
-  min-height: 180px;
-}
-
 .artifact-tree {
   min-width: 0;
   max-height: 380px;
