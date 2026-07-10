@@ -2777,6 +2777,15 @@ async function toggleAgentProvider(providerId) {
   renderSettingsModal();
   toast(enabled ? "Agent provider disabled." : "Agent provider enabled.");
 }
+  await refreshSettings();
+  state.config = await api("/api/workspaces");
+  applyAgentConfig();
+  renderAgent();
+  bindAgentEvents();
+  renderSettingsModal();
+  refreshIcons();
+  toast(enabled ? "Agent provider disabled." : "Agent provider enabled.");
+}
 
 async function saveAgents() {
   const saved = await api("/api/settings/agents", {
