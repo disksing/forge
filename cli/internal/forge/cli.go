@@ -10,8 +10,8 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--workflow=<name>] [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>"
-	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>"
+	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
 )
@@ -40,8 +40,6 @@ func Run(args []string) error {
 		return runInit(args[1:])
 	case "repo":
 		return runRepo(args[1:])
-	case "start":
-		return startTask(args[1:])
 	case "project":
 		return runProject(args[1:])
 	case "task":
@@ -163,13 +161,13 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug, options.NonInteractive, options.AgentID, options.Prompt, options.After)
 	case "list":
-		projectID, all, err := resolveTaskListArgs(args[1:])
+		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		return projectTaskList(projectID, all)
+		return projectTaskList(options)
 	case "show":
 		taskID, err := resolveTaskArg(args[1:], "show")
 		if err != nil {
@@ -186,6 +184,8 @@ func runTask(args []string) error {
 		return runTaskRepo(args[1:])
 	case "log":
 		return runResourceLog("task", args[1:])
+	case "run":
+		return runTaskRun(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -219,10 +219,9 @@ How Forge works:
   JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate
   writes with sessions that lock the project or task they update; stale locks
   are pruned from session liveness. Agents may read other projects and tasks
-  freely for context, but should only update resources they have locked. forge
-  start creates a PID-liveness session, locks the selected resource, injects
-  FORGE_SESSION_ID, and ends the session when the command exits. The workspace
-  root does not require a lock.
+  freely for context, but should only update resources they have locked. Agent
+  execution is provided by the separate forge-start binary. The workspace root
+  does not require a lock.
 
 Usage:
   forge --version
@@ -239,8 +238,8 @@ Usage:
   forge project log add [--project=<project>] [--details <text>|--details -] <title>
   forge project log list [--project=<project>] [--json]
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
-  forge task list [--project=<project>] [--all]
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
+  forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
   forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
@@ -248,6 +247,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+  forge task run configure|queue|start|complete|wait|pause|fail|settle ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
   forge session heartbeat --id=<id>
@@ -260,7 +260,7 @@ Usage:
   forge workspace tree --json
   forge workspace resource --id=<resource> --json
 
-  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Commands:
   forge --version
@@ -302,7 +302,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -310,7 +310,7 @@ Commands:
     full id such as project22 or just a number such as 22. When omitted, Forge
     uses the project containing the current working directory.
 
-  forge task list [--project=<project>] [--all]
+  forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
     List open tasks in a project. Use --all to include archived tasks.
     <project> may be a full id such as project22 or just a number such as 22.
     When omitted, Forge uses the project containing the current working
@@ -391,12 +391,12 @@ Commands:
     Print detail JSON for one project or task, including common Markdown files,
     artifacts, worktrees, and task repository metadata.
 
-  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
     Run an agent command in the selected project or task directory. When
     selectors are omitted, Forge uses the current task, otherwise the current
     project. With only --task, Forge uses the current project. Explicit command
     arguments after -- override the workspace forge.json agentCommand default.
-    forge start creates a PID-liveness session, locks the selected resource,
+    forge-start creates a PID-liveness session, locks the selected resource,
     injects FORGE_SESSION_ID into the agent environment, and ends the session
     when the command exits.`)
 }
@@ -447,10 +447,14 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 }
 
 type taskCreateOptions struct {
-	ParentID string
-	Title    string
-	Detail   string
-	Slug     string
+	ParentID       string
+	Title          string
+	Detail         string
+	Slug           string
+	NonInteractive bool
+	AgentID        string
+	Prompt         string
+	After          []string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -517,6 +521,26 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			}
 			options.Detail = args[i+1]
 			i++
+			continue
+		}
+		if arg == "--non-interactive" {
+			options.NonInteractive = true
+			continue
+		}
+		if strings.HasPrefix(arg, "--agent=") {
+			options.AgentID = strings.TrimSpace(strings.TrimPrefix(arg, "--agent="))
+			continue
+		}
+		if strings.HasPrefix(arg, "--prompt=") {
+			options.Prompt = strings.TrimSpace(strings.TrimPrefix(arg, "--prompt="))
+			continue
+		}
+		if strings.HasPrefix(arg, "--after=") {
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--after="))
+			if value == "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.After = append(options.After, value)
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {
@@ -623,22 +647,22 @@ func isASCIIInteger(value string) bool {
 	return true
 }
 
-func resolveTaskListArgs(args []string) (string, bool, error) {
-	projectID, includeArchived, err := parseTaskListArgs(args)
+func resolveTaskListArgs(args []string) (taskListOptions, error) {
+	projectID, includeArchived, runnable, includeBlocked, jsonOutput, err := parseTaskListArgs(args)
 	if err != nil {
-		return "", false, err
+		return taskListOptions{}, err
 	}
 	if projectID != "" {
-		return projectID, includeArchived, nil
+		return taskListOptions{ProjectID: projectID, IncludeArchived: includeArchived, Runnable: runnable, IncludeBlocked: includeBlocked, JSON: jsonOutput}, nil
 	}
 	inferred, ok, err := inferCurrentProjectID()
 	if err != nil {
-		return "", false, err
+		return taskListOptions{}, err
 	}
 	if !ok {
-		return "", false, errors.New("could not infer current project; use forge task list --project=<project>")
+		return taskListOptions{}, errors.New("could not infer current project; use forge task list --project=<project>")
 	}
-	return inferred, includeArchived, nil
+	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived, Runnable: runnable, IncludeBlocked: includeBlocked, JSON: jsonOutput}, nil
 }
 
 func resolveTaskArg(args []string, command string) (string, error) {
@@ -747,46 +771,58 @@ func normalizeTaskArg(projectID, task string) (string, error) {
 	return "", fmt.Errorf("invalid task %q: use taskM or M", task)
 }
 
-func parseTaskListArgs(args []string) (string, bool, error) {
+func parseTaskListArgs(args []string) (string, bool, bool, bool, bool, error) {
 	var projectID string
 	includeArchived := false
+	runnable := false
+	includeBlocked := false
+	jsonOutput := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--all":
 			if includeArchived {
-				return "", false, errors.New(taskListUsage)
+				return "", false, false, false, false, errors.New(taskListUsage)
 			}
 			includeArchived = true
+		case arg == "--runnable":
+			runnable = true
+		case arg == "--include-blocked":
+			includeBlocked = true
+		case arg == "--json":
+			jsonOutput = true
 		case strings.HasPrefix(arg, "--project="):
 			value := strings.TrimPrefix(arg, "--project=")
 			if value == "" {
-				return "", false, errors.New("project cannot be empty")
+				return "", false, false, false, false, errors.New("project cannot be empty")
 			}
 			if projectID != "" {
-				return "", false, errors.New(taskListUsage)
+				return "", false, false, false, false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(value)
 			if err != nil {
-				return "", false, err
+				return "", false, false, false, false, err
 			}
 			projectID = normalized
 		case arg == "--project":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return "", false, errors.New(taskListUsage)
+				return "", false, false, false, false, errors.New(taskListUsage)
 			}
 			if projectID != "" {
-				return "", false, errors.New(taskListUsage)
+				return "", false, false, false, false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(args[i+1])
 			if err != nil {
-				return "", false, err
+				return "", false, false, false, false, err
 			}
 			projectID = normalized
 			i++
 		default:
-			return "", false, errors.New(taskListUsage)
+			return "", false, false, false, false, errors.New(taskListUsage)
 		}
 	}
-	return projectID, includeArchived, nil
+	if (includeBlocked || jsonOutput) && !runnable {
+		return "", false, false, false, false, errors.New(taskListUsage)
+	}
+	return projectID, includeArchived, runnable, includeBlocked, jsonOutput, nil
 }

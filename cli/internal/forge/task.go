@@ -1,6 +1,7 @@
 package forge
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -59,7 +60,11 @@ var builtinWorkflows = map[string]string{
 }
 
 type taskListOptions struct {
+	ProjectID       string
 	IncludeArchived bool
+	Runnable        bool
+	IncludeBlocked  bool
+	JSON            bool
 }
 
 type taskListEntry struct {
@@ -263,7 +268,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, slug string) error {
+func projectTaskCreate(parentID, title string, detail string, slug string, nonInteractive bool, agentID, prompt string, afterValues []string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -303,33 +308,79 @@ func projectTaskCreate(parentID, title string, detail string, slug string) error
 		return err
 	}
 	task := newTask(id, "task", &parentID, title, "", defaultWorkflowName)
+	if nonInteractive {
+		after, err := resolveTaskRunDependencies(root, &task, afterValues)
+		if err != nil {
+			return err
+		}
+		now := time.Now().Format(time.RFC3339)
+		state := taskRunStateQueued
+		if len(after) > 0 {
+			state = taskRunStateWaiting
+		}
+		task.Run = &TaskRun{Mode: taskRunModeNonInteractive, AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after, UpdatedAt: now}
+	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
+		return errors.New("--agent, --prompt, and --after require --non-interactive")
+	}
 	if err := createResourceFilesWithMarkdown(taskPath, task, workflowContent, taskMarkdown(title, detail)); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
 }
 
-func projectTaskList(parentID string, includeArchived bool) error {
+func projectTaskList(options taskListOptions) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
-	parentID = cleanID(parentID)
+	parentID := cleanID(options.ProjectID)
 	parentPath, err := findTaskDir(root, parentID)
 	if err != nil {
 		return err
 	}
 	pattern := projectTaskName(parentID)
 	dirs := []string{parentPath}
-	if includeArchived {
+	if options.IncludeArchived {
 		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
 	}
-	tasks, err := readTasksInDirs(dirs, pattern)
+	entries, err := readTaskEntriesInDirs(dirs, pattern)
 	if err != nil {
 		return err
 	}
-	for _, task := range tasks {
-		fmt.Printf("%s\t%s\n", taskDirectoryName(task.ID), task.Title)
+	if !options.Runnable {
+		for _, entry := range entries {
+			fmt.Printf("%s\t%s\n", taskDirectoryName(entry.Task.ID), entry.Task.Title)
+		}
+		return nil
+	}
+	result := make([]runnableTask, 0)
+	for _, entry := range entries {
+		if entry.Task.Run == nil || entry.Task.Run.Mode != taskRunModeNonInteractive {
+			continue
+		}
+		ready, reason := taskRunReady(root, entry.Task)
+		if isArchivedPath(root, entry.Path) {
+			ready = false
+			reason = "archived"
+		}
+		if !ready && !options.IncludeBlocked {
+			continue
+		}
+		item := runnableTask{ID: entry.Task.ID, Path: relPath(root, entry.Path), Title: entry.Task.Title, Ready: ready, Reason: reason}
+		if entry.Task.Run != nil {
+			item.Generation = entry.Task.Run.Generation
+			item.State = entry.Task.Run.State
+			item.Prompt = entry.Task.Run.Prompt
+			item.AgentID = entry.Task.Run.AgentID
+			item.After = entry.Task.Run.After
+		}
+		result = append(result, item)
+	}
+	if options.JSON {
+		return printJSON(map[string]any{"tasks": result})
+	}
+	for _, task := range result {
+		fmt.Printf("%s\t%d\t%s\t%s\n", task.ID, task.Generation, task.Reason, task.Title)
 	}
 	return nil
 }
@@ -999,6 +1050,8 @@ You are working inside a %s.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
+- Determine whether this run is `+"`interactive`"+` or `+"`non_interactive`"+` from `+"`FORGE_INTERACTION_MODE`"+` or the injected session context. A non-interactive run is one turn: before finishing, call exactly one of `+"`forge task run complete`"+`, `+"`forge task run wait`"+`, `+"`forge task run pause`"+`, or `+"`forge task run fail`"+`, then end the response normally. Do not end the session yourself.
+- In a non-interactive run, create delegated work with `+"`forge task create --non-interactive --prompt=<prompt> <title>`"+`; suspend the current run with `+"`forge task run wait --after=<task@generation> --summary=<text>`"+`; and record successful completion with `+"`forge task run complete --summary=<text>`"+`.
 - If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.

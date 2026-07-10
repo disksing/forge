@@ -94,6 +94,46 @@ type Task struct {
 	CreatedAt   string     `json:"createdAt"`
 	UpdatedAt   string     `json:"updatedAt"`
 	Repos       []TaskRepo `json:"repos,omitempty"`
+	Run         *TaskRun   `json:"run,omitempty"`
+}
+
+type TaskRun struct {
+	Mode       string              `json:"mode"`
+	AgentID    string              `json:"agentId,omitempty"`
+	Prompt     string              `json:"prompt,omitempty"`
+	Generation int                 `json:"generation"`
+	State      string              `json:"state"`
+	After      []TaskRunDependency `json:"after,omitempty"`
+	Current    *TaskRunCurrent     `json:"current,omitempty"`
+	NextAction *TaskRunNextAction  `json:"nextAction,omitempty"`
+	LastResult *TaskRunResult      `json:"lastResult,omitempty"`
+	History    []TaskRunResult     `json:"history,omitempty"`
+	UpdatedAt  string              `json:"updatedAt"`
+}
+
+type TaskRunDependency struct {
+	TaskID     string `json:"taskId"`
+	Generation int    `json:"generation"`
+}
+
+type TaskRunCurrent struct {
+	SessionID string `json:"sessionId"`
+	Executor  string `json:"executor"`
+	StartedAt string `json:"startedAt"`
+}
+
+type TaskRunNextAction struct {
+	Type                 string              `json:"type"`
+	After                []TaskRunDependency `json:"after,omitempty"`
+	Summary              string              `json:"summary,omitempty"`
+	RequestedBySessionID string              `json:"requestedBySessionId"`
+}
+
+type TaskRunResult struct {
+	Generation int    `json:"generation"`
+	Outcome    string `json:"outcome"`
+	Summary    string `json:"summary,omitempty"`
+	FinishedAt string `json:"finishedAt"`
 }
 
 type TaskRepo struct {

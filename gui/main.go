@@ -197,6 +197,7 @@ func main() {
 	if err := s.startCodexIfEnabled(); err != nil {
 		log.Printf("start managed codex app-server: %v", err)
 	}
+	go s.runTaskScheduler(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {

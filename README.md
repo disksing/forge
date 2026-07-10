@@ -2,7 +2,7 @@
 
 forge is a small CLI for a local AgentWorkspace: a filesystem-based project/task workflow for AI agents, shared Git checkouts, and per-task Git worktrees.
 
-The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate writes with sessions that lock the project or task they update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update resources they have locked. When an agent is started through `forge start`, Forge creates a PID-liveness session, locks the selected resource, injects `FORGE_SESSION_ID`, and ends the session when the command exits. The workspace root does not require a lock.
+The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate writes with sessions that lock the project or task they update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update resources they have locked. When an agent is started through `forge-start`, Forge creates a PID-liveness session, locks the selected resource, injects `FORGE_SESSION_ID`, and ends the session when the command exits. The workspace root does not require a lock.
 
 ## Workspace Layout
 
@@ -33,7 +33,7 @@ AgentWorkspace/
   archive/
 ```
 
-Open projects live directly under the workspace with names such as `project1/` or `project1-forge-dev/`. Open project tasks live directly under their project directories with short names such as `task1/` or `task1-develop-forge/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. State is represented by location rather than a status field in `project.json` or `task.json`.
+Open projects live directly under the workspace with names such as `project1/` or `project1-forge-dev/`. Open project tasks live directly under their project directories with short names such as `task1/` or `task1-develop-forge/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. Open/archive state is represented by location; an optional `task.json.run` object records non-interactive execution state.
 
 ## Commands
 
@@ -51,13 +51,14 @@ forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>
-forge task list [--project=<project>] [--all]
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
+forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+forge task run configure|queue|start|complete|wait|pause|fail|settle ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
 forge session heartbeat --id=<id>
@@ -69,7 +70,7 @@ forge session show --id=<id>
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ```
 
 `forge --version` prints the build-time git branch and sha.
@@ -80,7 +81,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge repo list` lists repositories known to the workspace.
 
-`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
+`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge-start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
 `forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `work.md`, `log.jsonl`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata and do not own `worktree/` directories. By default, Forge points the generated project `AGENTS.md` launch card at `workflow/default.md`; `--workflow=<name>` points it at `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
 
@@ -90,9 +91,11 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge project archive [--project=<project>]` moves a project into workspace `archive/`. `<project>` follows the same rules as `forge project show`.
 
-`forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] <title>` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
+`forge task create` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. Add `--non-interactive`, `--prompt`, optional `--agent`, and repeatable `--after` flags to declare a one-turn automated task without starting it. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`.
 
-`forge task list [--project=<project>] [--all]` lists open tasks under a project. Use `--all` to include archived tasks. `<project>` follows the same rules as `forge task create`; when omitted, Forge uses the project containing the current working directory.
+`forge task list [--project=<project>] [--all]` lists tasks. Add `--runnable --json` for a side-effect-free query of non-interactive tasks whose generation and prerequisites are ready. `--include-blocked` includes configured tasks with their blocking reason.
+
+`forge task run` manages the structured non-interactive state in `task.json`. Executors call `start` after acquiring the task session lock and `settle` after the turn ends. An agent running in non-interactive mode must call exactly one of `complete`, `wait`, `pause`, or `fail` before ending its response; the command records a next action and the executor owns session shutdown.
 
 `forge task show [--project=<project>] [--task=<task>]` prints a task's `task.json`. `<task>` may be a short id such as `task4` or just a number such as `4`. Forge combines it with `--project` when provided, otherwise the current directory's project. When `--task` is omitted, Forge uses the task containing the current working directory.
 
@@ -114,7 +117,7 @@ forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge workspace resource --id=<resource> --json` prints detail JSON for one project or task, including common Markdown files, artifacts, worktrees, and task repository metadata.
 
-Agents started through `forge start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
+Agents started through `forge-start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
 
 `forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
 
@@ -132,13 +135,13 @@ The Forge GUI treats the workspace `AGENTS.md` as the user-editable instructions
 
 ## Building
 
-Build both command binaries with git metadata embedded:
+Build all three binaries with git metadata embedded:
 
 ```bash
 scripts/build
 ```
 
-The output defaults to `bin/forge` and `bin/forge-gui`. Pass a directory to override it, for example `scripts/build /tmp/forge-build`.
+The output defaults to `bin/forge`, `bin/forge-start`, and `bin/forge-gui`. Pass a directory to override it, for example `scripts/build /tmp/forge-build`.
 
 `forge repo add` uses normal `git clone` by default so source code is readable under `repos/`. forge does not create mirror repositories. Use `--bare` only when a bare repository is explicitly needed.
 
