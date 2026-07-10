@@ -106,15 +106,16 @@ type resourceDetailPath struct {
 }
 
 type agentRuntime struct {
-	mu          sync.Mutex
-	workspace   guiWorkspace
-	run         agentRun
-	events      []agentEvent
-	nextEventID int64
-	client      *codexClient
-	pending     map[string]pendingApproval
-	done        chan struct{}
-	doneOnce    sync.Once
+	mu            sync.Mutex
+	workspace     guiWorkspace
+	run           agentRun
+	events        []agentEvent
+	nextEventID   int64
+	client        *codexClient
+	pending       map[string]pendingApproval
+	done          chan struct{}
+	doneOnce      sync.Once
+	stopRequested bool
 }
 
 type agentManager struct {
@@ -1049,7 +1050,9 @@ func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
 	}
 	rt.mu.Lock()
 	rt.run.CodexThreadID = threadID
-	rt.run.Status = "running"
+	if !rt.stopRequested {
+		rt.run.Status = "running"
+	}
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
 	rt.mu.Unlock()
@@ -1154,18 +1157,27 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	return rt.startTurn(m, text)
 }
 
-func (rt *agentRuntime) stop(m *agentManager) {
+func (rt *agentRuntime) stop(m *agentManager) bool {
 	rt.mu.Lock()
+	if rt.stopRequested {
+		rt.mu.Unlock()
+		return false
+	}
+	rt.stopRequested = true
 	client := rt.client
 	threadID := rt.run.CodexThreadID
 	turnID := rt.run.CodexTurnID
+	rt.run.Status = "stopped"
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	run := rt.run
 	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
 	if client != nil && threadID != "" && turnID != "" {
 		_, _ = client.request("turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID})
 	}
 	rt.addEvent(m, "system", "turn/interrupt", "Stop requested.", nil, "")
-	rt.updateStatus(m, "stopped")
 	rt.signalDone()
+	return true
 }
 
 func (rt *agentRuntime) resolveApproval(m *agentManager, requestID, decision string) error {
@@ -1196,7 +1208,9 @@ func (rt *agentRuntime) handleServerRequest(client *codexClient, id json.RawMess
 		requestID := string(id)
 		rt.mu.Lock()
 		rt.pending[requestID] = pendingApproval{id: append(json.RawMessage(nil), id...), method: method}
-		rt.run.Status = "waiting_approval"
+		if !rt.stopRequested {
+			rt.run.Status = "waiting_approval"
+		}
 		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 		run := rt.run
 		rt.mu.Unlock()
@@ -1214,7 +1228,9 @@ func (rt *agentRuntime) handleNotification(m *agentManager, method string, param
 		turnID := nestedString(params, "turn", "id")
 		rt.mu.Lock()
 		rt.run.CodexTurnID = turnID
-		rt.run.Status = "running"
+		if !rt.stopRequested {
+			rt.run.Status = "running"
+		}
 		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 		run := rt.run
 		rt.mu.Unlock()
@@ -1265,6 +1281,10 @@ func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string
 
 func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	rt.mu.Lock()
+	if rt.stopRequested && status != "stopped" {
+		rt.mu.Unlock()
+		return
+	}
 	rt.run.Status = status
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
@@ -1307,7 +1327,9 @@ func codexThreadReadyText(method string) string {
 
 func (rt *agentRuntime) markIdle(m *agentManager) {
 	rt.mu.Lock()
-	rt.run.Status = "idle"
+	if !rt.stopRequested {
+		rt.run.Status = "idle"
+	}
 	rt.run.CodexTurnID = ""
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run

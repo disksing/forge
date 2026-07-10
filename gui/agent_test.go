@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -19,6 +20,62 @@ func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
 	}
 	if text != " \n" {
 		t.Fatalf("expected whitespace delta to be preserved, got %q", text)
+	}
+}
+
+func TestAgentRuntimeStopIsIdempotent(t *testing.T) {
+	workspace := t.TempDir()
+	if err := ensureAgentDirs(workspace); err != nil {
+		t.Fatal(err)
+	}
+	rt := &agentRuntime{
+		workspace: guiWorkspace{ID: "workspace", Path: workspace},
+		run: agentRun{
+			ID:          "run-one",
+			WorkspaceID: "workspace",
+			Status:      "running",
+		},
+		nextEventID: 1,
+		done:        make(chan struct{}),
+	}
+	m := &agentManager{
+		runtimes:    make(map[string]*agentRuntime),
+		subscribers: make(map[string]map[chan agentEvent]bool),
+	}
+
+	const requests = 20
+	var wg sync.WaitGroup
+	results := make(chan bool, requests)
+	for range requests {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			results <- rt.stop(m)
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	accepted := 0
+	for result := range results {
+		if result {
+			accepted++
+		}
+	}
+	if accepted != 1 {
+		t.Fatalf("expected exactly one stop request to be accepted, got %d", accepted)
+	}
+	events := rt.snapshotEvents()
+	if len(events) != 1 || events[0].Text != "Stop requested." {
+		t.Fatalf("expected one stop event, got %#v", events)
+	}
+	rt.markIdle(m)
+	rt.updateStatus(m, "failed")
+	rt.mu.Lock()
+	status := rt.run.Status
+	rt.mu.Unlock()
+	if status != "stopped" {
+		t.Fatalf("expected stopped status, got %q", status)
 	}
 }
 

@@ -2210,17 +2210,19 @@ function bindAgentEvents() {
   document.querySelector(".agent-session-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
-  $("agentStartButton")?.addEventListener("click", () => {
+  const startButton = $("agentStartButton");
+  if (startButton) startButton.onclick = () => {
     startAgentRun().catch((err) => toast(err.message));
-  });
-  $("agentChooserButton")?.addEventListener("click", (event) => {
+  };
+  const chooserButton = $("agentChooserButton");
+  if (chooserButton) chooserButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
     state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
-  });
+  };
   document.querySelectorAll("[data-agent-choice]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2233,12 +2235,14 @@ function bindAgentEvents() {
       refreshIcons();
     });
   });
-  $("agentStopButton")?.addEventListener("click", () => {
+  const stopButton = $("agentStopButton");
+  if (stopButton) stopButton.onclick = () => {
     stopAgentRun().catch((err) => toast(err.message));
-  });
-  $("agentResumeButton")?.addEventListener("click", () => {
+  };
+  const resumeButton = $("agentResumeButton");
+  if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
-  });
+  };
   document.querySelectorAll("[data-agent-run]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
