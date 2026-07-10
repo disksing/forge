@@ -5,12 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"os/exec"
 	"strings"
-	"sync"
-	"syscall"
-	"time"
 )
 
 type settingsResponse struct {
@@ -21,6 +16,7 @@ type settingsResponse struct {
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
 	Codex              codexStatus           `json:"codex"`
+	Opencode           opencodeStatus        `json:"opencode"`
 }
 
 type codexStatus struct {
@@ -30,21 +26,20 @@ type codexStatus struct {
 	StartedAt string `json:"startedAt,omitempty"`
 }
 
-type codexAppServer struct {
-	mu        sync.Mutex
-	client    *codexClient
-	startedAt string
+type opencodeStatus struct {
+	Running   bool   `json:"running"`
+	Enabled   bool   `json:"enabled"`
+	PID       int    `json:"pid,omitempty"`
+	StartedAt string `json:"startedAt,omitempty"`
 }
 
 const (
-	codexProviderID   = "codex"
-	codexProviderName = "Codex app-server"
-	defaultAgentID    = "codex-default"
+	codexProviderID      = "codex"
+	codexProviderName    = "Codex app-server"
+	opencodeProviderID   = "opencode"
+	opencodeProviderName = "OpenCode"
+	defaultAgentID       = "codex-default"
 )
-
-func newCodexAppServer() *codexAppServer {
-	return &codexAppServer{}
-}
 
 func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/settings"), "/")
@@ -103,6 +98,26 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, s.codexStatus())
+	case "opencode/start":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.setOpencodeEnabled(true); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, s.opencodeStatus())
+	case "opencode/stop":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.setOpencodeEnabled(false); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, s.opencodeStatus())
 	default:
 		http.NotFound(w, r)
 	}
@@ -122,6 +137,7 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		AgentProviders:     cfg.AgentProviders,
 		Agents:             cfg.Agents,
 		Codex:              s.codexStatus(),
+		Opencode:           s.opencodeStatus(),
 	})
 }
 
@@ -179,8 +195,15 @@ func (s *server) updateAgentProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg.AgentProviders = normalizeAgentProviders(providers)
 	cfg.Codex.Enabled = providerEnabled(cfg.AgentProviders, codexProviderID) && cfg.Codex.Enabled
+	cfg.Opencode.Enabled = providerEnabled(cfg.AgentProviders, opencodeProviderID) && cfg.Opencode.Enabled
 	if !providerEnabled(cfg.AgentProviders, codexProviderID) {
-		if err := s.codex.stop(); err != nil {
+		if err := s.codex.Stop(); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+	}
+	if !providerEnabled(cfg.AgentProviders, opencodeProviderID) {
+		if err := s.opencode.Stop(); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
@@ -225,17 +248,40 @@ func (s *server) codexStatus() codexStatus {
 		enabled = providerEnabled(cfg.AgentProviders, codexProviderID)
 	}
 	if enabled && cfg.Codex.Enabled {
-		_ = s.codex.start(s.agents)
+		_ = s.codex.Start(s.agents)
 	}
-	return s.codex.status(enabled)
+	return s.codex.Status(enabled)
 }
 
-func (s *server) startCodexIfEnabled() error {
+func (s *server) opencodeStatus() opencodeStatus {
 	cfg, err := s.loadConfig()
-	if err != nil || !cfg.Codex.Enabled || !providerEnabled(cfg.AgentProviders, codexProviderID) {
+	enabled := false
+	if err == nil {
+		enabled = providerEnabled(cfg.AgentProviders, opencodeProviderID)
+	}
+	if enabled && cfg.Opencode.Enabled {
+		_ = s.opencode.Start(s.agents)
+	}
+	return s.opencode.Status(enabled)
+}
+
+func (s *server) startProvidersIfEnabled() error {
+	cfg, err := s.loadConfig()
+	if err != nil {
 		return err
 	}
-	return s.codex.start(s.agents)
+	var startErrors []error
+	if cfg.Codex.Enabled && providerEnabled(cfg.AgentProviders, codexProviderID) {
+		if err := s.codex.Start(s.agents); err != nil {
+			startErrors = append(startErrors, fmt.Errorf("start Codex provider: %w", err))
+		}
+	}
+	if cfg.Opencode.Enabled && providerEnabled(cfg.AgentProviders, opencodeProviderID) {
+		if err := s.opencode.Start(s.agents); err != nil {
+			startErrors = append(startErrors, fmt.Errorf("start OpenCode provider: %w", err))
+		}
+	}
+	return errors.Join(startErrors...)
 }
 
 func (s *server) setCodexEnabled(enabled bool) error {
@@ -246,152 +292,30 @@ func (s *server) setCodexEnabled(enabled bool) error {
 	cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, codexProviderID, enabled)
 	cfg.Codex.Enabled = enabled
 	if enabled {
-		if err := s.codex.start(s.agents); err != nil {
+		if err := s.codex.Start(s.agents); err != nil {
 			return err
 		}
-	} else if err := s.codex.stop(); err != nil {
+	} else if err := s.codex.Stop(); err != nil {
 		return err
 	}
 	return s.saveConfig(cfg)
 }
 
-func (s *server) codexClient(m *agentManager) (*codexClient, error) {
-	if m == nil {
-		m = s.agents
-	}
-	if err := s.codex.start(m); err != nil {
-		return nil, err
-	}
+func (s *server) setOpencodeEnabled(enabled bool) error {
 	cfg, err := s.loadConfig()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if !cfg.Codex.Enabled {
-		cfg.Codex.Enabled = true
-		cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, codexProviderID, true)
-		if err := s.saveConfig(cfg); err != nil {
-			return nil, err
+	cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, opencodeProviderID, enabled)
+	cfg.Opencode.Enabled = enabled
+	if enabled {
+		if err := s.opencode.Start(s.agents); err != nil {
+			return err
 		}
-	}
-	return s.codex.getClient(m)
-}
-
-func (c *codexAppServer) status(enabled bool) codexStatus {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pruneLocked()
-	if c.client == nil || c.client.cmd == nil || c.client.cmd.Process == nil {
-		return codexStatus{Enabled: enabled}
-	}
-	return codexStatus{
-		Running:   true,
-		Enabled:   enabled,
-		PID:       c.client.cmd.Process.Pid,
-		StartedAt: c.startedAt,
-	}
-}
-
-func (c *codexAppServer) start(m *agentManager) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pruneLocked()
-	if c.client != nil && c.client.cmd != nil && c.client.cmd.Process != nil {
-		return nil
-	}
-	bin := strings.TrimSpace(os.Getenv("FORGE_CODEX_CLI"))
-	if bin == "" {
-		bin = "codex"
-	}
-	cmd := exec.Command(bin, "app-server")
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
+	} else if err := s.opencode.Stop(); err != nil {
 		return err
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return err
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-	client := newCodexClient(m, cmd, stdin)
-	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start codex app-server: %w", err)
-	}
-	go client.readLoop(stdout)
-	go client.stderrLoop(stderr)
-	go func() {
-		_ = cmd.Wait()
-		client.markClosed()
-		close(client.done)
-		c.mu.Lock()
-		if c.client == client {
-			c.client = nil
-			c.startedAt = ""
-		}
-		c.mu.Unlock()
-	}()
-	c.client = client
-	c.startedAt = time.Now().Format(time.RFC3339)
-	if _, err := client.request("initialize", map[string]any{
-		"clientInfo": map[string]any{
-			"name":    "forge_gui",
-			"title":   "Forge GUI",
-			"version": "0.1.0",
-		},
-		"capabilities": map[string]any{"experimentalApi": true},
-	}); err != nil {
-		client.close()
-		c.client = nil
-		c.startedAt = ""
-		return fmt.Errorf("initialize codex app-server: %w", err)
-	}
-	client.notify("initialized", map[string]any{})
-	return nil
-}
-
-func (c *codexAppServer) getClient(m *agentManager) (*codexClient, error) {
-	if err := c.start(m); err != nil {
-		return nil, err
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.client == nil {
-		return nil, errors.New("codex app-server is not running")
-	}
-	return c.client, nil
-}
-
-func (c *codexAppServer) stop() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.pruneLocked()
-	if c.client == nil {
-		return nil
-	}
-	c.client.close()
-	c.client = nil
-	c.startedAt = ""
-	return nil
-}
-
-func (c *codexAppServer) pruneLocked() {
-	if c.client == nil || c.client.cmd == nil || c.client.cmd.Process == nil {
-		return
-	}
-	select {
-	case <-c.client.done:
-		c.client = nil
-		c.startedAt = ""
-		return
-	default:
-	}
-	if err := c.client.cmd.Process.Signal(syscall.Signal(0)); err != nil {
-		c.client = nil
-		c.startedAt = ""
-	}
+	return s.saveConfig(cfg)
 }
 
 func normalizeAgentDefaults(defaults agentDefaults) agentDefaults {
@@ -415,8 +339,8 @@ func normalizeDefaultChatAgentID(agentID string, agents []agentConfig) string {
 }
 
 func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderConfig {
-	normalized := make([]agentProviderConfig, 0, len(providers)+1)
-	seen := make(map[string]bool, len(providers)+1)
+	normalized := make([]agentProviderConfig, 0, len(providers)+2)
+	seen := make(map[string]bool, len(providers)+2)
 	for _, provider := range providers {
 		provider.ID = strings.TrimSpace(provider.ID)
 		if provider.ID == "" || seen[provider.ID] {
@@ -434,6 +358,10 @@ func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderCon
 			provider.Name = codexProviderName
 			provider.Type = codexProviderID
 		}
+		if provider.ID == opencodeProviderID {
+			provider.Name = opencodeProviderName
+			provider.Type = opencodeProviderID
+		}
 		seen[provider.ID] = true
 		normalized = append(normalized, provider)
 	}
@@ -444,6 +372,14 @@ func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderCon
 			Type:    codexProviderID,
 			Enabled: true,
 		}}, normalized...)
+	}
+	if !seen[opencodeProviderID] {
+		normalized = append(normalized, agentProviderConfig{
+			ID:      opencodeProviderID,
+			Name:    opencodeProviderName,
+			Type:    opencodeProviderID,
+			Enabled: false,
+		})
 	}
 	return normalized
 }

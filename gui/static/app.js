@@ -1604,7 +1604,7 @@ function renderAgent() {
   controls.innerHTML = "";
   wrap.innerHTML = `
     <div id="agentSessions" class="agent-session-switcher">
-      ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start a Codex session from the selected task.</span></div>`}
+      ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start an agent session from the selected task.</span></div>`}
       ${state.agent.historyOpen && state.agent.runs.length ? `
         <div class="agent-session-menu">
           ${state.agent.runs.map(agentSessionMenuRow).join("")}
@@ -1701,9 +1701,9 @@ function renderTTY(options = {}) {
       : "";
     log.innerHTML = events.length || olderButton
       ? `${olderButton}${events.map(agentEventRow).join("")}`
-      : `<div class="tty-empty">${icon("loader-circle")}<strong>Waiting for Codex events</strong></div>`;
+      : `<div class="tty-empty">${icon("loader-circle")}<strong>Waiting for agent events</strong></div>`;
   } else {
-    const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start a Codex session.";
+    const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start an agent session.";
     log.innerHTML = `<div class="tty-empty">${icon("bot")}<strong>No agent run selected</strong><span>${escapeHTML(text)}</span></div>`;
   }
   log.dataset.agentRunId = nextRunId;
@@ -1743,7 +1743,7 @@ function renderTTYComposer() {
     composer.innerHTML = `
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
-        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected Codex session"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
+        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected agent session"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${state.agent.sendingInput ? "Sending..." : "Send input"}" aria-label="${state.agent.sendingInput ? "Sending input" : "Send input"}"${inputDisabled}>${sendIcon}</button>
       </form>
       ${agentComposerActions({ includeClose: true })}
@@ -1823,6 +1823,7 @@ function renderSettingsModal() {
     agentProviders: state.config?.agentProviders || [],
     agents: state.config?.agents || [],
     codex: { running: false },
+    opencode: { running: false },
   };
   root.innerHTML = `
     <div class="settings-overlay" data-settings-close></div>
@@ -1891,6 +1892,7 @@ function settingsAgentPanel(data) {
   const providers = data.agentProviders || [];
   const agents = data.agents || [];
   const codex = data.codex || { running: false };
+  const opencode = data.opencode || { running: false };
   return `
     <div class="settings-panel">
       <div class="settings-panel-header">
@@ -1903,7 +1905,7 @@ function settingsAgentPanel(data) {
           <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
         </div>
         <div class="settings-provider-list">
-          ${providers.map((provider) => settingsProviderRow(provider, codex)).join("")}
+          ${providers.map((provider) => settingsProviderRow(provider, codex, opencode)).join("")}
         </div>
       </section>
       ${settingsDefaultChatAgentSection(data)}
@@ -1952,17 +1954,19 @@ function settingsEnabledAgents(data) {
   return (data.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
 }
 
-function settingsProviderRow(provider, codex) {
+function settingsProviderRow(provider, codex, opencode) {
   const enabled = Boolean(provider.enabled);
-  const status = provider.id === "codex" && codex?.running
-    ? `Enabled · PID ${escapeHTML(String(codex.pid || ""))}`
-    : enabled
-      ? "Enabled"
-      : "Disabled";
+  let status = enabled ? "Enabled" : "Disabled";
+  if (provider.id === "codex" && codex?.running) {
+    status = `Enabled · PID ${escapeHTML(String(codex.pid || ""))}`;
+  } else if (provider.id === "opencode" && opencode?.running) {
+    status = `Enabled · PID ${escapeHTML(String(opencode.pid || ""))}`;
+  }
+  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : "box";
   return `
     <div class="settings-service-row">
       <div class="settings-provider-main">
-        <span class="settings-provider-mark">${icon(provider.id === "codex" ? "terminal" : "box")}</span>
+        <span class="settings-provider-mark">${icon(iconName)}</span>
         <span>
           <strong>${escapeHTML(provider.name || provider.id)}</strong>
           <small>${escapeHTML(provider.type || provider.id)} · ${status}</small>
@@ -2290,11 +2294,11 @@ async function startAgentRun() {
   state.agent.activeRunId = response.run.id;
   await loadAgentRuns();
   renderAll();
-  toast("Codex session started.");
+  toast("Agent session started.");
 }
 
 async function sendAgentInput(text) {
-  if (!state.agent.activeRunId) throw new Error("Start or select a Codex run first.");
+  if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
   await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
     body: JSON.stringify({ text }),
@@ -2306,7 +2310,7 @@ async function stopAgentRun() {
   await closeAgentRun(state.agent.activeRunId);
   await loadAgentRuns();
   renderAll();
-  toast("Codex session closed.");
+  toast("Agent session closed.");
 }
 
 async function switchAgentRun(runId) {
@@ -2335,7 +2339,7 @@ async function resumeAgentRun() {
   state.agent.historyOpen = false;
   await loadAgentRuns();
   renderAll();
-  toast("Codex session resumed.");
+  toast("Agent session resumed.");
 }
 
 async function resolveAgentApproval(requestId, decision) {
@@ -2762,16 +2766,18 @@ async function toggleAgentProvider(providerId) {
   const enabled = Boolean(provider.enabled);
   if (provider.id === "codex") {
     await api(`/api/settings/codex/${enabled ? "stop" : "start"}`, { method: "POST" });
-  } else {
-    await api("/api/settings/agent/providers", {
-      method: "PUT",
-      body: JSON.stringify(providers.map((item) => item.id === provider.id ? { ...item, enabled: !enabled } : item)),
-    });
+  } else if (provider.id === "opencode") {
+    await api(`/api/settings/opencode/${enabled ? "stop" : "start"}`, { method: "POST" });
   }
-  await refreshSettings();
+  await api("/api/settings/agent/providers", {
+    method: "PUT",
+    body: JSON.stringify(providers.map((item) => item.id === provider.id ? { ...item, enabled: !enabled } : item)),
+  });
+  state.settings.data = await api("/api/settings");
   state.config = await api("/api/workspaces");
   applyAgentConfig();
   renderAgent();
+  renderTTYComposer();
   bindAgentEvents();
   renderSettingsModal();
   refreshIcons();
