@@ -39,12 +39,8 @@ type config struct {
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
 	Codex              codexSettings         `json:"codex"`
-	Opencode           opencodeSettings      `json:"opencode"`
 }
 
-type opencodeSettings struct {
-	Enabled bool `json:"enabled"`
-}
 type agentDefaults struct {
 	Sandbox  string `json:"sandbox"`
 	Approval string `json:"approval"`
@@ -149,8 +145,6 @@ type server struct {
 	forgePath string
 	agents    *agentManager
 	codex     *codexAppServer
-	opencode  *opencodeAppServer
-	providers map[string]agentProvider
 }
 
 const (
@@ -189,11 +183,6 @@ func main() {
 		log.Fatal(err)
 	}
 	s.codex = newCodexAppServer()
-	s.opencode = newOpencodeAppServer()
-	s.providers = map[string]agentProvider{
-		codexProviderID:    s.codex,
-		opencodeProviderID: s.opencode,
-	}
 	s.agents = newAgentManager(s)
 	if initialWorkspace != "" {
 		if _, err := s.addWorkspace(context.Background(), initialWorkspace); err != nil {
@@ -205,8 +194,8 @@ func main() {
 	if err := s.cleanupStaleInternalSessions(context.Background()); err != nil {
 		log.Printf("cleanup stale internal sessions: %v", err)
 	}
-	if err := s.startProvidersIfEnabled(); err != nil {
-		log.Printf("start managed agent providers: %v", err)
+	if err := s.startCodexIfEnabled(); err != nil {
+		log.Printf("start managed codex app-server: %v", err)
 	}
 	go s.runTaskScheduler(context.Background())
 
@@ -1083,18 +1072,6 @@ func (s *server) workspace(id string) (guiWorkspace, error) {
 		}
 	}
 	return guiWorkspace{}, fmt.Errorf("workspace not found: %s", id)
-}
-
-func (s *server) providerForRun(run agentRun) (agentProvider, error) {
-	providerID := strings.TrimSpace(run.Provider)
-	if providerID == "" {
-		providerID = codexProviderID
-	}
-	provider, ok := s.providers[providerID]
-	if !ok {
-		return nil, fmt.Errorf("agent provider not available: %s", providerID)
-	}
-	return provider, nil
 }
 
 func (s *server) loadConfig() (config, error) {
