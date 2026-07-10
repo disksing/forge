@@ -637,8 +637,8 @@ func ensureNoSessionControlConflicts(store *SessionStore, sessionID string, cont
 			continue
 		}
 		for _, existing := range session.Controls {
-			if sessionPathsOverlap(existing.Path, control.Path) {
-				return fmt.Errorf("control conflict: %s already overlaps session %q control %s", formatSessionControl(control), session.ID, formatSessionControl(existing))
+			if existing.Path == control.Path {
+				return fmt.Errorf("control conflict: %s is already controlled by session %q", formatSessionControl(control), session.ID)
 			}
 		}
 	}

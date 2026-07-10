@@ -925,23 +925,69 @@ func TestSessionCommandsPruneArchivedResourceSessions(t *testing.T) {
 	})
 }
 
-func TestSessionRegisterRejectsActiveOverlappingControl(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		run(t, "task", "create", "--project=project1", "Session task")
-		alpha := strings.TrimSpace(run(t, "session", "new"))
-		beta := strings.TrimSpace(run(t, "session", "new"))
-		run(t, "session", "lock", "--id", alpha, "--project", "project1")
+func TestSessionLocksOnlyConflictOnSameResource(t *testing.T) {
+	tests := []struct {
+		name         string
+		first        []string
+		second       []string
+		wantConflict bool
+	}{
+		{
+			name:   "project then task",
+			first:  []string{"--project", "project1"},
+			second: []string{"--project", "project1", "--task", "task1"},
+		},
+		{
+			name:   "task then project",
+			first:  []string{"--project", "project1", "--task", "task1"},
+			second: []string{"--project", "project1"},
+		},
+		{
+			name:         "same project",
+			first:        []string{"--project", "project1"},
+			second:       []string{"--project", "project1"},
+			wantConflict: true,
+		},
+		{
+			name:         "same task",
+			first:        []string{"--project", "project1", "--task", "task1"},
+			second:       []string{"--project", "project1", "--task", "task1"},
+			wantConflict: true,
+		},
+		{
+			name:   "different tasks",
+			first:  []string{"--project", "project1", "--task", "task1"},
+			second: []string{"--project", "project1", "--task", "task2"},
+		},
+	}
 
-		out, err := runErr(t, "session", "lock", "--id", beta, "--project", "project1", "--task", "task1")
-		if err == nil {
-			t.Fatalf("expected overlapping session lock to fail, got stdout:\n%s", out)
-		}
-		if !strings.Contains(err.Error(), "control conflict") || !strings.Contains(err.Error(), alpha) {
-			t.Fatalf("expected conflict error naming active session, got: %v\nstdout:\n%s", err, out)
-		}
-	})
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			withTempCwd(t, func(root string) {
+				run(t, "init")
+				run(t, "project", "create", "Session project")
+				run(t, "task", "create", "--project=project1", "First session task")
+				run(t, "task", "create", "--project=project1", "Second session task")
+				alpha := strings.TrimSpace(run(t, "session", "new"))
+				beta := strings.TrimSpace(run(t, "session", "new"))
+				run(t, append([]string{"session", "lock", "--id", alpha}, tt.first...)...)
+
+				args := append([]string{"session", "lock", "--id", beta}, tt.second...)
+				if !tt.wantConflict {
+					run(t, args...)
+					return
+				}
+
+				out, err := runErr(t, args...)
+				if err == nil {
+					t.Fatalf("expected same-resource session lock to fail, got stdout:\n%s", out)
+				}
+				if !strings.Contains(err.Error(), "control conflict") || !strings.Contains(err.Error(), alpha) {
+					t.Fatalf("expected conflict error naming active session, got: %v\nstdout:\n%s", err, out)
+				}
+			})
+		})
+	}
 }
 
 func TestSessionHeartbeatExtendsSession(t *testing.T) {
