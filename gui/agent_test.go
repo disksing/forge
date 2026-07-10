@@ -209,8 +209,11 @@ func TestLoadConfigCreatesDefaultAgentProviderAndAgent(t *testing.T) {
 		t.Fatalf("expected one default agent, got %#v", cfg.Agents)
 	}
 	agent := cfg.Agents[0]
-	if agent.ProviderID != codexProviderID || agent.Sandbox != "workspace-write" || agent.Approval != "on-request" {
+	if agent.ProviderID != codexProviderID || agentOption(agent, agentOptionSandbox) != "workspace-write" || agentOption(agent, agentOptionApproval) != "on-request" {
 		t.Fatalf("unexpected default agent: %#v", agent)
+	}
+	if _, ok := agent.Options[agentOptionModel]; ok {
+		t.Fatalf("default agent should omit an empty model: %#v", agent.Options)
 	}
 	if cfg.DefaultChatAgentID != agent.ID {
 		t.Fatalf("expected default chat agent %q, got %q", agent.ID, cfg.DefaultChatAgentID)
@@ -226,8 +229,8 @@ func TestLoadConfigNormalizesDefaultChatAgent(t *testing.T) {
 			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
 		},
 		Agents: []agentConfig{
-			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
-			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "never"},
+			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "workspace-write", agentOptionApproval: "on-request"}},
+			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "danger-full-access", agentOptionApproval: "never"}},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -249,8 +252,8 @@ func TestUpdateDefaultChatAgentSetting(t *testing.T) {
 			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
 		},
 		Agents: []agentConfig{
-			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
-			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "never"},
+			{ID: "codex-a", Name: "Codex A", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "workspace-write", agentOptionApproval: "on-request"}},
+			{ID: "codex-b", Name: "Codex B", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "danger-full-access", agentOptionApproval: "never"}},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -278,21 +281,106 @@ func TestResolveAgentConfigUsesNamedAgent(t *testing.T) {
 			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: true},
 		},
 		Agents: []agentConfig{
-			{ID: "gpt-5-5", Name: "gpt-5.5", ProviderID: codexProviderID, Sandbox: "danger-full-access", Approval: "on-request", Model: "gpt-5.5"},
+			{ID: "gpt-5-5", Name: "gpt-5.5", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "danger-full-access", agentOptionApproval: "on-request", agentOptionModel: "gpt-5.5"}},
 		},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	m := newAgentManager(s)
-	agent, provider, err := m.resolveAgentConfig(startAgentRequest{AgentID: "gpt-5-5", Model: "ignored", Sandbox: "read-only", Approval: "never"})
+	agent, provider, err := m.resolveAgentConfig(startAgentRequest{AgentID: "gpt-5-5"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if provider.ID != codexProviderID {
 		t.Fatalf("unexpected provider: %#v", provider)
 	}
-	if agent.Model != "gpt-5.5" || agent.Sandbox != "danger-full-access" || agent.Approval != "on-request" {
+	if agentOption(agent, agentOptionModel) != "gpt-5.5" || agentOption(agent, agentOptionSandbox) != "danger-full-access" || agentOption(agent, agentOptionApproval) != "on-request" {
 		t.Fatalf("named agent options were not used: %#v", agent)
+	}
+}
+
+func TestResolveAgentConfigUsesConfiguredDefaultWhenAgentIDIsEmpty(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version:            1,
+		DefaultChatAgentID: "open",
+		AgentProviders: []agentProviderConfig{
+			{ID: opencodeProviderID, Name: opencodeProviderName, Type: opencodeProviderID, Enabled: true},
+		},
+		Agents: []agentConfig{
+			{ID: "open", Name: "OpenCode", ProviderID: opencodeProviderID, Options: map[string]string{agentOptionMode: "plan"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	agent, provider, err := newAgentManager(s).resolveAgentConfig(startAgentRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if agent.ID != "open" || provider.ID != opencodeProviderID {
+		t.Fatalf("unexpected default resolution: agent=%#v provider=%#v", agent, provider)
+	}
+}
+
+func TestApplyAgentRunOptionsUsesProviderSpecificFields(t *testing.T) {
+	codexRun := agentRun{}
+	applyAgentRunOptions(&codexRun, agentConfig{Options: map[string]string{
+		agentOptionModel:    "gpt-5.5",
+		agentOptionSandbox:  "danger-full-access",
+		agentOptionApproval: "never",
+	}}, codexProviderID)
+	if codexRun.Model != "gpt-5.5" || codexRun.Sandbox != "danger-full-access" || codexRun.Approval != "never" {
+		t.Fatalf("unexpected Codex run options: %#v", codexRun)
+	}
+
+	opencodeRun := agentRun{}
+	applyAgentRunOptions(&opencodeRun, agentConfig{Options: map[string]string{
+		agentOptionModel:    "openai/gpt-5",
+		agentOptionMode:     "plan",
+		agentOptionSandbox:  "danger-full-access",
+		agentOptionApproval: "never",
+	}}, opencodeProviderID)
+	if opencodeRun.Model != "openai/gpt-5" || opencodeRun.Sandbox != "read-only" || opencodeRun.Approval != "" {
+		t.Fatalf("unexpected OpenCode run options: %#v", opencodeRun)
+	}
+}
+
+func TestNormalizeAgentOptionsKeepsOnlyProviderFields(t *testing.T) {
+	agent := normalizeAgentOptions(agentConfig{
+		ProviderID: opencodeProviderID,
+		Options: map[string]string{
+			agentOptionMode:     "plan",
+			agentOptionModel:    "openai/gpt-5",
+			agentOptionSandbox:  "danger-full-access",
+			agentOptionApproval: "never",
+		},
+	}, opencodeProviderID)
+	if len(agent.Options) != 2 || agentOption(agent, agentOptionMode) != "plan" || agentOption(agent, agentOptionModel) != "openai/gpt-5" {
+		t.Fatalf("unexpected OpenCode options: %#v", agent.Options)
+	}
+}
+
+func TestUpdateAgentsPersistsProviderSpecificOptions(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	body := `[
+  {"id":"open","name":"OpenCode","providerId":"opencode","options":{"mode":"plan","model":"openai/gpt-5"}},
+  {"id":"code","name":"Codex","providerId":"codex","options":{"sandbox":"danger-full-access","approval":"never","model":"gpt-5.5"}}
+]`
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/agents", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.handleSettings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Agents[0].Options; len(got) != 2 || got[agentOptionMode] != "plan" || got[agentOptionModel] != "openai/gpt-5" {
+		t.Fatalf("unexpected saved OpenCode options: %#v", got)
+	}
+	if got := cfg.Agents[1].Options; len(got) != 3 || got[agentOptionSandbox] != "danger-full-access" || got[agentOptionApproval] != "never" || got[agentOptionModel] != "gpt-5.5" {
+		t.Fatalf("unexpected saved Codex options: %#v", got)
 	}
 }
 
@@ -304,7 +392,7 @@ func TestResolveAgentConfigRejectsDisabledProvider(t *testing.T) {
 			{ID: codexProviderID, Name: codexProviderName, Type: codexProviderID, Enabled: false},
 		},
 		Agents: []agentConfig{
-			{ID: "codex", Name: "Codex", ProviderID: codexProviderID, Sandbox: "workspace-write", Approval: "on-request"},
+			{ID: "codex", Name: "Codex", ProviderID: codexProviderID, Options: map[string]string{agentOptionSandbox: "workspace-write", agentOptionApproval: "on-request"}},
 		},
 	}); err != nil {
 		t.Fatal(err)

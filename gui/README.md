@@ -11,9 +11,16 @@ Forge GUI 支持多种 agent provider。当前内置：
 
 1. 启用 `OpenCode` provider。
 2. 创建一个新 agent，Provider 选择 `OpenCode`。
-3. 可选：配置 model、sandbox、approval 选项。
+3. 选择 `build` 或 `plan` mode，并可选配置 OpenCode model。
 
 配置保存后，即可在任务目录启动使用 OpenCode 的交互式或非交互式运行。
+
+agent 只共享名称和 provider 两个公共字段，运行参数保存在 provider 专属的 `options` 中：
+
+- Codex：`model`、`sandbox`、`approval`。
+- OpenCode：`model`、`mode`（`build` / `plan`）。
+
+settings 会随 provider 动态切换字段，服务端保存时也会过滤不属于该 provider 的 option。
 
 ## 环境变量
 
@@ -32,7 +39,7 @@ OpenCode provider 作为 ACP Client：
 - 将 `session/request_permission` 映射为现有审批 UI。
 - 文件与终端操作严格限制在 workspace 目录内。
 - 非交互式运行结束时，根据 `stopReason` 调用 `forge task run settle`。
-- model 会映射到 OpenCode 的 session config option；`read-only` sandbox 会在可用时选择 `plan` mode。
+- model 和 mode 会映射到 OpenCode 的 session config options。
 
 ## 验证
 

@@ -11,7 +11,6 @@ import (
 type settingsResponse struct {
 	Workspaces         []guiWorkspace        `json:"workspaces"`
 	ActiveID           string                `json:"activeId,omitempty"`
-	AgentDefaults      agentDefaults         `json:"agentDefaults"`
 	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
@@ -39,6 +38,10 @@ const (
 	opencodeProviderID   = "opencode"
 	opencodeProviderName = "OpenCode"
 	defaultAgentID       = "codex-default"
+	agentOptionModel     = "model"
+	agentOptionSandbox   = "sandbox"
+	agentOptionApproval  = "approval"
+	agentOptionMode      = "mode"
 )
 
 func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -54,12 +57,6 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch path {
-	case "agent/defaults":
-		if r.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		s.updateAgentDefaults(w, r)
 	case "agent/default-chat":
 		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -132,33 +129,12 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 	writeJSON(w, settingsResponse{
 		Workspaces:         cfg.Workspaces,
 		ActiveID:           cfg.ActiveID,
-		AgentDefaults:      cfg.AgentDefaults,
 		DefaultChatAgentID: cfg.DefaultChatAgentID,
 		AgentProviders:     cfg.AgentProviders,
 		Agents:             cfg.Agents,
 		Codex:              s.codexStatus(),
 		Opencode:           s.opencodeStatus(),
 	})
-}
-
-func (s *server) updateAgentDefaults(w http.ResponseWriter, r *http.Request) {
-	var defaults agentDefaults
-	if err := json.NewDecoder(r.Body).Decode(&defaults); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	cfg.AgentDefaults = normalizeAgentDefaults(defaults)
-	cfg.Agents = updateDefaultAgentFromDefaults(cfg.Agents, cfg.AgentDefaults)
-	if err := s.saveConfig(cfg); err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	writeJSON(w, cfg.AgentDefaults)
 }
 
 func (s *server) updateDefaultChatAgent(w http.ResponseWriter, r *http.Request) {
@@ -226,14 +202,7 @@ func (s *server) updateAgents(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	cfg.Agents = normalizeAgents(agents, cfg.AgentDefaults)
-	if len(cfg.Agents) > 0 {
-		cfg.AgentDefaults = normalizeAgentDefaults(agentDefaults{
-			Sandbox:  cfg.Agents[0].Sandbox,
-			Approval: cfg.Agents[0].Approval,
-			Model:    cfg.Agents[0].Model,
-		})
-	}
+	cfg.Agents = normalizeAgents(agents, cfg.AgentProviders)
 	if err := s.saveConfig(cfg); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -318,13 +287,6 @@ func (s *server) setOpencodeEnabled(enabled bool) error {
 	return s.saveConfig(cfg)
 }
 
-func normalizeAgentDefaults(defaults agentDefaults) agentDefaults {
-	defaults.Sandbox = normalizeSandbox(defaults.Sandbox)
-	defaults.Approval = normalizeApproval(defaults.Approval)
-	defaults.Model = strings.TrimSpace(defaults.Model)
-	return defaults
-}
-
 func normalizeDefaultChatAgentID(agentID string, agents []agentConfig) string {
 	agentID = strings.TrimSpace(agentID)
 	for _, agent := range agents {
@@ -384,8 +346,7 @@ func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderCon
 	return normalized
 }
 
-func normalizeAgents(agents []agentConfig, defaults agentDefaults) []agentConfig {
-	defaults = normalizeAgentDefaults(defaults)
+func normalizeAgents(agents []agentConfig, providers []agentProviderConfig) []agentConfig {
 	normalized := make([]agentConfig, 0, len(agents)+1)
 	seen := make(map[string]bool, len(agents)+1)
 	for _, agent := range agents {
@@ -404,41 +365,68 @@ func normalizeAgents(agents []agentConfig, defaults agentDefaults) []agentConfig
 		if agent.ProviderID == "" {
 			agent.ProviderID = codexProviderID
 		}
-		agent.Sandbox = normalizeSandbox(agent.Sandbox)
-		agent.Approval = normalizeApproval(agent.Approval)
-		agent.Model = strings.TrimSpace(agent.Model)
+		agent = normalizeAgentOptions(agent, agentProviderType(providers, agent.ProviderID))
 		seen[agent.ID] = true
 		normalized = append(normalized, agent)
 	}
 	if len(normalized) == 0 {
-		name := "Codex"
-		if defaults.Model != "" {
-			name = defaults.Model
-		}
 		normalized = append(normalized, agentConfig{
 			ID:         defaultAgentID,
-			Name:       name,
+			Name:       "Codex",
 			ProviderID: codexProviderID,
-			Sandbox:    defaults.Sandbox,
-			Approval:   defaults.Approval,
-			Model:      defaults.Model,
+			Options:    defaultCodexAgentOptions(),
 		})
 	}
 	return normalized
 }
 
-func updateDefaultAgentFromDefaults(agents []agentConfig, defaults agentDefaults) []agentConfig {
-	agents = normalizeAgents(agents, defaults)
-	agents[0].Sandbox = defaults.Sandbox
-	agents[0].Approval = defaults.Approval
-	agents[0].Model = defaults.Model
-	if agents[0].Name == "" || agents[0].ID == defaultAgentID {
-		agents[0].Name = "Codex"
-		if defaults.Model != "" {
-			agents[0].Name = defaults.Model
+func normalizeAgentOptions(agent agentConfig, providerType string) agentConfig {
+	option := func(key string) string {
+		return strings.TrimSpace(agent.Options[key])
+	}
+	model := option(agentOptionModel)
+	switch providerType {
+	case opencodeProviderID:
+		mode := normalizeOpencodeMode(option(agentOptionMode))
+		agent.Options = map[string]string{agentOptionMode: mode}
+		if model != "" {
+			agent.Options[agentOptionModel] = model
+		}
+	default:
+		agent.Options = map[string]string{
+			agentOptionSandbox:  normalizeSandbox(option(agentOptionSandbox)),
+			agentOptionApproval: normalizeApproval(option(agentOptionApproval)),
+		}
+		if model != "" {
+			agent.Options[agentOptionModel] = model
 		}
 	}
-	return agents
+	return agent
+}
+
+func agentProviderType(providers []agentProviderConfig, providerID string) string {
+	if provider, ok := findAgentProvider(providers, providerID); ok {
+		return provider.Type
+	}
+	return strings.TrimSpace(providerID)
+}
+
+func defaultCodexAgentOptions() map[string]string {
+	return map[string]string{
+		agentOptionSandbox:  "workspace-write",
+		agentOptionApproval: "on-request",
+	}
+}
+
+func normalizeOpencodeMode(value string) string {
+	if strings.TrimSpace(value) == "plan" {
+		return "plan"
+	}
+	return "build"
+}
+
+func agentOption(agent agentConfig, key string) string {
+	return strings.TrimSpace(agent.Options[key])
 }
 
 func providerEnabled(providers []agentProviderConfig, id string) bool {

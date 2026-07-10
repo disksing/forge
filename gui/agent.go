@@ -72,9 +72,6 @@ type startAgentRequest struct {
 	ResourceID        string `json:"resourceId"`
 	Title             string `json:"title"`
 	Prompt            string `json:"prompt"`
-	Model             string `json:"model"`
-	Sandbox           string `json:"sandbox"`
-	Approval          string `json:"approval"`
 	Cwd               string `json:"cwd"`
 	InteractionMode   string `json:"interactionMode,omitempty"`
 	TaskRunGeneration int    `json:"taskRunGeneration,omitempty"`
@@ -294,14 +291,12 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		Title:             strings.TrimSpace(req.Title),
 		Cwd:               cwd,
 		Status:            "starting",
-		Model:             agent.Model,
-		Sandbox:           agent.Sandbox,
-		Approval:          agent.Approval,
 		CreatedAt:         now,
 		UpdatedAt:         now,
 		InteractionMode:   strings.TrimSpace(req.InteractionMode),
 		TaskRunGeneration: req.TaskRunGeneration,
 	}
+	applyAgentRunOptions(&run, agent, provider.Type)
 	if run.InteractionMode == "" {
 		run.InteractionMode = "interactive"
 	}
@@ -387,6 +382,20 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
 }
 
+func applyAgentRunOptions(run *agentRun, agent agentConfig, providerType string) {
+	run.Model = agentOption(agent, agentOptionModel)
+	if providerType == opencodeProviderID {
+		if agentOption(agent, agentOptionMode) == "plan" {
+			run.Sandbox = "read-only"
+		} else {
+			run.Sandbox = "workspace-write"
+		}
+	} else {
+		run.Sandbox = normalizeSandbox(agentOption(agent, agentOptionSandbox))
+		run.Approval = normalizeApproval(agentOption(agent, agentOptionApproval))
+	}
+}
+
 func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, agentProviderConfig, error) {
 	cfg, err := m.server.loadConfig()
 	if err != nil {
@@ -394,22 +403,10 @@ func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, a
 	}
 	agentID := strings.TrimSpace(req.AgentID)
 	if agentID == "" {
-		agent := agentConfig{
-			ID:         "inline",
-			Name:       "Inline agent",
-			ProviderID: codexProviderID,
-			Model:      strings.TrimSpace(req.Model),
-			Sandbox:    normalizeSandbox(req.Sandbox),
-			Approval:   normalizeApproval(req.Approval),
-		}
-		provider, ok := findAgentProvider(cfg.AgentProviders, codexProviderID)
-		if !ok {
-			return agentConfig{}, agentProviderConfig{}, errors.New("default Codex provider is not configured")
-		}
-		if !provider.Enabled {
-			return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
-		}
-		return agent, provider, nil
+		agentID = cfg.DefaultChatAgentID
+	}
+	if agentID == "" {
+		return agentConfig{}, agentProviderConfig{}, errors.New("no default agent is configured")
 	}
 	agent, ok := findAgentConfig(cfg.Agents, agentID)
 	if !ok {

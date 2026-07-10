@@ -34,7 +34,6 @@ type config struct {
 	Version            int                   `json:"version"`
 	ActiveID           string                `json:"activeId,omitempty"`
 	Workspaces         []guiWorkspace        `json:"workspaces"`
-	AgentDefaults      agentDefaults         `json:"agentDefaults"`
 	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
@@ -45,12 +44,6 @@ type config struct {
 type opencodeSettings struct {
 	Enabled bool `json:"enabled"`
 }
-type agentDefaults struct {
-	Sandbox  string `json:"sandbox"`
-	Approval string `json:"approval"`
-	Model    string `json:"model,omitempty"`
-}
-
 type codexSettings struct {
 	Enabled bool `json:"enabled"`
 }
@@ -63,12 +56,10 @@ type agentProviderConfig struct {
 }
 
 type agentConfig struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	ProviderID string `json:"providerId"`
-	Sandbox    string `json:"sandbox"`
-	Approval   string `json:"approval"`
-	Model      string `json:"model,omitempty"`
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	ProviderID string            `json:"providerId"`
+	Options    map[string]string `json:"options,omitempty"`
 }
 
 type guiWorkspace struct {
@@ -1102,14 +1093,13 @@ func (s *server) loadConfig() (config, error) {
 	data, err := os.ReadFile(s.config)
 	if err != nil {
 		if os.IsNotExist(err) {
-			defaults := normalizeAgentDefaults(agentDefaults{})
-			agents := normalizeAgents(nil, defaults)
+			providers := normalizeAgentProviders(nil)
+			agents := normalizeAgents(nil, providers)
 			return config{
 				Version:            1,
 				Workspaces:         []guiWorkspace{},
-				AgentDefaults:      defaults,
 				DefaultChatAgentID: normalizeDefaultChatAgentID("", agents),
-				AgentProviders:     normalizeAgentProviders(nil),
+				AgentProviders:     providers,
 				Agents:             agents,
 			}, nil
 		}
@@ -1124,9 +1114,8 @@ func (s *server) loadConfig() (config, error) {
 	if cfg.Workspaces == nil {
 		cfg.Workspaces = []guiWorkspace{}
 	}
-	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
-	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
+	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)
 	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	return cfg, nil
 }
@@ -1135,9 +1124,8 @@ func (s *server) saveConfig(cfg config) error {
 	if cfg.Version == 0 {
 		cfg.Version = 1
 	}
-	cfg.AgentDefaults = normalizeAgentDefaults(cfg.AgentDefaults)
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
-	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentDefaults)
+	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)
 	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	if err := os.MkdirAll(filepath.Dir(s.config), 0o755); err != nil {
 		return err

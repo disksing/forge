@@ -22,6 +22,11 @@ const state = {
     workspacePath: "",
     createWorkspace: false,
     saving: false,
+    newAgent: {
+      name: "",
+      providerId: "codex",
+      options: {},
+    },
   },
   createDialog: {
     open: false,
@@ -46,9 +51,6 @@ const state = {
     draftPrompt: "",
     ttyDraft: "",
     agentId: "",
-    model: "",
-    sandbox: "workspace-write",
-    approval: "on-request",
     optionsOpen: false,
     agentChooserOpen: false,
     historyOpen: false,
@@ -1622,18 +1624,25 @@ function agentSelectOptions(agents) {
 
 function agentConfigSummary(agent) {
   if (!agent) return "";
-  const parts = [
-    providerName(agent.providerId),
-    sandboxLabel(agent.sandbox),
-    approvalLabel(agent.approval),
-  ];
-  if (agent.model) parts.push(agent.model);
+  const options = normalizedProviderAgentOptions(agent.providerId, agent.options);
+  const parts = [providerName(agent.providerId)];
+  if (agentProviderType(agent.providerId) === "opencode") {
+    parts.push(options.mode === "plan" ? "Plan" : "Build");
+  } else {
+    parts.push(sandboxLabel(options.sandbox), approvalLabel(options.approval));
+  }
+  if (options.model) parts.push(options.model);
   return parts.filter(Boolean).join(" · ");
 }
 
 function providerName(providerId) {
   const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
   return provider?.name || providerId || "Provider";
+}
+
+function agentProviderType(providerId) {
+  const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
+  return provider?.type || providerId || "codex";
 }
 
 function sandboxLabel(value) {
@@ -1818,7 +1827,6 @@ function renderSettingsModal() {
   const data = state.settings.data || {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
-    agentDefaults: currentAgentDefaults(),
     defaultChatAgentId: state.config?.defaultChatAgentId || "",
     agentProviders: state.config?.agentProviders || [],
     agents: state.config?.agents || [],
@@ -1981,6 +1989,7 @@ function settingsProviderRow(provider, codex, opencode) {
 }
 
 function settingsAgentRow(agent, providers, index) {
+  const normalized = { ...agent, options: normalizedProviderAgentOptions(agent.providerId, agent.options) };
   return `
     <div class="settings-agent-card settings-agent-row" data-agent-index="${index}">
       <div class="settings-agent-card-head">
@@ -1991,32 +2000,22 @@ function settingsAgentRow(agent, providers, index) {
         </label>
         <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}" title="Delete agent">${icon("trash-2")}</button>
       </div>
-      <div class="settings-agent-summary">${escapeHTML(agentConfigSummary(agent))}</div>
+      <div class="settings-agent-summary">${escapeHTML(agentConfigSummary(normalized))}</div>
       <div class="settings-agent-fields">
         <label>
           <span>Provider</span>
           <select data-agent-field="providerId">
-            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${agent.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
+            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${normalized.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
           </select>
         </label>
-        <label>
-          <span>Sandbox</span>
-          <select data-agent-field="sandbox">${sandboxOptions(agent.sandbox)}</select>
-        </label>
-        <label>
-          <span>Approval</span>
-          <select data-agent-field="approval">${approvalOptions(agent.approval)}</select>
-        </label>
-        <label>
-          <span>Model</span>
-          <input data-agent-field="model" value="${escapeHTML(agent.model || "")}" placeholder="Default" />
-        </label>
+        ${settingsProviderOptionFields(normalized.providerId, normalized.options, "data-agent-option")}
       </div>
     </div>
   `;
 }
 
 function settingsNewAgentCard(providers) {
+  const draft = normalizedNewAgentDraft(providers);
   return `
     <section class="settings-agent-section">
       <div class="settings-section-heading">
@@ -2027,7 +2026,7 @@ function settingsNewAgentCard(providers) {
           <span class="settings-agent-mark muted">${icon("plus")}</span>
           <label class="settings-agent-name-field">
             <span>Name</span>
-            <input id="settingsNewAgentName" placeholder="Agent name" />
+            <input id="settingsNewAgentName" value="${escapeHTML(draft.name)}" placeholder="Agent name" />
           </label>
           <button type="button" id="settingsAddAgentButton">${icon("plus")}<span>Add</span></button>
         </div>
@@ -2035,29 +2034,80 @@ function settingsNewAgentCard(providers) {
           <label>
             <span>Provider</span>
             <select id="settingsNewAgentProvider">
-              ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}">${escapeHTML(provider.name || provider.id)}</option>`).join("")}
+              ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${draft.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
             </select>
           </label>
-          <label>
-            <span>Sandbox</span>
-            <select id="settingsNewAgentSandbox">
-              ${sandboxOptions("workspace-write")}
-            </select>
-          </label>
-          <label>
-            <span>Approval</span>
-            <select id="settingsNewAgentApproval">
-              ${approvalOptions("on-request")}
-            </select>
-          </label>
-          <label>
-            <span>Model</span>
-            <input id="settingsNewAgentModel" placeholder="Default" />
-          </label>
+          ${settingsProviderOptionFields(draft.providerId, draft.options, "data-new-agent-option")}
         </div>
       </div>
     </section>
   `;
+}
+
+function settingsProviderOptionFields(providerId, options, attribute) {
+  if (agentProviderType(providerId) === "opencode") {
+    return `
+      <label>
+        <span>Mode</span>
+        <select ${attribute}="mode">
+          <option value="build" ${options.mode === "build" ? "selected" : ""}>Build</option>
+          <option value="plan" ${options.mode === "plan" ? "selected" : ""}>Plan</option>
+        </select>
+      </label>
+      <label>
+        <span>Model</span>
+        <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="OpenCode default" />
+      </label>
+    `;
+  }
+  return `
+    <label>
+      <span>Sandbox</span>
+      <select ${attribute}="sandbox">${sandboxOptions(options.sandbox)}</select>
+    </label>
+    <label>
+      <span>Approval</span>
+      <select ${attribute}="approval">${approvalOptions(options.approval)}</select>
+    </label>
+    <label>
+      <span>Model</span>
+      <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="Codex default" />
+    </label>
+  `;
+}
+
+function normalizedProviderAgentOptions(providerId, options = {}) {
+  const model = String(options?.model || "").trim();
+  if (agentProviderType(providerId) === "opencode") {
+    return {
+      mode: options?.mode === "plan" ? "plan" : "build",
+      ...(model ? { model } : {}),
+    };
+  }
+  return {
+    sandbox: ["workspace-write", "read-only", "danger-full-access"].includes(options?.sandbox)
+      ? options.sandbox
+      : "workspace-write",
+    approval: ["on-request", "never", "untrusted"].includes(options?.approval)
+      ? options.approval
+      : "on-request",
+    ...(model ? { model } : {}),
+  };
+}
+
+function normalizedNewAgentDraft(providers) {
+  const available = providers || [];
+  const configured = state.settings.newAgent || {};
+  const providerId = available.some((provider) => provider.id === configured.providerId)
+    ? configured.providerId
+    : available[0]?.id || "codex";
+  const draft = {
+    name: configured.name || "",
+    providerId,
+    options: normalizedProviderAgentOptions(providerId, configured.options),
+  };
+  state.settings.newAgent = draft;
+  return draft;
 }
 
 function sandboxOptions(value) {
@@ -2115,6 +2165,25 @@ function bindSettingsEvents() {
   });
   document.querySelectorAll("[data-remove-agent]").forEach((button) => {
     button.addEventListener("click", () => removeSettingsAgent(button.dataset.removeAgent).catch((err) => toast(err.message)));
+  });
+  document.querySelectorAll('.settings-agent-row [data-agent-field="providerId"]').forEach((select) => {
+    select.addEventListener("change", () => changeSettingsAgentProvider(Number(select.closest("[data-agent-index]")?.dataset.agentIndex), select.value));
+  });
+  $("settingsNewAgentName")?.addEventListener("input", (event) => {
+    state.settings.newAgent.name = event.target.value;
+  });
+  $("settingsNewAgentProvider")?.addEventListener("change", (event) => {
+    state.settings.newAgent = {
+      name: $("settingsNewAgentName")?.value || "",
+      providerId: event.target.value,
+      options: normalizedProviderAgentOptions(event.target.value),
+    };
+    renderSettingsModal();
+  });
+  document.querySelectorAll("[data-new-agent-option]").forEach((field) => {
+    field.addEventListener("input", () => {
+      state.settings.newAgent.options[field.dataset.newAgentOption] = field.value;
+    });
   });
 }
 
@@ -2652,29 +2721,12 @@ function workspaceName() {
   return state.config?.workspaces.find((w) => w.id === state.activeWorkspaceId)?.name || "Workspace";
 }
 
-function currentAgentDefaults() {
-  const agent = selectedAgentConfig();
-  return {
-    sandbox: agent?.sandbox || state.agent.sandbox || "workspace-write",
-    approval: agent?.approval || state.agent.approval || "on-request",
-    model: agent?.model || state.agent.model || "",
-  };
-}
-
 function applyAgentConfig() {
   const agents = enabledAgentConfigs();
   const defaultAgentId = defaultChatAgentID();
   if (!agents.some((agent) => agent.id === state.agent.agentId)) {
     state.agent.agentId = defaultAgentId;
   }
-  applySelectedAgentOptions();
-}
-
-function applySelectedAgentOptions() {
-  const agent = selectedAgentConfig();
-  state.agent.sandbox = agent?.sandbox || "workspace-write";
-  state.agent.approval = agent?.approval || "on-request";
-  state.agent.model = agent?.model || "";
 }
 
 function selectedAgentConfig() {
@@ -2828,33 +2880,49 @@ function collectSettingsAgents() {
   return Array.from(document.querySelectorAll(".settings-agent-row")).map((row, index) => {
     const source = existing[index] || {};
     const field = (name) => row.querySelector(`[data-agent-field="${name}"]`)?.value.trim() || "";
+    const providerId = field("providerId");
+    const rawOptions = {};
+    row.querySelectorAll("[data-agent-option]").forEach((optionField) => {
+      rawOptions[optionField.dataset.agentOption] = optionField.value.trim();
+    });
     return {
       id: source.id || slugID(field("name")),
       name: field("name"),
-      providerId: field("providerId"),
-      sandbox: field("sandbox") || "workspace-write",
-      approval: field("approval") || "on-request",
-      model: field("model"),
+      providerId,
+      options: normalizedProviderAgentOptions(providerId, rawOptions),
     };
   });
 }
 
+function changeSettingsAgentProvider(index, providerId) {
+  if (!Number.isInteger(index) || index < 0) return;
+  const agents = collectSettingsAgents();
+  if (!agents[index]) return;
+  agents[index] = {
+    ...agents[index],
+    providerId,
+    options: normalizedProviderAgentOptions(providerId, agents[index].options),
+  };
+  state.settings.data = { ...(state.settings.data || {}), agents };
+  renderSettingsModal();
+}
+
 async function addSettingsAgent() {
-  const name = $("settingsNewAgentName")?.value.trim() || "";
+  const draft = normalizedNewAgentDraft(state.settings.data?.agentProviders || []);
+  const name = $("settingsNewAgentName")?.value.trim() || draft.name.trim();
   if (!name) throw new Error("Agent name is required.");
   const current = collectSettingsAgents();
   const next = {
     id: uniqueAgentID(name, current),
     name,
-    providerId: $("settingsNewAgentProvider")?.value || "codex",
-    sandbox: $("settingsNewAgentSandbox")?.value || "workspace-write",
-    approval: $("settingsNewAgentApproval")?.value || "on-request",
-    model: $("settingsNewAgentModel")?.value.trim() || "",
+    providerId: draft.providerId,
+    options: normalizedProviderAgentOptions(draft.providerId, draft.options),
   };
   state.settings.data = {
     ...(state.settings.data || {}),
     agents: [...current, next],
   };
+  state.settings.newAgent = { name: "", providerId: draft.providerId, options: normalizedProviderAgentOptions(draft.providerId) };
   renderSettingsModal();
 }
 
