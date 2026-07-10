@@ -163,11 +163,68 @@ func TestOpencodeSessionUpdateUsesACPShape(t *testing.T) {
 	}
 	rt.handleOpencodeNotification(manager, "session/update", json.RawMessage(`{
 		"sessionId":"session",
-		"update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello"}}
+		"update":{"sessionUpdate":"agent_message_chunk","messageId":"message-one","content":{"type":"text","text":"hello"}}
+	}`))
+	rt.handleOpencodeNotification(manager, "session/update", json.RawMessage(`{
+		"sessionId":"session",
+		"update":{"sessionUpdate":"agent_thought_chunk","messageId":"message-one","content":{"type":"text","text":"thinking"}}
+	}`))
+	rt.handleOpencodeNotification(manager, "session/update", json.RawMessage(`{
+		"sessionId":"session",
+		"update":{"sessionUpdate":"usage_update","used":10,"size":100}
 	}`))
 	events := rt.snapshotEvents()
-	if len(events) != 1 || events[0].Type != "assistant_delta" || events[0].Text != "hello" {
+	if len(events) != 3 {
 		t.Fatalf("unexpected events: %#v", events)
+	}
+	if events[0].Type != "assistant_delta" || events[0].Text != "hello" {
+		t.Fatalf("unexpected message event: %#v", events[0])
+	}
+	if events[1].Type != "reasoning_delta" || events[1].Text != "thinking" {
+		t.Fatalf("unexpected thought event: %#v", events[1])
+	}
+	if events[2].Type != "metadata" || events[2].Text != "usage_update" {
+		t.Fatalf("unexpected metadata event: %#v", events[2])
+	}
+}
+
+func TestOpencodeSessionSettingsValidateModelAndMode(t *testing.T) {
+	options := []opencodeConfigOption{
+		{
+			ID:           "model",
+			Category:     "model",
+			CurrentValue: "opencode/big-pickle",
+			Options: []opencodeConfigOptionChoice{
+				{Value: "opencode/big-pickle"},
+				{Value: "kimi-for-coding/k2p7"},
+			},
+		},
+		{
+			ID:           "mode",
+			Category:     "mode",
+			CurrentValue: "build",
+			Options: []opencodeConfigOptionChoice{
+				{Value: "build"},
+				{Value: "plan"},
+			},
+		},
+	}
+	settings, err := opencodeSessionSettings(options, "kimi-for-coding/k2p7", "read-only")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings["model"] != "kimi-for-coding/k2p7" || settings["mode"] != "plan" {
+		t.Fatalf("unexpected settings: %#v", settings)
+	}
+
+	_, err = opencodeSessionSettings(options, "moonshotai/kimi-k2.7-code", "workspace-write")
+	if err == nil || !strings.Contains(err.Error(), "not available") || !strings.Contains(err.Error(), "kimi-for-coding/k2p7") {
+		t.Fatalf("expected actionable model error, got %v", err)
+	}
+
+	settings, err = opencodeSessionSettings(nil, "kimi-for-coding/k2p7", "workspace-write")
+	if err != nil || len(settings) != 0 {
+		t.Fatalf("sessions without config options should be left unchanged: %#v, %v", settings, err)
 	}
 }
 

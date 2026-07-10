@@ -21,6 +21,7 @@ agent 只共享名称和 provider 两个公共字段，运行参数保存在 pro
 - OpenCode：`model`、`mode`（`build` / `plan`）。
 
 settings 会随 provider 动态切换字段，服务端保存时也会过滤不属于该 provider 的 option。
+OpenCode model 必须使用 `session/new` 返回的 option value；配置值不存在时，Forge 会终止启动并在错误中列出可用值，不再静默使用 OpenCode 默认模型。
 
 ## 环境变量
 
@@ -36,6 +37,7 @@ OpenCode provider 作为 ACP Client：
 - 在 `initialize` 中声明 Client 能力：`fs.readTextFile`、`fs.writeTextFile`、`terminal`。
 - 实现 ACP Client 方法：`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`session/request_permission`。
 - 将 `session/update` 通知映射为 forge-gui 事件类型（`assistant_delta`、`tool`、`system` 等）。
+- 将 `agent_thought_chunk` 按 `messageId` 聚合为默认折叠的 reasoning 内容；usage、available commands 等元数据不进入聊天正文。
 - 将 `session/request_permission` 映射为现有审批 UI。
 - 文件与终端操作严格限制在 workspace 目录内。
 - 非交互式运行结束时，根据 `stopReason` 调用 `forge task run settle`。

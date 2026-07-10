@@ -1013,6 +1013,52 @@ body.resizing-y {
   overflow-wrap: anywhere;
 }
 
+.agent-reasoning-note {
+  width: min(92%, 720px);
+  margin: 8px 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.agent-reasoning-note summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+.agent-reasoning-note summary::-webkit-details-marker {
+  display: none;
+}
+
+.agent-reasoning-note summary svg {
+  width: 14px;
+  height: 14px;
+}
+
+.agent-reasoning-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+
+.agent-reasoning-note[open] .agent-reasoning-chevron {
+  transform: rotate(90deg);
+}
+
+.agent-reasoning-note p {
+  margin: 0;
+  padding: 0 9px 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .agent-system-note {
   margin: 10px 0;
   color: #94a3b8;

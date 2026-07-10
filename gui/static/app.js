@@ -1452,10 +1452,10 @@ function appendAgentEvent(event) {
   if (!event || isKnownAgentEvent(event)) return;
   event = normalizeAgentEvent(event);
   const last = state.agent.events[state.agent.events.length - 1];
-  if (canMergeAssistantDelta(last, event)) {
+  if (canMergeAgentDelta(last, event)) {
     last.id = event.id;
     last.time = event.time || last.time;
-    last.text = `${last.text ?? assistantDeltaText(last)}${event.text ?? assistantDeltaText(event)}`;
+    last.text = `${last.text ?? agentDeltaText(last)}${event.text ?? agentDeltaText(event)}`;
     last.data = event.data || last.data;
   } else {
     state.agent.events.push(event);
@@ -1495,10 +1495,10 @@ function coalesceAgentEvents(events) {
   for (const sourceEvent of events) {
     const event = normalizeAgentEvent(sourceEvent);
     const last = result[result.length - 1];
-    if (canMergeAssistantDelta(last, event)) {
+    if (canMergeAgentDelta(last, event)) {
       last.id = event.id;
       last.time = event.time || last.time;
-      last.text = `${last.text ?? assistantDeltaText(last)}${event.text ?? assistantDeltaText(event)}`;
+      last.text = `${last.text ?? agentDeltaText(last)}${event.text ?? agentDeltaText(event)}`;
       last.data = event.data || last.data;
     } else {
       result.push(event);
@@ -1508,26 +1508,30 @@ function coalesceAgentEvents(events) {
 }
 
 function normalizeAgentEvent(event) {
-  if (event?.type !== "assistant_delta") return { ...event };
-  return { ...event, text: assistantNormalizedText(event) };
+  if (!isAgentDelta(event)) return { ...event };
+  return { ...event, text: agentNormalizedText(event) };
 }
 
-function assistantNormalizedText(event) {
+function isAgentDelta(event) {
+  return event?.type === "assistant_delta" || event?.type === "reasoning_delta";
+}
+
+function agentNormalizedText(event) {
   if (typeof event.text === "string" && event.text !== event.method) {
     return event.text;
   }
-  return assistantDeltaText(event);
+  return agentDeltaText(event);
 }
 
-function assistantDeltaText(event) {
+function agentDeltaText(event) {
   const delta = agentEventDeltaValue(event);
   if (delta.found) return delta.value;
   if (event.text === event.method) return "";
   return event.text || "";
 }
 
-function canMergeAssistantDelta(previous, next) {
-  if (!previous || !next || previous.type !== "assistant_delta" || next.type !== "assistant_delta") {
+function canMergeAgentDelta(previous, next) {
+  if (!isAgentDelta(previous) || !isAgentDelta(next) || previous.type !== next.type) {
     return false;
   }
   const previousItemId = agentEventItemId(previous);
@@ -1550,7 +1554,8 @@ function displayAgentEvents(events) {
 }
 
 function shouldDisplayAgentEvent(event, completedItems = new Set()) {
-  if (event.type === "assistant_delta" || event.type === "approval_requested" || event.type === "error") return true;
+  if (event.type === "assistant_delta" || event.type === "reasoning_delta" || event.type === "approval_requested" || event.type === "error") return true;
+  if (event.type === "metadata") return false;
   if (event.method === "session/ready" || event.method === "turn/failed") return true;
   if (event.type === "user") return true;
   if (event.type === "tool") {
@@ -1591,7 +1596,7 @@ function agentEventItemType(event) {
 function agentEventItemId(event) {
   try {
     const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-    return data?.itemId || data?.item?.id || "";
+    return data?.messageId || data?.itemId || data?.item?.id || "";
   } catch (_) {
     return "";
   }
@@ -2199,6 +2204,14 @@ function agentEventRow(event) {
       </div>
     `;
   }
+  if (event.type === "reasoning_delta") {
+    return `
+      <details class="agent-reasoning-note">
+        <summary>${icon("brain-circuit")}<span>Reasoning</span><span class="agent-reasoning-chevron">${icon("chevron-right")}</span></summary>
+        <p>${escapeHTML(text)}</p>
+      </details>
+    `;
+  }
   if (event.type === "system" || event.type === "event") {
     return `<div class="agent-system-note">${escapeHTML(text)}</div>`;
   }
@@ -2233,17 +2246,17 @@ function toolEventSummary(event) {
 }
 
 function agentDisplayText(event) {
-  if (event.type === "assistant_delta") {
-    return assistantDisplayText(event);
+  if (isAgentDelta(event)) {
+    return agentDeltaDisplayText(event);
   }
   return event.text || event.method || event.type;
 }
 
-function assistantDisplayText(event) {
+function agentDeltaDisplayText(event) {
   if (typeof event.text === "string" && event.text !== event.method) {
     return event.text;
   }
-  return assistantDeltaText(event);
+  return agentDeltaText(event);
 }
 
 function agentEventDeltaValue(event) {
@@ -2251,6 +2264,9 @@ function agentEventDeltaValue(event) {
     const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
     if (data && Object.prototype.hasOwnProperty.call(data, "delta") && typeof data.delta === "string") {
       return { found: true, value: data.delta };
+    }
+    if (typeof data?.content?.text === "string") {
+      return { found: true, value: data.content.text };
     }
     for (const key of ["text", "message"]) {
       if (typeof data?.[key] === "string" && data[key].trim() !== "") {
@@ -2265,6 +2281,7 @@ function agentEventDeltaValue(event) {
 
 function agentEventIcon(event) {
   if (event.type === "assistant_delta") return icon("bot");
+  if (event.type === "reasoning_delta") return icon("brain-circuit");
   if (event.type === "user") return icon("user");
   if (event.type === "error") return icon("triangle-alert");
   if (event.type === "tool") return icon("terminal");
@@ -2273,6 +2290,7 @@ function agentEventIcon(event) {
 
 function agentEventTitle(event) {
   if (event.type === "assistant_delta") return "Codex";
+  if (event.type === "reasoning_delta") return "Reasoning";
   if (event.type === "user") return "You";
   if (event.type === "error") return "Error";
   if (event.type === "tool") return "Tool";

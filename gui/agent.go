@@ -1385,7 +1385,7 @@ func (rt *agentRuntime) setRun(run agentRun) {
 }
 
 func isAgentOutputEvent(eventType, method string) bool {
-	return eventType == "assistant_delta" ||
+	return eventType == "assistant_delta" || eventType == "reasoning_delta" ||
 		method == "item/commandExecution/outputDelta" ||
 		method == "command/exec/outputDelta"
 }

@@ -371,18 +371,9 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 	model := strings.TrimSpace(rt.run.Model)
 	sandbox := rt.run.Sandbox
 	rt.mu.Unlock()
-	settings := make(map[string]string)
-	for _, option := range session.ConfigOptions {
-		switch option.Category {
-		case "model":
-			if model != "" && configOptionHasValue(option, model) {
-				settings[option.ID] = model
-			}
-		case "mode":
-			if sandbox == "read-only" && configOptionHasValue(option, "plan") {
-				settings[option.ID] = "plan"
-			}
-		}
+	settings, err := opencodeSessionSettings(session.ConfigOptions, model, sandbox)
+	if err != nil {
+		return err
 	}
 	for configID, value := range settings {
 		if _, err := client.request("session/set_config_option", map[string]any{
@@ -396,13 +387,66 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 	return nil
 }
 
+func opencodeSessionSettings(options []opencodeConfigOption, model, sandbox string) (map[string]string, error) {
+	settings := make(map[string]string)
+	model = strings.TrimSpace(model)
+	modelOptionFound := false
+	modeOptionFound := false
+	for _, option := range options {
+		switch option.Category {
+		case "model":
+			modelOptionFound = true
+			if model == "" {
+				continue
+			}
+			if !configOptionHasValue(option, model) {
+				return nil, fmt.Errorf("opencode model %q is not available; choose one of: %s", model, strings.Join(configOptionValues(option), ", "))
+			}
+			settings[option.ID] = model
+		case "mode":
+			modeOptionFound = true
+			if sandbox != "read-only" {
+				continue
+			}
+			if !configOptionHasValue(option, "plan") {
+				return nil, errors.New("opencode plan mode is not available")
+			}
+			settings[option.ID] = "plan"
+		}
+	}
+	if len(options) > 0 && model != "" && !modelOptionFound {
+		return nil, errors.New("opencode session does not expose a model option")
+	}
+	if len(options) > 0 && sandbox == "read-only" && !modeOptionFound {
+		return nil, errors.New("opencode session does not expose a mode option")
+	}
+	return settings, nil
+}
+
 func configOptionHasValue(option opencodeConfigOption, value string) bool {
+	if option.CurrentValue == value {
+		return true
+	}
 	for _, choice := range option.Options {
 		if choice.Value == value {
 			return true
 		}
 	}
 	return false
+}
+
+func configOptionValues(option opencodeConfigOption) []string {
+	values := make([]string, 0, len(option.Options)+1)
+	seen := make(map[string]bool, len(option.Options)+1)
+	for _, value := range append([]opencodeConfigOptionChoice{{Value: option.CurrentValue}}, option.Options...) {
+		value.Value = strings.TrimSpace(value.Value)
+		if value.Value == "" || seen[value.Value] {
+			continue
+		}
+		seen[value.Value] = true
+		values = append(values, value.Value)
+	}
+	return values
 }
 
 func (o *opencodeAppServer) SendPrompt(rt *agentRuntime, text string) error {
@@ -808,10 +852,15 @@ func (rt *agentRuntime) handleOpencodeNotification(m *agentManager, method strin
 	case "agent_message_chunk":
 		text := nestedString(update, "content", "text")
 		rt.addEvent(m, "assistant_delta", method, text, update, "")
+	case "agent_thought_chunk":
+		text := nestedString(update, "content", "text")
+		rt.addEvent(m, "reasoning_delta", method, text, update, "")
 	case "tool_call", "tool_call_update":
 		rt.addEvent(m, "tool", method, eventText(updateType, update), update, "")
-	case "plan", "current_mode_update", "config_option_update", "session_info_update":
+	case "plan", "plan_update", "plan_removed":
 		rt.addEvent(m, "system", method, eventText(updateType, update), update, "")
+	case "available_commands_update", "current_mode_update", "config_option_update", "session_info_update", "usage_update":
+		rt.addEvent(m, "metadata", method, eventText(updateType, update), update, "")
 	default:
 		rt.addEvent(m, "event", method, eventText(updateType, update), update, "")
 	}
