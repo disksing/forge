@@ -51,7 +51,14 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !cfg.Codex.Enabled || !providerEnabled(cfg.AgentProviders, codexProviderID) {
+	hasEnabledProvider := false
+	for _, provider := range cfg.AgentProviders {
+		if provider.Enabled {
+			hasEnabledProvider = true
+			break
+		}
+	}
+	if !hasEnabledProvider {
 		return nil
 	}
 	for _, workspace := range cfg.Workspaces {
@@ -111,7 +118,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	}
 	if runs, err := loadAgentRuns(workspace.Path); err == nil {
 		for _, run := range runs {
-			if run.ResourceID == task.ID && strings.TrimSpace(run.CodexThreadID) != "" && !isLiveAgentStatus(run.Status) {
+			if run.ResourceID == task.ID && (strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "") && !isLiveAgentStatus(run.Status) {
 				req.ResumeRunID = run.ID
 				break
 			}

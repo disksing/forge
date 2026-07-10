@@ -12,13 +12,11 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -29,6 +27,7 @@ type agentRun struct {
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	Provider                string `json:"provider"`
+	ProviderSessionID       string `json:"providerSessionId,omitempty"`
 	CodexThreadID           string `json:"codexThreadId,omitempty"`
 	CodexTurnID             string `json:"codexTurnId,omitempty"`
 	Title                   string `json:"title"`
@@ -118,16 +117,18 @@ type resourceDetailPath struct {
 }
 
 type agentRuntime struct {
-	mu            sync.Mutex
-	workspace     guiWorkspace
-	run           agentRun
-	events        []agentEvent
-	nextEventID   int64
-	client        *codexClient
-	pending       map[string]pendingApproval
-	done          chan struct{}
-	doneOnce      sync.Once
-	stopRequested bool
+	mu                sync.Mutex
+	workspace         guiWorkspace
+	manager           *agentManager
+	run               agentRun
+	events            []agentEvent
+	nextEventID       int64
+	provider          agentProvider
+	pending           map[string]pendingApproval
+	done              chan struct{}
+	doneOnce          sync.Once
+	stopRequested     bool
+	opencodeTerminals map[string]*opencodeTerminal
 }
 
 type agentManager struct {
@@ -310,12 +311,14 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 			return
 		}
 		run.CodexThreadID = previous.CodexThreadID
+		run.ProviderSessionID = previous.ProviderSessionID
 	}
 	if run.Title == "" {
-		run.Title = "Codex run"
+		run.Title = provider.Name + " run"
 	}
 	rt := &agentRuntime{
 		workspace:   workspace,
+		manager:     m,
 		run:         run,
 		nextEventID: 1,
 		pending:     make(map[string]pendingApproval),
@@ -369,11 +372,11 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	registered = false
-	rt.addEvent(m, "system", "", "Starting codex app-server.", nil, "")
+	rt.addEvent(m, "system", "", "Starting "+provider.Name+" provider.", nil, "")
 	if forgeSessionID != "" {
 		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
 	}
-	go rt.startCodex(m, req.Prompt)
+	go rt.startProvider(m, req.Prompt)
 	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
 }
 
@@ -386,7 +389,7 @@ func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, a
 	if agentID == "" {
 		agent := agentConfig{
 			ID:         "inline",
-			Name:       "Inline Codex",
+			Name:       "Inline agent",
 			ProviderID: codexProviderID,
 			Model:      strings.TrimSpace(req.Model),
 			Sandbox:    normalizeSandbox(req.Sandbox),
@@ -394,7 +397,7 @@ func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, a
 		}
 		provider, ok := findAgentProvider(cfg.AgentProviders, codexProviderID)
 		if !ok {
-			return agentConfig{}, agentProviderConfig{}, errors.New("Codex provider is not configured")
+			return agentConfig{}, agentProviderConfig{}, errors.New("default Codex provider is not configured")
 		}
 		if !provider.Enabled {
 			return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
@@ -412,7 +415,7 @@ func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, a
 	if !provider.Enabled {
 		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
 	}
-	if provider.Type != codexProviderID {
+	if provider.Type != codexProviderID && provider.Type != opencodeProviderID {
 		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("unsupported agent provider: %s", provider.Name)
 	}
 	return agent, provider, nil
@@ -454,7 +457,7 @@ func (m *agentManager) ensureRunProviderEnabled(run agentRun) error {
 	if !provider.Enabled {
 		return fmt.Errorf("agent provider is disabled: %s", provider.Name)
 	}
-	if provider.Type != codexProviderID {
+	if provider.Type != codexProviderID && provider.Type != opencodeProviderID {
 		return fmt.Errorf("unsupported agent provider: %s", provider.Name)
 	}
 	return nil
@@ -885,11 +888,15 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	if strings.TrimSpace(run.CodexThreadID) == "" {
-		writeError(w, errors.New("run cannot be resumed because it has no Codex thread id"), http.StatusBadRequest)
+	if strings.TrimSpace(run.ProviderSessionID) == "" && strings.TrimSpace(run.CodexThreadID) == "" {
+		writeError(w, errors.New("run cannot be resumed because it has no provider session id"), http.StatusBadRequest)
 		return
 	}
 	if err := m.ensureRunProviderEnabled(run); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if _, err := m.server.providerForRun(run); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -907,6 +914,7 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	run.UpdatedAt = now
 	rt = &agentRuntime{
 		workspace:   workspace,
+		manager:     m,
 		run:         run,
 		events:      append([]agentEvent(nil), events...),
 		nextEventID: nextAgentEventID(events),
@@ -942,12 +950,19 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	registered = false
-	rt.addEvent(m, "system", "session/resume", "Resuming Codex session.", nil, "")
+	rt.addEvent(m, "system", "session/resume", "Resuming "+providerNameForRun(run)+" session.", nil, "")
 	if forgeSessionID != "" {
 		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
 	}
-	go rt.startCodex(m, "")
+	go rt.startProvider(m, "")
 	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
+}
+
+func providerNameForRun(run agentRun) string {
+	if run.Provider == "" {
+		return codexProviderName
+	}
+	return run.Provider
 }
 
 func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -1050,6 +1065,16 @@ func (m *agentManager) publish(runID string, event agentEvent) {
 	}
 }
 
+func (m *agentManager) providerForRun(run agentRun) (agentProvider, error) {
+	return m.server.providerForRun(run)
+}
+
+func (m *agentManager) runtimeByID(runID string) *agentRuntime {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runtimes[runID]
+}
+
 func (m *agentManager) runtimeByThreadID(threadID string) *agentRuntime {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1064,7 +1089,7 @@ func (m *agentManager) runtimeByThreadID(threadID string) *agentRuntime {
 	return nil
 }
 
-func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
+func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
 	defer func() {
 		rt.removeForgeSessionContext()
 		if err := m.endForgeSession(context.Background(), rt.workspace, rt.run.ForgeSessionID); err != nil {
@@ -1074,77 +1099,46 @@ func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
 		}
 		m.removeRuntime(rt.run.ID)
 	}()
-	client, err := startCodexClient(m, rt)
+	provider, err := m.providerForRun(rt.run)
 	if err != nil {
 		rt.addEvent(m, "error", "", err.Error(), nil, "")
 		rt.updateStatus(m, "failed")
 		return
 	}
-	rt.mu.Lock()
-	rt.client = client
-	rt.mu.Unlock()
-	threadParams := map[string]any{
-		"cwd":               rt.run.Cwd,
-		"sandbox":           rt.run.Sandbox,
-		"approvalPolicy":    rt.run.Approval,
-		"approvalsReviewer": "user",
-		"threadSource":      "api",
-		"config":            forgeThreadConfig(rt.run),
-	}
-	if rt.run.Model != "" {
-		threadParams["model"] = rt.run.Model
-	}
-	existingThreadID := strings.TrimSpace(rt.run.CodexThreadID)
-	method := "thread/start"
-	if existingThreadID != "" {
-		method = "thread/resume"
-		threadParams["threadId"] = existingThreadID
-		delete(threadParams, "threadSource")
-	}
-	result, err := client.request(method, threadParams)
-	if err != nil && method == "thread/resume" && rt.isNonInteractive() {
-		rt.addEvent(m, "error", method, fmt.Sprintf("%s failed, starting a new thread: %v", method, err), nil, "")
-		method = "thread/start"
-		existingThreadID = ""
-		delete(threadParams, "threadId")
-		threadParams["threadSource"] = "api"
-		result, err = client.request(method, threadParams)
-	}
-	if err != nil {
-		rt.addEvent(m, "error", "", fmt.Sprintf("%s failed: %v", method, err), nil, "")
+	if err := provider.Start(m); err != nil {
+		rt.addEvent(m, "error", "", err.Error(), nil, "")
 		rt.updateStatus(m, "failed")
 		return
 	}
-	threadID := firstString(result, "threadId", "id")
-	if threadID == "" {
-		threadID = nestedString(result, "thread", "id")
-	}
-	if threadID == "" {
-		threadID = existingThreadID
-	}
 	rt.mu.Lock()
-	rt.run.CodexThreadID = threadID
-	if !rt.stopRequested {
-		rt.run.Status = "running"
-	}
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
+	rt.provider = provider
 	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
-	rt.addEvent(m, "system", method, codexThreadReadyText(method), result, "")
-
+	existingSessionID := strings.TrimSpace(rt.run.ProviderSessionID)
+	if existingSessionID == "" {
+		existingSessionID = strings.TrimSpace(rt.run.CodexThreadID)
+	}
+	if existingSessionID != "" {
+		err = provider.ResumeSession(rt)
+	} else {
+		err = provider.NewSession(rt)
+	}
+	if err != nil {
+		rt.addEvent(m, "error", "", fmt.Sprintf("session start failed: %v", err), nil, "")
+		rt.updateStatus(m, "failed")
+		return
+	}
 	if strings.TrimSpace(prompt) == "" {
-		rt.addEvent(m, "system", "session/ready", "Codex session is ready and waiting for input.", nil, "")
+		rt.addEvent(m, "system", "session/ready", providerNameForRun(rt.run)+" session is ready and waiting for input.", nil, "")
 		rt.markIdle(m)
 	} else {
-		if err := rt.startTurn(m, prompt); err != nil {
-			rt.addEvent(m, "error", "turn/start", err.Error(), nil, "")
+		if err := rt.sendPrompt(m, prompt); err != nil {
+			rt.addEvent(m, "error", "prompt", err.Error(), nil, "")
 			rt.updateStatus(m, "failed")
 		}
 	}
 	select {
 	case <-rt.done:
-	case <-client.done:
+	case <-providerDone(provider):
 	}
 	rt.mu.Lock()
 	status := rt.run.Status
@@ -1154,111 +1148,55 @@ func (rt *agentRuntime) startCodex(m *agentManager, prompt string) {
 	}
 }
 
-func forgeThreadConfig(run agentRun) map[string]any {
-	mode := strings.TrimSpace(run.InteractionMode)
-	if mode == "" {
-		mode = "interactive"
+func providerDone(provider agentProvider) <-chan struct{} {
+	switch p := provider.(type) {
+	case *codexAppServer:
+		if p.client == nil {
+			return closedChan()
+		}
+		return p.client.done
+	case *opencodeAppServer:
+		if p.client == nil {
+			return closedChan()
+		}
+		return p.client.done
 	}
-	config := map[string]any{
-		"shell_environment_policy.set.FORGE_INTERACTION_MODE": mode,
-	}
-	if sessionID := strings.TrimSpace(run.ForgeSessionID); sessionID != "" {
-		config["shell_environment_policy.set.FORGE_SESSION_ID"] = sessionID
-	}
-	if mode == "non_interactive" && run.TaskRunGeneration > 0 {
-		config["shell_environment_policy.set.FORGE_TASK_RUN_GENERATION"] = strconv.Itoa(run.TaskRunGeneration)
-	}
-	return config
+	return closedChan()
 }
 
-func (rt *agentRuntime) withForgeSessionContext(text string) string {
-	rt.mu.Lock()
-	sessionID := strings.TrimSpace(rt.run.ForgeSessionID)
-	contextPath := strings.TrimSpace(rt.run.ForgeSessionContextPath)
-	mode := strings.TrimSpace(rt.run.InteractionMode)
-	generation := rt.run.TaskRunGeneration
-	rt.mu.Unlock()
-	if sessionID == "" {
-		return text
-	}
-	var b strings.Builder
-	b.WriteString("Forge session context:\n")
-	b.WriteString("- This Codex run is managed by Forge GUI.\n")
-	if mode == "" {
-		mode = "interactive"
-	}
-	b.WriteString("- Interaction mode: ")
-	b.WriteString(mode)
-	b.WriteString(".\n")
-	if mode == "non_interactive" {
-		b.WriteString(fmt.Sprintf("- Task run generation: %d. This is a single-turn non-interactive run.\n", generation))
-		b.WriteString("- Before ending the turn, run exactly one of: forge task run complete, forge task run wait, forge task run pause, or forge task run fail.\n")
-		b.WriteString("- These commands only record the next action. Finish your response normally; Forge GUI will settle the task and close the session.\n")
-	}
-	b.WriteString("- FORGE_SESSION_ID=")
-	b.WriteString(sessionID)
-	b.WriteString("\n")
-	if contextPath != "" {
-		b.WriteString("- Session context file: ")
-		b.WriteString(contextPath)
-		b.WriteString("\n")
-	}
-	b.WriteString("- This session and the current directory resource are managed by Forge GUI. Do not create another Forge session, do not lock/unlock the current resource, and do not end this session yourself.\n")
-	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use the id above as the managed session id for temporary locks on other resources only.\n\n")
-	b.WriteString("User request:\n")
-	b.WriteString(text)
-	return b.String()
+func closedChan() <-chan struct{} {
+	ch := make(chan struct{})
+	close(ch)
+	return ch
 }
 
-func (rt *agentRuntime) startTurn(m *agentManager, text string) error {
+func (rt *agentRuntime) sendPrompt(m *agentManager, text string) error {
 	rt.mu.Lock()
-	client := rt.client
-	threadID := rt.run.CodexThreadID
-	model := rt.run.Model
-	approval := rt.run.Approval
-	cwd := rt.run.Cwd
+	provider := rt.provider
 	rt.mu.Unlock()
-	if client == nil || threadID == "" {
-		return errors.New("codex thread is not ready")
+	if provider == nil {
+		return errors.New("agent provider is not ready")
 	}
-	text = rt.withForgeSessionContext(text)
-	params := map[string]any{
-		"threadId":       threadID,
-		"cwd":            cwd,
-		"approvalPolicy": approval,
-		"input":          []map[string]string{{"type": "text", "text": text}},
-	}
-	if model != "" {
-		params["model"] = model
-	}
-	_, err := client.request("turn/start", params)
-	return err
+	return provider.SendPrompt(rt, text)
 }
 
 func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	rt.addEvent(m, "user", "", text, nil, "")
 	rt.mu.Lock()
-	client := rt.client
-	threadID := rt.run.CodexThreadID
-	turnID := rt.run.CodexTurnID
+	provider := rt.provider
 	status := rt.run.Status
 	rt.mu.Unlock()
-	if client == nil || threadID == "" {
-		return errors.New("codex run is not ready")
+	if provider == nil {
+		return errors.New("agent run is not ready")
 	}
 	if status == "waiting_approval" {
 		return errors.New("approval is required before sending more input")
 	}
-	if status == "running" && turnID != "" {
-		_, err := client.request("turn/steer", map[string]any{
-			"threadId":       threadID,
-			"expectedTurnId": turnID,
-			"input":          []map[string]string{{"type": "text", "text": rt.withForgeSessionContext(text)}},
-		})
-		return err
+	if status == "running" {
+		return provider.SendInput(rt, text)
 	}
 	rt.updateStatus(m, "running")
-	return rt.startTurn(m, text)
+	return provider.SendPrompt(rt, text)
 }
 
 func (rt *agentRuntime) stop(m *agentManager) bool {
@@ -1268,18 +1206,16 @@ func (rt *agentRuntime) stop(m *agentManager) bool {
 		return false
 	}
 	rt.stopRequested = true
-	client := rt.client
-	threadID := rt.run.CodexThreadID
-	turnID := rt.run.CodexTurnID
+	provider := rt.provider
 	rt.run.Status = "stopped"
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
-	if client != nil && threadID != "" && turnID != "" {
-		_, _ = client.request("turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID})
+	if provider != nil {
+		_ = provider.Interrupt(rt)
 	}
-	rt.addEvent(m, "system", "turn/interrupt", "Stop requested.", nil, "")
+	rt.addEvent(m, "system", "interrupt", "Stop requested.", nil, "")
 	rt.signalDone()
 	return true
 }
@@ -1292,14 +1228,14 @@ func (rt *agentRuntime) resolveApproval(m *agentManager, requestID, decision str
 	}
 	rt.mu.Lock()
 	pending, ok := rt.pending[requestID]
-	client := rt.client
+	provider := rt.provider
 	delete(rt.pending, requestID)
 	rt.mu.Unlock()
-	if !ok || client == nil {
+	if !ok || provider == nil {
 		return fmt.Errorf("approval request not found: %s", requestID)
 	}
 	response := approvalResponse(pending.method, decision)
-	if err := client.respond(pending.id, response); err != nil {
+	if err := provider.ResolveApproval(requestID, response); err != nil {
 		return err
 	}
 	rt.addEvent(m, "approval_resolved", pending.method, fmt.Sprintf("Approval %s: %s", requestID, decision), mustJSON(response), "")
@@ -1472,13 +1408,6 @@ func nextAgentEventID(events []agentEvent) int64 {
 	return next
 }
 
-func codexThreadReadyText(method string) string {
-	if method == "thread/resume" {
-		return "Codex thread resumed."
-	}
-	return "Codex thread started."
-}
-
 func (rt *agentRuntime) markIdle(m *agentManager) {
 	rt.mu.Lock()
 	if !rt.stopRequested {
@@ -1501,219 +1430,6 @@ func (rt *agentRuntime) snapshotEvents() []agentEvent {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return append([]agentEvent(nil), rt.events...)
-}
-
-type rpcResponse struct {
-	result json.RawMessage
-	err    error
-}
-
-type codexClient struct {
-	manager *agentManager
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	mu      sync.Mutex
-	closeMu sync.Mutex
-	closed  bool
-	nextID  int64
-	waiting map[int64]chan rpcResponse
-	done    chan struct{}
-}
-
-func newCodexClient(m *agentManager, cmd *exec.Cmd, stdin io.WriteCloser) *codexClient {
-	return &codexClient{
-		manager: m,
-		cmd:     cmd,
-		stdin:   stdin,
-		nextID:  1,
-		waiting: make(map[int64]chan rpcResponse),
-		done:    make(chan struct{}),
-	}
-}
-
-func startCodexClient(m *agentManager, rt *agentRuntime) (*codexClient, error) {
-	return m.server.codexClient(m)
-}
-
-func agentProcessEnv(forgeSessionID string) []string {
-	env := os.Environ()
-	if forgeSessionID == "" {
-		return env
-	}
-	filtered := make([]string, 0, len(env)+1)
-	for _, item := range env {
-		if !strings.HasPrefix(item, "FORGE_SESSION_ID=") {
-			filtered = append(filtered, item)
-		}
-	}
-	return append(filtered, "FORGE_SESSION_ID="+forgeSessionID)
-}
-
-func (c *codexClient) request(method string, params any) (json.RawMessage, error) {
-	id, ch := c.nextRequest()
-	if err := c.write(map[string]any{"id": id, "method": method, "params": params}); err != nil {
-		return nil, err
-	}
-	select {
-	case response := <-ch:
-		return response.result, response.err
-	case <-time.After(15 * time.Minute):
-		return nil, fmt.Errorf("%s timed out", method)
-	case <-c.done:
-		return nil, errors.New("codex app-server exited")
-	}
-}
-
-func (c *codexClient) notify(method string, params any) {
-	_ = c.write(map[string]any{"method": method, "params": params})
-}
-
-func (c *codexClient) respond(id json.RawMessage, result any) error {
-	payload, err := json.Marshal(result)
-	if err != nil {
-		return err
-	}
-	line := fmt.Sprintf(`{"id":%s,"result":%s}`+"\n", string(id), string(payload))
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, err = c.stdin.Write([]byte(line))
-	return err
-}
-
-func (c *codexClient) close() {
-	c.closeMu.Lock()
-	if c.closed {
-		c.closeMu.Unlock()
-		return
-	}
-	c.closed = true
-	c.closeMu.Unlock()
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
-	if c.cmd != nil && c.cmd.Process != nil {
-		if pgid, err := syscall.Getpgid(c.cmd.Process.Pid); err == nil {
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-			return
-		}
-		_ = c.cmd.Process.Kill()
-	}
-}
-
-func (c *codexClient) markClosed() {
-	c.closeMu.Lock()
-	c.closed = true
-	c.closeMu.Unlock()
-}
-
-func (c *codexClient) isClosed() bool {
-	c.closeMu.Lock()
-	defer c.closeMu.Unlock()
-	return c.closed
-}
-
-func (c *codexClient) nextRequest() (int64, chan rpcResponse) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	id := c.nextID
-	c.nextID++
-	ch := make(chan rpcResponse, 1)
-	c.waiting[id] = ch
-	return id, ch
-}
-
-func (c *codexClient) write(message any) error {
-	data, err := json.Marshal(message)
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	_, err = c.stdin.Write(data)
-	return err
-}
-
-func (c *codexClient) readLoop(stdout io.Reader) {
-	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		c.handleLine(scanner.Bytes())
-	}
-	if err := scanner.Err(); err != nil {
-		if c.isClosed() || isClosedPipeError(err) {
-			return
-		}
-	}
-}
-
-func (c *codexClient) stderrLoop(stderr io.Reader) {
-	scanner := bufio.NewScanner(stderr)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		text := strings.TrimSpace(scanner.Text())
-		_ = text
-	}
-}
-
-func (c *codexClient) handleLine(line []byte) {
-	var envelope map[string]json.RawMessage
-	if err := json.Unmarshal(line, &envelope); err != nil {
-		return
-	}
-	method := rawString(envelope["method"])
-	if idRaw, ok := envelope["id"]; ok {
-		if method != "" {
-			rt := c.runtimeForParams(envelope["params"])
-			if rt == nil {
-				_ = c.respond(idRaw, map[string]any{"error": "thread is not managed by Forge GUI"})
-				return
-			}
-			rt.handleServerRequest(c, idRaw, method, envelope["params"])
-			return
-		}
-		id, _ := strconv.ParseInt(strings.Trim(string(idRaw), `"`), 10, 64)
-		c.mu.Lock()
-		ch := c.waiting[id]
-		delete(c.waiting, id)
-		c.mu.Unlock()
-		if ch == nil {
-			return
-		}
-		if errRaw, ok := envelope["error"]; ok && len(errRaw) > 0 {
-			ch <- rpcResponse{err: fmt.Errorf("%s", compactJSON(errRaw))}
-			return
-		}
-		ch <- rpcResponse{result: envelope["result"]}
-		return
-	}
-	if method != "" {
-		if rt := c.runtimeForParams(envelope["params"]); rt != nil {
-			rt.handleNotification(c.manager, method, envelope["params"])
-		}
-	}
-}
-
-func (c *codexClient) runtimeForParams(params json.RawMessage) *agentRuntime {
-	threadID := firstString(params, "threadId", "thread_id")
-	if threadID == "" {
-		threadID = nestedString(params, "thread", "id")
-	}
-	if threadID == "" || c.manager == nil {
-		return nil
-	}
-	return c.manager.runtimeByThreadID(threadID)
-}
-
-func isClosedPipeError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, os.ErrClosed) {
-		return true
-	}
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "file already closed") || strings.Contains(text, "use of closed file")
 }
 
 func loadAgentRuns(workspacePath string) ([]agentRun, error) {
@@ -1969,45 +1685,6 @@ func writeSSE(w http.ResponseWriter, event agentEvent) {
 	data, _ := json.Marshal(event)
 	_, _ = fmt.Fprintf(w, "id: %d\n", event.ID)
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
-}
-
-func isApprovalMethod(method string) bool {
-	return method == "item/commandExecution/requestApproval" ||
-		method == "item/fileChange/requestApproval" ||
-		method == "item/permissions/requestApproval"
-}
-
-func approvalResponse(method, decision string) any {
-	decision = strings.TrimSpace(decision)
-	if decision == "" {
-		decision = "decline"
-	}
-	switch method {
-	case "item/permissions/requestApproval":
-		return map[string]any{
-			"permissions": map[string]any{},
-			"scope":       "turn",
-		}
-	default:
-		if decision != "accept" && decision != "acceptForSession" && decision != "cancel" {
-			decision = "decline"
-		}
-		return map[string]any{"decision": decision}
-	}
-}
-
-func approvalSummary(method string, params json.RawMessage) string {
-	switch method {
-	case "item/commandExecution/requestApproval":
-		if command := firstString(params, "command"); command != "" {
-			return "Approve command: " + command
-		}
-	case "item/fileChange/requestApproval":
-		return "Approve file changes."
-	case "item/permissions/requestApproval":
-		return "Approve additional permissions."
-	}
-	return "Codex is waiting for approval."
 }
 
 func eventText(method string, params json.RawMessage) string {
