@@ -578,12 +578,6 @@ function renderDetails() {
       </div>
     </div>
     ${metrics(detail)}
-    ${selected.type === "project" ? `
-      <div class="content-section">
-        <h3>${icon("align-left")}<span>Description</span></h3>
-        <p>${escapeHTML(detail.description || "No description.")}</p>
-      </div>
-    ` : ""}
     ${fileSection(detail)}
     ${artifactSection("Artifacts", detail.artifacts)}
     ${selected.type === "project" ? "" : worktreeSection(detail.repos)}

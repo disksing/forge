@@ -67,6 +67,20 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestProjectDetailsOmitsDescription(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	if strings.Contains(source, `<span>Description</span>`) || strings.Contains(source, `detail.description || "No description."`) {
+		t.Fatal("project details should not render the description section")
+	}
+	if !strings.Contains(source, `<textarea name="description"`) {
+		t.Fatal("project creation dialog should retain its description field")
+	}
+}
+
 func TestFileMimeTypeMarkdown(t *testing.T) {
 	for _, name := range []string{"task.md", "README.markdown", "notes.mdown", "brief.mkdn"} {
 		if got := fileMimeType(name, []byte("# Title\n")); got != "text/markdown" {
