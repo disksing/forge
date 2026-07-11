@@ -132,7 +132,7 @@ func TestTaskLifecycle(t *testing.T) {
 		assertFile(t, filepath.Join(root, "project1", "project.md"))
 		assertMissing(t, filepath.Join(root, "project1", "task.json"))
 		assertMissing(t, filepath.Join(root, "project1", "task.md"))
-		assertFile(t, filepath.Join(root, "project1", "work.md"))
+		assertMissing(t, filepath.Join(root, "project1", "work.md"))
 		assertFile(t, filepath.Join(root, "project1", "log.jsonl"))
 		assertMissing(t, filepath.Join(root, "project1", "log.md"))
 		projectLogJSON := run(t, "project", "log", "list", "--project=project1", "--json")
@@ -173,37 +173,8 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected project.md to contain durable brief context only, got:\n%s", projectMD)
 		}
 		assertNoHan(t, projectMDPath)
-		taskWork := readFile(t, filepath.Join(root, "project1", "work.md"))
-		visibleTaskWork := stripHTMLComments(taskWork)
-		for _, section := range []string{"## Focus"} {
-			if !strings.Contains(visibleTaskWork, section) {
-				t.Fatalf("expected work.md to include %s, got:\n%s", section, taskWork)
-			}
-		}
-		for _, section := range []string{"## Status", "## Todo", "## Blockers"} {
-			if strings.Contains(visibleTaskWork, section) {
-				t.Fatalf("expected work.md not to include default %s section, got:\n%s", section, taskWork)
-			}
-		}
-		if strings.Contains(taskWork, "## Recovery Rule") {
-			t.Fatalf("expected work.md not to embed static recovery policy, got:\n%s", taskWork)
-		}
-		for _, snippet := range []string{
-			"Gather context from workspace, project files, and the user.",
-			"Optional modules. Copy only useful modules below this comment",
-			"## Todo\nUse for short-term actions needed by the next agent.",
-			"## Blockers\nUse only when work cannot continue without user input or an external change.",
-			"## Active Work\nUse when there is an in-progress implementation",
-			"## Paused Work\nUse when temporarily switching away from unfinished work.",
-			"## Resume Plan\nUse after interruption or handoff when order matters.",
-			"## Context\nUse for useful transient context",
-			"## Resources\nUse for unpredictable links and external ids",
-			"## Verification\nUse for checks already run or still needed",
-			"## Notes\nUse sparingly for recovery notes",
-		} {
-			if !strings.Contains(taskWork, snippet) {
-				t.Fatalf("expected work.md to include optional module guidance %q, got:\n%s", snippet, taskWork)
-			}
+		if strings.Contains(projectAgents, "Read project.json, project.md, work.md") || !strings.Contains(projectAgents, "projects do not have a work.md recovery snapshot") {
+			t.Fatalf("expected project AGENTS.md to omit project work.md, got:\n%s", projectAgents)
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
@@ -239,7 +210,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl") {
+		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, and log.jsonl") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "forge task log add <title> --details <details>") {
@@ -2117,7 +2088,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, original) {
 			t.Fatalf("expected human content to be preserved, got:\n%s", first)
 		}
-		if !strings.Contains(first, "`work.md` is a mutable recovery snapshot, not a chronological log.") {
+		if !strings.Contains(first, "Task `work.md` is a mutable recovery snapshot, not a chronological log.") {
 			t.Fatalf("expected workspace AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", first)
 		}
 		if !strings.Contains(first, "`project.md` and `task.md` are durable briefs.") {
@@ -2126,10 +2097,10 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
 			t.Fatalf("expected workspace AGENTS.md to describe optional work.md modules, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related resource notes in Markdown") {
+		if !strings.Contains(first, "Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related task notes in Markdown") {
 			t.Fatalf("expected workspace AGENTS.md to keep arbitrary resources in Markdown, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Do not append timeline history to `work.md`.") {
+		if !strings.Contains(first, "Do not append timeline history to task `work.md`.") {
 			t.Fatalf("expected workspace AGENTS.md to forbid timeline history in work.md, got:\n%s", first)
 		}
 		if !strings.Contains(first, "FORGE_INTERACTION_MODE") || !strings.Contains(first, "forge task create --non-interactive") || !strings.Contains(first, "forge task run wait") {
@@ -2164,6 +2135,10 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		run(t, "task", "create", "--project=project1", "Open child")
 		run(t, "task", "create", "--project=project1", "Archived child")
 		run(t, "task", "archive", "--project=project1", "--task=task2")
+		legacyProjectWork := filepath.Join(root, "project1", "work.md")
+		if err := os.WriteFile(legacyProjectWork, []byte("# Legacy project work\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
 
 		rootAgents := filepath.Join(root, "AGENTS.md")
 		taskAgents := filepath.Join(root, "project1", "AGENTS.md")
@@ -2174,13 +2149,15 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
 		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, and log.jsonl", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
 			t.Fatal(err)
 		}
 		run(t, "migrate")
+		assertMissing(t, legacyProjectWork)
+		assertFile(t, filepath.Join(root, "project1", "task1", "work.md"))
 
 		if pathExists(filepath.Join(root, "project1", "task1", configFile)) {
 			t.Fatal("migrate from task should not create nested forge.json")
@@ -2218,7 +2195,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Keep child note.") {
 			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, work.md, and log.jsonl") {
+		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, and log.jsonl") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
 		}
 		if !strings.Contains(subtaskAfter, "../../workflow/default.md") || strings.Contains(subtaskAfter, defaultWorkflowSnippet) {

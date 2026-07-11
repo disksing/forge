@@ -62,6 +62,10 @@ func runWorkspaceMigrate(args []string) error {
 	if err != nil {
 		return err
 	}
+	removedProjectWorkFiles, err := removeProjectWorkFiles(root)
+	if err != nil {
+		return err
+	}
 	if err := ensureWorkflowFiles(root, true); err != nil {
 		return err
 	}
@@ -71,8 +75,37 @@ func runWorkspaceMigrate(args []string) error {
 	if err := updateOpenTaskAgentsMD(root); err != nil {
 		return err
 	}
-	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated)\n", root, updatedResources)
+	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated, %d project work.md files removed)\n", root, updatedResources, removedProjectWorkFiles)
 	return nil
+}
+
+func removeProjectWorkFiles(root string) (int, error) {
+	removed := 0
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() && path != root {
+			switch entry.Name() {
+			case ".git", ".forge", reposDir, "worktree", "artifacts":
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if entry.IsDir() || entry.Name() != projectJSONFile {
+			return nil
+		}
+		workPath := filepath.Join(filepath.Dir(path), "work.md")
+		if err := os.Remove(workPath); err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		removed++
+		return nil
+	})
+	return removed, err
 }
 
 func ensureWorkflowFiles(root string, reset bool) error {
@@ -175,23 +208,23 @@ This directory is an AgentWorkspace managed by forge.
 - Workflow instruction files live under ` + "`workflow/`" + ` and generated project/task ` + "`AGENTS.md`" + ` files point agents to the selected workflow.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
-- Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
+- Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
 - Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
-- Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related resource notes in Markdown, usually the optional ` + "`Resources`" + ` module in ` + "`work.md`" + `.
+- Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related task notes in Markdown, usually the optional ` + "`Resources`" + ` module in task ` + "`work.md`" + `.
 - ` + "`project.md`" + ` and ` + "`task.md`" + ` are durable briefs. Keep background, scope, acceptance criteria, stable constraints, and decisions there.
-- ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep focus and optional modules such as ` + "`Todo`" + `, ` + "`Blockers`" + `, ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when they are useful.
-- Before starting risky, long-running, or interruptible work, update ` + "`work.md`" + ` with the current focus and any useful optional modules.
-- Immediately after completing a coherent step, update ` + "`work.md`" + ` with the new focus and any useful optional modules; remove empty optional modules.
-- Do not append timeline history to ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.jsonl`" + `.
+- Task ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep focus and optional modules such as ` + "`Todo`" + `, ` + "`Blockers`" + `, ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when they are useful.
+- Before starting risky, long-running, or interruptible task work, update the task's ` + "`work.md`" + ` with the current focus and any useful optional modules.
+- Immediately after completing a coherent task step, update the task's ` + "`work.md`" + ` with the new focus and any useful optional modules; remove empty optional modules.
+- Do not append timeline history to task ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.jsonl`" + `.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
 - Determine the current interaction mode from ` + "`FORGE_INTERACTION_MODE`" + ` or the injected session context. In ` + "`non_interactive`" + ` mode, before ending the turn call exactly one of ` + "`forge task run complete`" + `, ` + "`forge task run wait`" + `, ` + "`forge task run pause`" + `, or ` + "`forge task run fail`" + `. These commands record the next action; finish the response normally and let the session owner settle and close the session.
 - To delegate work, create a child with ` + "`forge task create --non-interactive --prompt=<prompt> <title>`" + `. To suspend the current non-interactive task until that child generation completes, call ` + "`forge task run wait --after=<task@generation> --summary=<text>`" + `. Never end a launcher-owned session yourself.
-- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, workflow steps in ` + "`workflow/`" + ` files, background context in ` + "`project.md`" + `/` + "`task.md`" + `, current recovery state in ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
+- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, workflow steps in ` + "`workflow/`" + ` files, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
 

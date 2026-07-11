@@ -440,8 +440,10 @@ func createResourceFilesWithMarkdown(dir string, resource Resource, workflowCont
 	if err := os.WriteFile(filepath.Join(dir, markdownFileName(resource)), []byte(markdown), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource)), 0o644); err != nil {
-		return err
+	if !isProject(resource) {
+		if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource)), 0o644); err != nil {
+			return err
+		}
 	}
 	logTitle := "Task created"
 	if isProject(resource) {
@@ -1015,10 +1017,6 @@ func defaultWorkMD(resource Resource) string {
 	meta := resource.resourceMeta()
 	label := "Task"
 	focus := "Gather context from workspace, project, task files, and the user. Refine task.md and work.md before starting active work."
-	if isProject(resource) {
-		label = "Project"
-		focus = "Gather context from workspace, project files, and the user. Refine project.md and work.md before starting active work."
-	}
 	return fmt.Sprintf(`# Work
 
 ## Focus
@@ -1103,7 +1101,7 @@ func taskAgentsPrompt(resource Resource, workflowContent string) string {
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
 	} else if _, ok := resource.(*Task); ok {
 		extra = `
-- This task belongs to a project. Read the parent project directory's project.json, project.md, work.md, and log.jsonl when you need broader context.
+- This task belongs to a project. Read the parent project directory's project.json, project.md, and log.jsonl when you need broader context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
 `
 	}
@@ -1114,11 +1112,11 @@ func taskAgentsPrompt(resource Resource, workflowContent string) string {
 	recoveryLine := workMDGuidance("work.md")
 	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
 	if isProject(resource) {
-		readLine = "Read project.json, project.md, work.md, and log.jsonl before acting."
+		readLine = "Read project.json, project.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = jsonGuidance("project.json")
 		backgroundLine = markdownGuidance("project.md")
-		recoveryLine = workMDGuidance("work.md")
+		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
 		pendingLine = "If project.md contains pending decisions or unresolved items, ask the user to clarify them, then update project.md with the confirmed answers."
 	}
 	return fmt.Sprintf(`# %s

@@ -307,7 +307,7 @@ Commands:
 
   forge project create [--workflow=<name>] [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
-    project.md, work.md, log.jsonl, artifacts/, and project-local AGENTS.md. By
+    project.md, log.jsonl, artifacts/, and project-local AGENTS.md. By
     default, AGENTS.md points agents to workflow/default.md.
     Use --workflow=<name> to select workflow/<name>.md. Use --slug <slug> to
     append a human-readable suffix to the directory name.
