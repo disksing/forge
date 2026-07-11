@@ -65,7 +65,7 @@ func startTask(args []string) error {
 	}
 	var task Task
 	var nonInteractive bool
-	if err := readResourceAtDir(taskPath, &task); err == nil && task.Run != nil && task.Run.Mode == taskRunModeNonInteractive {
+	if err := readTaskAtDir(taskPath, &task); err == nil && task.Run != nil && task.Run.Mode == taskRunModeNonInteractive {
 		ready, reason := taskRunReady(root, task)
 		if !ready && reason != "stale_execution" {
 			return fmt.Errorf("task is not runnable: %s", reason)

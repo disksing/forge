@@ -637,8 +637,8 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 		run(t, "init")
 		workflowContent := builtinWorkflows[defaultWorkflowName]
 
-		malformedProject := newTask("project9", "project", nil, "Malformed project", "Malformed project", defaultWorkflowName)
-		if err := createResourceFiles(filepath.Join(root, "project9--bad"), malformedProject, workflowContent); err != nil {
+		malformedProject := newProject("project9", "Malformed project", "Malformed project", defaultWorkflowName)
+		if err := createResourceFiles(filepath.Join(root, "project9--bad"), &malformedProject, workflowContent); err != nil {
 			t.Fatal(err)
 		}
 		listed := run(t, "project", "list")
@@ -657,8 +657,8 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 
 		parentPath := filepath.Join(root, "project1")
 		parentID := "project1"
-		malformedTask := newTask("project1.task8", "task", &parentID, "Malformed task", "Malformed task", defaultWorkflowName)
-		if err := createResourceFiles(filepath.Join(parentPath, "task8--bad"), malformedTask, workflowContent); err != nil {
+		malformedTask := newTask("project1.task8", parentID, "Malformed task", "Malformed task", defaultWorkflowName)
+		if err := createResourceFiles(filepath.Join(parentPath, "task8--bad"), &malformedTask, workflowContent); err != nil {
 			t.Fatal(err)
 		}
 		children := run(t, "task", "list", "--project=project1", "--all")
@@ -2373,20 +2373,20 @@ func createLegacyTaskFiles(dir string, task Task, workflowContent string) error 
 	if err := writeJSON(filepath.Join(dir, "task.json"), task); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "task.md"), []byte(defaultTaskMD(&task)), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(&task)), 0o644); err != nil {
 		return err
 	}
 	logTitle := "Task created"
-	if isProject(task) {
+	if isProject(&task) {
 		logTitle = "Project created"
 	}
 	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(&task, workflowContent)), 0o644)
 }
 
 func writeFakeRepo(t *testing.T, path string) {

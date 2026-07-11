@@ -70,6 +70,11 @@ type taskListEntry struct {
 	Path string
 }
 
+type projectListEntry struct {
+	Project Project
+	Path    string
+}
+
 func projectCreate(description, workflow string, allowBuiltinFallback bool, slug string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
@@ -92,12 +97,12 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool, slug
 	if err != nil {
 		return err
 	}
-	taskPath := filepath.Join(root, projectDirectoryName(id, slug))
-	task := newTask(id, "project", nil, titleFromDescription(description), description, workflow)
-	if err := createResourceFiles(taskPath, task, workflowContent); err != nil {
+	projectPath := filepath.Join(root, projectDirectoryName(id, slug))
+	project := newProject(id, titleFromDescription(description), description, workflow)
+	if err := createResourceFiles(projectPath, &project, workflowContent); err != nil {
 		return err
 	}
-	return printTaskJSON(task)
+	return printJSON(project)
 }
 
 func projectList(options taskListOptions) error {
@@ -109,12 +114,12 @@ func projectList(options taskListOptions) error {
 	if options.IncludeArchived {
 		dirs = append(dirs, filepath.Join(root, archiveDir))
 	}
-	entries, err := readTaskEntriesInDirs(dirs, topProjectName)
+	entries, err := readProjectEntriesInDirs(dirs)
 	if err != nil {
 		return err
 	}
 	for _, entry := range entries {
-		fmt.Printf("%s\t%s\n", entry.Task.ID, entry.Task.Title)
+		fmt.Printf("%s\t%s\n", entry.Project.ID, entry.Project.Title)
 	}
 	return nil
 }
@@ -128,11 +133,11 @@ func taskShow(id string) error {
 	if err != nil {
 		return err
 	}
-	var task Task
-	if err := readResourceAtDir(taskPath, &task); err != nil {
+	resource, err := readResourceAtDir(taskPath)
+	if err != nil {
 		return err
 	}
-	return printTaskJSON(task)
+	return printJSON(resource)
 }
 
 func taskArchive(id string) error {
@@ -142,7 +147,7 @@ func taskArchive(id string) error {
 	}
 	id = cleanID(id)
 
-	src, task, err := loadOpenTask(root, id)
+	src, task, err := loadOpenResource(root, id)
 	if err != nil {
 		return err
 	}
@@ -154,12 +159,14 @@ func taskArchive(id string) error {
 		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
 	}
 	if isProject(task) {
-		if err := ensureProjectTasksArchived(src, task); err != nil {
+		if err := ensureProjectTasksArchived(src, task.(*Project)); err != nil {
 			return err
 		}
 	}
-	if err := ensureTaskRepoWorktreesMerged(root, task); err != nil {
-		return err
+	if typed, ok := task.(*Task); ok {
+		if err := ensureTaskRepoWorktreesMerged(root, *typed); err != nil {
+			return err
+		}
 	}
 	if err := endSessionsControllingPath(root, relPath(root, src)); err != nil {
 		return err
@@ -170,8 +177,10 @@ func taskArchive(id string) error {
 	if err := os.Rename(src, dst); err != nil {
 		return err
 	}
-	if err := rewriteArchivedTaskReferences(root, dst, task, relPath(root, src), relPath(root, dst)); err != nil {
-		return err
+	if typed, ok := task.(*Task); ok {
+		if err := rewriteArchivedTaskReferences(root, dst, *typed, relPath(root, src), relPath(root, dst)); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("%s\n", relPath(root, dst))
 	return nil
@@ -190,7 +199,7 @@ func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, new
 	}
 	if changed {
 		task.UpdatedAt = time.Now().Format(time.RFC3339)
-		if err := writeResourceMetadata(taskPath, task); err != nil {
+		if err := writeResourceMetadata(taskPath, &task); err != nil {
 			return err
 		}
 	}
@@ -202,7 +211,7 @@ func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, new
 	return nil
 }
 
-func ensureProjectTasksArchived(projectPath string, project Task) error {
+func ensureProjectTasksArchived(projectPath string, project *Project) error {
 	openTasks, err := readTaskEntriesInDir(projectPath, projectTaskName(project.ID))
 	if err != nil {
 		return err
@@ -217,15 +226,16 @@ func ensureProjectTasksArchived(projectPath string, project Task) error {
 	return fmt.Errorf("cannot archive %s: archive all project tasks first: %s", project.ID, strings.Join(names, ", "))
 }
 
-func taskArchiveDestination(root, taskPath string, task Task) (string, error) {
+func taskArchiveDestination(root, taskPath string, task Resource) (string, error) {
+	meta := task.resourceMeta()
 	if isProject(task) {
 		return filepath.Join(root, archiveDir, filepath.Base(taskPath)), nil
 	}
-	if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
+	if typed, ok := task.(*Task); ok && typed.Parent != "" {
 		parentPath := filepath.Dir(taskPath)
 		return filepath.Join(parentPath, archiveDir, filepath.Base(taskPath)), nil
 	}
-	return "", fmt.Errorf("unsupported task id for archive: %s", task.ID)
+	return "", fmt.Errorf("unsupported task id for archive: %s", meta.ID)
 }
 
 func ensureTaskRepoWorktreesMerged(root string, task Task) error {
@@ -289,12 +299,9 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 	if isArchivedPath(root, parentPath) {
 		return fmt.Errorf("cannot create task under archived project: %s", parentID)
 	}
-	var parent Task
-	if err := readResourceAtDir(parentPath, &parent); err != nil {
+	var parent Project
+	if err := readProjectAtDir(parentPath, &parent); err != nil {
 		return err
-	}
-	if !isProject(parent) {
-		return fmt.Errorf("cannot create task under non-project resource: %s", parentID)
 	}
 	id, err := nextProjectTaskID(parentPath, parentID)
 	if err != nil {
@@ -305,7 +312,7 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 	if err != nil {
 		return err
 	}
-	task := newTask(id, "task", &parentID, title, "", defaultWorkflowName)
+	task := newTask(id, parentID, title, "", defaultWorkflowName)
 	if nonInteractive {
 		after, err := resolveTaskRunDependencies(root, &task, afterValues)
 		if err != nil {
@@ -320,7 +327,7 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
 		return errors.New("--agent, --prompt, and --after require --non-interactive")
 	}
-	if err := createResourceFilesWithMarkdown(taskPath, task, workflowContent, taskMarkdown(title, detail)); err != nil {
+	if err := createResourceFilesWithMarkdown(taskPath, &task, workflowContent, taskMarkdown(title, detail)); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -383,35 +390,43 @@ func projectTaskList(options taskListOptions) error {
 	return nil
 }
 
-func newTask(id string, taskType string, parent *string, title string, description string, workflow string) Task {
+func newProject(id, title, description, workflow string) Project {
+	now := time.Now().Format(time.RFC3339)
+	return Project{
+		ResourceMeta: ResourceMeta{SchemaVersion: resourceSchemaVersion, ID: id, Type: resourceTypeProject, Title: strings.TrimSpace(title), Workflow: workflow, CreatedAt: now, UpdatedAt: now},
+		Description:  description,
+	}
+}
+
+func newTask(id, parent, title, description, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
 	task := Task{
-		SchemaVersion: resourceSchemaVersion,
-		ID:            id,
-		Type:          taskType,
-		Parent:        parent,
-		Title:         strings.TrimSpace(title),
-		Description:   description,
-		Workflow:      workflow,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ResourceMeta: ResourceMeta{
+			SchemaVersion: resourceSchemaVersion,
+			ID:            id,
+			Type:          resourceTypeTask,
+			Title:         strings.TrimSpace(title),
+			Workflow:      workflow,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		Parent:      parent,
+		Description: description,
 	}
-	if taskType != "project" {
-		task.Repos = []TaskRepo{}
-	}
+	task.Repos = []TaskRepo{}
 	return task
 }
 
-func createResourceFiles(dir string, task Task, workflowContent string) error {
-	return createResourceFilesWithMarkdown(dir, task, workflowContent, defaultTaskMD(task))
+func createResourceFiles(dir string, resource Resource, workflowContent string) error {
+	return createResourceFilesWithMarkdown(dir, resource, workflowContent, defaultTaskMD(resource))
 }
 
-func createResourceFilesWithMarkdown(dir string, task Task, workflowContent string, markdown string) error {
+func createResourceFilesWithMarkdown(dir string, resource Resource, workflowContent string, markdown string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
 	subdirs := []string{"artifacts"}
-	if !isProject(task) {
+	if !isProject(resource) {
 		subdirs = append(subdirs, "worktree")
 	}
 	for _, subdir := range subdirs {
@@ -419,53 +434,49 @@ func createResourceFilesWithMarkdown(dir string, task Task, workflowContent stri
 			return err
 		}
 	}
-	if err := writeResourceMetadata(dir, task); err != nil {
+	if err := writeResourceMetadata(dir, resource); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, markdownFileName(task)), []byte(markdown), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, markdownFileName(resource)), []byte(markdown), 0o644); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(task)), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource)), 0o644); err != nil {
 		return err
 	}
 	logTitle := "Task created"
-	if isProject(task) {
+	if isProject(resource) {
 		logTitle = "Project created"
 	}
 	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(task, workflowContent)+"\n"), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource, workflowContent)+"\n"), 0o644)
 }
 
-func createTaskFiles(dir string, task Task, workflowContent string) error {
-	return createResourceFiles(dir, task, workflowContent)
-}
-
-func metadataFileName(task Task) string {
-	if isProject(task) {
+func metadataFileName(resource Resource) string {
+	if isProject(resource) {
 		return projectJSONFile
 	}
 	return taskJSONFile
 }
 
-func markdownFileName(task Task) string {
-	if isProject(task) {
+func markdownFileName(resource Resource) string {
+	if isProject(resource) {
 		return projectMDFile
 	}
 	return taskMDFile
 }
 
-func writeResourceMetadata(dir string, task Task) error {
-	if err := validateResource(task); err != nil {
+func writeResourceMetadata(dir string, resource Resource) error {
+	if err := validateResource(resource); err != nil {
 		return fmt.Errorf("invalid resource metadata for %s: %w", dir, err)
 	}
-	path := filepath.Join(dir, metadataFileName(task))
-	if err := writeJSON(path, task); err != nil {
+	path := filepath.Join(dir, metadataFileName(resource))
+	if err := writeJSON(path, resource); err != nil {
 		return err
 	}
 	stale := taskJSONFile
-	if !isProject(task) {
+	if !isProject(resource) {
 		stale = projectJSONFile
 	}
 	if err := os.Remove(filepath.Join(dir, stale)); err != nil && !os.IsNotExist(err) {
@@ -474,11 +485,11 @@ func writeResourceMetadata(dir string, task Task) error {
 	return nil
 }
 
-func readResourceAtDir(dir string, task *Task) error {
+func readResourceAtDir(dir string) (Resource, error) {
 	projectPath := filepath.Join(dir, projectJSONFile)
 	taskPath := filepath.Join(dir, taskJSONFile)
 	if pathExists(projectPath) && pathExists(taskPath) {
-		return fmt.Errorf("resource directory contains both %s and %s: %s", projectJSONFile, taskJSONFile, dir)
+		return nil, fmt.Errorf("resource directory contains both %s and %s: %s", projectJSONFile, taskJSONFile, dir)
 	}
 	path := taskPath
 	expectedType := resourceTypeTask
@@ -486,18 +497,51 @@ func readResourceAtDir(dir string, task *Task) error {
 		path = projectPath
 		expectedType = resourceTypeProject
 	}
-	if err := readJSON(path, task); err != nil {
+	var resource Resource
+	if expectedType == resourceTypeProject {
+		resource = &Project{}
+	} else {
+		resource = &Task{}
+	}
+	if err := readJSON(path, resource); err != nil {
+		return nil, err
+	}
+	meta := resource.resourceMeta()
+	if meta.SchemaVersion == 0 {
+		return nil, fmt.Errorf("resource metadata needs migration: %s; run forge migrate", path)
+	}
+	if meta.Type != expectedType {
+		return nil, fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, meta.Type)
+	}
+	if err := validateResource(resource); err != nil {
+		return nil, fmt.Errorf("invalid resource metadata %s: %w", path, err)
+	}
+	return resource, nil
+}
+
+func readProjectAtDir(dir string, project *Project) error {
+	resource, err := readResourceAtDir(dir)
+	if err != nil {
 		return err
 	}
-	if task.SchemaVersion == 0 {
-		return fmt.Errorf("resource metadata needs migration: %s; run forge migrate", path)
+	typed, ok := resource.(*Project)
+	if !ok {
+		return fmt.Errorf("resource is not a project: %s", dir)
 	}
-	if task.Type != expectedType {
-		return fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, task.Type)
+	*project = *typed
+	return nil
+}
+
+func readTaskAtDir(dir string, task *Task) error {
+	resource, err := readResourceAtDir(dir)
+	if err != nil {
+		return err
 	}
-	if err := validateResource(*task); err != nil {
-		return fmt.Errorf("invalid resource metadata %s: %w", path, err)
+	typed, ok := resource.(*Task)
+	if !ok {
+		return fmt.Errorf("resource is not a task: %s", dir)
 	}
+	*task = *typed
 	return nil
 }
 
@@ -579,18 +623,6 @@ func nextProjectTaskID(parentPath, parentID string) (string, error) {
 	return fmt.Sprintf("%s.task%d", parentID, maxID+1), nil
 }
 
-func readTasksInDir(dir string, pattern *regexp.Regexp) ([]Task, error) {
-	entries, err := readTaskEntriesInDir(dir, pattern)
-	if err != nil {
-		return nil, err
-	}
-	tasks := make([]Task, 0, len(entries))
-	for _, entry := range entries {
-		tasks = append(tasks, entry.Task)
-	}
-	return tasks, nil
-}
-
 func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -603,10 +635,10 @@ func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, 
 		}
 		var task Task
 		taskPath := filepath.Join(dir, entry.Name())
-		if err := readResourceAtDir(taskPath, &task); err != nil {
+		if err := readTaskAtDir(taskPath, &task); err != nil {
 			continue
 		}
-		if !pattern.MatchString(task.ID) || !resourceDirNameMatches(entry.Name(), task) {
+		if !pattern.MatchString(task.ID) || !resourceDirNameMatches(entry.Name(), &task) {
 			continue
 		}
 		tasks = append(tasks, taskListEntry{Task: task, Path: taskPath})
@@ -617,16 +649,44 @@ func readTaskEntriesInDir(dir string, pattern *regexp.Regexp) ([]taskListEntry, 
 	return tasks, nil
 }
 
-func readTasksInDirs(dirs []string, pattern *regexp.Regexp) ([]Task, error) {
-	entries, err := readTaskEntriesInDirs(dirs, pattern)
+func readProjectEntriesInDir(dir string) ([]projectListEntry, error) {
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-	tasks := make([]Task, 0, len(entries))
+	var projects []projectListEntry
 	for _, entry := range entries {
-		tasks = append(tasks, entry.Task)
+		if !entry.IsDir() {
+			continue
+		}
+		projectPath := filepath.Join(dir, entry.Name())
+		var project Project
+		if err := readProjectAtDir(projectPath, &project); err != nil {
+			continue
+		}
+		if !resourceDirNameMatches(entry.Name(), &project) {
+			continue
+		}
+		projects = append(projects, projectListEntry{Project: project, Path: projectPath})
 	}
-	return tasks, nil
+	sort.Slice(projects, func(i, j int) bool { return taskSortKey(projects[i].Project.ID) < taskSortKey(projects[j].Project.ID) })
+	return projects, nil
+}
+
+func readProjectEntriesInDirs(dirs []string) ([]projectListEntry, error) {
+	var projects []projectListEntry
+	for _, dir := range dirs {
+		entries, err := readProjectEntriesInDir(dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, err
+		}
+		projects = append(projects, entries...)
+	}
+	sort.Slice(projects, func(i, j int) bool { return taskSortKey(projects[i].Project.ID) < taskSortKey(projects[j].Project.ID) })
+	return projects, nil
 }
 
 func readTaskEntriesInDirs(dirs []string, pattern *regexp.Regexp) ([]taskListEntry, error) {
@@ -668,11 +728,11 @@ func findTaskDir(root, id string) (string, error) {
 		if !pathExists(filepath.Join(path, projectJSONFile)) && !pathExists(filepath.Join(path, taskJSONFile)) {
 			return nil
 		}
-		var task Task
-		if err := readResourceAtDir(path, &task); err != nil {
+		resource, err := readResourceAtDir(path)
+		if err != nil {
 			return nil
 		}
-		if task.ID == id && resourceDirNameMatches(entry.Name(), task) {
+		if resource.resourceMeta().ID == id && resourceDirNameMatches(entry.Name(), resource) {
 			found = path
 			return filepath.SkipAll
 		}
@@ -698,16 +758,16 @@ func inferCurrentProjectID() (string, bool, error) {
 	}
 	for {
 		if pathExists(filepath.Join(cwd, projectJSONFile)) || pathExists(filepath.Join(cwd, taskJSONFile)) {
-			var task Task
-			if err := readResourceAtDir(cwd, &task); err != nil {
+			resource, err := readResourceAtDir(cwd)
+			if err != nil {
 				return "", false, err
 			}
-			if resourceDirNameMatches(filepath.Base(cwd), task) && !isArchivedPath(root, cwd) {
-				if isProject(task) {
-					return task.ID, true, nil
+			if resourceDirNameMatches(filepath.Base(cwd), resource) && !isArchivedPath(root, cwd) {
+				if project, ok := resource.(*Project); ok {
+					return project.ID, true, nil
 				}
-				if isProjectTask(task) && task.Parent != nil && *task.Parent != "" {
-					return *task.Parent, true, nil
+				if task, ok := resource.(*Task); ok && task.Parent != "" {
+					return task.Parent, true, nil
 				}
 			}
 		}
@@ -734,10 +794,10 @@ func inferCurrentTaskID() (string, bool, error) {
 	for {
 		if pathExists(filepath.Join(cwd, taskJSONFile)) {
 			var task Task
-			if err := readResourceAtDir(cwd, &task); err != nil {
+			if err := readTaskAtDir(cwd, &task); err != nil {
 				return "", false, err
 			}
-			if resourceDirNameMatches(filepath.Base(cwd), task) && isProjectTask(task) && !isArchivedPath(root, cwd) {
+			if resourceDirNameMatches(filepath.Base(cwd), &task) && !isArchivedPath(root, cwd) {
 				return task.ID, true, nil
 			}
 		}
@@ -783,17 +843,17 @@ func updateOpenTaskAgentsMD(root string) error {
 		if !pathExists(filepath.Join(path, projectJSONFile)) && !pathExists(filepath.Join(path, taskJSONFile)) {
 			return nil
 		}
-		var task Task
-		if err := readResourceAtDir(path, &task); err != nil {
+		resource, err := readResourceAtDir(path)
+		if err != nil {
 			return nil
 		}
-		return updateTaskAgentsMD(root, path, task)
+		return updateTaskAgentsMD(root, path, resource)
 	})
 }
 
-func updateTaskAgentsMD(root, dir string, task Task) error {
+func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	path := filepath.Join(dir, "AGENTS.md")
-	workflow := task.Workflow
+	workflow := resource.resourceMeta().Workflow
 	if workflow == "" {
 		workflow = defaultWorkflowName
 	}
@@ -801,7 +861,7 @@ func updateTaskAgentsMD(root, dir string, task Task) error {
 	if err != nil {
 		return err
 	}
-	block := taskAgentsBlock(task, workflowContent)
+	block := taskAgentsBlock(resource, workflowContent)
 
 	content := ""
 	if data, err := os.ReadFile(path); err == nil {
@@ -809,7 +869,7 @@ func updateTaskAgentsMD(root, dir string, task Task) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(task, workflowContent)) {
+	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource, workflowContent)) {
 		content = ""
 	}
 
@@ -820,8 +880,8 @@ func updateTaskAgentsMD(root, dir string, task Task) error {
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
-func taskAgentsBlock(task Task, workflowContent string) string {
-	return forgePromptStart + "\n" + taskAgentsPrompt(task, workflowContent) + "\n" + forgePromptEnd
+func taskAgentsBlock(resource Resource, workflowContent string) string {
+	return forgePromptStart + "\n" + taskAgentsPrompt(resource, workflowContent) + "\n" + forgePromptEnd
 }
 
 func projectTaskName(projectID string) *regexp.Regexp {
@@ -862,15 +922,16 @@ func normalizeResourceSlug(slug string) (string, error) {
 	return slug, nil
 }
 
-func resourceDirNameMatches(name string, task Task) bool {
-	if isProject(task) {
-		return resourceDirNameID(name, topProjectDirName, "project") == task.ID
+func resourceDirNameMatches(name string, resource Resource) bool {
+	meta := resource.resourceMeta()
+	if isProject(resource) {
+		return resourceDirNameID(name, topProjectDirName, "project") == meta.ID
 	}
-	if isProjectTask(task) {
-		if name == task.ID {
+	if _, ok := resource.(*Task); ok {
+		if name == meta.ID {
 			return true
 		}
-		return resourceDirNameID(name, taskDirName, "task") == taskDirectoryName(task.ID)
+		return resourceDirNameID(name, taskDirName, "task") == taskDirectoryName(meta.ID)
 	}
 	return false
 }
@@ -883,12 +944,9 @@ func resourceDirNameID(name string, pattern *regexp.Regexp, prefix string) strin
 	return prefix + match[1]
 }
 
-func isProject(task Task) bool {
-	return task.Type == resourceTypeProject
-}
-
-func isProjectTask(task Task) bool {
-	return task.Type == resourceTypeTask && task.Parent != nil && *task.Parent != ""
+func isProject(resource Resource) bool {
+	_, ok := resource.(*Project)
+	return ok
 }
 
 func taskSortKey(id string) string {
@@ -918,8 +976,16 @@ func printTaskJSON(task Task) error {
 	return printJSON(task)
 }
 
-func defaultTaskMD(task Task) string {
-	return taskMarkdown(task.Title, task.Description)
+func defaultTaskMD(resource Resource) string {
+	meta := resource.resourceMeta()
+	description := ""
+	switch typed := resource.(type) {
+	case *Project:
+		description = typed.Description
+	case *Task:
+		description = typed.Description
+	}
+	return taskMarkdown(meta.Title, description)
 }
 
 func taskMarkdown(title string, detail string) string {
@@ -944,10 +1010,11 @@ func taskMarkdown(title string, detail string) string {
 `, title, detail)
 }
 
-func defaultWorkMD(task Task) string {
+func defaultWorkMD(resource Resource) string {
+	meta := resource.resourceMeta()
 	label := "Task"
 	focus := "Gather context from workspace, project, task files, and the user. Refine task.md and work.md before starting active work."
-	if isProject(task) {
+	if isProject(resource) {
 		label = "Project"
 		focus = "Gather context from workspace, project files, and the user. Refine project.md and work.md before starting active work."
 	}
@@ -1004,7 +1071,7 @@ Use for checks already run or still needed when that helps the next agent.
 Use sparingly for recovery notes that do not fit another module.
 - Note.
 -->
-`, label, task.ID, focus)
+`, label, meta.ID, focus)
 }
 
 func workMDGuidance(resourceName string) string {
@@ -1019,21 +1086,21 @@ func jsonGuidance(resourceName string) string {
 	return fmt.Sprintf("Keep %s focused on structured facts Forge already understands; use Markdown for arbitrary notes, links, IDs, and progress.", resourceName)
 }
 
-func taskAgentsPrompt(task Task, workflowContent string) string {
+func taskAgentsPrompt(resource Resource, workflowContent string) string {
 	extra := ""
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
 	writeScope := "Only update files inside this task directory and its worktrees."
 	repoGuidance := "For code changes, create Git worktrees under worktree/."
-	workflowPath := workflowRelativePath(task)
-	if isProject(task) {
+	workflowPath := workflowRelativePath(resource)
+	if isProject(resource) {
 		title = "Project Agent Instructions"
 		scope = "single AgentWorkspace project directory"
 		boundary = "Treat this directory as the current project boundary."
 		writeScope = "Only update files inside this project directory unless a task directory has been explicitly selected."
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
-	} else if task.Parent != nil {
+	} else if _, ok := resource.(*Task); ok {
 		extra = `
 - This task belongs to a project. Read the parent project directory's project.json, project.md, work.md, and log.jsonl when you need broader context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
@@ -1045,7 +1112,7 @@ func taskAgentsPrompt(task Task, workflowContent string) string {
 	backgroundLine := markdownGuidance("task.md")
 	recoveryLine := workMDGuidance("work.md")
 	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
-	if isProject(task) {
+	if isProject(resource) {
 		readLine = "Read project.json, project.md, work.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = jsonGuidance("project.json")
@@ -1081,12 +1148,12 @@ You are working inside a %s.
 `, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, workflowPath, extra)
 }
 
-func workflowRelativePath(task Task) string {
-	workflow := task.Workflow
+func workflowRelativePath(resource Resource) string {
+	workflow := resource.resourceMeta().Workflow
 	if workflow == "" {
 		workflow = defaultWorkflowName
 	}
-	if task.Parent != nil {
+	if _, ok := resource.(*Task); ok {
 		return filepath.ToSlash(filepath.Join("..", "..", workflowDir, workflow+".md"))
 	}
 	return filepath.ToSlash(filepath.Join("..", workflowDir, workflow+".md"))

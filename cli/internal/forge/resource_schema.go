@@ -14,46 +14,44 @@ const (
 	resourceTypeTask      = "task"
 )
 
-func validateResource(resource Task) error {
-	if resource.SchemaVersion != resourceSchemaVersion {
-		return fmt.Errorf("unsupported schemaVersion %d; expected %d", resource.SchemaVersion, resourceSchemaVersion)
+func validateResource(resource Resource) error {
+	meta := resource.resourceMeta()
+	if meta.SchemaVersion != resourceSchemaVersion {
+		return fmt.Errorf("unsupported schemaVersion %d; expected %d", meta.SchemaVersion, resourceSchemaVersion)
 	}
-	if strings.TrimSpace(resource.Title) == "" {
+	if strings.TrimSpace(meta.Title) == "" {
 		return fmt.Errorf("title cannot be empty")
 	}
-	if strings.TrimSpace(resource.Workflow) == "" {
+	if strings.TrimSpace(meta.Workflow) == "" {
 		return fmt.Errorf("workflow cannot be empty")
 	}
-	if strings.TrimSpace(resource.CreatedAt) == "" || strings.TrimSpace(resource.UpdatedAt) == "" {
+	if strings.TrimSpace(meta.CreatedAt) == "" || strings.TrimSpace(meta.UpdatedAt) == "" {
 		return fmt.Errorf("createdAt and updatedAt cannot be empty")
 	}
 
-	switch resource.Type {
-	case resourceTypeProject:
-		if !topProjectName.MatchString(resource.ID) {
-			return fmt.Errorf("project id must match projectN, got %q", resource.ID)
+	switch typed := resource.(type) {
+	case *Project:
+		if meta.Type != resourceTypeProject {
+			return fmt.Errorf("project type must be %q, got %q", resourceTypeProject, meta.Type)
 		}
-		if resource.Parent != nil {
-			return fmt.Errorf("project parent must be null")
+		if !topProjectName.MatchString(meta.ID) {
+			return fmt.Errorf("project id must match projectN, got %q", meta.ID)
 		}
-		if len(resource.Repos) != 0 {
-			return fmt.Errorf("project cannot contain repos")
+	case *Task:
+		if meta.Type != resourceTypeTask {
+			return fmt.Errorf("task type must be %q, got %q", resourceTypeTask, meta.Type)
 		}
-		if resource.Run != nil {
-			return fmt.Errorf("project cannot contain run")
-		}
-	case resourceTypeTask:
-		if resource.Parent == nil || strings.TrimSpace(*resource.Parent) == "" {
+		if strings.TrimSpace(typed.Parent) == "" {
 			return fmt.Errorf("task parent is required")
 		}
-		if !topProjectName.MatchString(*resource.Parent) {
-			return fmt.Errorf("task parent must match projectN, got %q", *resource.Parent)
+		if !topProjectName.MatchString(typed.Parent) {
+			return fmt.Errorf("task parent must match projectN, got %q", typed.Parent)
 		}
-		if !projectTaskName(*resource.Parent).MatchString(resource.ID) {
-			return fmt.Errorf("task id %q must match %s.taskN", resource.ID, *resource.Parent)
+		if !projectTaskName(typed.Parent).MatchString(meta.ID) {
+			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
 	default:
-		return fmt.Errorf("type must be %q or %q, got %q", resourceTypeProject, resourceTypeTask, resource.Type)
+		return fmt.Errorf("unsupported resource type %T", resource)
 	}
 	return nil
 }
@@ -83,21 +81,37 @@ func migrateResourceSchemas(root string) (int, error) {
 		if err := json.Unmarshal(data, &raw); err != nil {
 			return fmt.Errorf("read resource metadata %s: %w", path, err)
 		}
-		var resource Task
-		if err := json.Unmarshal(data, &resource); err != nil {
+		var header ResourceMeta
+		if err := json.Unmarshal(data, &header); err != nil {
 			return fmt.Errorf("read resource metadata %s: %w", path, err)
 		}
 		expectedType := resourceTypeTask
 		if entry.Name() == projectJSONFile {
 			expectedType = resourceTypeProject
 		}
-		if resource.Type != expectedType {
-			return fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, resource.Type)
+		if header.Type != expectedType {
+			return fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, header.Type)
 		}
-		if resource.SchemaVersion != 0 && resource.SchemaVersion != resourceSchemaVersion {
-			return fmt.Errorf("cannot migrate resource metadata %s: unsupported schemaVersion %d", path, resource.SchemaVersion)
+		if header.SchemaVersion != 0 && header.SchemaVersion != resourceSchemaVersion {
+			return fmt.Errorf("cannot migrate resource metadata %s: unsupported schemaVersion %d", path, header.SchemaVersion)
 		}
-		resource.SchemaVersion = resourceSchemaVersion
+		header.SchemaVersion = resourceSchemaVersion
+		var resource Resource
+		if header.Type == resourceTypeProject {
+			var project Project
+			if err := json.Unmarshal(data, &project); err != nil {
+				return fmt.Errorf("read resource metadata %s: %w", path, err)
+			}
+			project.ResourceMeta = header
+			resource = &project
+		} else {
+			var task Task
+			if err := json.Unmarshal(data, &task); err != nil {
+				return fmt.Errorf("read resource metadata %s: %w", path, err)
+			}
+			task.ResourceMeta = header
+			resource = &task
+		}
 		if err := validateResource(resource); err != nil {
 			return fmt.Errorf("cannot migrate resource metadata %s: %w", path, err)
 		}

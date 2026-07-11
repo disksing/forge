@@ -81,7 +81,7 @@ func resourceLogAdd(kind string, args []string) error {
 	if err != nil {
 		return err
 	}
-	dir, task, err := loadOpenTask(root, resourceID)
+	dir, resource, err := loadOpenResource(root, resourceID)
 	if err != nil {
 		return err
 	}
@@ -89,8 +89,8 @@ func resourceLogAdd(kind string, args []string) error {
 	if err := prependLogEntry(dir, entry); err != nil {
 		return err
 	}
-	task.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := writeResourceMetadata(dir, task); err != nil {
+	resource.resourceMeta().UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := writeResourceMetadata(dir, resource); err != nil {
 		return err
 	}
 	return printJSON(entry)
@@ -109,7 +109,7 @@ func resourceLogList(kind string, args []string) error {
 	if err != nil {
 		return err
 	}
-	dir, _, err := loadTask(root, resourceID)
+	dir, _, err := loadResource(root, resourceID)
 	if err != nil {
 		return err
 	}

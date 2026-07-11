@@ -33,10 +33,6 @@ func taskRepoAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	if isProject(task) {
-		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
-	}
-
 	name := strings.TrimSuffix(strings.TrimSpace(opts.name), ".git")
 	if err := ensureInsideName(name); err != nil {
 		return err
@@ -142,9 +138,6 @@ func taskRepoList(args []string) error {
 	_, task, err := loadTask(root, taskID)
 	if err != nil {
 		return err
-	}
-	if isProject(task) {
-		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
 	}
 	for _, repo := range task.Repos {
 		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, taskRepoStoragePath(repo), repo.WorktreePath, repo.Branch, repo.TargetBranch)
@@ -282,9 +275,6 @@ func removeTaskRepo(id, name string) error {
 	if err != nil {
 		return err
 	}
-	if isProject(task) {
-		return fmt.Errorf("projects do not manage repositories or worktrees: %s", task.ID)
-	}
 	name = strings.TrimSuffix(strings.TrimSpace(name), ".git")
 	if err := ensureInsideName(name); err != nil {
 		return err
@@ -312,10 +302,33 @@ func loadTask(root, id string) (string, Task, error) {
 		return "", Task{}, err
 	}
 	var task Task
-	if err := readResourceAtDir(taskPath, &task); err != nil {
+	if err := readTaskAtDir(taskPath, &task); err != nil {
 		return "", Task{}, err
 	}
 	return taskPath, task, nil
+}
+
+func loadResource(root, id string) (string, Resource, error) {
+	path, err := findTaskDir(root, id)
+	if err != nil {
+		return "", nil, err
+	}
+	resource, err := readResourceAtDir(path)
+	if err != nil {
+		return "", nil, err
+	}
+	return path, resource, nil
+}
+
+func loadOpenResource(root, id string) (string, Resource, error) {
+	path, resource, err := loadResource(root, id)
+	if err != nil {
+		return "", nil, err
+	}
+	if isArchivedPath(root, path) {
+		return "", nil, fmt.Errorf("cannot update archived resource: %s", resource.resourceMeta().ID)
+	}
+	return path, resource, nil
 }
 
 func loadOpenTask(root, id string) (string, Task, error) {
@@ -331,7 +344,7 @@ func loadOpenTask(root, id string) (string, Task, error) {
 
 func saveAndPrintTask(taskPath string, task Task) error {
 	task.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := writeResourceMetadata(taskPath, task); err != nil {
+	if err := writeResourceMetadata(taskPath, &task); err != nil {
 		return err
 	}
 	return printTaskJSON(task)

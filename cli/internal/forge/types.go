@@ -84,18 +84,61 @@ func splitAgentCommand(command string) ([]string, error) {
 	return args, nil
 }
 
+type ResourceMeta struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Title         string `json:"title"`
+	Workflow      string `json:"workflow,omitempty"`
+	CreatedAt     string `json:"createdAt"`
+	UpdatedAt     string `json:"updatedAt"`
+}
+
+type Project struct {
+	ResourceMeta
+	Description string `json:"description,omitempty"`
+}
+
 type Task struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	ID            string     `json:"id"`
-	Type          string     `json:"type"`
-	Parent        *string    `json:"parent"`
-	Title         string     `json:"title"`
-	Description   string     `json:"description,omitempty"`
-	Workflow      string     `json:"workflow,omitempty"`
-	CreatedAt     string     `json:"createdAt"`
-	UpdatedAt     string     `json:"updatedAt"`
-	Repos         []TaskRepo `json:"repos,omitempty"`
-	Run           *TaskRun   `json:"run,omitempty"`
+	ResourceMeta
+	Parent      string     `json:"parent"`
+	Description string     `json:"description,omitempty"`
+	Repos       []TaskRepo `json:"repos,omitempty"`
+	Run         *TaskRun   `json:"run,omitempty"`
+}
+
+type Resource interface {
+	resourceMeta() *ResourceMeta
+}
+
+func (project *Project) resourceMeta() *ResourceMeta { return &project.ResourceMeta }
+func (task *Task) resourceMeta() *ResourceMeta       { return &task.ResourceMeta }
+
+func (project Project) MarshalJSON() ([]byte, error) {
+	type projectJSON struct {
+		ResourceMeta
+		Parent      *string `json:"parent"`
+		Description string  `json:"description,omitempty"`
+	}
+	return json.Marshal(projectJSON{ResourceMeta: project.ResourceMeta, Description: project.Description})
+}
+
+func (project *Project) UnmarshalJSON(data []byte) error {
+	type projectJSON struct {
+		ResourceMeta
+		Parent      *string `json:"parent"`
+		Description string  `json:"description,omitempty"`
+	}
+	var decoded projectJSON
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	if decoded.Parent != nil {
+		return fmt.Errorf("project parent must be null")
+	}
+	project.ResourceMeta = decoded.ResourceMeta
+	project.Description = decoded.Description
+	return nil
 }
 
 type TaskRun struct {

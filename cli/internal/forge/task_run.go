@@ -350,14 +350,14 @@ func updateTaskRun(taskID string, update func(root, dir string, task *Task) erro
 		return err
 	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
-	if err := readResourceAtDir(dir, &task); err != nil {
+	if err := readTaskAtDir(dir, &task); err != nil {
 		return err
 	}
 	if err := update(root, dir, &task); err != nil {
 		return err
 	}
 	task.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := writeResourceMetadata(dir, task); err != nil {
+	if err := writeResourceMetadata(dir, &task); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -375,9 +375,7 @@ func resolveTaskRunDependencies(root string, current *Task, values []string) ([]
 		id = strings.TrimSpace(id)
 		if !strings.Contains(id, ".task") {
 			projectID := ""
-			if current.Parent != nil {
-				projectID = *current.Parent
-			}
+			projectID = current.Parent
 			var err error
 			id, err = normalizeTaskArg(projectID, id)
 			if err != nil {

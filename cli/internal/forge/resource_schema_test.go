@@ -12,45 +12,85 @@ import (
 func validTestResource(id, kind string, parent *string) Task {
 	now := time.Now().Format(time.RFC3339)
 	return Task{
-		SchemaVersion: resourceSchemaVersion,
-		ID:            id,
-		Type:          kind,
-		Parent:        parent,
-		Title:         "Resource",
-		Workflow:      defaultWorkflowName,
-		CreatedAt:     now,
-		UpdatedAt:     now,
+		ResourceMeta: ResourceMeta{
+			SchemaVersion: resourceSchemaVersion,
+			ID:            id,
+			Type:          kind,
+			Title:         "Resource",
+			Workflow:      defaultWorkflowName,
+			CreatedAt:     now,
+			UpdatedAt:     now,
+		},
+		Parent: func() string {
+			if parent == nil {
+				return ""
+			}
+			return *parent
+		}(),
 	}
 }
 
 func TestValidateResourceRejectsKindSpecificInvalidStates(t *testing.T) {
-	project := validTestResource("project1", resourceTypeProject, nil)
-	project.Run = &TaskRun{}
-	if err := validateResource(project); err == nil || !strings.Contains(err.Error(), "project cannot contain run") {
-		t.Fatalf("expected project run to be rejected, got %v", err)
+	project := newProject("project1", "Project", "", defaultWorkflowName)
+	project.Type = resourceTypeTask
+	if err := validateResource(&project); err == nil || !strings.Contains(err.Error(), "project type") {
+		t.Fatalf("expected incorrect project type to be rejected, got %v", err)
 	}
 
 	parent := "project1"
 	task := validTestResource("project1.task1.1", resourceTypeTask, &parent)
-	if err := validateResource(task); err == nil || !strings.Contains(err.Error(), "must match project1.taskN") {
+	if err := validateResource(&task); err == nil || !strings.Contains(err.Error(), "must match project1.taskN") {
 		t.Fatalf("expected nested task id to be rejected, got %v", err)
 	}
 
 	task = validTestResource("project1.task1", resourceTypeTask, nil)
-	if err := validateResource(task); err == nil || !strings.Contains(err.Error(), "task parent is required") {
+	if err := validateResource(&task); err == nil || !strings.Contains(err.Error(), "task parent is required") {
 		t.Fatalf("expected missing task parent to be rejected, got %v", err)
+	}
+}
+
+func TestProjectAndTaskJSONShapesRemainCompatible(t *testing.T) {
+	project := newProject("project1", "Project", "Description", defaultWorkflowName)
+	projectData, err := json.Marshal(project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projectJSON map[string]any
+	if err := json.Unmarshal(projectData, &projectJSON); err != nil {
+		t.Fatal(err)
+	}
+	if parent, exists := projectJSON["parent"]; !exists || parent != nil {
+		t.Fatalf("project parent must remain explicit null: %#v", projectJSON)
+	}
+	if _, exists := projectJSON["repos"]; exists {
+		t.Fatalf("project JSON must not contain repos: %#v", projectJSON)
+	}
+	if _, exists := projectJSON["run"]; exists {
+		t.Fatalf("project JSON must not contain run: %#v", projectJSON)
+	}
+
+	task := newTask("project1.task1", "project1", "Task", "", defaultWorkflowName)
+	taskData, err := json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var taskJSON map[string]any
+	if err := json.Unmarshal(taskData, &taskJSON); err != nil {
+		t.Fatal(err)
+	}
+	if taskJSON["parent"] != "project1" {
+		t.Fatalf("task parent changed shape: %#v", taskJSON)
 	}
 }
 
 func TestReadResourceRequiresCurrentSchema(t *testing.T) {
 	dir := t.TempDir()
-	project := validTestResource("project1", resourceTypeProject, nil)
+	project := newProject("project1", "Project", "", defaultWorkflowName)
 	project.SchemaVersion = 0
 	if err := writeJSON(filepath.Join(dir, projectJSONFile), project); err != nil {
 		t.Fatal(err)
 	}
-	var loaded Task
-	err := readResourceAtDir(dir, &loaded)
+	_, err := readResourceAtDir(dir)
 	if err == nil || !strings.Contains(err.Error(), "run forge migrate") {
 		t.Fatalf("expected migration instruction, got %v", err)
 	}
@@ -62,7 +102,7 @@ func TestMigrateResourceSchemasAddsVersionAndPreservesUnknownFields(t *testing.T
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := validTestResource("project1", resourceTypeProject, nil)
+	project := newProject("project1", "Project", "", defaultWorkflowName)
 	project.SchemaVersion = 0
 	data, err := json.Marshal(project)
 	if err != nil {
@@ -93,8 +133,7 @@ func TestMigrateResourceSchemasAddsVersionAndPreservesUnknownFields(t *testing.T
 	if migrated["schemaVersion"] != float64(resourceSchemaVersion) || migrated["futureField"] != "preserved" {
 		t.Fatalf("unexpected migrated metadata: %#v", migrated)
 	}
-	var loaded Task
-	if err := readResourceAtDir(projectDir, &loaded); err != nil {
+	if _, err := readResourceAtDir(projectDir); err != nil {
 		t.Fatalf("migrated resource should load: %v", err)
 	}
 }
