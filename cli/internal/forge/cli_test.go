@@ -152,7 +152,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(projectAgents, forgePromptStart) != 1 || strings.Count(projectAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected project AGENTS.md to contain one managed block, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "If project.md contains pending decisions or unresolved items") {
+		if !strings.Contains(projectAgents, "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md") {
 			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
 		}
 		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set in the environment or supplied in injected Forge session context, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "When accessing another project/task directory outside this locked resource") {
@@ -202,6 +202,14 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertFile(t, filepath.Join(root, "project1", "task1", "task.json"))
 		assertFile(t, filepath.Join(root, "project1", "task1", "task.md"))
+		taskMD := readFile(t, filepath.Join(root, "project1", "task1", "task.md"))
+		workMD := readFile(t, filepath.Join(root, "project1", "task1", "work.md"))
+		if !strings.Contains(taskMD, "Keep the durable contract here") || !strings.Contains(taskMD, "when they affect the task contract") {
+			t.Fatalf("expected task.md template to define the durable contract, got:\n%s", taskMD)
+		}
+		if !strings.Contains(workMD, "current execution state and next action") || !strings.Contains(workMD, "Do not restate the task background, scope, acceptance criteria, or stable decisions") {
+			t.Fatalf("expected work.md template to stay focused on recovery state, got:\n%s", workMD)
+		}
 		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
 		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
 		if !strings.Contains(subtaskAgents, "workspace root AGENTS.md") {
@@ -216,8 +224,11 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "forge task log add <title> --details <details>") {
 			t.Fatalf("expected subtask AGENTS.md to mention structured log command, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "If task.md contains pending decisions or unresolved items") {
+		if !strings.Contains(subtaskAgents, "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
+		}
+		if !strings.Contains(subtaskAgents, "Use task.md as the durable contract") || !strings.Contains(subtaskAgents, "Use work.md as a replaceable recovery checkpoint") || !strings.Contains(subtaskAgents, "promote it to task.md") {
+			t.Fatalf("expected subtask AGENTS.md to distinguish task contract from recovery state, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") {
 			t.Fatalf("expected subtask AGENTS.md to include direct-start session ownership guidance, got:\n%s", subtaskAgents)
@@ -516,7 +527,7 @@ Line two
 
 ## Scope
 
-<!-- Describe included work. Add optional sections such as Out of Scope, Constraints, Decisions, or Open Questions only when useful. -->
+<!-- Define what is included. Add Out of Scope, Constraints, Decisions, or Open Questions when they affect the task contract. -->
 
 ## Acceptance Criteria
 
@@ -2088,20 +2099,20 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, original) {
 			t.Fatalf("expected human content to be preserved, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Task `work.md` is a mutable recovery snapshot, not a chronological log.") {
-			t.Fatalf("expected workspace AGENTS.md to describe work.md as a mutable snapshot, got:\n%s", first)
+		if !strings.Contains(first, "Treat task `work.md` as a replaceable recovery checkpoint.") {
+			t.Fatalf("expected workspace AGENTS.md to describe work.md as a replaceable checkpoint, got:\n%s", first)
 		}
-		if !strings.Contains(first, "`project.md` and `task.md` are durable briefs.") {
-			t.Fatalf("expected workspace AGENTS.md to describe markdown briefs, got:\n%s", first)
+		if !strings.Contains(first, "Treat `project.md` and `task.md` as durable contracts.") {
+			t.Fatalf("expected workspace AGENTS.md to describe markdown contracts, got:\n%s", first)
 		}
-		if !strings.Contains(first, "optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
+		if !strings.Contains(first, "optional `work.md` modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
 			t.Fatalf("expected workspace AGENTS.md to describe optional work.md modules, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related task notes in Markdown") {
+		if !strings.Contains(first, "keep arbitrary links or external ids in `Resources`") {
 			t.Fatalf("expected workspace AGENTS.md to keep arbitrary resources in Markdown, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Do not append timeline history to task `work.md`.") {
-			t.Fatalf("expected workspace AGENTS.md to forbid timeline history in work.md, got:\n%s", first)
+		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
+			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
 		}
 		if !strings.Contains(first, "FORGE_INTERACTION_MODE") || !strings.Contains(first, "forge task create --non-interactive") || !strings.Contains(first, "forge task run wait") {
 			t.Fatalf("expected workspace AGENTS.md to teach non-interactive delegation, got:\n%s", first)

@@ -174,17 +174,17 @@ Each project directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, and selected workflow file.
 - `project.json`: versioned structured project facts such as schema version, id, type, description, and selected workflow.
-- `project.md`: durable project brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
-- `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge project log add/list` to write or read project log entries.
+- `project.md`: durable project contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It records why the project exists, its boundaries, stable constraints and decisions, and how success is judged. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and contract-changing `Open Questions` only when useful.
+- `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge project log add/list` to write or read project log entries; do not use it as a current-state snapshot.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 
 Each task directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, parent project context, and selected workflow file.
 - `task.json`: versioned structured facts such as schema version, id, type, parent id, title, selected workflow, and involved repositories.
-- `task.md`: durable task brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
-- `work.md`: mutable recovery snapshot generated with default `Focus` only, plus hidden HTML-comment examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`. Use `Todo` for short-term actions needed by the next agent. Use `Blockers` only when there is a real blocker. Use `Resources` for arbitrary PR links, CI run ids, image tags, deployment URLs, related tasks, and other resource notes that do not need a JSON schema.
-- `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge task log add/list` to write or read task log entries.
+- `task.md`: durable task contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It answers why the task exists, what is in or out of scope, which constraints and decisions remain valid, and how completion is judged. Questions that may change that contract belong here.
+- `work.md`: replaceable recovery checkpoint generated with default `Focus` only, plus hidden examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`. Keep only the current focus, next actions, blockers, and state needed to resume. Do not repeat the task contract or accumulate completed history. Short-lived execution questions and arbitrary PR, CI, image, deployment, or related-task references belong here when useful.
+- `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge task log add/list` to write or read task log entries; do not use it as the current recovery state.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 - `worktree/`: Git worktrees for code changes.
 

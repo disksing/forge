@@ -994,7 +994,7 @@ func defaultTaskMD(resource Resource) string {
 func taskMarkdown(title string, detail string) string {
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
-		detail = "<!-- Why this exists. Keep durable context here; put transient progress in work.md. -->"
+		detail = "<!-- Why this work exists. Keep the durable contract here; task execution state belongs in work.md. -->"
 	}
 	return fmt.Sprintf(`# %s
 
@@ -1004,7 +1004,7 @@ func taskMarkdown(title string, detail string) string {
 
 ## Scope
 
-<!-- Describe included work. Add optional sections such as Out of Scope, Constraints, Decisions, or Open Questions only when useful. -->
+<!-- Define what is included. Add Out of Scope, Constraints, Decisions, or Open Questions when they affect the task contract. -->
 
 ## Acceptance Criteria
 
@@ -1016,7 +1016,7 @@ func taskMarkdown(title string, detail string) string {
 func defaultWorkMD(resource Resource) string {
 	meta := resource.resourceMeta()
 	label := "Task"
-	focus := "Gather context from workspace, project, task files, and the user. Refine task.md and work.md before starting active work."
+	focus := "Clarify the task contract in task.md, then record the current execution state and next action here."
 	return fmt.Sprintf(`# Work
 
 ## Focus
@@ -1025,6 +1025,7 @@ func defaultWorkMD(resource Resource) string {
 
 <!--
 Optional modules. Copy only useful modules below this comment, keep them current, and delete empty modules.
+Do not restate the task background, scope, acceptance criteria, or stable decisions here; keep those in task.md.
 
 ## Todo
 Use for short-term actions needed by the next agent. Put completed history in log.jsonl.
@@ -1074,11 +1075,11 @@ Use sparingly for recovery notes that do not fit another module.
 }
 
 func workMDGuidance(resourceName string) string {
-	return fmt.Sprintf("Keep %s as the live recovery snapshot: focus plus optional modules only when useful. Use Todo only for short-term actions needed by the next agent. Delete empty optional modules; put arbitrary resource links or IDs in a Resources module.", resourceName)
+	return fmt.Sprintf("Use %s as a replaceable recovery checkpoint: record only the current focus, next actions, blockers, and state needed to resume. Do not repeat the task contract or append completed-step history. Keep optional modules only when useful, delete empty modules, and put arbitrary resource links or IDs in Resources.", resourceName)
 }
 
 func markdownGuidance(resourceName string) string {
-	return fmt.Sprintf("Use %s for the durable brief: background, scope, acceptance criteria, and stable constraints or decisions discovered during the conversation.", resourceName)
+	return fmt.Sprintf("Use %s as the durable contract: record why the work exists, what is in or out of scope, what constraints and decisions remain valid, and how completion will be judged.", resourceName)
 }
 
 func jsonGuidance(resourceName string) string {
@@ -1110,14 +1111,14 @@ func taskAgentsPrompt(resource Resource, workflowContent string) string {
 	structuredLine := jsonGuidance("task.json")
 	backgroundLine := markdownGuidance("task.md")
 	recoveryLine := workMDGuidance("work.md")
-	pendingLine := "If task.md contains pending decisions or unresolved items, ask the user to clarify them, then update task.md with the confirmed answers."
+	pendingLine := "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md; ask the user to resolve them before implementation when necessary. Keep short-lived execution questions in work.md. When investigation produces a durable decision, promote it to task.md and remove the temporary work.md note."
 	if isProject(resource) {
 		readLine = "Read project.json, project.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = jsonGuidance("project.json")
 		backgroundLine = markdownGuidance("project.md")
 		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
-		pendingLine = "If project.md contains pending decisions or unresolved items, ask the user to clarify them, then update project.md with the confirmed answers."
+		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 	}
 	return fmt.Sprintf(`# %s
 

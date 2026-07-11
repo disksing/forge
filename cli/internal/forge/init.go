@@ -214,12 +214,13 @@ This directory is an AgentWorkspace managed by forge.
 - Agents may read other task directories for reference.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
-- Keep arbitrary links, external ids, PRs, CI runs, image tags, deployment URLs, and related task notes in Markdown, usually the optional ` + "`Resources`" + ` module in task ` + "`work.md`" + `.
-- ` + "`project.md`" + ` and ` + "`task.md`" + ` are durable briefs. Keep background, scope, acceptance criteria, stable constraints, and decisions there.
-- Task ` + "`work.md`" + ` is a mutable recovery snapshot, not a chronological log. Keep focus and optional modules such as ` + "`Todo`" + `, ` + "`Blockers`" + `, ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when they are useful.
+- Treat ` + "`project.md`" + ` and ` + "`task.md`" + ` as durable contracts. Keep why the work exists, scope and non-scope, acceptance criteria, stable constraints, durable decisions, and contract-changing open questions there.
+- Treat task ` + "`work.md`" + ` as a replaceable recovery checkpoint. Keep only the current focus, next actions, blockers, and state needed to resume; do not restate the task contract.
+- Use optional ` + "`work.md`" + ` modules such as ` + "`Todo`" + `, ` + "`Blockers`" + `, ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when useful. Delete empty modules, and keep arbitrary links or external ids in ` + "`Resources`" + `.
 - Before starting risky, long-running, or interruptible task work, update the task's ` + "`work.md`" + ` with the current focus and any useful optional modules.
 - Immediately after completing a coherent task step, update the task's ` + "`work.md`" + ` with the new focus and any useful optional modules; remove empty optional modules.
-- Do not append timeline history to task ` + "`work.md`" + `. Put chronological events, command results, and completed-step history in ` + "`log.jsonl`" + `.
+- Treat ` + "`log.jsonl`" + ` as the append-only timeline. Put important chronological events and completed-step history there; keep current state out of the log and history out of ` + "`work.md`" + `.
+- Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
 - Determine the current interaction mode from ` + "`FORGE_INTERACTION_MODE`" + ` or the injected session context. In ` + "`non_interactive`" + ` mode, before ending the turn call exactly one of ` + "`forge task run complete`" + `, ` + "`forge task run wait`" + `, ` + "`forge task run pause`" + `, or ` + "`forge task run fail`" + `. These commands record the next action; finish the response normally and let the session owner settle and close the session.
