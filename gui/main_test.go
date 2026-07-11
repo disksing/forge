@@ -107,6 +107,25 @@ func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
 	}
 }
 
+func TestTTYComposerKeyboardSendModes(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`ttyMultiline: false`,
+		`event.isComposing || event.keyCode === 229`,
+		`if (event.metaKey || event.ctrlKey)`,
+		`if (event.shiftKey)`,
+		`if (state.agent.ttyMultiline) return`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("TTY composer keyboard handling is missing %q", want)
+		}
+	}
+}
+
 func TestProjectDetailsOmitsDescription(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

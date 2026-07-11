@@ -53,6 +53,7 @@ const state = {
     renderTimer: null,
     draftPrompt: "",
     ttyDraft: "",
+    ttyMultiline: false,
     agentId: "",
     optionsOpen: false,
     agentChooserOpen: false,
@@ -227,6 +228,7 @@ async function autoRefresh() {
         const nextRunId = runs[0]?.id || "";
         if (state.agent.activeRunId !== nextRunId) {
           state.agent.ttyDraft = "";
+          state.agent.ttyMultiline = false;
         }
         state.agent.activeRunId = nextRunId;
         await loadAgentEvents();
@@ -425,6 +427,7 @@ async function selectResource(id, options = {}) {
     state.agent.activeRunId = "";
     state.agent.events = [];
     state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
   }
   state.selectedId = id;
   state.sessionMenu = null;
@@ -1312,6 +1315,7 @@ async function loadAgentRuns() {
     const nextRunId = state.agent.runs[0]?.id || "";
     if (state.agent.activeRunId !== nextRunId) {
       state.agent.ttyDraft = "";
+      state.agent.ttyMultiline = false;
     }
     state.agent.activeRunId = nextRunId;
   }
@@ -1404,6 +1408,7 @@ async function reloadAgentRunsForSelection() {
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   await loadAgentRuns();
 }
 
@@ -1418,6 +1423,7 @@ function resetAgentState() {
   state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   clearAgentRenderTimer();
 }
 
@@ -1750,6 +1756,7 @@ function renderTTYComposer() {
   const activeRun = currentAgentRun();
   if (!activeRun) {
     state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
     const key = `none:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
@@ -1772,13 +1779,25 @@ function renderTTYComposer() {
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       state.agent.ttyDraft = event.target.value;
+      if (event.target.value.includes("\n")) {
+        state.agent.ttyMultiline = true;
+      }
       resizeTTYInput(event.target);
     });
     $("ttyInput")?.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
+      if (event.metaKey || event.ctrlKey) {
         event.preventDefault();
         $("ttyForm")?.requestSubmit();
+        return;
       }
+      if (event.shiftKey) {
+        state.agent.ttyMultiline = true;
+        return;
+      }
+      if (state.agent.ttyMultiline) return;
+      event.preventDefault();
+      $("ttyForm")?.requestSubmit();
     });
     resizeTTYInput($("ttyInput"));
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
@@ -1788,6 +1807,7 @@ function renderTTYComposer() {
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   composer.innerHTML = `
     ${agentComposerActions({ includeResume: true })}
   `;
@@ -2383,6 +2403,7 @@ async function startAgentRun() {
   });
   state.agent.draftPrompt = "";
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   state.agent.optionsOpen = false;
   state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
@@ -2416,6 +2437,7 @@ async function switchAgentRun(runId) {
   }
   state.agent.activeRunId = runId;
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   state.agent.historyOpen = false;
   await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
@@ -2431,6 +2453,7 @@ async function resumeAgentRun() {
   const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });
   state.agent.activeRunId = response.run.id;
   state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
   state.agent.historyOpen = false;
   await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
@@ -2468,6 +2491,7 @@ async function submitTTYInput(event) {
   try {
     await sendAgentInput(rawText);
     state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
   } catch (err) {
     toast(err.message);
   } finally {
