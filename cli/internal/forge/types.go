@@ -85,16 +85,17 @@ func splitAgentCommand(command string) ([]string, error) {
 }
 
 type Task struct {
-	ID          string     `json:"id"`
-	Type        string     `json:"type"`
-	Parent      *string    `json:"parent"`
-	Title       string     `json:"title"`
-	Description string     `json:"description,omitempty"`
-	Workflow    string     `json:"workflow,omitempty"`
-	CreatedAt   string     `json:"createdAt"`
-	UpdatedAt   string     `json:"updatedAt"`
-	Repos       []TaskRepo `json:"repos,omitempty"`
-	Run         *TaskRun   `json:"run,omitempty"`
+	SchemaVersion int        `json:"schemaVersion"`
+	ID            string     `json:"id"`
+	Type          string     `json:"type"`
+	Parent        *string    `json:"parent"`
+	Title         string     `json:"title"`
+	Description   string     `json:"description,omitempty"`
+	Workflow      string     `json:"workflow,omitempty"`
+	CreatedAt     string     `json:"createdAt"`
+	UpdatedAt     string     `json:"updatedAt"`
+	Repos         []TaskRepo `json:"repos,omitempty"`
+	Run           *TaskRun   `json:"run,omitempty"`
 }
 
 type TaskRun struct {

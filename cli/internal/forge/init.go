@@ -58,6 +58,10 @@ func runWorkspaceMigrate(args []string) error {
 	if err != nil {
 		return err
 	}
+	updatedResources, err := migrateResourceSchemas(root)
+	if err != nil {
+		return err
+	}
 	if err := ensureWorkflowFiles(root, true); err != nil {
 		return err
 	}
@@ -67,7 +71,7 @@ func runWorkspaceMigrate(args []string) error {
 	if err := updateOpenTaskAgentsMD(root); err != nil {
 		return err
 	}
-	fmt.Printf("migrated AgentWorkspace at %s\n", root)
+	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated)\n", root, updatedResources)
 	return nil
 }
 

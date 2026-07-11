@@ -762,7 +762,7 @@ func normalizeTaskArg(projectID, task string) (string, error) {
 		}
 		projectID = inferred
 	}
-	if legacyTopTaskName.MatchString(task) {
+	if taskDirName.MatchString(task) {
 		return projectID + "." + task, nil
 	}
 	if isASCIIInteger(task) {

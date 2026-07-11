@@ -15,8 +15,6 @@ import (
 
 var topProjectName = regexp.MustCompile(`^project([0-9]+)$`)
 var topProjectDirName = regexp.MustCompile(`^project([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
-var legacyTopTaskName = regexp.MustCompile(`^task([0-9]+)$`)
-var legacyTopTaskDirName = regexp.MustCompile(`^task([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
 var taskDirName = regexp.MustCompile(`^task([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
 var workflowName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 var resourceSlugName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -388,14 +386,15 @@ func projectTaskList(options taskListOptions) error {
 func newTask(id string, taskType string, parent *string, title string, description string, workflow string) Task {
 	now := time.Now().Format(time.RFC3339)
 	task := Task{
-		ID:          id,
-		Type:        taskType,
-		Parent:      parent,
-		Title:       strings.TrimSpace(title),
-		Description: description,
-		Workflow:    workflow,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		SchemaVersion: resourceSchemaVersion,
+		ID:            id,
+		Type:          taskType,
+		Parent:        parent,
+		Title:         strings.TrimSpace(title),
+		Description:   description,
+		Workflow:      workflow,
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
 	if taskType != "project" {
 		task.Repos = []TaskRepo{}
@@ -458,8 +457,8 @@ func markdownFileName(task Task) string {
 }
 
 func writeResourceMetadata(dir string, task Task) error {
-	if isProject(task) {
-		task.Repos = nil
+	if err := validateResource(task); err != nil {
+		return fmt.Errorf("invalid resource metadata for %s: %w", dir, err)
 	}
 	path := filepath.Join(dir, metadataFileName(task))
 	if err := writeJSON(path, task); err != nil {
@@ -476,12 +475,30 @@ func writeResourceMetadata(dir string, task Task) error {
 }
 
 func readResourceAtDir(dir string, task *Task) error {
-	if err := readJSON(filepath.Join(dir, projectJSONFile), task); err == nil {
-		return nil
-	} else if !os.IsNotExist(err) {
+	projectPath := filepath.Join(dir, projectJSONFile)
+	taskPath := filepath.Join(dir, taskJSONFile)
+	if pathExists(projectPath) && pathExists(taskPath) {
+		return fmt.Errorf("resource directory contains both %s and %s: %s", projectJSONFile, taskJSONFile, dir)
+	}
+	path := taskPath
+	expectedType := resourceTypeTask
+	if pathExists(projectPath) {
+		path = projectPath
+		expectedType = resourceTypeProject
+	}
+	if err := readJSON(path, task); err != nil {
 		return err
 	}
-	return readJSON(filepath.Join(dir, taskJSONFile), task)
+	if task.SchemaVersion == 0 {
+		return fmt.Errorf("resource metadata needs migration: %s; run forge migrate", path)
+	}
+	if task.Type != expectedType {
+		return fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, task.Type)
+	}
+	if err := validateResource(*task); err != nil {
+		return fmt.Errorf("invalid resource metadata %s: %w", path, err)
+	}
+	return nil
 }
 
 func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) {
@@ -529,9 +546,6 @@ func nextProjectID(root string) (string, error) {
 				continue
 			}
 			match := topProjectDirName.FindStringSubmatch(entry.Name())
-			if match == nil {
-				match = legacyTopTaskDirName.FindStringSubmatch(entry.Name())
-			}
 			if match == nil {
 				continue
 			}
@@ -811,7 +825,7 @@ func taskAgentsBlock(task Task, workflowContent string) string {
 }
 
 func projectTaskName(projectID string) *regexp.Regexp {
-	return regexp.MustCompile(`^` + regexp.QuoteMeta(projectID) + `\.task([0-9]+(?:\.[0-9]+)*)$`)
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(projectID) + `\.task([0-9]+)$`)
 }
 
 func projectDirectoryName(id, slug string) string {
@@ -850,10 +864,7 @@ func normalizeResourceSlug(slug string) (string, error) {
 
 func resourceDirNameMatches(name string, task Task) bool {
 	if isProject(task) {
-		if resourceDirNameID(name, topProjectDirName, "project") == task.ID {
-			return true
-		}
-		return resourceDirNameID(name, legacyTopTaskDirName, "task") == task.ID
+		return resourceDirNameID(name, topProjectDirName, "project") == task.ID
 	}
 	if isProjectTask(task) {
 		if name == task.ID {
@@ -873,11 +884,11 @@ func resourceDirNameID(name string, pattern *regexp.Regexp, prefix string) strin
 }
 
 func isProject(task Task) bool {
-	return task.Type == "project" || (task.Parent == nil && (topProjectName.MatchString(task.ID) || legacyTopTaskName.MatchString(task.ID)))
+	return task.Type == resourceTypeProject
 }
 
 func isProjectTask(task Task) bool {
-	return (task.Type == "task" || task.Type == "subtask") && task.Parent != nil && *task.Parent != ""
+	return task.Type == resourceTypeTask && task.Parent != nil && *task.Parent != ""
 }
 
 func taskSortKey(id string) string {

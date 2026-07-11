@@ -119,7 +119,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Agents started through `forge-start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
 
-`forge migrate` refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks.
+`forge migrate` upgrades project/task metadata to the current resource schema and refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
 
 `forge migrate` is safe to run multiple times. It rewrites built-in workflow templates, rewrites only forge-managed prompt blocks, and preserves content outside managed blocks:
 
@@ -174,7 +174,7 @@ repos/disksing/forge.git
 Each project directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, and selected workflow file.
-- `project.json`: structured project facts such as id, type, description, and selected workflow.
+- `project.json`: versioned structured project facts such as schema version, id, type, description, and selected workflow.
 - `project.md`: durable project brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
 - `work.md`: mutable recovery snapshot generated with default `Focus` only, plus hidden HTML-comment examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`.
 - `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge project log add/list` to write or read project log entries.
@@ -183,7 +183,7 @@ Each project directory contains:
 Each task directory contains:
 
 - `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, parent project context, and selected workflow file.
-- `task.json`: structured facts such as id, type, parent id, title, selected workflow, and involved repositories.
+- `task.json`: versioned structured facts such as schema version, id, type, parent id, title, selected workflow, and involved repositories.
 - `task.md`: durable task brief generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and `Open Questions` only when useful.
 - `work.md`: mutable recovery snapshot generated with default `Focus` only, plus hidden HTML-comment examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`. Use `Todo` for short-term actions needed by the next agent. Use `Blockers` only when there is a real blocker. Use `Resources` for arbitrary PR links, CI run ids, image tags, deployment URLs, related tasks, and other resource notes that do not need a JSON schema.
 - `log.jsonl`: structured execution log for chronological events, command results, and completed-step history. Use `forge task log add/list` to write or read task log entries.
