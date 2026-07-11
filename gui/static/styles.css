@@ -1248,8 +1248,8 @@ body.resizing-y {
 
 .tty-session-actions {
   min-height: 44px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 8px 12px;
   border-top: 1px solid var(--line);
@@ -1269,11 +1269,27 @@ body.resizing-y {
   font-weight: 750;
 }
 
+.tty-session-actions > .tty-primary-action,
+.tty-session-actions > .agent-stop-button {
+  flex: 1 0 140px;
+}
+
 .tty-new-session-control {
   position: relative;
-  min-width: 0;
+  flex: 1 0 270px;
+  min-width: 270px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
+}
+
+.tty-new-session-main span,
+.tty-new-session-agent span,
+.tty-primary-action span,
+.agent-stop-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tty-new-session-main,
@@ -1383,8 +1399,12 @@ body.resizing-y {
 
 .toast {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  top: 18px;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translateX(-50%);
+  z-index: 30;
   max-width: 440px;
   padding: 12px 14px;
   border-radius: 8px;

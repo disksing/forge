@@ -121,6 +121,8 @@ type guiSession struct {
 	UpdatedAt            string              `json:"updatedAt"`
 	Source               string              `json:"source"`
 	AgentRunID           string              `json:"agentRunId,omitempty"`
+	AgentRunAgentID      string              `json:"agentRunAgentId,omitempty"`
+	AgentRunProvider     string              `json:"agentRunProvider,omitempty"`
 	AgentRunTitle        string              `json:"agentRunTitle,omitempty"`
 	AgentRunStatus       string              `json:"agentRunStatus,omitempty"`
 	AgentRunUpdatedAt    string              `json:"agentRunUpdatedAt,omitempty"`
@@ -854,6 +856,8 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 		if run, ok := bySessionID[tree.Sessions[i].ID]; ok {
 			tree.Sessions[i].Source = "internal"
 			tree.Sessions[i].AgentRunID = run.ID
+			tree.Sessions[i].AgentRunAgentID = run.AgentID
+			tree.Sessions[i].AgentRunProvider = run.Provider
 			tree.Sessions[i].AgentRunTitle = run.Title
 			tree.Sessions[i].AgentRunStatus = run.Status
 			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt

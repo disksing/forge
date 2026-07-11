@@ -461,9 +461,13 @@ function renderSessions() {
     const row = document.createElement(clickable ? "button" : "div");
     row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${clickable ? "clickable-session" : ""}`;
     if (clickable) row.type = "button";
-    const label = isInternal ? "Internal" : "External";
+    const agent = isInternal
+      ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId)
+      : null;
+    const providerLabel = isInternal ? providerName(session.agentRunProvider || "codex") : "External";
+    const label = isInternal ? agent?.name || session.agentRunAgentId || providerLabel : "External";
     const title = isInternal ? session.agentRunTitle || resourceId || session.id : session.id;
-    const metaParts = [label];
+    const metaParts = [providerLabel];
     if (controls.length > 1) {
       metaParts.push(`${controls.length} locks`);
     } else if (resourceId) {
@@ -633,7 +637,7 @@ function workspaceDetails() {
     <div class="meta-grid">
       <div class="metric"><span>Projects</span><strong>${state.tree.projects.length}</strong></div>
       <div class="metric"><span>Tasks</span><strong>${state.tree.projects.reduce((n, p) => n + (p.children || []).length, 0)}</strong></div>
-      <div class="metric"><span>Sessions</span><strong>${state.tree.sessions.length}</strong></div>
+      <div class="metric"><span>Active sessions</span><strong>${state.tree.sessions.length}</strong></div>
     </div>
     ${workspaceAgentsSection()}
   `;
@@ -1319,6 +1323,12 @@ async function loadAgentRuns() {
     state.agent.events = [];
   }
   connectAgentStream();
+}
+
+async function refreshTreeSessions() {
+  if (!state.activeWorkspaceId || !state.tree) return;
+  const tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
+  state.tree.sessions = tree.sessions || [];
 }
 
 async function loadAgentEvents() {
@@ -2379,7 +2389,7 @@ async function startAgentRun() {
   state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
   state.agent.activeRunId = response.run.id;
-  await loadAgentRuns();
+  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
   toast("Agent session started.");
 }
@@ -2395,7 +2405,7 @@ async function sendAgentInput(text) {
 async function stopAgentRun() {
   if (!state.agent.activeRunId) return;
   await closeAgentRun(state.agent.activeRunId);
-  await loadAgentRuns();
+  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
   toast("Agent session closed.");
 }
@@ -2409,7 +2419,7 @@ async function switchAgentRun(runId) {
   state.agent.activeRunId = runId;
   state.agent.ttyDraft = "";
   state.agent.historyOpen = false;
-  await loadAgentRuns();
+  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
 }
 
@@ -2424,7 +2434,7 @@ async function resumeAgentRun() {
   state.agent.activeRunId = response.run.id;
   state.agent.ttyDraft = "";
   state.agent.historyOpen = false;
-  await loadAgentRuns();
+  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
   renderAll();
   toast("Agent session resumed.");
 }

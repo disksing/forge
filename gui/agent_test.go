@@ -413,6 +413,7 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 			ID:             "run-one",
 			WorkspaceID:    "workspace",
 			ResourceID:     "project1.task1",
+			AgentID:        "codex-review",
 			ForgeSessionID: "session-one",
 			Provider:       "codex",
 			Title:          "Run One",
@@ -439,7 +440,7 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := tree.Sessions[0]
-	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.AgentRunLastOutputAt != lastOutputAt || internal.ResourceID != "project1.task1" {
+	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunAgentID != "codex-review" || internal.AgentRunProvider != "codex" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.AgentRunLastOutputAt != lastOutputAt || internal.ResourceID != "project1.task1" {
 		t.Fatalf("internal session was not enriched with agent run state: %#v", internal)
 	}
 	if tree.Sessions[1].Source != "external" || tree.Sessions[1].AgentRunUpdatedAt != "" || tree.Sessions[1].AgentRunLastOutputAt != "" {
@@ -817,6 +818,22 @@ func mustReadFile(t *testing.T, path string) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestEndForgeSessionIgnoresAlreadyPrunedSession(t *testing.T) {
+	workspace := t.TempDir()
+	forgePath := filepath.Join(workspace, "forge-fake")
+	script := `#!/bin/sh
+echo "forge: session not found: $4" >&2
+exit 1
+`
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(&server{forgePath: forgePath})
+	if err := m.endForgeSession(context.Background(), guiWorkspace{Path: workspace}, "session-pruned"); err != nil {
+		t.Fatalf("already-pruned session should be treated as ended: %v", err)
+	}
 }
 
 func TestCleanupStaleInternalSessionsEndsOnlyAgentRunSessions(t *testing.T) {

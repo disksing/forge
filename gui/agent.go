@@ -24,6 +24,7 @@ type agentRun struct {
 	ID                      string `json:"id"`
 	WorkspaceID             string `json:"workspaceId"`
 	ResourceID              string `json:"resourceId,omitempty"`
+	AgentID                 string `json:"agentId,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	Provider                string `json:"provider"`
@@ -287,6 +288,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		ID:                newRunID(),
 		WorkspaceID:       workspace.ID,
 		ResourceID:        strings.TrimSpace(req.ResourceID),
+		AgentID:           agent.ID,
 		Provider:          provider.ID,
 		Title:             strings.TrimSpace(req.Title),
 		Cwd:               cwd,
@@ -523,6 +525,9 @@ func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspa
 		return nil
 	}
 	_, err := m.server.runForge(ctx, workspace.Path, "session", "end", "--id", sessionID)
+	if err != nil && strings.Contains(err.Error(), "session not found") {
+		return nil
+	}
 	return err
 }
 
