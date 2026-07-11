@@ -491,11 +491,7 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, errors.New("resourceId is required"), http.StatusBadRequest)
 		return
 	}
-	args := []string{"project", "archive", "--project", resourceID}
-	if strings.Contains(resourceID, ".task") {
-		projectID, taskID, _ := strings.Cut(resourceID, ".")
-		args = []string{"task", "archive", "--project", projectID, "--task", taskID}
-	}
+	args := []string{"resource", "archive", "--id=" + resourceID}
 	result, err := s.runForgeForWorkspace(r.Context(), id, args...)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)

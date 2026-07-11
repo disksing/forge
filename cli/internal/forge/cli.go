@@ -44,6 +44,8 @@ func Run(args []string) error {
 		return runProject(args[1:])
 	case "task":
 		return runTask(args[1:])
+	case "resource":
+		return runResource(args[1:])
 	case "session":
 		return runSession(args[1:])
 	case "workspace":
@@ -55,6 +57,25 @@ func Run(args []string) error {
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
+	}
+}
+
+func runResource(args []string) error {
+	if len(args) == 0 {
+		return errors.New("resource requires a subcommand")
+	}
+	switch args[0] {
+	case "archive":
+		if len(args) != 2 || !strings.HasPrefix(args[1], "--id=") {
+			return errors.New("usage: forge resource archive --id=<resource>")
+		}
+		id := strings.TrimSpace(strings.TrimPrefix(args[1], "--id="))
+		if id == "" {
+			return errors.New("resource id cannot be empty")
+		}
+		return taskArchive(id)
+	default:
+		return fmt.Errorf("unknown resource subcommand %q", args[0])
 	}
 }
 
@@ -237,6 +258,8 @@ Usage:
   forge project archive [--project=<project>]
   forge project log add [--project=<project>] [--details <text>|--details -] <title>
   forge project log list [--project=<project>] [--json]
+
+  forge resource archive --id=<resource>
 
   forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
   forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]

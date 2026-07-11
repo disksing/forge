@@ -1670,6 +1670,24 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 	})
 }
 
+func TestResourceArchiveDispatchesByStoredType(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Project")
+		run(t, "task", "create", "--project=project1", "Task")
+
+		taskOut := run(t, "resource", "archive", "--id=project1.task1")
+		if !strings.Contains(taskOut, "project1/archive/task1") {
+			t.Fatalf("unexpected task archive path: %s", taskOut)
+		}
+		projectOut := run(t, "resource", "archive", "--id=project1")
+		if !strings.Contains(projectOut, "archive/project1") {
+			t.Fatalf("unexpected project archive path: %s", projectOut)
+		}
+		assertDir(t, filepath.Join(root, archiveDir, "project1"))
+	})
+}
+
 func TestTaskArchiveRejectsLegacyPositionalID(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")

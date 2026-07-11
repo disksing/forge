@@ -44,6 +44,35 @@ func TestCreateTaskMapsNonInteractiveOptions(t *testing.T) {
 	}
 }
 
+func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
+	workspace := t.TempDir()
+	outputPath := filepath.Join(t.TempDir(), "args")
+	forgePath := filepath.Join(t.TempDir(), "forge-fake")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf 'archived/path\\n'\n"
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FORGE_TEST_ARGS", outputPath)
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/archive", strings.NewReader(`{"resourceId":"project1.task1"}`))
+	rec := httptest.NewRecorder()
+	s.archiveResource(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := strings.TrimSpace(string(data)), "resource\narchive\n--id=project1.task1"; got != want {
+		t.Fatalf("unexpected forge args:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestCreateTaskRejectsRunOptionsWithoutNonInteractive(t *testing.T) {
 	s := &server{}
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","prompt":"Do the work"}`))
