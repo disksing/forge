@@ -124,23 +124,23 @@ func projectList(options taskListOptions) error {
 	return nil
 }
 
-func taskShow(id string) error {
+func showResource(id string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
 	}
-	taskPath, err := findTaskDir(root, cleanID(id))
+	resourcePath, err := findResourceDir(root, cleanID(id))
 	if err != nil {
 		return err
 	}
-	resource, err := readResourceAtDir(taskPath)
+	resource, err := readResourceAtDir(resourcePath)
 	if err != nil {
 		return err
 	}
 	return printJSON(resource)
 }
 
-func taskArchive(id string) error {
+func archiveResource(id string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -151,7 +151,7 @@ func taskArchive(id string) error {
 	if err != nil {
 		return err
 	}
-	dst, err := taskArchiveDestination(root, src, task)
+	dst, err := resourceArchiveDestination(root, src, task)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func ensureProjectTasksArchived(projectPath string, project *Project) error {
 	return fmt.Errorf("cannot archive %s: archive all project tasks first: %s", project.ID, strings.Join(names, ", "))
 }
 
-func taskArchiveDestination(root, taskPath string, task Resource) (string, error) {
+func resourceArchiveDestination(root, taskPath string, task Resource) (string, error) {
 	meta := task.resourceMeta()
 	if isProject(task) {
 		return filepath.Join(root, archiveDir, filepath.Base(taskPath)), nil
@@ -292,7 +292,7 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 		return err
 	}
 
-	parentPath, err := findTaskDir(root, parentID)
+	parentPath, err := findResourceDir(root, parentID)
 	if err != nil {
 		return err
 	}
@@ -339,7 +339,7 @@ func projectTaskList(options taskListOptions) error {
 		return err
 	}
 	parentID := cleanID(options.ProjectID)
-	parentPath, err := findTaskDir(root, parentID)
+	parentPath, err := findResourceDir(root, parentID)
 	if err != nil {
 		return err
 	}
@@ -707,44 +707,45 @@ func readTaskEntriesInDirs(dirs []string, pattern *regexp.Regexp) ([]taskListEnt
 	return tasks, nil
 }
 
-func findTaskDir(root, id string) (string, error) {
+func findResourceDir(root, id string) (string, error) {
 	if id == "" {
-		return "", fmt.Errorf("task id cannot be empty")
+		return "", fmt.Errorf("resource id cannot be empty")
 	}
-	var found string
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
+	parents := []string{root, filepath.Join(root, archiveDir)}
+	if projectID, _, ok := strings.Cut(id, ".task"); ok {
+		projectPath, err := findResourceDir(root, projectID)
+		if err != nil {
+			return "", err
 		}
-		if !entry.IsDir() {
-			return nil
+		parents = []string{projectPath, filepath.Join(projectPath, archiveDir)}
+	}
+	var matches []string
+	for _, parent := range parents {
+		entries, err := os.ReadDir(parent)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return "", err
 		}
-		switch entry.Name() {
-		case ".git", reposDir, "worktree", "artifacts":
-			if path != root {
-				return filepath.SkipDir
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(parent, entry.Name())
+			resource, err := readResourceAtDir(path)
+			if err == nil && resource.resourceMeta().ID == id && resourceDirNameMatches(entry.Name(), resource) {
+				matches = append(matches, path)
 			}
 		}
-		if !pathExists(filepath.Join(path, projectJSONFile)) && !pathExists(filepath.Join(path, taskJSONFile)) {
-			return nil
-		}
-		resource, err := readResourceAtDir(path)
-		if err != nil {
-			return nil
-		}
-		if resource.resourceMeta().ID == id && resourceDirNameMatches(entry.Name(), resource) {
-			found = path
-			return filepath.SkipAll
-		}
-		return nil
-	})
-	if err != nil {
-		return "", err
 	}
-	if found == "" {
-		return "", fmt.Errorf("task not found: %s", id)
+	if len(matches) == 0 {
+		return "", fmt.Errorf("resource not found: %s", id)
 	}
-	return found, nil
+	if len(matches) > 1 {
+		return "", fmt.Errorf("multiple resource directories found for %s: %s", id, strings.Join(matches, ", "))
+	}
+	return matches[0], nil
 }
 
 func inferCurrentProjectID() (string, bool, error) {

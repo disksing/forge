@@ -621,7 +621,7 @@ func resolveSessionTarget(root string, options sessionTargetOptions) (SessionCon
 }
 
 func resolveResourceSessionControl(root, resourceID string) (SessionControl, bool, error) {
-	path, err := findTaskDir(root, resourceID)
+	path, err := findResourceDir(root, resourceID)
 	if err != nil {
 		return SessionControl{}, false, err
 	}
@@ -723,7 +723,7 @@ func sessionControlsArchivedResource(root string, session Session) bool {
 		if strings.TrimSpace(control.ResourceID) == "" {
 			continue
 		}
-		path, err := findTaskDir(root, control.ResourceID)
+		path, err := findResourceDir(root, control.ResourceID)
 		if err == nil && isArchivedPath(root, path) {
 			return true
 		}

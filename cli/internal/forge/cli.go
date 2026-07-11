@@ -73,7 +73,7 @@ func runResource(args []string) error {
 		if id == "" {
 			return errors.New("resource id cannot be empty")
 		}
-		return taskArchive(id)
+		return archiveResource(id)
 	default:
 		return fmt.Errorf("unknown resource subcommand %q", args[0])
 	}
@@ -142,13 +142,13 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		return taskShow(projectID)
+		return showResource(projectID)
 	case "archive":
 		projectID, err := resolveProjectArg(args[1:], "archive")
 		if err != nil {
 			return err
 		}
-		return taskArchive(projectID)
+		return archiveResource(projectID)
 	case "log":
 		return runResourceLog("project", args[1:])
 	case "repo":
@@ -194,13 +194,13 @@ func runTask(args []string) error {
 		if err != nil {
 			return err
 		}
-		return taskShow(taskID)
+		return showResource(taskID)
 	case "archive":
 		taskID, err := resolveTaskArg(args[1:], "archive")
 		if err != nil {
 			return err
 		}
-		return taskArchive(taskID)
+		return archiveResource(taskID)
 	case "repo":
 		return runTaskRepo(args[1:])
 	case "log":

@@ -47,7 +47,7 @@ func startTask(args []string) error {
 	if err != nil {
 		return err
 	}
-	taskPath, err := findTaskDir(root, resourceID)
+	taskPath, err := findResourceDir(root, resourceID)
 	if err != nil {
 		return err
 	}

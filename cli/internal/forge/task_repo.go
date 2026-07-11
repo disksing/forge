@@ -297,7 +297,7 @@ func removeTaskRepo(id, name string) error {
 }
 
 func loadTask(root, id string) (string, Task, error) {
-	taskPath, err := findTaskDir(root, id)
+	taskPath, err := findResourceDir(root, id)
 	if err != nil {
 		return "", Task{}, err
 	}
@@ -309,7 +309,7 @@ func loadTask(root, id string) (string, Task, error) {
 }
 
 func loadResource(root, id string) (string, Resource, error) {
-	path, err := findTaskDir(root, id)
+	path, err := findResourceDir(root, id)
 	if err != nil {
 		return "", nil, err
 	}

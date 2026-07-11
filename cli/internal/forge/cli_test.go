@@ -673,6 +673,24 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 	})
 }
 
+func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Project")
+		duplicate := filepath.Join(root, archiveDir, "project1-copy")
+		if err := os.MkdirAll(duplicate, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data := readFile(t, filepath.Join(root, "project1", projectJSONFile))
+		if err := os.WriteFile(filepath.Join(duplicate, projectJSONFile), []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := findResourceDir(root, "project1"); err == nil || !strings.Contains(err.Error(), "multiple resource directories") {
+			t.Fatalf("expected duplicate resource error, got %v", err)
+		}
+	})
+}
+
 func TestSessionNewLockShowListAndUnlock(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
