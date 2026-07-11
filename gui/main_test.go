@@ -96,6 +96,17 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	if !strings.Contains(source, `item.run.state || item.run.mode`) {
+		t.Fatal("task details should render structured run state")
+	}
+}
+
 func TestProjectDetailsOmitsDescription(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

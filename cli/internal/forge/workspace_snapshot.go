@@ -9,20 +9,20 @@ import (
 
 type WorkspaceTree struct {
 	Root     string             `json:"root"`
-	Projects []ResourceTreeItem `json:"projects"`
+	Projects []ResourceTreeView `json:"projects"`
 	Sessions []Session          `json:"sessions"`
 }
 
-type ResourceTreeItem struct {
+type ResourceTreeView struct {
 	ID       string             `json:"id"`
 	Type     string             `json:"type"`
 	Title    string             `json:"title"`
 	Path     string             `json:"path"`
 	Archived bool               `json:"archived"`
-	Children []ResourceTreeItem `json:"children,omitempty"`
+	Children []ResourceTreeView `json:"children,omitempty"`
 }
 
-type ResourceDetail struct {
+type ResourceDetailView struct {
 	ID          string             `json:"id"`
 	Type        string             `json:"type"`
 	Title       string             `json:"title"`
@@ -33,11 +33,12 @@ type ResourceDetail struct {
 	Path        string             `json:"path"`
 	Archived    bool               `json:"archived"`
 	Repos       []TaskRepo         `json:"repos,omitempty"`
+	Run         *TaskRun           `json:"run,omitempty"`
 	Logs        []LogEntry         `json:"logs,omitempty"`
 	Files       []ResourceFile     `json:"files,omitempty"`
 	Artifacts   []FileTreeEntry    `json:"artifacts"`
 	Worktrees   []FileTreeEntry    `json:"worktrees"`
-	Children    []ResourceTreeItem `json:"children,omitempty"`
+	Children    []ResourceTreeView `json:"children,omitempty"`
 }
 
 type ResourceFile struct {
@@ -89,7 +90,7 @@ func buildWorkspaceTree() (WorkspaceTree, error) {
 	if err != nil {
 		return WorkspaceTree{}, err
 	}
-	projects := make([]ResourceTreeItem, 0, len(projectEntries))
+	projects := make([]ResourceTreeView, 0, len(projectEntries))
 	for _, entry := range projectEntries {
 		project, err := buildResourceTreeItem(root, resourceEntry{Resource: &entry.Project, Path: entry.Path}, true)
 		if err != nil {
@@ -108,21 +109,21 @@ func buildWorkspaceTree() (WorkspaceTree, error) {
 	}, nil
 }
 
-func buildResourceDetail(id string) (ResourceDetail, error) {
+func buildResourceDetail(id string) (ResourceDetailView, error) {
 	root, err := findWorkspaceRoot()
 	if err != nil {
-		return ResourceDetail{}, err
+		return ResourceDetailView{}, err
 	}
 	path, resource, err := loadResource(root, cleanID(id))
 	if err != nil {
-		return ResourceDetail{}, err
+		return ResourceDetailView{}, err
 	}
 	return buildResourceDetailAt(root, resourceEntry{Resource: resource, Path: path})
 }
 
-func buildResourceTreeItem(root string, entry resourceEntry, includeChildren bool) (ResourceTreeItem, error) {
+func buildResourceTreeItem(root string, entry resourceEntry, includeChildren bool) (ResourceTreeView, error) {
 	meta := entry.Resource.resourceMeta()
-	item := ResourceTreeItem{
+	item := ResourceTreeView{
 		ID:       meta.ID,
 		Type:     meta.Type,
 		Title:    meta.Title,
@@ -132,21 +133,21 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
 		if err != nil {
-			return ResourceTreeItem{}, err
+			return ResourceTreeView{}, err
 		}
 		item.Children = children
 	}
 	return item, nil
 }
 
-func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetail, error) {
+func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView, error) {
 	meta := entry.Resource.resourceMeta()
 	logs, err := readLogEntries(entry.Path)
 	if err != nil {
-		return ResourceDetail{}, err
+		return ResourceDetailView{}, err
 	}
 	sortLogEntries(logs)
-	detail := ResourceDetail{
+	detail := ResourceDetailView{
 		ID:        meta.ID,
 		Type:      meta.Type,
 		Title:     meta.Title,
@@ -166,26 +167,27 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetail, er
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
+		detail.Run = typed.Run
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}
 	if isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
 		if err != nil {
-			return ResourceDetail{}, err
+			return ResourceDetailView{}, err
 		}
 		detail.Children = children
 	}
 	return detail, nil
 }
 
-func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeItem, error) {
+func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {
 	pattern := projectTaskName(entry.Resource.resourceMeta().ID)
 	dirs := []string{entry.Path}
 	childEntries, err := readTaskEntriesInDirs(dirs, pattern)
 	if err != nil {
 		return nil, err
 	}
-	children := make([]ResourceTreeItem, 0, len(childEntries))
+	children := make([]ResourceTreeView, 0, len(childEntries))
 	for _, child := range childEntries {
 		item, err := buildResourceTreeItem(root, resourceEntry{Resource: &child.Task, Path: child.Path}, false)
 		if err != nil {

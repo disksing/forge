@@ -212,7 +212,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		projectDetailJSON := run(t, "workspace", "resource", "--id", "project1", "--json")
-		var projectDetail ResourceDetail
+		var projectDetail ResourceDetailView
 		if err := json.Unmarshal([]byte(projectDetailJSON), &projectDetail); err != nil {
 			t.Fatalf("workspace project resource should print JSON, got error %v and output:\n%s", err, projectDetailJSON)
 		}
@@ -272,7 +272,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		emptyDetailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
-		var emptyDetail ResourceDetail
+		var emptyDetail ResourceDetailView
 		if err := json.Unmarshal([]byte(emptyDetailJSON), &emptyDetail); err != nil {
 			t.Fatalf("workspace task resource should print JSON, got error %v and output:\n%s", err, emptyDetailJSON)
 		}
@@ -305,7 +305,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("unexpected task tree item: %+v", taskItem)
 		}
 		detailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
-		var detail ResourceDetail
+		var detail ResourceDetailView
 		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
 			t.Fatalf("workspace resource should print JSON, got error %v and output:\n%s", err, detailJSON)
 		}
@@ -387,6 +387,14 @@ func TestNonInteractiveTaskRunLifecycleAndDependencies(t *testing.T) {
 		parentJSON := run(t, "task", "create", "--project=project1", "--non-interactive", "--after=project1.task1", "Parent")
 		if !strings.Contains(parentJSON, `"state": "waiting"`) || !strings.Contains(parentJSON, `"generation": 1`) {
 			t.Fatalf("expected waiting parent metadata, got:\n%s", parentJSON)
+		}
+		detailJSON := run(t, "workspace", "resource", "--id=project1.task1", "--json")
+		var detail ResourceDetailView
+		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail.Run == nil || detail.Run.Mode != taskRunModeNonInteractive || detail.Run.State != taskRunStateQueued {
+			t.Fatalf("task detail should expose run state, got: %+v", detail.Run)
 		}
 
 		listed := run(t, "task", "list", "--project=project1", "--runnable", "--json")
