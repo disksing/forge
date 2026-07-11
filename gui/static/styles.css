@@ -568,6 +568,55 @@ body.resizing-y {
   padding: 20px;
 }
 
+.create-task-automation-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  padding: 12px;
+  cursor: pointer;
+}
+
+.create-task-automation-toggle input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.create-task-automation-toggle span,
+.create-task-automation-toggle small {
+  display: block;
+}
+
+.create-task-automation-toggle small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.create-task-automation-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr);
+  gap: 10px;
+}
+
+.create-task-automation-fields label,
+.create-task-automation-fields label > span {
+  display: grid;
+  gap: 5px;
+}
+
+.create-task-automation-fields label > span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.create-task-automation-fields select {
+  width: 100%;
+  padding: 8px 10px;
+}
+
 .agent-panel {
   min-width: 0;
   min-height: 0;

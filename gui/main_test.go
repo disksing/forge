@@ -1,6 +1,71 @@
 package main
 
-import "testing"
+import (
+	"bytes"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestCreateTaskMapsNonInteractiveOptions(t *testing.T) {
+	workspace := t.TempDir()
+	outputPath := filepath.Join(t.TempDir(), "args")
+	forgePath := filepath.Join(t.TempDir(), "forge-fake")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf '{}\\n'\n"
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FORGE_TEST_ARGS", outputPath)
+
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath, forgePath: forgePath}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","nonInteractive":true,"agentId":"codex-one","prompt":"Do the work"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	s.createTask(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+	want := []string{"task", "create", "--project", "project1", "--non-interactive", "--agent=codex-one", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
+	}
+}
+
+func TestCreateTaskRejectsRunOptionsWithoutNonInteractive(t *testing.T) {
+	s := &server{}
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","prompt":"Do the work"}`))
+	rec := httptest.NewRecorder()
+	s.createTask(rec, req, "workspace-one")
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require nonInteractive") {
+		t.Fatalf("expected validation error, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{`name="nonInteractive"`, `name="prompt"`, `name="agentId"`, `nonInteractive: dialog.nonInteractive`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("create task dialog is missing %q", want)
+		}
+	}
+}
 
 func TestFileMimeTypeMarkdown(t *testing.T) {
 	for _, name := range []string{"task.md", "README.markdown", "notes.mdown", "brief.mkdn"} {

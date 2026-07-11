@@ -36,6 +36,9 @@ const state = {
     description: "",
     detail: "",
     slug: "",
+    nonInteractive: false,
+    agentId: "",
+    prompt: "",
     submitting: false,
   },
   autoRefreshTimer: null,
@@ -2537,6 +2540,9 @@ function openCreateDialog(type, projectId = "") {
     description: "",
     detail: "",
     slug: "",
+    nonInteractive: false,
+    agentId: defaultChatAgentID(),
+    prompt: "",
     submitting: false,
   };
   renderCreateDialog();
@@ -2552,6 +2558,9 @@ function closeCreateDialog() {
     description: "",
     detail: "",
     slug: "",
+    nonInteractive: false,
+    agentId: "",
+    prompt: "",
     submitting: false,
   };
   renderCreateDialog();
@@ -2570,7 +2579,8 @@ function renderCreateDialog() {
   const title = isTask ? "Create task" : "Create project";
   const descriptionPlaceholder = "Describe the project";
   const detailPlaceholder = "Task detail";
-  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.submitting}`;
+  const agents = enabledAgentConfigs();
+  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.nonInteractive}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
   root.innerHTML = `
@@ -2588,6 +2598,25 @@ function renderCreateDialog() {
           ${isTask ? `
             <input name="title" required value="${escapeHTML(dialog.title)}" placeholder="Task title" />
             <textarea name="detail" placeholder="${detailPlaceholder}">${escapeHTML(dialog.detail)}</textarea>
+            <label class="create-task-automation-toggle">
+              <input name="nonInteractive" type="checkbox" ${dialog.nonInteractive ? "checked" : ""} />
+              <span><strong>Run automatically</strong><small>Queue a one-turn task for the GUI scheduler.</small></span>
+            </label>
+            ${dialog.nonInteractive ? `
+              <div class="create-task-automation-fields">
+                <label>
+                  <span>Run prompt</span>
+                  <textarea name="prompt" placeholder="Instructions for the automated run">${escapeHTML(dialog.prompt)}</textarea>
+                </label>
+                <label>
+                  <span>Agent</span>
+                  <select name="agentId">
+                    <option value="">Workspace default</option>
+                    ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${dialog.agentId === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>`).join("")}
+                  </select>
+                </label>
+              </div>
+            ` : ""}
           ` : `
             <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
           `}
@@ -2609,11 +2638,17 @@ function bindCreateDialogEvents() {
   if (!form) return;
   form.addEventListener("input", (event) => {
     const target = event.target;
-    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
     if (target.name === "title") state.createDialog.title = target.value;
     if (target.name === "description") state.createDialog.description = target.value;
     if (target.name === "detail") state.createDialog.detail = target.value;
     if (target.name === "slug") state.createDialog.slug = target.value;
+    if (target.name === "prompt") state.createDialog.prompt = target.value;
+    if (target.name === "agentId") state.createDialog.agentId = target.value;
+    if (target.name === "nonInteractive") {
+      state.createDialog.nonInteractive = target.checked;
+      renderCreateDialog();
+    }
   });
   form.addEventListener("submit", submitCreateDialog);
   document.querySelectorAll("[data-create-dialog-close]").forEach((node) => {
@@ -2633,6 +2668,9 @@ async function submitCreateDialog(event) {
   dialog.description = String(form.get("description") || "");
   dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");
+  dialog.nonInteractive = form.get("nonInteractive") === "on";
+  dialog.agentId = String(form.get("agentId") || "");
+  dialog.prompt = String(form.get("prompt") || "");
   dialog.submitting = true;
   renderCreateDialog();
   try {
@@ -2654,6 +2692,9 @@ async function submitCreateDialog(event) {
           title: dialog.title,
           detail: dialog.detail,
           slug: dialog.slug,
+          nonInteractive: dialog.nonInteractive,
+          agentId: dialog.nonInteractive ? dialog.agentId : "",
+          prompt: dialog.nonInteractive ? dialog.prompt : "",
         }),
       });
       toast("Task created.");
