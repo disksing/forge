@@ -17,7 +17,6 @@ func validTestResource(id, kind string, parent *string) Task {
 			ID:            id,
 			Type:          kind,
 			Title:         "Resource",
-			Workflow:      defaultWorkflowName,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		},
@@ -31,7 +30,7 @@ func validTestResource(id, kind string, parent *string) Task {
 }
 
 func TestValidateResourceRejectsKindSpecificInvalidStates(t *testing.T) {
-	project := newProject("project1", "Project", "", defaultWorkflowName)
+	project := newProject("project1", "Project", "")
 	project.Type = resourceTypeTask
 	if err := validateResource(&project); err == nil || !strings.Contains(err.Error(), "project type") {
 		t.Fatalf("expected incorrect project type to be rejected, got %v", err)
@@ -50,7 +49,7 @@ func TestValidateResourceRejectsKindSpecificInvalidStates(t *testing.T) {
 }
 
 func TestProjectAndTaskJSONShapesRemainCompatible(t *testing.T) {
-	project := newProject("project1", "Project", "Description", defaultWorkflowName)
+	project := newProject("project1", "Project", "Description")
 	projectData, err := json.Marshal(project)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +68,7 @@ func TestProjectAndTaskJSONShapesRemainCompatible(t *testing.T) {
 		t.Fatalf("project JSON must not contain run: %#v", projectJSON)
 	}
 
-	task := newTask("project1.task1", "project1", "Task", "", defaultWorkflowName)
+	task := newTask("project1.task1", "project1", "Task", "")
 	taskData, err := json.Marshal(task)
 	if err != nil {
 		t.Fatal(err)
@@ -85,7 +84,7 @@ func TestProjectAndTaskJSONShapesRemainCompatible(t *testing.T) {
 
 func TestReadResourceRequiresCurrentSchema(t *testing.T) {
 	dir := t.TempDir()
-	project := newProject("project1", "Project", "", defaultWorkflowName)
+	project := newProject("project1", "Project", "")
 	project.SchemaVersion = 0
 	if err := writeJSON(filepath.Join(dir, projectJSONFile), project); err != nil {
 		t.Fatal(err)
@@ -102,7 +101,7 @@ func TestMigrateResourceSchemasAddsVersionAndPreservesUnknownFields(t *testing.T
 	if err := os.MkdirAll(projectDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	project := newProject("project1", "Project", "", defaultWorkflowName)
+	project := newProject("project1", "Project", "")
 	project.SchemaVersion = 0
 	data, err := json.Marshal(project)
 	if err != nil {

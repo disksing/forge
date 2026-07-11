@@ -36,9 +36,6 @@ func runInit(args []string) error {
 	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
-	if err := ensureWorkflowFiles(root, false); err != nil {
-		return err
-	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
 		return err
 	}
@@ -64,9 +61,6 @@ func runWorkspaceMigrate(args []string) error {
 	}
 	removedProjectWorkFiles, err := removeProjectWorkFiles(root)
 	if err != nil {
-		return err
-	}
-	if err := ensureWorkflowFiles(root, true); err != nil {
 		return err
 	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
@@ -106,23 +100,6 @@ func removeProjectWorkFiles(root string) (int, error) {
 		return nil
 	})
 	return removed, err
-}
-
-func ensureWorkflowFiles(root string, reset bool) error {
-	dir := filepath.Join(root, workflowDir)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	for name, content := range builtinWorkflows {
-		path := filepath.Join(dir, name+".md")
-		if !reset && pathExists(path) {
-			continue
-		}
-		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func updateAgentsMD(path string) error {
@@ -205,7 +182,7 @@ This directory is an AgentWorkspace managed by forge.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
-- Workflow instruction files live under ` + "`workflow/`" + ` and generated project/task ` + "`AGENTS.md`" + ` files point agents to the selected workflow.
+- Project task templates live under each project's ` + "`templates/`" + ` directory.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
@@ -225,7 +202,7 @@ This directory is an AgentWorkspace managed by forge.
 - Prefer forge commands for creating, listing, and archiving tasks.
 - Determine the current interaction mode from ` + "`FORGE_INTERACTION_MODE`" + ` or the injected session context. In ` + "`non_interactive`" + ` mode, before ending the turn call exactly one of ` + "`forge task run complete`" + `, ` + "`forge task run wait`" + `, ` + "`forge task run pause`" + `, or ` + "`forge task run fail`" + `. These commands record the next action; finish the response normally and let the session owner settle and close the session.
 - To delegate work, create a child with ` + "`forge task create --non-interactive --prompt=<prompt> <title>`" + `. To suspend the current non-interactive task until that child generation completes, call ` + "`forge task run wait --after=<task@generation> --summary=<text>`" + `. Never end a launcher-owned session yourself.
-- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, workflow steps in ` + "`workflow/`" + ` files, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
+- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
 
@@ -238,7 +215,7 @@ forge migrate
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--workflow=<name>] [--slug <slug>] <description>
+forge project create [--slug <slug>] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
@@ -273,9 +250,9 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 Notes:
 
 - ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace.
-- ` + "`forge migrate`" + ` refreshes built-in workflow templates and forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace.
+- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
-- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--workflow=<name>`" + ` to select the workflow instruction file that generated project/task ` + "`AGENTS.md`" + ` files point agents to. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
+- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
 - ` + "`forge project show`" + ` and ` + "`forge project archive`" + ` accept ` + "`--project=<project>`" + ` where project is a full id like ` + "`project22`" + ` or just a number like ` + "`22`" + `. When omitted, Forge uses the current directory's project.
 - ` + "`forge task create`" + ` creates a new open task directory under a project. Pass ` + "`<title>`" + ` for the task title stored in ` + "`task.json`" + `, and pass ` + "`--detail <detail>`" + ` to write the initial ` + "`task.md`" + ` body. Use ` + "`--project=<project>`" + ` to select a project, or omit it to use the current directory's project. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the task id.

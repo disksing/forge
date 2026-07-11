@@ -10,9 +10,6 @@ The design is intentionally simple. All workspace data lives on the filesystem a
 AgentWorkspace/
   AGENTS.md
   forge.json
-  workflow/
-    default.md
-    project.md
   repos/
     owner/repo/
   project1/
@@ -21,6 +18,7 @@ AgentWorkspace/
     project.md
     log.jsonl
     artifacts/
+    templates/
     task1/
       AGENTS.md
       task.json
@@ -45,7 +43,7 @@ forge migrate
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--workflow=<name>] [--slug <slug>] <description>
+forge project create [--slug <slug>] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
@@ -74,7 +72,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge --version` prints the build-time git branch and sha.
 
-`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `workflow/`, and a forge-managed block in `AGENTS.md`.
+`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, and a forge-managed block in `AGENTS.md`.
 
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
@@ -82,7 +80,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge-start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
-`forge project create [--workflow=<name>] [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `log.jsonl`, `AGENTS.md`, and `artifacts/`. Projects do not store repository metadata, recovery snapshots, or `worktree/` directories. By default, Forge points the generated project `AGENTS.md` launch card at `workflow/default.md`; `--workflow=<name>` points it at `workflow/<name>.md`. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description.
+`forge project create [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `log.jsonl`, `AGENTS.md`, `artifacts/`, and `templates/`. Projects do not store repository metadata, recovery snapshots, or `worktree/` directories. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description. Task templates are Markdown files under `templates/`; their YAML front matter supports `title`, `nonInteractive`, `agent`, and `prompt`.
 
 `forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
 
@@ -118,9 +116,9 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Agents started through `forge-start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
 
-`forge migrate` upgrades project/task metadata to the current resource schema and refreshes Forge-managed generated content in the enclosing workspace: built-in workflow templates, the workspace `AGENTS.md` managed block, and open project/task `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
+`forge migrate` upgrades project/task metadata to the current resource schema and refreshes the workspace and open resource `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
 
-`forge migrate` is safe to run multiple times. It rewrites built-in workflow templates, rewrites only forge-managed prompt blocks, and preserves content outside managed blocks:
+`forge migrate` is safe to run multiple times. It rewrites only forge-managed prompt blocks and preserves content outside managed blocks:
 
 ```md
 <!-- managed by forge cli -->
@@ -172,16 +170,16 @@ repos/disksing/forge.git
 
 Each project directory contains:
 
-- `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, and selected workflow file.
-- `project.json`: versioned structured project facts such as schema version, id, type, description, and selected workflow.
+- `AGENTS.md`: a short launch card that points agents to workspace rules and local context files, and documents the task template format.
+- `project.json`: versioned structured project facts such as schema version, id, type, and description.
 - `project.md`: durable project contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It records why the project exists, its boundaries, stable constraints and decisions, and how success is judged. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and contract-changing `Open Questions` only when useful.
 - `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge project log add/list` to write or read project log entries; do not use it as a current-state snapshot.
 - `artifacts/`: generated reports, screenshots, patches, and other outputs.
 
 Each task directory contains:
 
-- `AGENTS.md`: a short launch card that points agents to the workspace rules, local context files, parent project context, and selected workflow file.
-- `task.json`: versioned structured facts such as schema version, id, type, parent id, title, selected workflow, and involved repositories.
+- `AGENTS.md`: a short launch card that points agents to workspace rules, local context files, and parent project context.
+- `task.json`: versioned structured facts such as schema version, id, type, parent id, title, and involved repositories.
 - `task.md`: durable task contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It answers why the task exists, what is in or out of scope, which constraints and decisions remain valid, and how completion is judged. Questions that may change that contract belong here.
 - `work.md`: replaceable recovery checkpoint generated with default `Focus` only, plus hidden examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`. Keep only the current focus, next actions, blockers, and state needed to resume. Do not repeat the task contract or accumulate completed history. Short-lived execution questions and arbitrary PR, CI, image, deployment, or related-task references belong here when useful.
 - `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge task log add/list` to write or read task log entries; do not use it as the current recovery state.

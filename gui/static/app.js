@@ -32,6 +32,7 @@ const state = {
     open: false,
     type: "",
     projectId: "",
+    templateName: "",
     title: "",
     description: "",
     detail: "",
@@ -582,6 +583,7 @@ function renderDetails() {
     </div>
     ${metrics(detail)}
     ${fileSection(detail)}
+    ${selected.type === "project" ? templateSection(detail) : ""}
     ${artifactSection("Artifacts", detail.artifacts)}
     ${selected.type === "project" ? "" : worktreeSection(detail.repos)}
     ${fileModal()}
@@ -589,6 +591,31 @@ function renderDetails() {
   `;
   $("archiveButton")?.addEventListener("click", () => archiveResource(selected.id));
   $("newTaskButton")?.addEventListener("click", () => showTaskForm(selected.id));
+  bindTemplateEvents();
+}
+
+function templateSection(item) {
+  const templates = item.templates || [];
+  return `
+    <div class="content-section">
+      <h3>${icon("layout-template")}<span>Task Templates</span></h3>
+      <div class="template-list">
+        ${templates.length ? templates.map((template) => `
+          <button type="button" class="template-row" data-template-preview="${escapeHTML(template.path)}">
+            ${icon("file-text")}
+            <span><strong>${escapeHTML(template.title)}</strong><small>${escapeHTML(template.name)}${template.nonInteractive ? " · automatic" : ""}</small></span>
+            ${icon("chevron-right")}
+          </button>
+        `).join("") : `<div class="empty-list-row">No task templates in templates/*.md.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function bindTemplateEvents() {
+  document.querySelectorAll("[data-template-preview]").forEach((button) => {
+    button.addEventListener("click", () => previewFile("Templates", button.dataset.templatePreview).catch((err) => toast(err.message)));
+  });
 }
 
 function breadcrumb(selected, currentLabel) {
@@ -2555,6 +2582,7 @@ function openCreateDialog(type, projectId = "") {
     open: true,
     type,
     projectId,
+    templateName: "",
     title: "",
     description: "",
     detail: "",
@@ -2573,6 +2601,7 @@ function closeCreateDialog() {
     open: false,
     type: "",
     projectId: "",
+    templateName: "",
     title: "",
     description: "",
     detail: "",
@@ -2599,7 +2628,8 @@ function renderCreateDialog() {
   const descriptionPlaceholder = "Describe the project";
   const detailPlaceholder = "Task detail";
   const agents = enabledAgentConfigs();
-  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.nonInteractive}:${dialog.submitting}`;
+  const templates = isTask ? (state.details[dialog.projectId]?.templates || []) : [];
+  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.nonInteractive}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
   root.innerHTML = `
@@ -2615,6 +2645,15 @@ function renderCreateDialog() {
         </header>
         <form id="createDialogForm" class="details-form create-dialog-form">
           ${isTask ? `
+            ${templates.length ? `
+              <label>
+                <span>Template</span>
+                <select name="templateName">
+                  <option value="">Blank task</option>
+                  ${templates.map((template) => `<option value="${escapeHTML(template.name)}" ${dialog.templateName === template.name ? "selected" : ""}>${escapeHTML(template.title)}</option>`).join("")}
+                </select>
+              </label>
+            ` : ""}
             <input name="title" required value="${escapeHTML(dialog.title)}" placeholder="Task title" />
             <textarea name="detail" placeholder="${detailPlaceholder}">${escapeHTML(dialog.detail)}</textarea>
             <label class="create-task-automation-toggle">
@@ -2659,6 +2698,10 @@ function bindCreateDialogEvents() {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
     if (target.name === "title") state.createDialog.title = target.value;
+    if (target.name === "templateName") {
+      applyCreateDialogTemplate(target.value);
+      return;
+    }
     if (target.name === "description") state.createDialog.description = target.value;
     if (target.name === "detail") state.createDialog.detail = target.value;
     if (target.name === "slug") state.createDialog.slug = target.value;
@@ -2678,12 +2721,27 @@ function bindCreateDialogEvents() {
   }
 }
 
+function applyCreateDialogTemplate(name) {
+  const dialog = state.createDialog;
+  dialog.templateName = name;
+  const template = (state.details[dialog.projectId]?.templates || []).find((item) => item.name === name);
+  if (template) {
+    dialog.title = template.title || "";
+    dialog.detail = template.detail || "";
+    dialog.nonInteractive = Boolean(template.nonInteractive);
+    dialog.agentId = template.agentId || defaultChatAgentID();
+    dialog.prompt = template.prompt || "";
+  }
+  renderCreateDialog();
+}
+
 async function submitCreateDialog(event) {
   event.preventDefault();
   const dialog = state.createDialog;
   if (!dialog.open || dialog.submitting) return;
   const form = new FormData(event.currentTarget);
   dialog.title = String(form.get("title") || "");
+  dialog.templateName = String(form.get("templateName") || "");
   dialog.description = String(form.get("description") || "");
   dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");

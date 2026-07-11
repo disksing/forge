@@ -96,6 +96,19 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("task template UI is missing %q", want)
+		}
+	}
+}
+
 func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

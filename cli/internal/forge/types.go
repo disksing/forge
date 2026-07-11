@@ -89,7 +89,6 @@ type ResourceMeta struct {
 	ID            string `json:"id"`
 	Type          string `json:"type"`
 	Title         string `json:"title"`
-	Workflow      string `json:"workflow,omitempty"`
 	CreatedAt     string `json:"createdAt"`
 	UpdatedAt     string `json:"updatedAt"`
 }

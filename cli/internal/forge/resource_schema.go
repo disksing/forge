@@ -22,9 +22,6 @@ func validateResource(resource Resource) error {
 	if strings.TrimSpace(meta.Title) == "" {
 		return fmt.Errorf("title cannot be empty")
 	}
-	if strings.TrimSpace(meta.Workflow) == "" {
-		return fmt.Errorf("workflow cannot be empty")
-	}
 	if strings.TrimSpace(meta.CreatedAt) == "" || strings.TrimSpace(meta.UpdatedAt) == "" {
 		return fmt.Errorf("createdAt and updatedAt cannot be empty")
 	}

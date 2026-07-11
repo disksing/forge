@@ -16,46 +16,14 @@ import (
 var topProjectName = regexp.MustCompile(`^project([0-9]+)$`)
 var topProjectDirName = regexp.MustCompile(`^project([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
 var taskDirName = regexp.MustCompile(`^task([0-9]+)(?:-[A-Za-z0-9][A-Za-z0-9._-]*)?$`)
-var workflowName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 var resourceSlugName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
 
 const (
-	workflowDir         = "workflow"
-	defaultWorkflowName = "default"
-	projectWorkflowName = "project"
-	projectJSONFile     = "project.json"
-	projectMDFile       = "project.md"
-	taskJSONFile        = "task.json"
-	taskMDFile          = "task.md"
+	projectJSONFile = "project.json"
+	projectMDFile   = "project.md"
+	taskJSONFile    = "task.json"
+	taskMDFile      = "task.md"
 )
-
-var builtinWorkflows = map[string]string{
-	defaultWorkflowName: `Standard task workflow. Clarify requirements and acceptance criteria first, then implement, test, and record the result.
-
-### Steps
-
-1. Confirm the task boundary, acceptance criteria, and relevant risks.
-2. If anything important is unclear, clarify it with the user before changing code or documents.
-3. Make the required code or documentation changes.
-4. Run relevant tests and checks, then record important results.
-5. Summarize the changes, verification results, remaining risks, and recommended next steps.
-`,
-	projectWorkflowName: `This is a project-management project. Keep this project focused on clarifying requirements, splitting work into tasks, coordinating implementation, reviewing, merging, and closing out. Put implementation work in direct tasks, with each agent working in its own task-owned worktree/branch.
-
-### Steps
-
-1. When a new request arrives, discuss it with the user and clarify the task boundary, acceptance criteria, and risks.
-2. After the requirement is clear, create a new task under the current project and write the requirement, acceptance criteria, and necessary context into that task's task.md.
-3. Start an agent for the task. The agent should work inside that task directory, create an independent worktree/branch, then implement, test, and commit according to the task requirements.
-4. After the agent finishes, review from the project: inspect the diff, confirm requirement coverage, and run necessary tests.
-5. After review and tests pass, merge the task branch into the target branch.
-6. Complete the confirmed closeout steps and archive the task.
-
-### Pending Decisions
-
-- Should any additional closeout steps run after a task is complete, such as updating the local environment, rerunning integration tests, or pushing to the remote?
-`,
-}
 
 type taskListOptions struct {
 	ProjectID       string
@@ -75,7 +43,7 @@ type projectListEntry struct {
 	Path    string
 }
 
-func projectCreate(description, workflow string, allowBuiltinFallback bool, slug string) error {
+func projectCreate(description, slug string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -88,18 +56,13 @@ func projectCreate(description, workflow string, allowBuiltinFallback bool, slug
 	if err != nil {
 		return err
 	}
-	workflowContent, err := resolveWorkflow(root, workflow, allowBuiltinFallback && workflow == defaultWorkflowName)
-	if err != nil {
-		return err
-	}
-
 	id, err := nextProjectID(root)
 	if err != nil {
 		return err
 	}
 	projectPath := filepath.Join(root, projectDirectoryName(id, slug))
-	project := newProject(id, titleFromDescription(description), description, workflow)
-	if err := createResourceFiles(projectPath, &project, workflowContent); err != nil {
+	project := newProject(id, titleFromDescription(description), description)
+	if err := createResourceFiles(projectPath, &project); err != nil {
 		return err
 	}
 	return printJSON(project)
@@ -308,11 +271,7 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 		return err
 	}
 	taskPath := filepath.Join(parentPath, taskDirectoryName(id, slug))
-	workflowContent, err := resolveWorkflow(root, defaultWorkflowName, true)
-	if err != nil {
-		return err
-	}
-	task := newTask(id, parentID, title, "", defaultWorkflowName)
+	task := newTask(id, parentID, title, "")
 	if nonInteractive {
 		after, err := resolveTaskRunDependencies(root, &task, afterValues)
 		if err != nil {
@@ -327,7 +286,7 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
 		return errors.New("--agent, --prompt, and --after require --non-interactive")
 	}
-	if err := createResourceFilesWithMarkdown(taskPath, &task, workflowContent, taskMarkdown(title, detail)); err != nil {
+	if err := createResourceFilesWithMarkdown(taskPath, &task, taskMarkdown(title, detail)); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -390,15 +349,15 @@ func projectTaskList(options taskListOptions) error {
 	return nil
 }
 
-func newProject(id, title, description, workflow string) Project {
+func newProject(id, title, description string) Project {
 	now := time.Now().Format(time.RFC3339)
 	return Project{
-		ResourceMeta: ResourceMeta{SchemaVersion: resourceSchemaVersion, ID: id, Type: resourceTypeProject, Title: strings.TrimSpace(title), Workflow: workflow, CreatedAt: now, UpdatedAt: now},
+		ResourceMeta: ResourceMeta{SchemaVersion: resourceSchemaVersion, ID: id, Type: resourceTypeProject, Title: strings.TrimSpace(title), CreatedAt: now, UpdatedAt: now},
 		Description:  description,
 	}
 }
 
-func newTask(id, parent, title, description, workflow string) Task {
+func newTask(id, parent, title, description string) Task {
 	now := time.Now().Format(time.RFC3339)
 	task := Task{
 		ResourceMeta: ResourceMeta{
@@ -406,7 +365,6 @@ func newTask(id, parent, title, description, workflow string) Task {
 			ID:            id,
 			Type:          resourceTypeTask,
 			Title:         strings.TrimSpace(title),
-			Workflow:      workflow,
 			CreatedAt:     now,
 			UpdatedAt:     now,
 		},
@@ -417,16 +375,18 @@ func newTask(id, parent, title, description, workflow string) Task {
 	return task
 }
 
-func createResourceFiles(dir string, resource Resource, workflowContent string) error {
-	return createResourceFilesWithMarkdown(dir, resource, workflowContent, defaultTaskMD(resource))
+func createResourceFiles(dir string, resource Resource) error {
+	return createResourceFilesWithMarkdown(dir, resource, defaultTaskMD(resource))
 }
 
-func createResourceFilesWithMarkdown(dir string, resource Resource, workflowContent string, markdown string) error {
+func createResourceFilesWithMarkdown(dir string, resource Resource, markdown string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
 	subdirs := []string{"artifacts"}
-	if !isProject(resource) {
+	if isProject(resource) {
+		subdirs = append(subdirs, "templates")
+	} else {
 		subdirs = append(subdirs, "worktree")
 	}
 	for _, subdir := range subdirs {
@@ -452,7 +412,7 @@ func createResourceFilesWithMarkdown(dir string, resource Resource, workflowCont
 	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource, workflowContent)+"\n"), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource)+"\n"), 0o644)
 }
 
 func metadataFileName(resource Resource) string {
@@ -545,36 +505,6 @@ func readTaskAtDir(dir string, task *Task) error {
 	}
 	*task = *typed
 	return nil
-}
-
-func resolveWorkflow(root, name string, fallbackToBuiltin bool) (string, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "", fmt.Errorf("workflow cannot be empty")
-	}
-	if !workflowName.MatchString(name) {
-		return "", fmt.Errorf("invalid workflow name %q: use only letters, numbers, dot, underscore, or hyphen", name)
-	}
-	path := filepath.Join(root, workflowDir, name+".md")
-	data, err := os.ReadFile(path)
-	if err == nil {
-		return strings.TrimRight(string(data), " \t\r\n") + "\n", nil
-	}
-	if !os.IsNotExist(err) {
-		return "", err
-	}
-	if fallbackToBuiltin {
-		if content, ok := builtinWorkflows[name]; ok {
-			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-				return "", err
-			}
-			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-				return "", err
-			}
-			return strings.TrimRight(content, " \t\r\n") + "\n", nil
-		}
-	}
-	return "", fmt.Errorf("workflow not found: %s", filepath.ToSlash(filepath.Join(workflowDir, name+".md")))
 }
 
 func nextProjectID(root string) (string, error) {
@@ -856,15 +786,7 @@ func updateOpenTaskAgentsMD(root string) error {
 
 func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	path := filepath.Join(dir, "AGENTS.md")
-	workflow := resource.resourceMeta().Workflow
-	if workflow == "" {
-		workflow = defaultWorkflowName
-	}
-	workflowContent, err := resolveWorkflow(root, workflow, workflow == defaultWorkflowName)
-	if err != nil {
-		return err
-	}
-	block := taskAgentsBlock(resource, workflowContent)
+	block := taskAgentsBlock(resource)
 
 	content := ""
 	if data, err := os.ReadFile(path); err == nil {
@@ -872,7 +794,7 @@ func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource, workflowContent)) {
+	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource)) {
 		content = ""
 	}
 
@@ -883,8 +805,8 @@ func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
-func taskAgentsBlock(resource Resource, workflowContent string) string {
-	return forgePromptStart + "\n" + taskAgentsPrompt(resource, workflowContent) + "\n" + forgePromptEnd
+func taskAgentsBlock(resource Resource) string {
+	return forgePromptStart + "\n" + taskAgentsPrompt(resource) + "\n" + forgePromptEnd
 }
 
 func projectTaskName(projectID string) *regexp.Regexp {
@@ -1086,14 +1008,13 @@ func jsonGuidance(resourceName string) string {
 	return fmt.Sprintf("Keep %s focused on structured facts Forge already understands; use Markdown for arbitrary notes, links, IDs, and progress.", resourceName)
 }
 
-func taskAgentsPrompt(resource Resource, workflowContent string) string {
+func taskAgentsPrompt(resource Resource) string {
 	extra := ""
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
 	writeScope := "Only update files inside this task directory and its worktrees."
 	repoGuidance := "For code changes, create Git worktrees under worktree/."
-	workflowPath := workflowRelativePath(resource)
 	if isProject(resource) {
 		title = "Project Agent Instructions"
 		scope = "single AgentWorkspace project directory"
@@ -1119,12 +1040,29 @@ func taskAgentsPrompt(resource Resource, workflowContent string) string {
 		backgroundLine = markdownGuidance("project.md")
 		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
+		extra = `
+- Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied into a new task's task.md detail.
+- A template must have a non-empty title. It may also set nonInteractive (true or false), agent, and prompt. agent and prompt apply only when nonInteractive is true. Do not add other front matter fields.
+- Template format:
+
+  ` + "```markdown" + `
+  ---
+  title: Daily inspection
+  nonInteractive: true
+  agent: codex
+  prompt: Inspect the project and report findings.
+  ---
+  Inspect the current project state and report anything that needs attention.
+  ` + "```" + `
+
+- Create, edit, or remove template files directly. Tasks created from a template are independent copies and do not keep a live reference to the template.
+`
 	}
 	return fmt.Sprintf(`# %s
 
 You are working inside a %s.
 
-- Read the workspace root AGENTS.md file for global Forge workflow, session, lock, and file-role rules.
+- Read the workspace root AGENTS.md file for global Forge session, lock, and file-role rules.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
@@ -1141,20 +1079,8 @@ You are working inside a %s.
 - %s
 - %s
 - %s
-- Follow the selected workflow in %s.
 - Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
-`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, workflowPath, extra)
-}
-
-func workflowRelativePath(resource Resource) string {
-	workflow := resource.resourceMeta().Workflow
-	if workflow == "" {
-		workflow = defaultWorkflowName
-	}
-	if _, ok := resource.(*Task); ok {
-		return filepath.ToSlash(filepath.Join("..", "..", workflowDir, workflow+".md"))
-	}
-	return filepath.ToSlash(filepath.Join("..", workflowDir, workflow+".md"))
+`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
 }

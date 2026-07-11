@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	projectCreateUsage = "usage: forge project create [--workflow=<name>] [--slug <slug>] <description>"
+	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
 	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
@@ -17,10 +17,8 @@ const (
 )
 
 type createResourceOptions struct {
-	Workflow         string
-	ExplicitWorkflow bool
-	Slug             string
-	Description      string
+	Slug        string
+	Description string
 }
 
 func Run(args []string) error {
@@ -130,7 +128,7 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		return projectCreate(options.Description, options.Workflow, !options.ExplicitWorkflow, options.Slug)
+		return projectCreate(options.Description, options.Slug)
 	case "list":
 		options, err := parseProjectListArgs(args[1:])
 		if err != nil {
@@ -252,7 +250,7 @@ Usage:
   forge repo add [--bare] <name> <url>
   forge repo list
 
-  forge project create [--workflow=<name>] [--slug <slug>] <description>
+  forge project create [--slug <slug>] <description>
   forge project list [--all]
   forge project show [--project=<project>]
   forge project archive [--project=<project>]
@@ -294,8 +292,7 @@ Commands:
     from inside an existing workspace.
 
   forge migrate
-    Refresh built-in workflow templates and forge-managed AGENTS.md blocks in
-    the enclosing workspace.
+    Refresh forge-managed AGENTS.md blocks in the enclosing workspace.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -305,12 +302,10 @@ Commands:
   forge repo list
     List repositories known to the workspace.
 
-  forge project create [--workflow=<name>] [--slug <slug>] <description>
+  forge project create [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
-    project.md, log.jsonl, artifacts/, and project-local AGENTS.md. By
-    default, AGENTS.md points agents to workflow/default.md.
-    Use --workflow=<name> to select workflow/<name>.md. Use --slug <slug> to
-    append a human-readable suffix to the directory name.
+    project.md, log.jsonl, artifacts/, templates/, and project-local AGENTS.md.
+    Use --slug <slug> to append a human-readable suffix to the directory name.
 
   forge project list [--all]
     List open projects. Use --all to include archived projects.
@@ -425,22 +420,10 @@ Commands:
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
-	options := createResourceOptions{Workflow: defaultWorkflowName}
+	options := createResourceOptions{}
 	var description []string
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
-		if strings.HasPrefix(arg, "--workflow=") {
-			value := strings.TrimPrefix(arg, "--workflow=")
-			if value == "" {
-				return createResourceOptions{}, errors.New("workflow cannot be empty")
-			}
-			options.Workflow = value
-			options.ExplicitWorkflow = true
-			continue
-		}
-		if arg == "--workflow" || strings.HasPrefix(arg, "--workflow") {
-			return createResourceOptions{}, errors.New(projectCreateUsage)
-		}
 		if strings.HasPrefix(arg, "--slug=") {
 			value := strings.TrimPrefix(arg, "--slug=")
 			if value == "" {

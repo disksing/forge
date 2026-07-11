@@ -2,6 +2,7 @@ package forge
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,7 +28,6 @@ type ResourceDetailView struct {
 	Type        string             `json:"type"`
 	Title       string             `json:"title"`
 	Description string             `json:"description,omitempty"`
-	Workflow    string             `json:"workflow,omitempty"`
 	CreatedAt   string             `json:"createdAt"`
 	UpdatedAt   string             `json:"updatedAt"`
 	Path        string             `json:"path"`
@@ -39,6 +39,18 @@ type ResourceDetailView struct {
 	Artifacts   []FileTreeEntry    `json:"artifacts"`
 	Worktrees   []FileTreeEntry    `json:"worktrees"`
 	Children    []ResourceTreeView `json:"children,omitempty"`
+	Templates   []TaskTemplate     `json:"templates,omitempty"`
+}
+
+type TaskTemplate struct {
+	Name           string `json:"name"`
+	Path           string `json:"path"`
+	Title          string `json:"title"`
+	Detail         string `json:"detail"`
+	NonInteractive bool   `json:"nonInteractive,omitempty"`
+	AgentID        string `json:"agentId,omitempty"`
+	Prompt         string `json:"prompt,omitempty"`
+	Content        string `json:"content"`
 }
 
 type ResourceFile struct {
@@ -151,7 +163,6 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		ID:        meta.ID,
 		Type:      meta.Type,
 		Title:     meta.Title,
-		Workflow:  meta.Workflow,
 		CreatedAt: meta.CreatedAt,
 		UpdatedAt: meta.UpdatedAt,
 		Path:      relPath(root, entry.Path),
@@ -164,6 +175,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	switch typed := entry.Resource.(type) {
 	case *Project:
 		detail.Description = typed.Description
+		detail.Templates = readTaskTemplates(root, entry.Path)
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
@@ -178,6 +190,88 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		detail.Children = children
 	}
 	return detail, nil
+}
+
+func readTaskTemplates(root, projectDir string) []TaskTemplate {
+	dir := filepath.Join(projectDir, "templates")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return []TaskTemplate{}
+	}
+	templates := make([]TaskTemplate, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != ".md" {
+			continue
+		}
+		path := filepath.Join(dir, entry.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		template, err := parseTaskTemplate(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())), string(data))
+		if err != nil {
+			continue
+		}
+		template.Path = relPath(root, path)
+		template.Content = string(data)
+		templates = append(templates, template)
+	}
+	return templates
+}
+
+func parseTaskTemplate(name, content string) (TaskTemplate, error) {
+	template := TaskTemplate{Name: name}
+	normalized := strings.ReplaceAll(content, "\r\n", "\n")
+	if !strings.HasPrefix(normalized, "---\n") {
+		return template, fmt.Errorf("task template %s must start with YAML front matter", name)
+	}
+	end := strings.Index(normalized[4:], "\n---\n")
+	if end < 0 {
+		return template, fmt.Errorf("task template %s has unterminated YAML front matter", name)
+	}
+	frontMatter := normalized[4 : 4+end]
+	template.Detail = strings.TrimLeft(normalized[4+end+5:], "\n")
+	lines := strings.Split(frontMatter, "\n")
+	for index := 0; index < len(lines); index++ {
+		line := strings.TrimSpace(lines[index])
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, value, ok := strings.Cut(line, ":")
+		if !ok {
+			return template, fmt.Errorf("task template %s has invalid front matter line %q", name, line)
+		}
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if value == "|" || value == ">" {
+			var block []string
+			for index+1 < len(lines) && (strings.HasPrefix(lines[index+1], "  ") || strings.TrimSpace(lines[index+1]) == "") {
+				index++
+				block = append(block, strings.TrimPrefix(lines[index], "  "))
+			}
+			value = strings.TrimRight(strings.Join(block, "\n"), "\n")
+		}
+		value = strings.Trim(value, `"'`)
+		switch key {
+		case "title":
+			template.Title = value
+		case "nonInteractive":
+			if value != "true" && value != "false" {
+				return template, fmt.Errorf("task template %s has invalid nonInteractive value", name)
+			}
+			template.NonInteractive = value == "true"
+		case "agent":
+			template.AgentID = value
+		case "prompt":
+			template.Prompt = value
+		default:
+			return template, fmt.Errorf("task template %s has unknown field %q", name, key)
+		}
+	}
+	if strings.TrimSpace(template.Title) == "" {
+		return template, fmt.Errorf("task template %s requires title", name)
+	}
+	return template, nil
 }
 
 func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {

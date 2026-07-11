@@ -3377,3 +3377,30 @@ i[data-lucide] {
     justify-content: flex-end;
   }
 }
+.template-list {
+  display: grid;
+  gap: 8px;
+}
+
+.template-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  color: inherit;
+  text-align: left;
+}
+
+.template-row span {
+  display: grid;
+  gap: 2px;
+}
+
+.template-row small {
+  color: var(--muted);
+}
