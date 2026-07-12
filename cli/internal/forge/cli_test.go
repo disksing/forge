@@ -240,6 +240,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "FORGE_INTERACTION_MODE") || !strings.Contains(subtaskAgents, "forge task run complete --summary=<text>") || !strings.Contains(subtaskAgents, "Do not end the session yourself") {
 			t.Fatalf("expected subtask AGENTS.md to teach non-interactive protocol, got:\n%s", subtaskAgents)
 		}
+		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
+			t.Fatalf("expected subtask AGENTS.md to prevent relative worktree destination mistakes, got:\n%s", subtaskAgents)
+		}
 
 		children := run(t, "task", "list", "--project=project1")
 		if !strings.Contains(children, "task1\tAdd task commands") {
@@ -2052,6 +2055,9 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, and log.jsonl") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
+		}
+		if !strings.Contains(subtaskAfter, "absolute destination path inside this task's worktree/") {
+			t.Fatalf("expected migrated subtask guidance to prevent relative worktree destination mistakes, got:\n%s", subtaskAfter)
 		}
 		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)
