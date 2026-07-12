@@ -9,7 +9,17 @@
   </head>
   <body>
     <div id="app" class="app-shell">
-      <aside class="sidebar">
+      <header class="mobile-toolbar">
+        <button id="mobileMenuButton" class="mobile-icon-button" type="button" aria-label="Open navigation" aria-controls="mobileSidebar" aria-expanded="false">
+          <i data-lucide="menu"></i>
+        </button>
+        <div class="mobile-view-switcher" role="tablist" aria-label="Workspace view">
+          <button id="mobileDetailsButton" type="button" role="tab" aria-controls="detailsPanel" aria-selected="true">Details</button>
+          <button id="mobileChatButton" type="button" role="tab" aria-controls="agentPanel" aria-selected="false">Chat</button>
+        </div>
+      </header>
+      <button id="mobileSidebarBackdrop" class="mobile-sidebar-backdrop" type="button" aria-label="Close navigation"></button>
+      <aside id="mobileSidebar" class="sidebar">
         <div class="brand-band">
           <div class="brand-mark">F</div>
           <div class="brand-copy">
@@ -57,7 +67,7 @@
       <main class="workspace-panel">
         <section id="detailsPanel" class="details-panel"></section>
         <div id="detailsResize" class="resize-handle details-resize" role="separator" aria-orientation="vertical" aria-label="Resize details panel"></div>
-        <aside class="agent-panel">
+        <aside id="agentPanel" class="agent-panel">
           <div id="agentControls" class="agent-actions"></div>
           <div id="agentSessionsWrap" class="agent-sessions"></div>
           <div class="tty-panel">

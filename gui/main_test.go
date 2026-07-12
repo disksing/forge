@@ -139,6 +139,41 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	}
 }
 
+func TestMobileLayoutProvidesNavigationAndViewSwitching(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, want := range []string{`id="mobileMenuButton"`, `id="mobileSidebarBackdrop"`, `id="mobileDetailsButton"`, `id="mobileChatButton"`, `id="agentPanel"`} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("mobile layout markup is missing %q", want)
+		}
+	}
+
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{`function setMobileSidebar(open)`, `function setMobileView(view)`, `setMobileSidebar(false);`} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("mobile layout behavior is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{`.mobile-sidebar-open .sidebar`, `.mobile-chat-active .agent-panel`, `.mobile-chat-active .details-panel`} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("mobile layout styles are missing %q", want)
+		}
+	}
+}
+
 func TestProjectDetailsOmitsDescription(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

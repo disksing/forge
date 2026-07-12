@@ -45,6 +45,10 @@ const state = {
   autoRefreshTimer: null,
   autoRefreshInFlight: false,
   iconRefreshScheduled: false,
+  mobile: {
+    sidebarOpen: false,
+    view: "details",
+  },
   agent: {
     runs: [],
     activeRunId: "",
@@ -432,6 +436,7 @@ async function selectResource(id, options = {}) {
   }
   state.selectedId = id;
   state.sessionMenu = null;
+  setMobileSidebar(false);
   ensureSelectedProjectExpanded(false);
   syncURL();
   renderSelectionPanels();
@@ -3258,7 +3263,22 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+function setMobileSidebar(open) {
+  state.mobile.sidebarOpen = Boolean(open);
+  document.body.classList.toggle("mobile-sidebar-open", state.mobile.sidebarOpen);
+  $("mobileMenuButton")?.setAttribute("aria-expanded", String(state.mobile.sidebarOpen));
+}
+
+function setMobileView(view) {
+  state.mobile.view = view === "chat" ? "chat" : "details";
+  const chatActive = state.mobile.view === "chat";
+  document.body.classList.toggle("mobile-chat-active", chatActive);
+  $("mobileDetailsButton")?.setAttribute("aria-selected", String(!chatActive));
+  $("mobileChatButton")?.setAttribute("aria-selected", String(chatActive));
+}
+
 $("workspaceSelect").onchange = async (event) => {
+  setMobileSidebar(false);
   state.activeWorkspaceId = event.target.value;
   state.selectedId = "";
   state.sessionMenu = null;
@@ -3272,11 +3292,19 @@ $("workspaceSelect").onchange = async (event) => {
 $("newProjectButton").onclick = () => showProjectForm();
 
 $("systemSettingsButton").onclick = () => {
+  setMobileSidebar(false);
   openSettings().catch((err) => toast(err.message));
 };
 
+$("mobileMenuButton").onclick = () => setMobileSidebar(!state.mobile.sidebarOpen);
+$("mobileSidebarBackdrop").onclick = () => setMobileSidebar(false);
+$("mobileDetailsButton").onclick = () => setMobileView("details");
+$("mobileChatButton").onclick = () => setMobileView("chat");
+
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.diff) {
+  if (event.key === "Escape" && state.mobile.sidebarOpen) {
+    setMobileSidebar(false);
+  } else if (event.key === "Escape" && state.diff) {
     closeDiff();
   } else if (event.key === "Escape" && state.preview) {
     closePreview();
