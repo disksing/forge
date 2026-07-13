@@ -146,12 +146,17 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	}
 	app := string(appData)
 	for _, want := range []string{
-		`markFinalAgentResponses(coalesceAgentEvents(events))`,
-		`event.isFinalResponse ? "Final response" : "Progress update"`,
+		`markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events)))`,
 		`<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`,
 		`function groupToolEvents(events)`,
-		`<details class="agent-tool-group">`,
+		`previous.collapsed = true`,
+		`group.collapsed ? "" : " open"`,
+		`<details class="agent-tool-group"${group.collapsed ? "" : " open"}>`,
 		`function toolEventDetails(event)`,
+		`function markTransientAgentStatus(events)`,
+		`if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus)`,
+		`function isAgentSessionReady(run)`,
+		`composer.innerHTML = agentComposerActions({ includeClose: true })`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("agent chat rendering is missing %q", want)
@@ -163,10 +168,13 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 		t.Fatal(err)
 	}
 	styles := string(stylesData)
-	for _, want := range []string{`.agent-message-row.assistant.final`, `.agent-message-content`, `.agent-tool-group[open]`, `.agent-tool-item pre`} {
+	for _, want := range []string{`.agent-message-row.assistant.final`, `.agent-message-content`, `.agent-tool-group[open]`, `.agent-tool-item pre`, `.tty-input:focus-within`} {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("agent chat styles are missing %q", want)
 		}
+	}
+	if strings.Contains(app, "Final response") || strings.Contains(app, "Progress update") {
+		t.Fatal("agent message bubbles should rely on visual hierarchy without response labels")
 	}
 }
 

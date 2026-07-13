@@ -1069,27 +1069,6 @@ body.resizing-y {
   box-shadow: 0 4px 14px rgba(37, 99, 235, 0.09);
 }
 
-.agent-response-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 7px;
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.agent-response-label svg {
-  width: 13px;
-  height: 13px;
-}
-
-.agent-message-row.assistant.final .agent-response-label {
-  color: #2563eb;
-}
-
 .agent-message-row.user .agent-message-bubble {
   border-color: #bfdbfe;
   background: #eff6ff;
@@ -1395,8 +1374,20 @@ body.resizing-y {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 14px;
-  border-top: 1px solid var(--line);
+  margin: 10px 12px;
+  padding: 9px 10px;
+  border: 1px solid #93c5fd;
+  border-left: 4px solid #2563eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.09);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.tty-input:focus-within {
+  border-color: #60a5fa;
+  border-left-color: #1d4ed8;
+  box-shadow: 0 5px 18px rgba(37, 99, 235, 0.15);
 }
 
 .tty-input span {
@@ -1415,6 +1406,7 @@ body.resizing-y {
   max-height: 160px;
   padding: 5px 0;
   border: 0;
+  background: transparent;
   outline: none;
   resize: none;
   line-height: 20px;

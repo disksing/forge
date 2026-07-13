@@ -1589,7 +1589,7 @@ function canMergeAgentDelta(previous, next) {
 }
 
 function displayAgentEvents(events) {
-  const coalesced = markFinalAgentResponses(coalesceAgentEvents(events));
+  const coalesced = markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events)));
   const completedItems = new Map();
   for (const event of coalesced) {
     if (event.type === "tool" && event.method === "item/completed") {
@@ -1599,6 +1599,31 @@ function displayAgentEvents(events) {
   }
   const visible = coalesced.filter((event) => shouldDisplayAgentEvent(event, completedItems));
   return groupToolEvents(visible);
+}
+
+function markTransientAgentStatus(events) {
+  const result = events.map((event) => ({ ...event }));
+  let activeStatus = -1;
+  for (let index = 0; index < result.length; index++) {
+    const event = result[index];
+    if (isTransientAgentStatus(event)) {
+      activeStatus = index;
+    } else if (clearsTransientAgentStatus(event)) {
+      activeStatus = -1;
+    }
+  }
+  if (activeStatus >= 0) result[activeStatus].isActiveTransientStatus = true;
+  return result;
+}
+
+function isTransientAgentStatus(event) {
+  return ["session/resume", "thread/start", "thread/resume", "thread/goal/cleared", "session/ready"].includes(event?.method) ||
+    (event?.type === "system" && /^Starting .+ provider\.$/i.test(event.text || ""));
+}
+
+function clearsTransientAgentStatus(event) {
+  if (["user", "assistant_delta", "reasoning_delta", "tool", "approval_requested", "error"].includes(event?.type)) return true;
+  return ["turn/started", "turn/completed", "turn/failed", "session/prompt"].includes(event?.method);
 }
 
 function markFinalAgentResponses(events) {
@@ -1629,6 +1654,10 @@ function groupToolEvents(events) {
   const result = [];
   for (const event of events) {
     if (event.type !== "tool") {
+      const previous = result[result.length - 1];
+      if (event.type === "assistant_delta" && previous?.type === "tool_group") {
+        previous.collapsed = true;
+      }
       result.push(event);
       continue;
     }
@@ -1643,13 +1672,14 @@ function groupToolEvents(events) {
         last.events.push(event);
       }
     } else {
-      result.push({ type: "tool_group", events: [event] });
+      result.push({ type: "tool_group", events: [event], collapsed: false });
     }
   }
   return result;
 }
 
 function shouldDisplayAgentEvent(event, completedItems = new Map()) {
+  if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus);
   if (event.type === "assistant_delta" || event.type === "reasoning_delta" || event.type === "approval_requested" || event.type === "error") return true;
   if (event.type === "metadata") return false;
   if (event.method === "session/ready" || event.method === "turn/failed") return true;
@@ -1847,7 +1877,14 @@ function renderTTYComposer() {
     return;
   }
   if (isLiveAgentRun(activeRun)) {
-    const key = `live:${activeRun.id}:${state.agent.agentId}:${state.agent.sendingInput ? "sending" : "ready"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+    const sessionReady = isAgentSessionReady(activeRun);
+    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+    if (!sessionReady) {
+      if (composer.dataset.composerKey === key) return;
+      composer.dataset.composerKey = key;
+      composer.innerHTML = agentComposerActions({ includeClose: true });
+      return;
+    }
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput ? " disabled" : "";
@@ -1894,6 +1931,12 @@ function renderTTYComposer() {
   composer.innerHTML = `
     ${agentComposerActions({ includeResume: true })}
   `;
+}
+
+function isAgentSessionReady(run) {
+  if (!isLiveAgentRun(run)) return false;
+  if (state.agent.events.some((event) => event.method === "session/ready")) return true;
+  return state.agent.eventsHasMore && run.status !== "starting";
 }
 
 function agentComposerActions(options = {}) {
@@ -2304,22 +2347,18 @@ function bindSettingsEvents() {
 }
 
 function agentEventRow(event) {
-  if (event.type === "tool_group") return agentToolGroupRow(event.events || []);
+  if (event.type === "tool_group") return agentToolGroupRow(event);
   const method = event.method && event.type !== "assistant_delta" ? `<small>${escapeHTML(event.method)}</small>` : "";
   const text = agentDisplayText(event);
   if (event.type === "assistant_delta" || event.type === "user") {
     const isAssistant = event.type === "assistant_delta";
     const responseClass = isAssistant ? (event.isFinalResponse ? " final" : " progress") : "";
-    const responseLabel = isAssistant
-      ? `<div class="agent-response-label">${icon(event.isFinalResponse ? "sparkles" : "message-square-more")}<span>${event.isFinalResponse ? "Final response" : "Progress update"}</span></div>`
-      : "";
     const content = isAssistant
       ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`
       : `<p>${escapeHTML(text)}</p>`;
     return `
       <div class="agent-message-row ${escapeHTML(event.type === "user" ? "user" : "assistant")}${responseClass}">
         <div class="agent-message-bubble">
-          ${responseLabel}
           ${content}
         </div>
       </div>
@@ -2358,12 +2397,13 @@ function agentEventRow(event) {
   `;
 }
 
-function agentToolGroupRow(events) {
+function agentToolGroupRow(group) {
+  const events = group.events || [];
   const summaries = events.map(toolEventSummary);
   const preview = summaries.slice(0, 2).join(" · ");
   const remaining = Math.max(0, summaries.length - 2);
   return `
-    <details class="agent-tool-group">
+    <details class="agent-tool-group"${group.collapsed ? "" : " open"}>
       <summary>
         <span class="agent-tool-group-icon">${icon("wrench")}</span>
         <span class="agent-tool-group-title">${events.length} tool ${events.length === 1 ? "call" : "calls"}</span>
