@@ -66,6 +66,7 @@ const state = {
     eventsHasMore: false,
     loadingOlder: false,
     sendingInput: false,
+    toolGroupOpen: new Map(),
   },
   tty: [
     { type: "system", text: "Forge GUI initialized." },
@@ -1456,6 +1457,7 @@ function resetAgentState() {
   state.agent.historyOpen = false;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
+  state.agent.toolGroupOpen.clear();
   clearAgentRenderTimer();
 }
 
@@ -1851,11 +1853,20 @@ function renderTTY(options = {}) {
   $("loadOlderAgentEventsButton")?.addEventListener("click", () => {
     loadOlderAgentEvents().catch((err) => toast(err.message));
   });
+  bindAgentToolGroupEvents();
   if (stickToBottom) {
     log.scrollTop = log.scrollHeight;
   } else {
     log.scrollTop = previousScrollTop;
   }
+}
+
+function bindAgentToolGroupEvents() {
+  document.querySelectorAll(".agent-tool-group[data-tool-group-key]").forEach((details) => {
+    details.querySelector(":scope > summary")?.addEventListener("click", () => {
+      state.agent.toolGroupOpen.set(details.dataset.toolGroupKey, !details.open);
+    });
+  });
 }
 
 function isTTYNearBottom(log) {
@@ -2399,11 +2410,14 @@ function agentEventRow(event) {
 
 function agentToolGroupRow(group) {
   const events = group.events || [];
+  const key = agentToolGroupKey(group);
+  const userOpen = state.agent.toolGroupOpen.get(key);
+  const open = typeof userOpen === "boolean" ? userOpen : !group.collapsed;
   const summaries = events.map(toolEventSummary);
   const preview = summaries.slice(0, 2).join(" · ");
   const remaining = Math.max(0, summaries.length - 2);
   return `
-    <details class="agent-tool-group"${group.collapsed ? "" : " open"}>
+    <details class="agent-tool-group" data-tool-group-key="${escapeHTML(key)}"${open ? " open" : ""}>
       <summary>
         <span class="agent-tool-group-icon">${icon("wrench")}</span>
         <span class="agent-tool-group-title">${events.length} tool ${events.length === 1 ? "call" : "calls"}</span>
@@ -2415,6 +2429,12 @@ function agentToolGroupRow(group) {
       </div>
     </details>
   `;
+}
+
+function agentToolGroupKey(group) {
+  const first = group.events?.[0] || {};
+  const eventKey = agentEventItemId(first) || first.id || first.time || "tool";
+  return `${state.agent.activeRunId || "run"}:${eventKey}`;
 }
 
 function agentToolEventRow(event) {
