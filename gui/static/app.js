@@ -1589,26 +1589,77 @@ function canMergeAgentDelta(previous, next) {
 }
 
 function displayAgentEvents(events) {
-  const completedItems = new Set();
-  for (const event of events) {
+  const coalesced = markFinalAgentResponses(coalesceAgentEvents(events));
+  const completedItems = new Map();
+  for (const event of coalesced) {
     if (event.type === "tool" && event.method === "item/completed") {
       const id = agentEventItemId(event);
-      if (id) completedItems.add(id);
+      if (id) completedItems.set(id, event);
     }
   }
-  return coalesceAgentEvents(events.filter((event) => shouldDisplayAgentEvent(event, completedItems)));
+  const visible = coalesced.filter((event) => shouldDisplayAgentEvent(event, completedItems));
+  return groupToolEvents(visible);
 }
 
-function shouldDisplayAgentEvent(event, completedItems = new Set()) {
+function markFinalAgentResponses(events) {
+  const result = events.map((event) => ({ ...event }));
+  let lastAssistant = -1;
+  for (let index = 0; index < result.length; index++) {
+    const event = result[index];
+    if (event.type === "assistant_delta") lastAssistant = index;
+    if (isAgentTurnStart(event) || event.type === "user") lastAssistant = -1;
+    if (isAgentTurnCompletion(event) && lastAssistant >= 0) {
+      result[lastAssistant].isFinalResponse = true;
+      lastAssistant = -1;
+    }
+  }
+  return result;
+}
+
+function isAgentTurnStart(event) {
+  return event?.method === "turn/started";
+}
+
+function isAgentTurnCompletion(event) {
+  return event?.method === "turn/completed" ||
+    (event?.method === "session/prompt" && /^OpenCode turn finished:/i.test(event.text || ""));
+}
+
+function groupToolEvents(events) {
+  const result = [];
+  for (const event of events) {
+    if (event.type !== "tool") {
+      result.push(event);
+      continue;
+    }
+    const last = result[result.length - 1];
+    if (last?.type === "tool_group") {
+      const previous = last.events[last.events.length - 1];
+      const previousID = agentEventItemId(previous);
+      const nextID = agentEventItemId(event);
+      if (previousID && previousID === nextID) {
+        last.events[last.events.length - 1] = event;
+      } else {
+        last.events.push(event);
+      }
+    } else {
+      result.push({ type: "tool_group", events: [event] });
+    }
+  }
+  return result;
+}
+
+function shouldDisplayAgentEvent(event, completedItems = new Map()) {
   if (event.type === "assistant_delta" || event.type === "reasoning_delta" || event.type === "approval_requested" || event.type === "error") return true;
   if (event.type === "metadata") return false;
   if (event.method === "session/ready" || event.method === "turn/failed") return true;
   if (event.type === "user") return true;
   if (event.type === "tool") {
     const itemType = agentEventItemType(event);
-    if (itemType === "userMessage" || itemType === "agentMessage") return false;
+    if (itemType === "userMessage" || itemType === "agentMessage" || itemType === "reasoning") return false;
     if (event.method === "item/commandExecution/outputDelta" || event.method === "command/exec/outputDelta") return false;
-    if (event.method !== "item/started") return false;
+    if (event.method === "item/completed") return true;
+    if (event.method !== "item/started") return event.method === "session/update";
     const itemId = agentEventItemId(event);
     return !itemId || !completedItems.has(itemId);
   }
@@ -1631,20 +1682,20 @@ function shouldDisplayAgentEvent(event, completedItems = new Set()) {
 }
 
 function agentEventItemType(event) {
-  try {
-    const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-    return data?.item?.type || "";
-  } catch (_) {
-    return "";
-  }
+  const data = agentEventData(event);
+  return data?.item?.type || data?.sessionUpdate || data?.update?.sessionUpdate || "";
 }
 
 function agentEventItemId(event) {
+  const data = agentEventData(event);
+  return data?.messageId || data?.itemId || data?.item?.id || data?.toolCallId || data?.toolCall?.id || "";
+}
+
+function agentEventData(event) {
   try {
-    const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-    return data?.messageId || data?.itemId || data?.item?.id || "";
+    return typeof event?.data === "string" ? JSON.parse(event.data) : event?.data || {};
   } catch (_) {
-    return "";
+    return {};
   }
 }
 
@@ -2253,13 +2304,23 @@ function bindSettingsEvents() {
 }
 
 function agentEventRow(event) {
+  if (event.type === "tool_group") return agentToolGroupRow(event.events || []);
   const method = event.method && event.type !== "assistant_delta" ? `<small>${escapeHTML(event.method)}</small>` : "";
   const text = agentDisplayText(event);
   if (event.type === "assistant_delta" || event.type === "user") {
+    const isAssistant = event.type === "assistant_delta";
+    const responseClass = isAssistant ? (event.isFinalResponse ? " final" : " progress") : "";
+    const responseLabel = isAssistant
+      ? `<div class="agent-response-label">${icon(event.isFinalResponse ? "sparkles" : "message-square-more")}<span>${event.isFinalResponse ? "Final response" : "Progress update"}</span></div>`
+      : "";
+    const content = isAssistant
+      ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`
+      : `<p>${escapeHTML(text)}</p>`;
     return `
-      <div class="agent-message-row ${escapeHTML(event.type === "user" ? "user" : "assistant")}">
+      <div class="agent-message-row ${escapeHTML(event.type === "user" ? "user" : "assistant")}${responseClass}">
         <div class="agent-message-bubble">
-          <p>${escapeHTML(text)}</p>
+          ${responseLabel}
+          ${content}
         </div>
       </div>
     `;
@@ -2297,12 +2358,89 @@ function agentEventRow(event) {
   `;
 }
 
+function agentToolGroupRow(events) {
+  const summaries = events.map(toolEventSummary);
+  const preview = summaries.slice(0, 2).join(" · ");
+  const remaining = Math.max(0, summaries.length - 2);
+  return `
+    <details class="agent-tool-group">
+      <summary>
+        <span class="agent-tool-group-icon">${icon("wrench")}</span>
+        <span class="agent-tool-group-title">${events.length} tool ${events.length === 1 ? "call" : "calls"}</span>
+        <span class="agent-tool-group-preview">${escapeHTML(preview)}${remaining ? ` · +${remaining} more` : ""}</span>
+        <span class="agent-tool-group-chevron">${icon("chevron-right")}</span>
+      </summary>
+      <div class="agent-tool-list">
+        ${events.map(agentToolEventRow).join("")}
+      </div>
+    </details>
+  `;
+}
+
+function agentToolEventRow(event) {
+  return `
+    <details class="agent-tool-item">
+      <summary>
+        ${agentEventIcon(event)}
+        <span>${escapeHTML(toolEventSummary(event))}</span>
+        <small>${escapeHTML(event.method || "tool")}</small>
+      </summary>
+      <pre>${escapeHTML(toolEventDetails(event))}</pre>
+    </details>
+  `;
+}
+
 function toolEventSummary(event) {
+  const data = agentEventData(event);
+  const item = data?.item || data?.toolCall || data?.update?.toolCall || data;
   const itemType = agentEventItemType(event);
-  if (itemType === "reasoning") return "Reasoning...";
-  if (itemType === "commandExecution") return "Running command...";
-  if (itemType === "fileChange") return "Applying file change...";
-  return "Working...";
+  const command = firstAgentToolValue(item, ["command", "cmd"]);
+  const paths = agentToolPaths(item);
+  const toolName = firstAgentToolValue(item, ["name", "tool", "title"]);
+  if (itemType === "commandExecution") return toolSummaryWithDetail("Command", command);
+  if (itemType === "fileChange") return toolSummaryWithDetail("File change", paths.join(", "));
+  if (itemType === "mcpToolCall") {
+    const server = firstAgentToolValue(item, ["server", "serverName"]);
+    return toolSummaryWithDetail("MCP", [server, toolName].filter(Boolean).join(" / "));
+  }
+  if (itemType === "webSearch") return toolSummaryWithDetail("Web search", firstAgentToolValue(item, ["query"]));
+  if (itemType === "tool_call" || itemType === "tool_call_update") return toolSummaryWithDetail("Tool", toolName || command);
+  return toolSummaryWithDetail(readableAgentToolType(itemType) || "Tool", toolName || command || paths.join(", "));
+}
+
+function toolSummaryWithDetail(label, detail) {
+  const compact = String(detail || "").replace(/\s+/g, " ").trim();
+  if (!compact) return label;
+  return `${label} · ${compact.length > 88 ? `${compact.slice(0, 85)}…` : compact}`;
+}
+
+function firstAgentToolValue(item, keys) {
+  for (const key of keys) {
+    const value = item?.[key] ?? item?.rawInput?.[key] ?? item?.input?.[key] ?? item?.arguments?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+    if (Array.isArray(value) && value.length) return value.join(" ");
+  }
+  return "";
+}
+
+function agentToolPaths(item) {
+  const values = [item?.path, item?.filePath, item?.rawInput?.path, item?.input?.path];
+  for (const change of item?.changes || []) values.push(change?.path, change?.filePath);
+  return [...new Set(values.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))];
+}
+
+function readableAgentToolType(value) {
+  return String(value || "")
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function toolEventDetails(event) {
+  const data = agentEventData(event);
+  const serialized = Object.keys(data).length ? JSON.stringify(data, null, 2) : agentDisplayText(event);
+  if (serialized.length <= 12000) return serialized;
+  return `${serialized.slice(0, 12000)}\n… details truncated`;
 }
 
 function agentDisplayText(event) {

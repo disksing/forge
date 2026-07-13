@@ -139,6 +139,37 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	}
 }
 
+func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`markFinalAgentResponses(coalesceAgentEvents(events))`,
+		`event.isFinalResponse ? "Final response" : "Progress update"`,
+		`<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`,
+		`function groupToolEvents(events)`,
+		`<details class="agent-tool-group">`,
+		`function toolEventDetails(event)`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("agent chat rendering is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{`.agent-message-row.assistant.final`, `.agent-message-content`, `.agent-tool-group[open]`, `.agent-tool-item pre`} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("agent chat styles are missing %q", want)
+		}
+	}
+}
+
 func TestMobileLayoutProvidesNavigationAndViewSwitching(t *testing.T) {
 	indexData, err := staticFiles.ReadFile("static/index.html")
 	if err != nil {
