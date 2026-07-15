@@ -109,6 +109,27 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 	}
 }
 
+func TestArtifactPreviewPreservesScrollAndSupportsNewWindow(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`const previewScrollState = captureFilePreviewScrollState();`,
+		`restoreFilePreviewScrollState(previewScrollState);`,
+		`data-preview-scroll`,
+		`scroller.scrollTop = snapshot.scrollTop;`,
+		`scroller.scrollLeft = snapshot.scrollLeft;`,
+		`class="secondary-button file-modal-open"`,
+		`target="_blank" rel="noopener"`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("artifact preview behavior is missing %q", want)
+		}
+	}
+}
+
 func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

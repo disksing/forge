@@ -551,6 +551,7 @@ function sessionResourceMenu(session, controls) {
 function renderDetails() {
   const panel = $("detailsPanel");
   const workspaceEditorState = captureWorkspaceAgentsEditorState();
+  const previewScrollState = captureFilePreviewScrollState();
   if (!state.tree) {
     panel.innerHTML = emptyDetails();
     return;
@@ -595,6 +596,7 @@ function renderDetails() {
     ${fileModal()}
     ${diffModal()}
   `;
+  restoreFilePreviewScrollState(previewScrollState);
   $("archiveButton")?.addEventListener("click", () => archiveResource(selected.id));
   $("newTaskButton")?.addEventListener("click", () => showTaskForm(selected.id));
   bindTemplateEvents();
@@ -1057,7 +1059,12 @@ function fileModal() {
             <strong>${escapeHTML(preview.name || fileNameFromPath(preview.path))}</strong>
             <span>${escapeHTML(preview.path || "")}${preview.size != null ? ` · ${formatBytes(preview.size)}` : ""}${preview.truncated ? " · truncated" : ""}</span>
           </div>
-          <button class="icon-button" data-modal-close="true" title="Close" aria-label="Close">${icon("x")}</button>
+          <div class="file-modal-actions">
+            <a class="secondary-button file-modal-open" href="${escapeHTML(rawFileURL(preview.path))}" target="_blank" rel="noopener" title="Open file in new window">
+              ${icon("external-link")}<span>Open</span>
+            </a>
+            <button class="icon-button" data-modal-close="true" title="Close" aria-label="Close">${icon("x")}</button>
+          </div>
         </header>
         ${body}
       </section>
@@ -1138,7 +1145,7 @@ function fileModalBody(preview) {
   }
   if (preview.image) {
     return `
-      <div class="image-preview">
+      <div class="image-preview" data-preview-scroll>
         <img src="${escapeHTML(rawFileURL(preview.path))}" alt="${escapeHTML(preview.name || preview.path)}" />
       </div>
     `;
@@ -1153,11 +1160,30 @@ function fileModalBody(preview) {
     `;
   }
   if (isMarkdownFile(preview.path || preview.name)) {
-    return `<div class="modal-markdown markdown-rendered">${renderMarkdown(preview.content || "")}</div>`;
+    return `<div class="modal-markdown markdown-rendered" data-preview-scroll>${renderMarkdown(preview.content || "")}</div>`;
   }
   return `
-    <pre class="modal-preview-content">${escapeHTML(preview.content || "")}</pre>
+    <pre class="modal-preview-content" data-preview-scroll>${escapeHTML(preview.content || "")}</pre>
   `;
+}
+
+function captureFilePreviewScrollState() {
+  const scroller = document.querySelector("[data-preview-scroll]");
+  if (!scroller || !state.preview?.path) return null;
+  return {
+    key: artifactKey(state.preview.section || "", state.preview.path),
+    scrollTop: scroller.scrollTop,
+    scrollLeft: scroller.scrollLeft,
+  };
+}
+
+function restoreFilePreviewScrollState(snapshot) {
+  if (!snapshot || !state.preview?.path) return;
+  if (snapshot.key !== artifactKey(state.preview.section || "", state.preview.path)) return;
+  const scroller = document.querySelector("[data-preview-scroll]");
+  if (!scroller) return;
+  scroller.scrollTop = snapshot.scrollTop;
+  scroller.scrollLeft = snapshot.scrollLeft;
 }
 
 function bindArtifactBrowserEvents() {

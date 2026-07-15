@@ -2688,8 +2688,8 @@ i[data-lucide] {
   background: #f8fafc;
 }
 
-.file-modal-header strong,
-.file-modal-header span {
+.file-modal-header > div:first-child strong,
+.file-modal-header > div:first-child span {
   display: block;
   min-width: 0;
   overflow: hidden;
@@ -2697,12 +2697,27 @@ i[data-lucide] {
   white-space: nowrap;
 }
 
-.file-modal-header strong {
+.file-modal-header > div:first-child {
+  min-width: 0;
+}
+
+.file-modal-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-modal-open {
+  text-decoration: none;
+}
+
+.file-modal-header > div:first-child strong {
   color: #1e293b;
   font-size: 14px;
 }
 
-.file-modal-header span {
+.file-modal-header > div:first-child span {
   margin-top: 3px;
   color: #64748b;
   font-size: 11px;
