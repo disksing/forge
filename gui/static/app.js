@@ -7,6 +7,7 @@ const state = {
   workspaceAgentsDirty: false,
   workspaceAgentsSaving: false,
   activeWorkspaceId: "",
+  workspaceMenuOpen: false,
   selectedId: "",
   expandedProjects: new Set(),
   expandedPaths: new Set(),
@@ -298,19 +299,88 @@ function renderSelectionPanels() {
   renderCreateDialog();
 }
 
+const WORKSPACE_AVATAR_PALETTE = [
+  ["#dbeafe", "#1d4ed8"],
+  ["#ede9fe", "#6d28d9"],
+  ["#fee2e2", "#b91c1c"],
+  ["#ffedd5", "#c2410c"],
+  ["#dcfce7", "#15803d"],
+  ["#cffafe", "#0e7490"],
+];
+
+function workspaceAvatarColors(workspace) {
+  const key = (workspace?.id || workspace?.name || "").trim();
+  let hash = 0;
+  for (const ch of key) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+  return WORKSPACE_AVATAR_PALETTE[hash % WORKSPACE_AVATAR_PALETTE.length];
+}
+
+function applyWorkspaceAvatarColor(element, workspace) {
+  const [bg, fg] = workspaceAvatarColors(workspace);
+  element.style.background = bg;
+  element.style.color = fg;
+}
+
 function renderWorkspaceSelect() {
-  const select = $("workspaceSelect");
-  select.innerHTML = "";
-  for (const workspace of state.config.workspaces) {
-    const option = document.createElement("option");
-    option.value = workspace.id;
-    option.textContent = workspace.name;
-    select.appendChild(option);
-  }
-  select.value = state.activeWorkspaceId;
   const active = state.config.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
-  $("workspaceAvatar").textContent = (active?.name || "A").trim().slice(0, 1).toUpperCase();
+  const avatar = $("workspaceAvatar");
+  avatar.textContent = (active?.name || "A").trim().slice(0, 1).toUpperCase();
+  applyWorkspaceAvatarColor(avatar, active);
+  $("workspaceSwitcherName").textContent = active?.name || "Workspace";
+  $("workspaceSwitcher").setAttribute("aria-expanded", String(state.workspaceMenuOpen));
+  const menu = $("workspaceMenu");
+  if (!state.workspaceMenuOpen) {
+    menu.hidden = true;
+    menu.innerHTML = "";
+  } else {
+    menu.hidden = false;
+    menu.innerHTML = workspaceMenuMarkup(active?.id || "");
+  }
   refreshIcons();
+}
+
+function workspaceMenuMarkup(activeId) {
+  const rows = state.config.workspaces.map((workspace) => {
+    const initial = (workspace.name || "?").trim().slice(0, 1).toUpperCase();
+    const [bg, fg] = workspaceAvatarColors(workspace);
+    const active = workspace.id === activeId;
+    return `
+      <button type="button" class="workspace-menu-row" role="option" aria-selected="${active}" data-workspace-id="${escapeHTML(workspace.id)}">
+        <span class="workspace-avatar" style="background:${bg};color:${fg}">${escapeHTML(initial)}</span>
+        <span class="workspace-menu-main">
+          <strong>${escapeHTML(workspace.name || workspace.id)}</strong>
+          <small>${escapeHTML(workspace.path || "")}</small>
+        </span>
+        ${active ? icon("check", "workspace-menu-check") : ""}
+      </button>
+    `;
+  }).join("");
+  return `
+    <div class="workspace-menu-title">Switch Workspace</div>
+    ${rows}
+    <div class="workspace-menu-footer">
+      <button type="button" id="workspaceMenuAdd">${icon("plus")}<span>Add workspace...</span></button>
+    </div>
+  `;
+}
+
+async function switchWorkspace(id) {
+  if (!workspaceExists(id)) return;
+  state.workspaceMenuOpen = false;
+  if (id === state.activeWorkspaceId) {
+    renderWorkspaceSelect();
+    return;
+  }
+  setMobileSidebar(false);
+  state.activeWorkspaceId = id;
+  state.selectedId = "";
+  state.sessionMenu = null;
+  resetWorkspaceAgentsDraft();
+  closeCreateDialog();
+  resetAgentState();
+  renderWorkspaceSelect();
+  await loadUIState();
+  await loadTree();
 }
 
 function renderTree() {
@@ -4089,17 +4159,31 @@ function setMobileView(view) {
   $("mobileChatButton")?.setAttribute("aria-selected", String(chatActive));
 }
 
-$("workspaceSelect").onchange = async (event) => {
-  setMobileSidebar(false);
-  state.activeWorkspaceId = event.target.value;
-  state.selectedId = "";
-  state.sessionMenu = null;
-  resetWorkspaceAgentsDraft();
-  closeCreateDialog();
-  resetAgentState();
-  await loadUIState();
-  await loadTree();
+$("workspaceSwitcher").onclick = (event) => {
+  event.stopPropagation();
+  state.workspaceMenuOpen = !state.workspaceMenuOpen;
+  renderWorkspaceSelect();
 };
+
+$("workspaceMenu").addEventListener("click", (event) => {
+  if (event.target.closest("#workspaceMenuAdd")) {
+    state.workspaceMenuOpen = false;
+    renderWorkspaceSelect();
+    openSettings("workspace").catch((err) => toast(err.message));
+    return;
+  }
+  const row = event.target.closest("[data-workspace-id]");
+  if (row) {
+    switchWorkspace(row.dataset.workspaceId).catch((err) => toast(err.message));
+  }
+});
+
+document.addEventListener("mousedown", (event) => {
+  if (!state.workspaceMenuOpen) return;
+  if (event.target.closest(".workspace-select-row")) return;
+  state.workspaceMenuOpen = false;
+  renderWorkspaceSelect();
+});
 
 $("newProjectButton").onclick = () => showProjectForm();
 
@@ -4130,6 +4214,9 @@ document.addEventListener("keydown", (event) => {
     refreshIcons();
   } else if (event.key === "Escape" && state.settings.open) {
     closeSettings();
+  } else if (event.key === "Escape" && state.workspaceMenuOpen) {
+    state.workspaceMenuOpen = false;
+    renderWorkspaceSelect();
   } else if (event.key === "Escape" && (state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen)) {
     state.agent.optionsOpen = false;
     state.agent.agentChooserOpen = false;

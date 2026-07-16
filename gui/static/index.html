@@ -30,11 +30,13 @@
         </div>
 
         <section class="workspace-switcher">
-          <label for="workspaceSelect">Switch Workspace</label>
           <div class="workspace-select-row">
-            <div class="workspace-avatar" id="workspaceAvatar">A</div>
-            <select id="workspaceSelect"></select>
-            <i data-lucide="chevrons-up-down" class="select-icon"></i>
+            <button id="workspaceSwitcher" class="workspace-switcher-button" type="button" aria-haspopup="listbox" aria-expanded="false">
+              <span class="workspace-avatar" id="workspaceAvatar">A</span>
+              <span class="workspace-switcher-name" id="workspaceSwitcherName">Workspace</span>
+              <i data-lucide="chevrons-up-down" class="select-icon"></i>
+            </button>
+            <div id="workspaceMenu" class="workspace-menu" role="listbox" hidden></div>
           </div>
         </section>
 
