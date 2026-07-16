@@ -1233,12 +1233,21 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	if status == "starting" {
 		return errors.New("session is starting")
 	}
-	rt.addEvent(m, "user", "", text, nil, "")
+	var err error
 	if status == "running" {
-		return provider.SendInput(rt, text)
+		err = provider.SendInput(rt, text)
+	} else {
+		rt.updateStatus(m, "running")
+		err = provider.SendPrompt(rt, text)
+		if err != nil {
+			rt.updateStatus(m, status)
+		}
 	}
-	rt.updateStatus(m, "running")
-	return provider.SendPrompt(rt, text)
+	if err != nil {
+		return err
+	}
+	rt.addEvent(m, "user", "", text, nil, "")
+	return nil
 }
 
 func (rt *agentRuntime) sendSchedulerPrompt(m *agentManager, text string) error {

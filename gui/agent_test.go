@@ -13,6 +13,33 @@ import (
 	"testing"
 )
 
+type recordingAgentProvider struct {
+	inputCalls  int
+	inputText   string
+	inputErr    error
+	promptCalls int
+}
+
+func (p *recordingAgentProvider) ID() string                             { return "recording" }
+func (p *recordingAgentProvider) Start(*agentManager) error              { return nil }
+func (p *recordingAgentProvider) Stop() error                            { return nil }
+func (p *recordingAgentProvider) IsRunning() bool                        { return true }
+func (p *recordingAgentProvider) Done() <-chan struct{}                  { return closedProviderDone() }
+func (p *recordingAgentProvider) NewSession(*agentRuntime) error         { return nil }
+func (p *recordingAgentProvider) ResumeSession(*agentRuntime) error      { return nil }
+func (p *recordingAgentProvider) SendPrompt(*agentRuntime, string) error { p.promptCalls++; return nil }
+func (p *recordingAgentProvider) Interrupt(*agentRuntime) error          { return nil }
+func (p *recordingAgentProvider) CloseSession(*agentRuntime) error       { return nil }
+func (p *recordingAgentProvider) ResolveApproval(pendingApproval, string) (any, error) {
+	return nil, nil
+}
+
+func (p *recordingAgentProvider) SendInput(_ *agentRuntime, text string) error {
+	p.inputCalls++
+	p.inputText = text
+	return p.inputErr
+}
+
 func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
 	text, ok := agentMessageDeltaText(json.RawMessage(`{"delta":" \n"}`))
 	if !ok {
@@ -83,6 +110,88 @@ func TestAgentRuntimeStopIsIdempotent(t *testing.T) {
 	rt.mu.Unlock()
 	if status != "stopped" {
 		t.Fatalf("expected stopped status, got %q", status)
+	}
+}
+
+func TestSendInputIntervenesInSchedulerTurnWithoutChangingAutoRunState(t *testing.T) {
+	workspace := t.TempDir()
+	if err := ensureAgentDirs(workspace); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configData, err := json.Marshal(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	provider := &recordingAgentProvider{}
+	s := &server{config: configPath}
+	m := newAgentManager(s)
+	rt := &agentRuntime{
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run: agentRun{
+			ID:                "run-autorun",
+			WorkspaceID:       "workspace-one",
+			ResourceID:        "project1.task1",
+			Status:            "running",
+			SchedulerTurn:     true,
+			AutoRunGeneration: 7,
+		},
+		provider:    provider,
+		nextEventID: 1,
+	}
+	m.registerRuntime(rt)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/agent/runs/run-autorun/input", strings.NewReader(`{"text":"Use the new constraint"}`))
+	rec := httptest.NewRecorder()
+	m.sendInput(rec, req, "workspace-one", "run-autorun")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected intervention to be accepted, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if provider.inputCalls != 1 || provider.inputText != "Use the new constraint" || provider.promptCalls != 0 {
+		t.Fatalf("expected exactly one active-turn delivery, got calls=%d text=%q prompts=%d", provider.inputCalls, provider.inputText, provider.promptCalls)
+	}
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	if !run.SchedulerTurn || run.AutoRunGeneration != 7 || run.Status != "running" {
+		t.Fatalf("intervention changed AutoRun state: %#v", run)
+	}
+	events := rt.snapshotEvents()
+	if len(events) != 1 || events[0].Type != "user" || events[0].Text != "Use the new constraint" {
+		t.Fatalf("expected one accepted user event, got %#v", events)
+	}
+}
+
+func TestSendInputReportsUndeliverableInterventionWithoutRecordingIt(t *testing.T) {
+	workspace := t.TempDir()
+	if err := ensureAgentDirs(workspace); err != nil {
+		t.Fatal(err)
+	}
+	provider := &recordingAgentProvider{inputErr: errors.New("active turn cannot accept input")}
+	m := &agentManager{subscribers: make(map[string]map[chan agentEvent]bool)}
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:         agentRun{ID: "run-autorun", WorkspaceID: "workspace-one", Status: "running", SchedulerTurn: true, AutoRunGeneration: 4},
+		provider:    provider,
+		nextEventID: 1,
+	}
+
+	err := rt.sendInput(m, "Try this instead")
+	if err == nil || !strings.Contains(err.Error(), "cannot accept input") {
+		t.Fatalf("expected an explicit delivery error, got %v", err)
+	}
+	if provider.inputCalls != 1 {
+		t.Fatalf("expected one delivery attempt, got %d", provider.inputCalls)
+	}
+	if events := rt.snapshotEvents(); len(events) != 0 {
+		t.Fatalf("undelivered input should not be recorded as accepted: %#v", events)
+	}
+	if !rt.run.SchedulerTurn || rt.run.AutoRunGeneration != 4 || rt.run.Status != "running" {
+		t.Fatalf("failed intervention changed AutoRun state: %#v", rt.run)
 	}
 }
 

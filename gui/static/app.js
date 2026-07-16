@@ -228,18 +228,14 @@ async function autoRefresh() {
       }
     }
     const runs = await fetchAgentRuns();
-    if (!sameJSON(state.agent.runs, runs)) {
+    const runsChanged = !sameJSON(state.agent.runs, runs);
+    if (runsChanged) {
       state.agent.runs = runs;
-      if (state.agent.activeRunId && !runs.some((run) => run.id === state.agent.activeRunId)) {
-        const nextRunId = runs[0]?.id || "";
-        if (state.agent.activeRunId !== nextRunId) {
-          state.agent.ttyDraft = "";
-          state.agent.ttyMultiline = false;
-        }
-        state.agent.activeRunId = nextRunId;
-        await loadAgentEvents();
-        connectAgentStream();
-      }
+      changed = true;
+    }
+    if (reconcileActiveAgentRun(runs)) {
+      await loadAgentEvents();
+      connectAgentStream();
       changed = true;
     }
     if (taskSessionStateKey() !== state.taskSessionStateKey) {
@@ -1370,20 +1366,31 @@ async function loadAgentRuns() {
     return;
   }
   state.agent.runs = await fetchAgentRuns();
-  if (!state.agent.activeRunId || !state.agent.runs.some((run) => run.id === state.agent.activeRunId)) {
-    const nextRunId = state.agent.runs[0]?.id || "";
-    if (state.agent.activeRunId !== nextRunId) {
-      state.agent.ttyDraft = "";
-      state.agent.ttyMultiline = false;
-    }
-    state.agent.activeRunId = nextRunId;
-  }
+  reconcileActiveAgentRun(state.agent.runs);
   if (state.agent.activeRunId) {
     await loadAgentEvents();
   } else {
     state.agent.events = [];
   }
   connectAgentStream();
+}
+
+function reconcileActiveAgentRun(runs) {
+  const nextRunId = preferredAgentRunID(runs);
+  if (state.agent.activeRunId === nextRunId) return false;
+  state.agent.activeRunId = nextRunId;
+  state.agent.events = [];
+  state.agent.eventsHasMore = false;
+  state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
+  return true;
+}
+
+function preferredAgentRunID(runs) {
+  const autoRun = runs.find((run) => run.schedulerTurn && isLiveAgentRun(run));
+  if (autoRun) return autoRun.id;
+  if (runs.some((run) => run.id === state.agent.activeRunId)) return state.agent.activeRunId;
+  return runs[0]?.id || "";
 }
 
 async function refreshTreeSessions() {
@@ -1934,22 +1941,19 @@ function renderTTYComposer() {
   }
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
-    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
-    if (!sessionReady) {
-      if (composer.dataset.composerKey === key) return;
-      composer.dataset.composerKey = key;
-      composer.innerHTML = agentComposerActions({ includeClose: true });
-      return;
-    }
+    const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
+    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
-    const inputDisabled = state.agent.sendingInput ? " disabled" : "";
+    const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
     const sendIcon = state.agent.sendingInput ? icon("loader-circle") : icon("send");
+    const placeholder = unavailableReason || "Send input to the selected agent session";
+    const sendTitle = state.agent.sendingInput ? "Sending..." : unavailableReason || "Send input";
     composer.innerHTML = `
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
-        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="Send input to the selected agent session"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
-        <button type="submit" class="tty-send-button" title="${state.agent.sendingInput ? "Sending..." : "Send input"}" aria-label="${state.agent.sendingInput ? "Sending input" : "Send input"}"${inputDisabled}>${sendIcon}</button>
+        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
+        <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
       </form>
       ${agentComposerActions({ includeClose: true })}
     `;
@@ -1991,8 +1995,17 @@ function renderTTYComposer() {
 
 function isAgentSessionReady(run) {
   if (!isLiveAgentRun(run)) return false;
+  if (run.status !== "starting") return true;
   if (state.agent.events.some((event) => event.method === "session/ready")) return true;
   return state.agent.eventsHasMore && run.status !== "starting";
+}
+
+function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
+  if (!sessionReady) return "Agent session is starting.";
+  if (run.status === "waiting_approval") return "Resolve the pending approval before sending input.";
+  if (run.schedulerTurn && run.provider === "codex" && !run.codexTurnId) return "AutoRun turn is starting.";
+  if (run.schedulerTurn && run.provider === "opencode" && run.status === "running") return "OpenCode cannot accept input during an active turn.";
+  return "";
 }
 
 function agentComposerActions(options = {}) {
@@ -2707,7 +2720,7 @@ async function stopAgentRun() {
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
   const previousRun = currentAgentRun();
-  if (previousRun && isLiveAgentRun(previousRun)) {
+  if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
     await closeAgentRun(previousRun.id);
   }
   state.agent.activeRunId = runId;

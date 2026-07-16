@@ -294,6 +294,7 @@ func (c *codexAppServer) SendInput(rt *agentRuntime, text string) error {
 	rt.mu.Lock()
 	threadID := rt.run.CodexThreadID
 	turnID := rt.run.CodexTurnID
+	schedulerTurn := rt.run.SchedulerTurn
 	rt.mu.Unlock()
 	if threadID == "" {
 		return errors.New("codex thread is not ready")
@@ -305,6 +306,9 @@ func (c *codexAppServer) SendInput(rt *agentRuntime, text string) error {
 			"input":          []map[string]string{{"type": "text", "text": rt.withForgeSessionContext(text)}},
 		})
 		return err
+	}
+	if schedulerTurn {
+		return errors.New("AutoRun turn is starting; try again")
 	}
 	return c.SendPrompt(rt, text)
 }

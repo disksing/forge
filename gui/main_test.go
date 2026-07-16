@@ -256,6 +256,26 @@ func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
 	}
 }
 
+func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`function preferredAgentRunID(runs)`,
+		`run.schedulerTurn && isLiveAgentRun(run)`,
+		`if (run.status !== "starting") return true;`,
+		`function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run))`,
+		`placeholder="${escapeHTML(placeholder)}"${inputDisabled}`,
+		`!previousRun.schedulerTurn`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("AutoRun live intervention UI is missing %q", want)
+		}
+	}
+}
+
 func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
@@ -275,7 +295,7 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 		`function markTransientAgentStatus(events)`,
 		`if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus)`,
 		`function isAgentSessionReady(run)`,
-		`composer.innerHTML = agentComposerActions({ includeClose: true })`,
+		`function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run))`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("agent chat rendering is missing %q", want)
