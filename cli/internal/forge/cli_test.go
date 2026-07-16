@@ -498,7 +498,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge init\n  forge migrate",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun]",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
@@ -506,7 +506,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge migrate",
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun]",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 	}
@@ -562,6 +562,46 @@ Line two
 		listed := run(t, "task", "list", "--project=project1")
 		if !strings.Contains(listed, "task1\tTask title") {
 			t.Fatalf("expected task list to show title, got:\n%s", listed)
+		}
+	})
+}
+
+func TestTaskCreateUsesCompleteTaskMarkdown(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Parent project")
+
+		templateMarkdown := `# Template task
+
+## Background
+
+Template background.
+
+## Scope
+
+- Template scope.
+
+## Acceptance Criteria
+
+- Template result.
+`
+		run(t, "task", "create", "Template task", "--project=project1", "--slug=template-task", "--task-markdown", templateMarkdown)
+
+		taskMD := readFile(t, filepath.Join(root, "project1", "task1-template-task", "task.md"))
+		if taskMD != templateMarkdown {
+			t.Fatalf("expected template markdown to be written exactly once, got:\n%s", taskMD)
+		}
+		for _, heading := range []string{"# Template task", "## Background", "## Scope", "## Acceptance Criteria"} {
+			if count := strings.Count(taskMD, heading); count != 1 {
+				t.Fatalf("expected %q exactly once, got %d in:\n%s", heading, count, taskMD)
+			}
+		}
+		if strings.Contains(taskMD, "<!-- Define what is included.") || strings.Contains(taskMD, "- TBD") {
+			t.Fatalf("complete template markdown should not include the default scaffold, got:\n%s", taskMD)
+		}
+
+		if _, err := runErr(t, "task", "create", "Ambiguous task", "--project=project1", "--detail=Background", "--task-markdown=# Full task"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("expected detail and complete markdown to be rejected together, got: %v", err)
 		}
 	})
 }

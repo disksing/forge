@@ -10,7 +10,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -180,7 +180,7 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug, options.AutoRun, options.AgentID, options.Prompt, options.After)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.AgentID, options.Prompt, options.After)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -259,7 +259,7 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
   forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -320,13 +320,15 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
-    shown by task list. --detail writes the task.md body. <project> may be a
-    full id such as project22 or just a number such as 22. When omitted, Forge
-    uses the project containing the current working directory.
+    shown by task list. --detail initializes the Background section in the
+    default task.md scaffold. --task-markdown writes the complete task.md file
+    and is mutually exclusive with --detail. <project> may be a full id such as
+    project22 or just a number such as 22. When omitted, Forge uses the project
+    containing the current working directory.
 
   forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
     List open tasks in a project. Use --all to include archived tasks.
@@ -453,14 +455,17 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 }
 
 type taskCreateOptions struct {
-	ParentID string
-	Title    string
-	Detail   string
-	Slug     string
-	AutoRun  bool
-	AgentID  string
-	Prompt   string
-	After    []string
+	ParentID        string
+	Title           string
+	Detail          string
+	DetailSet       bool
+	TaskMarkdown    string
+	TaskMarkdownSet bool
+	Slug            string
+	AutoRun         bool
+	AgentID         string
+	Prompt          string
+	After           []string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -519,6 +524,7 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 		}
 		if strings.HasPrefix(arg, "--detail=") {
 			options.Detail = strings.TrimPrefix(arg, "--detail=")
+			options.DetailSet = true
 			continue
 		}
 		if arg == "--detail" {
@@ -526,6 +532,21 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 				return taskCreateOptions{}, errors.New(taskCreateUsage)
 			}
 			options.Detail = args[i+1]
+			options.DetailSet = true
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--task-markdown=") {
+			options.TaskMarkdown = strings.TrimPrefix(arg, "--task-markdown=")
+			options.TaskMarkdownSet = true
+			continue
+		}
+		if arg == "--task-markdown" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.TaskMarkdown = args[i+1]
+			options.TaskMarkdownSet = true
 			i++
 			continue
 		}
@@ -556,6 +577,9 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 	}
 	if len(title) == 0 {
 		return taskCreateOptions{}, errors.New(taskCreateUsage)
+	}
+	if options.DetailSet && options.TaskMarkdownSet {
+		return taskCreateOptions{}, errors.New("--detail and --task-markdown are mutually exclusive")
 	}
 	options.Title = strings.Join(title, " ")
 	return options, nil

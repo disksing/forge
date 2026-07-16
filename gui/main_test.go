@@ -44,6 +44,39 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	}
 }
 
+func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
+	workspace := t.TempDir()
+	outputPath := filepath.Join(t.TempDir(), "args")
+	forgePath := filepath.Join(t.TempDir(), "forge-fake")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf '{}\\n'\n"
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("FORGE_TEST_ARGS", outputPath)
+
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"project":"project1","title":"Template task","taskMarkdown":"# Template task"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
+	rec := httptest.NewRecorder()
+	s.createTask(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	data, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+	want := []string{"task", "create", "--project", "project1", "--task-markdown=# Template task", "Template task"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
+	}
+}
+
 func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	workspace := t.TempDir()
 	outputPath := filepath.Join(t.TempDir(), "args")
@@ -102,7 +135,7 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`} {
+	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`, `{ taskMarkdown: dialog.detail }`, `{ detail: dialog.detail }`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("task template UI is missing %q", want)
 		}

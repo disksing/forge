@@ -239,7 +239,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, slug string, autorun bool, agentID, prompt string, afterValues []string) error {
+func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentID, prompt string, afterValues []string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -290,7 +290,11 @@ func projectTaskCreate(parentID, title string, detail string, slug string, autor
 	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
 		return errors.New("--agent, --prompt, and --after require --autorun")
 	}
-	if err := createResourceFilesWithMarkdown(stagingPath, &task, taskMarkdown(title, detail)); err != nil {
+	markdown := taskMarkdown(title, detail)
+	if completeMarkdownSet {
+		markdown = completeMarkdown
+	}
+	if err := createResourceFilesWithMarkdown(stagingPath, &task, markdown); err != nil {
 		return err
 	}
 	if task.AutoRun != nil {
@@ -1058,7 +1062,7 @@ func taskAgentsPrompt(resource Resource) string {
 		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
-- Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied into a new task's task.md detail.
+- Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied as a new task's complete task.md file.
 - A template must have a non-empty title. It may also set autorun (true or false), agent, and prompt. agent and prompt apply only when autorun is true. Do not add other front matter fields.
 - Template format:
 

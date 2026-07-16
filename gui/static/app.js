@@ -3015,7 +3015,7 @@ async function submitCreateDialog(event) {
         body: JSON.stringify({
           project: dialog.projectId,
           title: dialog.title,
-          detail: dialog.detail,
+          ...(dialog.templateName ? { taskMarkdown: dialog.detail } : { detail: dialog.detail }),
           slug: dialog.slug,
           autorun: dialog.autorun,
           agentId: dialog.autorun ? dialog.agentId : "",
