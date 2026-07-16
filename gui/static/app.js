@@ -721,8 +721,7 @@ function metrics(item) {
   const artifactCount = countFiles(item.artifacts);
   const repoCount = item.repos?.length || 0;
   return `
-    <div class="meta-grid">
-      <div class="metric">${icon(item.type === "project" ? "folder" : "file-text")}<div><span>Type</span><strong>${escapeHTML(item.type)}</strong></div></div>
+    <div class="meta-grid resource-meta-grid">
       <div class="metric">${icon(item.type === "project" ? "check-circle-2" : "paperclip")}<div><span>${item.type === "project" ? "Tasks" : "Artifacts"}</span><strong>${item.type === "project" ? taskCount : artifactCount}</strong></div></div>
       <div class="metric">${icon("folder-git-2")}<div><span>Repos</span><strong>${repoCount}</strong></div></div>
       ${item.run ? `<div class="metric">${icon("play-circle")}<div><span>Run</span><strong>${escapeHTML(item.run.state || item.run.mode || "configured")}</strong></div></div>` : ""}

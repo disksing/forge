@@ -2118,6 +2118,10 @@ i[data-lucide] {
   background: #fff;
 }
 
+.resource-meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
 .metric {
   min-height: 70px;
   display: flex;
