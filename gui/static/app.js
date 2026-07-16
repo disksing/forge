@@ -325,9 +325,12 @@ function renderTree() {
   for (const project of state.tree.projects) {
     tree.appendChild(treeButton(project, "project"));
     if (isProjectExpanded(project.id)) {
+      const group = document.createElement("div");
+      group.className = "task-group";
       for (const task of project.children || []) {
-        tree.appendChild(treeButton(task, "task"));
+        group.appendChild(treeButton(task, "task"));
       }
+      tree.appendChild(group);
     }
   }
   state.taskOperationalStateKey = taskOperationalStateKey();
@@ -894,6 +897,7 @@ function logTimelineEntry(entry) {
           <small>${escapeHTML(entry.time || "")}</small>
         </span>
         <span class="log-title">${escapeHTML(title)}</span>
+        <span class="log-chevron" aria-hidden="true">${icon("chevron-right")}</span>
       </summary>
       <div class="log-details ${details ? "" : "empty"}">
         ${details ? renderMarkdown(details) : "No details."}

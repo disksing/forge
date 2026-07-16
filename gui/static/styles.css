@@ -41,6 +41,34 @@ button {
   cursor: pointer;
 }
 
+::selection {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+button,
+summary,
+select,
+a[href],
+.session-row,
+.tree-item,
+.worktree-row,
+.artifact-row,
+.file-row,
+.template-row,
+.workspace-select-row,
+.agent-current-run,
+.agent-session-menu-row,
+.agent-run-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: var(--sidebar-width) 8px minmax(0, 1fr);
@@ -2378,6 +2406,19 @@ i[data-lucide] {
   font-size: 13px;
 }
 
+.task-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 15px;
+  padding-left: 7px;
+  border-left: 1px solid var(--line);
+}
+
+.task-group .task-item {
+  padding-left: 8px;
+}
+
 .session-section {
   margin: 0 12px;
   flex: 0 0 var(--sidebar-session-height);
@@ -2775,12 +2816,32 @@ i[data-lucide] {
   position: absolute;
   top: 18px;
   left: 2px;
+  z-index: 1;
   width: 8px;
   height: 8px;
   border: 2px solid #64748b;
   border-radius: 999px;
   background: #ffffff;
   content: "";
+}
+
+.log-entry:not(:last-child)::after {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  left: 7px;
+  width: 2px;
+  background: var(--line);
+  content: "";
+}
+
+.log-entry:first-child:not(:last-child)::after {
+  top: 30px;
+}
+
+.log-entry:first-child::before {
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .log-entry summary {
@@ -2798,20 +2859,22 @@ i[data-lucide] {
   display: none;
 }
 
-.log-entry summary::after {
-  content: "";
-  width: 8px;
-  height: 8px;
-  border-right: 2px solid #94a3b8;
-  border-bottom: 2px solid #94a3b8;
-  transform: rotate(45deg);
+.log-chevron {
+  display: grid;
+  place-items: center;
   justify-self: end;
   grid-column: 3;
+  color: #94a3b8;
   transition: transform 0.16s ease;
 }
 
-.log-entry[open] summary::after {
-  transform: rotate(225deg);
+.log-chevron svg {
+  width: 14px;
+  height: 14px;
+}
+
+.log-entry[open] .log-chevron {
+  transform: rotate(90deg);
 }
 
 .log-time {
@@ -4139,7 +4202,7 @@ i[data-lucide] {
     grid-column: 1;
   }
 
-  .log-entry summary::after {
+  .log-chevron {
     grid-column: 2;
     grid-row: 1 / span 2;
   }
@@ -4286,4 +4349,75 @@ i[data-lucide] {
 
 .template-row small {
   color: var(--muted);
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes modal-zoom-in-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.create-dialog-backdrop,
+.upload-dialog-backdrop,
+.file-modal-backdrop,
+.settings-overlay {
+  animation: modal-fade-in 160ms ease-out;
+}
+
+.create-dialog,
+.upload-dialog,
+.file-modal,
+.diff-modal {
+  animation: modal-zoom-in 180ms ease-out;
+}
+
+.settings-modal {
+  animation: modal-zoom-in-centered 180ms ease-out;
+}
+
+.create-dialog,
+.upload-dialog,
+.file-modal,
+.diff-modal,
+.settings-modal {
+  border-radius: 12px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .create-dialog-backdrop,
+  .upload-dialog-backdrop,
+  .file-modal-backdrop,
+  .settings-overlay,
+  .create-dialog,
+  .upload-dialog,
+  .file-modal,
+  .diff-modal,
+  .settings-modal {
+    animation: none;
+  }
 }
