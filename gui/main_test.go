@@ -129,6 +129,34 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAgentsEditorFillsAvailableWidth(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(appData), `id="workspaceAgentsForm" class="details-form workspace-agents-form"`) {
+		t.Fatal("workspace AGENTS.md editor should have a layout-specific form class")
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.workspace-agents-form {
+  width: 100%;
+  max-width: none;
+  min-width: 0;`,
+		`.workspace-agents-form textarea {
+  min-width: 0;`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("responsive workspace AGENTS.md editor styles are missing %q", want)
+		}
+	}
+}
+
 func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

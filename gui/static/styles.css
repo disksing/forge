@@ -518,6 +518,16 @@ body.resizing-y {
   resize: vertical;
 }
 
+.workspace-agents-form {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.workspace-agents-form textarea {
+  min-width: 0;
+}
+
 .create-dialog-layer {
   position: fixed;
   inset: 0;

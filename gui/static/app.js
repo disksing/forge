@@ -807,7 +807,7 @@ function workspaceAgentsSection() {
 function workspaceAgentsEditor(content) {
   const userContent = workspaceAgentsEditorContent(content);
   return `
-    <form id="workspaceAgentsForm" class="details-form">
+    <form id="workspaceAgentsForm" class="details-form workspace-agents-form">
       <textarea id="workspaceAgentsContent" rows="10" spellcheck="false" ${state.workspaceAgentsSaving ? "disabled" : ""}>${escapeHTML(userContent)}</textarea>
       <div class="form-actions">
         <button type="submit" ${state.workspaceAgentsSaving ? "disabled" : ""}>
