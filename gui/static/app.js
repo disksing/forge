@@ -2759,6 +2759,13 @@ async function submitTTYInput(event) {
   const input = $("ttyInput");
   const rawText = input?.value || "";
   if (!rawText.trim()) return;
+  let restoreInputFocus = document.activeElement === input;
+  const cancelInputFocusRestore = () => {
+    restoreInputFocus = false;
+  };
+  if (restoreInputFocus) {
+    document.addEventListener("focusin", cancelInputFocusRestore, true);
+  }
   state.agent.ttyDraft = rawText;
   state.agent.sendingInput = true;
   renderTTYComposer();
@@ -2770,8 +2777,12 @@ async function submitTTYInput(event) {
   } catch (err) {
     toast(err.message);
   } finally {
+    document.removeEventListener("focusin", cancelInputFocusRestore, true);
     state.agent.sendingInput = false;
     renderTTYComposer();
+    if (restoreInputFocus) {
+      $("ttyInput")?.focus({ preventScroll: true });
+    }
     refreshIcons();
   }
 }

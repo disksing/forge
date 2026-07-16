@@ -230,6 +230,32 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	}
 }
 
+func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`let restoreInputFocus = document.activeElement === input;`,
+		`document.addEventListener("focusin", cancelInputFocusRestore, true);`,
+		`restoreInputFocus = false;`,
+		`document.removeEventListener("focusin", cancelInputFocusRestore, true);`,
+		`$("ttyInput")?.focus({ preventScroll: true });`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("TTY composer focus restoration is missing %q", want)
+		}
+	}
+
+	removeListener := strings.Index(source, `document.removeEventListener("focusin", cancelInputFocusRestore, true);`)
+	renderComposer := strings.Index(source[removeListener:], `renderTTYComposer();`)
+	restoreFocus := strings.Index(source[removeListener:], `$("ttyInput")?.focus({ preventScroll: true });`)
+	if removeListener < 0 || renderComposer < 0 || restoreFocus < 0 || renderComposer >= restoreFocus {
+		t.Fatal("TTY composer should restore focus only after replacing the sending input")
+	}
+}
+
 func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
