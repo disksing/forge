@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,15 @@ type runnableTaskDependency struct {
 	TaskID     string `json:"taskId"`
 	Generation int    `json:"generation"`
 }
+
+type runnableTaskDispatchResult string
+
+const (
+	runnableTaskStarted        runnableTaskDispatchResult = "started"
+	runnableTaskSkippedActive  runnableTaskDispatchResult = "skipped_active"
+	runnableTaskNotRunnable    runnableTaskDispatchResult = "not_runnable"
+	runnableTaskDispatchFailed runnableTaskDispatchResult = "failed"
+)
 
 func (s *server) runTaskScheduler(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
@@ -62,51 +72,68 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	if !hasEnabledProvider {
 		return nil
 	}
+	var failures []error
 	for _, workspace := range cfg.Workspaces {
 		out, err := s.runForge(ctx, workspace.Path, "workspace", "tree", "--json")
 		if err != nil {
-			return err
+			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))
+			continue
 		}
 		var tree workspaceTree
 		if err := json.Unmarshal(out, &tree); err != nil {
-			return err
+			failures = append(failures, fmt.Errorf("decode workspace %s: %w", workspace.ID, err))
+			continue
 		}
 		started := false
 		for _, project := range tree.Projects {
 			out, err := s.runForge(ctx, workspace.Path, "task", "list", "--project="+project.ID, "--runnable", "--json")
 			if err != nil {
-				return err
+				failures = append(failures, fmt.Errorf("list runnable tasks for %s: %w", project.ID, err))
+				continue
 			}
 			var ready runnableTaskResponse
 			if err := json.Unmarshal(out, &ready); err != nil {
-				return err
+				failures = append(failures, fmt.Errorf("decode runnable tasks for %s: %w", project.ID, err))
+				continue
 			}
 			for _, task := range ready.Tasks {
-				if err := s.startRunnableTask(ctx, workspace, task); err != nil {
-					log.Printf("start runnable task %s: %v", task.ID, err)
-					continue
+				result, err := s.startRunnableTask(ctx, workspace, task)
+				switch result {
+				case runnableTaskStarted:
+					started = true
+				case runnableTaskDispatchFailed:
+					if err == nil {
+						err = errors.New("dispatch failed without an error")
+					}
+					failures = append(failures, fmt.Errorf("start runnable task %s: %w", task.ID, err))
 				}
-				started = true
-				break
+				if started {
+					break
+				}
 			}
 			if started {
 				break
 			}
 		}
 	}
-	return nil
+	return errors.Join(failures...)
 }
 
-func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) error {
+func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) (runnableTaskDispatchResult, error) {
+	switch task.State {
+	case "queued", "running", "waiting":
+	default:
+		return runnableTaskNotRunnable, nil
+	}
 	if task.State == "waiting" {
 		selector, err := forgeTaskSelectorArgs(task.ID)
 		if err != nil {
-			return err
+			return runnableTaskDispatchFailed, err
 		}
 		args := []string{"task", "autorun", "resume"}
 		args = append(args, selector...)
 		if _, err := s.runForge(ctx, workspace.Path, args...); err != nil {
-			return err
+			return runnableTaskDispatchFailed, err
 		}
 	}
 	prompt := strings.TrimSpace(task.Prompt)
@@ -132,52 +159,57 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		SchedulerTurn:     true,
 		AutoRunGeneration: task.Generation,
 	}
-	if runs, err := loadAgentRuns(workspace.Path); err == nil {
-		for _, run := range runs {
-			if run.ResourceID != task.ID || !s.agentRunActive(run.ID) {
-				continue
-			}
-			if task.AgentID != "" && run.AgentID != task.AgentID {
-				return nil
-			}
-			if run.Status != "idle" {
-				return nil
-			}
-			return s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt)
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil {
+		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)
+	}
+	for _, run := range runs {
+		if run.ResourceID != task.ID || !s.agentRunActive(run.ID) {
+			continue
 		}
-		for _, run := range runs {
-			if run.ResourceID != task.ID || s.agentRunActive(run.ID) {
-				continue
-			}
-			if task.AgentID != "" && run.AgentID != task.AgentID {
-				break
-			}
-			if strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "" {
-				req.ResumeRunID = run.ID
-			}
+		if task.AgentID != "" && run.AgentID != task.AgentID {
+			return runnableTaskDispatchFailed, fmt.Errorf("active run %s uses agent %s, AutoRun requires %s", run.ID, run.AgentID, task.AgentID)
+		}
+		if run.Status != "idle" {
+			return runnableTaskSkippedActive, nil
+		}
+		if err := s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
+			return runnableTaskDispatchFailed, err
+		}
+		return runnableTaskStarted, nil
+	}
+	for _, run := range runs {
+		if run.ResourceID != task.ID || s.agentRunActive(run.ID) {
+			continue
+		}
+		if task.AgentID != "" && run.AgentID != task.AgentID {
 			break
 		}
+		if strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "" {
+			req.ResumeRunID = run.ID
+		}
+		break
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
-		return err
+		return runnableTaskDispatchFailed, err
 	}
 	endpoint := strings.TrimRight(s.internalEndpoint(), "/") + "/api/workspaces/" + workspace.ID + "/agent/runs"
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return runnableTaskDispatchFailed, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(httpReq)
 	if err != nil {
-		return err
+		return runnableTaskDispatchFailed, err
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+		return runnableTaskDispatchFailed, fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
-	return nil
+	return runnableTaskStarted, nil
 }
 
 func (s *server) agentRunActive(runID string) bool {
