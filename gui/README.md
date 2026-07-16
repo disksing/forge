@@ -27,6 +27,17 @@ OpenCode model 必须使用 `session/new` 返回的 option value；配置值不�
 
 - `FORGE_CODEX_CLI`：自定义 `codex` 可执行文件路径（默认使用 `codex`）。
 - `FORGE_OPENCODE_CLI`：自定义 `opencode` 可执行文件路径（默认使用 `opencode`）。
+- `FORGE_GUI_CONFIG`：自定义 GUI 配置文件路径。每个运行中的 GUI 会独占其配置文件；测试时如需启动第二实例，必须使用独立配置文件、端口和 workspace。
+
+例如，启动与主 GUI 完全隔离的测试实例：
+
+```sh
+FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
+  forge-gui-bin --addr 127.0.0.1:4999 \
+  --workspace /tmp/forge-workspace-test
+```
+
+如果另一个 GUI 已持有相同配置的锁，新实例会拒绝启动。锁由进程持有，退出或崩溃后由操作系统自动释放。
 
 ## OpenCode ACP 实现说明
 
