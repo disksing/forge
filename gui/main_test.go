@@ -211,6 +211,42 @@ func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
 	}
 }
 
+func TestResourceDetailsOmitRedundantTypeMetric(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	metricsStart := strings.Index(app, "function metrics(item)")
+	metricsEnd := strings.Index(app, "function logSection(item)")
+	if metricsStart < 0 || metricsEnd <= metricsStart {
+		t.Fatal("resource detail metrics function is missing")
+	}
+	metricsSource := app[metricsStart:metricsEnd]
+	if strings.Contains(metricsSource, `<span>Type</span>`) || strings.Contains(metricsSource, `escapeHTML(item.type)`) {
+		t.Fatal("project and task details should not render their resource type")
+	}
+	for _, want := range []string{
+		`class="meta-grid resource-meta-grid"`,
+		`item.type === "project" ? "Tasks" : "Artifacts"`,
+		`<span>Repos</span>`,
+		`<span>Run</span>`,
+	} {
+		if !strings.Contains(metricsSource, want) {
+			t.Fatalf("resource detail metrics should retain %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stylesData), `.resource-meta-grid {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));`) {
+		t.Fatal("resource detail metrics should fill the available columns without an empty type slot")
+	}
+}
+
 func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
