@@ -692,7 +692,6 @@ function renderDetails() {
         </div>
       </div>
     </div>
-    ${metrics(detail)}
     ${fileSection(detail)}
     ${selected.type === "project" ? templateSection(detail) : ""}
     ${artifactSection("Artifacts", detail.artifacts)}
@@ -773,11 +772,6 @@ function workspaceDetails() {
       </nav>
       <div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>
     </div>
-    <div class="meta-grid">
-      <div class="metric"><span>Projects</span><strong>${state.tree.projects.length}</strong></div>
-      <div class="metric"><span>Tasks</span><strong>${state.tree.projects.reduce((n, p) => n + (p.children || []).length, 0)}</strong></div>
-      <div class="metric"><span>Active sessions</span><strong>${state.tree.sessions.length}</strong></div>
-    </div>
     ${workspaceAgentsSection()}
   `;
 }
@@ -822,19 +816,6 @@ function workspaceAgentsEditor(content) {
 async function openBreadcrumbResource(id) {
   const forceDetail = id === state.selectedId && id !== "workspace";
   await selectResource(id, { forceDetail });
-}
-
-function metrics(item) {
-  const taskCount = item.children?.length || 0;
-  const artifactCount = countFiles(item.artifacts);
-  const repoCount = item.repos?.length || 0;
-  return `
-    <div class="meta-grid resource-meta-grid">
-      <div class="metric">${icon(item.type === "project" ? "check-circle-2" : "paperclip")}<div><span>${item.type === "project" ? "Tasks" : "Artifacts"}</span><strong>${item.type === "project" ? taskCount : artifactCount}</strong></div></div>
-      <div class="metric">${icon("folder-git-2")}<div><span>Repos</span><strong>${repoCount}</strong></div></div>
-      ${item.run ? `<div class="metric">${icon("play-circle")}<div><span>Run</span><strong>${escapeHTML(item.run.state || item.run.mode || "configured")}</strong></div></div>` : ""}
-    </div>
-  `;
 }
 
 function logSection(item) {
@@ -3496,10 +3477,6 @@ function slugID(value) {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
-}
-
-function countFiles(entries = []) {
-  return entries.reduce((sum, entry) => sum + (entry.type === "file" ? 1 : countFiles(entry.children || [])), 0);
 }
 
 function formatBytes(size) {

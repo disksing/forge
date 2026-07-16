@@ -273,40 +273,30 @@ func TestArtifactPreviewPreservesScrollAndSupportsNewWindow(t *testing.T) {
 	}
 }
 
-func TestTaskDetailsRenderStructuredRunState(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	if !strings.Contains(source, `item.run.state || item.run.mode`) {
-		t.Fatal("task details should render structured run state")
-	}
-}
-
-func TestResourceDetailsOmitRedundantTypeMetric(t *testing.T) {
+func TestPageDetailsOmitSummaryStats(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	app := string(appData)
-	metricsStart := strings.Index(app, "function metrics(item)")
-	metricsEnd := strings.Index(app, "function logSection(item)")
-	if metricsStart < 0 || metricsEnd <= metricsStart {
-		t.Fatal("resource detail metrics function is missing")
+	if strings.Contains(app, `class="meta-grid`) || strings.Contains(app, `class="metric`) || strings.Contains(app, "function metrics(") {
+		t.Fatal("workspace, project, and task details should not render summary stats")
 	}
-	metricsSource := app[metricsStart:metricsEnd]
-	if strings.Contains(metricsSource, `<span>Type</span>`) || strings.Contains(metricsSource, `escapeHTML(item.type)`) {
-		t.Fatal("project and task details should not render their resource type")
+	if strings.Contains(app, "function countFiles(") {
+		t.Fatal("summary-only artifact counting should be removed")
 	}
 	for _, want := range []string{
-		`class="meta-grid resource-meta-grid"`,
-		`item.type === "project" ? "Tasks" : "Artifacts"`,
-		`<span>Repos</span>`,
-		`<span>Run</span>`,
+		`<div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>`,
+		`${workspaceAgentsSection()}`,
+		`<h1>${escapeHTML(detail.title)}</h1>`,
+		`id="newTaskButton"`,
+		`<button class="danger" id="archiveButton"`,
+		`${fileSection(detail)}`,
+		`${artifactSection("Artifacts", detail.artifacts)}`,
+		`selected.type === "project" ? "" : worktreeSection(detail.repos)`,
 	} {
-		if !strings.Contains(metricsSource, want) {
-			t.Fatalf("resource detail metrics should retain %q", want)
+		if !strings.Contains(app, want) {
+			t.Fatalf("page details should retain %q after removing summary stats", want)
 		}
 	}
 
@@ -314,9 +304,11 @@ func TestResourceDetailsOmitRedundantTypeMetric(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(stylesData), `.resource-meta-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));`) {
-		t.Fatal("resource detail metrics should fill the available columns without an empty type slot")
+	styles := string(stylesData)
+	for _, removed := range []string{".meta-grid", ".resource-meta-grid", ".metric"} {
+		if strings.Contains(styles, removed) {
+			t.Fatalf("summary-only style %q should be removed", removed)
+		}
 	}
 }
 
