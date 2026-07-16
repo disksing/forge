@@ -245,6 +245,12 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
 			t.Fatalf("expected subtask AGENTS.md to prevent relative worktree destination mistakes, got:\n%s", subtaskAgents)
 		}
+		if !strings.Contains(subtaskAgents, "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions") || !strings.Contains(subtaskAgents, "Explicit user instructions may authorize work outside this task directory; Forge lock rules still apply") {
+			t.Fatalf("expected subtask AGENTS.md to make task boundaries subordinate to explicit user instructions, got:\n%s", subtaskAgents)
+		}
+		if strings.Contains(projectAgents, "Explicit user instructions may authorize work outside this task directory") {
+			t.Fatalf("project AGENTS.md should not contain task-only scope guidance, got:\n%s", projectAgents)
+		}
 
 		children := run(t, "task", "list", "--project=project1")
 		if !strings.Contains(children, "task1\tAdd task commands") {

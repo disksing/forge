@@ -1039,7 +1039,7 @@ func taskAgentsPrompt(resource Resource) string {
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
-	writeScope := "Only update files inside this task directory and its worktrees."
+	writeScope := "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions. Explicit user instructions may authorize work outside this task directory; Forge lock rules still apply."
 	repoGuidance := "For code changes, create Git worktrees under worktree/. When running `git worktree add`, pass an absolute destination path inside this task's worktree/ directory; a relative destination can be resolved from the shared repository when the command uses `git -C`, placing the worktree outside this task."
 	if isProject(resource) {
 		title = "Project Agent Instructions"
