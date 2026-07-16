@@ -456,7 +456,7 @@ func TestCreateTaskDialogIsLargeAndResponsive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(appData), `class="create-dialog${isTask ? " create-task-dialog" : ""}"`) {
+	if !strings.Contains(string(appData), `class="create-dialog${isTask ? " create-task-dialog" : ""}${entering ? " modal-enter" : ""}"`) {
 		t.Fatal("create task dialog should have a task-specific class")
 	}
 

@@ -4478,21 +4478,21 @@ i[data-lucide] {
   }
 }
 
-.create-dialog-backdrop,
-.upload-dialog-backdrop,
-.file-modal-backdrop,
-.settings-overlay {
+.create-dialog-backdrop.modal-enter,
+.upload-dialog-backdrop.modal-enter,
+.file-modal-backdrop.modal-enter,
+.settings-overlay.modal-enter {
   animation: modal-fade-in 160ms ease-out;
 }
 
-.create-dialog,
-.upload-dialog,
-.file-modal,
-.diff-modal {
+.create-dialog.modal-enter,
+.upload-dialog.modal-enter,
+.file-modal.modal-enter,
+.diff-modal.modal-enter {
   animation: modal-zoom-in 180ms ease-out;
 }
 
-.settings-modal {
+.settings-modal.modal-enter {
   animation: modal-zoom-in-centered 180ms ease-out;
 }
 
@@ -4505,15 +4505,15 @@ i[data-lucide] {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .create-dialog-backdrop,
-  .upload-dialog-backdrop,
-  .file-modal-backdrop,
-  .settings-overlay,
-  .create-dialog,
-  .upload-dialog,
-  .file-modal,
-  .diff-modal,
-  .settings-modal {
+  .create-dialog-backdrop.modal-enter,
+  .upload-dialog-backdrop.modal-enter,
+  .file-modal-backdrop.modal-enter,
+  .settings-overlay.modal-enter,
+  .create-dialog.modal-enter,
+  .upload-dialog.modal-enter,
+  .file-modal.modal-enter,
+  .diff-modal.modal-enter,
+  .settings-modal.modal-enter {
     animation: none;
   }
 }
