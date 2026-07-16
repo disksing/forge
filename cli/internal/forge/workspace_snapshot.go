@@ -24,33 +24,40 @@ type ResourceTreeView struct {
 }
 
 type ResourceDetailView struct {
-	ID          string             `json:"id"`
-	Type        string             `json:"type"`
-	Title       string             `json:"title"`
-	Description string             `json:"description,omitempty"`
-	CreatedAt   string             `json:"createdAt"`
-	UpdatedAt   string             `json:"updatedAt"`
-	Path        string             `json:"path"`
-	Archived    bool               `json:"archived"`
-	Repos       []TaskRepo         `json:"repos,omitempty"`
-	Run         *TaskRun           `json:"run,omitempty"`
-	Logs        []LogEntry         `json:"logs,omitempty"`
-	Files       []ResourceFile     `json:"files,omitempty"`
-	Artifacts   []FileTreeEntry    `json:"artifacts"`
-	Worktrees   []FileTreeEntry    `json:"worktrees"`
-	Children    []ResourceTreeView `json:"children,omitempty"`
-	Templates   []TaskTemplate     `json:"templates,omitempty"`
+	ID                  string                  `json:"id"`
+	Type                string                  `json:"type"`
+	Title               string                  `json:"title"`
+	Description         string                  `json:"description,omitempty"`
+	CreatedAt           string                  `json:"createdAt"`
+	UpdatedAt           string                  `json:"updatedAt"`
+	Path                string                  `json:"path"`
+	Archived            bool                    `json:"archived"`
+	Repos               []TaskRepo              `json:"repos,omitempty"`
+	AutoRun             *AutoRun                `json:"autoRun,omitempty"`
+	AutoRunDependencies []AutoRunDependencyView `json:"autoRunDependencies,omitempty"`
+	Logs                []LogEntry              `json:"logs,omitempty"`
+	Files               []ResourceFile          `json:"files,omitempty"`
+	Artifacts           []FileTreeEntry         `json:"artifacts"`
+	Worktrees           []FileTreeEntry         `json:"worktrees"`
+	Children            []ResourceTreeView      `json:"children,omitempty"`
+	Templates           []TaskTemplate          `json:"templates,omitempty"`
+}
+
+type AutoRunDependencyView struct {
+	TaskID     string `json:"taskId"`
+	Generation int    `json:"generation"`
+	State      string `json:"state"`
 }
 
 type TaskTemplate struct {
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	Title          string `json:"title"`
-	Detail         string `json:"detail"`
-	NonInteractive bool   `json:"nonInteractive,omitempty"`
-	AgentID        string `json:"agentId,omitempty"`
-	Prompt         string `json:"prompt,omitempty"`
-	Content        string `json:"content"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Title   string `json:"title"`
+	Detail  string `json:"detail"`
+	AutoRun bool   `json:"autorun,omitempty"`
+	AgentID string `json:"agentId,omitempty"`
+	Prompt  string `json:"prompt,omitempty"`
+	Content string `json:"content"`
 }
 
 type ResourceFile struct {
@@ -179,7 +186,12 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
-		detail.Run = typed.Run
+		detail.AutoRun = typed.AutoRun
+		if typed.AutoRun != nil {
+			for _, dependency := range typed.AutoRun.After {
+				detail.AutoRunDependencies = append(detail.AutoRunDependencies, AutoRunDependencyView{TaskID: dependency.TaskID, Generation: dependency.Generation, State: autoRunDependencyState(root, dependency)})
+			}
+		}
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}
 	if isProject(entry.Resource) {
@@ -255,11 +267,11 @@ func parseTaskTemplate(name, content string) (TaskTemplate, error) {
 		switch key {
 		case "title":
 			template.Title = value
-		case "nonInteractive":
+		case "autorun":
 			if value != "true" && value != "false" {
-				return template, fmt.Errorf("task template %s has invalid nonInteractive value", name)
+				return template, fmt.Errorf("task template %s has invalid autorun value", name)
 			}
-			template.NonInteractive = value == "true"
+			template.AutoRun = value == "true"
 		case "agent":
 			template.AgentID = value
 		case "prompt":

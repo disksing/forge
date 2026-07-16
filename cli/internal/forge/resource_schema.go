@@ -47,6 +47,24 @@ func validateResource(resource Resource) error {
 		if !projectTaskName(typed.Parent).MatchString(meta.ID) {
 			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
+		if typed.AutoRun != nil {
+			if typed.AutoRun.Generation <= 0 {
+				return fmt.Errorf("AutoRun generation must be positive")
+			}
+			switch typed.AutoRun.State {
+			case autoRunStateQueued, autoRunStateRunning, autoRunStateWaiting, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed:
+			default:
+				return fmt.Errorf("invalid AutoRun state %q", typed.AutoRun.State)
+			}
+			if typed.AutoRun.State != autoRunStateWaiting && len(typed.AutoRun.After) > 0 {
+				return fmt.Errorf("AutoRun after is only valid in waiting state")
+			}
+			for _, dependency := range typed.AutoRun.After {
+				if strings.TrimSpace(dependency.TaskID) == "" || dependency.Generation <= 0 {
+					return fmt.Errorf("invalid AutoRun dependency")
+				}
+			}
+		}
 	default:
 		return fmt.Errorf("unsupported resource type %T", resource)
 	}

@@ -10,7 +10,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -180,7 +180,7 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug, options.NonInteractive, options.AgentID, options.Prompt, options.After)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.Slug, options.AutoRun, options.AgentID, options.Prompt, options.After)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -203,8 +203,8 @@ func runTask(args []string) error {
 		return runTaskRepo(args[1:])
 	case "log":
 		return runResourceLog("task", args[1:])
-	case "run":
-		return runTaskRun(args[1:])
+	case "autorun":
+		return runTaskAutoRun(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -259,7 +259,7 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
   forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -268,7 +268,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task run configure|queue|start|complete|wait|pause|fail|settle ...
+  forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
   forge session heartbeat --id=<id>
@@ -320,7 +320,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -453,14 +453,14 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 }
 
 type taskCreateOptions struct {
-	ParentID       string
-	Title          string
-	Detail         string
-	Slug           string
-	NonInteractive bool
-	AgentID        string
-	Prompt         string
-	After          []string
+	ParentID string
+	Title    string
+	Detail   string
+	Slug     string
+	AutoRun  bool
+	AgentID  string
+	Prompt   string
+	After    []string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -529,8 +529,8 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			i++
 			continue
 		}
-		if arg == "--non-interactive" {
-			options.NonInteractive = true
+		if arg == "--autorun" {
+			options.AutoRun = true
 			continue
 		}
 		if strings.HasPrefix(arg, "--agent=") {

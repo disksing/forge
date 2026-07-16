@@ -875,8 +875,8 @@ func (rt *agentRuntime) handleOpencodePromptResult(requestErr error, result json
 	}
 	if requestErr != nil {
 		rt.addEvent(rt.manager, "error", "session/prompt", requestErr.Error(), nil, "")
-		if rt.isNonInteractive() {
-			rt.settleNonInteractive(rt.manager, "failed", requestErr.Error())
+		if rt.isSchedulerTurn() {
+			rt.finishSchedulerTurn(rt.manager, requestErr.Error())
 		} else {
 			rt.markIdle(rt.manager)
 		}
@@ -887,12 +887,8 @@ func (rt *agentRuntime) handleOpencodePromptResult(requestErr error, result json
 		stopReason = "end_turn"
 	}
 	rt.addEvent(rt.manager, "system", "session/prompt", "OpenCode turn finished: "+stopReason+".", result, "")
-	if rt.isNonInteractive() {
-		status := "completed"
-		if stopReason != "end_turn" {
-			status = "failed"
-		}
-		rt.settleNonInteractive(rt.manager, status, "OpenCode stop reason: "+stopReason)
+	if rt.isSchedulerTurn() {
+		rt.finishSchedulerTurn(rt.manager, "OpenCode stop reason: "+stopReason)
 		return
 	}
 	rt.markIdle(rt.manager)
@@ -1068,16 +1064,8 @@ func mergeOpencodeTerminalEnv(base []string, extra []opencodeEnvVariable, run ag
 	for _, item := range extra {
 		set(item.Name, item.Value)
 	}
-	mode := strings.TrimSpace(run.InteractionMode)
-	if mode == "" {
-		mode = "interactive"
-	}
-	set("FORGE_INTERACTION_MODE", mode)
 	if run.ForgeSessionID != "" {
 		set("FORGE_SESSION_ID", run.ForgeSessionID)
-	}
-	if mode == "non_interactive" && run.TaskRunGeneration > 0 {
-		set("FORGE_TASK_RUN_GENERATION", strconv.Itoa(run.TaskRunGeneration))
 	}
 	result := make([]string, 0, len(order))
 	for _, name := range order {

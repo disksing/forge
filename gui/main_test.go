@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestCreateTaskMapsNonInteractiveOptions(t *testing.T) {
+func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	workspace := t.TempDir()
 	outputPath := filepath.Join(t.TempDir(), "args")
 	forgePath := filepath.Join(t.TempDir(), "forge-fake")
@@ -26,7 +26,7 @@ func TestCreateTaskMapsNonInteractiveOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","nonInteractive":true,"agentId":"codex-one","prompt":"Do the work"}`
+	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"agentId":"codex-one","prompt":"Do the work"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
@@ -38,7 +38,7 @@ func TestCreateTaskMapsNonInteractiveOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"task", "create", "--project", "project1", "--non-interactive", "--agent=codex-one", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
+	want := []string{"task", "create", "--project", "project1", "--autorun", "--agent=codex-one", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
 	}
@@ -73,12 +73,12 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	}
 }
 
-func TestCreateTaskRejectsRunOptionsWithoutNonInteractive(t *testing.T) {
+func TestCreateTaskRejectsRunOptionsWithoutAutoRun(t *testing.T) {
 	s := &server{}
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","prompt":"Do the work"}`))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require nonInteractive") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require autorun") {
 		t.Fatalf("expected validation error, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -89,7 +89,7 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`name="nonInteractive"`, `name="prompt"`, `name="agentId"`, `nonInteractive: dialog.nonInteractive`} {
+	for _, want := range []string{`name="autorun"`, `name="prompt"`, `name="agentId"`, `autorun: dialog.autorun`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("create task dialog is missing %q", want)
 		}
