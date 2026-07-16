@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -745,6 +746,73 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	}
 	if strings.Contains(app, "Final response") || strings.Contains(app, "Progress update") {
 		t.Fatal("agent message bubbles should rely on visual hierarchy without response labels")
+	}
+}
+
+func TestAgentChatReasoningIsTransientAndDoesNotSplitToolGroups(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the agent chat behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function coalesceAgentEvents(events)")
+	end := strings.Index(app, "function renderAgent()")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate agent event transformation functions")
+	}
+
+	script := `
+const state = { agent: { activeRunId: "run" } };
+` + app[start:end] + `
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function tool(id, update = false) {
+  return {
+    id: id + (update ? 100 : 0),
+    type: "tool",
+    method: "session/update",
+    data: { sessionUpdate: update ? "tool_call_update" : "tool_call", toolCallId: id, status: update ? "completed" : "pending" },
+  };
+}
+function reasoning(id, text) {
+  return { id, type: "reasoning_delta", method: "session/update", text, data: { messageId: id } };
+}
+
+let displayed = displayAgentEvents([tool(1), reasoning(2, "working")]);
+assert(displayed.length === 2, "the active reasoning phase should remain briefly visible");
+assert(displayed[0].type === "tool_group" && displayed[1].type === "reasoning_delta", "active reasoning should follow the first tool group");
+
+displayed = displayAgentEvents([
+  tool(1),
+  reasoning(2, "working"),
+  tool(3),
+  tool(3, true),
+  tool(4),
+  tool(4, true),
+]);
+assert(displayed.length === 1 && displayed[0].type === "tool_group", "completed reasoning should disappear without splitting tools");
+assert(displayed[0].events.length === 3, "tool updates should replace their call while N and M calls merge");
+assert(displayed[0].events.map(agentEventItemId).join(",") === "1,3,4", "the merged group should preserve tool order");
+
+displayed = displayAgentEvents([
+  tool(1),
+  reasoning(2, "working"),
+  { id: 3, type: "system", method: "session/prompt", text: "OpenCode turn finished: end_turn." },
+]);
+assert(displayed.every((event) => event.type !== "reasoning_delta"), "turn completion should remove stale reasoning");
+`
+
+	testFile := filepath.Join(t.TempDir(), "agent-chat-events.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("agent chat behavior test failed: %v\n%s", err, output)
 	}
 }
 
