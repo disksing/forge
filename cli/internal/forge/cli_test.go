@@ -109,6 +109,8 @@ func TestTaskLifecycle(t *testing.T) {
 		assertDir(t, filepath.Join(root, archiveDir))
 		assertFile(t, filepath.Join(root, configFile))
 		assertFile(t, filepath.Join(root, "AGENTS.md"))
+		assertDir(t, filepath.Join(root, wikiDir))
+		assertFile(t, filepath.Join(root, wikiDir, "index.md"))
 
 		created := run(t, "project", "create", "Implement the forge MVP")
 		if !strings.Contains(created, `"id": "project1"`) {
@@ -2030,6 +2032,11 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun wait") {
 			t.Fatalf("expected workspace AGENTS.md to teach AutoRun delegation, got:\n%s", first)
 		}
+		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
+			if !strings.Contains(first, want) {
+				t.Fatalf("expected workspace AGENTS.md to include Wiki guidance %q, got:\n%s", want, first)
+			}
+		}
 		if strings.Count(first, forgePromptStart) != 1 || strings.Count(first, forgePromptEnd) != 1 {
 			t.Fatalf("expected one forge managed block, got:\n%s", first)
 		}
@@ -2048,6 +2055,106 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		}
 		if strings.Count(second, forgePromptStart) != 1 || strings.Count(second, forgePromptEnd) != 1 {
 			t.Fatalf("expected migrate to avoid duplicate managed blocks, got:\n%s", second)
+		}
+	})
+}
+
+func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		indexPath := filepath.Join(root, wikiDir, "index.md")
+		if got := readFile(t, indexPath); got != defaultWikiIndex {
+			t.Fatalf("unexpected default Wiki index:\n%s", got)
+		}
+
+		customIndex := "# Team Wiki\n\n- [Architecture](architecture.md)\n"
+		if err := os.WriteFile(indexPath, []byte(customIndex), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		guideDir := filepath.Join(root, wikiDir, "guides", "operations")
+		if err := os.MkdirAll(guideDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		guidePath := filepath.Join(guideDir, "deploy.txt")
+		if err := os.WriteFile(guidePath, []byte("deploy safely\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "migrate")
+		if got := readFile(t, indexPath); got != customIndex {
+			t.Fatalf("migrate rewrote the custom Wiki index:\n%s", got)
+		}
+		if got := readFile(t, guidePath); got != "deploy safely\n" {
+			t.Fatalf("migrate rewrote a custom Wiki page: %q", got)
+		}
+
+		tree, err := buildWorkspaceTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tree.Wiki.Exists || tree.Wiki.Error != "" || len(tree.Wiki.Entries) != 2 {
+			t.Fatalf("unexpected Wiki snapshot: %+v", tree.Wiki)
+		}
+		if tree.Wiki.Entries[0].Name != "guides" || tree.Wiki.Entries[0].Path != "guides" || tree.Wiki.Entries[0].Type != "directory" {
+			t.Fatalf("unexpected nested Wiki root entry: %+v", tree.Wiki.Entries[0])
+		}
+		operations := tree.Wiki.Entries[0].Children[0]
+		if operations.Path != "guides/operations" || len(operations.Children) != 1 || operations.Children[0].Path != "guides/operations/deploy.txt" || operations.Children[0].Modified == "" {
+			t.Fatalf("unexpected nested Wiki tree: %+v", tree.Wiki.Entries[0])
+		}
+		originalSize := operations.Children[0].Size
+		if err := os.WriteFile(guidePath, []byte("deploy safely with a reviewed checklist\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		refreshedTree, err := buildWorkspaceTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		refreshedPage := refreshedTree.Wiki.Entries[0].Children[0].Children[0]
+		if refreshedPage.Size == originalSize {
+			t.Fatalf("Wiki snapshot did not reflect a modified file: before=%d after=%d", originalSize, refreshedPage.Size)
+		}
+
+		if err := os.RemoveAll(filepath.Join(root, wikiDir)); err != nil {
+			t.Fatal(err)
+		}
+		tree, err = buildWorkspaceTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tree.Wiki.Exists || tree.Wiki.Entries == nil || len(tree.Wiki.Entries) != 0 {
+			t.Fatalf("missing Wiki should have an explicit empty snapshot: %+v", tree.Wiki)
+		}
+		run(t, "migrate")
+		if got := readFile(t, indexPath); got != defaultWikiIndex {
+			t.Fatalf("migrate did not restore the default Wiki index:\n%s", got)
+		}
+
+		if err := os.Remove(indexPath); err != nil {
+			t.Fatal(err)
+		}
+		tree, err = buildWorkspaceTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tree.Wiki.Exists || tree.Wiki.Entries == nil || len(tree.Wiki.Entries) != 0 {
+			t.Fatalf("empty Wiki should remain distinguishable from a missing Wiki: %+v", tree.Wiki)
+		}
+
+		if err := os.Remove(filepath.Join(root, wikiDir)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, wikiDir), []byte("not a directory"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		tree, err = buildWorkspaceTree()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !tree.Wiki.Exists || !strings.Contains(tree.Wiki.Error, "not a directory") {
+			t.Fatalf("invalid Wiki path should report a clear snapshot error: %+v", tree.Wiki)
+		}
+		if _, err := runErr(t, "migrate"); err == nil || !strings.Contains(err.Error(), "not a directory") {
+			t.Fatalf("migrate should reject an invalid Wiki path, got %v", err)
 		}
 	})
 }

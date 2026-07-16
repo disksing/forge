@@ -77,6 +77,22 @@ type workspaceTree struct {
 	Root     string             `json:"root"`
 	Projects []resourceSnapshot `json:"projects"`
 	Sessions []guiSession       `json:"sessions"`
+	Wiki     workspaceWiki      `json:"wiki"`
+}
+
+type workspaceWiki struct {
+	Exists  bool            `json:"exists"`
+	Entries []fileTreeEntry `json:"entries"`
+	Error   string          `json:"error,omitempty"`
+}
+
+type fileTreeEntry struct {
+	Name     string          `json:"name"`
+	Path     string          `json:"path"`
+	Type     string          `json:"type"`
+	Size     int64           `json:"size,omitempty"`
+	Modified string          `json:"modified,omitempty"`
+	Children []fileTreeEntry `json:"children,omitempty"`
 }
 
 type resourceSnapshot struct {
@@ -155,8 +171,9 @@ type server struct {
 }
 
 const (
-	previewMaxBytes = 512 * 1024
-	diffMaxBytes    = 4 * 1024 * 1024
+	previewMaxBytes  = 512 * 1024
+	diffMaxBytes     = 4 * 1024 * 1024
+	workspaceWikiDir = "wiki"
 )
 
 func main() {
@@ -354,6 +371,24 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
+	case "wiki":
+		if len(parts) == 4 && parts[2] == "files" && parts[3] == "raw" {
+			if r.Method != http.MethodGet {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			s.serveRawWikiFile(w, r, id)
+			return
+		}
+		if len(parts) != 3 || parts[2] != "files" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.previewWikiFile(w, r, id)
 	case "diff":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -586,6 +621,29 @@ func (s *server) previewFile(w http.ResponseWriter, r *http.Request, id string) 
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	previewPath(w, relPath, abs)
+}
+
+func (s *server) previewWikiFile(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	relPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if relPath == "" {
+		writeError(w, errors.New("path is required"), http.StatusBadRequest)
+		return
+	}
+	abs, err := safeWikiPath(workspace.Path, relPath)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	previewPath(w, relPath, abs)
+}
+
+func previewPath(w http.ResponseWriter, relPath, abs string) {
 	info, err := os.Stat(abs)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
@@ -712,6 +770,29 @@ func (s *server) serveRawFile(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	serveRawPath(w, r, relPath, abs)
+}
+
+func (s *server) serveRawWikiFile(w http.ResponseWriter, r *http.Request, id string) {
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	relPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if relPath == "" {
+		writeError(w, errors.New("path is required"), http.StatusBadRequest)
+		return
+	}
+	abs, err := safeWikiPath(workspace.Path, relPath)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	serveRawPath(w, r, relPath, abs)
+}
+
+func serveRawPath(w http.ResponseWriter, r *http.Request, relPath, abs string) {
 	file, err := os.Open(abs)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
@@ -1243,6 +1324,21 @@ func safeWorkspacePath(root string, relPath string) (string, error) {
 		}
 	}
 	return targetAbs, nil
+}
+
+func safeWikiPath(workspaceRoot, relPath string) (string, error) {
+	if strings.TrimSpace(relPath) == "" {
+		return "", errors.New("path is required")
+	}
+	wikiRoot, err := safeWorkspacePath(workspaceRoot, workspaceWikiDir)
+	if err != nil {
+		return "", err
+	}
+	target, err := safeWorkspacePath(wikiRoot, relPath)
+	if err != nil && strings.Contains(err.Error(), "path escapes the workspace") {
+		return "", errors.New("path escapes the Workspace Wiki")
+	}
+	return target, err
 }
 
 func ensurePathInside(root string, target string) error {

@@ -36,6 +36,9 @@ func runInit(args []string) error {
 	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
+	if err := ensureWorkspaceWiki(root); err != nil {
+		return err
+	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
 		return err
 	}
@@ -63,6 +66,9 @@ func runWorkspaceMigrate(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := ensureWorkspaceWiki(root); err != nil {
+		return err
+	}
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
 		return err
 	}
@@ -71,6 +77,42 @@ func runWorkspaceMigrate(args []string) error {
 	}
 	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated, %d project work.md files removed)\n", root, updatedResources, removedProjectWorkFiles)
 	return nil
+}
+
+func ensureWorkspaceWiki(root string) error {
+	dir := filepath.Join(root, wikiDir)
+	info, err := os.Lstat(dir)
+	switch {
+	case os.IsNotExist(err):
+		if err := os.Mkdir(dir, 0o755); err != nil {
+			return err
+		}
+	case err != nil:
+		return err
+	case info.Mode()&os.ModeSymlink != 0:
+		return fmt.Errorf("workspace wiki path must not be a symbolic link: %s", dir)
+	case !info.IsDir():
+		return fmt.Errorf("workspace wiki path is not a directory: %s", dir)
+	}
+
+	indexPath := filepath.Join(dir, "index.md")
+	if _, err := os.Lstat(indexPath); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	file, err := os.OpenFile(indexPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		if os.IsExist(err) {
+			return nil
+		}
+		return err
+	}
+	if _, err := file.WriteString(defaultWikiIndex); err != nil {
+		file.Close()
+		return err
+	}
+	return file.Close()
 }
 
 func removeProjectWorkFiles(root string) (int, error) {
@@ -168,11 +210,20 @@ const (
 	forgePromptEnd   = "<!-- end of forge cli prompt -->"
 )
 
+const defaultWikiIndex = `# Workspace Wiki
+
+This index is the entry point for long-lived workspace knowledge. Add links to topic pages with short summaries as the Wiki grows.
+`
+
 const workspaceAgentsPrompt = `# AgentWorkspace
 
 This directory is an AgentWorkspace managed by forge.
 
 - All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees.
+- Long-lived knowledge about the workspace's code, projects, and work history lives in ` + "`wiki/`" + `.
+- Before starting work in this workspace, read ` + "`wiki/index.md`" + `.
+- Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
+- When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
 - Agents coordinate writes with sessions that lock the project or task they are updating; stale locks are pruned from session liveness.
 - Agents may read other projects and tasks freely for context, but should only update the resource they have locked and any task worktrees owned by that resource.
 - When started through ` + "`forge-start`" + ` or Forge GUI, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.

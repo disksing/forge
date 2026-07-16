@@ -2,7 +2,7 @@
 
 forge is a small CLI for a local AgentWorkspace: a filesystem-based project/task workflow for AI agents, shared Git checkouts, and per-task Git worktrees.
 
-The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate writes with sessions that lock the project or task they update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update resources they have locked. When an agent is started through `forge-start`, Forge creates a PID-liveness session, locks the selected resource, injects `FORGE_SESSION_ID`, and ends the session when the command exits. The workspace root does not require a lock.
+The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, a workspace Wiki, logs, artifacts, and task worktrees. Agents coordinate writes with sessions that lock the project or task they update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update resources they have locked. When an agent is started through `forge-start`, Forge creates a PID-liveness session, locks the selected resource, injects `FORGE_SESSION_ID`, and ends the session when the command exits. The workspace root does not require a lock.
 
 ## Workspace Layout
 
@@ -10,6 +10,8 @@ The design is intentionally simple. All workspace data lives on the filesystem a
 AgentWorkspace/
   AGENTS.md
   forge.json
+  wiki/
+    index.md
   repos/
     owner/repo/
   project1/
@@ -72,7 +74,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge --version` prints the build-time git branch and sha.
 
-`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, and a forge-managed block in `AGENTS.md`.
+`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `wiki/index.md`, and a forge-managed block in `AGENTS.md`.
 
 `forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
 
@@ -110,13 +112,13 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge session list` lists active sessions after automatically pruning stale sessions. `forge session show --id=<id>` prints one active session as formatted JSON.
 
-`forge workspace tree --json` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
+`forge workspace tree --json` prints a lightweight JSON tree of the Workspace Wiki, open projects, open tasks, and active sessions for GUI and tool integrations.
 
 `forge workspace resource --id=<resource> --json` prints detail JSON for one project or task, including common Markdown files, artifacts, worktrees, and task repository metadata.
 
 Agents started through `forge-start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
 
-`forge migrate` upgrades project/task metadata to the current resource schema and refreshes the workspace and open resource `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
+`forge migrate` upgrades project/task metadata to the current resource schema, restores a missing `wiki/index.md`, and refreshes the workspace and open resource `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
 
 `forge migrate` is safe to run multiple times. It rewrites only forge-managed prompt blocks and preserves content outside managed blocks:
 
@@ -128,7 +130,7 @@ Agents started through `forge-start` or Forge GUI should reuse the injected `FOR
 
 Content outside that block belongs to people and agents and is preserved.
 
-The Forge GUI treats the workspace `AGENTS.md` as the user-editable instructions surface and hides Forge-managed content while editing it. Project and task `AGENTS.md` files are generated launch cards for agents and are hidden from project/task detail views.
+The Forge GUI treats the workspace `AGENTS.md` as the user-editable instructions surface and hides Forge-managed content while editing it. The Workspace detail view also provides a refreshable tree and safe preview for files under `wiki/`. Project and task `AGENTS.md` files are generated launch cards for agents and are hidden from project/task detail views.
 
 ## Building
 

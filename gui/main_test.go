@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,97 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
+	workspace := t.TempDir()
+	wikiDir := filepath.Join(workspace, "wiki")
+	if err := os.MkdirAll(filepath.Join(wikiDir, "guides"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wikiDir, "guides", "notes.md"), []byte("# Notes\n\nSafe content.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(workspace, "outside.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path=guides%2Fnotes.md", nil)
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected Wiki Markdown preview, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var preview filePreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Path != "guides/notes.md" || preview.Binary || !strings.Contains(preview.Content, "Safe content") {
+		t.Fatalf("unexpected Wiki preview: %+v", preview)
+	}
+
+	for _, path := range []string{"../outside.txt", "guides/../../outside.txt", "/etc/passwd"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path="+path, nil)
+		rec := httptest.NewRecorder()
+		s.handleWorkspace(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected Wiki traversal %q to be rejected, got %d: %s", path, rec.Code, rec.Body.String())
+		}
+	}
+
+	if err := os.Symlink(outside, filepath.Join(wikiDir, "outside-link.txt")); err != nil {
+		t.Fatal(err)
+	}
+	for _, suffix := range []string{"wiki/files?path=outside-link.txt", "wiki/files/raw?path=outside-link.txt"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/"+suffix, nil)
+		rec := httptest.NewRecorder()
+		s.handleWorkspace(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected external Wiki symlink to be rejected, got %d: %s", rec.Code, rec.Body.String())
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path=missing.md", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "no such file") {
+		t.Fatalf("expected a clear missing Wiki file response, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWorkspaceWikiUIReusesTreePreviewAndStates(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`${workspaceWikiSection()}`,
+		`return artifactSection("Wiki", wiki.entries, "No Wiki files yet.");`,
+		`<strong>Wiki not initialized</strong>`,
+		`<strong>Wiki unavailable</strong>`,
+		`section === "Wiki" ? "wiki/files" : "files"`,
+		`section === "Wiki" ? "wiki/files/raw" : "files/raw"`,
+		`changed && state.preview?.section === "Wiki"`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("Workspace Wiki UI is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(stylesData), ".wiki-status {") {
+		t.Fatal("Workspace Wiki status styling is missing")
+	}
+}
 
 func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	workspace := t.TempDir()

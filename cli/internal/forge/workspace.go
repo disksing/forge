@@ -13,6 +13,7 @@ const (
 	configFile = "forge.json"
 	reposDir   = "repos"
 	archiveDir = "archive"
+	wikiDir    = "wiki"
 )
 
 func findWorkspaceRoot() (string, error) {

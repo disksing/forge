@@ -212,6 +212,9 @@ async function autoRefresh() {
     if (changed) {
       state.tree = tree;
     }
+    if (changed && state.preview?.section === "Wiki" && !state.preview.loading) {
+      await refreshFilePreview("Wiki", state.preview.path);
+    }
     if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
       state.selectedId = tree.projects[0]?.id || "workspace";
       syncURL({ replace: true });
@@ -670,11 +673,14 @@ function renderDetails() {
   if (state.selectedId === "workspace") {
     panel.innerHTML = workspaceDetails();
     restoreWorkspaceAgentsEditorState(workspaceEditorState);
+    restoreFilePreviewScrollState(previewScrollState);
     return;
   }
   const selected = findResource(state.selectedId) || state.tree.projects[0];
   if (!selected) {
     panel.innerHTML = workspaceDetails();
+    restoreWorkspaceAgentsEditorState(workspaceEditorState);
+    restoreFilePreviewScrollState(previewScrollState);
     return;
   }
   const detail = state.details[selected.id];
@@ -780,7 +786,38 @@ function workspaceDetails() {
       <div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>
     </div>
     ${workspaceAgentsSection()}
+    ${workspaceWikiSection()}
+    ${fileModal()}
   `;
+}
+
+function workspaceWikiSection() {
+  const wiki = state.tree?.wiki;
+  if (wiki?.error) {
+    return `
+      <div class="content-section">
+        <h3>${icon("book-open")}<span>Wiki</span></h3>
+        <div class="file-modal-empty error-preview wiki-status">
+          ${icon("triangle-alert")}
+          <strong>Wiki unavailable</strong>
+          <span>${escapeHTML(wiki.error)}</span>
+        </div>
+      </div>
+    `;
+  }
+  if (!wiki?.exists) {
+    return `
+      <div class="content-section">
+        <h3>${icon("book-open")}<span>Wiki</span></h3>
+        <div class="file-modal-empty wiki-status">
+          ${icon("book-open")}
+          <strong>Wiki not initialized</strong>
+          <span>Run forge migrate to create wiki/index.md.</span>
+        </div>
+      </div>
+    `;
+  }
+  return artifactSection("Wiki", wiki.entries, "No Wiki files yet.");
 }
 
 function workspaceAgentsSection() {
@@ -1053,14 +1090,15 @@ function restoreWorkspaceAgentsEditorState(snapshot) {
   textarea.scrollTop = snapshot.scrollTop || 0;
 }
 
-function artifactSection(title, entries = []) {
+function artifactSection(title, entries = [], emptyMessage = "No artifacts.") {
   const safeEntries = Array.isArray(entries) ? entries : [];
+  const sectionIcon = title === "Worktrees" ? "folder-git-2" : title === "Wiki" ? "book-open" : "paperclip";
   return `
     <div class="content-section">
-      <h3>${icon(title === "Worktrees" ? "folder-git-2" : "paperclip")}<span>${title}</span></h3>
+      <h3>${icon(sectionIcon)}<span>${title}</span></h3>
       <div class="artifact-browser">
         <div class="artifact-tree" role="tree">
-          ${safeEntries.length > 0 ? safeEntries.map((entry) => artifactRow(entry, title, 0)).join("") : emptyListRow("No artifacts.")}
+          ${safeEntries.length > 0 ? safeEntries.map((entry) => artifactRow(entry, title, 0)).join("") : emptyListRow(emptyMessage)}
         </div>
       </div>
     </div>
@@ -1151,7 +1189,7 @@ function fileModal() {
             <span>${escapeHTML(preview.path || "")}${preview.size != null ? ` · ${formatBytes(preview.size)}` : ""}${preview.truncated ? " · truncated" : ""}</span>
           </div>
           <div class="file-modal-actions">
-            <a class="secondary-button file-modal-open" href="${escapeHTML(rawFileURL(preview.path))}" target="_blank" rel="noopener" title="Open file in new window">
+            <a class="secondary-button file-modal-open" href="${escapeHTML(rawFileURL(preview.path, preview.section))}" target="_blank" rel="noopener" title="Open file in new window">
               ${icon("external-link")}<span>Open</span>
             </a>
             <button class="icon-button" data-modal-close="true" title="Close" aria-label="Close">${icon("x")}</button>
@@ -1237,7 +1275,7 @@ function fileModalBody(preview) {
   if (preview.image) {
     return `
       <div class="image-preview" data-preview-scroll>
-        <img src="${escapeHTML(rawFileURL(preview.path))}" alt="${escapeHTML(preview.name || preview.path)}" />
+        <img src="${escapeHTML(rawFileURL(preview.path, preview.section))}" alt="${escapeHTML(preview.name || preview.path)}" />
       </div>
     `;
   }
@@ -1336,13 +1374,21 @@ async function previewFile(section, path) {
   state.preview = { section, path, loading: true };
   renderAll();
   try {
-    const preview = await api(`/api/workspaces/${state.activeWorkspaceId}/files?path=${encodeURIComponent(path)}`);
-    state.preview = { section, ...preview };
+    await refreshFilePreview(section, path, { rethrow: true });
   } catch (err) {
-    state.preview = { section, path, error: err.message };
     throw err;
   } finally {
     renderAll();
+  }
+}
+
+async function refreshFilePreview(section, path, options = {}) {
+  try {
+    const preview = await api(filePreviewURL(section, path));
+    state.preview = { section, ...preview };
+  } catch (err) {
+    state.preview = { section, path, error: err.message };
+    if (options.rethrow) throw err;
   }
 }
 
@@ -1415,8 +1461,14 @@ function closeDiff() {
   renderAll();
 }
 
-function rawFileURL(path) {
-  return `/api/workspaces/${state.activeWorkspaceId}/files/raw?path=${encodeURIComponent(path)}`;
+function filePreviewURL(section, path) {
+  const base = section === "Wiki" ? "wiki/files" : "files";
+  return `/api/workspaces/${state.activeWorkspaceId}/${base}?path=${encodeURIComponent(path)}`;
+}
+
+function rawFileURL(path, section = "") {
+  const base = section === "Wiki" ? "wiki/files/raw" : "files/raw";
+  return `/api/workspaces/${state.activeWorkspaceId}/${base}?path=${encodeURIComponent(path)}`;
 }
 
 function fileNameFromPath(path = "") {

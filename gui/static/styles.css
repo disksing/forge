@@ -3357,6 +3357,13 @@ i[data-lucide] {
   color: #dc2626;
 }
 
+.wiki-status {
+  min-height: 120px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
 .diff-viewer {
   flex: 1;
   min-height: 0;

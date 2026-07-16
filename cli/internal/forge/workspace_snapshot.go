@@ -6,12 +6,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 type WorkspaceTree struct {
 	Root     string             `json:"root"`
 	Projects []ResourceTreeView `json:"projects"`
 	Sessions []Session          `json:"sessions"`
+	Wiki     WorkspaceWikiView  `json:"wiki"`
+}
+
+type WorkspaceWikiView struct {
+	Exists  bool            `json:"exists"`
+	Entries []FileTreeEntry `json:"entries"`
+	Error   string          `json:"error,omitempty"`
 }
 
 type ResourceTreeView struct {
@@ -77,6 +85,7 @@ type FileTreeEntry struct {
 	Path     string          `json:"path"`
 	Type     string          `json:"type"`
 	Size     int64           `json:"size,omitempty"`
+	Modified string          `json:"modified,omitempty"`
 	Children []FileTreeEntry `json:"children,omitempty"`
 }
 
@@ -131,7 +140,34 @@ func buildWorkspaceTree() (WorkspaceTree, error) {
 		Root:     slash(root),
 		Projects: projects,
 		Sessions: sessions,
+		Wiki:     readWorkspaceWiki(root),
 	}, nil
+}
+
+func readWorkspaceWiki(root string) WorkspaceWikiView {
+	dir := filepath.Join(root, wikiDir)
+	info, err := os.Lstat(dir)
+	if os.IsNotExist(err) {
+		return WorkspaceWikiView{Entries: []FileTreeEntry{}}
+	}
+	if err != nil {
+		return WorkspaceWikiView{Entries: []FileTreeEntry{}, Error: err.Error()}
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return WorkspaceWikiView{Exists: true, Entries: []FileTreeEntry{}, Error: "workspace wiki directory must not be a symbolic link"}
+	}
+	if !info.IsDir() {
+		return WorkspaceWikiView{Exists: true, Entries: []FileTreeEntry{}, Error: "workspace wiki path is not a directory"}
+	}
+	count := 0
+	entries, err := readFileTreeLimited(dir, dir, 0, &count)
+	if err != nil {
+		return WorkspaceWikiView{Exists: true, Entries: []FileTreeEntry{}, Error: err.Error()}
+	}
+	if entries == nil {
+		entries = []FileTreeEntry{}
+	}
+	return WorkspaceWikiView{Exists: true, Entries: entries}
 }
 
 func buildResourceDetail(id string) (ResourceDetailView, error) {
@@ -363,20 +399,20 @@ func readResourceFiles(root, dir string, resource Resource) []ResourceFile {
 
 func readFileTree(root, dir string) []FileTreeEntry {
 	count := 0
-	entries := readFileTreeLimited(root, dir, 0, &count)
+	entries, _ := readFileTreeLimited(root, dir, 0, &count)
 	if entries == nil {
 		return []FileTreeEntry{}
 	}
 	return entries
 }
 
-func readFileTreeLimited(root, dir string, depth int, count *int) []FileTreeEntry {
+func readFileTreeLimited(root, dir string, depth int, count *int) ([]FileTreeEntry, error) {
 	if depth > maxFileTreeDepth || *count >= maxFileTreeEntries {
-		return nil
+		return nil, nil
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	tree := make([]FileTreeEntry, 0, len(entries))
 	for _, entry := range entries {
@@ -399,13 +435,14 @@ func readFileTreeLimited(root, dir string, depth int, count *int) []FileTreeEntr
 		}
 		if entry.IsDir() {
 			node.Type = "directory"
-			node.Children = readFileTreeLimited(root, path, depth+1, count)
+			node.Children, _ = readFileTreeLimited(root, path, depth+1, count)
 		} else {
 			node.Size = info.Size()
 		}
+		node.Modified = info.ModTime().UTC().Format(time.RFC3339Nano)
 		tree = append(tree, node)
 	}
-	return tree
+	return tree, nil
 }
 
 func skipFileTreeDir(entry os.DirEntry) bool {
