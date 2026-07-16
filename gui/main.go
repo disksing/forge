@@ -200,6 +200,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	configLock, err := acquireGUIConfigLock(configPath, addr)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer configLock.Close()
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		log.Fatal(err)
