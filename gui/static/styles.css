@@ -887,18 +887,46 @@ body.resizing-y {
 }
 
 .autorun-status {
+  --autorun-tone: var(--muted);
+  --autorun-surface: color-mix(in srgb, var(--autorun-tone) 7%, var(--panel));
+  --autorun-border: color-mix(in srgb, var(--autorun-tone) 38%, var(--line));
+  position: relative;
   margin: 0 0 10px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
+  padding: 13px 14px;
+  overflow: hidden;
+  border: 1px solid var(--autorun-border);
+  border-left-width: 4px;
+  border-radius: 12px;
+  background: var(--autorun-surface);
+  box-shadow: 0 5px 16px color-mix(in srgb, var(--autorun-tone) 10%, transparent);
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.autorun-status > div {
+.autorun-status-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.autorun-status-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+}
+
+.autorun-title-icon {
+  width: 17px;
+  height: 17px;
+  color: var(--autorun-tone);
+}
+
+.autorun-status-title strong {
+  font-size: 13px;
+  letter-spacing: 0.01em;
 }
 
 .autorun-status small,
@@ -907,22 +935,141 @@ body.resizing-y {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .autorun-state {
-  padding: 2px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid color-mix(in srgb, var(--autorun-tone) 42%, transparent);
   border-radius: 999px;
-  background: var(--line-soft);
+  background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));
+  color: var(--autorun-tone);
   font-size: 11px;
-  text-transform: capitalize;
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
-.autorun-state-running {
-  color: var(--accent);
+.autorun-state-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
 }
 
-.autorun-state-failed {
-  color: var(--red);
+.autorun-status-queued {
+  --autorun-tone: var(--accent);
+}
+
+.autorun-status-running {
+  --autorun-tone: var(--accent);
+  border-color: transparent;
+  background:
+    linear-gradient(var(--autorun-surface), var(--autorun-surface)) padding-box,
+    linear-gradient(
+      110deg,
+      var(--autorun-border) 15%,
+      color-mix(in srgb, var(--autorun-tone) 70%, var(--bg)) 42%,
+      color-mix(in srgb, var(--autorun-tone) 45%, var(--bg)) 50%,
+      var(--autorun-border) 78%
+    ) border-box;
+  background-size: 100% 100%, 240% 100%;
+  animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;
+}
+
+.autorun-status-running .autorun-state-icon {
+  transform-origin: center;
+  animation: autorun-running-icon 2.6s ease-in-out infinite;
+}
+
+.autorun-status-waiting {
+  --autorun-tone: var(--amber);
+}
+
+.autorun-status-paused {
+  --autorun-tone: var(--muted);
+}
+
+.autorun-status-completed {
+  --autorun-tone: var(--green);
+}
+
+.autorun-status-failed {
+  --autorun-tone: var(--red);
+}
+
+@keyframes autorun-running-border {
+  from {
+    background-position: 0 0, 100% 0;
+  }
+  to {
+    background-position: 0 0, -140% 0;
+  }
+}
+
+@keyframes autorun-running-pulse {
+  0%, 100% {
+    box-shadow: 0 5px 16px color-mix(in srgb, var(--autorun-tone) 10%, transparent);
+  }
+  50% {
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--autorun-tone) 22%, transparent);
+  }
+}
+
+@keyframes autorun-running-icon {
+  0%, 100% {
+    opacity: 0.78;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .autorun-status {
+    transition: none;
+  }
+
+  .autorun-status-running,
+  .autorun-status-running .autorun-state-icon {
+    animation: none;
+  }
+
+  .autorun-status-running {
+    border-color: var(--autorun-border);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--autorun-tone) 24%, transparent);
+  }
+}
+
+@media (forced-colors: active) {
+  .autorun-status,
+  .autorun-state {
+    border-color: CanvasText;
+  }
+
+  .autorun-status-running,
+  .autorun-status-running .autorun-state-icon {
+    animation: none;
+  }
+
+  .autorun-status-running {
+    outline: 2px solid Highlight;
+    outline-offset: -4px;
+  }
+}
+
+@media (max-width: 420px) {
+  .autorun-status {
+    padding: 11px 12px;
+  }
+
+  .autorun-status-heading {
+    align-items: flex-start;
+  }
 }
 
 .agent-current-session {

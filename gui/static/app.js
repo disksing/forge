@@ -1787,18 +1787,38 @@ function renderAgent() {
 function autoRunStatus(detail) {
   const run = detail?.autoRun;
   if (!run) return "";
+  const presentation = autoRunPresentation(run.state);
   const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run failed", "Auto Run retry"].includes(entry.title));
   const dependencyItems = detail.autoRunDependencies || (run.after || []);
   const dependencies = dependencyItems.map((dep) => `${dep.taskId}@${dep.generation}${dep.state ? ` (${dep.state})` : ""}`).join(", ");
   const blocked = dependencyItems.some((dep) => dep.state === "failed");
   return `
-    <section class="autorun-status" aria-label="AutoRun status">
-      <div><strong>AutoRun</strong><span class="autorun-state autorun-state-${escapeHTML(run.state)}">${escapeHTML(run.state)}</span></div>
+    <section class="autorun-status autorun-status-${presentation.key}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
+      <div class="autorun-status-heading">
+        <div class="autorun-status-title"><i data-lucide="workflow" class="autorun-title-icon" aria-hidden="true"></i><strong>AutoRun</strong></div>
+        <span class="autorun-state autorun-state-${presentation.key}">
+          <i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>
+          <span>${escapeHTML(presentation.label)}</span>
+        </span>
+      </div>
       <small>Generation ${escapeHTML(String(run.generation))}${run.agentId ? ` · ${escapeHTML(run.agentId)}` : ""}</small>
       ${dependencies ? `<p>${blocked ? "Blocked by" : "Waiting for"} ${escapeHTML(dependencies)}</p>` : ""}
       ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
     </section>
   `;
+}
+
+function autoRunPresentation(state) {
+  const presentations = {
+    queued: { label: "Queued", icon: "list-start" },
+    running: { label: "Running", icon: "activity" },
+    waiting: { label: "Waiting", icon: "clock-3" },
+    paused: { label: "Paused", icon: "pause" },
+    completed: { label: "Completed", icon: "circle-check" },
+    failed: { label: "Failed", icon: "circle-x" },
+  };
+  const key = Object.hasOwn(presentations, state) ? state : "unknown";
+  return { key, ...(presentations[key] || { label: state || "Unknown", icon: "circle-help" }) };
 }
 
 function agentSelectOptions(agents) {

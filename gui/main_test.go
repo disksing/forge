@@ -312,6 +312,59 @@ func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 	}
 }
 
+func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`function autoRunPresentation(state)`,
+		`queued: { label: "Queued", icon: "list-start" }`,
+		`running: { label: "Running", icon: "activity" }`,
+		`waiting: { label: "Waiting", icon: "clock-3" }`,
+		`paused: { label: "Paused", icon: "pause" }`,
+		`completed: { label: "Completed", icon: "circle-check" }`,
+		`failed: { label: "Failed", icon: "circle-x" }`,
+		`class="autorun-status autorun-status-${presentation.key}" role="status"`,
+		`aria-label="AutoRun: ${escapeHTML(presentation.label)}"`,
+		`class="autorun-title-icon" aria-hidden="true"`,
+		`class="autorun-state autorun-state-${presentation.key}"`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("accessible AutoRun status markup is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.autorun-status-queued`,
+		`.autorun-status-running`,
+		`.autorun-status-waiting`,
+		`.autorun-status-paused`,
+		`.autorun-status-completed`,
+		`.autorun-status-failed`,
+		`animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;`,
+		`@media (prefers-reduced-motion: reduce)`,
+		`.autorun-status-running .autorun-state-icon`,
+		`animation: none;`,
+		`@media (forced-colors: active)`,
+		`@media (max-width: 420px)`,
+		`--autorun-surface: color-mix(in srgb, var(--autorun-tone) 7%, var(--panel));`,
+		`background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));`,
+		`flex-wrap: wrap;`,
+		`overflow-wrap: anywhere;`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("responsive AutoRun status styles are missing %q", want)
+		}
+	}
+}
+
 func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
