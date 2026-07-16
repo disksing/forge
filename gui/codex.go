@@ -380,10 +380,48 @@ func (rt *agentRuntime) withForgeSessionContext(text string) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("- This session and the current directory resource are managed by Forge GUI. Do not create another Forge session, do not lock/unlock the current resource, and do not end this session yourself.\n")
-	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use the id above as the managed session id for temporary locks on other resources only.\n\n")
+	b.WriteString("- If the process environment does not contain FORGE_SESSION_ID, use the id above as the managed session id for temporary locks on other resources only.\n")
+	if catalog := rt.agentProfileCatalog(); catalog != "" {
+		b.WriteString(catalog)
+	}
+	b.WriteString("\n")
 	b.WriteString("User request:\n")
 	b.WriteString(text)
 	return b.String()
+}
+
+func (rt *agentRuntime) agentProfileCatalog() string {
+	if rt.manager == nil || rt.manager.server == nil {
+		return ""
+	}
+	cfg, err := rt.manager.server.loadConfig()
+	if err != nil || len(cfg.AgentProfiles) == 0 {
+		return ""
+	}
+	var lines []string
+	for _, route := range cfg.AgentProfiles {
+		if !agentConfigAvailable(cfg, route.AgentID) {
+			continue
+		}
+		agent, _ := findAgentConfig(cfg.Agents, route.AgentID)
+		provider, _ := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
+		clean := func(value string) string { return strings.Join(strings.Fields(value), " ") }
+		parts := []string{clean(agent.Name), clean(provider.Name)}
+		if model := agentOption(agent, agentOptionModel); model != "" {
+			parts = append(parts, "model "+clean(model))
+		}
+		if provider.Type == opencodeProviderID {
+			parts = append(parts, agentOption(agent, agentOptionMode)+" mode")
+		}
+		if route.Description != "" {
+			parts = append([]string{clean(route.Description)}, parts...)
+		}
+		lines = append(lines, fmt.Sprintf("  - %s: %s", route.Key, strings.Join(parts, " · ")))
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return "- Available Agent Profiles for AutoRun child tasks:\n" + strings.Join(lines, "\n") + "\n- When creating an AutoRun task, use repeatable --agent-profile=<profile> preferences instead of GUI Agent IDs.\n"
 }
 
 func codexThreadReadyText(method string) string {

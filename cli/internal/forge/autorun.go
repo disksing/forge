@@ -21,25 +21,27 @@ const (
 )
 
 type autoRunCommandOptions struct {
-	TaskID  string
-	AgentID string
-	Prompt  string
-	After   []string
-	Summary string
-	Reason  string
+	TaskID                 string
+	PreferredAgentProfiles []string
+	AgentID                string
+	Prompt                 string
+	After                  []string
+	Summary                string
+	Reason                 string
 }
 
 type runnableTask struct {
-	ID         string              `json:"id"`
-	Path       string              `json:"path"`
-	Title      string              `json:"title"`
-	Generation int                 `json:"generation"`
-	State      string              `json:"state"`
-	Ready      bool                `json:"ready"`
-	Reason     string              `json:"reason"`
-	Prompt     string              `json:"prompt,omitempty"`
-	AgentID    string              `json:"agentId,omitempty"`
-	After      []AutoRunDependency `json:"after,omitempty"`
+	ID                     string              `json:"id"`
+	Path                   string              `json:"path"`
+	Title                  string              `json:"title"`
+	Generation             int                 `json:"generation"`
+	State                  string              `json:"state"`
+	Ready                  bool                `json:"ready"`
+	Reason                 string              `json:"reason"`
+	Prompt                 string              `json:"prompt,omitempty"`
+	PreferredAgentProfiles []string            `json:"preferredAgentProfiles,omitempty"`
+	AgentID                string              `json:"agentId,omitempty"`
+	After                  []AutoRunDependency `json:"after,omitempty"`
 }
 
 func runTaskAutoRun(args []string) error {
@@ -71,7 +73,7 @@ func autoRunUsage(command string) string {
 	base := "usage: forge task autorun "
 	switch command {
 	case "queue":
-		return base + "queue [--project=<project>] [--task=<task>] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...]"
+		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...]"
 	case "start", "resume":
 		return base + command + " [--project=<project>] [--task=<task>]"
 	case "complete":
@@ -112,6 +114,8 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			task = value
 		case "agent":
 			opts.AgentID = value
+		case "agent-profile":
+			opts.PreferredAgentProfiles = append(opts.PreferredAgentProfiles, value)
 		case "prompt":
 			opts.Prompt = value
 		case "after":
@@ -123,6 +127,9 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 		default:
 			return opts, errors.New(usage)
 		}
+	}
+	if opts.AgentID != "" && len(opts.PreferredAgentProfiles) > 0 {
+		return opts, errors.New("--agent-profile and legacy --agent are mutually exclusive")
 	}
 	var err error
 	if task == "" {
@@ -141,13 +148,18 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		generation := 1
 		agentID, prompt := opts.AgentID, opts.Prompt
+		preferredAgentProfiles, err := normalizeAgentProfiles(opts.PreferredAgentProfiles)
+		if err != nil {
+			return err
+		}
 		if task.AutoRun != nil {
 			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed {
 				return fmt.Errorf("cannot queue AutoRun in %s state", task.AutoRun.State)
 			}
 			generation = task.AutoRun.Generation + 1
-			if agentID == "" {
+			if agentID == "" && len(preferredAgentProfiles) == 0 {
 				agentID = task.AutoRun.AgentID
+				preferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
 			}
 			if prompt == "" {
 				prompt = task.AutoRun.Prompt
@@ -163,7 +175,7 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 		if len(after) > 0 {
 			state = autoRunStateWaiting
 		}
-		task.AutoRun = &AutoRun{Generation: generation, State: state, AgentID: agentID, Prompt: prompt, After: after}
+		task.AutoRun = &AutoRun{Generation: generation, State: state, PreferredAgentProfiles: preferredAgentProfiles, AgentID: agentID, Prompt: prompt, After: after}
 		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation)); err != nil {
 			return err
 		}
@@ -172,6 +184,29 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 		}
 		return nil
 	})
+}
+
+func normalizeAgentProfiles(values []string) ([]string, error) {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		profile := strings.ToLower(strings.TrimSpace(value))
+		if profile == "" {
+			return nil, errors.New("agent profile cannot be empty")
+		}
+		for _, r := range profile {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+				continue
+			}
+			return nil, fmt.Errorf("invalid agent profile %q: use lowercase letters, numbers, '.', '_', or '-'", value)
+		}
+		if seen[profile] {
+			continue
+		}
+		seen[profile] = true
+		normalized = append(normalized, profile)
+	}
+	return normalized, nil
 }
 
 func autoRunStart(opts autoRunCommandOptions) error {

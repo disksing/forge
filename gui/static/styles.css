@@ -620,9 +620,16 @@ body.resizing-y {
   font-weight: 700;
 }
 
-.create-task-automation-fields select {
+.create-task-automation-fields select,
+.create-task-automation-fields input {
   width: 100%;
   padding: 8px 10px;
+}
+
+.create-task-automation-fields small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .agent-panel {
@@ -3849,6 +3856,13 @@ i[data-lucide] {
   gap: 10px;
 }
 
+.settings-section-copy {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .settings-section-heading {
   min-height: 22px;
   display: flex;
@@ -3955,6 +3969,33 @@ i[data-lucide] {
   display: grid;
   grid-template-columns: minmax(150px, 1.1fr) minmax(120px, 0.9fr) minmax(120px, 0.9fr) minmax(120px, 1fr);
   gap: 10px;
+}
+
+.settings-profile-fields {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(180px, 1.5fr) minmax(150px, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+}
+
+.settings-profile-fields label {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.settings-profile-fields label > span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.settings-profile-fields input,
+.settings-profile-fields select {
+  min-width: 0;
+  width: 100%;
 }
 
 @media (max-width: 980px) {
@@ -4193,6 +4234,10 @@ i[data-lucide] {
   .settings-form-grid,
   .settings-agent-fields {
     grid-template-columns: 1fr;
+  }
+
+  .settings-profile-fields {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .settings-agent-card-head {

@@ -118,7 +118,7 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"agentId":"codex-one","prompt":"Do the work"}`
+	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
@@ -130,9 +130,26 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	args := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"task", "create", "--project", "project1", "--autorun", "--agent=codex-one", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
+	want := []string{"task", "create", "--project", "project1", "--autorun", "--agent-profile=kimi", "--agent-profile=codex", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
 	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
 		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
+	}
+
+	body = `{"project":"project1","title":"Legacy task","autorun":true,"agentId":"codex-one"}`
+	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
+	rec = httptest.NewRecorder()
+	s.createTask(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected legacy Agent ID compatibility, got %d: %s", rec.Code, rec.Body.String())
+	}
+	data, err = os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	args = strings.Split(strings.TrimSpace(string(data)), "\n")
+	want = []string{"task", "create", "--project", "project1", "--autorun", "--agent=codex-one", "Legacy task"}
+	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
+		t.Fatalf("unexpected legacy forge args:\n got: %#v\nwant: %#v", args, want)
 	}
 }
 
@@ -214,9 +231,29 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`name="autorun"`, `name="prompt"`, `name="agentId"`, `autorun: dialog.autorun`} {
+	for _, want := range []string{`name="autorun"`, `name="prompt"`, `name="agentProfiles"`, `preferredAgentProfiles: dialog.autorun`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("create task dialog is missing %q", want)
+		}
+	}
+}
+
+func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`AutoRun Agent Profiles`,
+		`id="agentProfileForm"`,
+		`/api/settings/agent-profiles`,
+		`preferredAgentProfiles`,
+		`Actual Agent:`,
+		`Legacy Agent:`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Agent Profile UI is missing %q", want)
 		}
 	}
 }

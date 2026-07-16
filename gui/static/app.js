@@ -27,6 +27,11 @@ const state = {
       providerId: "codex",
       options: {},
     },
+    newProfile: {
+      key: "",
+      description: "",
+      agentId: "",
+    },
   },
   createDialog: {
     open: false,
@@ -38,7 +43,8 @@ const state = {
     detail: "",
     slug: "",
     autorun: false,
-    agentId: "",
+    preferredAgentProfiles: [],
+    legacyAgentId: "",
     prompt: "",
     submitting: false,
   },
@@ -1941,6 +1947,11 @@ function autoRunStatus(detail) {
   const dependencyItems = detail.autoRunDependencies || (run.after || []);
   const dependencies = dependencyItems.map((dep) => `${dep.taskId}@${dep.generation}${dep.state ? ` (${dep.state})` : ""}`).join(", ");
   const blocked = dependencyItems.some((dep) => dep.state === "failed");
+  const profiles = run.preferredAgentProfiles || [];
+  const actual = currentAgentRun();
+  const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
+    ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentId || ""}`
+    : "";
   return `
     <section class="autorun-status autorun-status-${presentation.key}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
       <div class="autorun-status-heading">
@@ -1950,7 +1961,8 @@ function autoRunStatus(detail) {
           <span>${escapeHTML(presentation.label)}</span>
         </span>
       </div>
-      <small>Generation ${escapeHTML(String(run.generation))}${run.agentId ? ` · ${escapeHTML(run.agentId)}` : ""}</small>
+      <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : run.agentId ? ` · Legacy Agent: ${escapeHTML(run.agentId)}` : " · Workspace default"}</small>
+      ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
       ${dependencies ? `<p>${blocked ? "Blocked by" : "Waiting for"} ${escapeHTML(dependencies)}</p>` : ""}
       ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
     </section>
@@ -2227,6 +2239,7 @@ function renderSettingsModal() {
     defaultChatAgentId: state.config?.defaultChatAgentId || "",
     agentProviders: state.config?.agentProviders || [],
     agents: state.config?.agents || [],
+    agentProfiles: state.config?.agentProfiles || [],
     codex: { running: false },
     opencode: { running: false },
   };
@@ -2314,6 +2327,7 @@ function settingsAgentPanel(data) {
         </div>
       </section>
       ${settingsDefaultChatAgentSection(data)}
+      ${settingsAgentProfilesSection(data)}
       <form id="agentConfigForm" class="settings-agent-form">
         <section class="settings-agent-section">
           <div class="settings-section-heading">
@@ -2330,6 +2344,51 @@ function settingsAgentPanel(data) {
         </div>
       </form>
     </div>
+  `;
+}
+
+function settingsAgentProfilesSection(data) {
+  const profiles = data.agentProfiles || [];
+  const agents = data.agents || [];
+  const draftAgentId = agents.some((agent) => agent.id === state.settings.newProfile.agentId)
+    ? state.settings.newProfile.agentId
+    : agents[0]?.id || "";
+  state.settings.newProfile.agentId = draftAgentId;
+  const targetOptions = (selected) => agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === selected ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>`).join("");
+  return `
+    <form id="agentProfileForm" class="settings-agent-form">
+      <section class="settings-agent-section">
+        <div class="settings-section-heading">
+          <h3>AutoRun Agent Profiles</h3>
+          <span>${profiles.length} routes</span>
+        </div>
+        <p class="settings-section-copy">Portable Profile names map AutoRun preferences to local Agents. Keys must be unique.</p>
+        <div class="settings-agent-list">
+          ${profiles.map((profile, index) => `
+            <div class="settings-agent-card settings-agent-profile-row" data-profile-index="${index}">
+              <div class="settings-profile-fields">
+                <label><span>Profile key</span><input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" /></label>
+                <label><span>Summary</span><input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" /></label>
+                <label><span>Local Agent</span><select data-profile-field="agentId">${targetOptions(profile.agentId)}</select></label>
+                <button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>
+              </div>
+            </div>
+          `).join("") || `<div class="settings-empty">No AutoRun Agent Profiles configured.</div>`}
+        </div>
+      </section>
+      <section class="settings-agent-section">
+        <div class="settings-section-heading"><h3>New Profile</h3></div>
+        <div class="settings-agent-card settings-agent-new">
+          <div class="settings-profile-fields">
+            <label><span>Profile key</span><input id="settingsNewProfileKey" value="${escapeHTML(state.settings.newProfile.key)}" placeholder="kimi" /></label>
+            <label><span>Summary</span><input id="settingsNewProfileDescription" value="${escapeHTML(state.settings.newProfile.description)}" placeholder="Kimi coding agent" /></label>
+            <label><span>Local Agent</span><select id="settingsNewProfileAgent" ${agents.length ? "" : "disabled"}>${targetOptions(draftAgentId) || `<option value="">No Agents</option>`}</select></label>
+            <button type="button" id="settingsAddProfileButton" ${agents.length ? "" : "disabled"}>${icon("plus")}<span>Add</span></button>
+          </div>
+        </div>
+      </section>
+      <div class="settings-form-actions"><button type="submit">${icon("save")}<span>Save Profiles</span></button></div>
+    </form>
   `;
 }
 
@@ -2554,6 +2613,17 @@ function bindSettingsEvents() {
     event.preventDefault();
     saveAgents().catch((err) => toast(err.message));
   });
+  $("agentProfileForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveAgentProfiles().catch((err) => toast(err.message));
+  });
+  $("settingsAddProfileButton")?.addEventListener("click", addSettingsProfile);
+  document.querySelectorAll("[data-remove-profile]").forEach((button) => {
+    button.addEventListener("click", () => removeSettingsProfile(Number(button.dataset.removeProfile)));
+  });
+  $("settingsNewProfileKey")?.addEventListener("input", (event) => { state.settings.newProfile.key = event.target.value; });
+  $("settingsNewProfileDescription")?.addEventListener("input", (event) => { state.settings.newProfile.description = event.target.value; });
+  $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentId = event.target.value; });
   $("settingsDefaultChatAgent")?.addEventListener("change", (event) => {
     saveDefaultChatAgent(event.target.value).catch((err) => toast(err.message));
   });
@@ -3256,7 +3326,8 @@ function openCreateDialog(type, projectId = "") {
     detail: "",
     slug: "",
     autorun: false,
-    agentId: defaultChatAgentID(),
+    preferredAgentProfiles: [],
+    legacyAgentId: "",
     prompt: "",
     submitting: false,
   };
@@ -3275,7 +3346,8 @@ function closeCreateDialog() {
     detail: "",
     slug: "",
     autorun: false,
-    agentId: "",
+    preferredAgentProfiles: [],
+    legacyAgentId: "",
     prompt: "",
     submitting: false,
   };
@@ -3295,7 +3367,7 @@ function renderCreateDialog() {
   const title = isTask ? "Create task" : "Create project";
   const descriptionPlaceholder = "Describe the project";
   const detailPlaceholder = "Task detail";
-  const agents = enabledAgentConfigs();
+  const profiles = state.config?.agentProfiles || [];
   const templates = isTask ? (state.details[dialog.projectId]?.templates || []) : [];
   const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.autorun}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
@@ -3335,11 +3407,9 @@ function renderCreateDialog() {
                   <textarea name="prompt" placeholder="Instructions for the automated run">${escapeHTML(dialog.prompt)}</textarea>
                 </label>
                 <label>
-                  <span>Agent</span>
-                  <select name="agentId">
-                    <option value="">Workspace default</option>
-                    ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${dialog.agentId === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>`).join("")}
-                  </select>
+                  <span>Preferred Agent Profiles</span>
+                  <input name="agentProfiles" value="${escapeHTML((dialog.preferredAgentProfiles || []).join(", "))}" placeholder="Workspace default, or kimi, codex" />
+                  <small>${profiles.length ? `Available: ${profiles.map((profile) => escapeHTML(profile.key)).join(", ")}` : "No Profiles configured; the workspace default will be used."}</small>
                 </label>
               </div>
             ` : ""}
@@ -3374,7 +3444,7 @@ function bindCreateDialogEvents() {
     if (target.name === "detail") state.createDialog.detail = target.value;
     if (target.name === "slug") state.createDialog.slug = target.value;
     if (target.name === "prompt") state.createDialog.prompt = target.value;
-    if (target.name === "agentId") state.createDialog.agentId = target.value;
+    if (target.name === "agentProfiles") state.createDialog.preferredAgentProfiles = parseAgentProfiles(target.value);
     if (target.name === "autorun") {
       state.createDialog.autorun = target.checked;
       renderCreateDialog();
@@ -3397,7 +3467,8 @@ function applyCreateDialogTemplate(name) {
     dialog.title = template.title || "";
     dialog.detail = template.detail || "";
     dialog.autorun = Boolean(template.autorun);
-    dialog.agentId = template.agentId || defaultChatAgentID();
+    dialog.preferredAgentProfiles = template.preferredAgentProfiles || [];
+    dialog.legacyAgentId = template.agentId || "";
     dialog.prompt = template.prompt || "";
   }
   renderCreateDialog();
@@ -3414,7 +3485,7 @@ async function submitCreateDialog(event) {
   dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");
   dialog.autorun = form.get("autorun") === "on";
-  dialog.agentId = String(form.get("agentId") || "");
+  dialog.preferredAgentProfiles = parseAgentProfiles(String(form.get("agentProfiles") || ""));
   dialog.prompt = String(form.get("prompt") || "");
   dialog.submitting = true;
   renderCreateDialog();
@@ -3438,7 +3509,8 @@ async function submitCreateDialog(event) {
           ...(dialog.templateName ? { taskMarkdown: dialog.detail } : { detail: dialog.detail }),
           slug: dialog.slug,
           autorun: dialog.autorun,
-          agentId: dialog.autorun ? dialog.agentId : "",
+          preferredAgentProfiles: dialog.autorun ? dialog.preferredAgentProfiles : [],
+          agentId: dialog.autorun && !dialog.preferredAgentProfiles.length ? dialog.legacyAgentId : "",
           prompt: dialog.autorun ? dialog.prompt : "",
         }),
       });
@@ -3451,6 +3523,15 @@ async function submitCreateDialog(event) {
     renderCreateDialog();
     toast(err.message);
   }
+}
+
+function parseAgentProfiles(value) {
+  const seen = new Set();
+  return String(value || "").split(",").map((item) => item.trim().toLowerCase()).filter((item) => {
+    if (!item || seen.has(item)) return false;
+    seen.add(item);
+    return true;
+  });
 }
 
 async function archiveResource(resourceId) {
@@ -3659,6 +3740,7 @@ async function saveAgents() {
   await refreshSettings();
   if (state.config) {
     state.config.agents = state.settings.data?.agents || saved;
+    state.config.agentProfiles = state.settings.data?.agentProfiles || [];
     state.config.defaultChatAgentId = state.settings.data?.defaultChatAgentId || "";
   }
   applyAgentConfig();
@@ -3668,6 +3750,51 @@ async function saveAgents() {
   renderSettingsModal();
   refreshIcons();
   toast("Agents saved.");
+}
+
+function collectSettingsAgentProfiles() {
+  return Array.from(document.querySelectorAll(".settings-agent-profile-row")).map((row) => {
+    const field = (name) => row.querySelector(`[data-profile-field="${name}"]`)?.value.trim() || "";
+    return { key: field("key"), description: field("description"), agentId: field("agentId") };
+  });
+}
+
+async function saveAgentProfiles() {
+  const saved = await api("/api/settings/agent-profiles", {
+    method: "PUT",
+    body: JSON.stringify(collectSettingsAgentProfiles()),
+  });
+  state.settings.data = { ...(state.settings.data || {}), agentProfiles: saved };
+  if (state.config) state.config.agentProfiles = saved;
+  renderSettingsModal();
+  toast("Agent Profiles saved.");
+}
+
+function addSettingsProfile() {
+  const key = state.settings.newProfile.key.trim().toLowerCase();
+  const agentId = state.settings.newProfile.agentId;
+  if (!key) {
+    toast("Profile key is required.");
+    return;
+  }
+  const current = collectSettingsAgentProfiles();
+  if (current.some((profile) => profile.key.trim().toLowerCase() === key)) {
+    toast(`Profile ${key} already exists.`);
+    return;
+  }
+  state.settings.data = {
+    ...(state.settings.data || {}),
+    agentProfiles: [...current, { key, description: state.settings.newProfile.description.trim(), agentId }],
+  };
+  state.settings.newProfile = { key: "", description: "", agentId };
+  renderSettingsModal();
+}
+
+function removeSettingsProfile(index) {
+  const current = collectSettingsAgentProfiles();
+  if (!Number.isInteger(index) || index < 0 || index >= current.length) return;
+  state.settings.data = { ...(state.settings.data || {}), agentProfiles: current.filter((_, itemIndex) => itemIndex !== index) };
+  renderSettingsModal();
 }
 
 async function saveDefaultChatAgent(agentId) {

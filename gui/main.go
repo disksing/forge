@@ -37,6 +37,7 @@ type config struct {
 	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
+	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
 	Codex              codexSettings         `json:"codex"`
 	Opencode           opencodeSettings      `json:"opencode"`
 }
@@ -60,6 +61,12 @@ type agentConfig struct {
 	Name       string            `json:"name"`
 	ProviderID string            `json:"providerId"`
 	Options    map[string]string `json:"options,omitempty"`
+}
+
+type agentProfileRoute struct {
+	Key         string `json:"key"`
+	Description string `json:"description,omitempty"`
+	AgentID     string `json:"agentId"`
 }
 
 type guiWorkspace struct {
@@ -476,15 +483,16 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 
 func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 	var body struct {
-		Project      string  `json:"project"`
-		Title        string  `json:"title"`
-		Detail       string  `json:"detail"`
-		TaskMarkdown *string `json:"taskMarkdown"`
-		Description  string  `json:"description"`
-		Slug         string  `json:"slug"`
-		AutoRun      bool    `json:"autorun"`
-		AgentID      string  `json:"agentId"`
-		Prompt       string  `json:"prompt"`
+		Project                string   `json:"project"`
+		Title                  string   `json:"title"`
+		Detail                 string   `json:"detail"`
+		TaskMarkdown           *string  `json:"taskMarkdown"`
+		Description            string   `json:"description"`
+		Slug                   string   `json:"slug"`
+		AutoRun                bool     `json:"autorun"`
+		PreferredAgentProfiles []string `json:"preferredAgentProfiles"`
+		AgentID                string   `json:"agentId"`
+		Prompt                 string   `json:"prompt"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -501,14 +509,23 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 	args := []string{"task", "create", "--project", body.Project}
 	if body.AutoRun {
 		args = append(args, "--autorun")
+		if len(body.PreferredAgentProfiles) > 0 && strings.TrimSpace(body.AgentID) != "" {
+			writeError(w, errors.New("preferredAgentProfiles and legacy agentId are mutually exclusive"), http.StatusBadRequest)
+			return
+		}
+		for _, profile := range body.PreferredAgentProfiles {
+			if strings.TrimSpace(profile) != "" {
+				args = append(args, "--agent-profile="+strings.TrimSpace(profile))
+			}
+		}
 		if strings.TrimSpace(body.AgentID) != "" {
 			args = append(args, "--agent="+strings.TrimSpace(body.AgentID))
 		}
 		if strings.TrimSpace(body.Prompt) != "" {
 			args = append(args, "--prompt="+strings.TrimSpace(body.Prompt))
 		}
-	} else if strings.TrimSpace(body.AgentID) != "" || strings.TrimSpace(body.Prompt) != "" {
-		writeError(w, errors.New("agentId and prompt require autorun"), http.StatusBadRequest)
+	} else if len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.AgentID) != "" || strings.TrimSpace(body.Prompt) != "" {
+		writeError(w, errors.New("preferredAgentProfiles, agentId, and prompt require autorun"), http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(body.Slug) != "" {
@@ -1214,6 +1231,7 @@ func (s *server) loadConfig() (config, error) {
 				DefaultChatAgentID: normalizeDefaultChatAgentID("", agents),
 				AgentProviders:     providers,
 				Agents:             agents,
+				AgentProfiles:      []agentProfileRoute{},
 			}, nil
 		}
 		return config{}, err
@@ -1229,6 +1247,10 @@ func (s *server) loadConfig() (config, error) {
 	}
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)
+	cfg.AgentProfiles, err = normalizeAgentProfileRoutes(cfg.AgentProfiles, cfg.Agents)
+	if err != nil {
+		return config{}, err
+	}
 	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	return cfg, nil
 }
@@ -1239,6 +1261,11 @@ func (s *server) saveConfig(cfg config) error {
 	}
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)
+	var err error
+	cfg.AgentProfiles, err = normalizeAgentProfileRoutes(cfg.AgentProfiles, cfg.Agents)
+	if err != nil {
+		return err
+	}
 	cfg.DefaultChatAgentID = normalizeDefaultChatAgentID(cfg.DefaultChatAgentID, cfg.Agents)
 	if err := os.MkdirAll(filepath.Dir(s.config), 0o755); err != nil {
 		return err
