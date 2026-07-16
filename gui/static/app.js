@@ -14,6 +14,7 @@ const state = {
   expandedMarkdownFiles: new Set(),
   preview: null,
   diff: null,
+  modalEnter: "",
   sessionMenu: null,
   taskOperationalStateKey: "",
   settings: {
@@ -1260,11 +1261,13 @@ function fileModal() {
   if (!preview) {
     return "";
   }
+  const entering = state.modalEnter === "preview";
+  if (entering) state.modalEnter = "";
   const body = fileModalBody(preview);
   return `
     <div class="file-modal-layer" role="presentation">
-      <div class="file-modal-backdrop" data-modal-close="true"></div>
-      <section class="file-modal" role="dialog" aria-modal="true" aria-label="File preview">
+      <div class="file-modal-backdrop${entering ? " modal-enter" : ""}" data-modal-close="true"></div>
+      <section class="file-modal${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="File preview">
         <header class="file-modal-header">
           <div>
             <strong>${escapeHTML(preview.name || fileNameFromPath(preview.path))}</strong>
@@ -1286,11 +1289,13 @@ function fileModal() {
 function diffModal() {
   const diff = state.diff;
   if (!diff) return "";
+  const entering = state.modalEnter === "diff";
+  if (entering) state.modalEnter = "";
   const title = diff.branch || diff.name || "Diff";
   return `
     <div class="diff-modal-layer" role="presentation">
-      <div class="file-modal-backdrop" data-diff-close="true"></div>
-      <section class="diff-modal" role="dialog" aria-modal="true" aria-label="Worktree diff">
+      <div class="file-modal-backdrop${entering ? " modal-enter" : ""}" data-diff-close="true"></div>
+      <section class="diff-modal${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="Worktree diff">
         <header class="file-modal-header diff-modal-header">
           <div>
             <strong>${escapeHTML(title)}</strong>
@@ -1453,6 +1458,7 @@ function bindDiffModalEvents() {
 }
 
 async function previewFile(section, path) {
+  state.modalEnter = "preview";
   state.preview = { section, path, loading: true };
   renderAll();
   try {
@@ -1494,6 +1500,7 @@ async function saveWorkspaceAgents() {
 }
 
 async function openDiff(repo) {
+  state.modalEnter = "diff";
   state.diff = { ...repo, loading: true };
   renderAll();
   try {
@@ -2339,9 +2346,11 @@ function renderSettingsModal() {
     codex: { running: false },
     opencode: { running: false },
   };
+  const entering = state.modalEnter === "settings";
+  if (entering) state.modalEnter = "";
   root.innerHTML = `
-    <div class="settings-overlay" data-settings-close></div>
-    <section class="settings-modal" role="dialog" aria-modal="true" aria-label="System Settings">
+    <div class="settings-overlay${entering ? " modal-enter" : ""}" data-settings-close></div>
+    <section class="settings-modal${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="System Settings">
       <aside class="settings-tabs">
         <div class="settings-title">System Settings</div>
         ${settingsTabButton("workspace", "hard-drive", "Workspace")}
@@ -3053,6 +3062,7 @@ function openAgentUploadDialog() {
   }
   const input = $("ttyInput");
   if (input) state.agent.ttyDraft = input.value;
+  state.modalEnter = "upload";
   state.uploadDialog = {
     open: true,
     runId: run.id,
@@ -3112,10 +3122,12 @@ function renderAgentUploadDialog() {
   }
   const busy = uploadInProgress();
   const items = state.uploadDialog.items;
+  const entering = state.modalEnter === "upload";
+  if (entering) state.modalEnter = "";
   root.innerHTML = `
     <div class="upload-dialog-layer" role="presentation">
-      <div class="upload-dialog-backdrop" data-upload-close="true"></div>
-      <section class="upload-dialog" role="dialog" aria-modal="true" aria-label="Upload files">
+      <div class="upload-dialog-backdrop${entering ? " modal-enter" : ""}" data-upload-close="true"></div>
+      <section class="upload-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="Upload files">
         <header class="upload-dialog-header">
           <div>
             <strong>Upload files</strong>
@@ -3412,6 +3424,7 @@ function showTaskForm(projectId) {
 }
 
 function openCreateDialog(type, projectId = "") {
+  state.modalEnter = "create";
   state.createDialog = {
     open: true,
     type,
@@ -3468,10 +3481,12 @@ function renderCreateDialog() {
   const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.autorun}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
+  const entering = state.modalEnter === "create";
+  if (entering) state.modalEnter = "";
   root.innerHTML = `
     <div class="create-dialog-layer" role="presentation">
-      <div class="create-dialog-backdrop" data-create-dialog-close="true"></div>
-      <section class="create-dialog${isTask ? " create-task-dialog" : ""}" role="dialog" aria-modal="true" aria-label="${title}">
+      <div class="create-dialog-backdrop${entering ? " modal-enter" : ""}" data-create-dialog-close="true"></div>
+      <section class="create-dialog${isTask ? " create-task-dialog" : ""}${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="${title}">
         <header class="create-dialog-header">
           <div>
             <strong>${title}</strong>
@@ -3742,6 +3757,7 @@ function defaultChatAgentID() {
 }
 
 async function openSettings(tab = "workspace") {
+  state.modalEnter = "settings";
   state.settings.open = true;
   state.settings.tab = tab;
   await refreshSettings();
