@@ -64,14 +64,15 @@ type AutoRunDependencyView struct {
 }
 
 type TaskTemplate struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Title   string `json:"title"`
-	Detail  string `json:"detail"`
-	AutoRun bool   `json:"autorun,omitempty"`
-	AgentID string `json:"agentId,omitempty"`
-	Prompt  string `json:"prompt,omitempty"`
-	Content string `json:"content"`
+	Name                   string   `json:"name"`
+	Path                   string   `json:"path"`
+	Title                  string   `json:"title"`
+	Detail                 string   `json:"detail"`
+	AutoRun                bool     `json:"autorun,omitempty"`
+	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
+	AgentID                string   `json:"agentId,omitempty"`
+	Prompt                 string   `json:"prompt,omitempty"`
+	Content                string   `json:"content"`
 }
 
 type ResourceFile struct {
@@ -319,6 +320,13 @@ func parseTaskTemplate(name, content string) (TaskTemplate, error) {
 			template.AutoRun = value == "true"
 		case "agent":
 			template.AgentID = value
+		case "agent-profiles":
+			value = strings.TrimSpace(strings.Trim(value, "[]"))
+			profiles, err := normalizeAgentProfiles(strings.Split(value, ","))
+			if err != nil {
+				return template, fmt.Errorf("task template %s: %w", name, err)
+			}
+			template.PreferredAgentProfiles = profiles
 		case "prompt":
 			template.Prompt = value
 		default:

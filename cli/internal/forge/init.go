@@ -252,7 +252,7 @@ This directory is an AgentWorkspace managed by forge.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
 - When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun wait`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command.
-- To delegate AutoRun work, create a child with ` + "`forge task create --autorun --prompt=<prompt> <title>`" + `. Use the returned generation when suspending the current AutoRun with ` + "`forge task autorun wait --after=<task@generation> --summary=<text>`" + `.
+- To delegate AutoRun work, create a child with ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. Use the returned generation when suspending the current AutoRun with ` + "`forge task autorun wait --after=<task@generation> --summary=<text>`" + `.
 - Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
@@ -273,7 +273,7 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]

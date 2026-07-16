@@ -103,6 +103,13 @@ func TestStartRunnableTaskReturnsExplicitNonStartResults(t *testing.T) {
 	}
 
 	result, err = s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
+		ID: "project1.task1", Generation: 1, State: "running", PreferredAgentProfiles: []string{"kimi"},
+	})
+	if err != nil || result != runnableTaskSkippedActive {
+		t.Fatalf("expected Profile preference to reuse an active task session, got result=%q err=%v", result, err)
+	}
+
+	result, err = s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
 		ID: "project1.task2", Generation: 1, State: "paused",
 	})
 	if err != nil || result != runnableTaskNotRunnable {
@@ -134,13 +141,16 @@ func TestStartRunnableTaskRecoversOrphanedRunningTask(t *testing.T) {
 	}, false)
 
 	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Title: "Recover", Generation: 3, State: "running", AgentID: "agent-one", Prompt: "Continue work",
+		ID: "project1.task1", Title: "Recover", Generation: 3, State: "running", PreferredAgentProfiles: []string{"codex"}, Prompt: "Continue work",
 	})
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected orphaned task recovery to start, got result=%q err=%v", result, err)
 	}
 	if request.ResourceID != "project1.task1" || request.ResumeRunID != "run-orphaned" || request.AutoRunGeneration != 3 {
 		t.Fatalf("unexpected recovery request: %#v", request)
+	}
+	if request.AgentID != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
+		t.Fatalf("unexpected Profile resolution: %#v", request)
 	}
 	if !strings.Contains(request.Prompt, "Recover and continue") {
 		t.Fatalf("recovery prompt is missing orphan context: %q", request.Prompt)
@@ -237,13 +247,52 @@ esac
 	}
 	s.agents = newAgentManager(s)
 	if err := s.saveConfig(config{
-		Version:        1,
-		Workspaces:     []guiWorkspace{{ID: "workspace-one", Path: workspace}},
-		AgentProviders: []agentProviderConfig{{ID: codexProviderID, Name: "Codex", Type: codexProviderID, Enabled: true}},
+		Version:            1,
+		Workspaces:         []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+		DefaultChatAgentID: "agent-one",
+		AgentProviders:     []agentProviderConfig{{ID: codexProviderID, Name: "Codex", Type: codexProviderID, Enabled: true}},
+		Agents: []agentConfig{
+			{ID: "agent-one", Name: "Agent One", ProviderID: codexProviderID},
+			{ID: "agent-two", Name: "Agent Two", ProviderID: codexProviderID},
+		},
+		AgentProfiles: []agentProfileRoute{
+			{Key: "codex", AgentID: "agent-one"},
+			{Key: "kimi", AgentID: "agent-two"},
+		},
 	}); err != nil {
 		t.Fatal(err)
 	}
 	return s
+}
+
+func TestResolveAutoRunAgentUsesOrderedProfilesAndFallback(t *testing.T) {
+	cfg := config{
+		DefaultChatAgentID: "default",
+		AgentProviders: []agentProviderConfig{
+			{ID: codexProviderID, Type: codexProviderID, Enabled: true},
+			{ID: opencodeProviderID, Type: opencodeProviderID, Enabled: false},
+		},
+		Agents: []agentConfig{
+			{ID: "default", ProviderID: codexProviderID},
+			{ID: "kimi", ProviderID: opencodeProviderID},
+			{ID: "review", ProviderID: codexProviderID},
+		},
+		AgentProfiles: []agentProfileRoute{
+			{Key: "kimi", AgentID: "kimi"},
+			{Key: "review", AgentID: "review"},
+		},
+	}
+	selection, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}})
+	if err != nil || selection.AgentID != "review" || selection.Profile != "review" {
+		t.Fatalf("expected first available Profile, got selection=%+v err=%v", selection, err)
+	}
+	selection, err = resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
+	if err != nil || selection.AgentID != "default" || selection.Profile != "" || !strings.Contains(selection.Reason, "fallback") {
+		t.Fatalf("expected default fallback, got selection=%+v err=%v", selection, err)
+	}
+	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{AgentID: "removed"}); err == nil || !strings.Contains(err.Error(), "migrate") {
+		t.Fatalf("expected actionable legacy migration error, got %v", err)
+	}
 }
 
 func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRun, active bool) {

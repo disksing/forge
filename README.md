@@ -50,7 +50,7 @@ forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -82,7 +82,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge-start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
 
-`forge project create [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `log.jsonl`, `AGENTS.md`, `artifacts/`, and `templates/`. Projects do not store repository metadata, recovery snapshots, or `worktree/` directories. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description. Task templates are Markdown files under `templates/`; their YAML front matter supports `title`, `autorun`, `agent`, and `prompt`.
+`forge project create [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `log.jsonl`, `AGENTS.md`, `artifacts/`, and `templates/`. Projects do not store repository metadata, recovery snapshots, or `worktree/` directories. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description. Task templates are Markdown files under `templates/`; their YAML front matter supports `title`, `autorun`, `agent-profiles`, legacy `agent`, and `prompt`.
 
 `forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
 
@@ -90,7 +90,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 `forge project archive [--project=<project>]` moves a project into workspace `archive/`. `<project>` follows the same rules as `forge project show`.
 
-`forge task create` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. Add `--autorun`, `--prompt`, optional `--agent`, and repeatable `--after=<task@generation>` flags to queue an AutoRun without starting it. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`.
+`forge task create` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. Add `--autorun`, `--prompt`, repeatable ordered `--agent-profile=<profile>`, and repeatable `--after=<task@generation>` flags to queue an AutoRun without starting it. Profiles are portable preferences resolved by the GUI; legacy `--agent=<id>` remains available for existing exact bindings and is mutually exclusive with Profiles. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`.
 
 `forge task list [--project=<project>] [--all]` lists tasks. Add `--runnable --json` for a side-effect-free query of AutoRuns whose generation and prerequisites are ready. `--include-blocked` includes configured tasks with their blocking reason.
 

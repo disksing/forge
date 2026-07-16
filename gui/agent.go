@@ -27,6 +27,8 @@ type agentRun struct {
 	WorkspaceID             string `json:"workspaceId"`
 	ResourceID              string `json:"resourceId,omitempty"`
 	AgentID                 string `json:"agentId,omitempty"`
+	AgentProfile            string `json:"agentProfile,omitempty"`
+	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	Provider                string `json:"provider"`
@@ -78,14 +80,16 @@ type agentUploadResponse struct {
 var agentIndexMu sync.Mutex
 
 type startAgentRequest struct {
-	AgentID           string `json:"agentId"`
-	ResourceID        string `json:"resourceId"`
-	Title             string `json:"title"`
-	Prompt            string `json:"prompt"`
-	Cwd               string `json:"cwd"`
-	SchedulerTurn     bool   `json:"schedulerTurn,omitempty"`
-	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
-	ResumeRunID       string `json:"resumeRunId,omitempty"`
+	AgentID              string `json:"agentId"`
+	AgentProfile         string `json:"agentProfile,omitempty"`
+	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
+	ResourceID           string `json:"resourceId"`
+	Title                string `json:"title"`
+	Prompt               string `json:"prompt"`
+	Cwd                  string `json:"cwd"`
+	SchedulerTurn        bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration    int    `json:"autoRunGeneration,omitempty"`
+	ResumeRunID          string `json:"resumeRunId,omitempty"`
 }
 
 type agentInputRequest struct {
@@ -439,18 +443,20 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	now := time.Now().Format(time.RFC3339)
 	run := agentRun{
-		ID:                newRunID(),
-		WorkspaceID:       workspace.ID,
-		ResourceID:        strings.TrimSpace(req.ResourceID),
-		AgentID:           agent.ID,
-		Provider:          provider.ID,
-		Title:             strings.TrimSpace(req.Title),
-		Cwd:               cwd,
-		Status:            "starting",
-		CreatedAt:         now,
-		UpdatedAt:         now,
-		SchedulerTurn:     req.SchedulerTurn,
-		AutoRunGeneration: req.AutoRunGeneration,
+		ID:                   newRunID(),
+		WorkspaceID:          workspace.ID,
+		ResourceID:           strings.TrimSpace(req.ResourceID),
+		AgentID:              agent.ID,
+		AgentProfile:         strings.TrimSpace(req.AgentProfile),
+		AgentSelectionReason: strings.TrimSpace(req.AgentSelectionReason),
+		Provider:             provider.ID,
+		Title:                strings.TrimSpace(req.Title),
+		Cwd:                  cwd,
+		Status:               "starting",
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		SchedulerTurn:        req.SchedulerTurn,
+		AutoRunGeneration:    req.AutoRunGeneration,
 	}
 	applyAgentRunOptions(&run, agent, provider.Type)
 	if resumeID := strings.TrimSpace(req.ResumeRunID); resumeID != "" {

@@ -479,6 +479,65 @@ func TestLoadConfigNormalizesDefaultChatAgent(t *testing.T) {
 	}
 }
 
+func TestAgentProfileRoutesValidateAndPersist(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	base := config{
+		Version:        1,
+		AgentProviders: []agentProviderConfig{{ID: codexProviderID, Type: codexProviderID, Enabled: true}},
+		Agents:         []agentConfig{{ID: "agent-one", Name: "Agent One", ProviderID: codexProviderID}},
+		AgentProfiles:  []agentProfileRoute{{Key: "KIMI", Description: "  Kimi   coding agent ", AgentID: "agent-one"}},
+	}
+	if err := s.saveConfig(base); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.AgentProfiles) != 1 || cfg.AgentProfiles[0].Key != "kimi" || cfg.AgentProfiles[0].Description != "Kimi coding agent" {
+		t.Fatalf("unexpected normalized Agent Profiles: %+v", cfg.AgentProfiles)
+	}
+	base.AgentProfiles = append(base.AgentProfiles, agentProfileRoute{Key: "kimi", AgentID: "agent-one"})
+	if err := s.saveConfig(base); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate Profile rejection, got %v", err)
+	}
+	base.AgentProfiles = []agentProfileRoute{{Key: "review", AgentID: "missing"}}
+	if err := s.saveConfig(base); err == nil || !strings.Contains(err.Error(), "missing agent") {
+		t.Fatalf("expected missing Agent rejection, got %v", err)
+	}
+}
+
+func TestUpdateAgentProfilesSetting(t *testing.T) {
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version:        1,
+		AgentProviders: []agentProviderConfig{{ID: codexProviderID, Type: codexProviderID, Enabled: true}},
+		Agents:         []agentConfig{{ID: "agent-one", Name: "Agent One", ProviderID: codexProviderID}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/settings/agent-profiles", strings.NewReader(`[{"key":"review","description":"Review work","agentId":"agent-one"}]`))
+	rec := httptest.NewRecorder()
+	s.handleSettings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err := s.loadConfig()
+	if err != nil || len(cfg.AgentProfiles) != 1 || cfg.AgentProfiles[0].Key != "review" {
+		t.Fatalf("Profile route was not saved: profiles=%+v err=%v", cfg.AgentProfiles, err)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/api/settings/agents", strings.NewReader(`[]`))
+	rec = httptest.NewRecorder()
+	s.handleSettings(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected Agent removal to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err = s.loadConfig()
+	if err != nil || len(cfg.AgentProfiles) != 0 {
+		t.Fatalf("routes to removed Agents should be discarded: profiles=%+v err=%v", cfg.AgentProfiles, err)
+	}
+}
+
 func TestUpdateDefaultChatAgentSetting(t *testing.T) {
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
 	if err := s.saveConfig(config{
@@ -936,7 +995,16 @@ exit 1
 	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	m := newAgentManager(&server{forgePath: forgePath})
+	s := &server{forgePath: forgePath, config: filepath.Join(tmp, "gui.json")}
+	if err := s.saveConfig(config{
+		Version:        1,
+		AgentProviders: []agentProviderConfig{{ID: opencodeProviderID, Name: opencodeProviderName, Type: opencodeProviderID, Enabled: true}},
+		Agents:         []agentConfig{{ID: "opencode-kimi", Name: "Kimi", ProviderID: opencodeProviderID, Options: map[string]string{agentOptionMode: "build", agentOptionModel: "kimi/k2"}}},
+		AgentProfiles:  []agentProfileRoute{{Key: "kimi", Description: "Kimi coding", AgentID: "opencode-kimi"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(s)
 	run := agentRun{
 		ID:                "run-one",
 		WorkspaceID:       "workspace",
@@ -971,7 +1039,7 @@ exit 1
 	}
 
 	run.ForgeSessionContextPath = contextPath
-	rt := &agentRuntime{run: run}
+	rt := &agentRuntime{run: run, manager: m}
 	prompt := rt.withForgeSessionContext("continue the task")
 	if !strings.Contains(prompt, "FORGE_SESSION_ID=session-one") {
 		t.Fatalf("prompt does not include session id:\n%s", prompt)
@@ -984,6 +1052,9 @@ exit 1
 	}
 	if !strings.Contains(prompt, "AutoRun generation: 3") || !strings.Contains(prompt, "forge task autorun complete") {
 		t.Fatalf("prompt does not include AutoRun protocol:\n%s", prompt)
+	}
+	if !strings.Contains(prompt, "Available Agent Profiles") || !strings.Contains(prompt, "kimi: Kimi coding") || !strings.Contains(prompt, "--agent-profile=<profile>") {
+		t.Fatalf("prompt does not include the Agent Profile catalog:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "User request:\ncontinue the task") {
 		t.Fatalf("prompt does not include user request:\n%s", prompt)

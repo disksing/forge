@@ -239,7 +239,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentID, prompt string, afterValues []string) error {
+func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, agentID, prompt string, afterValues []string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -278,6 +278,10 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 	defer os.RemoveAll(stagingPath)
 	task := newTask(id, parentID, title, "")
 	if autorun {
+		preferredAgentProfiles, err = normalizeAgentProfiles(preferredAgentProfiles)
+		if err != nil {
+			return err
+		}
 		after, err := resolveAutoRunDependencies(root, &task, afterValues)
 		if err != nil {
 			return err
@@ -286,9 +290,9 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 		if len(after) > 0 {
 			state = autoRunStateWaiting
 		}
-		task.AutoRun = &AutoRun{AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
-	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
-		return errors.New("--agent, --prompt, and --after require --autorun")
+		task.AutoRun = &AutoRun{PreferredAgentProfiles: preferredAgentProfiles, AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
+	} else if len(afterValues) > 0 || len(preferredAgentProfiles) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
+		return errors.New("--agent-profile, --agent, --prompt, and --after require --autorun")
 	}
 	markdown := taskMarkdown(title, detail)
 	if completeMarkdownSet {
@@ -356,6 +360,7 @@ func projectTaskList(options taskListOptions) error {
 			item.Generation = entry.Task.AutoRun.Generation
 			item.State = entry.Task.AutoRun.State
 			item.Prompt = entry.Task.AutoRun.Prompt
+			item.PreferredAgentProfiles = append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...)
 			item.AgentID = entry.Task.AutoRun.AgentID
 			item.After = entry.Task.AutoRun.After
 		}
@@ -1063,14 +1068,14 @@ func taskAgentsPrompt(resource Resource) string {
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
 - Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied as a new task's complete task.md file.
-- A template must have a non-empty title. It may also set autorun (true or false), agent, and prompt. agent and prompt apply only when autorun is true. Do not add other front matter fields.
+- A template must have a non-empty title. It may also set autorun (true or false), agent-profiles, legacy agent, and prompt. Agent settings and prompt apply only when autorun is true. Do not add other front matter fields.
 - Template format:
 
   ` + "```markdown" + `
   ---
   title: Daily inspection
   autorun: true
-  agent: codex
+  agent-profiles: [kimi, codex]
   prompt: Inspect the project and report findings.
   ---
   Inspect the current project state and report anything that needs attention.
@@ -1088,7 +1093,7 @@ You are working inside a %s.
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
 - When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of `+"`forge task autorun complete`"+`, `+"`forge task autorun wait`"+`, `+"`forge task autorun pause`"+`, or `+"`forge task autorun fail`"+` as the turn's last side-effecting command.
-- To delegate AutoRun work, create a child with `+"`forge task create --autorun --prompt=<prompt> <title>`"+`; use the returned generation when suspending the current AutoRun with `+"`forge task autorun wait --after=<task@generation> --summary=<text>`"+`.
+- To delegate AutoRun work, create a child with `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. Use the returned generation when suspending the current AutoRun with `+"`forge task autorun wait --after=<task@generation> --summary=<text>`"+`.
 - If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.

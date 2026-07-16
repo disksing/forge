@@ -14,6 +14,7 @@ type settingsResponse struct {
 	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
+	AgentProfiles      []agentProfileRoute   `json:"agentProfiles"`
 	Codex              codexStatus           `json:"codex"`
 	Opencode           opencodeStatus        `json:"opencode"`
 }
@@ -75,6 +76,12 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.updateAgents(w, r)
+	case "agent-profiles":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateAgentProfiles(w, r)
 	case "codex/start":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -132,6 +139,7 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		DefaultChatAgentID: cfg.DefaultChatAgentID,
 		AgentProviders:     cfg.AgentProviders,
 		Agents:             cfg.Agents,
+		AgentProfiles:      cfg.AgentProfiles,
 		Codex:              s.codexStatus(),
 		Opencode:           s.opencodeStatus(),
 	})
@@ -203,11 +211,36 @@ func (s *server) updateAgents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	cfg.Agents = normalizeAgents(agents, cfg.AgentProviders)
+	cfg.AgentProfiles = filterAgentProfileRoutes(cfg.AgentProfiles, cfg.Agents)
 	if err := s.saveConfig(cfg); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, cfg.Agents)
+}
+
+func (s *server) updateAgentProfiles(w http.ResponseWriter, r *http.Request) {
+	var profiles []agentProfileRoute
+	if err := json.NewDecoder(r.Body).Decode(&profiles); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	profiles, err = normalizeAgentProfileRoutes(profiles, cfg.Agents)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	cfg.AgentProfiles = profiles
+	if err := s.saveConfig(cfg); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, cfg.AgentProfiles)
 }
 
 func (s *server) codexStatus() codexStatus {
@@ -298,6 +331,65 @@ func normalizeDefaultChatAgentID(agentID string, agents []agentConfig) string {
 		return agents[0].ID
 	}
 	return ""
+}
+
+func normalizeAgentProfileRoutes(routes []agentProfileRoute, agents []agentConfig) ([]agentProfileRoute, error) {
+	normalized := make([]agentProfileRoute, 0, len(routes))
+	seen := make(map[string]bool, len(routes))
+	for _, route := range routes {
+		key, err := normalizeAgentProfileKey(route.Key)
+		if err != nil {
+			return nil, err
+		}
+		if seen[key] {
+			return nil, fmt.Errorf("duplicate agent profile: %s", key)
+		}
+		agentID := strings.TrimSpace(route.AgentID)
+		if _, ok := findAgentConfig(agents, agentID); !ok {
+			return nil, fmt.Errorf("agent profile %s references missing agent: %s", key, agentID)
+		}
+		seen[key] = true
+		normalized = append(normalized, agentProfileRoute{
+			Key:         key,
+			Description: strings.Join(strings.Fields(route.Description), " "),
+			AgentID:     agentID,
+		})
+	}
+	return normalized, nil
+}
+
+func normalizeAgentProfileKey(value string) (string, error) {
+	key := strings.ToLower(strings.TrimSpace(value))
+	if key == "" {
+		return "", errors.New("agent profile key is required")
+	}
+	for _, r := range key {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
+			continue
+		}
+		return "", fmt.Errorf("invalid agent profile %q: use lowercase letters, numbers, '.', '_', or '-'", value)
+	}
+	return key, nil
+}
+
+func filterAgentProfileRoutes(routes []agentProfileRoute, agents []agentConfig) []agentProfileRoute {
+	filtered := make([]agentProfileRoute, 0, len(routes))
+	for _, route := range routes {
+		if _, ok := findAgentConfig(agents, route.AgentID); ok {
+			filtered = append(filtered, route)
+		}
+	}
+	return filtered
+}
+
+func findAgentProfileRoute(routes []agentProfileRoute, key string) (agentProfileRoute, bool) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	for _, route := range routes {
+		if route.Key == key {
+			return route, true
+		}
+	}
+	return agentProfileRoute{}, false
 }
 
 func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderConfig {

@@ -18,14 +18,21 @@ type runnableTaskResponse struct {
 }
 
 type runnableTaskCandidate struct {
-	ID         string                   `json:"id"`
-	Path       string                   `json:"path"`
-	Title      string                   `json:"title"`
-	Generation int                      `json:"generation"`
-	State      string                   `json:"state"`
-	Prompt     string                   `json:"prompt"`
-	AgentID    string                   `json:"agentId"`
-	After      []runnableTaskDependency `json:"after,omitempty"`
+	ID                     string                   `json:"id"`
+	Path                   string                   `json:"path"`
+	Title                  string                   `json:"title"`
+	Generation             int                      `json:"generation"`
+	State                  string                   `json:"state"`
+	Prompt                 string                   `json:"prompt"`
+	PreferredAgentProfiles []string                 `json:"preferredAgentProfiles,omitempty"`
+	AgentID                string                   `json:"agentId"`
+	After                  []runnableTaskDependency `json:"after,omitempty"`
+}
+
+type autoRunAgentSelection struct {
+	AgentID string
+	Profile string
+	Reason  string
 }
 
 type runnableTaskDependency struct {
@@ -151,14 +158,6 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		prompt += "\n\nThe following prerequisite task runs completed: " + strings.Join(completed, ", ") + ". Read their task files and results before continuing."
 	}
 	prompt += "\n\nThis is an AutoRun scheduler turn. Before ending, call exactly one of forge task autorun complete, wait, pause, or fail as your last side-effecting command."
-	req := startAgentRequest{
-		AgentID:           strings.TrimSpace(task.AgentID),
-		ResourceID:        task.ID,
-		Title:             task.Title,
-		Prompt:            prompt,
-		SchedulerTurn:     true,
-		AutoRunGeneration: task.Generation,
-	}
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {
 		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)
@@ -167,7 +166,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		if run.ResourceID != task.ID || !s.agentRunActive(run.ID) {
 			continue
 		}
-		if task.AgentID != "" && run.AgentID != task.AgentID {
+		if len(task.PreferredAgentProfiles) == 0 && task.AgentID != "" && run.AgentID != task.AgentID {
 			return runnableTaskDispatchFailed, fmt.Errorf("active run %s uses agent %s, AutoRun requires %s", run.ID, run.AgentID, task.AgentID)
 		}
 		if run.Status != "idle" {
@@ -178,11 +177,29 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		}
 		return runnableTaskStarted, nil
 	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return runnableTaskDispatchFailed, fmt.Errorf("load Agent Profile configuration: %w", err)
+	}
+	selection, err := resolveAutoRunAgent(cfg, task)
+	if err != nil {
+		return runnableTaskDispatchFailed, err
+	}
+	req := startAgentRequest{
+		AgentID:              selection.AgentID,
+		AgentProfile:         selection.Profile,
+		AgentSelectionReason: selection.Reason,
+		ResourceID:           task.ID,
+		Title:                task.Title,
+		Prompt:               prompt,
+		SchedulerTurn:        true,
+		AutoRunGeneration:    task.Generation,
+	}
 	for _, run := range runs {
 		if run.ResourceID != task.ID || s.agentRunActive(run.ID) {
 			continue
 		}
-		if task.AgentID != "" && run.AgentID != task.AgentID {
+		if run.AgentID != selection.AgentID {
 			break
 		}
 		if strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "" {
@@ -210,6 +227,61 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskDispatchFailed, fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 	return runnableTaskStarted, nil
+}
+
+func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+	if len(task.PreferredAgentProfiles) > 0 {
+		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
+		for _, raw := range task.PreferredAgentProfiles {
+			profile := strings.ToLower(strings.TrimSpace(raw))
+			if profile == "" || seen[profile] {
+				continue
+			}
+			seen[profile] = true
+			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
+			if !ok || !agentConfigAvailable(cfg, route.AgentID) {
+				continue
+			}
+			return autoRunAgentSelection{AgentID: route.AgentID, Profile: profile, Reason: "matched preferred Agent Profile " + profile}, nil
+		}
+		fallback, ok := defaultAvailableAgent(cfg)
+		if !ok {
+			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no enabled fallback Agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
+		}
+		return autoRunAgentSelection{AgentID: fallback.ID, Reason: "preferred Agent Profiles unavailable; using fallback " + fallback.ID}, nil
+	}
+	if legacyID := strings.TrimSpace(task.AgentID); legacyID != "" {
+		if !agentConfigAvailable(cfg, legacyID) {
+			return autoRunAgentSelection{}, fmt.Errorf("legacy AutoRun agentId %s is unavailable; restore that GUI Agent or migrate the task to preferredAgentProfiles", legacyID)
+		}
+		return autoRunAgentSelection{AgentID: legacyID, Reason: "using legacy AutoRun agentId"}, nil
+	}
+	fallback, ok := defaultAvailableAgent(cfg)
+	if !ok {
+		return autoRunAgentSelection{}, errors.New("no enabled Agent is configured for AutoRun")
+	}
+	return autoRunAgentSelection{AgentID: fallback.ID, Reason: "using default Agent"}, nil
+}
+
+func agentConfigAvailable(cfg config, agentID string) bool {
+	agent, ok := findAgentConfig(cfg.Agents, agentID)
+	if !ok {
+		return false
+	}
+	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
+	return ok && provider.Enabled && (provider.Type == codexProviderID || provider.Type == opencodeProviderID)
+}
+
+func defaultAvailableAgent(cfg config) (agentConfig, bool) {
+	if agent, ok := findAgentConfig(cfg.Agents, cfg.DefaultChatAgentID); ok && agentConfigAvailable(cfg, agent.ID) {
+		return agent, true
+	}
+	for _, agent := range cfg.Agents {
+		if agentConfigAvailable(cfg, agent.ID) {
+			return agent, true
+		}
+	}
+	return agentConfig{}, false
 }
 
 func (s *server) agentRunActive(runID string) bool {

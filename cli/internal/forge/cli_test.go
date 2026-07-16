@@ -174,7 +174,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "Project task templates live in templates/*.md") || !strings.Contains(projectAgents, "autorun: true") {
 			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
 		}
-		templateContent := "---\ntitle: Daily inspection\nautorun: true\nagent: codex\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
+		templateContent := "---\ntitle: Daily inspection\nautorun: true\nagent-profiles: [kimi, codex]\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
 		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "daily.md"), []byte(templateContent), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -193,7 +193,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected one task template, got: %+v", projectDetail.Templates)
 		}
 		template := projectDetail.Templates[0]
-		if template.Name != "daily" || template.Title != "Daily inspection" || !template.AutoRun || template.AgentID != "codex" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
+		if template.Name != "daily" || template.Title != "Daily inspection" || !template.AutoRun || strings.Join(template.PreferredAgentProfiles, ",") != "kimi,codex" || template.AgentID != "" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
 			t.Fatalf("unexpected parsed task template: %+v", template)
 		}
 
@@ -428,6 +428,42 @@ func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 		logs := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
 		if !strings.Contains(logs, `"autoRun": true`) || !strings.Contains(logs, `"autoRunGeneration": 1`) {
 			t.Fatalf("expected marked AutoRun history, got:\n%s", logs)
+		}
+	})
+}
+
+func TestAutoRunPreferredAgentProfilesAndLegacyCompatibility(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Automation")
+		created := run(t, "task", "create", "--project=project1", "--autorun", "--agent-profile=Kimi", "--agent-profile=codex", "--agent-profile=kimi", "Profile task")
+		var task Task
+		if err := json.Unmarshal([]byte(created), &task); err != nil {
+			t.Fatal(err)
+		}
+		if task.AutoRun == nil || strings.Join(task.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || task.AutoRun.AgentID != "" {
+			t.Fatalf("unexpected preferred Agent Profiles: %+v", task.AutoRun)
+		}
+		runnable := run(t, "task", "list", "--project=project1", "--runnable", "--json")
+		if !strings.Contains(runnable, `"preferredAgentProfiles": [`) || !strings.Contains(runnable, `"kimi"`) {
+			t.Fatalf("runnable output is missing Agent Profiles:\n%s", runnable)
+		}
+		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
+		run(t, "task", "autorun", "complete", "--project=project1", "--task=task1")
+		requeued := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
+		if !strings.Contains(requeued, `"preferredAgentProfiles"`) || !strings.Contains(requeued, `"codex"`) {
+			t.Fatalf("requeue did not inherit Agent Profiles:\n%s", requeued)
+		}
+
+		legacy := run(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "Legacy task")
+		if !strings.Contains(legacy, `"agentId": "local-agent"`) || strings.Contains(legacy, `"preferredAgentProfiles"`) {
+			t.Fatalf("legacy exact Agent ID compatibility changed:\n%s", legacy)
+		}
+		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "--agent-profile=kimi", "Invalid"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("expected mixed legacy and Profile selection to fail, got %v", err)
+		}
+		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent-profile=not valid", "Invalid"); err == nil || !strings.Contains(err.Error(), "invalid agent profile") {
+			t.Fatalf("expected invalid Profile to fail, got %v", err)
 		}
 	})
 }

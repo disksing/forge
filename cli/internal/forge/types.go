@@ -141,11 +141,12 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 }
 
 type AutoRun struct {
-	Generation int                 `json:"generation"`
-	State      string              `json:"state"`
-	AgentID    string              `json:"agentId,omitempty"`
-	Prompt     string              `json:"prompt,omitempty"`
-	After      []AutoRunDependency `json:"after,omitempty"`
+	Generation             int                 `json:"generation"`
+	State                  string              `json:"state"`
+	PreferredAgentProfiles []string            `json:"preferredAgentProfiles,omitempty"`
+	AgentID                string              `json:"agentId,omitempty"`
+	Prompt                 string              `json:"prompt,omitempty"`
+	After                  []AutoRunDependency `json:"after,omitempty"`
 }
 
 type AutoRunDependency struct {
