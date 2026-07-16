@@ -45,6 +45,141 @@ func TestOpencodeApprovalResponseSelectsMatchingOption(t *testing.T) {
 	if cancelled["outcome"].(map[string]any)["outcome"] != "cancelled" {
 		t.Fatalf("unexpected cancelled response %#v", cancelled)
 	}
+
+	fallback, err := opencodeApprovalResponse(json.RawMessage(`{
+		"options":[{"optionId":"allow-always","kind":"allow_always"}]
+	}`), "accept")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fallback["outcome"].(map[string]any)["optionId"] != "allow-always" {
+		t.Fatalf("unexpected allow fallback response %#v", fallback)
+	}
+}
+
+func TestOpencodePermissionRequestIsAutomaticallyApproved(t *testing.T) {
+	workspace := t.TempDir()
+	manager := newAgentManager(&server{})
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
+		manager:     manager,
+		run:         agentRun{ID: "run-auto-approve", WorkspaceID: "workspace", Status: "running"},
+		nextEventID: 1,
+		pending:     make(map[string]pendingApproval),
+		done:        make(chan struct{}),
+	}
+	reader, writer := io.Pipe()
+	client := newOpencodeClient(manager, nil, writer)
+	handled := make(chan struct{})
+	go func() {
+		rt.handleOpencodeServerRequest(client, json.RawMessage(`7`), "session/request_permission", json.RawMessage(`{
+			"options":[
+				{"optionId":"always","kind":"allow_always"},
+				{"optionId":"once","kind":"allow_once"}
+			]
+		}`))
+		close(handled)
+	}()
+
+	var envelope struct {
+		JSONRPC string `json:"jsonrpc"`
+		ID      int    `json:"id"`
+		Result  struct {
+			Outcome struct {
+				Outcome  string `json:"outcome"`
+				OptionID string `json:"optionId"`
+			} `json:"outcome"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(reader).Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-handled:
+	case <-time.After(time.Second):
+		t.Fatal("permission request handler did not finish")
+	}
+	_ = reader.Close()
+	_ = writer.Close()
+
+	if envelope.JSONRPC != "2.0" || envelope.ID != 7 || envelope.Result.Outcome.Outcome != "selected" || envelope.Result.Outcome.OptionID != "once" {
+		t.Fatalf("unexpected automatic approval response: %#v", envelope)
+	}
+	if rt.run.Status != "running" {
+		t.Fatalf("expected run to remain running, got %q", rt.run.Status)
+	}
+	if len(rt.pending) != 0 {
+		t.Fatalf("expected no pending approval, got %#v", rt.pending)
+	}
+	if len(rt.events) != 1 || rt.events[0].Type != "approval_resolved" || rt.events[0].PendingRequestID != "" {
+		t.Fatalf("unexpected events: %#v", rt.events)
+	}
+}
+
+func TestOpencodePermissionAutoApprovalFailureStopsRun(t *testing.T) {
+	workspace := t.TempDir()
+	manager := newAgentManager(&server{})
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
+		manager:     manager,
+		run:         agentRun{ID: "run-auto-approve-failure", WorkspaceID: "workspace", Status: "running"},
+		nextEventID: 1,
+		pending:     make(map[string]pendingApproval),
+		done:        make(chan struct{}),
+	}
+	client := newOpencodeClient(manager, nil, nil)
+	rt.handleOpencodeServerRequest(client, json.RawMessage(`8`), "session/request_permission", json.RawMessage(`{
+		"options":[{"optionId":"reject","kind":"reject_once"}]
+	}`))
+
+	if rt.run.Status != "failed" || !rt.stopRequested {
+		t.Fatalf("expected failed stopped run, got status=%q stopped=%v", rt.run.Status, rt.stopRequested)
+	}
+	select {
+	case <-rt.done:
+	default:
+		t.Fatal("expected failed run to be signaled done")
+	}
+	if len(rt.pending) != 0 {
+		t.Fatalf("expected no pending approval, got %#v", rt.pending)
+	}
+	if len(rt.events) != 1 || rt.events[0].Type != "error" || !strings.Contains(rt.events[0].Text, "no option") {
+		t.Fatalf("unexpected events: %#v", rt.events)
+	}
+}
+
+func TestOpencodePermissionAutoApprovalWriteFailureStopsRun(t *testing.T) {
+	workspace := t.TempDir()
+	manager := newAgentManager(&server{})
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
+		manager:     manager,
+		run:         agentRun{ID: "run-auto-approve-write-failure", WorkspaceID: "workspace", Status: "running"},
+		nextEventID: 1,
+		pending:     make(map[string]pendingApproval),
+		done:        make(chan struct{}),
+	}
+	reader, writer := io.Pipe()
+	if err := reader.Close(); err != nil {
+		t.Fatal(err)
+	}
+	client := newOpencodeClient(manager, nil, writer)
+	rt.handleOpencodeServerRequest(client, json.RawMessage(`9`), "session/request_permission", json.RawMessage(`{
+		"options":[{"optionId":"once","kind":"allow_once"}]
+	}`))
+	_ = writer.Close()
+
+	if rt.run.Status != "failed" || !rt.stopRequested {
+		t.Fatalf("expected failed stopped run, got status=%q stopped=%v", rt.run.Status, rt.stopRequested)
+	}
+	select {
+	case <-rt.done:
+	default:
+		t.Fatal("expected failed run to be signaled done")
+	}
+	if len(rt.events) != 1 || rt.events[0].Type != "error" || !strings.Contains(rt.events[0].Text, "auto-approve OpenCode permission") {
+		t.Fatalf("unexpected events: %#v", rt.events)
+	}
 }
 
 func TestSafeACPWorkspacePathRejectsEscapes(t *testing.T) {
@@ -349,7 +484,7 @@ func TestOpencodeLivePrompt(t *testing.T) {
 	if err := provider.SendPrompt(rt, "Reply with exactly: forge-opencode-smoke"); err != nil {
 		t.Fatal(err)
 	}
-	output := waitForLiveOpencodeTurn(t, rt, manager, 0)
+	output := waitForLiveOpencodeTurn(t, rt, 0)
 	if !strings.Contains(output, "forge-opencode-smoke") {
 		t.Fatalf("unexpected assistant output %q", output)
 	}
@@ -360,13 +495,13 @@ func TestOpencodeLivePrompt(t *testing.T) {
 	if err := provider.SendPrompt(rt, "Create the file "+target+" containing exactly: written-by-opencode"); err != nil {
 		t.Fatal(err)
 	}
-	waitForLiveOpencodeTurn(t, rt, manager, eventCount)
+	waitForLiveOpencodeTurn(t, rt, eventCount)
 	if content := strings.TrimSpace(string(mustReadFile(t, target))); content != "written-by-opencode" {
 		t.Fatalf("unexpected file content %q", content)
 	}
 }
 
-func waitForLiveOpencodeTurn(t *testing.T, rt *agentRuntime, manager *agentManager, eventStart int) string {
+func waitForLiveOpencodeTurn(t *testing.T, rt *agentRuntime, eventStart int) string {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Minute)
 	for time.Now().Before(deadline) {
@@ -379,12 +514,10 @@ func waitForLiveOpencodeTurn(t *testing.T, rt *agentRuntime, manager *agentManag
 			pendingIDs = append(pendingIDs, requestID)
 		}
 		rt.mu.Unlock()
-		for _, requestID := range pendingIDs {
-			if err := rt.resolveApproval(manager, requestID, "accept"); err != nil {
-				t.Fatal(err)
-			}
+		if len(pendingIDs) > 0 {
+			t.Fatalf("OpenCode left permissions waiting for manual approval: %v", pendingIDs)
 		}
-		if status != "idle" || len(pendingIDs) > 0 {
+		if status != "idle" {
 			continue
 		}
 		var output strings.Builder

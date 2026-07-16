@@ -767,21 +767,15 @@ func (c *opencodeClient) handleLine(line []byte) {
 func (rt *agentRuntime) handleOpencodeServerRequest(client *opencodeClient, id json.RawMessage, method string, params json.RawMessage) {
 	switch method {
 	case "session/request_permission":
-		requestID := string(id)
-		rt.mu.Lock()
-		rt.pending[requestID] = pendingApproval{
-			id:     append(json.RawMessage(nil), id...),
-			method: method,
-			params: append(json.RawMessage(nil), params...),
+		response, err := opencodeApprovalResponse(params, "accept")
+		if err == nil {
+			err = client.respond(id, response)
 		}
-		if !rt.stopRequested {
-			rt.run.Status = "waiting_approval"
+		if err != nil {
+			rt.failOpencodePermissionRequest(client.manager, err)
+			return
 		}
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-		run := rt.run
-		rt.mu.Unlock()
-		_ = saveAgentRun(rt.workspace.Path, run)
-		rt.addEvent(client.manager, "approval_requested", method, opencodePermissionSummary(params), params, requestID)
+		rt.addEvent(client.manager, "approval_resolved", method, "OpenCode permission automatically approved.", mustJSON(response), "")
 	case "fs/read_text_file":
 		content, err := rt.handleOpencodeReadTextFile(params)
 		if err != nil {
@@ -832,6 +826,23 @@ func (rt *agentRuntime) handleOpencodeServerRequest(client *opencodeClient, id j
 		_ = client.respondError(id, -32601, "unsupported by Forge GUI")
 		rt.addEvent(client.manager, "server_request", method, fmt.Sprintf("Unsupported opencode request: %s", method), params, "")
 	}
+}
+
+func (rt *agentRuntime) failOpencodePermissionRequest(m *agentManager, err error) {
+	message := fmt.Sprintf("auto-approve OpenCode permission: %v", err)
+	rt.mu.Lock()
+	schedulerTurn := rt.run.SchedulerTurn
+	rt.stopRequested = true
+	rt.run.Status = "failed"
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	run := rt.run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+	rt.addEvent(m, "error", "session/request_permission", message, nil, "")
+	if schedulerTurn {
+		rt.recordSchedulerFailure(m, message)
+	}
+	rt.signalDone()
 }
 
 func (rt *agentRuntime) handleOpencodeNotification(m *agentManager, method string, params json.RawMessage) {
@@ -1126,13 +1137,6 @@ func (rt *agentRuntime) handleOpencodeTerminalRelease(params json.RawMessage) er
 	delete(rt.opencodeTerminals, terminal.id)
 	rt.mu.Unlock()
 	return nil
-}
-
-func opencodePermissionSummary(params json.RawMessage) string {
-	if title := nestedString(params, "toolCall", "title"); title != "" {
-		return "Approve permission: " + title
-	}
-	return "OpenCode is waiting for permission approval."
 }
 
 var (
