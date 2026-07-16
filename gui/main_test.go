@@ -411,6 +411,33 @@ func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 }
 
+func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const taskState = taskOperationalState(item);`,
+		`if (taskState.label)`,
+		`const sessions = taskAgentSessions(item.id);`,
+		`const locks = taskLocks(item.id);`,
+		`const primary = deriveTaskPrimaryState(item.autoRun, sessions);`,
+		`const projectState = taskOperationalState(project);`,
+		"parts.push(`${project.id}:${projectState.kind}:${projectState.iconName}:${projectState.recentOutput}:${projectState.lock?.kind || \"none\"}:${projectState.label}`);",
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("project tree session and lock status is missing %q", want)
+		}
+	}
+	if strings.Contains(app, `kind === "task" ? taskOperationalState(item) : noTaskOperationalState()`) {
+		t.Fatal("project tree rows should not receive an unconditional empty operational state")
+	}
+	if strings.Contains(app, `kind === "task" && taskState.label`) {
+		t.Fatal("project tree status should expose the same accessible label and tooltip as task status")
+	}
+}
+
 func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

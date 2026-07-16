@@ -335,13 +335,13 @@ function renderTree() {
 
 function treeButton(item, kind) {
   const button = document.createElement("button");
-  const taskState = kind === "task" ? taskOperationalState(item) : noTaskOperationalState();
+  const taskState = taskOperationalState(item);
   const hasTaskState = Boolean(taskState.iconName || taskState.lock);
   button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${hasTaskState ? "has-task-status" : ""} ${taskState.className} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
-  if (kind === "task" && taskState.label) {
+  if (taskState.label) {
     button.setAttribute("aria-label", `${title}. ${taskState.label}`);
     bindTaskStatusTooltip(button, taskState.label);
   }
@@ -487,6 +487,8 @@ function taskOperationalStateKey() {
   if (!state.tree) return "";
   const parts = [];
   for (const project of state.tree.projects || []) {
+    const projectState = taskOperationalState(project);
+    parts.push(`${project.id}:${projectState.kind}:${projectState.iconName}:${projectState.recentOutput}:${projectState.lock?.kind || "none"}:${projectState.label}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
       parts.push(`${task.id}:${taskState.kind}:${taskState.iconName}:${taskState.recentOutput}:${taskState.lock?.kind || "none"}:${taskState.label}`);
