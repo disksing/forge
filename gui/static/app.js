@@ -2883,7 +2883,7 @@ function renderCreateDialog() {
   root.innerHTML = `
     <div class="create-dialog-layer" role="presentation">
       <div class="create-dialog-backdrop" data-create-dialog-close="true"></div>
-      <section class="create-dialog" role="dialog" aria-modal="true" aria-label="${title}">
+      <section class="create-dialog${isTask ? " create-task-dialog" : ""}" role="dialog" aria-modal="true" aria-label="${title}">
         <header class="create-dialog-header">
           <div>
             <strong>${title}</strong>
