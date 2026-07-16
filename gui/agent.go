@@ -40,8 +40,8 @@ type agentRun struct {
 	CreatedAt               string `json:"createdAt"`
 	UpdatedAt               string `json:"updatedAt"`
 	LastOutputAt            string `json:"lastOutputAt,omitempty"`
-	InteractionMode         string `json:"interactionMode,omitempty"`
-	TaskRunGeneration       int    `json:"taskRunGeneration,omitempty"`
+	SchedulerTurn           bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
 }
 
 type agentEvent struct {
@@ -74,13 +74,15 @@ type startAgentRequest struct {
 	Title             string `json:"title"`
 	Prompt            string `json:"prompt"`
 	Cwd               string `json:"cwd"`
-	InteractionMode   string `json:"interactionMode,omitempty"`
-	TaskRunGeneration int    `json:"taskRunGeneration,omitempty"`
+	SchedulerTurn     bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
 	ResumeRunID       string `json:"resumeRunId,omitempty"`
 }
 
 type agentInputRequest struct {
-	Text string `json:"text"`
+	Text              string `json:"text"`
+	SchedulerTurn     bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
 }
 
 type agentApprovalRequest struct {
@@ -95,20 +97,14 @@ type pendingApproval struct {
 }
 
 type forgeSessionContext struct {
-	Version         int                  `json:"version"`
-	WorkspaceID     string               `json:"workspaceId"`
-	ResourceID      string               `json:"resourceId,omitempty"`
-	RunID           string               `json:"runId"`
-	ForgeSessionID  string               `json:"forgeSessionId"`
-	Cwd             string               `json:"cwd"`
-	CreatedAt       string               `json:"createdAt"`
-	InteractionMode string               `json:"interactionMode"`
-	TaskRun         *forgeSessionTaskRun `json:"taskRun,omitempty"`
-}
-
-type forgeSessionTaskRun struct {
-	Generation int    `json:"generation"`
-	Executor   string `json:"executor"`
+	Version           int    `json:"version"`
+	WorkspaceID       string `json:"workspaceId"`
+	ResourceID        string `json:"resourceId,omitempty"`
+	RunID             string `json:"runId"`
+	ForgeSessionID    string `json:"forgeSessionId"`
+	Cwd               string `json:"cwd"`
+	CreatedAt         string `json:"createdAt"`
+	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
 }
 
 type resourceDetailPath struct {
@@ -295,13 +291,10 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		Status:            "starting",
 		CreatedAt:         now,
 		UpdatedAt:         now,
-		InteractionMode:   strings.TrimSpace(req.InteractionMode),
-		TaskRunGeneration: req.TaskRunGeneration,
+		SchedulerTurn:     req.SchedulerTurn,
+		AutoRunGeneration: req.AutoRunGeneration,
 	}
 	applyAgentRunOptions(&run, agent, provider.Type)
-	if run.InteractionMode == "" {
-		run.InteractionMode = "interactive"
-	}
 	if resumeID := strings.TrimSpace(req.ResumeRunID); resumeID != "" {
 		previous, _, _, loadErr := loadAgentRunDetail(workspace.Path, resumeID)
 		if loadErr != nil {
@@ -350,8 +343,8 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	if run.InteractionMode == "non_interactive" {
-		if err := m.startTaskRun(r.Context(), workspace, run); err != nil {
+	if run.SchedulerTurn {
+		if err := m.startAutoRun(r.Context(), workspace, run); err != nil {
 			cleanup()
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -495,18 +488,13 @@ func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorksp
 	return nil
 }
 
-func (m *agentManager) startTaskRun(ctx context.Context, workspace guiWorkspace, run agentRun) error {
+func (m *agentManager) startAutoRun(ctx context.Context, workspace guiWorkspace, run agentRun) error {
 	selector, err := forgeTaskSelectorArgs(run.ResourceID)
 	if err != nil {
 		return err
 	}
-	args := []string{"task", "run", "start"}
+	args := []string{"task", "autorun", "start"}
 	args = append(args, selector...)
-	args = append(args,
-		fmt.Sprintf("--generation=%d", run.TaskRunGeneration),
-		"--session-id="+run.ForgeSessionID,
-		"--executor=forge-gui",
-	)
 	_, err = m.server.runForge(ctx, workspace.Path, args...)
 	return err
 }
@@ -514,7 +502,7 @@ func (m *agentManager) startTaskRun(ctx context.Context, workspace guiWorkspace,
 func forgeTaskSelectorArgs(resourceID string) ([]string, error) {
 	projectID, taskSuffix, ok := strings.Cut(strings.TrimSpace(resourceID), ".task")
 	if !ok || projectID == "" || taskSuffix == "" {
-		return nil, fmt.Errorf("non-interactive run requires a task resource id: %s", resourceID)
+		return nil, fmt.Errorf("AutoRun requires a task resource id: %s", resourceID)
 	}
 	return []string{"--project", projectID, "--task", "task" + taskSuffix}, nil
 }
@@ -561,20 +549,14 @@ func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace g
 		return "", err
 	}
 	context := forgeSessionContext{
-		Version:         2,
-		WorkspaceID:     run.WorkspaceID,
-		ResourceID:      resourceID,
-		RunID:           run.ID,
-		ForgeSessionID:  sessionID,
-		Cwd:             run.Cwd,
-		CreatedAt:       time.Now().Format(time.RFC3339),
-		InteractionMode: run.InteractionMode,
-	}
-	if context.InteractionMode == "" {
-		context.InteractionMode = "interactive"
-	}
-	if context.InteractionMode == "non_interactive" {
-		context.TaskRun = &forgeSessionTaskRun{Generation: run.TaskRunGeneration, Executor: "forge-gui"}
+		Version:           2,
+		WorkspaceID:       run.WorkspaceID,
+		ResourceID:        resourceID,
+		RunID:             run.ID,
+		ForgeSessionID:    sessionID,
+		Cwd:               run.Cwd,
+		CreatedAt:         time.Now().Format(time.RFC3339),
+		AutoRunGeneration: run.AutoRunGeneration,
 	}
 	data, err := json.MarshalIndent(context, "", "  ")
 	if err != nil {
@@ -862,8 +844,42 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, errors.New("text is required"), http.StatusBadRequest)
 		return
 	}
-	if err := rt.sendInput(m, text); err != nil {
-		writeError(w, err, http.StatusBadRequest)
+	if req.SchedulerTurn {
+		rt.mu.Lock()
+		run := rt.run
+		if run.Status != "idle" {
+			rt.mu.Unlock()
+			writeError(w, errors.New("session is busy"), http.StatusConflict)
+			return
+		}
+		run.Status = "starting"
+		run.SchedulerTurn = true
+		run.AutoRunGeneration = req.AutoRunGeneration
+		rt.run = run
+		rt.mu.Unlock()
+		if err := m.startAutoRun(r.Context(), rt.workspace, run); err != nil {
+			rt.mu.Lock()
+			rt.run.Status = "idle"
+			rt.run.SchedulerTurn = false
+			rt.run.AutoRunGeneration = 0
+			rt.mu.Unlock()
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		_ = saveAgentRun(rt.workspace.Path, run)
+	}
+	var sendErr error
+	if req.SchedulerTurn {
+		sendErr = rt.sendSchedulerPrompt(m, text)
+	} else {
+		sendErr = rt.sendInput(m, text)
+	}
+	if sendErr != nil {
+		if req.SchedulerTurn {
+			rt.recordSchedulerFailure(m, sendErr.Error())
+			rt.markIdle(m)
+		}
+		writeError(w, sendErr, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, map[string]string{"status": "accepted"})
@@ -918,8 +934,8 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	run.ForgeSessionID = forgeSessionID
 	run.CodexTurnID = ""
 	run.Status = "starting"
-	run.InteractionMode = "interactive"
-	run.TaskRunGeneration = 0
+	run.SchedulerTurn = false
+	run.AutoRunGeneration = 0
 	run.UpdatedAt = now
 	rt = &agentRuntime{
 		workspace:   workspace,
@@ -1117,11 +1133,17 @@ func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
 	provider, err := m.providerForRun(rt.run)
 	if err != nil {
 		rt.addEvent(m, "error", "", err.Error(), nil, "")
+		if rt.isSchedulerTurn() {
+			rt.recordSchedulerFailure(m, err.Error())
+		}
 		rt.updateStatus(m, "failed")
 		return
 	}
 	if err := provider.Start(m); err != nil {
 		rt.addEvent(m, "error", "", err.Error(), nil, "")
+		if rt.isSchedulerTurn() {
+			rt.recordSchedulerFailure(m, err.Error())
+		}
 		rt.updateStatus(m, "failed")
 		return
 	}
@@ -1139,6 +1161,17 @@ func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
 	}
 	if err != nil {
 		rt.addEvent(m, "error", "", fmt.Sprintf("session start failed: %v", err), nil, "")
+		if existingSessionID != "" {
+			rt.mu.Lock()
+			rt.run.ProviderSessionID = ""
+			rt.run.CodexThreadID = ""
+			failedRun := rt.run
+			rt.mu.Unlock()
+			_ = saveAgentRun(rt.workspace.Path, failedRun)
+		}
+		if rt.isSchedulerTurn() {
+			rt.recordSchedulerFailure(m, err.Error())
+		}
 		rt.updateStatus(m, "failed")
 		return
 	}
@@ -1148,7 +1181,11 @@ func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
 	} else {
 		if err := rt.sendPrompt(m, prompt); err != nil {
 			rt.addEvent(m, "error", "prompt", err.Error(), nil, "")
+			if rt.isSchedulerTurn() {
+				rt.recordSchedulerFailure(m, err.Error())
+			}
 			rt.updateStatus(m, "failed")
+			rt.signalDone()
 		}
 	}
 	select {
@@ -1159,6 +1196,9 @@ func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
 	status := rt.run.Status
 	rt.mu.Unlock()
 	if status == "running" || status == "waiting_approval" || status == "starting" {
+		if rt.isSchedulerTurn() {
+			rt.recordSchedulerFailure(m, "Session closed before AutoRun result was submitted")
+		}
 		rt.updateStatus(m, "stopped")
 	}
 }
@@ -1180,7 +1220,6 @@ func (rt *agentRuntime) sendPrompt(m *agentManager, text string) error {
 }
 
 func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
-	rt.addEvent(m, "user", "", text, nil, "")
 	rt.mu.Lock()
 	provider := rt.provider
 	status := rt.run.Status
@@ -1191,10 +1230,33 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	if status == "waiting_approval" {
 		return errors.New("approval is required before sending more input")
 	}
+	if status == "starting" {
+		return errors.New("session is starting")
+	}
+	rt.addEvent(m, "user", "", text, nil, "")
 	if status == "running" {
 		return provider.SendInput(rt, text)
 	}
 	rt.updateStatus(m, "running")
+	return provider.SendPrompt(rt, text)
+}
+
+func (rt *agentRuntime) sendSchedulerPrompt(m *agentManager, text string) error {
+	rt.mu.Lock()
+	provider := rt.provider
+	if rt.run.Status != "starting" {
+		rt.mu.Unlock()
+		return errors.New("session is busy")
+	}
+	rt.run.Status = "running"
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	run := rt.run
+	rt.mu.Unlock()
+	if provider == nil {
+		return errors.New("agent run is not ready")
+	}
+	_ = saveAgentRun(rt.workspace.Path, run)
+	rt.addEvent(m, "user", "", text, nil, "")
 	return provider.SendPrompt(rt, text)
 }
 
@@ -1206,11 +1268,16 @@ func (rt *agentRuntime) stop(m *agentManager) bool {
 	}
 	rt.stopRequested = true
 	provider := rt.provider
+	schedulerTurn := rt.run.SchedulerTurn
+	rt.run.SchedulerTurn = false
 	rt.run.Status = "stopped"
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
+	if schedulerTurn {
+		rt.recordSchedulerFailure(m, "Session stopped before AutoRun result was submitted")
+	}
 	if provider != nil {
 		_ = provider.Interrupt(rt)
 	}
@@ -1279,15 +1346,15 @@ func (rt *agentRuntime) handleNotification(m *agentManager, method string, param
 		rt.addEvent(m, "system", method, "Turn started.", params, "")
 	case "turn/completed":
 		rt.addEvent(m, "system", method, "Turn completed.", params, "")
-		if rt.isNonInteractive() {
-			rt.settleNonInteractive(m, "completed", eventText(method, params))
+		if rt.isSchedulerTurn() {
+			rt.finishSchedulerTurn(m, eventText(method, params))
 		} else {
 			rt.markIdle(m)
 		}
 	case "turn/failed", "error":
 		rt.addEvent(m, "error", method, eventText(method, params), params, "")
-		if rt.isNonInteractive() {
-			rt.settleNonInteractive(m, "failed", eventText(method, params))
+		if rt.isSchedulerTurn() {
+			rt.finishSchedulerTurn(m, eventText(method, params))
 		} else {
 			rt.markIdle(m)
 		}
@@ -1341,46 +1408,76 @@ func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
-func (rt *agentRuntime) isNonInteractive() bool {
+func (rt *agentRuntime) isSchedulerTurn() bool {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return rt.run.InteractionMode == "non_interactive"
+	return rt.run.SchedulerTurn
 }
 
-func (rt *agentRuntime) settleNonInteractive(m *agentManager, turnResult, summary string) {
+func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 	rt.mu.Lock()
 	run := rt.run
 	rt.mu.Unlock()
 	selector, err := forgeTaskSelectorArgs(run.ResourceID)
 	if err == nil {
-		args := []string{"task", "run", "settle"}
+		args := []string{"task", "autorun", "retry"}
 		args = append(args, selector...)
-		args = append(args,
-			fmt.Sprintf("--generation=%d", run.TaskRunGeneration),
-			"--session-id="+run.ForgeSessionID,
-			"--turn-result="+turnResult,
-			"--summary="+strings.TrimSpace(summary),
-		)
+		showArgs := []string{"task", "show"}
+		showArgs = append(showArgs, selector...)
 		var out []byte
-		out, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
+		out, err = m.server.runForge(context.Background(), rt.workspace.Path, showArgs...)
+		var task struct {
+			AutoRun *struct {
+				State string `json:"state"`
+			} `json:"autoRun"`
+		}
 		if err == nil {
-			var task struct {
-				Run *struct {
-					State string `json:"state"`
-				} `json:"run"`
+			err = json.Unmarshal(out, &task)
+		}
+		if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
+			args = append(args, "--reason="+strings.TrimSpace(summary))
+			out, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
+			if err == nil {
+				_ = json.Unmarshal(out, &task)
 			}
-			if json.Unmarshal(out, &task) == nil && task.Run != nil && task.Run.State != "" {
-				rt.updateStatus(m, task.Run.State)
+			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
+				rt.markIdle(m)
+				prompt := "Continue the current AutoRun. Before ending this scheduler turn, update the result with forge task autorun complete, wait, pause, or fail as your last side-effecting command."
+				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
+					err = sendErr
+					rt.signalDone()
+				}
+				return
 			}
 		}
 	}
 	if err != nil {
-		rt.addEvent(m, "error", "forge/task-run/settle", err.Error(), nil, "")
+		rt.addEvent(m, "error", "forge/autorun/finish", err.Error(), nil, "")
 		rt.updateStatus(m, "failed")
+		rt.signalDone()
 	} else {
-		rt.addEvent(m, "system", "forge/task-run/settle", "Non-interactive task run settled.", nil, "")
+		rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun scheduler turn finished.", nil, "")
+		rt.mu.Lock()
+		rt.run.SchedulerTurn = false
+		rt.mu.Unlock()
+		rt.markIdle(m)
 	}
-	rt.signalDone()
+}
+
+func (rt *agentRuntime) recordSchedulerFailure(m *agentManager, reason string) {
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	selector, err := forgeTaskSelectorArgs(run.ResourceID)
+	if err == nil {
+		args := []string{"task", "autorun", "retry"}
+		args = append(args, selector...)
+		args = append(args, "--reason="+strings.TrimSpace(reason))
+		_, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
+	}
+	if err != nil {
+		rt.addEvent(m, "error", "forge/autorun/retry", err.Error(), nil, "")
+	}
 }
 
 func (rt *agentRuntime) setRun(run agentRun) {

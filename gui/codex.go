@@ -237,12 +237,6 @@ func (c *codexAppServer) ResumeSession(rt *agentRuntime) error {
 		threadParams["model"] = rt.run.Model
 	}
 	result, err := client.request("thread/resume", threadParams)
-	if err != nil && rt.isNonInteractive() {
-		rt.addEvent(rt.manager, "error", "thread/resume", fmt.Sprintf("thread/resume failed, starting a new thread: %v", err), nil, "")
-		delete(threadParams, "threadId")
-		threadParams["threadSource"] = "api"
-		result, err = client.request("thread/start", threadParams)
-	}
 	if err != nil {
 		return err
 	}
@@ -349,18 +343,9 @@ func (c *codexAppServer) ensureClient(m *agentManager) (*codexClient, error) {
 }
 
 func forgeThreadConfig(run agentRun) map[string]any {
-	mode := strings.TrimSpace(run.InteractionMode)
-	if mode == "" {
-		mode = "interactive"
-	}
-	config := map[string]any{
-		"shell_environment_policy.set.FORGE_INTERACTION_MODE": mode,
-	}
+	config := map[string]any{}
 	if sessionID := strings.TrimSpace(run.ForgeSessionID); sessionID != "" {
 		config["shell_environment_policy.set.FORGE_SESSION_ID"] = sessionID
-	}
-	if mode == "non_interactive" && run.TaskRunGeneration > 0 {
-		config["shell_environment_policy.set.FORGE_TASK_RUN_GENERATION"] = strconv.Itoa(run.TaskRunGeneration)
 	}
 	return config
 }
@@ -369,8 +354,8 @@ func (rt *agentRuntime) withForgeSessionContext(text string) string {
 	rt.mu.Lock()
 	sessionID := strings.TrimSpace(rt.run.ForgeSessionID)
 	contextPath := strings.TrimSpace(rt.run.ForgeSessionContextPath)
-	mode := strings.TrimSpace(rt.run.InteractionMode)
-	generation := rt.run.TaskRunGeneration
+	schedulerTurn := rt.run.SchedulerTurn
+	generation := rt.run.AutoRunGeneration
 	rt.mu.Unlock()
 	if sessionID == "" {
 		return text
@@ -378,16 +363,9 @@ func (rt *agentRuntime) withForgeSessionContext(text string) string {
 	var b strings.Builder
 	b.WriteString("Forge session context:\n")
 	b.WriteString("- This run is managed by Forge GUI.\n")
-	if mode == "" {
-		mode = "interactive"
-	}
-	b.WriteString("- Interaction mode: ")
-	b.WriteString(mode)
-	b.WriteString(".\n")
-	if mode == "non_interactive" {
-		b.WriteString(fmt.Sprintf("- Task run generation: %d. This is a single-turn non-interactive run.\n", generation))
-		b.WriteString("- Before ending the turn, run exactly one of: forge task run complete, forge task run wait, forge task run pause, or forge task run fail.\n")
-		b.WriteString("- These commands only record the next action. Finish your response normally; Forge GUI will settle the task and close the session.\n")
+	if schedulerTurn {
+		b.WriteString(fmt.Sprintf("- AutoRun generation: %d. This turn was started by the scheduler.\n", generation))
+		b.WriteString("- Before ending, run exactly one of: forge task autorun complete, forge task autorun wait, forge task autorun pause, or forge task autorun fail as the last side-effecting command.\n")
 	}
 	b.WriteString("- FORGE_SESSION_ID=")
 	b.WriteString(sessionID)

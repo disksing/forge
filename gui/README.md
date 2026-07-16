@@ -40,7 +40,7 @@ OpenCode provider 作为 ACP Client：
 - 将 `agent_thought_chunk` 按 `messageId` 聚合为默认折叠的 reasoning 内容；usage、available commands 等元数据不进入聊天正文。
 - 将 `session/request_permission` 映射为现有审批 UI。
 - 文件与终端操作严格限制在 workspace 目录内。
-- 非交互式运行结束时，根据 `stopReason` 调用 `forge task run settle`。
+- scheduler turn 结束时读取 AutoRun 的即时状态；若仍为 `running`，记录 retry 并在共享三次预算内继续。
 - model 和 mode 会映射到 OpenCode 的 session config options。
 
 ## 验证

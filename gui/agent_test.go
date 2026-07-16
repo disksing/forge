@@ -23,9 +23,9 @@ func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
 	}
 }
 
-func TestForgeThreadConfigIncludesRunMode(t *testing.T) {
-	config := forgeThreadConfig(agentRun{ForgeSessionID: "session-one", InteractionMode: "non_interactive", TaskRunGeneration: 4})
-	if config["shell_environment_policy.set.FORGE_SESSION_ID"] != "session-one" || config["shell_environment_policy.set.FORGE_INTERACTION_MODE"] != "non_interactive" || config["shell_environment_policy.set.FORGE_TASK_RUN_GENERATION"] != "4" {
+func TestForgeThreadConfigIncludesSession(t *testing.T) {
+	config := forgeThreadConfig(agentRun{ForgeSessionID: "session-one", SchedulerTurn: true, AutoRunGeneration: 4})
+	if config["shell_environment_policy.set.FORGE_SESSION_ID"] != "session-one" || len(config) != 1 {
 		t.Fatalf("unexpected thread config: %#v", config)
 	}
 }
@@ -706,8 +706,8 @@ exit 1
 		ResourceID:        "project1.task1",
 		ForgeSessionID:    "session-one",
 		Cwd:               resourceDir,
-		InteractionMode:   "non_interactive",
-		TaskRunGeneration: 3,
+		SchedulerTurn:     true,
+		AutoRunGeneration: 3,
 	}
 
 	contextPath, err := m.writeForgeSessionContext(context.Background(), guiWorkspace{Path: workspace}, run)
@@ -729,8 +729,8 @@ exit 1
 	if sessionContext.ForgeSessionID != "session-one" || sessionContext.RunID != "run-one" {
 		t.Fatalf("unexpected session context: %#v", sessionContext)
 	}
-	if sessionContext.Version != 2 || sessionContext.InteractionMode != "non_interactive" || sessionContext.TaskRun == nil || sessionContext.TaskRun.Generation != 3 {
-		t.Fatalf("expected non-interactive session context, got: %#v", sessionContext)
+	if sessionContext.Version != 2 || sessionContext.AutoRunGeneration != 3 {
+		t.Fatalf("expected AutoRun generation in session context, got: %#v", sessionContext)
 	}
 
 	run.ForgeSessionContextPath = contextPath
@@ -745,8 +745,8 @@ exit 1
 	if !strings.Contains(prompt, "Do not create another Forge session") || !strings.Contains(prompt, "do not lock/unlock the current resource") {
 		t.Fatalf("prompt does not include managed session ownership guidance:\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "Interaction mode: non_interactive") || !strings.Contains(prompt, "forge task run complete") || !strings.Contains(prompt, "Forge GUI will settle the task and close the session") {
-		t.Fatalf("prompt does not include non-interactive protocol:\n%s", prompt)
+	if !strings.Contains(prompt, "AutoRun generation: 3") || !strings.Contains(prompt, "forge task autorun complete") {
+		t.Fatalf("prompt does not include AutoRun protocol:\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "User request:\ncontinue the task") {
 		t.Fatalf("prompt does not include user request:\n%s", prompt)
@@ -762,13 +762,13 @@ exit 1
 	}
 }
 
-func TestNonInteractiveTurnCompletionSettlesAndStopsRuntime(t *testing.T) {
+func TestSchedulerTurnCompletionObservesSubmittedResult(t *testing.T) {
 	workspace := t.TempDir()
 	argsPath := filepath.Join(workspace, "args.txt")
 	forgePath := filepath.Join(workspace, "forge-fake")
 	script := `#!/bin/sh
 printf '%s\n' "$*" > "$FORGE_TEST_ARGS"
-printf '{"run":{"state":"waiting"}}\n'
+printf '{"autoRun":{"state":"waiting"}}\n'
 `
 	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -783,8 +783,8 @@ printf '{"run":{"state":"waiting"}}\n'
 			WorkspaceID:       "workspace",
 			ResourceID:        "project1.task1",
 			ForgeSessionID:    "session-one",
-			InteractionMode:   "non_interactive",
-			TaskRunGeneration: 2,
+			SchedulerTurn:     true,
+			AutoRunGeneration: 2,
 			Status:            "running",
 		},
 		nextEventID: 1,
@@ -792,19 +792,14 @@ printf '{"run":{"state":"waiting"}}\n'
 		pending:     make(map[string]pendingApproval),
 	}
 	rt.handleNotification(m, "turn/completed", json.RawMessage(`{"turn":{"status":"completed"}}`))
-	select {
-	case <-rt.done:
-	default:
-		t.Fatal("expected non-interactive runtime to stop after settle")
-	}
 	rt.mu.Lock()
 	status := rt.run.Status
 	rt.mu.Unlock()
-	if status != "waiting" {
-		t.Fatalf("expected settled status waiting, got %q", status)
+	if status != "idle" {
+		t.Fatalf("expected session to remain idle, got %q", status)
 	}
 	args := string(mustReadFile(t, argsPath))
-	for _, expected := range []string{"task run settle", "--project project1", "--task task1", "--generation=2", "--session-id=session-one", "--turn-result=completed"} {
+	for _, expected := range []string{"task show", "--project project1", "--task task1"} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("expected settle args to contain %q, got %q", expected, args)
 		}

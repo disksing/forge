@@ -200,8 +200,8 @@ This directory is an AgentWorkspace managed by forge.
 - Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
-- Determine the current interaction mode from ` + "`FORGE_INTERACTION_MODE`" + ` or the injected session context. In ` + "`non_interactive`" + ` mode, before ending the turn call exactly one of ` + "`forge task run complete`" + `, ` + "`forge task run wait`" + `, ` + "`forge task run pause`" + `, or ` + "`forge task run fail`" + `. These commands record the next action; finish the response normally and let the session owner settle and close the session.
-- To delegate work, create a child with ` + "`forge task create --non-interactive --prompt=<prompt> <title>`" + `. To suspend the current non-interactive task until that child generation completes, call ` + "`forge task run wait --after=<task@generation> --summary=<text>`" + `. Never end a launcher-owned session yourself.
+- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun wait`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command.
+- To delegate AutoRun work, create a child with ` + "`forge task create --autorun --prompt=<prompt> <title>`" + `. Use the returned generation when suspending the current AutoRun with ` + "`forge task autorun wait --after=<task@generation> --summary=<text>`" + `.
 - Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
@@ -222,7 +222,7 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive] [--agent=<agent>] [--prompt=<prompt>] [--after=<task>...] <title>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun] [--agent=<agent>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -231,7 +231,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task run configure|queue|start|complete|wait|pause|fail|settle ...
+forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
 forge session heartbeat --id=<id>
@@ -264,5 +264,5 @@ Notes:
 - ` + "`forge session new`" + ` creates a session and prints a unique id. Use heartbeat liveness by default or explicitly with ` + "`--heartbeat [--timeout <duration>]`" + `; use ` + "`--pid <pid>`" + ` for process liveness; Forge GUI uses ` + "`--gui-run --workspace-id <id> --run-id <id> --endpoint <url>`" + ` for GUI-managed run liveness. ` + "`forge session heartbeat --id=<id>`" + ` refreshes a heartbeat session timestamp. ` + "`forge session lock/unlock --id=<id>`" + ` records or releases project/task control, inferring the current task or project when selectors are omitted; workspace root does not need a lock. ` + "`forge session end --id=<id>`" + ` removes an active session immediately and releases all of its locks. ` + "`forge session list`" + ` lists active sessions after pruning stale sessions, and ` + "`forge session show --id=<id>`" + ` prints one session as JSON.
 - ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
-- ` + "`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` is the separate headless agent executor. It creates a session, locks the selected resource, injects the Forge run context, runs the agent, settles non-interactive task state, and ends the session.
+- ` + "`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` is a plain Session launcher. It creates a session, locks the selected resource, runs the agent, and ends the session; it does not schedule or update AutoRun.
 `

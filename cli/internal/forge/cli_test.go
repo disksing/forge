@@ -169,10 +169,10 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "Project task templates live in templates/*.md") || !strings.Contains(projectAgents, "nonInteractive: true") {
+		if !strings.Contains(projectAgents, "Project task templates live in templates/*.md") || !strings.Contains(projectAgents, "autorun: true") {
 			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
 		}
-		templateContent := "---\ntitle: Daily inspection\nnonInteractive: true\nagent: codex\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
+		templateContent := "---\ntitle: Daily inspection\nautorun: true\nagent: codex\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
 		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "daily.md"), []byte(templateContent), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -191,7 +191,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected one task template, got: %+v", projectDetail.Templates)
 		}
 		template := projectDetail.Templates[0]
-		if template.Name != "daily" || template.Title != "Daily inspection" || !template.NonInteractive || template.AgentID != "codex" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
+		if template.Name != "daily" || template.Title != "Daily inspection" || !template.AutoRun || template.AgentID != "codex" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
 			t.Fatalf("unexpected parsed task template: %+v", template)
 		}
 
@@ -237,8 +237,8 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") {
 			t.Fatalf("expected subtask AGENTS.md to include direct-start session ownership guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "FORGE_INTERACTION_MODE") || !strings.Contains(subtaskAgents, "forge task run complete --summary=<text>") || !strings.Contains(subtaskAgents, "Do not end the session yourself") {
-			t.Fatalf("expected subtask AGENTS.md to teach non-interactive protocol, got:\n%s", subtaskAgents)
+		if !strings.Contains(subtaskAgents, "forge task autorun complete") || !strings.Contains(subtaskAgents, "forge task create --autorun") {
+			t.Fatalf("expected subtask AGENTS.md to teach AutoRun protocol, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
 			t.Fatalf("expected subtask AGENTS.md to prevent relative worktree destination mistakes, got:\n%s", subtaskAgents)
@@ -362,15 +362,15 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
-func TestNonInteractiveTaskRunLifecycleAndDependencies(t *testing.T) {
+func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
-		childJSON := run(t, "task", "create", "--project=project1", "--non-interactive", "--prompt=Investigate", "Child")
-		if !strings.Contains(childJSON, `"mode": "non_interactive"`) || !strings.Contains(childJSON, `"state": "queued"`) {
-			t.Fatalf("expected non-interactive run metadata, got:\n%s", childJSON)
+		childJSON := run(t, "task", "create", "--project=project1", "--autorun", "--prompt=Investigate", "Child")
+		if !strings.Contains(childJSON, `"autoRun"`) || !strings.Contains(childJSON, `"state": "queued"`) {
+			t.Fatalf("expected AutoRun metadata, got:\n%s", childJSON)
 		}
-		parentJSON := run(t, "task", "create", "--project=project1", "--non-interactive", "--after=project1.task1", "Parent")
+		parentJSON := run(t, "task", "create", "--project=project1", "--autorun", "--after=project1.task1@1", "Parent")
 		if !strings.Contains(parentJSON, `"state": "waiting"`) || !strings.Contains(parentJSON, `"generation": 1`) {
 			t.Fatalf("expected waiting parent metadata, got:\n%s", parentJSON)
 		}
@@ -379,8 +379,8 @@ func TestNonInteractiveTaskRunLifecycleAndDependencies(t *testing.T) {
 		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
 			t.Fatal(err)
 		}
-		if detail.Run == nil || detail.Run.Mode != taskRunModeNonInteractive || detail.Run.State != taskRunStateQueued {
-			t.Fatalf("task detail should expose run state, got: %+v", detail.Run)
+		if detail.AutoRun == nil || detail.AutoRun.State != autoRunStateQueued {
+			t.Fatalf("task detail should expose AutoRun state, got: %+v", detail.AutoRun)
 		}
 
 		listed := run(t, "task", "list", "--project=project1", "--runnable", "--json")
@@ -394,19 +394,8 @@ func TestNonInteractiveTaskRunLifecycleAndDependencies(t *testing.T) {
 			t.Fatalf("expected only child runnable, got: %+v", ready.Tasks)
 		}
 
-		sessionID := strings.TrimSpace(run(t, "session", "new"))
-		run(t, "session", "lock", "--id="+sessionID, "--project=project1", "--task=task1")
-		run(t, "task", "run", "start", "--project=project1", "--task=task1", "--generation=1", "--session-id="+sessionID, "--executor=test")
-		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv("FORGE_SESSION_ID", sessionID)
-		run(t, "task", "run", "complete", "--summary=done")
-		run(t, "task", "run", "settle", "--generation=1", "--session-id="+sessionID, "--turn-result=completed")
-		run(t, "session", "end", "--id="+sessionID)
-		if err := os.Chdir(root); err != nil {
-			t.Fatal(err)
-		}
+		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
+		run(t, "task", "autorun", "complete", "--project=project1", "--task=task1", "--summary=done")
 
 		listed = run(t, "task", "list", "--project=project1", "--runnable", "--json")
 		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
@@ -415,55 +404,83 @@ func TestNonInteractiveTaskRunLifecycleAndDependencies(t *testing.T) {
 		if len(ready.Tasks) != 1 || ready.Tasks[0].ID != "project1.task2" || ready.Tasks[0].Reason != "prerequisites_completed" {
 			t.Fatalf("expected parent runnable after child completion, got: %+v", ready.Tasks)
 		}
-	})
-}
-
-func TestNonInteractiveRunWithoutActionPauses(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--non-interactive", "Task")
-		sessionID := strings.TrimSpace(run(t, "session", "new"))
-		run(t, "session", "lock", "--id="+sessionID, "--project=project1", "--task=task1")
-		run(t, "task", "run", "start", "--project=project1", "--task=task1", "--generation=1", "--session-id="+sessionID, "--executor=test")
-		settled := run(t, "task", "run", "settle", "--project=project1", "--task=task1", "--generation=1", "--session-id="+sessionID, "--turn-result=completed")
-		if !strings.Contains(settled, `"state": "paused"`) || !strings.Contains(settled, `"summary": "missing_next_action"`) {
-			t.Fatalf("expected missing action to pause, got:\n%s", settled)
+		queued := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
+		if !strings.Contains(queued, `"generation": 2`) || !strings.Contains(queued, `"state": "queued"`) {
+			t.Fatalf("expected terminal AutoRun to queue generation 2, got:\n%s", queued)
+		}
+		listed = run(t, "task", "list", "--project=project1", "--runnable", "--json")
+		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
+			t.Fatal(err)
+		}
+		if len(ready.Tasks) != 2 {
+			t.Fatalf("expected old generation completion to remain in logs, got: %+v", ready.Tasks)
+		}
+		logs := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
+		if !strings.Contains(logs, `"autoRun": true`) || !strings.Contains(logs, `"autoRunGeneration": 1`) {
+			t.Fatalf("expected marked AutoRun history, got:\n%s", logs)
 		}
 	})
 }
 
-func TestTaskRunRejectsDependencyCycle(t *testing.T) {
+func TestOldRunNamingIsRejected(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--non-interactive", "First")
-		run(t, "task", "create", "--project=project1", "--non-interactive", "--after=project1.task1", "Second")
-		out, err := runErr(t, "task", "run", "configure", "--project=project1", "--task=task1", "--mode=non-interactive", "--after=project1.task2")
+		if _, err := runErr(t, "task", "create", "--project=project1", "--non-interactive", "Task"); err == nil {
+			t.Fatal("expected --non-interactive to be rejected")
+		}
+		if _, err := runErr(t, "task", "run", "queue", "--project=project1", "--task=task1"); err == nil {
+			t.Fatal("expected task run command to be rejected")
+		}
+	})
+}
+
+func TestAutoRunRetryBudgetPauses(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Automation")
+		run(t, "task", "create", "--project=project1", "--autorun", "Task")
+		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
+		run(t, "task", "autorun", "retry", "--project=project1", "--task=task1")
+		run(t, "task", "autorun", "retry", "--project=project1", "--task=task1")
+		third := run(t, "task", "autorun", "retry", "--project=project1", "--task=task1")
+		if !strings.Contains(third, `"state": "paused"`) {
+			t.Fatalf("expected retry limit to pause, got:\n%s", third)
+		}
+	})
+}
+
+func TestAutoRunRejectsDependencyCycle(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Automation")
+		run(t, "task", "create", "--project=project1", "--autorun", "First")
+		run(t, "task", "create", "--project=project1", "--autorun", "--after=project1.task1@1", "Second")
+		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
+		out, err := runErr(t, "task", "autorun", "wait", "--project=project1", "--task=task1", "--after=project1.task2@1")
 		if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
 			t.Fatalf("expected dependency cycle error, got %v\nstdout:\n%s", err, out)
 		}
 	})
 }
 
-func TestForgeStartSettlesNonInteractiveTask(t *testing.T) {
+func TestForgeStartDoesNotScheduleAutoRun(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--non-interactive", "--prompt=Do work", "Task")
+		run(t, "task", "create", "--project=project1", "--autorun", "--prompt=Do work", "Task")
 		output := filepath.Join(root, "automatic.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
-		t.Setenv("FORGE_START_COMPLETE", "1")
 		t.Setenv("FORGE_START_RECORD_MODE", "1")
 		runStart(t, "--project=project1", "--task=task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$")
 		got := readFile(t, output)
-		if !strings.Contains(got, "mode=non_interactive\n") || !strings.Contains(got, "generation=1\n") || !strings.Contains(got, "prompt=Do work\n") || !strings.Contains(got, `"interactionMode": "non_interactive"`) {
-			t.Fatalf("expected non-interactive environment, got:\n%s", got)
+		if strings.Contains(got, "non_interactive") || strings.Contains(got, `"autoRunGeneration"`) {
+			t.Fatalf("forge-start should not inject AutoRun context, got:\n%s", got)
 		}
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
-		if !strings.Contains(shown, `"state": "completed"`) || !strings.Contains(shown, `"summary": "helper complete"`) {
-			t.Fatalf("expected forge-start to settle completion, got:\n%s", shown)
+		if !strings.Contains(shown, `"state": "queued"`) {
+			t.Fatalf("forge-start should leave AutoRun queued, got:\n%s", shown)
 		}
 	})
 }
@@ -481,7 +498,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge init\n  forge migrate",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive]",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
@@ -489,7 +506,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge migrate",
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--non-interactive]",
+		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 	}
@@ -1156,9 +1173,7 @@ func TestStartInjectsCodexShellEnvironmentPolicy(t *testing.T) {
 		for _, want := range []string{
 			"arg0=-c",
 			expectedConfig,
-			"arg2=-c",
-			`arg3=shell_environment_policy.set.FORGE_INTERACTION_MODE="interactive"`,
-			"arg4=--dangerously-bypass-approvals-and-sandbox",
+			"arg2=--dangerously-bypass-approvals-and-sandbox",
 		} {
 			if !strings.Contains(got, want+"\n") {
 				t.Fatalf("expected fake codex args to contain %q, got:\n%s", want, got)
@@ -1964,8 +1979,8 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
 			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
 		}
-		if !strings.Contains(first, "FORGE_INTERACTION_MODE") || !strings.Contains(first, "forge task create --non-interactive") || !strings.Contains(first, "forge task run wait") {
-			t.Fatalf("expected workspace AGENTS.md to teach non-interactive delegation, got:\n%s", first)
+		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun wait") {
+			t.Fatalf("expected workspace AGENTS.md to teach AutoRun delegation, got:\n%s", first)
 		}
 		if strings.Count(first, forgePromptStart) != 1 || strings.Count(first, forgePromptEnd) != 1 {
 			t.Fatalf("expected one forge managed block, got:\n%s", first)

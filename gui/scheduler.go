@@ -21,6 +21,7 @@ type runnableTaskCandidate struct {
 	Path       string                   `json:"path"`
 	Title      string                   `json:"title"`
 	Generation int                      `json:"generation"`
+	State      string                   `json:"state"`
 	Prompt     string                   `json:"prompt"`
 	AgentID    string                   `json:"agentId"`
 	After      []runnableTaskDependency `json:"after,omitempty"`
@@ -97,9 +98,23 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 }
 
 func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) error {
+	if task.State == "waiting" {
+		selector, err := forgeTaskSelectorArgs(task.ID)
+		if err != nil {
+			return err
+		}
+		args := []string{"task", "autorun", "resume"}
+		args = append(args, selector...)
+		if _, err := s.runForge(ctx, workspace.Path, args...); err != nil {
+			return err
+		}
+	}
 	prompt := strings.TrimSpace(task.Prompt)
 	if prompt == "" {
 		prompt = "Read task.md and complete the task."
+	}
+	if task.State == "running" {
+		prompt = "Recover and continue the current AutoRun generation. Read task.md, work.md, and the relevant AutoRun entries in log.jsonl before continuing.\n\n" + prompt
 	}
 	if len(task.After) > 0 {
 		var completed []string
@@ -108,20 +123,39 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		}
 		prompt += "\n\nThe following prerequisite task runs completed: " + strings.Join(completed, ", ") + ". Read their task files and results before continuing."
 	}
+	prompt += "\n\nThis is an AutoRun scheduler turn. Before ending, call exactly one of forge task autorun complete, wait, pause, or fail as your last side-effecting command."
 	req := startAgentRequest{
 		AgentID:           strings.TrimSpace(task.AgentID),
 		ResourceID:        task.ID,
 		Title:             task.Title,
 		Prompt:            prompt,
-		InteractionMode:   "non_interactive",
-		TaskRunGeneration: task.Generation,
+		SchedulerTurn:     true,
+		AutoRunGeneration: task.Generation,
 	}
 	if runs, err := loadAgentRuns(workspace.Path); err == nil {
 		for _, run := range runs {
-			if run.ResourceID == task.ID && (strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "") && !isLiveAgentStatus(run.Status) {
-				req.ResumeRunID = run.ID
+			if run.ResourceID != task.ID || !s.agentRunActive(run.ID) {
+				continue
+			}
+			if task.AgentID != "" && run.AgentID != task.AgentID {
+				return nil
+			}
+			if run.Status != "idle" {
+				return nil
+			}
+			return s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt)
+		}
+		for _, run := range runs {
+			if run.ResourceID != task.ID || s.agentRunActive(run.ID) {
+				continue
+			}
+			if task.AgentID != "" && run.AgentID != task.AgentID {
 				break
 			}
+			if strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "" {
+				req.ResumeRunID = run.ID
+			}
+			break
 		}
 	}
 	body, err := json.Marshal(req)
@@ -142,6 +176,45 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
+	}
+	return nil
+}
+
+func (s *server) agentRunActive(runID string) bool {
+	if s.agents == nil {
+		return false
+	}
+	s.agents.mu.Lock()
+	rt := s.agents.runtimes[runID]
+	s.agents.mu.Unlock()
+	if rt == nil {
+		return false
+	}
+	rt.mu.Lock()
+	active := isLiveAgentStatus(rt.run.Status)
+	rt.mu.Unlock()
+	return active
+}
+
+func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, generation int, prompt string) error {
+	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, AutoRunGeneration: generation})
+	if err != nil {
+		return err
+	}
+	endpoint := strings.TrimRight(s.internalEndpoint(), "/") + "/api/workspaces/" + workspace.ID + "/agent/runs/" + runID + "/input"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	responseBody, _ := io.ReadAll(response.Body)
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("agent input returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 	return nil
 }

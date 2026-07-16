@@ -239,7 +239,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, slug string, nonInteractive bool, agentID, prompt string, afterValues []string) error {
+func projectTaskCreate(parentID, title string, detail string, slug string, autorun bool, agentID, prompt string, afterValues []string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -271,22 +271,39 @@ func projectTaskCreate(parentID, title string, detail string, slug string, nonIn
 		return err
 	}
 	taskPath := filepath.Join(parentPath, taskDirectoryName(id, slug))
+	if pathExists(taskPath) {
+		return fmt.Errorf("task directory already exists: %s", taskPath)
+	}
+	stagingPath := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
+	defer os.RemoveAll(stagingPath)
 	task := newTask(id, parentID, title, "")
-	if nonInteractive {
-		after, err := resolveTaskRunDependencies(root, &task, afterValues)
+	if autorun {
+		after, err := resolveAutoRunDependencies(root, &task, afterValues)
 		if err != nil {
 			return err
 		}
-		now := time.Now().Format(time.RFC3339)
-		state := taskRunStateQueued
+		state := autoRunStateQueued
 		if len(after) > 0 {
-			state = taskRunStateWaiting
+			state = autoRunStateWaiting
 		}
-		task.Run = &TaskRun{Mode: taskRunModeNonInteractive, AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after, UpdatedAt: now}
+		task.AutoRun = &AutoRun{AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
 	} else if len(afterValues) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
-		return errors.New("--agent, --prompt, and --after require --non-interactive")
+		return errors.New("--agent, --prompt, and --after require --autorun")
 	}
-	if err := createResourceFilesWithMarkdown(taskPath, &task, taskMarkdown(title, detail)); err != nil {
+	if err := createResourceFilesWithMarkdown(stagingPath, &task, taskMarkdown(title, detail)); err != nil {
+		return err
+	}
+	if task.AutoRun != nil {
+		if err := prependLogEntry(stagingPath, newAutoRunLogEntry("Auto Run queued", "", task.AutoRun.Generation)); err != nil {
+			return err
+		}
+		if task.AutoRun.State == autoRunStateWaiting {
+			if err := prependLogEntry(stagingPath, newAutoRunLogEntry("Auto Run waiting", "waiting for prerequisites", task.AutoRun.Generation)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := os.Rename(stagingPath, taskPath); err != nil {
 		return err
 	}
 	return printTaskJSON(task)
@@ -319,10 +336,10 @@ func projectTaskList(options taskListOptions) error {
 	}
 	result := make([]runnableTask, 0)
 	for _, entry := range entries {
-		if entry.Task.Run == nil || entry.Task.Run.Mode != taskRunModeNonInteractive {
+		if entry.Task.AutoRun == nil {
 			continue
 		}
-		ready, reason := taskRunReady(root, entry.Task)
+		ready, reason := autoRunReady(root, entry.Task)
 		if isArchivedPath(root, entry.Path) {
 			ready = false
 			reason = "archived"
@@ -331,12 +348,12 @@ func projectTaskList(options taskListOptions) error {
 			continue
 		}
 		item := runnableTask{ID: entry.Task.ID, Path: relPath(root, entry.Path), Title: entry.Task.Title, Ready: ready, Reason: reason}
-		if entry.Task.Run != nil {
-			item.Generation = entry.Task.Run.Generation
-			item.State = entry.Task.Run.State
-			item.Prompt = entry.Task.Run.Prompt
-			item.AgentID = entry.Task.Run.AgentID
-			item.After = entry.Task.Run.After
+		if entry.Task.AutoRun != nil {
+			item.Generation = entry.Task.AutoRun.Generation
+			item.State = entry.Task.AutoRun.State
+			item.Prompt = entry.Task.AutoRun.Prompt
+			item.AgentID = entry.Task.AutoRun.AgentID
+			item.After = entry.Task.AutoRun.After
 		}
 		result = append(result, item)
 	}
@@ -1042,13 +1059,13 @@ func taskAgentsPrompt(resource Resource) string {
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
 - Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied into a new task's task.md detail.
-- A template must have a non-empty title. It may also set nonInteractive (true or false), agent, and prompt. agent and prompt apply only when nonInteractive is true. Do not add other front matter fields.
+- A template must have a non-empty title. It may also set autorun (true or false), agent, and prompt. agent and prompt apply only when autorun is true. Do not add other front matter fields.
 - Template format:
 
   ` + "```markdown" + `
   ---
   title: Daily inspection
-  nonInteractive: true
+  autorun: true
   agent: codex
   prompt: Inspect the project and report findings.
   ---
@@ -1066,8 +1083,8 @@ You are working inside a %s.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- Determine whether this run is `+"`interactive`"+` or `+"`non_interactive`"+` from `+"`FORGE_INTERACTION_MODE`"+` or the injected session context. A non-interactive run is one turn: before finishing, call exactly one of `+"`forge task run complete`"+`, `+"`forge task run wait`"+`, `+"`forge task run pause`"+`, or `+"`forge task run fail`"+`, then end the response normally. Do not end the session yourself.
-- In a non-interactive run, create delegated work with `+"`forge task create --non-interactive --prompt=<prompt> <title>`"+`; suspend the current run with `+"`forge task run wait --after=<task@generation> --summary=<text>`"+`; and record successful completion with `+"`forge task run complete --summary=<text>`"+`.
+- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of `+"`forge task autorun complete`"+`, `+"`forge task autorun wait`"+`, `+"`forge task autorun pause`"+`, or `+"`forge task autorun fail`"+` as the turn's last side-effecting command.
+- To delegate AutoRun work, create a child with `+"`forge task create --autorun --prompt=<prompt> <title>`"+`; use the returned generation when suspending the current AutoRun with `+"`forge task autorun wait --after=<task@generation> --summary=<text>`"+`.
 - If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.

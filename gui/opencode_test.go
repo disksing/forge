@@ -84,8 +84,8 @@ func TestOpencodeTerminalHonorsArgsEnvAndOutputLimit(t *testing.T) {
 			ID:                "run-terminal",
 			Cwd:               workspace,
 			ForgeSessionID:    "session-terminal",
-			InteractionMode:   "non_interactive",
-			TaskRunGeneration: 7,
+			SchedulerTurn:     true,
+			AutoRunGeneration: 7,
 		},
 		opencodeTerminals: make(map[string]*opencodeTerminal),
 	}
@@ -93,7 +93,7 @@ func TestOpencodeTerminalHonorsArgsEnvAndOutputLimit(t *testing.T) {
 	params := mustJSON(map[string]any{
 		"sessionId":       "session",
 		"command":         "/bin/sh",
-		"args":            []string{"-c", "printf '%s:%s:%s' \"$CUSTOM\" \"$FORGE_SESSION_ID\" \"$FORGE_TASK_RUN_GENERATION\""},
+		"args":            []string{"-c", "printf '%s:%s' \"$CUSTOM\" \"$FORGE_SESSION_ID\""},
 		"env":             []map[string]string{{"name": "CUSTOM", "value": "value"}},
 		"cwd":             workspace,
 		"outputByteLimit": limit,
@@ -114,7 +114,7 @@ func TestOpencodeTerminalHonorsArgsEnvAndOutputLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output["output"] != "value:session-terminal:7" || output["truncated"] != false {
+	if output["output"] != "value:session-terminal" || output["truncated"] != false {
 		t.Fatalf("unexpected output: %#v", output)
 	}
 	if _, ok := output["exitStatus"]; !ok {
@@ -237,7 +237,7 @@ func TestOpencodePromptResultMarksInteractiveRunIdle(t *testing.T) {
 	rt := &agentRuntime{
 		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
 		manager:     manager,
-		run:         agentRun{ID: "run-prompt", WorkspaceID: "workspace", Status: "running", InteractionMode: "interactive"},
+		run:         agentRun{ID: "run-prompt", WorkspaceID: "workspace", Status: "running"},
 		nextEventID: 1,
 	}
 	rt.handleOpencodePromptResult(nil, json.RawMessage(`{"stopReason":"end_turn"}`))
@@ -249,13 +249,13 @@ func TestOpencodePromptResultMarksInteractiveRunIdle(t *testing.T) {
 	}
 }
 
-func TestOpencodePromptResultSettlesNonInteractiveRun(t *testing.T) {
+func TestOpencodePromptResultFinishesSchedulerTurn(t *testing.T) {
 	workspace := t.TempDir()
 	argsPath := filepath.Join(workspace, "args.txt")
 	forgePath := filepath.Join(workspace, "forge-fake")
 	script := `#!/bin/sh
 printf '%s\n' "$*" > "$FORGE_TEST_ARGS"
-printf '{"run":{"state":"complete"}}\n'
+printf '{"autoRun":{"state":"completed"}}\n'
 `
 	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
@@ -270,24 +270,19 @@ printf '{"run":{"state":"complete"}}\n'
 			WorkspaceID:       "workspace",
 			ResourceID:        "project1.task1",
 			ForgeSessionID:    "session-one",
-			InteractionMode:   "non_interactive",
-			TaskRunGeneration: 3,
+			SchedulerTurn:     true,
+			AutoRunGeneration: 3,
 			Status:            "running",
 		},
 		nextEventID: 1,
 		done:        make(chan struct{}),
 	}
 	rt.handleOpencodePromptResult(nil, json.RawMessage(`{"stopReason":"end_turn"}`))
-	select {
-	case <-rt.done:
-	default:
-		t.Fatal("expected non-interactive runtime to stop after settle")
-	}
-	if rt.run.Status != "complete" {
-		t.Fatalf("expected complete status, got %q", rt.run.Status)
+	if rt.run.Status != "idle" {
+		t.Fatalf("expected idle status, got %q", rt.run.Status)
 	}
 	args := string(mustReadFile(t, argsPath))
-	for _, expected := range []string{"task run settle", "--generation=3", "--turn-result=completed"} {
+	for _, expected := range []string{"task show", "--project project1", "--task task1"} {
 		if !strings.Contains(args, expected) {
 			t.Fatalf("expected settle args to contain %q, got %q", expected, args)
 		}
@@ -336,7 +331,7 @@ func TestOpencodeLivePrompt(t *testing.T) {
 	rt := &agentRuntime{
 		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
 		manager:     manager,
-		run:         agentRun{ID: "run-live", WorkspaceID: "workspace", Cwd: workspace, Status: "starting", InteractionMode: "interactive"},
+		run:         agentRun{ID: "run-live", WorkspaceID: "workspace", Cwd: workspace, Status: "starting"},
 		nextEventID: 1,
 		pending:     make(map[string]pendingApproval),
 		done:        make(chan struct{}),

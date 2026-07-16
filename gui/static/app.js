@@ -37,7 +37,7 @@ const state = {
     description: "",
     detail: "",
     slug: "",
-    nonInteractive: false,
+    autorun: false,
     agentId: "",
     prompt: "",
     submitting: false,
@@ -611,7 +611,7 @@ function templateSection(item) {
         ${templates.length ? templates.map((template) => `
           <button type="button" class="template-row" data-template-preview="${escapeHTML(template.path)}">
             ${icon("file-text")}
-            <span><strong>${escapeHTML(template.title)}</strong><small>${escapeHTML(template.name)}${template.nonInteractive ? " · automatic" : ""}</small></span>
+            <span><strong>${escapeHTML(template.title)}</strong><small>${escapeHTML(template.name)}${template.autorun ? " · automatic" : ""}</small></span>
             ${icon("chevron-right")}
           </button>
         `).join("") : `<div class="empty-list-row">No task templates in templates/*.md.</div>`}
@@ -1764,7 +1764,9 @@ function renderAgent() {
   const visibleRun = activeRun || state.agent.runs[0] || null;
   controls.hidden = true;
   controls.innerHTML = "";
+  const detail = state.details[state.selectedId];
   wrap.innerHTML = `
+    ${autoRunStatus(detail)}
     <div id="agentSessions" class="agent-session-switcher">
       ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start an agent session from the selected task.</span></div>`}
       ${state.agent.historyOpen && state.agent.runs.length ? `
@@ -1773,6 +1775,23 @@ function renderAgent() {
         </div>
       ` : ""}
     </div>
+  `;
+}
+
+function autoRunStatus(detail) {
+  const run = detail?.autoRun;
+  if (!run) return "";
+  const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run failed", "Auto Run retry"].includes(entry.title));
+  const dependencyItems = detail.autoRunDependencies || (run.after || []);
+  const dependencies = dependencyItems.map((dep) => `${dep.taskId}@${dep.generation}${dep.state ? ` (${dep.state})` : ""}`).join(", ");
+  const blocked = dependencyItems.some((dep) => dep.state === "failed");
+  return `
+    <section class="autorun-status" aria-label="AutoRun status">
+      <div><strong>AutoRun</strong><span class="autorun-state autorun-state-${escapeHTML(run.state)}">${escapeHTML(run.state)}</span></div>
+      <small>Generation ${escapeHTML(String(run.generation))}${run.agentId ? ` · ${escapeHTML(run.agentId)}` : ""}</small>
+      ${dependencies ? `<p>${blocked ? "Blocked by" : "Waiting for"} ${escapeHTML(dependencies)}</p>` : ""}
+      ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
+    </section>
   `;
 }
 
@@ -2816,7 +2835,7 @@ function openCreateDialog(type, projectId = "") {
     description: "",
     detail: "",
     slug: "",
-    nonInteractive: false,
+    autorun: false,
     agentId: defaultChatAgentID(),
     prompt: "",
     submitting: false,
@@ -2835,7 +2854,7 @@ function closeCreateDialog() {
     description: "",
     detail: "",
     slug: "",
-    nonInteractive: false,
+    autorun: false,
     agentId: "",
     prompt: "",
     submitting: false,
@@ -2858,7 +2877,7 @@ function renderCreateDialog() {
   const detailPlaceholder = "Task detail";
   const agents = enabledAgentConfigs();
   const templates = isTask ? (state.details[dialog.projectId]?.templates || []) : [];
-  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.nonInteractive}:${dialog.submitting}`;
+  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.autorun}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
   root.innerHTML = `
@@ -2886,10 +2905,10 @@ function renderCreateDialog() {
             <input name="title" required value="${escapeHTML(dialog.title)}" placeholder="Task title" />
             <textarea name="detail" placeholder="${detailPlaceholder}">${escapeHTML(dialog.detail)}</textarea>
             <label class="create-task-automation-toggle">
-              <input name="nonInteractive" type="checkbox" ${dialog.nonInteractive ? "checked" : ""} />
+              <input name="autorun" type="checkbox" ${dialog.autorun ? "checked" : ""} />
               <span><strong>Run automatically</strong><small>Queue a one-turn task for the GUI scheduler.</small></span>
             </label>
-            ${dialog.nonInteractive ? `
+            ${dialog.autorun ? `
               <div class="create-task-automation-fields">
                 <label>
                   <span>Run prompt</span>
@@ -2936,8 +2955,8 @@ function bindCreateDialogEvents() {
     if (target.name === "slug") state.createDialog.slug = target.value;
     if (target.name === "prompt") state.createDialog.prompt = target.value;
     if (target.name === "agentId") state.createDialog.agentId = target.value;
-    if (target.name === "nonInteractive") {
-      state.createDialog.nonInteractive = target.checked;
+    if (target.name === "autorun") {
+      state.createDialog.autorun = target.checked;
       renderCreateDialog();
     }
   });
@@ -2957,7 +2976,7 @@ function applyCreateDialogTemplate(name) {
   if (template) {
     dialog.title = template.title || "";
     dialog.detail = template.detail || "";
-    dialog.nonInteractive = Boolean(template.nonInteractive);
+    dialog.autorun = Boolean(template.autorun);
     dialog.agentId = template.agentId || defaultChatAgentID();
     dialog.prompt = template.prompt || "";
   }
@@ -2974,7 +2993,7 @@ async function submitCreateDialog(event) {
   dialog.description = String(form.get("description") || "");
   dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");
-  dialog.nonInteractive = form.get("nonInteractive") === "on";
+  dialog.autorun = form.get("autorun") === "on";
   dialog.agentId = String(form.get("agentId") || "");
   dialog.prompt = String(form.get("prompt") || "");
   dialog.submitting = true;
@@ -2998,9 +3017,9 @@ async function submitCreateDialog(event) {
           title: dialog.title,
           detail: dialog.detail,
           slug: dialog.slug,
-          nonInteractive: dialog.nonInteractive,
-          agentId: dialog.nonInteractive ? dialog.agentId : "",
-          prompt: dialog.nonInteractive ? dialog.prompt : "",
+          autorun: dialog.autorun,
+          agentId: dialog.autorun ? dialog.agentId : "",
+          prompt: dialog.autorun ? dialog.prompt : "",
         }),
       });
       toast("Task created.");

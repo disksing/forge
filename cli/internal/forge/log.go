@@ -16,10 +16,19 @@ import (
 const logJSONLFile = "log.jsonl"
 
 type LogEntry struct {
-	ID      string `json:"id"`
-	Time    string `json:"time"`
-	Title   string `json:"title"`
-	Details string `json:"details,omitempty"`
+	ID                string `json:"id"`
+	Time              string `json:"time"`
+	Title             string `json:"title"`
+	Details           string `json:"details,omitempty"`
+	AutoRun           bool   `json:"autoRun,omitempty"`
+	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
+}
+
+func newAutoRunLogEntry(title, details string, generation int) LogEntry {
+	entry := newLogEntry(title, details)
+	entry.AutoRun = true
+	entry.AutoRunGeneration = generation
+	return entry
 }
 
 type logAddOptions struct {
