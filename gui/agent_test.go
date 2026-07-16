@@ -519,20 +519,22 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 	lastOutputAt := "2026-07-07T12:00:02+08:00"
 	runs := []agentRun{
 		{
-			ID:             "run-one",
-			WorkspaceID:    "workspace",
-			ResourceID:     "project1.task1",
-			AgentID:        "codex-review",
-			ForgeSessionID: "session-one",
-			Provider:       "codex",
-			Title:          "Run One",
-			Cwd:            workspace,
-			Status:         "running",
-			Sandbox:        "workspace-write",
-			Approval:       "on-request",
-			CreatedAt:      "2026-07-07T12:00:00+08:00",
-			UpdatedAt:      updatedAt,
-			LastOutputAt:   lastOutputAt,
+			ID:                "run-one",
+			WorkspaceID:       "workspace",
+			ResourceID:        "project1.task1",
+			AgentID:           "codex-review",
+			ForgeSessionID:    "session-one",
+			Provider:          "codex",
+			Title:             "Run One",
+			Cwd:               workspace,
+			Status:            "running",
+			Sandbox:           "workspace-write",
+			Approval:          "on-request",
+			CreatedAt:         "2026-07-07T12:00:00+08:00",
+			UpdatedAt:         updatedAt,
+			LastOutputAt:      lastOutputAt,
+			SchedulerTurn:     true,
+			AutoRunGeneration: 4,
 		},
 	}
 	if err := rewriteAgentRuns(workspace, runs); err != nil {
@@ -549,7 +551,7 @@ func TestEnrichTreeSessionsIncludesAgentRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := tree.Sessions[0]
-	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunAgentID != "codex-review" || internal.AgentRunProvider != "codex" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.AgentRunLastOutputAt != lastOutputAt || internal.ResourceID != "project1.task1" {
+	if internal.Source != "internal" || internal.AgentRunID != "run-one" || internal.AgentRunAgentID != "codex-review" || internal.AgentRunProvider != "codex" || internal.AgentRunStatus != "running" || internal.AgentRunUpdatedAt != updatedAt || internal.AgentRunLastOutputAt != lastOutputAt || !internal.SchedulerTurn || internal.AutoRunGeneration != 4 || internal.ResourceID != "project1.task1" {
 		t.Fatalf("internal session was not enriched with agent run state: %#v", internal)
 	}
 	if tree.Sessions[1].Source != "external" || tree.Sessions[1].AgentRunUpdatedAt != "" || tree.Sessions[1].AgentRunLastOutputAt != "" {

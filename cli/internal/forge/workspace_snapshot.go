@@ -20,7 +20,13 @@ type ResourceTreeView struct {
 	Title    string             `json:"title"`
 	Path     string             `json:"path"`
 	Archived bool               `json:"archived"`
+	AutoRun  *AutoRunTreeView   `json:"autoRun,omitempty"`
 	Children []ResourceTreeView `json:"children,omitempty"`
+}
+
+type AutoRunTreeView struct {
+	Generation int    `json:"generation"`
+	State      string `json:"state"`
 }
 
 type ResourceDetailView struct {
@@ -148,6 +154,9 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Title:    meta.Title,
 		Path:     relPath(root, entry.Path),
 		Archived: isArchivedPath(root, entry.Path),
+	}
+	if task, ok := entry.Resource.(*Task); ok && task.AutoRun != nil {
+		item.AutoRun = &AutoRunTreeView{Generation: task.AutoRun.Generation, State: task.AutoRun.State}
 	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)

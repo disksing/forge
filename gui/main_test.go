@@ -129,6 +129,51 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`function taskOperationalState(item)`,
+		`function deriveTaskPrimaryState(autoRun, sessions)`,
+		`session.schedulerTurn && session.autoRunGeneration === autoRun.generation`,
+		`function taskAgentSessions(resourceId)`,
+		`session.resourceId === resourceId`,
+		`function taskLocks(resourceId)`,
+		`sessionControls(session).some((control) => control.resourceId === resourceId)`,
+		`class="task-status-slot`,
+		`task-lock-indicator`,
+		`button.setAttribute("aria-label"`,
+		`button.setAttribute("aria-describedby"`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("combined task tree status is missing %q", want)
+		}
+	}
+	if strings.Contains(app, `function taskSessionState(resourceId)`) {
+		t.Fatal("tree status should not use the legacy session-only state derivation")
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.task-status-auto-running .task-status-indicator`,
+		`.task-status-session-running .task-status-indicator`,
+		`.task-lock-external`,
+		`.task-status-tooltip`,
+		`@media (prefers-reduced-motion: reduce)`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("combined task tree status styles are missing %q", want)
+		}
+	}
+}
+
 func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

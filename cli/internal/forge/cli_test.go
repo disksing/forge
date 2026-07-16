@@ -382,6 +382,14 @@ func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 		if detail.AutoRun == nil || detail.AutoRun.State != autoRunStateQueued {
 			t.Fatalf("task detail should expose AutoRun state, got: %+v", detail.AutoRun)
 		}
+		treeJSON := run(t, "workspace", "tree", "--json")
+		var tree WorkspaceTree
+		if err := json.Unmarshal([]byte(treeJSON), &tree); err != nil {
+			t.Fatal(err)
+		}
+		if got := tree.Projects[0].Children[0].AutoRun; got == nil || got.Generation != 1 || got.State != autoRunStateQueued {
+			t.Fatalf("task tree should expose lightweight AutoRun state, got: %+v", got)
+		}
 
 		listed := run(t, "task", "list", "--project=project1", "--runnable", "--json")
 		var ready struct {

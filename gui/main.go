@@ -85,7 +85,13 @@ type resourceSnapshot struct {
 	Title    string             `json:"title"`
 	Path     string             `json:"path"`
 	Archived bool               `json:"archived"`
+	AutoRun  *autoRunSnapshot   `json:"autoRun,omitempty"`
 	Children []resourceSnapshot `json:"children,omitempty"`
+}
+
+type autoRunSnapshot struct {
+	Generation int    `json:"generation"`
+	State      string `json:"state"`
 }
 
 type filePreview struct {
@@ -127,6 +133,8 @@ type guiSession struct {
 	AgentRunStatus       string              `json:"agentRunStatus,omitempty"`
 	AgentRunUpdatedAt    string              `json:"agentRunUpdatedAt,omitempty"`
 	AgentRunLastOutputAt string              `json:"agentRunLastOutputAt,omitempty"`
+	SchedulerTurn        bool                `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration    int                 `json:"autoRunGeneration,omitempty"`
 	ResourceID           string              `json:"resourceId,omitempty"`
 }
 
@@ -880,6 +888,8 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 			tree.Sessions[i].AgentRunStatus = run.Status
 			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
 			tree.Sessions[i].AgentRunLastOutputAt = run.LastOutputAt
+			tree.Sessions[i].SchedulerTurn = run.SchedulerTurn
+			tree.Sessions[i].AutoRunGeneration = run.AutoRunGeneration
 			tree.Sessions[i].ResourceID = run.ResourceID
 		}
 	}

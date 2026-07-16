@@ -14,7 +14,7 @@ const state = {
   preview: null,
   diff: null,
   sessionMenu: null,
-  taskSessionStateKey: "",
+  taskOperationalStateKey: "",
   settings: {
     open: false,
     tab: "workspace",
@@ -76,7 +76,7 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
-const TASK_OUTPUT_ACTIVE_WINDOW_MS = 60 * 1000;
+const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 80;
 const AGENT_OLDER_VISIBLE_EVENT_COUNT = 50;
@@ -238,7 +238,7 @@ async function autoRefresh() {
       connectAgentStream();
       changed = true;
     }
-    if (taskSessionStateKey() !== state.taskSessionStateKey) {
+    if (taskOperationalStateKey() !== state.taskOperationalStateKey) {
       changed = true;
     }
     if (changed) {
@@ -299,11 +299,12 @@ function renderWorkspaceSelect() {
 }
 
 function renderTree() {
+  hideTaskStatusTooltip();
   const tree = $("projectTree");
   tree.innerHTML = "";
   if (!state.tree) {
     tree.innerHTML = `<div class="empty-state"><div>Add a workspace path to begin.</div></div>`;
-    state.taskSessionStateKey = "";
+    state.taskOperationalStateKey = "";
     return;
   }
   for (const project of state.tree.projects) {
@@ -314,20 +315,29 @@ function renderTree() {
       }
     }
   }
-  state.taskSessionStateKey = taskSessionStateKey();
+  state.taskOperationalStateKey = taskOperationalStateKey();
 }
 
 function treeButton(item, kind) {
   const button = document.createElement("button");
-  const sessionState = kind === "task" ? taskSessionState(item.id) : noTaskSessionState();
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${sessionState.kind !== "none" ? "has-open-session" : ""} ${sessionState.className} ${state.selectedId === item.id ? "active" : ""}`;
+  const taskState = kind === "task" ? taskOperationalState(item) : noTaskOperationalState();
+  const hasTaskState = Boolean(taskState.iconName || taskState.lock);
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${hasTaskState ? "has-task-status" : ""} ${taskState.className} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
+  const title = item.title || item.id;
+  if (kind === "task" && taskState.label) {
+    button.setAttribute("aria-label", `${title}. ${taskState.label}`);
+    bindTaskStatusTooltip(button, taskState.label);
+  }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
-    <span class="task-session-indicator-slot">${sessionState.iconName ? `<span class="task-session-indicator" title="${escapeHTML(sessionState.label)}" aria-label="${escapeHTML(sessionState.label)}">${icon(sessionState.iconName, "task-session-icon")}</span>` : ""}</span>
+    <span class="task-status-slot ${taskState.lock && !taskState.iconName ? "task-status-lock-only" : ""}" aria-hidden="true">
+      ${taskState.iconName ? `<span class="task-status-indicator ${taskState.recentOutput ? "task-status-fresh" : ""}">${icon(taskState.iconName, "task-status-icon")}</span>` : ""}
+      ${taskState.lock ? `<span class="task-lock-indicator ${taskState.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
+    </span>
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
-    <span class="name">${escapeHTML(item.title || item.id)}</span>
+    <span class="name">${escapeHTML(title)}</span>
   `;
   button.onclick = (event) => {
     if (event.target.closest("[data-project-toggle]")) {
@@ -339,67 +349,132 @@ function treeButton(item, kind) {
   return button;
 }
 
-function noTaskSessionState() {
-  return { kind: "none", className: "", iconName: "", label: "No open sessions" };
+function noTaskOperationalState() {
+  return { kind: "none", className: "", iconName: "", label: "", lock: null, recentOutput: false };
 }
 
-function taskSessionState(resourceId) {
-  const sessions = taskSessions(resourceId);
-  if (sessions.length === 0) return noTaskSessionState();
-
-  const recentOutput = sessions.filter((session) => hasRecentAgentOutput(session));
-  if (recentOutput.length > 0) {
-    return {
-      kind: "active",
-      className: "task-session-active",
-      iconName: "circle-dot",
-      label: taskSessionLabel(recentOutput.length, "output in the last minute"),
-    };
-  }
-
-  const waitingInput = sessions.filter((session) => session.agentRunStatus === "idle");
-  if (waitingInput.length > 0) {
-    return {
-      kind: "waiting",
-      className: "task-session-waiting",
-      iconName: "message-circle",
-      label: taskSessionLabel(waitingInput.length, "waiting for input"),
-    };
-  }
-
+function taskOperationalState(item) {
+  const sessions = taskAgentSessions(item.id);
+  const locks = taskLocks(item.id);
+  const primary = deriveTaskPrimaryState(item.autoRun, sessions);
+  const lock = deriveTaskLockState(locks);
   return {
-    kind: "quiet",
-    className: "task-session-quiet",
-    iconName: "clock",
-    label: taskSessionLabel(sessions.length, "without recent output"),
+    ...primary,
+    lock,
+    label: taskOperationalLabel(item.autoRun, sessions, lock, primary),
   };
 }
 
-function taskSessions(resourceId) {
-  if (!resourceId) return [];
-  const matched = [];
-  const seen = new Set();
-  for (const session of state.tree?.sessions || []) {
-    const controls = sessionControls(session);
-    const controlsResource = controls.some((control) => control.resourceId === resourceId);
-    if (session.resourceId === resourceId || controlsResource) {
-      const key = session.id || `${resourceId}:${matched.length}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        matched.push(session);
-      }
-    }
+function deriveTaskPrimaryState(autoRun, sessions) {
+  const autoRunState = autoRun?.state || "";
+  const approval = sessions.find((session) => session.agentRunStatus === "waiting_approval");
+  const active = sessions.find((session) => ["starting", "running"].includes(session.agentRunStatus));
+  const idle = sessions.find((session) => session.agentRunStatus === "idle");
+
+  if (autoRunState === "failed") {
+    return taskPrimaryState("failed", "task-status-danger", "triangle-alert", "AutoRun failed");
   }
-  return matched;
+  if (approval) {
+    return taskPrimaryState("approval", "task-status-attention", "shield-question", "Session waiting for approval", approval);
+  }
+  if (autoRunState === "running") {
+    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running"].includes(session.agentRunStatus));
+    if (scheduler) {
+      return taskPrimaryState("auto-running", "task-status-auto-running", "loader-circle", "AutoRun running", scheduler);
+    }
+    return taskPrimaryState("recovering", "task-status-attention", "rotate-ccw", "AutoRun waiting for scheduler recovery");
+  }
+  if (active) {
+    return taskPrimaryState("session-running", "task-status-session-running", "bot", "Agent session running", active);
+  }
+  if (autoRunState === "paused") {
+    return taskPrimaryState("paused", "task-status-attention", "square", "AutoRun paused");
+  }
+  if (idle) {
+    return taskPrimaryState("session-idle", "task-status-info", "message-square", "Session waiting for input", idle);
+  }
+  if (autoRunState === "waiting") {
+    return taskPrimaryState("waiting", "task-status-attention", "git-branch", "AutoRun waiting for dependencies");
+  }
+  if (autoRunState === "queued") {
+    return taskPrimaryState("queued", "task-status-queued", "clock", "AutoRun queued");
+  }
+  if (autoRunState === "completed") {
+    return taskPrimaryState("completed", "task-status-completed", "check-circle-2", "AutoRun completed");
+  }
+  return noTaskOperationalState();
 }
 
-function taskSessionStateKey() {
+function taskPrimaryState(kind, className, iconName, primaryLabel, session = null) {
+  return {
+    kind,
+    className,
+    iconName,
+    primaryLabel,
+    recentOutput: Boolean(session && hasRecentAgentOutput(session)),
+  };
+}
+
+function taskAgentSessions(resourceId) {
+  if (!resourceId) return [];
+  return (state.tree?.sessions || []).filter((session) => session.resourceId === resourceId);
+}
+
+function taskLocks(resourceId) {
+  if (!resourceId) return [];
+  return (state.tree?.sessions || []).filter((session) => sessionControls(session).some((control) => control.resourceId === resourceId));
+}
+
+function deriveTaskLockState(locks) {
+  if (locks.length === 0) return null;
+  const external = locks.find((session) => session.source === "external");
+  const owner = external || locks[0];
+  const count = locks.length;
+  const ownerLabel = taskLockOwnerLabel(owner);
+  return {
+    kind: external ? "external" : "internal",
+    className: external ? "task-lock-external" : "task-lock-internal",
+    label: count > 1 ? `Locked by ${count} sessions including ${ownerLabel}` : `Locked by ${ownerLabel}`,
+  };
+}
+
+function taskLockOwnerLabel(session) {
+  if (session.source === "external") return "an external session";
+  const agent = (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId);
+  return `${agent?.name || session.agentRunAgentId || providerName(session.agentRunProvider) || "Forge GUI"} session`;
+}
+
+function taskOperationalLabel(autoRun, sessions, lock, primary) {
+  const parts = [];
+  if (autoRun) {
+    parts.push(`AutoRun ${autoRun.state}, generation ${autoRun.generation}`);
+  }
+  if (sessions.length === 1) {
+    parts.push(taskAgentSessionLabel(sessions[0]));
+  } else if (sessions.length > 1) {
+    const statuses = [...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ");
+    parts.push(`${sessions.length} agent sessions: ${statuses}`);
+  }
+  if (primary.kind === "recovering") {
+    parts.push("No matching active scheduler session");
+  }
+  if (lock) parts.push(lock.label);
+  return parts.join(" · ");
+}
+
+function taskAgentSessionLabel(session) {
+  const role = session.schedulerTurn ? "AutoRun session" : "Agent session";
+  const status = session.agentRunStatus || "open";
+  return `${role} ${status.replace("waiting_approval", "waiting for approval")}`;
+}
+
+function taskOperationalStateKey() {
   if (!state.tree) return "";
   const parts = [];
   for (const project of state.tree.projects || []) {
     for (const task of project.children || []) {
-      const sessionState = taskSessionState(task.id);
-      parts.push(`${task.id}:${sessionState.kind}:${sessionState.iconName}:${sessionState.label}`);
+      const taskState = taskOperationalState(task);
+      parts.push(`${task.id}:${taskState.kind}:${taskState.iconName}:${taskState.recentOutput}:${taskState.lock?.kind || "none"}:${taskState.label}`);
     }
   }
   return parts.join("|");
@@ -408,15 +483,48 @@ function taskSessionStateKey() {
 function hasRecentAgentOutput(session) {
   const outputAt = new Date(session.agentRunLastOutputAt || "").getTime();
   if (Number.isFinite(outputAt)) {
-    return Date.now() - outputAt <= TASK_OUTPUT_ACTIVE_WINDOW_MS;
+    return Date.now() - outputAt <= TASK_OUTPUT_FRESH_WINDOW_MS;
   }
   if (!["running", "starting"].includes(session.agentRunStatus)) return false;
   const updatedAt = new Date(session.agentRunUpdatedAt || "").getTime();
-  return Number.isFinite(updatedAt) && Date.now() - updatedAt <= TASK_OUTPUT_ACTIVE_WINDOW_MS;
+  return Number.isFinite(updatedAt) && Date.now() - updatedAt <= TASK_OUTPUT_FRESH_WINDOW_MS;
 }
 
-function taskSessionLabel(count, description) {
-  return `${count} open ${count === 1 ? "session" : "sessions"} ${description}`;
+function bindTaskStatusTooltip(button, label) {
+  const tooltip = taskStatusTooltip();
+  button.setAttribute("aria-describedby", tooltip.id);
+  button.addEventListener("mouseenter", () => showTaskStatusTooltip(button, label));
+  button.addEventListener("mouseleave", hideTaskStatusTooltip);
+  button.addEventListener("focus", () => showTaskStatusTooltip(button, label));
+  button.addEventListener("blur", hideTaskStatusTooltip);
+}
+
+function taskStatusTooltip() {
+  let tooltip = $("taskStatusTooltip");
+  if (tooltip) return tooltip;
+  tooltip = document.createElement("div");
+  tooltip.id = "taskStatusTooltip";
+  tooltip.className = "task-status-tooltip";
+  tooltip.setAttribute("role", "tooltip");
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+  return tooltip;
+}
+
+function showTaskStatusTooltip(button, label) {
+  const tooltip = taskStatusTooltip();
+  tooltip.textContent = label;
+  tooltip.hidden = false;
+  const rect = button.getBoundingClientRect();
+  const left = Math.min(rect.right + 8, window.innerWidth - tooltip.offsetWidth - 8);
+  const top = Math.max(8, Math.min(rect.top + (rect.height - tooltip.offsetHeight) / 2, window.innerHeight - tooltip.offsetHeight - 8));
+  tooltip.style.left = `${Math.max(8, left)}px`;
+  tooltip.style.top = `${top}px`;
+}
+
+function hideTaskStatusTooltip() {
+  const tooltip = $("taskStatusTooltip");
+  if (tooltip) tooltip.hidden = true;
 }
 
 async function selectResource(id, options = {}) {
