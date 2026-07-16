@@ -365,6 +365,43 @@ func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
 	}
 }
 
+func TestAgentChooserSelectionUpdatesImmediately(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	start := strings.Index(source, `document.querySelectorAll("[data-agent-choice]").forEach((button) => {`)
+	if start < 0 {
+		t.Fatal("agent chooser click handler is missing")
+	}
+	end := strings.Index(source[start:], `const stopButton = $("agentStopButton");`)
+	if end < 0 {
+		t.Fatal("agent chooser click handler boundary is missing")
+	}
+	handler := source[start : start+end]
+	wants := []string{
+		`state.agent.agentId = button.dataset.agentChoice;`,
+		`state.agent.agentChooserOpen = false;`,
+		`renderTTYComposer();`,
+		`bindAgentEvents();`,
+	}
+	previous := -1
+	for _, want := range wants {
+		index := strings.Index(handler, want)
+		if index < 0 {
+			t.Fatalf("agent chooser click handler is missing %q", want)
+		}
+		if index <= previous {
+			t.Fatalf("agent chooser click handler runs %q out of order", want)
+		}
+		previous = index
+	}
+	if strings.Contains(handler, `applySelectedAgentOptions`) {
+		t.Fatal("agent chooser click handler must not call the removed option synchronization helper")
+	}
+}
+
 func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

@@ -2763,7 +2763,6 @@ function bindAgentEvents() {
       event.stopPropagation();
       state.agent.agentId = button.dataset.agentChoice;
       state.agent.agentChooserOpen = false;
-      applySelectedAgentOptions();
       renderTTYComposer();
       bindAgentEvents();
       refreshIcons();
