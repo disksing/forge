@@ -42,6 +42,12 @@ const state = {
     prompt: "",
     submitting: false,
   },
+  uploadDialog: {
+    open: false,
+    runId: "",
+    items: [],
+    nextId: 1,
+  },
   autoRefreshTimer: null,
   autoRefreshInFlight: false,
   iconRefreshScheduled: false,
@@ -530,6 +536,7 @@ function hideTaskStatusTooltip() {
 async function selectResource(id, options = {}) {
   const selectionChanged = state.selectedId !== id;
   if (selectionChanged) {
+    discardAgentUploadDialog();
     state.preview = null;
     state.diff = null;
     closeAgentStream();
@@ -1567,6 +1574,7 @@ async function reloadAgentRunsForSelection() {
 }
 
 function resetAgentState() {
+  discardAgentUploadDialog();
   closeAgentStream();
   state.agent.runs = [];
   state.agent.activeRunId = "";
@@ -2062,6 +2070,7 @@ function renderTTYComposer() {
         <span>&gt;</span>
         <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
+        <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>
       </form>
       ${agentComposerActions({ includeClose: true })}
     `;
@@ -2757,6 +2766,8 @@ function bindAgentEvents() {
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
   };
+  const uploadButton = $("agentUploadButton");
+  if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
   document.querySelectorAll("[data-agent-run]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -2814,6 +2825,232 @@ async function sendAgentInput(text) {
     method: "POST",
     body: JSON.stringify({ text }),
   });
+}
+
+function openAgentUploadDialog() {
+  const run = currentAgentRun();
+  if (!run || !isLiveAgentRun(run)) {
+    toast("Start or resume an agent session before uploading files.");
+    return;
+  }
+  const input = $("ttyInput");
+  if (input) state.agent.ttyDraft = input.value;
+  state.uploadDialog = {
+    open: true,
+    runId: run.id,
+    items: [],
+    nextId: 1,
+  };
+  renderAgentUploadDialog();
+  $("agentUploadDropZone")?.focus({ preventScroll: true });
+}
+
+function closeAgentUploadDialog() {
+  if (!state.uploadDialog.open || uploadInProgress()) return;
+  const paths = state.uploadDialog.items
+    .filter((item) => item.status === "success" && item.path)
+    .map((item) => item.path);
+  if (paths.length > 0 && state.uploadDialog.runId === state.agent.activeRunId) {
+    state.agent.ttyDraft = appendUploadedPaths(state.agent.ttyDraft, paths);
+    state.agent.ttyMultiline = state.agent.ttyDraft.includes("\n");
+  }
+  discardAgentUploadDialog();
+  const composer = $("ttyComposer");
+  if (composer) delete composer.dataset.composerKey;
+  renderTTYComposer();
+  bindAgentEvents();
+  $("ttyInput")?.focus({ preventScroll: true });
+  refreshIcons();
+}
+
+function discardAgentUploadDialog() {
+  state.uploadDialog = {
+    open: false,
+    runId: "",
+    items: [],
+    nextId: 1,
+  };
+  const root = $("uploadDialogRoot");
+  if (root) root.innerHTML = "";
+}
+
+function appendUploadedPaths(draft, paths) {
+  const block = paths.filter(Boolean).join("\n");
+  if (!block) return draft;
+  if (!draft) return block;
+  return `${draft}${draft.endsWith("\n") ? "" : "\n"}${block}`;
+}
+
+function uploadInProgress() {
+  return state.uploadDialog.items.some((item) => item.status === "queued" || item.status === "uploading");
+}
+
+function renderAgentUploadDialog() {
+  const root = $("uploadDialogRoot");
+  if (!root) return;
+  if (!state.uploadDialog.open) {
+    root.innerHTML = "";
+    return;
+  }
+  const busy = uploadInProgress();
+  const items = state.uploadDialog.items;
+  root.innerHTML = `
+    <div class="upload-dialog-layer" role="presentation">
+      <div class="upload-dialog-backdrop" data-upload-close="true"></div>
+      <section class="upload-dialog" role="dialog" aria-modal="true" aria-label="Upload files">
+        <header class="upload-dialog-header">
+          <div>
+            <strong>Upload files</strong>
+            <span>Files are saved in this session's artifacts/upload/ directory.</span>
+          </div>
+          <button class="icon-button" type="button" data-upload-close="true" title="Close" aria-label="Close" ${busy ? "disabled" : ""}>${icon("x")}</button>
+        </header>
+        <div class="upload-dialog-content">
+          <input id="agentUploadInput" type="file" multiple hidden />
+          <div id="agentUploadDropZone" class="upload-drop-zone" tabindex="0">
+            ${icon("clipboard-paste")}
+            <strong>Paste files from the clipboard</strong>
+            <span>or choose one or more files from this device</span>
+            <button id="agentUploadChooseButton" type="button" class="secondary-button">${icon("folder-open")}<span>Choose files</span></button>
+          </div>
+          <div class="upload-list" aria-live="polite">
+            ${items.length ? items.map(uploadItemRow).join("") : `<div class="upload-empty">Selected or pasted files upload automatically.</div>`}
+          </div>
+        </div>
+        <footer class="upload-dialog-footer">
+          <span>${busy ? "Wait for uploads to finish before closing." : uploadSummary(items)}</span>
+          <button type="button" data-upload-close="true" ${busy ? "disabled" : ""}>Done</button>
+        </footer>
+      </section>
+    </div>
+  `;
+  bindAgentUploadDialogEvents();
+  refreshIcons();
+}
+
+function uploadItemRow(item) {
+  const presentation = {
+    queued: { icon: "clock-3", label: "Queued" },
+    uploading: { icon: "loader-circle", label: `Uploading ${item.progress}%` },
+    success: { icon: "circle-check", label: "Uploaded" },
+    error: { icon: "triangle-alert", label: "Failed" },
+  }[item.status] || { icon: "file", label: item.status };
+  return `
+    <div class="upload-item upload-item-${escapeHTML(item.status)}">
+      <div class="upload-item-heading">
+        ${icon(presentation.icon)}
+        <span><strong>${escapeHTML(item.name)}</strong><small>${formatBytes(item.size)}</small></span>
+        <em>${escapeHTML(presentation.label)}</em>
+      </div>
+      <div class="upload-progress" role="progressbar" aria-label="${escapeHTML(item.name)}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${item.progress}">
+        <span style="width: ${item.progress}%"></span>
+      </div>
+      ${item.status === "success" ? `<small class="upload-result-path">${escapeHTML(item.path)}</small>` : ""}
+      ${item.status === "error" ? `<small class="upload-error">${escapeHTML(item.error || "Upload failed")}</small>` : ""}
+    </div>
+  `;
+}
+
+function uploadSummary(items) {
+  if (items.length === 0) return "No files selected.";
+  const succeeded = items.filter((item) => item.status === "success").length;
+  const failed = items.filter((item) => item.status === "error").length;
+  return `${succeeded} uploaded${failed ? ` · ${failed} failed` : ""}. Successful paths will be added to the chat input.`;
+}
+
+function bindAgentUploadDialogEvents() {
+  const input = $("agentUploadInput");
+  const choose = $("agentUploadChooseButton");
+  if (choose && input) choose.onclick = () => input.click();
+  if (input) input.onchange = () => enqueueAgentUploads(input.files);
+  const dropZone = $("agentUploadDropZone");
+  if (dropZone) {
+    dropZone.ondragover = (event) => {
+      event.preventDefault();
+      dropZone.classList.add("dragging");
+    };
+    dropZone.ondragleave = () => dropZone.classList.remove("dragging");
+    dropZone.ondrop = (event) => {
+      event.preventDefault();
+      enqueueAgentUploads(event.dataTransfer?.files);
+    };
+    dropZone.onkeydown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        input?.click();
+      }
+    };
+  }
+  document.querySelectorAll("[data-upload-close]").forEach((node) => {
+    node.addEventListener("click", closeAgentUploadDialog);
+  });
+}
+
+function clipboardUploadFiles(clipboardData) {
+  const itemFiles = Array.from(clipboardData?.items || [])
+    .filter((item) => item.kind === "file")
+    .map((item) => item.getAsFile())
+    .filter(Boolean);
+  return itemFiles.length ? itemFiles : Array.from(clipboardData?.files || []);
+}
+
+function enqueueAgentUploads(files) {
+  const selected = Array.from(files || []);
+  if (!state.uploadDialog.open || selected.length === 0) return;
+  const items = selected.map((file, index) => ({
+    id: state.uploadDialog.nextId++,
+    file,
+    name: file.name || clipboardUploadName(file, index),
+    size: file.size || 0,
+    progress: 0,
+    status: "queued",
+    path: "",
+    error: "",
+  }));
+  state.uploadDialog.items.push(...items);
+  renderAgentUploadDialog();
+  items.forEach(uploadAgentFile);
+}
+
+function clipboardUploadName(file, index) {
+  const extensions = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp", "application/pdf": "pdf" };
+  const extension = extensions[file.type] || "bin";
+  return `clipboard-${Date.now()}-${index + 1}.${extension}`;
+}
+
+function uploadAgentFile(item) {
+  item.status = "uploading";
+  renderAgentUploadDialog();
+  const request = new XMLHttpRequest();
+  const endpoint = `/api/workspaces/${encodeURIComponent(state.activeWorkspaceId)}/agent/runs/${encodeURIComponent(state.uploadDialog.runId)}/uploads`;
+  request.open("POST", endpoint);
+  request.responseType = "json";
+  request.upload.addEventListener("progress", (event) => {
+    if (!event.lengthComputable) return;
+    item.progress = Math.min(99, Math.round((event.loaded / event.total) * 100));
+    renderAgentUploadDialog();
+  });
+  request.addEventListener("load", () => {
+    const response = request.response || {};
+    if (request.status >= 200 && request.status < 300) {
+      item.status = "success";
+      item.progress = 100;
+      item.path = response.path || "";
+      item.name = response.name || item.name;
+    } else {
+      item.status = "error";
+      item.error = response.error || `${request.status} ${request.statusText}`;
+    }
+    renderAgentUploadDialog();
+  });
+  request.addEventListener("error", () => {
+    item.status = "error";
+    item.error = "Network error while uploading.";
+    renderAgentUploadDialog();
+  });
+  const body = new FormData();
+  body.append("file", item.file, item.name);
+  request.send(body);
 }
 
 async function stopAgentRun() {
@@ -3672,7 +3909,9 @@ $("mobileDetailsButton").onclick = () => setMobileView("details");
 $("mobileChatButton").onclick = () => setMobileView("chat");
 
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.mobile.sidebarOpen) {
+  if (event.key === "Escape" && state.uploadDialog.open) {
+    closeAgentUploadDialog();
+  } else if (event.key === "Escape" && state.mobile.sidebarOpen) {
     setMobileSidebar(false);
   } else if (event.key === "Escape" && state.diff) {
     closeDiff();
@@ -3695,6 +3934,14 @@ document.addEventListener("keydown", (event) => {
     bindAgentEvents();
     refreshIcons();
   }
+});
+
+document.addEventListener("paste", (event) => {
+  if (!state.uploadDialog.open) return;
+  const files = clipboardUploadFiles(event.clipboardData);
+  if (files.length === 0) return;
+  event.preventDefault();
+  enqueueAgentUploads(files);
 });
 
 document.addEventListener("click", (event) => {

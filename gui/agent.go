@@ -12,12 +12,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 type agentRun struct {
@@ -64,7 +66,14 @@ type agentRunDetail struct {
 const (
 	agentEventTailBytes = 1024 * 1024
 	agentEventMaxCount  = 500
+	agentUploadMaxBytes = 512 * 1024 * 1024
 )
+
+type agentUploadResponse struct {
+	Path string `json:"path"`
+	Name string `json:"name"`
+	Size int64  `json:"size"`
+}
 
 var agentIndexMu sync.Mutex
 
@@ -173,6 +182,12 @@ func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceI
 			return
 		}
 		m.sendInput(w, r, workspaceID, runID)
+	case "uploads":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		m.uploadFile(w, r, workspaceID, runID)
 	case "stop":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -205,6 +220,149 @@ func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceI
 		m.stream(w, r, workspaceID, runID)
 	default:
 		http.NotFound(w, r)
+	}
+}
+
+func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
+	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	var run agentRun
+	if rt != nil {
+		rt.mu.Lock()
+		run = rt.run
+		rt.mu.Unlock()
+	} else {
+		run, _, _, err = loadAgentRunDetail(workspace.Path, runID)
+		if err != nil {
+			writeError(w, err, http.StatusNotFound)
+			return
+		}
+	}
+	if run.WorkspaceID != workspaceID {
+		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, agentUploadMaxBytes)
+	file, header, err := r.FormFile("file")
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	if err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeError(w, fmt.Errorf("file exceeds the %d MiB upload limit", agentUploadMaxBytes/(1024*1024)), http.StatusRequestEntityTooLarge)
+			return
+		}
+		writeError(w, errors.New("multipart field file is required"), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	uploadDir, err := secureAgentUploadDir(workspace.Path, run.Cwd)
+	if err != nil {
+		writeError(w, fmt.Errorf("prepare upload directory: %w", err), http.StatusBadRequest)
+		return
+	}
+	name := safeUploadName(header.Filename)
+	destination, storedName, output, err := createUniqueUpload(uploadDir, name)
+	if err != nil {
+		writeError(w, fmt.Errorf("create upload: %w", err), http.StatusInternalServerError)
+		return
+	}
+	written, copyErr := io.Copy(output, file)
+	closeErr := output.Close()
+	if copyErr != nil || closeErr != nil {
+		_ = os.Remove(destination)
+		if copyErr != nil {
+			writeError(w, fmt.Errorf("store upload: %w", copyErr), http.StatusInternalServerError)
+		} else {
+			writeError(w, fmt.Errorf("store upload: %w", closeErr), http.StatusInternalServerError)
+		}
+		return
+	}
+	writeJSON(w, agentUploadResponse{
+		Path: path.Join("artifacts", "upload", storedName),
+		Name: storedName,
+		Size: written,
+	})
+}
+
+func secureAgentUploadDir(workspacePath, cwd string) (string, error) {
+	workspaceAbs, err := filepath.Abs(workspacePath)
+	if err != nil {
+		return "", err
+	}
+	cwdAbs, err := filepath.Abs(cwd)
+	if err != nil {
+		return "", err
+	}
+	if err := ensurePathInside(workspaceAbs, cwdAbs); err != nil {
+		return "", err
+	}
+	workspaceEval, err := filepath.EvalSymlinks(workspaceAbs)
+	if err != nil {
+		return "", err
+	}
+	cwdEval, err := filepath.EvalSymlinks(cwdAbs)
+	if err != nil {
+		return "", err
+	}
+	if err := ensurePathInside(workspaceEval, cwdEval); err != nil {
+		return "", err
+	}
+	uploadDir := filepath.Join(cwdAbs, "artifacts", "upload")
+	if err := os.MkdirAll(uploadDir, 0o755); err != nil {
+		return "", err
+	}
+	uploadEval, err := filepath.EvalSymlinks(uploadDir)
+	if err != nil {
+		return "", err
+	}
+	if err := ensurePathInside(cwdEval, uploadEval); err != nil {
+		return "", errors.New("upload directory escapes the agent session")
+	}
+	return uploadEval, nil
+}
+
+func safeUploadName(name string) string {
+	name = strings.ReplaceAll(name, "\\", "/")
+	name = path.Base(name)
+	name = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || strings.ContainsRune(`<>:"/\\|?*`, r) {
+			return '_'
+		}
+		return r
+	}, name)
+	name = strings.Trim(name, " .")
+	if name == "" || name == "." || name == ".." {
+		return "upload"
+	}
+	return name
+}
+
+func createUniqueUpload(dir, name string) (string, string, *os.File, error) {
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	if stem == "" {
+		stem, ext = name, ""
+	}
+	for index := 1; ; index++ {
+		candidate := name
+		if index > 1 {
+			candidate = fmt.Sprintf("%s (%d)%s", stem, index, ext)
+		}
+		destination := filepath.Join(dir, candidate)
+		file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err == nil {
+			return destination, candidate, file, nil
+		}
+		if !os.IsExist(err) {
+			return "", "", nil, err
+		}
 	}
 }
 

@@ -157,6 +157,50 @@ func TestWorkspaceAgentsEditorFillsAvailableWidth(t *testing.T) {
 	}
 }
 
+func TestAgentUploadUIIncludesSelectionPasteProgressAndDraftBackfill(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(indexData), `id="uploadDialogRoot"`) {
+		t.Fatal("agent upload dialog root is missing")
+	}
+
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`id="agentUploadButton" class="tty-upload-button"`,
+		`id="agentUploadInput" type="file" multiple`,
+		`document.addEventListener("paste"`,
+		`clipboardUploadFiles(event.clipboardData)`,
+		`items.forEach(uploadAgentFile)`,
+		`request.upload.addEventListener("progress"`,
+		`item.status = "success"`,
+		`item.status = "error"`,
+		`.filter((item) => item.status === "success" && item.path)`,
+		`function appendUploadedPaths(draft, paths)`,
+		"return `${draft}${draft.endsWith(\"\\n\") ? \"\" : \"\\n\"}${block}`;",
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("agent upload UI is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{".upload-dialog-layer", ".upload-drop-zone", ".upload-progress", ".upload-item-success", ".upload-item-error"} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("agent upload UI styles are missing %q", want)
+		}
+	}
+}
+
 func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -38,6 +40,130 @@ func (p *recordingAgentProvider) SendInput(_ *agentRuntime, text string) error {
 	p.inputCalls++
 	p.inputText = text
 	return p.inputErr
+}
+
+func TestAgentUploadStoresFilesInSessionArtifactsAndAvoidsOverwrite(t *testing.T) {
+	workspace := t.TempDir()
+	cwd := filepath.Join(workspace, "project1", "task1")
+	if err := os.MkdirAll(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	m := testUploadAgentManager(t, workspace, cwd)
+
+	first := performAgentUpload(t, m, "../../report.txt", "first")
+	if first.Path != "artifacts/upload/report.txt" || first.Name != "report.txt" || first.Size != 5 {
+		t.Fatalf("unexpected first upload response: %#v", first)
+	}
+	second := performAgentUpload(t, m, "report.txt", "second")
+	if second.Path != "artifacts/upload/report (2).txt" || second.Name != "report (2).txt" || second.Size != 6 {
+		t.Fatalf("unexpected conflict upload response: %#v", second)
+	}
+
+	for name, want := range map[string]string{"report.txt": "first", "report (2).txt": "second"} {
+		data, err := os.ReadFile(filepath.Join(cwd, "artifacts", "upload", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != want {
+			t.Fatalf("unexpected content for %s: %q", name, data)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(workspace, "report.txt")); !os.IsNotExist(err) {
+		t.Fatalf("malicious filename escaped upload directory: %v", err)
+	}
+}
+
+func TestAgentUploadRejectsEscapingUploadSymlink(t *testing.T) {
+	workspace := t.TempDir()
+	cwd := filepath.Join(workspace, "project1", "task1")
+	outside := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(cwd, "artifacts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(cwd, "artifacts", "upload")); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	m := testUploadAgentManager(t, workspace, cwd)
+
+	req := agentUploadRequest(t, "escape.txt", "blocked")
+	rec := httptest.NewRecorder()
+	m.handle(rec, req, "workspace-one", []string{"runs", "run-one", "uploads"})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "escapes the agent session") {
+		t.Fatalf("expected escaping symlink rejection, got %d: %s", rec.Code, rec.Body.String())
+	}
+	entries, err := os.ReadDir(outside)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("upload wrote through escaping symlink: %#v", entries)
+	}
+}
+
+func TestSafeUploadNameRemovesPathsAndUnsafeCharacters(t *testing.T) {
+	for input, want := range map[string]string{
+		"../../notes.md":      "notes.md",
+		`..\\..\\windows.txt`: "windows.txt",
+		"bad\x00name?.png":    "bad_name_.png",
+		" . ":                 "upload",
+		"截图 1.png":            "截图 1.png",
+	} {
+		if got := safeUploadName(input); got != want {
+			t.Fatalf("safeUploadName(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func testUploadAgentManager(t *testing.T, workspace, cwd string) *agentManager {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configData, err := json.Marshal(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, configData, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newAgentManager(&server{config: configPath})
+	m.registerRuntime(&agentRuntime{
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Cwd: cwd, Status: "idle"},
+	})
+	return m
+}
+
+func performAgentUpload(t *testing.T, m *agentManager, name, content string) agentUploadResponse {
+	t.Helper()
+	req := agentUploadRequest(t, name, content)
+	rec := httptest.NewRecorder()
+	m.handle(rec, req, "workspace-one", []string{"runs", "run-one", "uploads"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected upload success, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response agentUploadResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	return response
+}
+
+func agentUploadRequest(t *testing.T, name, content string) *http.Request {
+	t.Helper()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write([]byte(content)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/agent/runs/run-one/uploads", &body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
 }
 
 func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
