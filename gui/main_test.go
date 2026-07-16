@@ -710,7 +710,7 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	}
 	app := string(appData)
 	for _, want := range []string{
-		`markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events)))`,
+		`markTransientAgentReasoning(markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events))))`,
 		`<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`,
 		`function groupToolEvents(events)`,
 		`previous.collapsed = true`,
@@ -721,6 +721,10 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 		`function toolEventDetails(event)`,
 		`function markTransientAgentStatus(events)`,
 		`if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus)`,
+		`function markTransientAgentReasoning(events)`,
+		`if (activeReasoning >= 0) result[activeReasoning].isActiveTransientReasoning = true`,
+		`return event?.type !== "reasoning_delta" && event?.type !== "metadata"`,
+		`if (event.type === "reasoning_delta") return Boolean(event.isActiveTransientReasoning)`,
 		`function isAgentSessionReady(run)`,
 		`function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run))`,
 	} {

@@ -1780,7 +1780,7 @@ function canMergeAgentDelta(previous, next) {
 }
 
 function displayAgentEvents(events) {
-  const coalesced = markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events)));
+  const coalesced = markTransientAgentReasoning(markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events))));
   const completedItems = new Map();
   for (const event of coalesced) {
     if (event.type === "tool" && event.method === "item/completed") {
@@ -1805,6 +1805,25 @@ function markTransientAgentStatus(events) {
   }
   if (activeStatus >= 0) result[activeStatus].isActiveTransientStatus = true;
   return result;
+}
+
+function markTransientAgentReasoning(events) {
+  const result = events.map((event) => ({ ...event }));
+  let activeReasoning = -1;
+  for (let index = 0; index < result.length; index++) {
+    const event = result[index];
+    if (event.type === "reasoning_delta") {
+      activeReasoning = index;
+    } else if (clearsTransientAgentReasoning(event)) {
+      activeReasoning = -1;
+    }
+  }
+  if (activeReasoning >= 0) result[activeReasoning].isActiveTransientReasoning = true;
+  return result;
+}
+
+function clearsTransientAgentReasoning(event) {
+  return event?.type !== "reasoning_delta" && event?.type !== "metadata";
 }
 
 function isTransientAgentStatus(event) {
@@ -1871,7 +1890,8 @@ function groupToolEvents(events) {
 
 function shouldDisplayAgentEvent(event, completedItems = new Map()) {
   if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus);
-  if (event.type === "assistant_delta" || event.type === "reasoning_delta" || event.type === "approval_requested" || event.type === "error") return true;
+  if (event.type === "reasoning_delta") return Boolean(event.isActiveTransientReasoning);
+  if (event.type === "assistant_delta" || event.type === "approval_requested" || event.type === "error") return true;
   if (event.type === "metadata") return false;
   if (event.method === "session/ready" || event.method === "turn/failed") return true;
   if (event.type === "user") return true;

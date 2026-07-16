@@ -37,7 +37,7 @@ OpenCode provider 作为 ACP Client：
 - 在 `initialize` 中声明 Client 能力：`fs.readTextFile`、`fs.writeTextFile`、`terminal`。
 - 实现 ACP Client 方法：`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`session/request_permission`。
 - 将 `session/update` 通知映射为 forge-gui 事件类型（`assistant_delta`、`tool`、`system` 等）。
-- 将 `agent_thought_chunk` 按 `messageId` 聚合为默认折叠的 reasoning 内容；usage、available commands 等元数据不进入聊天正文。
+- 将 `agent_thought_chunk` 按 `messageId` 聚合为瞬时 reasoning 内容，在工具调用、回答或回合状态到来后移除；被 reasoning 分隔的工具调用会随之重新合并，usage、available commands 等元数据不进入聊天正文。
 - 将 `session/request_permission` 映射为现有审批 UI。
 - 文件与终端操作严格限制在 workspace 目录内。
 - scheduler turn 结束时读取 AutoRun 的即时状态；若仍为 `running`，记录 retry 并在共享三次预算内继续。
