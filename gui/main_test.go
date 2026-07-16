@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +12,40 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(indexData), `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`) {
+		t.Fatal("SVG favicon link is missing from the page head")
+	}
+
+	staticRoot, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
+	rec := httptest.NewRecorder()
+	serveStatic(staticRoot, rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("favicon request returned %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "image/svg+xml" {
+		t.Fatalf("favicon content type is %q, want image/svg+xml", got)
+	}
+
+	var icon struct {
+		XMLName xml.Name
+	}
+	if err := xml.Unmarshal(rec.Body.Bytes(), &icon); err != nil {
+		t.Fatalf("favicon is not valid XML: %v", err)
+	}
+	if icon.XMLName.Local != "svg" {
+		t.Fatalf("favicon root element is %q, want svg", icon.XMLName.Local)
+	}
+}
 
 func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	workspace := t.TempDir()
