@@ -109,6 +109,43 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 	}
 }
 
+func TestCreateTaskDialogIsLargeAndResponsive(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(appData), `class="create-dialog${isTask ? " create-task-dialog" : ""}"`) {
+		t.Fatal("create task dialog should have a task-specific class")
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.create-task-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(900px, calc(100vw - 48px));
+  height: min(760px, calc(100vh - 48px));
+  height: min(760px, calc(100dvh - 48px));`,
+		`.create-task-dialog .create-dialog-form {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;`,
+		`.create-task-dialog textarea[name="detail"] {
+  min-height: clamp(180px, 32vh, 340px);`,
+		`.create-task-dialog {
+    height: calc(100vh - 24px);
+    height: calc(100dvh - 24px);`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("responsive create task dialog styles are missing %q", want)
+		}
+	}
+}
+
 func TestArtifactPreviewPreservesScrollAndSupportsNewWindow(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
