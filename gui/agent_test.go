@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -174,6 +175,100 @@ func TestAgentMessageDeltaTextPreservesWhitespace(t *testing.T) {
 	if text != " \n" {
 		t.Fatalf("expected whitespace delta to be preserved, got %q", text)
 	}
+}
+
+func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
+	workspace := t.TempDir()
+	m := testAgentManagerForWorkspace(t, workspace)
+	events := make([]agentEvent, agentEventMaxCount+20)
+	for i := range events {
+		events[i] = agentEvent{ID: int64(i + 1), Type: "event", Text: fmt.Sprintf("event-%d", i+1)}
+	}
+	rt := &agentRuntime{
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
+		events:    events,
+	}
+	m.registerRuntime(rt)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/agent/runs/run-one", nil)
+	rec := httptest.NewRecorder()
+	m.getRun(rec, req, "workspace-one", "run-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var detail agentRunDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if len(detail.Events) != agentEventMaxCount || detail.Events[0].ID != 21 || detail.Events[len(detail.Events)-1].ID != int64(len(events)) {
+		t.Fatalf("unexpected active event tail: first=%d last=%d count=%d", detail.Events[0].ID, detail.Events[len(detail.Events)-1].ID, len(detail.Events))
+	}
+	if !detail.EventsTruncated || !detail.EventsHasMore {
+		t.Fatalf("expected active history to advertise older events: %#v", detail)
+	}
+}
+
+func TestAgentRuntimeRetainsBoundedEventTail(t *testing.T) {
+	workspace := t.TempDir()
+	initial := make([]agentEvent, agentEventMaxCount)
+	for i := range initial {
+		initial[i] = agentEvent{ID: int64(i + 1), Type: "event"}
+	}
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:         agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
+		events:      initial,
+		nextEventID: int64(agentEventMaxCount + 1),
+	}
+	m := newAgentManager(&server{})
+
+	rt.addEvent(m, "event", "test", "new event", nil, "")
+	events := rt.snapshotEvents()
+	if len(events) != agentEventMaxCount || events[0].ID != 2 || events[len(events)-1].ID != int64(agentEventMaxCount+1) {
+		t.Fatalf("runtime did not retain the bounded tail: first=%d last=%d count=%d", events[0].ID, events[len(events)-1].ID, len(events))
+	}
+}
+
+func TestAgentStreamStartsAfterClientCursor(t *testing.T) {
+	workspace := t.TempDir()
+	m := testAgentManagerForWorkspace(t, workspace)
+	events := make([]agentEvent, 5)
+	for i := range events {
+		events[i] = agentEvent{ID: int64(i + 1), Type: "event", Text: fmt.Sprintf("event-%d", i+1)}
+	}
+	m.registerRuntime(&agentRuntime{
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
+		events:    events,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/agent/runs/run-one/stream?after=3", nil).WithContext(ctx)
+	req.Header.Set("Last-Event-ID", "4")
+	rec := httptest.NewRecorder()
+	m.stream(rec, req, "workspace-one", "run-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "id: 4\n") || !strings.Contains(body, "id: 5\n") {
+		t.Fatalf("stream did not honor the newest client cursor: %q", body)
+	}
+}
+
+func testAgentManagerForWorkspace(t *testing.T, workspace string) *agentManager {
+	t.Helper()
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath}
+	if err := s.saveConfig(config{
+		Version:    1,
+		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return newAgentManager(s)
 }
 
 func TestForgeThreadConfigIncludesSession(t *testing.T) {

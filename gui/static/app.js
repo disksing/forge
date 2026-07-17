@@ -92,11 +92,11 @@ const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
-const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 80;
+const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;
 const AGENT_OLDER_VISIBLE_EVENT_COUNT = 50;
-const AGENT_OLDER_RAW_PAGE_LIMIT = 500;
-const AGENT_INITIAL_AUTO_PAGE_LIMIT = 8;
-const AGENT_MANUAL_AUTO_PAGE_LIMIT = 16;
+const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
+const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
+const AGENT_MANUAL_AUTO_PAGE_LIMIT = 4;
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -1630,6 +1630,16 @@ async function loadAgentRuns() {
   connectAgentStream();
 }
 
+async function refreshAgentRunMetadata() {
+  if (!state.activeWorkspaceId) return;
+  const runs = await fetchAgentRuns();
+  state.agent.runs = runs;
+  if (reconcileActiveAgentRun(runs)) {
+    await loadAgentEvents();
+    connectAgentStream();
+  }
+}
+
 function reconcileActiveAgentRun(runs) {
   const nextRunId = preferredAgentRunID(runs);
   if (state.agent.activeRunId === nextRunId) return false;
@@ -1718,6 +1728,11 @@ function visibleAgentEventCount() {
 function oldestAgentEventID() {
   return state.agent.events.find((event) => event.id > 0)?.id || 0;
 }
+
+function latestAgentEventID() {
+  return state.agent.events.reduce((max, event) => Math.max(max, event.id || 0), 0);
+}
+
 function fetchAgentRuns() {
   const resourceId = selectedAgentResourceId();
   const query = resourceId ? `?resourceId=${encodeURIComponent(resourceId)}` : "";
@@ -1758,7 +1773,9 @@ function connectAgentStream() {
   if (state.agent.streamRunId === state.agent.activeRunId && state.agent.stream) return;
   closeAgentStream();
   const runId = state.agent.activeRunId;
-  const stream = new EventSource(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stream`);
+  const after = latestAgentEventID();
+  const query = after > 0 ? `?after=${encodeURIComponent(after)}` : "";
+  const stream = new EventSource(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stream${query}`);
   stream.onmessage = (event) => {
     try {
       appendAgentEvent(JSON.parse(event.data));
@@ -1767,8 +1784,14 @@ function connectAgentStream() {
     }
   };
   stream.onerror = () => {
-    stream.close();
-    if (state.agent.stream === stream) {
+    if (state.agent.stream !== stream) {
+      stream.close();
+      return;
+    }
+    // Live EventSource connections reconnect automatically and send their
+    // Last-Event-ID. Closed runs have no future events, so stop retrying them.
+    if (!isLiveAgentRun(currentAgentRun())) {
+      stream.close();
       state.agent.stream = null;
       state.agent.streamRunId = "";
     }
@@ -1798,7 +1821,7 @@ function appendAgentEvent(event) {
     state.agent.events.push(event);
   }
   if (["turn/completed", "turn/failed", "error"].includes(event.method) || event.type === "approval_requested") {
-    loadAgentRuns().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
+    refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
     scheduleAgentRender();
   }

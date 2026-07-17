@@ -749,6 +749,33 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	}
 }
 
+func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;`,
+		`const AGENT_OLDER_RAW_PAGE_LIMIT = 250;`,
+		`const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;`,
+		`const AGENT_MANUAL_AUTO_PAGE_LIMIT = 4;`,
+		`function latestAgentEventID()`,
+		`const after = latestAgentEventID();`,
+		`/stream${query}`,
+		`if (!isLiveAgentRun(currentAgentRun()))`,
+		`async function refreshAgentRunMetadata()`,
+		`refreshAgentRunMetadata().then(renderAll)`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("bounded agent history behavior is missing %q", want)
+		}
+	}
+	if strings.Contains(app, `loadAgentRuns().then(renderAll)`) {
+		t.Fatal("turn completion should refresh run metadata without reloading the full event tail")
+	}
+}
+
 func TestAgentChatReasoningIsTransientAndDoesNotSplitToolGroups(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

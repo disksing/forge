@@ -946,9 +946,8 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 		return
 	}
 	if rt != nil {
-		rt.mu.Lock()
-		detail := agentRunDetail{Run: rt.run, Events: append([]agentEvent(nil), rt.events...)}
-		rt.mu.Unlock()
+		run, events, truncated := rt.snapshotDetail()
+		detail := agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated}
 		writeJSON(w, detail)
 		return
 	}
@@ -981,7 +980,8 @@ func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	if rt != nil {
-		writeJSON(w, map[string]any{"events": rt.snapshotEvents(), "hasMore": false})
+		_, events, truncated := rt.snapshotDetail()
+		writeJSON(w, map[string]any{"events": events, "eventsTruncated": truncated, "hasMore": truncated})
 		return
 	}
 	_, events, truncated, err := loadAgentRunDetail(workspace.Path, runID)
@@ -1066,9 +1066,8 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	if rt != nil {
-		rt.mu.Lock()
-		detail := agentRunDetail{Run: rt.run, Events: append([]agentEvent(nil), rt.events...)}
-		rt.mu.Unlock()
+		run, events, truncated := rt.snapshotDetail()
+		detail := agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated}
 		writeJSON(w, detail)
 		return
 	}
@@ -1186,26 +1185,49 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	ch := make(chan agentEvent, 64)
+	afterID := agentStreamAfterID(r)
+	lastSentID := afterID
+	ch := make(chan agentEvent, agentEventMaxCount)
 	m.subscribe(runID, ch)
 	defer m.unsubscribe(runID, ch)
 	var events []agentEvent
 	if rt != nil {
-		events = rt.snapshotEvents()
+		if afterID > 0 {
+			events = rt.snapshotEventsAfter(afterID)
+		} else {
+			_, events, _ = rt.snapshotDetail()
+		}
 	} else {
 		_, events, _, _ = loadAgentRunDetail(workspace.Path, runID)
+		events = agentEventsAfter(events, afterID)
 	}
 	for _, event := range events {
+		if event.ID <= lastSentID {
+			continue
+		}
 		writeSSE(w, event)
+		lastSentID = event.ID
 	}
 	flusher.Flush()
 	if rt == nil {
 		return
 	}
+	// Catch events published while the initial snapshot was being written. The
+	// subscriber may contain the same events, so the ID guard below deduplicates
+	// them while preserving a gap-free handoff from history to live updates.
+	for _, event := range rt.snapshotEventsAfter(lastSentID) {
+		writeSSE(w, event)
+		lastSentID = event.ID
+	}
+	flusher.Flush()
 	for {
 		select {
 		case event := <-ch:
+			if event.ID <= lastSentID {
+				continue
+			}
 			writeSSE(w, event)
+			lastSentID = event.ID
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -1557,6 +1579,11 @@ func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string
 	}
 	rt.nextEventID++
 	rt.events = append(rt.events, event)
+	if len(rt.events) > agentEventMaxCount {
+		copy(rt.events, rt.events[len(rt.events)-agentEventMaxCount:])
+		clear(rt.events[agentEventMaxCount:])
+		rt.events = rt.events[:agentEventMaxCount]
+	}
 	rt.run.UpdatedAt = event.Time
 	if isAgentOutputEvent(eventType, method) {
 		rt.run.LastOutputAt = event.Time
@@ -1701,6 +1728,52 @@ func (rt *agentRuntime) snapshotEvents() []agentEvent {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return append([]agentEvent(nil), rt.events...)
+}
+
+func (rt *agentRuntime) snapshotDetail() (agentRun, []agentEvent, bool) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	events, truncated := tailAgentEvents(rt.events, agentEventMaxCount)
+	return rt.run, events, truncated
+}
+
+func (rt *agentRuntime) snapshotEventsAfter(afterID int64) []agentEvent {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return agentEventsAfter(rt.events, afterID)
+}
+
+func tailAgentEvents(events []agentEvent, limit int) ([]agentEvent, bool) {
+	if limit <= 0 || limit > agentEventMaxCount {
+		limit = agentEventMaxCount
+	}
+	truncated := len(events) > limit
+	if len(events) > limit {
+		events = events[len(events)-limit:]
+	}
+	if len(events) > 0 && events[0].ID > 1 {
+		truncated = true
+	}
+	return append([]agentEvent(nil), events...), truncated
+}
+
+func agentEventsAfter(events []agentEvent, afterID int64) []agentEvent {
+	if afterID <= 0 {
+		return append([]agentEvent(nil), events...)
+	}
+	start := sort.Search(len(events), func(i int) bool {
+		return events[i].ID > afterID
+	})
+	return append([]agentEvent(nil), events[start:]...)
+}
+
+func agentStreamAfterID(r *http.Request) int64 {
+	afterID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("after")), 10, 64)
+	lastEventID, _ := strconv.ParseInt(strings.TrimSpace(r.Header.Get("Last-Event-ID")), 10, 64)
+	if lastEventID > afterID {
+		return lastEventID
+	}
+	return afterID
 }
 
 func loadAgentRuns(workspacePath string) ([]agentRun, error) {
