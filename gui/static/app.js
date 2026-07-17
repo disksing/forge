@@ -389,7 +389,7 @@ function renderTree() {
   const tree = $("projectTree");
   tree.innerHTML = "";
   if (!state.tree) {
-    tree.innerHTML = `<div class="empty-state"><div>Add a workspace path to begin.</div></div>`;
+    tree.innerHTML = `<div class="empty-state">${icon("folder-search", "empty-state-icon")}<strong>No workspace yet</strong><span>Add a workspace path to begin.</span></div>`;
     state.taskOperationalStateKey = "";
     return;
   }
@@ -772,7 +772,7 @@ function renderDetails() {
         ${breadcrumb(selected, selected.title)}
         <div class="title-row"><h1>${escapeHTML(selected.title)}</h1></div>
       </div>
-      <div class="empty-state"><div>Loading details...</div></div>
+      <div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>
     `;
     return;
   }
@@ -812,7 +812,7 @@ function templateSection(item) {
             <span><strong>${escapeHTML(template.title)}</strong><small>${escapeHTML(template.name)}${template.autorun ? " · automatic" : ""}</small></span>
             ${icon("chevron-right")}
           </button>
-        `).join("") : `<div class="empty-list-row">No task templates in templates/*.md.</div>`}
+        `).join("") : emptyListRow("No task templates in templates/*.md.", "layout-template")}
       </div>
     </div>
   `;
@@ -851,10 +851,9 @@ function breadcrumb(selected, currentLabel) {
 function emptyDetails() {
   return `
     <div class="empty-state">
-      <div>
-        <h1>No workspace selected</h1>
-        <p>Add an AgentWorkspace path in the sidebar.</p>
-      </div>
+      ${icon("folder-search", "empty-state-icon")}
+      <strong>No workspace selected</strong>
+      <span>Add an AgentWorkspace path in the sidebar.</span>
     </div>
   `;
 }
@@ -904,7 +903,7 @@ function workspaceWikiSection() {
 
 function workspaceAgentsSection() {
   const agents = state.workspaceAgents;
-  let body = `<div class="empty-state"><div>Loading AGENTS.md...</div></div>`;
+  let body = `<div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading AGENTS.md...</strong></div>`;
   if (agents?.error) {
     body = `
       <div class="file-modal-empty error-preview">
@@ -1181,11 +1180,28 @@ function artifactSection(title, entries = [], emptyMessage = "No artifacts.") {
       <h3>${icon(sectionIcon)}<span>${title}</span></h3>
       <div class="artifact-browser">
         <div class="artifact-tree" role="tree">
-          ${safeEntries.length > 0 ? safeEntries.map((entry) => artifactRow(entry, title, 0)).join("") : emptyListRow(emptyMessage)}
+          ${safeEntries.length > 0 ? safeEntries.map((entry) => artifactRow(entry, title, 0)).join("") : emptyListRow(emptyMessage, title === "Artifacts" ? "archive" : "inbox")}
         </div>
       </div>
     </div>
   `;
+}
+
+const ARTIFACT_ICON_TONES = {
+  code: ["file-code", "artifact-icon-code"],
+  doc: ["file-text", "artifact-icon-doc"],
+  media: ["image", "artifact-icon-media"],
+  archive: ["archive", "artifact-icon-archive"],
+  default: ["file", ""],
+};
+
+function artifactFileIcon(name = "") {
+  const ext = name.includes(".") ? name.split(".").pop().toLowerCase() : "";
+  if (["js", "jsx", "ts", "tsx", "mjs", "cjs", "go", "py", "rs", "java", "kt", "c", "cc", "cpp", "h", "hpp", "cs", "rb", "php", "swift", "sh", "bash", "zsh", "sql", "html", "css", "scss", "vue", "svelte", "json", "jsonc", "yaml", "yml", "toml", "xml", "proto", "graphql"].includes(ext)) return ARTIFACT_ICON_TONES.code;
+  if (["md", "markdown", "txt", "rst", "adoc", "pdf", "log"].includes(ext)) return ARTIFACT_ICON_TONES.doc;
+  if (["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "avif"].includes(ext)) return ARTIFACT_ICON_TONES.media;
+  if (["zip", "tar", "gz", "tgz", "bz2", "xz", "7z", "rar"].includes(ext)) return ARTIFACT_ICON_TONES.archive;
+  return ARTIFACT_ICON_TONES.default;
 }
 
 function artifactRow(entry, section, depth) {
@@ -1194,6 +1210,7 @@ function artifactRow(entry, section, depth) {
   const expanded = state.expandedPaths.has(key);
   const active = state.preview?.section === section && state.preview?.path === entry.path;
   const children = isDirectory && expanded ? (entry.children || []).map((child) => artifactRow(child, section, depth + 1)).join("") : "";
+  const [fileIconName, fileIconTone] = isDirectory ? [null, ""] : artifactFileIcon(entry.name);
   return `
     <div class="artifact-node">
       <button
@@ -1204,7 +1221,9 @@ function artifactRow(entry, section, depth) {
         data-path="${escapeHTML(entry.path)}">
         <span class="artifact-main">
           <span class="artifact-chevron">${isDirectory ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
-          ${icon(isDirectory ? (expanded ? "folder-open" : "folder") : "file", "artifact-icon")}
+          ${isDirectory
+            ? icon(expanded ? "folder-open" : "folder", "artifact-icon artifact-icon-dir")
+            : icon(fileIconName, `artifact-icon ${fileIconTone}`.trim())}
           <span class="artifact-name" title="${escapeHTML(entry.path)}">${escapeHTML(entry.name)}</span>
         </span>
         <small>${isDirectory ? `${(entry.children || []).length} items` : formatBytes(entry.size || 0)}</small>
@@ -1220,14 +1239,14 @@ function worktreeSection(repos = []) {
     <div class="content-section">
       <h3>${icon("folder-git-2")}<span>Worktrees</span></h3>
       <div class="worktree-list">
-        ${safeRepos.length > 0 ? safeRepos.map(worktreeRow).join("") : emptyListRow("No worktrees.")}
+        ${safeRepos.length > 0 ? safeRepos.map(worktreeRow).join("") : emptyListRow("No worktrees.", "git-branch")}
       </div>
     </div>
   `;
 }
 
-function emptyListRow(message) {
-  return `<div class="empty-list-row">${escapeHTML(message)}</div>`;
+function emptyListRow(message, iconName = "inbox") {
+  return `<div class="empty-list-row">${icon(iconName)}<span>${escapeHTML(message)}</span></div>`;
 }
 
 function worktreeRow(repo) {
@@ -2126,13 +2145,29 @@ function approvalLabel(value) {
   return "On request";
 }
 
+const RUN_STATUS_TONES = {
+  starting: "running",
+  running: "running",
+  waiting_approval: "attention",
+  stopped: "muted",
+  failed: "danger",
+  completed: "done",
+};
+
+function runStatusBadge(status = "") {
+  const tone = RUN_STATUS_TONES[status] || "muted";
+  const pulse = tone === "running" || tone === "attention" ? " run-badge-pulse" : "";
+  const label = status.replace(/_/g, " ") || "unknown";
+  return `<span class="run-badge run-badge-${tone}"><span class="run-badge-dot${pulse}"></span>${escapeHTML(label)}</span>`;
+}
+
 function agentCurrentSessionRow(run) {
   return `
     <div class="agent-current-session">
       <button type="button" class="agent-current-run ${state.agent.activeRunId === run.id ? "active" : ""}" data-agent-run="${escapeHTML(run.id)}" aria-expanded="${state.agent.historyOpen ? "true" : "false"}" title="Switch session">
         <span>
           <strong>${escapeHTML(run.title || run.id)}</strong>
-          <small>${escapeHTML(run.status)} · ${escapeHTML(relativeTime(run.updatedAt))}</small>
+          <small>${runStatusBadge(run.status)}<span class="run-badge-time">${escapeHTML(relativeTime(run.updatedAt))}</span></small>
         </span>
         ${icon("chevrons-up-down", "session-select-icon")}
       </button>
@@ -2145,7 +2180,7 @@ function agentSessionMenuRow(run) {
     <button type="button" class="agent-session-menu-row ${state.agent.activeRunId === run.id ? "active" : ""}" data-agent-run="${escapeHTML(run.id)}">
       <span>
         <strong>${escapeHTML(run.title || run.id)}</strong>
-        <small>${escapeHTML(run.status)} · ${escapeHTML(relativeTime(run.updatedAt))}</small>
+        <small>${runStatusBadge(run.status)}<span class="run-badge-time">${escapeHTML(relativeTime(run.updatedAt))}</span></small>
       </span>
     </button>
   `;
@@ -2156,7 +2191,7 @@ function agentRunRow(run) {
     <button class="agent-run-row ${state.agent.activeRunId === run.id ? "active" : ""}" data-agent-run="${escapeHTML(run.id)}">
       <span>
         <strong>${escapeHTML(run.title || run.id)}</strong>
-        <small>${escapeHTML(run.status)} · ${escapeHTML(relativeTime(run.updatedAt))}</small>
+        <small>${runStatusBadge(run.status)}<span class="run-badge-time">${escapeHTML(relativeTime(run.updatedAt))}</span></small>
       </span>
     </button>
   `;
