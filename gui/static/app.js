@@ -123,7 +123,7 @@ async function load() {
   state.config = await api("/api/workspaces");
   applyAgentConfig();
   state.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId : state.config.activeId || state.config.workspaces[0]?.id || "";
-  state.selectedId = route.resourceId || "";
+  state.selectedId = route.resourceId || "workspace";
   renderWorkspaceSelect();
   if (state.activeWorkspaceId) {
     await loadUIState();
@@ -146,12 +146,7 @@ async function loadTree(options = {}) {
   state.workspaceAgents = null;
   state.preview = null;
   state.diff = null;
-  if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
-    state.selectedId = "";
-  }
-  if (!state.selectedId) {
-    state.selectedId = state.tree.projects[0]?.id || "workspace";
-  }
+  ensureValidSelection();
   ensureSelectedProjectExpanded(false);
   if (state.selectedId === "workspace") {
     await loadWorkspaceAgents();
@@ -224,8 +219,7 @@ async function autoRefresh() {
     if (changed && state.preview?.section === "Wiki" && !state.preview.loading) {
       await refreshFilePreview("Wiki", state.preview.path);
     }
-    if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
-      state.selectedId = tree.projects[0]?.id || "workspace";
+    if (ensureValidSelection()) {
       syncURL({ replace: true });
       changed = true;
     }
@@ -375,7 +369,7 @@ async function switchWorkspace(id) {
   }
   setMobileSidebar(false);
   state.activeWorkspaceId = id;
-  state.selectedId = "";
+  state.selectedId = "workspace";
   state.sessionMenu = null;
   resetWorkspaceAgentsDraft();
   closeCreateDialog();
@@ -3700,7 +3694,7 @@ async function submitCreateDialog(event) {
         }),
       });
       toast("Project created.");
-      state.selectedId = "";
+      state.selectedId = "workspace";
     } else {
       await api(`/api/workspaces/${state.activeWorkspaceId}/tasks`, {
         method: "POST",
@@ -3742,7 +3736,7 @@ async function archiveResource(resourceId) {
     body: JSON.stringify({ resourceId }),
   });
   toast("Archived.");
-  state.selectedId = "";
+  state.selectedId = "workspace";
   await loadTree();
 }
 
@@ -3755,6 +3749,12 @@ function findResource(id) {
     }
   }
   return null;
+}
+
+function ensureValidSelection() {
+  if (state.selectedId === "workspace" || findResource(state.selectedId)) return false;
+  state.selectedId = "workspace";
+  return true;
 }
 
 function parentProject(id) {
@@ -3890,7 +3890,7 @@ async function removeSettingsWorkspace(id) {
   state.config = await api("/api/workspaces");
   if (state.activeWorkspaceId === id) {
     state.activeWorkspaceId = state.config.activeId || state.config.workspaces[0]?.id || "";
-    state.selectedId = "";
+    state.selectedId = "workspace";
     resetAgentState();
     if (state.activeWorkspaceId) {
       await loadUIState();
@@ -4381,7 +4381,7 @@ window.addEventListener("popstate", async () => {
   const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
   const previousSelectedId = state.selectedId;
   state.activeWorkspaceId = route.workspaceId;
-  state.selectedId = route.resourceId || "";
+  state.selectedId = route.resourceId || "workspace";
   state.preview = null;
   state.diff = null;
   state.sessionMenu = null;
@@ -4397,10 +4397,10 @@ window.addEventListener("popstate", async () => {
     await loadUIState();
     await loadTree({ updateURL: false });
   } else {
-    if (state.selectedId && state.selectedId !== "workspace" && !findResource(state.selectedId)) {
-      state.selectedId = "";
-    }
-    if (state.selectedId && state.selectedId !== "workspace") {
+    ensureValidSelection();
+    if (state.selectedId === "workspace") {
+      await loadWorkspaceAgents();
+    } else {
       ensureSelectedProjectExpanded(false);
       await loadDetail(state.selectedId);
     }

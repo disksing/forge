@@ -48,6 +48,44 @@ func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
 	}
 }
 
+func TestWorkspaceNavigationDefaultsToWorkspaceDetails(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+
+	if got := strings.Count(source, `state.selectedId = route.resourceId || "workspace";`); got != 2 {
+		t.Fatalf("initial load and popstate should default routes to workspace details; got %d matches", got)
+	}
+	for _, want := range []string{
+		`function ensureValidSelection() {
+  if (state.selectedId === "workspace" || findResource(state.selectedId)) return false;
+  state.selectedId = "workspace";
+  return true;
+}`,
+		`state.activeWorkspaceId = id;
+  state.selectedId = "workspace";`,
+		`if (ensureValidSelection()) {
+      syncURL({ replace: true });`,
+		`ensureValidSelection();
+    if (state.selectedId === "workspace") {
+      await loadWorkspaceAgents();`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("workspace navigation is missing %q", want)
+		}
+	}
+	for _, oldFallback := range []string{
+		`state.selectedId = state.tree.projects[0]?.id || "workspace";`,
+		`state.selectedId = tree.projects[0]?.id || "workspace";`,
+	} {
+		if strings.Contains(source, oldFallback) {
+			t.Fatalf("workspace navigation still selects the first project with %q", oldFallback)
+		}
+	}
+}
+
 func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	workspace := t.TempDir()
 	wikiDir := filepath.Join(workspace, "wiki")
