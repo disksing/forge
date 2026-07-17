@@ -766,6 +766,9 @@ func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
 		`if (!isLiveAgentRun(currentAgentRun()))`,
 		`async function refreshAgentRunMetadata()`,
 		`refreshAgentRunMetadata().then(renderAll)`,
+		`scheduleAgentRender({ full: !mergedDelta })`,
+		`function renderLatestAgentDelta()`,
+		`content.innerHTML = renderMarkdown(agentDisplayText(event));`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("bounded agent history behavior is missing %q", want)

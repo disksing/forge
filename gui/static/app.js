@@ -70,6 +70,7 @@ const state = {
     stream: null,
     streamRunId: "",
     renderTimer: null,
+    fullRenderPending: false,
     draftPrompt: "",
     ttyDraft: "",
     ttyMultiline: false,
@@ -1812,7 +1813,8 @@ function appendAgentEvent(event) {
   if (!event || isKnownAgentEvent(event)) return;
   event = normalizeAgentEvent(event);
   const last = state.agent.events[state.agent.events.length - 1];
-  if (canMergeAgentDelta(last, event)) {
+  const mergedDelta = canMergeAgentDelta(last, event);
+  if (mergedDelta) {
     last.id = event.id;
     last.time = event.time || last.time;
     last.text = `${last.text ?? agentDeltaText(last)}${event.text ?? agentDeltaText(event)}`;
@@ -1823,7 +1825,7 @@ function appendAgentEvent(event) {
   if (["turn/completed", "turn/failed", "error"].includes(event.method) || event.type === "approval_requested") {
     refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
-    scheduleAgentRender();
+    scheduleAgentRender({ full: !mergedDelta });
   }
 }
 
@@ -1834,11 +1836,14 @@ function isKnownAgentEvent(event) {
   return maxLoadedId > 0 && event.id <= maxLoadedId;
 }
 
-function scheduleAgentRender() {
+function scheduleAgentRender(options = {}) {
+  state.agent.fullRenderPending = state.agent.fullRenderPending || Boolean(options.full);
   if (state.agent.renderTimer) return;
   state.agent.renderTimer = window.setTimeout(() => {
     state.agent.renderTimer = null;
-    renderTTY();
+    const full = state.agent.fullRenderPending;
+    state.agent.fullRenderPending = false;
+    if (full || !renderLatestAgentDelta()) renderTTY();
     refreshIcons();
   }, 80);
 }
@@ -1848,6 +1853,33 @@ function clearAgentRenderTimer() {
     window.clearTimeout(state.agent.renderTimer);
   }
   state.agent.renderTimer = null;
+  state.agent.fullRenderPending = false;
+}
+
+function renderLatestAgentDelta() {
+  const event = state.agent.events[state.agent.events.length - 1];
+  if (!isAgentDelta(event)) return false;
+  const log = $("ttyLog");
+  if (!log) return false;
+  const stickToBottom = isTTYNearBottom(log);
+  const previousScrollTop = log.scrollTop;
+  if (event.type === "assistant_delta") {
+    const rows = log.querySelectorAll(".agent-message-row.assistant .agent-message-content");
+    const content = rows[rows.length - 1];
+    if (!content) return false;
+    content.innerHTML = renderMarkdown(agentDisplayText(event));
+  } else {
+    const notes = log.querySelectorAll(".agent-reasoning-note p");
+    const content = notes[notes.length - 1];
+    if (!content) return false;
+    content.textContent = agentDisplayText(event);
+  }
+  if (stickToBottom) {
+    log.scrollTop = log.scrollHeight;
+  } else {
+    log.scrollTop = previousScrollTop;
+  }
+  return true;
 }
 
 function coalesceAgentEvents(events) {
