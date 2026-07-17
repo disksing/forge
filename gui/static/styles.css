@@ -19,6 +19,26 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #cbd5e1;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 body {
@@ -174,7 +194,7 @@ body.resizing-y {
   background: var(--accent);
   color: #fff;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .brand-copy {
@@ -204,7 +224,7 @@ body.resizing-y {
 .agent-panel h2 {
   color: var(--muted);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -387,7 +407,7 @@ body.resizing-y {
   margin-bottom: 14px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -751,7 +771,7 @@ body.resizing-y {
   gap: 7px;
   border-radius: 6px;
   font-size: 13px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .tty-primary-action {
@@ -807,7 +827,7 @@ body.resizing-y {
   gap: 5px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -833,7 +853,7 @@ body.resizing-y {
   gap: 4px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -967,7 +987,7 @@ body.resizing-y {
   background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));
   color: var(--autorun-tone);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.02em;
 }
 
@@ -1164,7 +1184,77 @@ body.resizing-y {
   margin-top: 2px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
+}
+
+.agent-current-run small,
+.agent-session-menu-row small,
+.agent-run-row small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.run-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 5px;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.run-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.run-badge-pulse {
+  animation: task-status-pulse 1.8s ease-in-out infinite;
+}
+
+.run-badge-running {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.run-badge-attention {
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.run-badge-done {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: #059669;
+}
+
+.run-badge-danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.run-badge-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-current-run.active,
+.agent-session-menu-row.active,
+.agent-run-row.active {
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.14);
 }
 
 .session-select-icon {
@@ -1209,7 +1299,7 @@ body.resizing-y {
   margin-top: 2px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .tty-panel {
@@ -1242,7 +1332,7 @@ body.resizing-y {
   background: #f8fafc;
   color: #475569;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .load-older-events:hover {
@@ -1363,7 +1453,7 @@ body.resizing-y {
 .agent-tool-group-title {
   flex: 0 0 auto;
   color: #334155;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .agent-tool-group-preview {
@@ -1619,7 +1709,7 @@ body.resizing-y {
   align-items: center;
   color: var(--accent);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .tty-input textarea {
@@ -1741,7 +1831,7 @@ body.resizing-y {
   margin-top: 4px;
   color: var(--muted);
   font-size: 12px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .upload-dialog-header .icon-button:disabled {
@@ -1886,7 +1976,7 @@ body.resizing-y {
   color: #64748b;
   font-size: 11px;
   font-style: normal;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .upload-progress {
@@ -1946,7 +2036,7 @@ body.resizing-y {
   border-radius: 6px;
   background: #2563eb;
   color: #fff;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .upload-dialog-footer > button:disabled {
@@ -1978,7 +2068,7 @@ body.resizing-y {
   gap: 7px;
   border-radius: 6px;
   font-size: 13px;
-  font-weight: 750;
+  font-weight: 700;
 }
 
 .tty-session-actions > .tty-primary-action,
@@ -2050,7 +2140,7 @@ body.resizing-y {
 .tty-new-session-prompt {
   color: #bfdbfe;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .tty-agent-menu {
@@ -2097,16 +2187,41 @@ body.resizing-y {
 .tty-agent-menu small {
   color: #64748b;
   font-size: 11px;
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .empty-state {
   height: 100%;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 6px;
   padding: 32px;
   text-align: center;
   color: var(--muted);
+}
+
+.empty-state strong,
+.empty-state span {
+  display: block;
+}
+
+.empty-state strong {
+  color: #334155;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.empty-state span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.empty-state-icon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 2px;
+  color: #94a3b8;
 }
 
 .toast {
@@ -2184,7 +2299,7 @@ i[data-lucide] {
   background: #dbeafe;
   color: #1d4ed8;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   flex: 0 0 auto;
 }
 
@@ -2207,7 +2322,7 @@ i[data-lucide] {
   padding: 7px 9px 5px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -2313,7 +2428,7 @@ i[data-lucide] {
   padding: 0 8px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.08em;
 }
 
@@ -2593,7 +2708,7 @@ i[data-lucide] {
   border: 1px solid #cbd5e1;
   color: #64748b;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .session-badge.internal {
@@ -3021,7 +3136,7 @@ i[data-lucide] {
   display: block;
   margin: 1.15em 0 0.45em;
   color: #0f172a;
-  font-weight: 750;
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -3153,12 +3268,27 @@ i[data-lucide] {
   min-height: 42px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  gap: 8px;
+  padding: 0 12px;
   border-radius: 6px;
   background: #f8fafc;
   color: #64748b;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
+}
+
+.empty-list-row svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: #94a3b8;
+}
+
+.empty-list-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .artifact-node {
@@ -3210,6 +3340,28 @@ i[data-lucide] {
 
 .artifact-icon {
   color: #64748b;
+}
+
+.artifact-icon-dir {
+  color: #3b82f6;
+  fill: currentColor;
+  fill-opacity: 0.16;
+}
+
+.artifact-icon-code {
+  color: #3b82f6;
+}
+
+.artifact-icon-doc {
+  color: #d97706;
+}
+
+.artifact-icon-media {
+  color: #8b5cf6;
+}
+
+.artifact-icon-archive {
+  color: #b45309;
 }
 
 .artifact-row.active .artifact-icon,
@@ -3696,7 +3848,7 @@ i[data-lucide] {
   margin: 0 6px 12px;
   color: #0f172a;
   font-size: 15px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-tab {
@@ -3826,7 +3978,7 @@ i[data-lucide] {
   background: #2563eb;
   color: #fff;
   padding: 0 14px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-check {
@@ -3902,7 +4054,7 @@ i[data-lucide] {
   background: #0f172a;
   color: #fff;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-row-actions {
@@ -3918,7 +4070,7 @@ i[data-lucide] {
   color: #166534;
   padding: 3px 8px;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-danger-button {
@@ -3987,7 +4139,7 @@ i[data-lucide] {
 .settings-form-grid label > span {
   color: #475569;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-full-row,
@@ -4032,7 +4184,7 @@ i[data-lucide] {
 
 .settings-section-heading h3 {
   margin: 0;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .settings-section-heading span {
@@ -4046,7 +4198,7 @@ i[data-lucide] {
   gap: 5px;
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -4061,7 +4213,7 @@ i[data-lucide] {
   background: #eff6ff;
   color: #1d4ed8;
   font-size: 12px;
-  font-weight: 900;
+  font-weight: 700;
 }
 
 .settings-provider-mark svg,
@@ -4107,7 +4259,7 @@ i[data-lucide] {
 .settings-agent-fields label > span {
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -4146,7 +4298,7 @@ i[data-lucide] {
 .settings-profile-fields label > span {
   color: #64748b;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
@@ -4209,7 +4361,7 @@ i[data-lucide] {
     background: transparent;
     color: var(--muted);
     font-size: 13px;
-    font-weight: 800;
+    font-weight: 700;
   }
 
   .mobile-view-switcher button[aria-selected="true"] {
