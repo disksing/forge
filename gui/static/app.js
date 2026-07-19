@@ -2042,6 +2042,7 @@ function shouldDisplayAgentEvent(event, completedItems = new Map()) {
   if (event.type === "reasoning_delta") return Boolean(event.isActiveTransientReasoning);
   if (event.type === "assistant_delta" || event.type === "approval_requested" || event.type === "error") return true;
   if (event.type === "metadata") return false;
+  if (event.type === "system" && event.method === "session/prompt") return false;
   if (event.method === "session/ready" || event.method === "turn/failed") return true;
   if (event.type === "user") return true;
   if (event.type === "tool") {

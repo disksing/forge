@@ -873,6 +873,7 @@ displayed = displayAgentEvents([
   { id: 3, type: "system", method: "session/prompt", text: "OpenCode turn finished: end_turn." },
 ]);
 assert(displayed.every((event) => event.type !== "reasoning_delta"), "turn completion should remove stale reasoning");
+assert(displayed.length === 1 && displayed[0].type === "tool_group", "turn completion notices should not render as chat messages");
 `
 
 	testFile := filepath.Join(t.TempDir(), "agent-chat-events.js")
