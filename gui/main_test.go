@@ -796,8 +796,10 @@ func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
 	for _, want := range []string{
 		`const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;`,
 		`const AGENT_OLDER_RAW_PAGE_LIMIT = 250;`,
+		`const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;`,
+		`const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;`,
 		`const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;`,
-		`const AGENT_MANUAL_AUTO_PAGE_LIMIT = 4;`,
+		`const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;`,
 		`function latestAgentEventID()`,
 		`const after = latestAgentEventID();`,
 		`/stream${query}`,
@@ -814,6 +816,83 @@ func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
 	}
 	if strings.Contains(app, `loadAgentRuns().then(renderAll)`) {
 		t.Fatal("turn completion should refresh run metadata without reloading the full event tail")
+	}
+}
+
+func TestLoadOlderAgentEventsSkipsRawNoiseUntilVisibleMessage(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the agent history behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "async function loadOlderAgentEvents()")
+	end := strings.Index(app, "function fetchAgentRuns()")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate agent history loading functions")
+	}
+
+	script := `
+const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
+const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
+const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
+const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
+const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+const state = {
+  activeWorkspaceId: "workspace",
+  agent: {
+    activeRunId: "run",
+    loadingOlder: false,
+    eventsHasMore: true,
+    events: [{ id: 3000, type: "assistant_delta", text: "current" }],
+  },
+};
+const pages = [
+  [{ id: 2500, type: "reasoning_delta", text: "noise one" }],
+  [{ id: 2000, type: "reasoning_delta", text: "noise two" }],
+  [{ id: 1500, type: "assistant_delta", text: "older reply" }],
+];
+const requestedLimits = [];
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function $(id) {
+  return id === "ttyLog" ? { scrollHeight: 0, scrollTop: 0 } : null;
+}
+function renderTTY() {}
+function refreshIcons() {}
+function displayAgentEvents(events) {
+  return events.filter((event) => event.type === "assistant_delta" || event.type === "user");
+}
+function coalesceAgentEvents(events) {
+  return events;
+}
+async function api(url) {
+  const limit = new URL(url, "http://forge.test").searchParams.get("limit");
+  requestedLimits.push(Number(limit));
+  return { events: pages.shift() || [], hasMore: pages.length > 0 };
+}
+` + app[start:end] + `
+(async () => {
+  await loadOlderAgentEvents();
+  assert(requestedLimits.join(",") === "500,500,500", "manual history should use bounded 500-event pages until a visible message is found");
+  assert(visibleAgentEventCount() === 2, "older visible reply was not loaded through reasoning noise");
+  assert(state.agent.events[0].text === "older reply", "older events should be prepended in chronological order");
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+`
+
+	testFile := filepath.Join(t.TempDir(), "agent-load-older-events.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("agent history behavior test failed: %v\n%s", err, output)
 	}
 }
 

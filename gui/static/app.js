@@ -94,10 +94,11 @@ const AUTO_REFRESH_INTERVAL_MS = 5000;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;
-const AGENT_OLDER_VISIBLE_EVENT_COUNT = 50;
 const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
+const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
+const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
-const AGENT_MANUAL_AUTO_PAGE_LIMIT = 4;
+const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -1680,11 +1681,17 @@ async function loadOlderAgentEvents() {
   if (!oldestAgentEventID()) return;
   const log = $("ttyLog");
   const previousHeight = log?.scrollHeight || 0;
-  const targetVisibleCount = visibleAgentEventCount() + AGENT_OLDER_VISIBLE_EVENT_COUNT;
+  // Raw provider events can contain thousands of reasoning deltas between two
+  // chat messages. Keep paging until the button reveals at least one visible
+  // message instead of stopping after a fixed number of invisible raw events.
+  const targetVisibleCount = visibleAgentEventCount() + AGENT_MANUAL_VISIBLE_EVENT_COUNT;
   state.agent.loadingOlder = true;
   renderTTY({ stickToBottom: false });
   try {
-    await ensureVisibleAgentEvents(targetVisibleCount, { maxPages: AGENT_MANUAL_AUTO_PAGE_LIMIT });
+    await ensureVisibleAgentEvents(targetVisibleCount, {
+      maxPages: AGENT_MANUAL_AUTO_PAGE_LIMIT,
+      pageLimit: AGENT_MANUAL_RAW_PAGE_LIMIT,
+    });
   } finally {
     state.agent.loadingOlder = false;
     renderTTY({ stickToBottom: false });
@@ -1698,18 +1705,19 @@ async function loadOlderAgentEvents() {
 
 async function ensureVisibleAgentEvents(targetCount, options = {}) {
   const maxPages = options.maxPages || AGENT_INITIAL_AUTO_PAGE_LIMIT;
+  const pageLimit = options.pageLimit || AGENT_OLDER_RAW_PAGE_LIMIT;
   let pages = 0;
   while (state.agent.eventsHasMore && visibleAgentEventCount() < targetCount && pages < maxPages) {
-    const loaded = await loadOlderAgentEventsPage();
+    const loaded = await loadOlderAgentEventsPage(pageLimit);
     if (!loaded) break;
     pages++;
   }
 }
 
-async function loadOlderAgentEventsPage() {
+async function loadOlderAgentEventsPage(pageLimit = AGENT_OLDER_RAW_PAGE_LIMIT) {
   const before = oldestAgentEventID();
   if (!before) return false;
-  const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?before=${encodeURIComponent(before)}&limit=${AGENT_OLDER_RAW_PAGE_LIMIT}`);
+  const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?before=${encodeURIComponent(before)}&limit=${encodeURIComponent(pageLimit)}`);
   const older = body.events || [];
   state.agent.events = coalesceAgentEvents([...older, ...state.agent.events]);
   state.agent.eventsHasMore = Boolean(body.hasMore);
