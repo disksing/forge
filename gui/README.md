@@ -24,7 +24,7 @@ Forge GUI 支持多种 agent provider。当前内置：
 2. 创建一个新 agent，Provider 选择 `Kimi Code`。
 3. 选择 `build` 或 `plan` mode，并可选配置 Kimi Code model。
 
-Forge 默认执行 `kimi acp`。如果 GUI 进程的 `PATH` 找不到 CLI，可通过 `FORGE_KIMI_CLI` 指定 `kimi` 可执行文件的绝对路径。
+Forge 优先从 `FORGE_KIMI_CLI` 和 GUI 进程的 `PATH` 查找命令；若均未找到，会自动尝试 Kimi Code 官方安装器使用的 `~/.kimi-code/bin/kimi`，然后执行 `kimi acp`。
 
 agent 只共享名称和 provider 两个公共字段，运行参数保存在 provider 专属的 `options` 中：
 

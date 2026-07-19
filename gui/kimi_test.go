@@ -18,6 +18,40 @@ func TestKimiProviderUsesKimiACPCommand(t *testing.T) {
 	}
 }
 
+func TestKimiProviderFindsOfficialInstallOutsidePATH(t *testing.T) {
+	home := t.TempDir()
+	command := filepath.Join(home, ".kimi-code", "bin", "kimi")
+	if err := os.MkdirAll(filepath.Dir(command), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(command, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	t.Setenv("FORGE_KIMI_CLI", "")
+
+	resolved, err := newKimiAppServer().resolveCommand()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != command {
+		t.Fatalf("expected official Kimi install %q, got %q", command, resolved)
+	}
+}
+
+func TestKimiProviderMissingCommandErrorIsActionable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	t.Setenv("FORGE_KIMI_CLI", "")
+
+	_, err := newKimiAppServer().resolveCommand()
+	if err == nil || !strings.Contains(err.Error(), "FORGE_KIMI_CLI") || !strings.Contains(err.Error(), filepath.Join(home, ".kimi-code", "bin", "kimi")) {
+		t.Fatalf("expected actionable missing Kimi error, got %v", err)
+	}
+}
+
 func TestKimiACPProviderStartsSessionAndStreamsPrompt(t *testing.T) {
 	workspace := t.TempDir()
 	if err := ensureAgentDirs(workspace); err != nil {

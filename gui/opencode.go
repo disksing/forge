@@ -20,15 +20,16 @@ import (
 const opencodeProtocolVersion = 1
 
 type opencodeAppServer struct {
-	mu           sync.Mutex
-	client       *opencodeClient
-	startedAt    string
-	capabilities opencodeAgentCapabilities
-	providerID   string
-	providerName string
-	commandEnv   string
-	command      string
-	args         []string
+	mu               sync.Mutex
+	client           *opencodeClient
+	startedAt        string
+	capabilities     opencodeAgentCapabilities
+	providerID       string
+	providerName     string
+	commandEnv       string
+	command          string
+	commandFallbacks []string
+	args             []string
 }
 
 type opencodeAgentCapabilities struct {
@@ -120,7 +121,9 @@ func newOpencodeAppServer() *opencodeAppServer {
 }
 
 func newKimiAppServer() *opencodeAppServer {
-	return newACPAppServer(kimiProviderID, kimiProviderName, "FORGE_KIMI_CLI", "kimi", "acp")
+	provider := newACPAppServer(kimiProviderID, kimiProviderName, "FORGE_KIMI_CLI", "kimi", "acp")
+	provider.commandFallbacks = []string{filepath.Join(".kimi-code", "bin", "kimi")}
+	return provider
 }
 
 func newACPAppServer(providerID, providerName, commandEnv, command string, args ...string) *opencodeAppServer {
@@ -135,6 +138,36 @@ func newACPAppServer(providerID, providerName, commandEnv, command string, args 
 
 func (o *opencodeAppServer) ID() string { return o.providerID }
 
+func (o *opencodeAppServer) resolveCommand() (string, error) {
+	if configured := strings.TrimSpace(os.Getenv(o.commandEnv)); configured != "" {
+		resolved, err := exec.LookPath(configured)
+		if err != nil {
+			return "", fmt.Errorf("%s=%q does not point to an executable %s CLI", o.commandEnv, configured, o.providerName)
+		}
+		return resolved, nil
+	}
+	if resolved, err := exec.LookPath(o.command); err == nil {
+		return resolved, nil
+	}
+	home, _ := os.UserHomeDir()
+	checked := make([]string, 0, len(o.commandFallbacks))
+	for _, fallback := range o.commandFallbacks {
+		candidate := fallback
+		if !filepath.IsAbs(candidate) && home != "" {
+			candidate = filepath.Join(home, candidate)
+		}
+		checked = append(checked, candidate)
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode().Perm()&0o111 != 0 {
+			return candidate, nil
+		}
+	}
+	detail := fmt.Sprintf("PATH for %q", o.command)
+	if len(checked) > 0 {
+		detail += " and " + strings.Join(checked, ", ")
+	}
+	return "", fmt.Errorf("%s CLI not found; install it or set %s to its executable path (checked %s)", o.providerName, o.commandEnv, detail)
+}
+
 func (o *opencodeAppServer) Start(m *agentManager) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -142,9 +175,9 @@ func (o *opencodeAppServer) Start(m *agentManager) error {
 	if o.client != nil && o.client.cmd != nil && o.client.cmd.Process != nil {
 		return nil
 	}
-	bin := strings.TrimSpace(os.Getenv(o.commandEnv))
-	if bin == "" {
-		bin = o.command
+	bin, err := o.resolveCommand()
+	if err != nil {
+		return err
 	}
 	cmd := exec.Command(bin, o.args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
