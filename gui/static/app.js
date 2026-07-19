@@ -2014,7 +2014,7 @@ function isAgentTurnStart(event) {
 
 function isAgentTurnCompletion(event) {
   return event?.method === "turn/completed" ||
-    (event?.method === "session/prompt" && /^OpenCode turn finished:/i.test(event.text || ""));
+    (event?.method === "session/prompt" && /^(OpenCode|Kimi Code) turn finished:/i.test(event.text || ""));
 }
 
 function groupToolEvents(events) {
@@ -2172,7 +2172,7 @@ function agentConfigSummary(agent) {
   if (!agent) return "";
   const options = normalizedProviderAgentOptions(agent.providerId, agent.options);
   const parts = [providerName(agent.providerId)];
-  if (agentProviderType(agent.providerId) === "opencode") {
+  if (isACPProviderType(agent.providerId)) {
     parts.push(options.mode === "plan" ? "Plan" : "Build");
   } else {
     parts.push(sandboxLabel(options.sandbox), approvalLabel(options.approval));
@@ -2189,6 +2189,10 @@ function providerName(providerId) {
 function agentProviderType(providerId) {
   const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
   return provider?.type || providerId || "codex";
+}
+
+function isACPProviderType(providerId) {
+  return ["opencode", "kimi"].includes(agentProviderType(providerId));
 }
 
 function sandboxLabel(value) {
@@ -2381,7 +2385,7 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
   if (!sessionReady) return "Agent session is starting.";
   if (run.status === "waiting_approval") return "Resolve the pending approval before sending input.";
   if (run.schedulerTurn && run.provider === "codex" && !run.codexTurnId) return "AutoRun turn is starting.";
-  if (run.schedulerTurn && run.provider === "opencode" && run.status === "running") return "OpenCode cannot accept input during an active turn.";
+  if (run.schedulerTurn && ["opencode", "kimi"].includes(run.provider) && run.status === "running") return `${providerName(run.provider)} cannot accept input during an active turn.`;
   return "";
 }
 
@@ -2438,6 +2442,7 @@ function renderSettingsModal() {
     agentProfiles: state.config?.agentProfiles || [],
     codex: { running: false },
     opencode: { running: false },
+    kimi: { running: false },
   };
   const entering = state.modalEnter === "settings";
   if (entering) state.modalEnter = "";
@@ -2509,6 +2514,7 @@ function settingsAgentPanel(data) {
   const agents = data.agents || [];
   const codex = data.codex || { running: false };
   const opencode = data.opencode || { running: false };
+  const kimi = data.kimi || { running: false };
   return `
     <div class="settings-panel">
       <div class="settings-panel-header">
@@ -2521,7 +2527,7 @@ function settingsAgentPanel(data) {
           <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
         </div>
         <div class="settings-provider-list">
-          ${providers.map((provider) => settingsProviderRow(provider, codex, opencode)).join("")}
+          ${providers.map((provider) => settingsProviderRow(provider, { codex, opencode, kimi })).join("")}
         </div>
       </section>
       ${settingsDefaultChatAgentSection(data)}
@@ -2616,15 +2622,14 @@ function settingsEnabledAgents(data) {
   return (data.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
 }
 
-function settingsProviderRow(provider, codex, opencode) {
+function settingsProviderRow(provider, statuses) {
   const enabled = Boolean(provider.enabled);
   let status = enabled ? "Enabled" : "Disabled";
-  if (provider.id === "codex" && codex?.running) {
-    status = `Enabled · PID ${escapeHTML(String(codex.pid || ""))}`;
-  } else if (provider.id === "opencode" && opencode?.running) {
-    status = `Enabled · PID ${escapeHTML(String(opencode.pid || ""))}`;
+  const runtime = statuses?.[provider.id];
+  if (runtime?.running) {
+    status = `Enabled · PID ${escapeHTML(String(runtime.pid || ""))}`;
   }
-  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : "box";
+  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : provider.id === "kimi" ? "sparkles" : "box";
   return `
     <div class="settings-service-row">
       <div class="settings-provider-main">
@@ -2699,7 +2704,7 @@ function settingsNewAgentCard(providers) {
 }
 
 function settingsProviderOptionFields(providerId, options, attribute) {
-  if (agentProviderType(providerId) === "opencode") {
+  if (isACPProviderType(providerId)) {
     return `
       <label>
         <span>Mode</span>
@@ -2710,7 +2715,7 @@ function settingsProviderOptionFields(providerId, options, attribute) {
       </label>
       <label>
         <span>Model</span>
-        <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="OpenCode default" />
+        <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="${escapeHTML(providerName(providerId))} default" />
       </label>
     `;
   }
@@ -2732,7 +2737,7 @@ function settingsProviderOptionFields(providerId, options, attribute) {
 
 function normalizedProviderAgentOptions(providerId, options = {}) {
   const model = String(options?.model || "").trim();
-  if (agentProviderType(providerId) === "opencode") {
+  if (isACPProviderType(providerId)) {
     return {
       mode: options?.mode === "plan" ? "plan" : "build",
       ...(model ? { model } : {}),
@@ -3926,6 +3931,8 @@ async function toggleAgentProvider(providerId) {
     await api(`/api/settings/codex/${enabled ? "stop" : "start"}`, { method: "POST" });
   } else if (provider.id === "opencode") {
     await api(`/api/settings/opencode/${enabled ? "stop" : "start"}`, { method: "POST" });
+  } else if (provider.id === "kimi") {
+    await api(`/api/settings/kimi/${enabled ? "stop" : "start"}`, { method: "POST" });
   }
   await api("/api/settings/agent/providers", {
     method: "PUT",

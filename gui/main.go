@@ -40,6 +40,7 @@ type config struct {
 	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
 	Codex              codexSettings         `json:"codex"`
 	Opencode           opencodeSettings      `json:"opencode"`
+	Kimi               opencodeSettings      `json:"kimi"`
 }
 
 type opencodeSettings struct {
@@ -174,6 +175,7 @@ type server struct {
 	agents    *agentManager
 	codex     *codexAppServer
 	opencode  *opencodeAppServer
+	kimi      *opencodeAppServer
 	providers map[string]agentProvider
 }
 
@@ -220,9 +222,11 @@ func main() {
 	}
 	s.codex = newCodexAppServer()
 	s.opencode = newOpencodeAppServer()
+	s.kimi = newKimiAppServer()
 	s.providers = map[string]agentProvider{
 		codexProviderID:    s.codex,
 		opencodeProviderID: s.opencode,
+		kimiProviderID:     s.kimi,
 	}
 	s.agents = newAgentManager(s)
 	if initialWorkspace != "" {

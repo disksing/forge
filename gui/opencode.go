@@ -24,6 +24,11 @@ type opencodeAppServer struct {
 	client       *opencodeClient
 	startedAt    string
 	capabilities opencodeAgentCapabilities
+	providerID   string
+	providerName string
+	commandEnv   string
+	command      string
+	args         []string
 }
 
 type opencodeAgentCapabilities struct {
@@ -53,6 +58,7 @@ type opencodeClient struct {
 	done           chan struct{}
 	runIDBySession map[string]string
 	runtimeByRunID map[string]*agentRuntime
+	providerName   string
 }
 
 type opencodeConfigOption struct {
@@ -109,9 +115,25 @@ type opencodeTerminalRequest struct {
 	TerminalID string `json:"terminalId"`
 }
 
-func newOpencodeAppServer() *opencodeAppServer { return &opencodeAppServer{} }
+func newOpencodeAppServer() *opencodeAppServer {
+	return newACPAppServer(opencodeProviderID, opencodeProviderName, "FORGE_OPENCODE_CLI", "opencode", "acp")
+}
 
-func (o *opencodeAppServer) ID() string { return opencodeProviderID }
+func newKimiAppServer() *opencodeAppServer {
+	return newACPAppServer(kimiProviderID, kimiProviderName, "FORGE_KIMI_CLI", "kimi", "acp")
+}
+
+func newACPAppServer(providerID, providerName, commandEnv, command string, args ...string) *opencodeAppServer {
+	return &opencodeAppServer{
+		providerID:   providerID,
+		providerName: providerName,
+		commandEnv:   commandEnv,
+		command:      command,
+		args:         append([]string(nil), args...),
+	}
+}
+
+func (o *opencodeAppServer) ID() string { return o.providerID }
 
 func (o *opencodeAppServer) Start(m *agentManager) error {
 	o.mu.Lock()
@@ -120,11 +142,11 @@ func (o *opencodeAppServer) Start(m *agentManager) error {
 	if o.client != nil && o.client.cmd != nil && o.client.cmd.Process != nil {
 		return nil
 	}
-	bin := strings.TrimSpace(os.Getenv("FORGE_OPENCODE_CLI"))
+	bin := strings.TrimSpace(os.Getenv(o.commandEnv))
 	if bin == "" {
-		bin = "opencode"
+		bin = o.command
 	}
-	cmd := exec.Command(bin, "acp")
+	cmd := exec.Command(bin, o.args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -138,9 +160,9 @@ func (o *opencodeAppServer) Start(m *agentManager) error {
 	if err != nil {
 		return err
 	}
-	client := newOpencodeClient(m, cmd, stdin)
+	client := newACPClient(m, cmd, stdin, o.providerName)
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start opencode acp: %w", err)
+		return fmt.Errorf("start %s acp: %w", o.providerName, err)
 	}
 	go client.readLoop(stdout)
 	go client.stderrLoop(stderr)
@@ -177,20 +199,20 @@ func (o *opencodeAppServer) Start(m *agentManager) error {
 		client.close()
 		o.client = nil
 		o.startedAt = ""
-		return fmt.Errorf("initialize opencode acp: %w", err)
+		return fmt.Errorf("initialize %s acp: %w", o.providerName, err)
 	}
 	var initialized opencodeInitializeResult
 	if err := json.Unmarshal(result, &initialized); err != nil {
 		client.close()
 		o.client = nil
 		o.startedAt = ""
-		return fmt.Errorf("decode opencode initialize response: %w", err)
+		return fmt.Errorf("decode %s initialize response: %w", o.providerName, err)
 	}
 	if initialized.ProtocolVersion != opencodeProtocolVersion {
 		client.close()
 		o.client = nil
 		o.startedAt = ""
-		return fmt.Errorf("unsupported opencode ACP protocol version: %d", initialized.ProtocolVersion)
+		return fmt.Errorf("unsupported %s ACP protocol version: %d", o.providerName, initialized.ProtocolVersion)
 	}
 	o.capabilities = initialized.AgentCapabilities
 	return nil
@@ -242,7 +264,7 @@ func (o *opencodeAppServer) getClient() (*opencodeClient, error) {
 	defer o.mu.Unlock()
 	o.pruneLocked()
 	if o.client == nil {
-		return nil, errors.New("opencode acp is not running")
+		return nil, fmt.Errorf("%s acp is not running", o.providerName)
 	}
 	return o.client, nil
 }
@@ -305,7 +327,7 @@ func (o *opencodeAppServer) NewSession(rt *agentRuntime) error {
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
 	client.registerRuntime(run.ID, session.SessionID, rt)
-	rt.addEvent(rt.manager, "system", "session/new", "OpenCode session started.", result, "")
+	rt.addEvent(rt.manager, "system", "session/new", o.providerName+" session started.", result, "")
 	return nil
 }
 
@@ -315,10 +337,15 @@ func (o *opencodeAppServer) ResumeSession(rt *agentRuntime) error {
 		return err
 	}
 	o.mu.Lock()
-	supported := o.capabilities.supportsSessionMethod("resume")
+	resumeSupported := o.capabilities.supportsSessionMethod("resume")
+	loadSupported := o.capabilities.LoadSession
 	o.mu.Unlock()
-	if !supported {
-		return errors.New("opencode does not advertise session/resume support")
+	method := "session/resume"
+	if !resumeSupported {
+		if !loadSupported {
+			return fmt.Errorf("%s does not advertise session resume or load support", o.providerName)
+		}
+		method = "session/load"
 	}
 	sessionID := strings.TrimSpace(rt.run.ProviderSessionID)
 	if sessionID == "" {
@@ -326,10 +353,14 @@ func (o *opencodeAppServer) ResumeSession(rt *agentRuntime) error {
 	}
 	runID := rt.run.ID
 	client.registerRuntime(runID, sessionID, rt)
-	result, err := client.request("session/resume", map[string]any{
+	params := map[string]any{
 		"sessionId": sessionID,
 		"cwd":       rt.run.Cwd,
-	})
+	}
+	if method == "session/load" {
+		params["mcpServers"] = []any{}
+	}
+	result, err := client.request(method, params)
 	if err != nil {
 		client.unregisterRuntime(runID, sessionID)
 		return err
@@ -338,7 +369,7 @@ func (o *opencodeAppServer) ResumeSession(rt *agentRuntime) error {
 	if len(result) > 0 && string(result) != "null" {
 		if err := json.Unmarshal(result, &session); err != nil {
 			client.unregisterRuntime(runID, sessionID)
-			return fmt.Errorf("decode session/resume response: %w", err)
+			return fmt.Errorf("decode %s response: %w", method, err)
 		}
 	}
 	if session.SessionID != "" {
@@ -362,7 +393,7 @@ func (o *opencodeAppServer) ResumeSession(rt *agentRuntime) error {
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
 	client.registerRuntime(runID, sessionID, rt)
-	rt.addEvent(rt.manager, "system", "session/resume", "OpenCode session resumed.", result, "")
+	rt.addEvent(rt.manager, "system", method, o.providerName+" session resumed.", result, "")
 	return nil
 }
 
@@ -371,7 +402,7 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 	model := strings.TrimSpace(rt.run.Model)
 	sandbox := rt.run.Sandbox
 	rt.mu.Unlock()
-	settings, err := opencodeSessionSettings(session.ConfigOptions, model, sandbox)
+	settings, err := acpSessionSettings(session.ConfigOptions, model, sandbox, o.providerName)
 	if err != nil {
 		return err
 	}
@@ -381,13 +412,17 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 			"configId":  configID,
 			"value":     value,
 		}); err != nil {
-			return fmt.Errorf("set opencode session option %s: %w", configID, err)
+			return fmt.Errorf("set %s session option %s: %w", o.providerName, configID, err)
 		}
 	}
 	return nil
 }
 
 func opencodeSessionSettings(options []opencodeConfigOption, model, sandbox string) (map[string]string, error) {
+	return acpSessionSettings(options, model, sandbox, opencodeProviderName)
+}
+
+func acpSessionSettings(options []opencodeConfigOption, model, sandbox, providerName string) (map[string]string, error) {
 	settings := make(map[string]string)
 	model = strings.TrimSpace(model)
 	modelOptionFound := false
@@ -400,7 +435,7 @@ func opencodeSessionSettings(options []opencodeConfigOption, model, sandbox stri
 				continue
 			}
 			if !configOptionHasValue(option, model) {
-				return nil, fmt.Errorf("opencode model %q is not available; choose one of: %s", model, strings.Join(configOptionValues(option), ", "))
+				return nil, fmt.Errorf("%s model %q is not available; choose one of: %s", providerName, model, strings.Join(configOptionValues(option), ", "))
 			}
 			settings[option.ID] = model
 		case "mode":
@@ -409,16 +444,16 @@ func opencodeSessionSettings(options []opencodeConfigOption, model, sandbox stri
 				continue
 			}
 			if !configOptionHasValue(option, "plan") {
-				return nil, errors.New("opencode plan mode is not available")
+				return nil, fmt.Errorf("%s plan mode is not available", providerName)
 			}
 			settings[option.ID] = "plan"
 		}
 	}
 	if len(options) > 0 && model != "" && !modelOptionFound {
-		return nil, errors.New("opencode session does not expose a model option")
+		return nil, fmt.Errorf("%s session does not expose a model option", providerName)
 	}
 	if len(options) > 0 && sandbox == "read-only" && !modeOptionFound {
-		return nil, errors.New("opencode session does not expose a mode option")
+		return nil, fmt.Errorf("%s session does not expose a mode option", providerName)
 	}
 	return settings, nil
 }
@@ -459,7 +494,7 @@ func (o *opencodeAppServer) SendPrompt(rt *agentRuntime, text string) error {
 	runID := rt.run.ID
 	rt.mu.Unlock()
 	if sessionID == "" {
-		return errors.New("opencode session is not ready")
+		return fmt.Errorf("%s session is not ready", o.providerName)
 	}
 	text = rt.withForgeSessionContext(text)
 	client.registerRuntime(runID, sessionID, rt)
@@ -477,7 +512,7 @@ func (o *opencodeAppServer) SendPrompt(rt *agentRuntime, text string) error {
 }
 
 func (o *opencodeAppServer) SendInput(_ *agentRuntime, _ string) error {
-	return errors.New("OpenCode does not support steering an active prompt; wait for the turn to finish")
+	return fmt.Errorf("%s does not support steering an active prompt; wait for the turn to finish", o.providerName)
 }
 
 func (o *opencodeAppServer) Interrupt(rt *agentRuntime) error {
@@ -567,6 +602,10 @@ func opencodeApprovalResponse(params json.RawMessage, decision string) (map[stri
 }
 
 func newOpencodeClient(m *agentManager, cmd *exec.Cmd, stdin io.WriteCloser) *opencodeClient {
+	return newACPClient(m, cmd, stdin, opencodeProviderName)
+}
+
+func newACPClient(m *agentManager, cmd *exec.Cmd, stdin io.WriteCloser, providerName string) *opencodeClient {
 	return &opencodeClient{
 		manager:        m,
 		cmd:            cmd,
@@ -576,6 +615,7 @@ func newOpencodeClient(m *agentManager, cmd *exec.Cmd, stdin io.WriteCloser) *op
 		done:           make(chan struct{}),
 		runIDBySession: make(map[string]string),
 		runtimeByRunID: make(map[string]*agentRuntime),
+		providerName:   providerName,
 	}
 }
 
@@ -595,7 +635,7 @@ func (c *opencodeClient) request(method string, params any) (json.RawMessage, er
 		return nil, fmt.Errorf("%s timed out", method)
 	case <-c.done:
 		c.removeWaiter(key)
-		return nil, errors.New("opencode acp exited")
+		return nil, fmt.Errorf("%s acp exited", c.providerName)
 	}
 }
 
@@ -775,7 +815,7 @@ func (rt *agentRuntime) handleOpencodeServerRequest(client *opencodeClient, id j
 			rt.failOpencodePermissionRequest(client.manager, err)
 			return
 		}
-		rt.addEvent(client.manager, "approval_resolved", method, "OpenCode permission automatically approved.", mustJSON(response), "")
+		rt.addEvent(client.manager, "approval_resolved", method, client.providerName+" permission automatically approved.", mustJSON(response), "")
 	case "fs/read_text_file":
 		content, err := rt.handleOpencodeReadTextFile(params)
 		if err != nil {
@@ -824,12 +864,12 @@ func (rt *agentRuntime) handleOpencodeServerRequest(client *opencodeClient, id j
 		_ = client.respond(id, nil)
 	default:
 		_ = client.respondError(id, -32601, "unsupported by Forge GUI")
-		rt.addEvent(client.manager, "server_request", method, fmt.Sprintf("Unsupported opencode request: %s", method), params, "")
+		rt.addEvent(client.manager, "server_request", method, fmt.Sprintf("Unsupported %s request: %s", client.providerName, method), params, "")
 	}
 }
 
 func (rt *agentRuntime) failOpencodePermissionRequest(m *agentManager, err error) {
-	message := fmt.Sprintf("auto-approve OpenCode permission: %v", err)
+	message := fmt.Sprintf("auto-approve %s permission: %v", acpProviderNameForRun(rt.run), err)
 	rt.mu.Lock()
 	schedulerTurn := rt.run.SchedulerTurn
 	rt.stopRequested = true
@@ -854,7 +894,7 @@ func (rt *agentRuntime) handleOpencodeNotification(m *agentManager, method strin
 		Update json.RawMessage `json:"update"`
 	}
 	if err := json.Unmarshal(params, &notification); err != nil || len(notification.Update) == 0 {
-		rt.addEvent(m, "error", method, "Invalid OpenCode session update.", params, "")
+		rt.addEvent(m, "error", method, "Invalid ACP session update.", params, "")
 		return
 	}
 	update := notification.Update
@@ -897,12 +937,20 @@ func (rt *agentRuntime) handleOpencodePromptResult(requestErr error, result json
 	if stopReason == "" {
 		stopReason = "end_turn"
 	}
-	rt.addEvent(rt.manager, "system", "session/prompt", "OpenCode turn finished: "+stopReason+".", result, "")
+	providerName := acpProviderNameForRun(rt.run)
+	rt.addEvent(rt.manager, "system", "session/prompt", providerName+" turn finished: "+stopReason+".", result, "")
 	if rt.isSchedulerTurn() {
-		rt.finishSchedulerTurn(rt.manager, "OpenCode stop reason: "+stopReason)
+		rt.finishSchedulerTurn(rt.manager, providerName+" stop reason: "+stopReason)
 		return
 	}
 	rt.markIdle(rt.manager)
+}
+
+func acpProviderNameForRun(run agentRun) string {
+	if run.Provider == kimiProviderID {
+		return kimiProviderName
+	}
+	return opencodeProviderName
 }
 
 func (rt *agentRuntime) handleOpencodeReadTextFile(params json.RawMessage) (string, error) {

@@ -269,7 +269,7 @@ func agentConfigAvailable(cfg config, agentID string) bool {
 		return false
 	}
 	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
-	return ok && provider.Enabled && (provider.Type == codexProviderID || provider.Type == opencodeProviderID)
+	return ok && provider.Enabled && (provider.Type == codexProviderID || isACPProviderType(provider.Type))
 }
 
 func defaultAvailableAgent(cfg config) (agentConfig, bool) {

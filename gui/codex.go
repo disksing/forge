@@ -410,7 +410,7 @@ func (rt *agentRuntime) agentProfileCatalog() string {
 		if model := agentOption(agent, agentOptionModel); model != "" {
 			parts = append(parts, "model "+clean(model))
 		}
-		if provider.Type == opencodeProviderID {
+		if isACPProviderType(provider.Type) {
 			parts = append(parts, agentOption(agent, agentOptionMode)+" mode")
 		}
 		if route.Description != "" {

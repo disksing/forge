@@ -4,6 +4,7 @@ Forge GUI 支持多种 agent provider。当前内置：
 
 - **Codex app-server** (`codex`)：默认 provider，通过 `codex app-server` 子进程运行。
 - **OpenCode ACP** (`opencode`)：通过 `opencode acp` 子进程运行，使用 ACP（Agent Client Protocol）协议。
+- **Kimi Code ACP** (`kimi`)：通过 `kimi acp` 子进程运行，使用 ACP（Agent Client Protocol）协议。
 
 ## 配置 OpenCode Provider
 
@@ -15,18 +16,29 @@ Forge GUI 支持多种 agent provider。当前内置：
 
 配置保存后，即可在任务目录启动使用 OpenCode 的交互式或非交互式运行。
 
+## 配置 Kimi Code Provider
+
+先安装 Kimi Code CLI，并在终端运行 `kimi` 完成登录。然后在 GUI 的 System Settings → Agent 中：
+
+1. 启用 `Kimi Code` provider。
+2. 创建一个新 agent，Provider 选择 `Kimi Code`。
+3. 选择 `build` 或 `plan` mode，并可选配置 Kimi Code model。
+
+Forge 默认执行 `kimi acp`。如果 GUI 进程的 `PATH` 找不到 CLI，可通过 `FORGE_KIMI_CLI` 指定 `kimi` 可执行文件的绝对路径。
+
 agent 只共享名称和 provider 两个公共字段，运行参数保存在 provider 专属的 `options` 中：
 
 - Codex：`model`、`sandbox`、`approval`。
-- OpenCode：`model`、`mode`（`build` / `plan`）。
+- OpenCode / Kimi Code：`model`、`mode`（`build` / `plan`）。
 
 settings 会随 provider 动态切换字段，服务端保存时也会过滤不属于该 provider 的 option。
-OpenCode model 必须使用 `session/new` 返回的 option value；配置值不存在时，Forge 会终止启动并在错误中列出可用值，不再静默使用 OpenCode 默认模型。
+ACP provider 的 model 必须使用 `session/new` 返回的 option value；配置值不存在时，Forge 会终止启动并在错误中列出可用值，不再静默使用 provider 默认模型。
 
 ## 环境变量
 
 - `FORGE_CODEX_CLI`：自定义 `codex` 可执行文件路径（默认使用 `codex`）。
 - `FORGE_OPENCODE_CLI`：自定义 `opencode` 可执行文件路径（默认使用 `opencode`）。
+- `FORGE_KIMI_CLI`：自定义 `kimi` 可执行文件路径（默认使用 `kimi`）。
 - `FORGE_GUI_CONFIG`：自定义 GUI 配置文件路径。每个运行中的 GUI 会独占其配置文件；测试时如需启动第二实例，必须使用独立配置文件、端口和 workspace。
 
 例如，启动与主 GUI 完全隔离的测试实例：
@@ -39,12 +51,12 @@ FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 
 如果另一个 GUI 已持有相同配置的锁，新实例会拒绝启动。锁由进程持有，退出或崩溃后由操作系统自动释放。
 
-## OpenCode ACP 实现说明
+## ACP Provider 实现说明
 
-OpenCode provider 作为 ACP Client：
+OpenCode 与 Kimi Code provider 作为独立 ACP Client：
 
-- 启动 `opencode acp` 子进程并通过 stdio JSON-RPC 通信。
-- 使用 ACP v1，并校验 OpenCode 返回的协议版本与可选 session capabilities。
+- 分别启动 `opencode acp` 或 `kimi acp` 子进程并通过 stdio JSON-RPC 通信。
+- 使用 ACP v1，并校验 provider 返回的协议版本与可选 session capabilities。
 - 在 `initialize` 中声明 Client 能力：`fs.readTextFile`、`fs.writeTextFile`、`terminal`。
 - 实现 ACP Client 方法：`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`session/request_permission`。
 - 将 `session/update` 通知映射为 forge-gui 事件类型（`assistant_delta`、`tool`、`system` 等）。
@@ -52,11 +64,11 @@ OpenCode provider 作为 ACP Client：
 - 将 `session/request_permission` 映射为现有审批 UI。
 - 文件与终端操作严格限制在 workspace 目录内。
 - scheduler turn 结束时读取 AutoRun 的即时状态；若仍为 `running`，记录 retry 并在共享三次预算内继续。
-- model 和 mode 会映射到 OpenCode 的 session config options。
+- model 和 mode 会映射到对应 provider 的 session config options。
 
 ## 验证
 
-默认测试不依赖本机安装 OpenCode：
+默认测试使用假 ACP 子进程覆盖 Kimi Code 会话，不依赖本机安装 OpenCode 或 Kimi Code：
 
 ```sh
 go test ./gui/...
