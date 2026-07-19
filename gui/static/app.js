@@ -673,7 +673,7 @@ function renderSessions() {
       : null;
     const providerLabel = isInternal ? providerName(session.agentRunProvider || "codex") : "External";
     const label = isInternal ? agent?.name || session.agentRunAgentId || providerLabel : "External";
-    const title = isInternal ? session.agentRunTitle || resourceId || session.id : session.id;
+    const title = sessionDisplayTitle(session, resourceId);
     const metaParts = [providerLabel];
     if (controls.length > 1) {
       metaParts.push(`${controls.length} locks`);
@@ -697,6 +697,14 @@ function renderSessions() {
       list.appendChild(sessionResourceMenu(session, controls));
     }
   }
+}
+
+function sessionDisplayTitle(session, resourceId) {
+  const resourceTitle = findResource(resourceId)?.title || "";
+  if (session.source === "internal") {
+    return session.agentRunTitle || resourceTitle || resourceId || session.id;
+  }
+  return resourceTitle || resourceId || session.id;
 }
 
 function sessionControls(session) {

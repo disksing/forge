@@ -450,6 +450,69 @@ func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 }
 
+func TestSessionDisplayTitleUsesLockedResourceTitle(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the session title behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function sessionDisplayTitle(session, resourceId)")
+	if start < 0 {
+		t.Fatal("could not find session title function")
+	}
+	end := strings.Index(app[start:], "function sessionControls(session)")
+	if end < 0 {
+		t.Fatal("could not isolate session title function")
+	}
+	end += start
+
+	script := `
+const resources = new Map([
+  ["project1", { id: "project1", title: "Forge" }],
+  ["project1.task1", { id: "project1.task1", title: "Fix session title" }],
+]);
+function findResource(id) {
+  return resources.get(id) || null;
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(message + ": expected " + expected + ", got " + actual);
+}
+` + app[start:end] + `
+assertEqual(
+  sessionDisplayTitle({ source: "external", id: "session-internal-name" }, "project1.task1"),
+  "Fix session title",
+  "external session should use the locked task title",
+);
+assertEqual(
+  sessionDisplayTitle({ source: "internal", id: "session-one", agentRunTitle: "Title captured at launch" }, "project1.task1"),
+  "Title captured at launch",
+  "internal session should keep its captured run title",
+);
+assertEqual(
+  sessionDisplayTitle({ source: "external", id: "session-missing" }, "project1.task404"),
+  "project1.task404",
+  "missing resources should fall back to the resource id",
+);
+assertEqual(
+  sessionDisplayTitle({ source: "external", id: "session-unlocked" }, ""),
+  "session-unlocked",
+  "unlocked sessions should fall back to the session id",
+);
+`
+
+	testFile := filepath.Join(t.TempDir(), "session-display-title.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("session title behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
