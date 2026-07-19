@@ -79,6 +79,7 @@ const state = {
     agentChooserOpen: false,
     historyOpen: false,
     eventsHasMore: false,
+    historyBeforeId: 0,
     loadingOlder: false,
     sendingInput: false,
     toolGroupOpen: new Map(),
@@ -624,6 +625,7 @@ async function selectResource(id, options = {}) {
     state.agent.runs = [];
     state.agent.activeRunId = "";
     state.agent.events = [];
+    state.agent.historyBeforeId = 0;
     state.agent.ttyDraft = "";
     state.agent.ttyMultiline = false;
   }
@@ -1622,6 +1624,7 @@ async function loadAgentRuns() {
     await loadAgentEvents();
   } else {
     state.agent.events = [];
+    state.agent.historyBeforeId = 0;
   }
   connectAgentStream();
 }
@@ -1642,6 +1645,7 @@ function reconcileActiveAgentRun(runs) {
   state.agent.activeRunId = nextRunId;
   state.agent.events = [];
   state.agent.eventsHasMore = false;
+  state.agent.historyBeforeId = 0;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
   return true;
@@ -1664,10 +1668,13 @@ async function loadAgentEvents() {
   if (!state.activeWorkspaceId || !state.agent.activeRunId) {
     state.agent.events = [];
     state.agent.eventsHasMore = false;
+    state.agent.historyBeforeId = 0;
     return;
   }
   const detail = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}`);
-  state.agent.events = coalesceAgentEvents(detail.events || []);
+  const events = detail.events || [];
+  state.agent.historyBeforeId = oldestRawAgentEventID(events);
+  state.agent.events = coalesceAgentEvents(events);
   state.agent.eventsHasMore = Boolean(detail.eventsHasMore || detail.eventsTruncated);
   await ensureVisibleAgentEvents(AGENT_INITIAL_VISIBLE_EVENT_COUNT, { maxPages: AGENT_INITIAL_AUTO_PAGE_LIMIT });
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
@@ -1678,19 +1685,20 @@ async function loadAgentEvents() {
 
 async function loadOlderAgentEvents() {
   if (!state.activeWorkspaceId || !state.agent.activeRunId || state.agent.loadingOlder) return;
-  if (!oldestAgentEventID()) return;
+  if (!state.agent.historyBeforeId) return;
   const log = $("ttyLog");
   const previousHeight = log?.scrollHeight || 0;
-  // Raw provider events can contain thousands of reasoning deltas between two
-  // chat messages. Keep paging until the button reveals at least one visible
-  // message instead of stopping after a fixed number of invisible raw events.
-  const targetVisibleCount = visibleAgentEventCount() + AGENT_MANUAL_VISIBLE_EVENT_COUNT;
+  // Raw provider events can contain thousands of reasoning/tool updates
+  // between two chat messages. Keep paging until the button reveals at least
+  // one earlier conversation message, not merely another tool group.
+  const targetVisibleCount = visibleAgentMessageCount() + AGENT_MANUAL_VISIBLE_EVENT_COUNT;
   state.agent.loadingOlder = true;
   renderTTY({ stickToBottom: false });
   try {
     await ensureVisibleAgentEvents(targetVisibleCount, {
       maxPages: AGENT_MANUAL_AUTO_PAGE_LIMIT,
       pageLimit: AGENT_MANUAL_RAW_PAGE_LIMIT,
+      visibleCount: visibleAgentMessageCount,
     });
   } finally {
     state.agent.loadingOlder = false;
@@ -1706,8 +1714,9 @@ async function loadOlderAgentEvents() {
 async function ensureVisibleAgentEvents(targetCount, options = {}) {
   const maxPages = options.maxPages || AGENT_INITIAL_AUTO_PAGE_LIMIT;
   const pageLimit = options.pageLimit || AGENT_OLDER_RAW_PAGE_LIMIT;
+  const visibleCount = options.visibleCount || visibleAgentEventCount;
   let pages = 0;
-  while (state.agent.eventsHasMore && visibleAgentEventCount() < targetCount && pages < maxPages) {
+  while (state.agent.eventsHasMore && visibleCount() < targetCount && pages < maxPages) {
     const loaded = await loadOlderAgentEventsPage(pageLimit);
     if (!loaded) break;
     pages++;
@@ -1715,10 +1724,16 @@ async function ensureVisibleAgentEvents(targetCount, options = {}) {
 }
 
 async function loadOlderAgentEventsPage(pageLimit = AGENT_OLDER_RAW_PAGE_LIMIT) {
-  const before = oldestAgentEventID();
+  const before = state.agent.historyBeforeId;
   if (!before) return false;
   const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?before=${encodeURIComponent(before)}&limit=${encodeURIComponent(pageLimit)}`);
   const older = body.events || [];
+  const nextBefore = oldestRawAgentEventID(older);
+  if (older.length > 0 && (!nextBefore || nextBefore >= before)) {
+    state.agent.eventsHasMore = false;
+    return false;
+  }
+  if (nextBefore) state.agent.historyBeforeId = nextBefore;
   state.agent.events = coalesceAgentEvents([...older, ...state.agent.events]);
   state.agent.eventsHasMore = Boolean(body.hasMore);
   return older.length > 0;
@@ -1728,8 +1743,17 @@ function visibleAgentEventCount() {
   return displayAgentEvents(state.agent.events).length;
 }
 
-function oldestAgentEventID() {
-  return state.agent.events.find((event) => event.id > 0)?.id || 0;
+function visibleAgentMessageCount() {
+  return displayAgentEvents(state.agent.events).filter((event) =>
+    ["assistant_delta", "user", "error", "approval_requested"].includes(event.type)
+  ).length;
+}
+
+function oldestRawAgentEventID(events) {
+  return events.reduce((oldest, event) => {
+    const id = Number(event?.id) || 0;
+    return id > 0 && (!oldest || id < oldest) ? id : oldest;
+  }, 0);
 }
 
 function latestAgentEventID() {
@@ -1746,6 +1770,7 @@ async function reloadAgentRunsForSelection() {
   closeAgentStream();
   state.agent.activeRunId = "";
   state.agent.events = [];
+  state.agent.historyBeforeId = 0;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
   await loadAgentRuns();
@@ -1758,6 +1783,7 @@ function resetAgentState() {
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.eventsHasMore = false;
+  state.agent.historyBeforeId = 0;
   state.agent.loadingOlder = false;
   state.agent.optionsOpen = false;
   state.agent.agentChooserOpen = false;

@@ -800,6 +800,7 @@ func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
 		`const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;`,
 		`const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;`,
 		`const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;`,
+		`state.agent.historyBeforeId = oldestRawAgentEventID(events);`,
 		`function latestAgentEventID()`,
 		`const after = latestAgentEventID();`,
 		`/stream${query}`,
@@ -819,7 +820,7 @@ func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
 	}
 }
 
-func TestLoadOlderAgentEventsSkipsRawNoiseUntilVisibleMessage(t *testing.T) {
+func TestLoadOlderAgentEventsAdvancesRawCursorAcrossCoalescedDelta(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for the agent history behavior test")
@@ -847,14 +848,15 @@ const state = {
     activeRunId: "run",
     loadingOlder: false,
     eventsHasMore: true,
-    events: [{ id: 3000, type: "assistant_delta", text: "current" }],
+    historyBeforeId: 3000,
+    events: [{ id: 3000, type: "assistant_delta", text: "current", data: { messageId: "long-message" } }],
   },
 };
-const pages = [
-  [{ id: 2500, type: "reasoning_delta", text: "noise one" }],
-  [{ id: 2000, type: "reasoning_delta", text: "noise two" }],
-  [{ id: 1500, type: "assistant_delta", text: "older reply" }],
-];
+const pages = new Map([
+  [3000, [{ id: 2500, type: "assistant_delta", text: "earlier chunk", data: { messageId: "long-message" } }]],
+  [2500, [{ id: 2000, type: "assistant_delta", text: "older reply", data: { messageId: "older-message" } }]],
+]);
+const requestedBefore = [];
 const requestedLimits = [];
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -868,19 +870,33 @@ function displayAgentEvents(events) {
   return events.filter((event) => event.type === "assistant_delta" || event.type === "user");
 }
 function coalesceAgentEvents(events) {
-  return events;
+  const result = [];
+  for (const event of events) {
+    const last = result[result.length - 1];
+    if (last?.type === event.type && last?.data?.messageId === event?.data?.messageId) {
+      last.id = event.id;
+      last.text += event.text;
+    } else {
+      result.push({ ...event, data: { ...event.data } });
+    }
+  }
+  return result;
 }
 async function api(url) {
-  const limit = new URL(url, "http://forge.test").searchParams.get("limit");
-  requestedLimits.push(Number(limit));
-  return { events: pages.shift() || [], hasMore: pages.length > 0 };
+  const params = new URL(url, "http://forge.test").searchParams;
+  const before = Number(params.get("before"));
+  requestedBefore.push(before);
+  requestedLimits.push(Number(params.get("limit")));
+  return { events: pages.get(before) || [], hasMore: before > 2500 };
 }
 ` + app[start:end] + `
 (async () => {
   await loadOlderAgentEvents();
-  assert(requestedLimits.join(",") === "500,500,500", "manual history should use bounded 500-event pages until a visible message is found");
+  assert(requestedBefore.join(",") === "3000,2500", "raw history cursor should advance even when display coalescing keeps a newer event id");
+  assert(requestedLimits.join(",") === "500,500", "manual history should use bounded 500-event pages until a visible message is found");
   assert(visibleAgentEventCount() === 2, "older visible reply was not loaded through reasoning noise");
   assert(state.agent.events[0].text === "older reply", "older events should be prepended in chronological order");
+  assert(state.agent.historyBeforeId === 2000, "raw history cursor should track the oldest server event id");
 })().catch((error) => {
   console.error(error);
   process.exit(1);
