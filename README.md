@@ -1,44 +1,284 @@
-# forge
+# Forge
 
-forge is a small CLI for a local AgentWorkspace: a filesystem-based project/task workflow for AI agents, shared Git checkouts, and per-task Git worktrees.
+Forge is a local, filesystem-first workspace manager for people and AI coding agents. It combines a deterministic CLI with a responsive web UI for organizing projects and tasks, running interactive agent sessions, scheduling autonomous work, and reviewing the resulting files and Git changes.
 
-The design is intentionally simple. All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, a workspace Wiki, logs, artifacts, and task worktrees. Agents coordinate writes with sessions that lock the project or task they update; stale locks are pruned from session liveness. Agents may read other projects and tasks freely for context, but should only update resources they have locked. When an agent is started through `forge-start`, Forge creates a PID-liveness session, locks the selected resource, injects `FORGE_SESSION_ID`, and ends the session when the command exits. The workspace root does not require a lock.
+The workspace is the source of truth. Contracts are Markdown, structured state is JSON, history is JSONL, generated output is stored as artifacts, and code changes live in task-owned Git worktrees. The GUI is a control plane over those files rather than a separate project database.
+
+## Highlights
+
+- **Transparent local state.** Projects, tasks, logs, artifacts, templates, and Wiki pages remain ordinary files that can be inspected, versioned, backed up, or repaired without the GUI.
+- **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
+- **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
+- **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
+- **Interactive and autonomous agents.** Forge GUI supports Codex app-server, OpenCode ACP, and Kimi Code ACP, including streaming chat, approvals, resumable history, file uploads, and mid-run user intervention.
+- **Dependency-aware AutoRun.** Tasks can be queued with preferred Agent Profiles and prerequisite task generations. The GUI scheduler resumes ready work, records retries, and exposes queued, running, waiting, paused, completed, and failed states.
+- **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
+
+## Design
+
+Forge separates concerns deliberately:
+
+```text
+Forge CLI / forge-start ───────┐
+                              ├── AgentWorkspace files (source of truth)
+Forge GUI ── invokes CLI ─────┤
+          ├── agent providers │
+          └── Git diff viewer ┘
+
+shared checkout in repos/ ── git worktree ── task-owned branch in worktree/
+```
+
+- The **CLI** owns deterministic workspace mutations and JSON views used by other tools.
+- **`forge-start`** launches a terminal agent inside one resource with a managed session and lock.
+- The **GUI** renders workspace state, manages agent providers and sessions, and schedules AutoRun turns through the CLI.
+- **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
+
+The workspace root itself is not lockable. Project and task resources are independently lockable, so unrelated tasks can progress concurrently.
+
+## Requirements
+
+- Go 1.22 or newer
+- Git
+- One or more optional agent CLIs for GUI chat or AutoRun:
+  - `codex` with `codex app-server`
+  - `opencode` with `opencode acp`
+  - `kimi` with `kimi acp`
+
+## Build
+
+Clone the repository and build all three binaries with branch and commit metadata embedded:
+
+```bash
+git clone https://github.com/disksing/forge.git
+cd forge
+scripts/build
+```
+
+This creates:
+
+```text
+bin/forge
+bin/forge-start
+bin/forge-gui
+```
+
+Pass another output directory to `scripts/build` if needed. Add that directory to `PATH`, or invoke the binaries by their absolute paths.
+
+## Quick Start
+
+Create a workspace and its first project:
+
+```bash
+mkdir AgentWorkspace
+cd AgentWorkspace
+
+forge init
+forge project create --slug forge-dev "Develop Forge"
+forge repo add forge https://github.com/disksing/forge.git
+forge task create --project=project1 --slug first-change \
+  --detail "Implement and verify the first change." \
+  "First change"
+```
+
+Open the GUI for that workspace:
+
+```bash
+FORGE_CLI="$(command -v forge)" forge-gui --workspace "$PWD"
+```
+
+Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). The GUI can also create or add workspaces, create projects and tasks, apply project task templates, and configure agents.
+
+The GUI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
+
+## Forge GUI
+
+The main UI is split into navigation, resource details, and agent chat:
+
+- **Navigation:** switch workspaces, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles.
+- **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
+- **Chat:** start, stop, resume, or revisit agent sessions; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
+- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, enable providers, configure provider-specific agents, select the default chat agent, and map portable Agent Profiles to local agents.
+
+The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
+
+### Agent Providers
+
+Forge ships with three provider adapters:
+
+| Provider | Process | Agent options |
+| --- | --- | --- |
+| Codex | `codex app-server` | model, sandbox, approval policy |
+| OpenCode | `opencode acp` | model, `build` or `plan` mode |
+| Kimi Code | `kimi acp` | model, `build` or `plan` mode |
+
+Codex is enabled by default. OpenCode and Kimi Code can be enabled in **Settings → Agent** after their CLIs are installed and authenticated. Multiple providers and agents can be enabled at the same time.
+
+Useful overrides:
+
+```text
+FORGE_CLI            forge executable used by the GUI
+FORGE_CODEX_CLI      Codex executable
+FORGE_OPENCODE_CLI   OpenCode executable
+FORGE_KIMI_CLI       Kimi Code executable
+FORGE_GUI_CONFIG     GUI configuration file
+```
+
+Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for provider setup, ACP behavior, and live smoke tests.
+
+## Task Worktrees
+
+Forge records worktree metadata but leaves Git operations explicit. A typical coding task looks like this:
+
+```bash
+repo="$PWD/repos/forge"
+task="$PWD/project1-forge-dev/task1-first-change"
+
+git -C "$repo" worktree add \
+  -b task1-first-change \
+  "$task/worktree/forge" \
+  master
+
+forge task repo add \
+  --project=project1 \
+  --task=task1 \
+  --worktree "$task/worktree/forge" \
+  --branch task1-first-change \
+  --target master \
+  --base master \
+  forge
+```
+
+Use an absolute destination with `git worktree add`, especially when combining it with `git -C`; otherwise Git may resolve the destination relative to the shared checkout.
+
+## Interactive Agent Launches
+
+`forge-start` runs a command in the selected project or task directory. It creates a PID-liveness session, locks that resource, injects `FORGE_SESSION_ID`, writes launch context under `.forge/`, and releases the session when the command exits.
+
+```bash
+forge-start --project=project1 --task=task1 -- codex
+```
+
+Selectors may be omitted when the current directory already identifies the task or project. A default command can be stored in `forge.json` as either a string or argument array:
+
+```json
+{
+  "version": 1,
+  "agentCommand": ["codex", "--dangerously-bypass-approvals-and-sandbox"]
+}
+```
+
+Agents launched by `forge-start` or Forge GUI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
+
+## AutoRun
+
+AutoRun adds a generation-numbered state machine to a task. The GUI scheduler finds runnable tasks, resolves preferred Agent Profiles to locally configured agents, starts or resumes a session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`.
+
+Create an autonomous task:
+
+```bash
+forge task create \
+  --project=project1 \
+  --autorun \
+  --agent-profile=fast \
+  --agent-profile=codex \
+  --prompt="Read task.md, implement the change, and verify it." \
+  "Implement the change"
+```
+
+Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `review`, or `codex` to machine-local agent configurations; if none are available, the scheduler falls back to an enabled default agent.
+
+Tasks can wait for exact generations of other tasks:
+
+```bash
+forge task create \
+  --project=project1 \
+  --autorun \
+  --after=project1.task1@1 \
+  --prompt="Integrate the completed prerequisite." \
+  "Integration"
+```
+
+A scheduler-started turn must finish with exactly one result action:
+
+```bash
+forge task autorun complete --summary="Implemented and verified"
+forge task autorun wait --after=project1.task3@1 --summary="Waiting for dependency"
+forge task autorun pause --reason="User decision required"
+forge task autorun fail --reason="Verification cannot pass"
+```
+
+If a running turn exits without reporting a result, the scheduler records a retry and continues within a shared three-attempt budget before pausing the task. A completed or failed task can be queued again as a new generation.
+
+## Task Templates
+
+Project-local templates live in `templates/*.md`. YAML front matter controls task creation and the remainder becomes the new task's complete `task.md`:
+
+```markdown
+---
+title: Daily inspection
+autorun: true
+agent-profiles: [fast, codex]
+prompt: Inspect the project and report findings.
+---
+# Daily inspection
+
+## Background
+
+Inspect the current project state and report anything that needs attention.
+```
+
+Supported front matter fields are `title`, `autorun`, `agent-profiles`, legacy `agent`, and `prompt`. Agent settings and prompts apply only to AutoRun templates.
 
 ## Workspace Layout
 
 ```text
 AgentWorkspace/
-  AGENTS.md
-  forge.json
+  AGENTS.md                   global human and agent instructions
+  forge.json                  workspace configuration
+  forge-sessions.json         active session and lock registry
   wiki/
-    index.md
+    index.md                  long-lived workspace knowledge
   repos/
-    owner/repo/
-  project1/
-    AGENTS.md
-    project.json
-    project.md
-    log.jsonl
-    artifacts/
-    templates/
-    task1/
-      AGENTS.md
-      task.json
-      task.md
-      work.md
-      log.jsonl
-      artifacts/
-      worktree/
-  archive/
+    forge/                    shared normal checkout
+  project1-forge-dev/
+    AGENTS.md                 generated project launch card
+    project.json              structured project metadata
+    project.md                durable project contract
+    log.jsonl                 append-only project timeline
+    templates/                reusable task templates
+    artifacts/                project outputs
+    task1-first-change/
+      AGENTS.md               generated task launch card
+      task.json               task, repository, and AutoRun metadata
+      task.md                 durable task contract
+      work.md                 replaceable recovery checkpoint
+      log.jsonl               append-only task timeline
+      artifacts/              reports, screenshots, uploads, patches
+      worktree/               task-owned Git worktrees
+    archive/                  archived tasks
+  archive/                    archived projects
 ```
 
-Open projects live directly under the workspace with names such as `project1/` or `project1-forge-dev/`. Open project tasks live directly under their project directories with short names such as `task1/` or `task1-develop-forge/`, while their resource ids remain full ids such as `project1.task1`. Archived projects live under `archive/`. Archived project tasks live under their project directory's `archive/` directory. Open/archive state is represented by location; an optional `task.json.autoRun` snapshot records the current automated round.
+Open/archive state is represented by directory location. Human-readable directory suffixes do not change resource ids: `project1-forge-dev/task1-first-change/` is still `project1.task1`.
 
-## Commands
+### File Roles
 
-```bash
+| File | Role |
+| --- | --- |
+| `project.md`, `task.md` | Durable contracts: background, scope, acceptance criteria, stable constraints, decisions, and contract-changing questions. |
+| task `work.md` | Current focus, next actions, blockers, and just enough transient state to resume. It is replaced as work advances. |
+| `log.jsonl` | Append-only chronological events and completed-step history, written with `forge project log` or `forge task log`. |
+| `project.json`, `task.json` | Versioned structured facts Forge understands. Arbitrary notes belong in Markdown. |
+| `AGENTS.md` | Workspace operating rules plus generated project/task launch cards. Forge rewrites only its marked managed block. |
+| `wiki/` | Long-lived knowledge shared across projects and tasks, with `wiki/index.md` as the entry point. |
+| `artifacts/` | Generated reports, screenshots, patches, uploaded files, and other outputs. |
+
+## CLI Reference
+
+Run `forge help` for full command descriptions. The current command surface is:
+
+```text
 forge --version
-
 forge init
 forge migrate
 
@@ -49,22 +289,23 @@ forge project create [--slug <slug>] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
+forge project log add|list ...
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
-forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
-forge task show [--project=<project>] [--task=<task>]
-forge task archive [--project=<project>] [--task=<task>]
-forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-forge task repo list [--project=<project>] [--task=<task>]
-forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task autorun queue|start|wait|pause|resume|complete|fail ...
+forge resource archive --id=<resource>
 
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
-forge session heartbeat --id=<id>
-forge session lock --id=<id> [--project=<project>] [--task=<task>]
-forge session unlock --id=<id> [--project=<project>] [--task=<task>]
-forge session list
-forge session show --id=<id>
+forge task create [--project=<project>] [--slug <slug>]
+                  [--detail <detail>|--task-markdown <markdown>]
+                  [--autorun] [--agent-profile=<profile>...]
+                  [--agent=<legacy-agent-id>] [--prompt=<prompt>]
+                  [--after=<task@generation>...] <title>
+forge task list [--project=<project>] [--all]
+                [--runnable [--include-blocked] [--json]]
+forge task show|archive ...
+forge task log add|list ...
+forge task repo add|list|remove ...
+forge task autorun queue|start|retry|wait|pause|resume|complete|fail ...
+
+forge session new|heartbeat|lock|unlock|end|list|show ...
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
@@ -72,139 +313,46 @@ forge workspace resource --id=<resource> --json
 forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ```
 
-`forge --version` prints the build-time git branch and sha.
+`forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
 
-`forge init` initializes the current directory as a new AgentWorkspace. It must be run outside any existing workspace, and creates `forge.json`, `repos/`, `archive/`, `wiki/index.md`, and a forge-managed block in `AGENTS.md`.
-
-`forge repo add <name> <url>` clones a normal checkout into `repos/<name>`. Repository names may include path segments such as `disksing/forge`. Use `--bare` to create a legacy bare repository at `repos/<name>.git`.
-
-`forge repo list` lists repositories known to the workspace.
-
-`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]` creates a PID-liveness session, locks the selected project/task resource, injects `FORGE_SESSION_ID` into the agent environment, runs an agent command in the selected directory, and ends the session when the command exits. If `forge-start` exits abnormally, later session operations prune the stale lock by PID liveness. When selectors are omitted, Forge uses the current task, otherwise the current project. With only `--task`, Forge uses the current project. Explicit command arguments after `--` override the workspace `forge.json` default. Configure the default as `agentCommand`, either as a string such as `"codex --dangerously-bypass-approvals-and-sandbox"` or an argument array such as `["codex", "--dangerously-bypass-approvals-and-sandbox"]`.
-
-`forge project create [--slug <slug>] <description>` creates the next top-level project directory with `project.json`, `project.md`, `log.jsonl`, `AGENTS.md`, `artifacts/`, and `templates/`. Projects do not store repository metadata, recovery snapshots, or `worktree/` directories. Use `--slug <slug>` to create a directory such as `project1-forge-dev/` while keeping the resource id as `project1`. Generated `project.md` contains only the project title and description. Task templates are Markdown files under `templates/`; their YAML front matter supports `title`, `autorun`, `agent-profiles`, legacy `agent`, and `prompt`.
-
-`forge project list` lists open projects. Use `--all` to include archived projects. It never includes tasks; use `forge task list [--project=<project>]` for project tasks.
-
-`forge project show [--project=<project>]` prints a project's `project.json`. `<project>` may be a full id such as `project22` or just a number such as `22`. When omitted, Forge uses the project containing the current working directory.
-
-`forge project archive [--project=<project>]` moves a project into workspace `archive/`. `<project>` follows the same rules as `forge project show`.
-
-`forge task create` creates the next task under a project. `<title>` is stored in `task.json` and shown by `forge task list`; `--detail` writes the initial `task.md` body. Add `--autorun`, `--prompt`, repeatable ordered `--agent-profile=<profile>`, and repeatable `--after=<task@generation>` flags to queue an AutoRun without starting it. Profiles are portable preferences resolved by the GUI; legacy `--agent=<id>` remains available for existing exact bindings and is mutually exclusive with Profiles. The task id is full, such as `project1.task1`, while the directory name is short, such as `project1/task1/` or `project1/task1-develop-forge/`.
-
-`forge task list [--project=<project>] [--all]` lists tasks. Add `--runnable --json` for a side-effect-free query of AutoRuns whose generation and prerequisites are ready. `--include-blocked` includes configured tasks with their blocking reason.
-
-`forge task autorun` manages the current AutoRun snapshot. `queue` creates the first generation or a new generation after a terminal result; `start`, `resume`, `complete`, `wait`, `pause`, and `fail` update it immediately. The GUI scheduler reuses ordinary agent Sessions and requires only scheduler-started turns to submit one result action before ending. AutoRun history and its three-attempt retry budget are derived from marked entries in `log.jsonl`.
-
-`forge task show [--project=<project>] [--task=<task>]` prints a task's `task.json`. `<task>` may be a short id such as `task4` or just a number such as `4`. Forge combines it with `--project` when provided, otherwise the current directory's project. When `--task` is omitted, Forge uses the task containing the current working directory.
-
-`forge task archive [--project=<project>] [--task=<task>]` moves an open task into its project archive. `<task>` follows the same rules as `forge task show`.
-
-`forge task repo add [--project=<project>] [--task=<task>] <repo-name>` adds or updates a repository entry in the task's `task.json`. Optional `--worktree`, `--branch`, `--target`, and `--base` flags record the exact worktree and branch metadata. Task selection follows `forge task show`.
-
-`forge task repo list [--project=<project>] [--task=<task>]` lists repositories recorded in a task's `task.json`. Task selection follows `forge task show`.
-
-`forge task repo remove [--project=<project>] [--task=<task>] <repo-name>` removes a repository entry from a task's `task.json`. Task selection follows `forge task show`.
-
-`forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]` creates a session in `forge-sessions.json` and prints its unique id. Heartbeat liveness is the default and uses a default timeout unless `--timeout` is provided. PID liveness stays active while the process exists. GUI run liveness stays active while the Forge GUI local endpoint reports that its managed run is active. `forge session heartbeat --id=<id>` refreshes a heartbeat session timestamp. Session commands prune stale sessions before acting, except that `forge session end --id=<id>` first removes the explicit target if it exists.
-
-`forge session lock --id=<id> [--project=<project>] [--task=<task>]` records project or task control for a session. With no selector, Forge locks the current task when run under a task directory, otherwise the current project. With only `--project`, Forge locks that project. With only `--task`, Forge uses the current project and locks that task. Workspace root does not need a lock. `forge session unlock` uses the same selector rules to release control.
-
-`forge session list` lists active sessions after automatically pruning stale sessions. `forge session show --id=<id>` prints one active session as formatted JSON.
-
-`forge workspace tree --json` prints a lightweight JSON tree of the Workspace Wiki, open projects, open tasks, and active sessions for GUI and tool integrations.
-
-`forge workspace resource --id=<resource> --json` prints detail JSON for one project or task, including common Markdown files, artifacts, worktrees, and task repository metadata.
-
-Agents started through `forge-start` or Forge GUI should reuse the injected `FORGE_SESSION_ID`; the launcher already registered the session and locked the starting resource, and will release it when the agent session exits. Agents should not create another session, lock/unlock the starting resource, or end a launcher-owned session. Agents started directly without `FORGE_SESSION_ID` should detect their current process PID, run `forge session new --pid <pid>`, export the printed id as `FORGE_SESSION_ID`, lock the current project/task resource once, and end that session when the agent exits. Agents should use temporary `forge session lock`/`unlock` pairs only for additional project/task resources outside the starting resource.
-
-`forge migrate` upgrades project/task metadata to the current resource schema, restores a missing `wiki/index.md`, and refreshes the workspace and open resource `AGENTS.md` managed blocks. Run it once after installing a Forge version that reports resource metadata needs migration.
-
-`forge migrate` is safe to run multiple times. It rewrites only forge-managed prompt blocks and preserves content outside managed blocks:
-
-```md
+```markdown
 <!-- managed by forge cli -->
 ...
 <!-- end of forge cli prompt -->
 ```
 
-Content outside that block belongs to people and agents and is preserved.
-
-The Forge GUI treats the workspace `AGENTS.md` as the user-editable instructions surface and hides Forge-managed content while editing it. The Workspace detail view also provides a refreshable tree and safe preview for files under `wiki/`. Project and task `AGENTS.md` files are generated launch cards for agents and are hidden from project/task detail views.
-
-## Building
-
-Build all three binaries with git metadata embedded:
-
-```bash
-scripts/build
-```
-
-The output defaults to `bin/forge`, `bin/forge-start`, and `bin/forge-gui`. Pass a directory to override it, for example `scripts/build /tmp/forge-build`.
-
-`forge repo add` uses normal `git clone` by default so source code is readable under `repos/`. forge does not create mirror repositories. Use `--bare` only when a bare repository is explicitly needed.
-
-Repository names may include path segments:
-
-```bash
-forge repo add disksing/forge https://github.com/disksing/forge.git
-```
-
-This creates:
-
-```text
-repos/disksing/forge/
-```
-
-The legacy bare form is still available:
-
-```bash
-forge repo add --bare disksing/forge https://github.com/disksing/forge.git
-```
-
-That creates:
-
-```text
-repos/disksing/forge.git
-```
-
-## Project And Task Files
-
-Each project directory contains:
-
-- `AGENTS.md`: a short launch card that points agents to workspace rules and local context files, and documents the task template format.
-- `project.json`: versioned structured project facts such as schema version, id, type, and description.
-- `project.md`: durable project contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It records why the project exists, its boundaries, stable constraints and decisions, and how success is judged. Add optional modules such as `Out of Scope`, `Constraints`, `Decisions`, and contract-changing `Open Questions` only when useful.
-- `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge project log add/list` to write or read project log entries; do not use it as a current-state snapshot.
-- `artifacts/`: generated reports, screenshots, patches, and other outputs.
-
-Each task directory contains:
-
-- `AGENTS.md`: a short launch card that points agents to workspace rules, local context files, and parent project context.
-- `task.json`: versioned structured facts such as schema version, id, type, parent id, title, and involved repositories.
-- `task.md`: durable task contract generated with default `Background`, `Scope`, and `Acceptance Criteria` modules. It answers why the task exists, what is in or out of scope, which constraints and decisions remain valid, and how completion is judged. Questions that may change that contract belong here.
-- `work.md`: replaceable recovery checkpoint generated with default `Focus` only, plus hidden examples for optional modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`. Keep only the current focus, next actions, blockers, and state needed to resume. Do not repeat the task contract or accumulate completed history. Short-lived execution questions and arbitrary PR, CI, image, deployment, or related-task references belong here when useful.
-- `log.jsonl`: append-only timeline for important chronological events and completed-step history. Use `forge task log add/list` to write or read task log entries; do not use it as the current recovery state.
-- `artifacts/`: generated reports, screenshots, patches, and other outputs.
-- `worktree/`: Git worktrees for code changes.
-
-Agents may update the current task's `task.json` when they discover new involved repositories.
-
-Use `forge task repo add` for those structured updates:
-
-```bash
-forge task repo add project3.task1 disksing/forge --branch agent/project3-task1-repos --target master
-```
-
-If `--worktree` is omitted, forge records `<project-id>/taskN/worktree/<repo>` by default. If `--branch` or `--target` is omitted, forge tries to infer the current worktree branch and repository default branch.
-
 ## Development
+
+Run the full test suite and build all binaries:
 
 ```bash
 go test ./...
+scripts/build
+```
+
+Useful focused commands:
+
+```bash
+go test ./cli/internal/forge
+go test ./gui/...
 go run ./cli/cmd/forge help
+go run ./gui --workspace /path/to/AgentWorkspace
+```
+
+When testing a second GUI instance, isolate all mutable state:
+
+```bash
+FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
+  go run ./gui \
+  --addr 127.0.0.1:4999 \
+  --workspace /tmp/forge-workspace-test
 ```
 
 ## Companion Tools
 
+- [Forge GUI provider guide](gui/README.md): provider configuration, ACP implementation details, environment variables, and live tests.
 - [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
+
+## License
+
+[MIT](LICENSE)
