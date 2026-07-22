@@ -10,7 +10,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
-- **Interactive and autonomous agents.** Forge GUI supports Codex app-server, OpenCode ACP, and Kimi Code ACP, including streaming chat, approvals, resumable history, file uploads, and mid-run user intervention.
+- **Interactive and autonomous agents.** Forge GUI supports Codex app-server, OpenCode ACP, Kimi Code ACP, and Pi JSONL RPC, including streaming chat, resumable history, file uploads, and mid-run user intervention.
 - **Dependency-aware AutoRun.** Tasks can be queued with preferred Agent Profiles and prerequisite task generations. The GUI scheduler resumes ready work, records retries, and exposes queued, running, waiting, paused, completed, and failed states.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
 

@@ -41,6 +41,7 @@ type config struct {
 	Codex              codexSettings         `json:"codex"`
 	Opencode           opencodeSettings      `json:"opencode"`
 	Kimi               opencodeSettings      `json:"kimi"`
+	Pi                 opencodeSettings      `json:"pi"`
 }
 
 type opencodeSettings struct {
@@ -176,6 +177,7 @@ type server struct {
 	codex     *codexAppServer
 	opencode  *opencodeAppServer
 	kimi      *opencodeAppServer
+	pi        *piRPCProvider
 	providers map[string]agentProvider
 }
 
@@ -223,10 +225,12 @@ func main() {
 	s.codex = newCodexAppServer()
 	s.opencode = newOpencodeAppServer()
 	s.kimi = newKimiAppServer()
+	s.pi = newPiRPCProvider()
 	s.providers = map[string]agentProvider{
 		codexProviderID:    s.codex,
 		opencodeProviderID: s.opencode,
 		kimiProviderID:     s.kimi,
+		piProviderID:       s.pi,
 	}
 	s.agents = newAgentManager(s)
 	if initialWorkspace != "" {

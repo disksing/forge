@@ -18,6 +18,7 @@ type settingsResponse struct {
 	Codex              codexStatus           `json:"codex"`
 	Opencode           opencodeStatus        `json:"opencode"`
 	Kimi               opencodeStatus        `json:"kimi"`
+	Pi                 opencodeStatus        `json:"pi"`
 }
 
 type codexStatus struct {
@@ -41,6 +42,8 @@ const (
 	opencodeProviderName = "OpenCode"
 	kimiProviderID       = "kimi"
 	kimiProviderName     = "Kimi Code"
+	piProviderID         = "pi"
+	piProviderName       = "Pi Coding Agent"
 	defaultAgentID       = "codex-default"
 	agentOptionModel     = "model"
 	agentOptionSandbox   = "sandbox"
@@ -145,6 +148,26 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, s.kimiStatus())
+	case "pi/start":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.setPiEnabled(true); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, s.piStatus())
+	case "pi/stop":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		if err := s.setPiEnabled(false); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, s.piStatus())
 	default:
 		http.NotFound(w, r)
 	}
@@ -166,6 +189,7 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 		Codex:              s.codexStatus(),
 		Opencode:           s.opencodeStatus(),
 		Kimi:               s.kimiStatus(),
+		Pi:                 s.piStatus(),
 	})
 }
 
@@ -205,6 +229,7 @@ func (s *server) updateAgentProviders(w http.ResponseWriter, r *http.Request) {
 	cfg.Codex.Enabled = providerEnabled(cfg.AgentProviders, codexProviderID) && cfg.Codex.Enabled
 	cfg.Opencode.Enabled = providerEnabled(cfg.AgentProviders, opencodeProviderID) && cfg.Opencode.Enabled
 	cfg.Kimi.Enabled = providerEnabled(cfg.AgentProviders, kimiProviderID) && cfg.Kimi.Enabled
+	cfg.Pi.Enabled = providerEnabled(cfg.AgentProviders, piProviderID) && cfg.Pi.Enabled
 	if !providerEnabled(cfg.AgentProviders, codexProviderID) {
 		if err := s.codex.Stop(); err != nil {
 			writeError(w, err, http.StatusBadRequest)
@@ -219,6 +244,12 @@ func (s *server) updateAgentProviders(w http.ResponseWriter, r *http.Request) {
 	}
 	if !providerEnabled(cfg.AgentProviders, kimiProviderID) {
 		if err := s.kimi.Stop(); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+	}
+	if !providerEnabled(cfg.AgentProviders, piProviderID) {
+		if err := s.pi.Stop(); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
@@ -310,6 +341,18 @@ func (s *server) kimiStatus() opencodeStatus {
 	return s.kimi.Status(enabled)
 }
 
+func (s *server) piStatus() opencodeStatus {
+	cfg, err := s.loadConfig()
+	enabled := false
+	if err == nil {
+		enabled = providerEnabled(cfg.AgentProviders, piProviderID)
+	}
+	if enabled && cfg.Pi.Enabled {
+		_ = s.pi.Start(s.agents)
+	}
+	return s.pi.Status(enabled)
+}
+
 func (s *server) startProvidersIfEnabled() error {
 	cfg, err := s.loadConfig()
 	if err != nil {
@@ -329,6 +372,11 @@ func (s *server) startProvidersIfEnabled() error {
 	if cfg.Kimi.Enabled && providerEnabled(cfg.AgentProviders, kimiProviderID) {
 		if err := s.kimi.Start(s.agents); err != nil {
 			startErrors = append(startErrors, fmt.Errorf("start Kimi Code provider: %w", err))
+		}
+	}
+	if cfg.Pi.Enabled && providerEnabled(cfg.AgentProviders, piProviderID) {
+		if err := s.pi.Start(s.agents); err != nil {
+			startErrors = append(startErrors, fmt.Errorf("start Pi provider: %w", err))
 		}
 	}
 	return errors.Join(startErrors...)
@@ -380,6 +428,23 @@ func (s *server) setKimiEnabled(enabled bool) error {
 			return err
 		}
 	} else if err := s.kimi.Stop(); err != nil {
+		return err
+	}
+	return s.saveConfig(cfg)
+}
+
+func (s *server) setPiEnabled(enabled bool) error {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return err
+	}
+	cfg.AgentProviders = setProviderEnabled(cfg.AgentProviders, piProviderID, enabled)
+	cfg.Pi.Enabled = enabled
+	if enabled {
+		if err := s.pi.Start(s.agents); err != nil {
+			return err
+		}
+	} else if err := s.pi.Stop(); err != nil {
 		return err
 	}
 	return s.saveConfig(cfg)
@@ -458,8 +523,8 @@ func findAgentProfileRoute(routes []agentProfileRoute, key string) (agentProfile
 }
 
 func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderConfig {
-	normalized := make([]agentProviderConfig, 0, len(providers)+3)
-	seen := make(map[string]bool, len(providers)+3)
+	normalized := make([]agentProviderConfig, 0, len(providers)+4)
+	seen := make(map[string]bool, len(providers)+4)
 	for _, provider := range providers {
 		provider.ID = strings.TrimSpace(provider.ID)
 		if provider.ID == "" || seen[provider.ID] {
@@ -485,6 +550,10 @@ func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderCon
 			provider.Name = kimiProviderName
 			provider.Type = kimiProviderID
 		}
+		if provider.ID == piProviderID {
+			provider.Name = piProviderName
+			provider.Type = piProviderID
+		}
 		seen[provider.ID] = true
 		normalized = append(normalized, provider)
 	}
@@ -509,6 +578,14 @@ func normalizeAgentProviders(providers []agentProviderConfig) []agentProviderCon
 			ID:      kimiProviderID,
 			Name:    kimiProviderName,
 			Type:    kimiProviderID,
+			Enabled: false,
+		})
+	}
+	if !seen[piProviderID] {
+		normalized = append(normalized, agentProviderConfig{
+			ID:      piProviderID,
+			Name:    piProviderName,
+			Type:    piProviderID,
 			Enabled: false,
 		})
 	}
@@ -555,7 +632,7 @@ func normalizeAgentOptions(agent agentConfig, providerType string) agentConfig {
 	}
 	model := option(agentOptionModel)
 	switch providerType {
-	case opencodeProviderID, kimiProviderID:
+	case opencodeProviderID, kimiProviderID, piProviderID:
 		mode := normalizeOpencodeMode(option(agentOptionMode))
 		agent.Options = map[string]string{agentOptionMode: mode}
 		if model != "" {
@@ -575,6 +652,10 @@ func normalizeAgentOptions(agent agentConfig, providerType string) agentConfig {
 
 func isACPProviderType(providerType string) bool {
 	return providerType == opencodeProviderID || providerType == kimiProviderID
+}
+
+func isBuildPlanProviderType(providerType string) bool {
+	return isACPProviderType(providerType) || providerType == piProviderID
 }
 
 func agentProviderType(providers []agentProviderConfig, providerID string) string {

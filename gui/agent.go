@@ -543,7 +543,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 
 func applyAgentRunOptions(run *agentRun, agent agentConfig, providerType string) {
 	run.Model = agentOption(agent, agentOptionModel)
-	if isACPProviderType(providerType) {
+	if isBuildPlanProviderType(providerType) {
 		if agentOption(agent, agentOptionMode) == "plan" {
 			run.Sandbox = "read-only"
 		} else {
@@ -578,7 +578,7 @@ func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, a
 	if !provider.Enabled {
 		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
 	}
-	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) {
+	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) && provider.Type != piProviderID {
 		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("unsupported agent provider: %s", provider.Name)
 	}
 	return agent, provider, nil
@@ -620,7 +620,7 @@ func (m *agentManager) ensureRunProviderEnabled(run agentRun) error {
 	if !provider.Enabled {
 		return fmt.Errorf("agent provider is disabled: %s", provider.Name)
 	}
-	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) {
+	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) && provider.Type != piProviderID {
 		return fmt.Errorf("unsupported agent provider: %s", provider.Name)
 	}
 	return nil
@@ -1154,6 +1154,8 @@ func providerNameForRun(run agentRun) string {
 		return opencodeProviderName
 	case kimiProviderID:
 		return kimiProviderName
+	case piProviderID:
+		return piProviderName
 	default:
 		return run.Provider
 	}

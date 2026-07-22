@@ -2206,7 +2206,7 @@ function agentConfigSummary(agent) {
   if (!agent) return "";
   const options = normalizedProviderAgentOptions(agent.providerId, agent.options);
   const parts = [providerName(agent.providerId)];
-  if (isACPProviderType(agent.providerId)) {
+  if (isBuildPlanProviderType(agent.providerId)) {
     parts.push(options.mode === "plan" ? "Plan" : "Build");
   } else {
     parts.push(sandboxLabel(options.sandbox), approvalLabel(options.approval));
@@ -2227,6 +2227,10 @@ function agentProviderType(providerId) {
 
 function isACPProviderType(providerId) {
   return ["opencode", "kimi"].includes(agentProviderType(providerId));
+}
+
+function isBuildPlanProviderType(providerId) {
+  return isACPProviderType(providerId) || agentProviderType(providerId) === "pi";
 }
 
 function sandboxLabel(value) {
@@ -2549,6 +2553,7 @@ function settingsAgentPanel(data) {
   const codex = data.codex || { running: false };
   const opencode = data.opencode || { running: false };
   const kimi = data.kimi || { running: false };
+  const pi = data.pi || { running: false };
   return `
     <div class="settings-panel">
       <div class="settings-panel-header">
@@ -2561,7 +2566,7 @@ function settingsAgentPanel(data) {
           <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
         </div>
         <div class="settings-provider-list">
-          ${providers.map((provider) => settingsProviderRow(provider, { codex, opencode, kimi })).join("")}
+          ${providers.map((provider) => settingsProviderRow(provider, { codex, opencode, kimi, pi })).join("")}
         </div>
       </section>
       ${settingsDefaultChatAgentSection(data)}
@@ -2661,9 +2666,9 @@ function settingsProviderRow(provider, statuses) {
   let status = enabled ? "Enabled" : "Disabled";
   const runtime = statuses?.[provider.id];
   if (runtime?.running) {
-    status = `Enabled · PID ${escapeHTML(String(runtime.pid || ""))}`;
+    status = runtime.pid ? `Enabled · PID ${escapeHTML(String(runtime.pid))}` : "Enabled · Ready";
   }
-  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : provider.id === "kimi" ? "sparkles" : "box";
+  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : provider.id === "kimi" ? "sparkles" : provider.id === "pi" ? "bot" : "box";
   return `
     <div class="settings-service-row">
       <div class="settings-provider-main">
@@ -2738,7 +2743,7 @@ function settingsNewAgentCard(providers) {
 }
 
 function settingsProviderOptionFields(providerId, options, attribute) {
-  if (isACPProviderType(providerId)) {
+  if (isBuildPlanProviderType(providerId)) {
     return `
       <label>
         <span>Mode</span>
@@ -2771,7 +2776,7 @@ function settingsProviderOptionFields(providerId, options, attribute) {
 
 function normalizedProviderAgentOptions(providerId, options = {}) {
   const model = String(options?.model || "").trim();
-  if (isACPProviderType(providerId)) {
+  if (isBuildPlanProviderType(providerId)) {
     return {
       mode: options?.mode === "plan" ? "plan" : "build",
       ...(model ? { model } : {}),
@@ -3967,6 +3972,8 @@ async function toggleAgentProvider(providerId) {
     await api(`/api/settings/opencode/${enabled ? "stop" : "start"}`, { method: "POST" });
   } else if (provider.id === "kimi") {
     await api(`/api/settings/kimi/${enabled ? "stop" : "start"}`, { method: "POST" });
+  } else if (provider.id === "pi") {
+    await api(`/api/settings/pi/${enabled ? "stop" : "start"}`, { method: "POST" });
   }
   await api("/api/settings/agent/providers", {
     method: "PUT",
