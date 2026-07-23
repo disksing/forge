@@ -2092,7 +2092,11 @@ function shouldDisplayAgentEvent(event, completedItems = new Map()) {
     if (itemType === "userMessage" || itemType === "agentMessage" || itemType === "reasoning") return false;
     if (event.method === "item/commandExecution/outputDelta" || event.method === "command/exec/outputDelta") return false;
     if (event.method === "item/completed") return true;
-    if (event.method !== "item/started") return event.method === "session/update";
+    if (event.method !== "item/started") {
+      if (event.method !== "session/update") return false;
+      if ((itemType === "tool_call" || itemType === "tool_call_update") && !agentToolCallHasIdentity(event)) return false;
+      return true;
+    }
     const itemId = agentEventItemId(event);
     return !itemId || !completedItems.has(itemId);
   }
@@ -2119,6 +2123,16 @@ function agentEventItemType(event) {
   return data?.item?.type || data?.sessionUpdate || data?.update?.sessionUpdate || "";
 }
 
+function agentToolCallHasIdentity(event) {
+  const data = agentEventData(event);
+  const item = data?.item || data?.toolCall || data?.update?.toolCall || data;
+  for (const key of ["name", "tool", "title", "command", "cmd"]) {
+    const value = item?.[key] ?? item?.rawInput?.[key] ?? item?.input?.[key] ?? item?.arguments?.[key];
+    if (typeof value === "string" && value.trim()) return true;
+    if (Array.isArray(value) && value.length) return true;
+  }
+  return false;
+}
 function agentEventItemId(event) {
   const data = agentEventData(event);
   return data?.messageId || data?.itemId || data?.item?.id || data?.toolCallId || data?.toolCall?.id || "";
