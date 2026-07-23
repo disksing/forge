@@ -1002,7 +1002,7 @@ function tool(id, update = false) {
     id: id + (update ? 100 : 0),
     type: "tool",
     method: "session/update",
-    data: { sessionUpdate: update ? "tool_call_update" : "tool_call", toolCallId: id, status: update ? "completed" : "pending" },
+    data: { sessionUpdate: update ? "tool_call_update" : "tool_call", toolCallId: id, status: update ? "completed" : "pending", title: "tool-" + id },
   };
 }
 function reasoning(id, text) {
@@ -1036,6 +1036,83 @@ assert(displayed.length === 1 && displayed[0].type === "tool_group", "turn compl
 `
 
 	testFile := filepath.Join(t.TempDir(), "agent-chat-events.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("agent chat behavior test failed: %v\n%s", err, output)
+	}
+}
+
+func TestAgentChatHidesUntitledToolCallUpdates(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the agent chat behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function coalesceAgentEvents(events)")
+	end := strings.Index(app, "function renderAgent()")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate agent event transformation functions")
+	}
+
+	script := `
+const state = { agent: { activeRunId: "run" } };
+` + app[start:end] + `
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function titledCall(id) {
+  return {
+    id,
+    type: "tool",
+    method: "session/update",
+    data: { sessionUpdate: "tool_call", toolCallId: id, title: "read", kind: "read", status: "pending" },
+  };
+}
+function titledUpdate(id) {
+  return {
+    id: id + 100,
+    type: "tool",
+    method: "session/update",
+    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "completed", title: "README.md" },
+  };
+}
+function untitledProgress(id) {
+  return {
+    id: id + 200,
+    type: "tool",
+    method: "session/update",
+    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "in_progress", content: [{ type: "content", content: { type: "text", text: "partial-json-chunk" } }] },
+  };
+}
+function untitledCompleted(id) {
+  return {
+    id: id + 300,
+    type: "tool",
+    method: "session/update",
+    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "completed" },
+  };
+}
+
+let displayed = displayAgentEvents([titledCall(1), untitledProgress(1), untitledProgress(1), untitledCompleted(1)]);
+assert(displayed.length === 1 && displayed[0].type === "tool_group", "untitled updates should not split or extend the tool group");
+assert(displayed[0].events.length === 1, "untitled tool_call progress and completed updates should be hidden");
+assert(displayed[0].events[0].data.title === "read", "the titled tool call should remain visible");
+
+displayed = displayAgentEvents([titledCall(1), titledUpdate(1)]);
+assert(displayed.length === 1 && displayed[0].events.length === 1, "a titled update should replace its call in the group");
+assert(displayed[0].events[0].data.title === "README.md", "titled completed updates should stay visible");
+
+displayed = displayAgentEvents([untitledProgress(9), untitledCompleted(9)]);
+assert(displayed.length === 0, "a fully untitled tool call should disappear entirely");
+`
+
+	testFile := filepath.Join(t.TempDir(), "agent-chat-untitled-tools.js")
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
