@@ -851,7 +851,7 @@ func serveRawPath(w http.ResponseWriter, r *http.Request, relPath, abs string) {
 		writeError(w, errors.New("raw preview is only available for text and common image formats"), http.StatusBadRequest)
 		return
 	}
-	w.Header().Set("Content-Type", fileMimeType(relPath, sample))
+	w.Header().Set("Content-Type", contentTypeWithCharset(fileMimeType(relPath, sample)))
 	w.Header().Set("Content-Disposition", "inline")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, info.Name(), info.ModTime(), file)
@@ -1413,6 +1413,13 @@ func fileMimeType(path string, data []byte) string {
 		return http.DetectContentType(data)
 	}
 	return "application/octet-stream"
+}
+
+func contentTypeWithCharset(mimeType string) string {
+	if strings.HasPrefix(mimeType, "text/") && !strings.Contains(mimeType, "charset") {
+		return mimeType + "; charset=utf-8"
+	}
+	return mimeType
 }
 
 func isPreviewableImage(path string) bool {

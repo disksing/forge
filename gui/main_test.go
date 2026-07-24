@@ -1197,3 +1197,49 @@ func TestFileMimeTypeMarkdown(t *testing.T) {
 		}
 	}
 }
+
+func TestContentTypeWithCharset(t *testing.T) {
+	if got := contentTypeWithCharset("text/markdown"); got != "text/markdown; charset=utf-8" {
+		t.Fatalf("contentTypeWithCharset(text/markdown) = %q", got)
+	}
+	if got := contentTypeWithCharset("text/plain; charset=utf-8"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("contentTypeWithCharset should keep an existing charset, got %q", got)
+	}
+	if got := contentTypeWithCharset("image/png"); got != "image/png" {
+		t.Fatalf("contentTypeWithCharset should leave non-text types alone, got %q", got)
+	}
+}
+
+func TestRawFileServesUTF8Charset(t *testing.T) {
+	workspace := t.TempDir()
+	content := []byte("# 标题\n\n中文内容。\n")
+	if err := os.WriteFile(filepath.Join(workspace, "notes.md"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(workspace, "wiki"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(workspace, "wiki", "notes.md"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, suffix := range []string{"files/raw?path=notes.md", "wiki/files/raw?path=notes.md"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/"+suffix, nil)
+		rec := httptest.NewRecorder()
+		s.handleWorkspace(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected raw preview for %q, got %d: %s", suffix, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Type"); got != "text/markdown; charset=utf-8" {
+			t.Fatalf("raw preview for %q should declare UTF-8, got Content-Type %q", suffix, got)
+		}
+		if !strings.Contains(rec.Body.String(), "中文内容") {
+			t.Fatalf("raw preview for %q lost UTF-8 content: %q", suffix, rec.Body.String())
+		}
+	}
+}
