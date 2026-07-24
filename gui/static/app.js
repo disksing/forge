@@ -21,6 +21,9 @@ const state = {
     open: false,
     tab: "workspace",
     data: null,
+    agentDirty: false,
+    expandedAgents: new Set(),
+    suppressDraftSync: false,
     workspacePath: "",
     createWorkspace: false,
     saving: false,
@@ -2471,6 +2474,8 @@ function renderSettingsModal() {
     root.innerHTML = "";
     return;
   }
+  if (!state.settings.suppressDraftSync) syncSettingsDraftFromDOM();
+  state.settings.suppressDraftSync = false;
   const data = state.settings.data || {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
@@ -2481,6 +2486,7 @@ function renderSettingsModal() {
     codex: { running: false },
     opencode: { running: false },
     kimi: { running: false },
+    pi: { running: false },
   };
   const entering = state.modalEnter === "settings";
   if (entering) state.modalEnter = "";
@@ -2503,10 +2509,12 @@ function renderSettingsModal() {
 }
 
 function settingsTabButton(id, iconName, label) {
+  const dirty = id === "agent" && state.settings.agentDirty;
   return `
-    <button type="button" class="settings-tab ${state.settings.tab === id ? "active" : ""}" data-settings-tab="${id}">
+    <button type="button" class="settings-tab ${state.settings.tab === id ? "active" : ""}${dirty ? " dirty" : ""}" data-settings-tab="${id}">
       ${icon(iconName)}
       <span>${escapeHTML(label)}</span>
+      ${id === "agent" ? `<span class="settings-tab-dot" aria-hidden="true"></span>` : ""}
     </button>
   `;
 }
@@ -2554,8 +2562,9 @@ function settingsAgentPanel(data) {
   const opencode = data.opencode || { running: false };
   const kimi = data.kimi || { running: false };
   const pi = data.pi || { running: false };
+  const dirty = Boolean(state.settings.agentDirty);
   return `
-    <div class="settings-panel">
+    <div class="settings-panel settings-agent-panel">
       <div class="settings-panel-header">
         <h2>Agents</h2>
         <p>Providers define available runtimes. Agents package provider options for session start.</p>
@@ -2571,21 +2580,20 @@ function settingsAgentPanel(data) {
       </section>
       ${settingsDefaultChatAgentSection(data)}
       ${settingsAgentProfilesSection(data)}
-      <form id="agentConfigForm" class="settings-agent-form">
-        <section class="settings-agent-section">
-          <div class="settings-section-heading">
-            <h3>Configured Agents</h3>
-            <span>${agents.length} total</span>
-          </div>
-          <div class="settings-agent-list">
-            ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("")}
-          </div>
-        </section>
-        ${settingsNewAgentCard(providers)}
-        <div class="settings-form-actions">
-          <button type="submit">${icon("save")}<span>Save Agents</span></button>
+      <section class="settings-agent-section">
+        <div class="settings-section-heading">
+          <h3>Configured Agents</h3>
+          <span>${agents.length} total</span>
         </div>
-      </form>
+        <div class="settings-agent-list">
+          ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("") || `<div class="settings-empty">No agents configured. Add one below.</div>`}
+        </div>
+      </section>
+      ${settingsNewAgentCard(providers)}
+      <div class="settings-form-actions settings-save-bar">
+        <span class="settings-save-hint${dirty ? " visible" : ""}" id="settingsSaveHint">${dirty ? "Unsaved changes" : ""}</span>
+        <button type="button" id="settingsSaveButton" ${dirty ? "" : "disabled"}>${icon("save")}<span>Save All</span></button>
+      </div>
     </div>
   `;
 }
@@ -2599,39 +2607,32 @@ function settingsAgentProfilesSection(data) {
   state.settings.newProfile.agentId = draftAgentId;
   const targetOptions = (selected) => agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === selected ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>`).join("");
   return `
-    <form id="agentProfileForm" class="settings-agent-form">
-      <section class="settings-agent-section">
-        <div class="settings-section-heading">
-          <h3>AutoRun Agent Profiles</h3>
-          <span>${profiles.length} routes</span>
+    <section class="settings-agent-section">
+      <div class="settings-section-heading">
+        <h3>AutoRun Agent Profiles</h3>
+        <span>${profiles.length} routes</span>
+      </div>
+      <p class="settings-section-copy">Portable Profile names map AutoRun preferences to local Agents. Keys must be unique.</p>
+      <div class="settings-profile-table">
+        <div class="settings-profile-row settings-profile-head">
+          <span>Profile key</span><span>Summary</span><span>Local Agent</span><span></span>
         </div>
-        <p class="settings-section-copy">Portable Profile names map AutoRun preferences to local Agents. Keys must be unique.</p>
-        <div class="settings-agent-list">
-          ${profiles.map((profile, index) => `
-            <div class="settings-agent-card settings-agent-profile-row" data-profile-index="${index}">
-              <div class="settings-profile-fields">
-                <label><span>Profile key</span><input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" /></label>
-                <label><span>Summary</span><input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" /></label>
-                <label><span>Local Agent</span><select data-profile-field="agentId">${targetOptions(profile.agentId)}</select></label>
-                <button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>
-              </div>
-            </div>
-          `).join("") || `<div class="settings-empty">No AutoRun Agent Profiles configured.</div>`}
-        </div>
-      </section>
-      <section class="settings-agent-section">
-        <div class="settings-section-heading"><h3>New Profile</h3></div>
-        <div class="settings-agent-card settings-agent-new">
-          <div class="settings-profile-fields">
-            <label><span>Profile key</span><input id="settingsNewProfileKey" value="${escapeHTML(state.settings.newProfile.key)}" placeholder="kimi" /></label>
-            <label><span>Summary</span><input id="settingsNewProfileDescription" value="${escapeHTML(state.settings.newProfile.description)}" placeholder="Kimi coding agent" /></label>
-            <label><span>Local Agent</span><select id="settingsNewProfileAgent" ${agents.length ? "" : "disabled"}>${targetOptions(draftAgentId) || `<option value="">No Agents</option>`}</select></label>
-            <button type="button" id="settingsAddProfileButton" ${agents.length ? "" : "disabled"}>${icon("plus")}<span>Add</span></button>
+        ${profiles.map((profile, index) => `
+          <div class="settings-profile-row" data-profile-index="${index}">
+            <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" />
+            <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" />
+            <select data-profile-field="agentId" aria-label="Local Agent">${targetOptions(profile.agentId)}</select>
+            <button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>
           </div>
+        `).join("")}
+        <div class="settings-profile-row settings-profile-new">
+          <input id="settingsNewProfileKey" value="${escapeHTML(state.settings.newProfile.key)}" placeholder="New key" aria-label="New profile key" />
+          <input id="settingsNewProfileDescription" value="${escapeHTML(state.settings.newProfile.description)}" placeholder="New profile summary" aria-label="New profile summary" />
+          <select id="settingsNewProfileAgent" aria-label="New profile agent" ${agents.length ? "" : "disabled"}>${targetOptions(draftAgentId) || `<option value="">No Agents</option>`}</select>
+          <button type="button" id="settingsAddProfileButton" ${agents.length ? "" : "disabled"}>${icon("plus")}<span>Add</span></button>
         </div>
-      </section>
-      <div class="settings-form-actions"><button type="submit">${icon("save")}<span>Save Profiles</span></button></div>
-    </form>
+      </div>
+    </section>
   `;
 }
 
@@ -2644,7 +2645,7 @@ function settingsDefaultChatAgentSection(data) {
     <section class="settings-agent-section">
       <div class="settings-section-heading">
         <h3>Default Chat Agent</h3>
-        <span>${defaultID ? escapeHTML(agentDisplayName(agents.find((agent) => agent.id === defaultID))) : "None"}</span>
+        <span id="settingsDefaultChatAgentLabel">${defaultID ? escapeHTML(agentDisplayName(agents.find((agent) => agent.id === defaultID))) : "None"}</span>
       </div>
       <label class="settings-default-agent">
         <span>Agent</span>
@@ -2688,17 +2689,20 @@ function settingsProviderRow(provider, statuses) {
 
 function settingsAgentRow(agent, providers, index) {
   const normalized = { ...agent, options: normalizedProviderAgentOptions(agent.providerId, agent.options) };
+  const expanded = Boolean(state.settings.expandedAgents?.has(agent.id));
   return `
-    <div class="settings-agent-card settings-agent-row" data-agent-index="${index}">
+    <div class="settings-agent-card settings-agent-row${expanded ? " expanded" : ""}" data-agent-index="${index}">
       <div class="settings-agent-card-head">
+        <button type="button" class="settings-agent-toggle" data-expand-agent="${escapeHTML(agent.id)}" aria-expanded="${expanded ? "true" : "false"}" title="${expanded ? "Collapse" : "Expand"}">${icon(expanded ? "chevron-down" : "chevron-right")}</button>
         <span class="settings-agent-mark">${escapeHTML((agent.name || agent.id || "A").slice(0, 1).toUpperCase())}</span>
+        <span class="settings-agent-title">${escapeHTML(agent.name || agent.id || "Untitled agent")}</span>
         <label class="settings-agent-name-field">
           <span>Name</span>
           <input data-agent-field="name" value="${escapeHTML(agent.name || "")}" placeholder="Agent name" />
         </label>
+        <span class="settings-agent-summary" title="${escapeHTML(agentConfigSummary(normalized))}">${escapeHTML(agentConfigSummary(normalized))}</span>
         <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}" title="Delete agent">${icon("trash-2")}</button>
       </div>
-      <div class="settings-agent-summary">${escapeHTML(agentConfigSummary(normalized))}</div>
       <div class="settings-agent-fields">
         <label>
           <span>Provider</span>
@@ -2851,13 +2855,8 @@ function bindSettingsEvents() {
   document.querySelectorAll("[data-toggle-provider]").forEach((button) => {
     button.addEventListener("click", () => toggleAgentProvider(button.dataset.toggleProvider).catch((err) => toast(err.message)));
   });
-  $("agentConfigForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveAgents().catch((err) => toast(err.message));
-  });
-  $("agentProfileForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveAgentProfiles().catch((err) => toast(err.message));
+  $("settingsSaveButton")?.addEventListener("click", () => {
+    saveAgentSettings().catch((err) => toast(err.message));
   });
   $("settingsAddProfileButton")?.addEventListener("click", addSettingsProfile);
   document.querySelectorAll("[data-remove-profile]").forEach((button) => {
@@ -2867,13 +2866,32 @@ function bindSettingsEvents() {
   $("settingsNewProfileDescription")?.addEventListener("input", (event) => { state.settings.newProfile.description = event.target.value; });
   $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentId = event.target.value; });
   $("settingsDefaultChatAgent")?.addEventListener("change", (event) => {
-    saveDefaultChatAgent(event.target.value).catch((err) => toast(err.message));
+    state.settings.data = { ...(state.settings.data || {}), defaultChatAgentId: event.target.value };
+    const label = $("settingsDefaultChatAgentLabel");
+    if (label) label.textContent = event.target.selectedOptions[0]?.textContent || "None";
+    markAgentSettingsDirty();
   });
   $("settingsAddAgentButton")?.addEventListener("click", () => {
     addSettingsAgent().catch((err) => toast(err.message));
   });
   document.querySelectorAll("[data-remove-agent]").forEach((button) => {
-    button.addEventListener("click", () => removeSettingsAgent(button.dataset.removeAgent).catch((err) => toast(err.message)));
+    button.addEventListener("click", () => removeSettingsAgent(button.dataset.removeAgent));
+  });
+  document.querySelectorAll("[data-expand-agent]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const id = button.dataset.expandAgent;
+      if (!state.settings.expandedAgents) state.settings.expandedAgents = new Set();
+      if (state.settings.expandedAgents.has(id)) {
+        state.settings.expandedAgents.delete(id);
+      } else {
+        state.settings.expandedAgents.add(id);
+      }
+      renderSettingsModal();
+    });
+  });
+  document.querySelectorAll(".settings-agent-row [data-agent-field], .settings-agent-row [data-agent-option], .settings-profile-row [data-profile-field]").forEach((field) => {
+    field.addEventListener("input", markAgentSettingsDirty);
+    field.addEventListener("change", markAgentSettingsDirty);
   });
   document.querySelectorAll('.settings-agent-row [data-agent-field="providerId"]').forEach((select) => {
     select.addEventListener("change", () => changeSettingsAgentProvider(Number(select.closest("[data-agent-index]")?.dataset.agentIndex), select.value));
@@ -3903,17 +3921,42 @@ async function openSettings(tab = "workspace") {
   state.modalEnter = "settings";
   state.settings.open = true;
   state.settings.tab = tab;
+  state.settings.agentDirty = false;
+  state.settings.expandedAgents = new Set();
   await refreshSettings();
   renderSettingsModal();
 }
 
 function closeSettings() {
+  if (state.settings.open && state.settings.agentDirty && !window.confirm("Discard unsaved agent settings changes?")) {
+    return;
+  }
   state.settings.open = false;
+  state.settings.agentDirty = false;
   renderSettingsModal();
 }
 
 async function refreshSettings() {
   state.settings.data = await api("/api/settings");
+}
+
+function snapshotAgentDraft() {
+  const data = state.settings.data || {};
+  return {
+    agents: data.agents || [],
+    agentProfiles: data.agentProfiles || [],
+    defaultChatAgentId: data.defaultChatAgentId || "",
+  };
+}
+
+// Full settings reloads replace state.settings.data; keep unsaved agent edits.
+async function refreshSettingsPreservingAgentDraft() {
+  syncSettingsDraftFromDOM();
+  const draft = state.settings.agentDirty ? snapshotAgentDraft() : null;
+  await refreshSettings();
+  if (draft) {
+    state.settings.data = { ...(state.settings.data || {}), ...draft };
+  }
 }
 
 async function submitSettingsWorkspace() {
@@ -3932,7 +3975,7 @@ async function submitSettingsWorkspace() {
   renderWorkspaceSelect();
   await loadUIState();
   await loadTree();
-  await refreshSettings();
+  await refreshSettingsPreservingAgentDraft();
   renderSettingsModal();
   toast(created ? "Workspace created." : "Workspace added.");
 }
@@ -3956,7 +3999,7 @@ async function removeSettingsWorkspace(id) {
   } else {
     renderWorkspaceSelect();
   }
-  await refreshSettings();
+  await refreshSettingsPreservingAgentDraft();
   renderSettingsModal();
   toast("Workspace removed from Forge GUI.");
 }
@@ -3979,7 +4022,7 @@ async function toggleAgentProvider(providerId) {
     method: "PUT",
     body: JSON.stringify(providers.map((item) => item.id === provider.id ? { ...item, enabled: !enabled } : item)),
   });
-  state.settings.data = await api("/api/settings");
+  await refreshSettingsPreservingAgentDraft();
   state.config = await api("/api/workspaces");
   applyAgentConfig();
   renderAgent();
@@ -3990,43 +4033,67 @@ async function toggleAgentProvider(providerId) {
   toast(enabled ? "Agent provider disabled." : "Agent provider enabled.");
 }
 
-async function saveAgents() {
-  const saved = await api("/api/settings/agents", {
-    method: "PUT",
-    body: JSON.stringify(collectSettingsAgents()),
-  });
-  if (state.config) state.config.agents = saved;
-  await refreshSettings();
-  if (state.config) {
-    state.config.agents = state.settings.data?.agents || saved;
-    state.config.agentProfiles = state.settings.data?.agentProfiles || [];
-    state.config.defaultChatAgentId = state.settings.data?.defaultChatAgentId || "";
+function syncSettingsDraftFromDOM() {
+  if (!state.settings.open) return;
+  if (!document.querySelector(".settings-agent-panel")) return;
+  const data = state.settings.data || {};
+  state.settings.data = {
+    ...data,
+    agents: collectSettingsAgents(),
+    agentProfiles: collectSettingsAgentProfiles(),
+    defaultChatAgentId: $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "",
+  };
+}
+
+function markAgentSettingsDirty() {
+  if (state.settings.agentDirty) return;
+  state.settings.agentDirty = true;
+  updateSettingsSaveBar();
+  document.querySelector('[data-settings-tab="agent"]')?.classList.add("dirty");
+}
+
+function updateSettingsSaveBar() {
+  const button = $("settingsSaveButton");
+  if (button) button.disabled = !state.settings.agentDirty;
+  const hint = $("settingsSaveHint");
+  if (hint) {
+    hint.textContent = state.settings.agentDirty ? "Unsaved changes" : "";
+    hint.classList.toggle("visible", state.settings.agentDirty);
   }
+}
+
+async function saveAgentSettings() {
+  syncSettingsDraftFromDOM();
+  const data = state.settings.data || {};
+  await api("/api/settings/agents", {
+    method: "PUT",
+    body: JSON.stringify(data.agents || []),
+  });
+  await api("/api/settings/agent-profiles", {
+    method: "PUT",
+    body: JSON.stringify(data.agentProfiles || []),
+  });
+  await api("/api/settings/agent/default-chat", {
+    method: "PUT",
+    body: JSON.stringify({ agentId: data.defaultChatAgentId || "" }),
+  });
+  state.settings.data = await api("/api/settings");
+  state.config = await api("/api/workspaces");
+  state.settings.agentDirty = false;
   applyAgentConfig();
   renderAgent();
   renderTTYComposer();
   bindAgentEvents();
   renderSettingsModal();
   refreshIcons();
-  toast("Agents saved.");
+  toast("Agent settings saved.");
 }
 
 function collectSettingsAgentProfiles() {
-  return Array.from(document.querySelectorAll(".settings-agent-profile-row")).map((row) => {
+  return Array.from(document.querySelectorAll(".settings-profile-row[data-profile-index]")).map((row) => {
     const field = (name) => row.querySelector(`[data-profile-field="${name}"]`)?.value.trim() || "";
     return { key: field("key"), description: field("description"), agentId: field("agentId") };
   });
-}
-
-async function saveAgentProfiles() {
-  const saved = await api("/api/settings/agent-profiles", {
-    method: "PUT",
-    body: JSON.stringify(collectSettingsAgentProfiles()),
-  });
-  state.settings.data = { ...(state.settings.data || {}), agentProfiles: saved };
-  if (state.config) state.config.agentProfiles = saved;
-  renderSettingsModal();
-  toast("Agent Profiles saved.");
 }
 
 function addSettingsProfile() {
@@ -4036,7 +4103,8 @@ function addSettingsProfile() {
     toast("Profile key is required.");
     return;
   }
-  const current = collectSettingsAgentProfiles();
+  syncSettingsDraftFromDOM();
+  const current = state.settings.data?.agentProfiles || [];
   if (current.some((profile) => profile.key.trim().toLowerCase() === key)) {
     toast(`Profile ${key} already exists.`);
     return;
@@ -4046,33 +4114,19 @@ function addSettingsProfile() {
     agentProfiles: [...current, { key, description: state.settings.newProfile.description.trim(), agentId }],
   };
   state.settings.newProfile = { key: "", description: "", agentId };
+  markAgentSettingsDirty();
+  state.settings.suppressDraftSync = true;
   renderSettingsModal();
 }
 
 function removeSettingsProfile(index) {
-  const current = collectSettingsAgentProfiles();
+  syncSettingsDraftFromDOM();
+  const current = state.settings.data?.agentProfiles || [];
   if (!Number.isInteger(index) || index < 0 || index >= current.length) return;
   state.settings.data = { ...(state.settings.data || {}), agentProfiles: current.filter((_, itemIndex) => itemIndex !== index) };
+  markAgentSettingsDirty();
+  state.settings.suppressDraftSync = true;
   renderSettingsModal();
-}
-
-async function saveDefaultChatAgent(agentId) {
-  const saved = await api("/api/settings/agent/default-chat", {
-    method: "PUT",
-    body: JSON.stringify({ agentId }),
-  });
-  const defaultChatAgentId = saved.defaultChatAgentId || "";
-  if (state.config) state.config.defaultChatAgentId = defaultChatAgentId;
-  state.settings.data = { ...(state.settings.data || {}), defaultChatAgentId };
-  state.agent.agentId = defaultChatAgentId;
-  state.agent.agentChooserOpen = false;
-  applyAgentConfig();
-  renderAgent();
-  renderTTYComposer();
-  bindAgentEvents();
-  renderSettingsModal();
-  refreshIcons();
-  toast("Default chat agent saved.");
 }
 
 function collectSettingsAgents() {
@@ -4096,7 +4150,8 @@ function collectSettingsAgents() {
 
 function changeSettingsAgentProvider(index, providerId) {
   if (!Number.isInteger(index) || index < 0) return;
-  const agents = collectSettingsAgents();
+  syncSettingsDraftFromDOM();
+  const agents = [...(state.settings.data?.agents || [])];
   if (!agents[index]) return;
   agents[index] = {
     ...agents[index],
@@ -4104,6 +4159,8 @@ function changeSettingsAgentProvider(index, providerId) {
     options: normalizedProviderAgentOptions(providerId, agents[index].options),
   };
   state.settings.data = { ...(state.settings.data || {}), agents };
+  markAgentSettingsDirty();
+  state.settings.suppressDraftSync = true;
   renderSettingsModal();
 }
 
@@ -4111,7 +4168,8 @@ async function addSettingsAgent() {
   const draft = normalizedNewAgentDraft(state.settings.data?.agentProviders || []);
   const name = $("settingsNewAgentName")?.value.trim() || draft.name.trim();
   if (!name) throw new Error("Agent name is required.");
-  const current = collectSettingsAgents();
+  syncSettingsDraftFromDOM();
+  const current = state.settings.data?.agents || [];
   const next = {
     id: uniqueAgentID(name, current),
     name,
@@ -4123,16 +4181,24 @@ async function addSettingsAgent() {
     agents: [...current, next],
   };
   state.settings.newAgent = { name: "", providerId: draft.providerId, options: normalizedProviderAgentOptions(draft.providerId) };
+  if (!state.settings.expandedAgents) state.settings.expandedAgents = new Set();
+  state.settings.expandedAgents.add(next.id);
+  markAgentSettingsDirty();
+  state.settings.suppressDraftSync = true;
   renderSettingsModal();
 }
 
-async function removeSettingsAgent(id) {
+function removeSettingsAgent(id) {
   if (!id) return;
-  const current = collectSettingsAgents();
+  syncSettingsDraftFromDOM();
+  const current = state.settings.data?.agents || [];
   state.settings.data = {
     ...(state.settings.data || {}),
     agents: current.filter((agent) => agent.id !== id),
   };
+  state.settings.expandedAgents?.delete(id);
+  markAgentSettingsDirty();
+  state.settings.suppressDraftSync = true;
   renderSettingsModal();
 }
 
