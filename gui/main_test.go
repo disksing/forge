@@ -1418,3 +1418,36 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 		}
 	}
 }
+
+func TestFileSectionHeaderHostsOpenActionOnSameRow(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`<h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span>${openFileAction(file.name, path)}</h3>`,
+		`function openFileAction(name, path)`,
+		`if (!path || !isMarkdownFile(name)) {`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("file section header open action is missing %q", want)
+		}
+	}
+	if strings.Contains(app, "markdown-preview-toolbar") {
+		t.Fatal("markdown preview toolbar should be folded into the section header row")
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	if !strings.Contains(styles, `.content-section h3 .markdown-open-file {
+  margin-left: auto;`) {
+		t.Fatal("open action should be pushed to the right end of the section header row")
+	}
+	if strings.Contains(styles, ".markdown-preview-toolbar") {
+		t.Fatal("markdown preview toolbar styles should be removed with the toolbar")
+	}
+}
