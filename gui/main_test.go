@@ -321,7 +321,7 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	source := string(data)
 	for _, want := range []string{
 		`AutoRun Agent Profiles`,
-		`id="agentProfileForm"`,
+		`settings-profile-table`,
 		`/api/settings/agent-profiles`,
 		`preferredAgentProfiles`,
 		`Actual Agent:`,
