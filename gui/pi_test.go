@@ -45,6 +45,8 @@ printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[]}
 printf '%s\n' '{"type":"tool_execution_start","toolCallId":"tool-1","toolName":"read","args":{"path":"README.md"}}'
 printf '%s\n' '{"type":"tool_execution_update","toolCallId":"tool-1","toolName":"read","partialResult":{}}'
 printf '%s\n' '{"type":"tool_execution_end","toolCallId":"tool-1","toolName":"read","result":{"content":[{"type":"text","text":"done"}]}}'
+printf '%s\n' '{"type":"tool_execution_start","toolCallId":"tool-2","toolName":"bash","args":{"command":"npm test"}}'
+printf '%s\n' '{"type":"tool_execution_end","toolCallId":"tool-2","toolName":"bash","isError":true,"result":{"content":[{"type":"text","text":"boom"}]}}'
 printf '%s\n' '{"type":"turn_end"}'
 printf '%s\n' '{"type":"agent_end"}'
 printf '%s\n' '{"type":"agent_settled"}'
@@ -104,8 +106,17 @@ while IFS= read -r line; do :; done
 	if !hasAgentEvent(events, "reasoning_delta", "considering") || !hasAgentEvent(events, "assistant_delta", "hello from pi") || !hasAgentEvent(events, "tool", "read README.md") {
 		t.Fatalf("unexpected Pi events: %#v", events)
 	}
-	if !hasAgentEvent(events, "tool", "read") {
-		t.Fatalf("expected Pi tool end event: %#v", events)
+	endCount := 0
+	for _, event := range events {
+		if event.Type == "tool" && event.Method == "tool_execution_end" && event.Text == "read README.md" {
+			endCount++
+		}
+	}
+	if endCount != 1 {
+		t.Fatalf("expected Pi tool end event to reuse start args: %#v", events)
+	}
+	if !hasAgentEvent(events, "tool", "bash npm test failed") {
+		t.Fatalf("expected failing Pi tool end event with start args: %#v", events)
 	}
 	for _, event := range events {
 		if event.Method == "message_start" || event.Method == "message_end" || event.Method == "turn_start" || event.Method == "turn_end" || event.Method == "agent_start" || event.Method == "agent_end" || event.Method == "tool_execution_update" {

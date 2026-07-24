@@ -30,12 +30,13 @@ type piRPCClient struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
 
-	mu      sync.Mutex
-	writeMu sync.Mutex
-	nextID  int64
-	waiting map[string]chan piRPCResponse
-	closed  bool
-	closing bool
+	mu       sync.Mutex
+	writeMu  sync.Mutex
+	nextID   int64
+	waiting  map[string]chan piRPCResponse
+	toolArgs map[string]json.RawMessage
+	closed   bool
+	closing  bool
 }
 
 type piRPCResponse struct {
@@ -186,6 +187,7 @@ func (p *piRPCProvider) startSession(rt *agentRuntime, resumeSessionID string) e
 		stdin:    stdin,
 		nextID:   1,
 		waiting:  make(map[string]chan piRPCResponse),
+		toolArgs: make(map[string]json.RawMessage),
 	}
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start Pi RPC: %w", err)
@@ -410,7 +412,22 @@ func (c *piRPCClient) handleEvent(raw json.RawMessage, eventType string) {
 			c.rt.addEvent(c.rt.manager, "error", eventType, text, raw, "")
 		}
 	case "tool_execution_start", "tool_execution_end":
-		text := piToolSummary(event.ToolName, event.Args)
+		args := event.Args
+		if id := strings.TrimSpace(event.ToolCallID); id != "" {
+			c.mu.Lock()
+			if eventType == "tool_execution_start" {
+				if len(args) > 0 {
+					c.toolArgs[id] = append(json.RawMessage(nil), args...)
+				}
+			} else {
+				if len(args) == 0 {
+					args = c.toolArgs[id]
+				}
+				delete(c.toolArgs, id)
+			}
+			c.mu.Unlock()
+		}
+		text := piToolSummary(event.ToolName, args)
 		if eventType == "tool_execution_end" && event.IsError {
 			text += " failed"
 		}
