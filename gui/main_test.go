@@ -320,7 +320,7 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		`AutoRun Agent Profiles`,
+		`AutoRun Profiles`,
 		`settings-profile-table`,
 		`/api/settings/agent-profiles`,
 		`preferredAgentProfiles`,
@@ -329,6 +329,42 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("Agent Profile UI is missing %q", want)
+		}
+	}
+}
+
+func TestAgentSettingsSplitIntoTabs(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`settingsTabButton("providers", "cpu", "Providers")`,
+		`settingsTabButton("agents", "bot", "Agents")`,
+		`settingsTabButton("profiles", "route", "Profiles")`,
+		`function settingsProvidersPanel(data)`,
+		`function settingsAgentsPanel(data)`,
+		`function settingsProfilesPanel(data)`,
+		`data-settings-section="agents"`,
+		`data-settings-section="profiles"`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("settings tab split is missing %q", want)
+		}
+	}
+	if strings.Contains(source, `settingsTabButton("agent",`) {
+		t.Fatal("old single Agent settings tab should be removed")
+	}
+	start := strings.Index(source, "function syncSettingsDraftFromDOM()")
+	end := strings.Index(source, "function markAgentSettingsDirty()")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate syncSettingsDraftFromDOM")
+	}
+	sync := source[start:end]
+	for _, want := range []string{`data-settings-section="agents"`, `data-settings-section="profiles"`} {
+		if !strings.Contains(sync, want) {
+			t.Fatalf("draft sync should only collect rendered sections, missing %q", want)
 		}
 	}
 }
