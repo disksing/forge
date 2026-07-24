@@ -2930,10 +2930,9 @@ i[data-lucide] {
   position: relative;
 }
 
-.markdown-preview-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 10px;
+.content-section h3 .markdown-open-file {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .markdown-open-file {

@@ -1027,10 +1027,11 @@ function fileSection(item) {
   const files = visibleResourceFiles(item);
   let insertedLog = false;
   const sections = files.map((file) => {
+    const path = file.path || resourceFilePath(item.path, file.name);
     const section = `
       <div class="content-section">
-        <h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span></h3>
-        ${renderFileContent(file.name, file.content, file.path || resourceFilePath(item.path, file.name))}
+        <h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span>${openFileAction(file.name, path)}</h3>
+        ${renderFileContent(file.name, file.content)}
       </div>
     `;
     if (file.name === "work.md") {
@@ -1049,14 +1050,25 @@ function visibleResourceFiles(item) {
   return (item.files || []).filter((file) => file.name !== "AGENTS.md");
 }
 
-function renderFileContent(name, content, path = "") {
+function renderFileContent(name, content) {
   if (name === "AGENTS.md") {
     return renderAgentsFileContent(content);
   }
   if (isMarkdownFile(name)) {
-    return renderMarkdownFileContent(name, content, path);
+    return renderMarkdownFileContent(name, content);
   }
   return `<pre class="markdown-view">${escapeHTML(content)}</pre>`;
+}
+
+function openFileAction(name, path) {
+  if (!path || !isMarkdownFile(name)) {
+    return "";
+  }
+  return `
+    <a class="markdown-open-file" href="${escapeHTML(rawFileURL(path))}" target="_blank" rel="noopener" title="Open file in new window" aria-label="Open ${escapeHTML(name)} in new window">
+      ${icon("external-link")}<span>Open</span>
+    </a>
+  `;
 }
 
 function renderAgentsFileContent(content) {
@@ -1073,20 +1085,12 @@ function renderAgentsFileContent(content) {
   return renderMarkdownFileContent("AGENTS.md", userContent);
 }
 
-function renderMarkdownFileContent(name, content, path = "") {
+function renderMarkdownFileContent(name, content) {
   const key = markdownFileKey(name);
   const canCollapse = isLongMarkdownContent(content);
   const expanded = !canCollapse || state.expandedMarkdownFiles.has(key);
-  const openAction = path ? `
-    <div class="markdown-preview-toolbar">
-      <a class="markdown-open-file" href="${escapeHTML(rawFileURL(path))}" target="_blank" rel="noopener" title="Open file in new window" aria-label="Open ${escapeHTML(name)} in new window">
-        ${icon("external-link")}<span>Open</span>
-      </a>
-    </div>
-  ` : "";
   return `
     <div class="markdown-preview ${expanded ? "expanded" : "collapsed"}">
-      ${openAction}
       <div class="markdown-view markdown-rendered">${renderMarkdown(content)}</div>
       ${expanded ? "" : `
         <button type="button" class="markdown-show-all" data-markdown-toggle="${escapeHTML(key)}" aria-expanded="false">
