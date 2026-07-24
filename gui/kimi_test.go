@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -65,12 +66,24 @@ fi
 IFS= read -r initialize
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"sessionCapabilities":{"resume":{}}}}}'
 IFS= read -r new_session
-printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"kimi-session","configOptions":[]}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"sessionId":"kimi-session","configOptions":[{"id":"mode","category":"mode","currentValue":"default","options":[{"value":"default"},{"value":"plan"},{"value":"yolo"}]}]}}'
+IFS= read -r set_mode
+case "$set_mode" in
+  *'"configId":"mode"'*'"value":"yolo"'*) ;;
+  *) exit 3 ;;
+esac
+printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":null}'
 IFS= read -r prompt
 printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"kimi-session","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"hello from kimi"}}}}'
-printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn"}}'
 IFS= read -r resume
-printf '%s\n' '{"jsonrpc":"2.0","id":4,"result":{"sessionId":"kimi-session","configOptions":[]}}'
+printf '%s\n' '{"jsonrpc":"2.0","id":5,"result":{"sessionId":"kimi-session","configOptions":[{"id":"mode","category":"mode","currentValue":"default","options":[{"value":"default"},{"value":"plan"},{"value":"yolo"}]}]}}'
+IFS= read -r resume_set_mode
+case "$resume_set_mode" in
+  *'"configId":"mode"'*'"value":"yolo"'*) ;;
+  *) exit 4 ;;
+esac
+printf '%s\n' '{"jsonrpc":"2.0","id":6,"result":null}'
 while IFS= read -r line; do :; done
 `
 	if err := os.WriteFile(command, []byte(script), 0o755); err != nil {
@@ -104,14 +117,18 @@ while IFS= read -r line; do :; done
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
+	status := ""
 	for time.Now().Before(deadline) {
-		if rt.run.Status == "idle" {
+		rt.mu.Lock()
+		status = rt.run.Status
+		rt.mu.Unlock()
+		if status == "idle" {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if rt.run.Status != "idle" {
-		t.Fatalf("Kimi prompt did not finish: status=%q events=%#v", rt.run.Status, rt.snapshotEvents())
+	if status != "idle" {
+		t.Fatalf("Kimi prompt did not finish: status=%q events=%#v", status, rt.snapshotEvents())
 	}
 	events := rt.snapshotEvents()
 	if len(events) < 3 || events[0].Text != "Kimi Code session started." || events[1].Type != "assistant_delta" || events[1].Text != "hello from kimi" || !strings.Contains(events[2].Text, "Kimi Code turn finished") {
@@ -162,8 +179,68 @@ func TestKimiSessionSettingsUseProviderName(t *testing.T) {
 		CurrentValue: "default",
 		Options:      []opencodeConfigOptionChoice{{Value: "default"}},
 	}}
-	_, err := acpSessionSettings(options, "missing", "workspace-write", kimiProviderName)
+	_, err := acpSessionSettings(options, "missing", "workspace-write", kimiProviderID, kimiProviderName)
 	if err == nil || !strings.Contains(err.Error(), kimiProviderName) {
 		t.Fatalf("expected a Kimi-specific configuration error, got %v", err)
+	}
+}
+
+func TestKimiSessionSettingsSelectYoloOrPlanMode(t *testing.T) {
+	options := []opencodeConfigOption{{
+		ID:           "mode",
+		Category:     "mode",
+		CurrentValue: "default",
+		Options: []opencodeConfigOptionChoice{
+			{Value: "default"},
+			{Value: "plan"},
+			{Value: "auto"},
+			{Value: "yolo"},
+		},
+	}}
+	build, err := acpSessionSettings(options, "", "workspace-write", kimiProviderID, kimiProviderName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if build["mode"] != "yolo" {
+		t.Fatalf("expected Kimi build mode to select yolo, got %#v", build)
+	}
+	plan, err := acpSessionSettings(options, "", "read-only", kimiProviderID, kimiProviderName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan["mode"] != "plan" {
+		t.Fatalf("expected Kimi plan mode to select plan, got %#v", plan)
+	}
+}
+
+func TestKimiPermissionRequestIsNotAutomaticallyApproved(t *testing.T) {
+	workspace := t.TempDir()
+	manager := newAgentManager(&server{})
+	rt := &agentRuntime{
+		workspace:   guiWorkspace{ID: "workspace", Path: workspace},
+		manager:     manager,
+		run:         agentRun{ID: "run-kimi-permission", WorkspaceID: "workspace", Provider: kimiProviderID, Status: "running"},
+		nextEventID: 1,
+		pending:     make(map[string]pendingApproval),
+		done:        make(chan struct{}),
+	}
+	client := newACPClient(manager, nil, nil, kimiProviderName)
+	params := json.RawMessage(`{
+		"options":[
+			{"optionId":"once","kind":"allow_once"},
+			{"optionId":"reject","kind":"reject_once"}
+		]
+	}`)
+	rt.handleOpencodeServerRequest(client, json.RawMessage(`17`), "session/request_permission", params)
+
+	if rt.run.Status != "waiting_approval" {
+		t.Fatalf("expected unexpected Kimi permission to wait for user input, got %q", rt.run.Status)
+	}
+	pending, ok := rt.pending["17"]
+	if !ok || string(pending.params) != string(params) {
+		t.Fatalf("expected Kimi permission request to be retained, got %#v", rt.pending)
+	}
+	if len(rt.events) != 1 || rt.events[0].Type != "approval_requested" {
+		t.Fatalf("expected one manual approval event, got %#v", rt.events)
 	}
 }

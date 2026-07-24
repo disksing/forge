@@ -113,6 +113,8 @@ Forge ships with three provider adapters:
 
 Codex is enabled by default. OpenCode and Kimi Code can be enabled in **Settings → Agent** after their CLIs are installed and authenticated. Multiple providers and agents can be enabled at the same time.
 
+Forge configures Kimi Code `build` sessions with the ACP `yolo` mode so regular tool calls do not pause for approval; `plan` sessions remain read-only. An unexpected Kimi permission request is still surfaced for manual review instead of being approved by Forge.
+
 Useful overrides:
 
 ```text

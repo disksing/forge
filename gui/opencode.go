@@ -435,7 +435,7 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 	model := strings.TrimSpace(rt.run.Model)
 	sandbox := rt.run.Sandbox
 	rt.mu.Unlock()
-	settings, err := acpSessionSettings(session.ConfigOptions, model, sandbox, o.providerName)
+	settings, err := acpSessionSettings(session.ConfigOptions, model, sandbox, o.providerID, o.providerName)
 	if err != nil {
 		return err
 	}
@@ -452,12 +452,18 @@ func (o *opencodeAppServer) configureSession(client *opencodeClient, rt *agentRu
 }
 
 func opencodeSessionSettings(options []opencodeConfigOption, model, sandbox string) (map[string]string, error) {
-	return acpSessionSettings(options, model, sandbox, opencodeProviderName)
+	return acpSessionSettings(options, model, sandbox, opencodeProviderID, opencodeProviderName)
 }
 
-func acpSessionSettings(options []opencodeConfigOption, model, sandbox, providerName string) (map[string]string, error) {
+func acpSessionSettings(options []opencodeConfigOption, model, sandbox, providerID, providerName string) (map[string]string, error) {
 	settings := make(map[string]string)
 	model = strings.TrimSpace(model)
+	mode := ""
+	if sandbox == "read-only" {
+		mode = "plan"
+	} else if providerID == kimiProviderID {
+		mode = "yolo"
+	}
 	modelOptionFound := false
 	modeOptionFound := false
 	for _, option := range options {
@@ -473,19 +479,19 @@ func acpSessionSettings(options []opencodeConfigOption, model, sandbox, provider
 			settings[option.ID] = model
 		case "mode":
 			modeOptionFound = true
-			if sandbox != "read-only" {
+			if mode == "" {
 				continue
 			}
-			if !configOptionHasValue(option, "plan") {
-				return nil, fmt.Errorf("%s plan mode is not available", providerName)
+			if !configOptionHasValue(option, mode) {
+				return nil, fmt.Errorf("%s %s mode is not available", providerName, mode)
 			}
-			settings[option.ID] = "plan"
+			settings[option.ID] = mode
 		}
 	}
 	if len(options) > 0 && model != "" && !modelOptionFound {
 		return nil, fmt.Errorf("%s session does not expose a model option", providerName)
 	}
-	if len(options) > 0 && sandbox == "read-only" && !modeOptionFound {
+	if len(options) > 0 && mode != "" && !modeOptionFound {
 		return nil, fmt.Errorf("%s session does not expose a mode option", providerName)
 	}
 	return settings, nil
@@ -840,6 +846,10 @@ func (c *opencodeClient) handleLine(line []byte) {
 func (rt *agentRuntime) handleOpencodeServerRequest(client *opencodeClient, id json.RawMessage, method string, params json.RawMessage) {
 	switch method {
 	case "session/request_permission":
+		if client.providerName == kimiProviderName {
+			rt.queueApprovalRequest(client.manager, id, method, params)
+			return
+		}
 		response, err := opencodeApprovalResponse(params, "accept")
 		if err == nil {
 			err = client.respond(id, response)

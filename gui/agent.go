@@ -1516,21 +1516,29 @@ func (rt *agentRuntime) resolveApproval(m *agentManager, requestID, decision str
 
 func (rt *agentRuntime) handleServerRequest(client *codexClient, id json.RawMessage, method string, params json.RawMessage) {
 	if isApprovalMethod(method) {
-		requestID := string(id)
-		rt.mu.Lock()
-		rt.pending[requestID] = pendingApproval{id: append(json.RawMessage(nil), id...), method: method}
-		if !rt.stopRequested {
-			rt.run.Status = "waiting_approval"
-		}
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-		run := rt.run
-		rt.mu.Unlock()
-		_ = saveAgentRun(rt.workspace.Path, run)
-		rt.addEvent(client.manager, "approval_requested", method, approvalSummary(method, params), params, requestID)
+		rt.queueApprovalRequest(client.manager, id, method, params)
 		return
 	}
 	_ = client.respond(id, map[string]any{"error": "unsupported by Forge GUI"})
 	rt.addEvent(client.manager, "server_request", method, fmt.Sprintf("Unsupported app-server request: %s", method), params, "")
+}
+
+func (rt *agentRuntime) queueApprovalRequest(m *agentManager, id json.RawMessage, method string, params json.RawMessage) {
+	requestID := string(id)
+	rt.mu.Lock()
+	rt.pending[requestID] = pendingApproval{
+		id:     append(json.RawMessage(nil), id...),
+		method: method,
+		params: append(json.RawMessage(nil), params...),
+	}
+	if !rt.stopRequested {
+		rt.run.Status = "waiting_approval"
+	}
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	run := rt.run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+	rt.addEvent(m, "approval_requested", method, approvalSummary(method, params), params, requestID)
 }
 
 func (rt *agentRuntime) handleNotification(m *agentManager, method string, params json.RawMessage) {
