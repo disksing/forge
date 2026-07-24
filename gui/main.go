@@ -838,6 +838,13 @@ func serveRawPath(w http.ResponseWriter, r *http.Request, relPath, abs string) {
 		writeError(w, errors.New("cannot preview a directory"), http.StatusBadRequest)
 		return
 	}
+	if r.URL.Query().Get("download") == "1" {
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": info.Name()}))
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		http.ServeContent(w, r, info.Name(), info.ModTime(), file)
+		return
+	}
 	sample, err := io.ReadAll(io.LimitReader(file, previewMaxBytes+1))
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)

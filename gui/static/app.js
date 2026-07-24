@@ -1223,6 +1223,14 @@ function artifactRow(entry, section, depth) {
   const active = state.preview?.section === section && state.preview?.path === entry.path;
   const children = isDirectory && expanded ? (entry.children || []).map((child) => artifactRow(child, section, depth + 1)).join("") : "";
   const [fileIconName, fileIconTone] = isDirectory ? [null, ""] : artifactFileIcon(entry.name);
+  const downloadButton = isDirectory ? "" : `
+    <a
+      class="artifact-download"
+      href="${escapeHTML(artifactDownloadURL(entry.path, section))}"
+      download="${escapeHTML(entry.name)}"
+      title="Download ${escapeHTML(entry.name)}"
+      aria-label="Download ${escapeHTML(entry.name)}"
+      data-artifact-download>${icon("download", "artifact-download-icon")}</a>`;
   return `
     <div class="artifact-node">
       <button
@@ -1238,7 +1246,10 @@ function artifactRow(entry, section, depth) {
             : icon(fileIconName, `artifact-icon ${fileIconTone}`.trim())}
           <span class="artifact-name" title="${escapeHTML(entry.path)}">${escapeHTML(entry.name)}</span>
         </span>
-        <small>${isDirectory ? `${(entry.children || []).length} items` : formatBytes(entry.size || 0)}</small>
+        <span class="artifact-side">
+          ${downloadButton}
+          <small>${isDirectory ? `${(entry.children || []).length} items` : formatBytes(entry.size || 0)}</small>
+        </span>
       </button>
       ${children ? `<div class="artifact-children">${children}</div>` : ""}
     </div>
@@ -1435,7 +1446,8 @@ function restoreFilePreviewScrollState(snapshot) {
 
 function bindArtifactBrowserEvents() {
   document.querySelectorAll("[data-file-action]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", (event) => {
+      if (event.target.closest("[data-artifact-download]")) return;
       const section = button.dataset.section;
       const path = button.dataset.path;
       if (button.dataset.fileAction === "toggle") {
@@ -1589,6 +1601,10 @@ function filePreviewURL(section, path) {
 function rawFileURL(path, section = "") {
   const base = section === "Wiki" ? "wiki/files/raw" : "files/raw";
   return `/api/workspaces/${state.activeWorkspaceId}/${base}?path=${encodeURIComponent(path)}`;
+}
+
+function artifactDownloadURL(path, section = "") {
+  return `${rawFileURL(path, section)}&download=1`;
 }
 
 function fileNameFromPath(path = "") {

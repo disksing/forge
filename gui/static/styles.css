@@ -3384,6 +3384,37 @@ i[data-lucide] {
   white-space: nowrap;
 }
 
+.artifact-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.artifact-download {
+  display: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  color: #64748b;
+}
+
+.artifact-row:hover .artifact-download,
+.artifact-row:focus-within .artifact-download {
+  display: grid;
+}
+
+.artifact-download:hover {
+  background: #e2e8f0;
+  color: #2563eb;
+}
+
+.artifact-download .artifact-download-icon {
+  width: 14px;
+  height: 14px;
+}
+
 .artifact-row.active small {
   color: #3b82f6;
 }

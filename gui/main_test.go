@@ -631,6 +631,93 @@ func TestArtifactPreviewPreservesScrollAndSupportsNewWindow(t *testing.T) {
 	}
 }
 
+func TestRawFileDownloadServesAttachment(t *testing.T) {
+	workspace := t.TempDir()
+	textContent := []byte("hello artifact\n")
+	if err := os.WriteFile(filepath.Join(workspace, "notes.txt"), textContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	binaryContent := []byte{'P', 'K', 0x00, 0x01, 0xff, 0x02}
+	if err := os.WriteFile(filepath.Join(workspace, "bundle.zip"), binaryContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Binary files are rejected for inline raw preview.
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files/raw?path=bundle.zip", nil)
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected binary inline preview to be rejected, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// The same binary file downloads as an attachment.
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files/raw?path=bundle.zip&download=1", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected binary download to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if disposition := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment") || !strings.Contains(disposition, "bundle.zip") {
+		t.Fatalf("unexpected Content-Disposition for download: %q", disposition)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), binaryContent) {
+		t.Fatalf("unexpected download body: %v", rec.Body.Bytes())
+	}
+
+	// Text files also download as attachments.
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files/raw?path=notes.txt&download=1", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected text download to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if disposition := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment") || !strings.Contains(disposition, "notes.txt") {
+		t.Fatalf("unexpected Content-Disposition for text download: %q", disposition)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), textContent) {
+		t.Fatalf("unexpected text download body: %q", rec.Body.String())
+	}
+}
+
+func TestArtifactRowShowsHoverDownloadButton(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`function artifactDownloadURL(path, section = "") {`,
+		"`${rawFileURL(path, section)}&download=1`",
+		`class="artifact-download"`,
+		`data-artifact-download`,
+		`event.target.closest("[data-artifact-download]")`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("artifact download UI is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		".artifact-download {",
+		".artifact-row:hover .artifact-download,",
+		".artifact-row:focus-within .artifact-download {",
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("artifact download styling is missing %q", want)
+		}
+	}
+}
+
 func TestPageDetailsOmitSummaryStats(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
