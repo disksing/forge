@@ -333,6 +333,26 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	}
 }
 
+func TestBackgroundRenderPreservesOpenSettingsModal(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	start := strings.Index(source, "function renderAll()")
+	end := strings.Index(source, "function renderSelectionPanels()")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate renderAll")
+	}
+	renderAll := source[start:end]
+	if !strings.Contains(renderAll, `if (!state.settings.open) renderSettingsModal();`) {
+		t.Fatal("background renders should leave an open settings modal mounted")
+	}
+	if strings.Contains(renderAll, "\n  renderSettingsModal();") {
+		t.Fatal("renderAll should not unconditionally rebuild the settings modal")
+	}
+}
+
 func TestWorkspaceAgentsEditorFillsAvailableWidth(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

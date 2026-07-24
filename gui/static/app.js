@@ -281,7 +281,10 @@ function renderAll() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
-  renderSettingsModal();
+  // Background refreshes render the main workspace frequently. Keep an open
+  // settings modal mounted so its scroll position and in-progress controls
+  // are not reset; settings actions render it explicitly when needed.
+  if (!state.settings.open) renderSettingsModal();
 }
 
 function renderSelectionPanels() {
