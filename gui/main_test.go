@@ -924,6 +924,8 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 		`function groupToolEvents(events)`,
 		`previous.collapsed = true`,
 		`const open = typeof userOpen === "boolean" ? userOpen : !group.collapsed`,
+		`const visibleEvents = visibleAgentToolEvents(group, userOpen)`,
+		`${visibleEvents.map(agentToolEventRow).join("")}`,
 		`data-tool-group-key="${escapeHTML(key)}"${open ? " open" : ""}`,
 		`function bindAgentToolGroupEvents()`,
 		`state.agent.toolGroupOpen.set(details.dataset.toolGroupKey, !details.open)`,
@@ -954,6 +956,56 @@ func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
 	}
 	if strings.Contains(app, "Final response") || strings.Contains(app, "Progress update") {
 		t.Fatal("agent message bubbles should rely on visual hierarchy without response labels")
+	}
+}
+
+func TestAgentChatLimitsOnlyActiveUntouchedToolGroups(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the agent tool group behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function visibleAgentToolEvents(group, userOpen)")
+	end := strings.Index(app, "function agentToolGroupKey(group)")
+	if start < 0 || end <= start {
+		t.Fatal("could not isolate active tool group visibility helper")
+	}
+
+	script := `
+const AGENT_ACTIVE_TOOL_EVENT_LIMIT = 3;
+` + app[start:end] + `
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+const events = [1, 2, 3, 4, 5].map((id) => ({ id }));
+const active = { events, collapsed: false };
+const completed = { events: [...events], collapsed: true };
+
+let visible = visibleAgentToolEvents(active);
+assert(visible.map((event) => event.id).join(",") === "3,4,5", "an untouched active group should show its latest three calls");
+assert(active.events.length === 5, "limiting the active group must not discard its full event history");
+
+active.events.push({ id: 6 });
+visible = visibleAgentToolEvents(active);
+assert(visible.map((event) => event.id).join(",") === "4,5,6", "the active window should advance with new calls");
+
+visible = visibleAgentToolEvents(active, true);
+assert(visible.length === 6, "a manually expanded active group should show every call");
+
+visible = visibleAgentToolEvents(completed);
+assert(visible.length === 5, "a completed group should retain every call for manual expansion");
+`
+
+	testFile := filepath.Join(t.TempDir(), "agent-active-tool-group.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("agent active tool group behavior test failed: %v\n%s", err, output)
 	}
 }
 
