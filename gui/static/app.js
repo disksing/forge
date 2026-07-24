@@ -103,6 +103,7 @@ const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+const AGENT_ACTIVE_TOOL_EVENT_LIMIT = 3;
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -3004,6 +3005,7 @@ function agentToolGroupRow(group) {
   const key = agentToolGroupKey(group);
   const userOpen = state.agent.toolGroupOpen.get(key);
   const open = typeof userOpen === "boolean" ? userOpen : !group.collapsed;
+  const visibleEvents = visibleAgentToolEvents(group, userOpen);
   const summaries = events.map(toolEventSummary);
   const preview = summaries.slice(0, 2).join(" · ");
   const remaining = Math.max(0, summaries.length - 2);
@@ -3016,10 +3018,16 @@ function agentToolGroupRow(group) {
         <span class="agent-tool-group-chevron">${icon("chevron-right")}</span>
       </summary>
       <div class="agent-tool-list">
-        ${events.map(agentToolEventRow).join("")}
+        ${visibleEvents.map(agentToolEventRow).join("")}
       </div>
     </details>
   `;
+}
+
+function visibleAgentToolEvents(group, userOpen) {
+  const events = group.events || [];
+  if (group.collapsed || userOpen === true) return events;
+  return events.slice(-AGENT_ACTIVE_TOOL_EVENT_LIMIT);
 }
 
 function agentToolGroupKey(group) {
