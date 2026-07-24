@@ -62,7 +62,11 @@ func projectCreate(description, slug string) error {
 	}
 	projectPath := filepath.Join(root, projectDirectoryName(id, slug))
 	project := newProject(id, titleFromDescription(description), description)
-	if err := createResourceFiles(projectPath, &project); err != nil {
+	language, err := workspaceLanguage(root)
+	if err != nil {
+		return err
+	}
+	if err := createResourceFiles(projectPath, &project, language); err != nil {
 		return err
 	}
 	return printJSON(project)
@@ -277,6 +281,10 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 	stagingPath := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(stagingPath)
 	task := newTask(id, parentID, title, "")
+	language, err := workspaceLanguage(root)
+	if err != nil {
+		return err
+	}
 	if autorun {
 		preferredAgentProfiles, err = normalizeAgentProfiles(preferredAgentProfiles)
 		if err != nil {
@@ -294,11 +302,11 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 	} else if len(afterValues) > 0 || len(preferredAgentProfiles) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
 		return errors.New("--agent-profile, --agent, --prompt, and --after require --autorun")
 	}
-	markdown := taskMarkdown(title, detail)
+	markdown := taskMarkdown(title, detail, language)
 	if completeMarkdownSet {
 		markdown = completeMarkdown
 	}
-	if err := createResourceFilesWithMarkdown(stagingPath, &task, markdown); err != nil {
+	if err := createResourceFilesWithMarkdown(stagingPath, &task, markdown, language); err != nil {
 		return err
 	}
 	if task.AutoRun != nil {
@@ -401,11 +409,15 @@ func newTask(id, parent, title, description string) Task {
 	return task
 }
 
-func createResourceFiles(dir string, resource Resource) error {
-	return createResourceFilesWithMarkdown(dir, resource, defaultTaskMD(resource))
+func createResourceFiles(dir string, resource Resource, languages ...string) error {
+	language := defaultLanguage
+	if len(languages) > 0 {
+		language = languages[0]
+	}
+	return createResourceFilesWithMarkdown(dir, resource, defaultTaskMD(resource, language), language)
 }
 
-func createResourceFilesWithMarkdown(dir string, resource Resource, markdown string) error {
+func createResourceFilesWithMarkdown(dir string, resource Resource, markdown, language string) error {
 	if pathExists(dir) {
 		return fmt.Errorf("task directory already exists: %s", dir)
 	}
@@ -427,18 +439,15 @@ func createResourceFilesWithMarkdown(dir string, resource Resource, markdown str
 		return err
 	}
 	if !isProject(resource) {
-		if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource)), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource, language)), 0o644); err != nil {
 			return err
 		}
 	}
-	logTitle := "Task created"
-	if isProject(resource) {
-		logTitle = "Project created"
-	}
+	logTitle := localizedCreationLogTitle(resource, language)
 	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource)+"\n"), 0o644)
+	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource, language)+"\n"), 0o644)
 }
 
 func metadataFileName(resource Resource) string {
@@ -784,7 +793,7 @@ func isArchivedPath(root, path string) bool {
 	return false
 }
 
-func updateOpenTaskAgentsMD(root string) error {
+func updateOpenTaskAgentsMD(root, language string) error {
 	return filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -806,13 +815,13 @@ func updateOpenTaskAgentsMD(root string) error {
 		if err != nil {
 			return nil
 		}
-		return updateTaskAgentsMD(root, path, resource)
+		return updateTaskAgentsMD(root, path, resource, language)
 	})
 }
 
-func updateTaskAgentsMD(root, dir string, resource Resource) error {
+func updateTaskAgentsMD(root, dir string, resource Resource, language string) error {
 	path := filepath.Join(dir, "AGENTS.md")
-	block := taskAgentsBlock(resource)
+	block := taskAgentsBlock(resource, language)
 
 	content := ""
 	if data, err := os.ReadFile(path); err == nil {
@@ -820,7 +829,8 @@ func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource)) {
+	if strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource, defaultLanguage)) ||
+		strings.TrimSpace(content) == strings.TrimSpace(taskAgentsPrompt(resource, languageSimplifiedChinese)) {
 		content = ""
 	}
 
@@ -831,8 +841,8 @@ func updateTaskAgentsMD(root, dir string, resource Resource) error {
 	return os.WriteFile(path, []byte(updated), 0o644)
 }
 
-func taskAgentsBlock(resource Resource) string {
-	return forgePromptStart + "\n" + taskAgentsPrompt(resource) + "\n" + forgePromptEnd
+func taskAgentsBlock(resource Resource, language string) string {
+	return forgePromptStart + "\n" + taskAgentsPrompt(resource, language) + "\n" + forgePromptEnd
 }
 
 func projectTaskName(projectID string) *regexp.Regexp {
@@ -927,7 +937,7 @@ func printTaskJSON(task Task) error {
 	return printJSON(task)
 }
 
-func defaultTaskMD(resource Resource) string {
+func defaultTaskMD(resource Resource, language string) string {
 	meta := resource.resourceMeta()
 	description := ""
 	switch typed := resource.(type) {
@@ -936,10 +946,16 @@ func defaultTaskMD(resource Resource) string {
 	case *Task:
 		description = typed.Description
 	}
-	return taskMarkdown(meta.Title, description)
+	if language == languageSimplifiedChinese && isProject(resource) {
+		return projectMarkdownZH(meta.Title, description)
+	}
+	return taskMarkdown(meta.Title, description, language)
 }
 
-func taskMarkdown(title string, detail string) string {
+func taskMarkdown(title string, detail string, language string) string {
+	if language == languageSimplifiedChinese {
+		return taskMarkdownZH(title, detail)
+	}
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
 		detail = "<!-- Why this work exists. Keep the durable contract here; task execution state belongs in work.md. -->"
@@ -961,7 +977,10 @@ func taskMarkdown(title string, detail string) string {
 `, title, detail)
 }
 
-func defaultWorkMD(resource Resource) string {
+func defaultWorkMD(resource Resource, language string) string {
+	if language == languageSimplifiedChinese {
+		return defaultWorkMDZH(resource)
+	}
 	meta := resource.resourceMeta()
 	label := "Task"
 	focus := "Clarify the task contract in task.md, then record the current execution state and next action here."
@@ -1034,7 +1053,10 @@ func jsonGuidance(resourceName string) string {
 	return fmt.Sprintf("Keep %s focused on structured facts Forge already understands; use Markdown for arbitrary notes, links, IDs, and progress.", resourceName)
 }
 
-func taskAgentsPrompt(resource Resource) string {
+func taskAgentsPrompt(resource Resource, language string) string {
+	if language == languageSimplifiedChinese {
+		return taskAgentsPromptZH(resource)
+	}
 	extra := ""
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"

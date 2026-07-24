@@ -8,6 +8,7 @@ import (
 
 type Config struct {
 	Version      int          `json:"version"`
+	Language     string       `json:"language"`
 	AgentCommand AgentCommand `json:"agentCommand,omitempty"`
 }
 
