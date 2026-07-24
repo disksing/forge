@@ -35,10 +35,18 @@ printf '%s\n' '{"id":1,"type":"response","command":"get_state","success":true,"d
 IFS= read -r prompt
 printf '%s\n' '{"id":2,"type":"response","command":"prompt","success":true}'
 printf '%s\n' '{"type":"agent_start"}'
+printf '%s\n' '{"type":"turn_start"}'
+printf '%s\n' '{"type":"message_start","message":{"role":"user","content":[]}}'
+printf '%s\n' '{"type":"message_end","message":{"role":"user","content":[]}}'
+printf '%s\n' '{"type":"message_start","message":{"role":"assistant","content":[]}}'
 printf '%s\n' '{"type":"message_update","assistantMessageEvent":{"type":"thinking_delta","delta":"considering"}}'
 printf '%s\n' '{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hello from pi"}}'
+printf '%s\n' '{"type":"message_end","message":{"role":"assistant","content":[]}}'
 printf '%s\n' '{"type":"tool_execution_start","toolCallId":"tool-1","toolName":"read","args":{"path":"README.md"}}'
+printf '%s\n' '{"type":"tool_execution_update","toolCallId":"tool-1","toolName":"read","partialResult":{}}'
 printf '%s\n' '{"type":"tool_execution_end","toolCallId":"tool-1","toolName":"read","result":{"content":[{"type":"text","text":"done"}]}}'
+printf '%s\n' '{"type":"turn_end"}'
+printf '%s\n' '{"type":"agent_end"}'
 printf '%s\n' '{"type":"agent_settled"}'
 IFS= read -r steer
 printf '%s\n' '{"id":3,"type":"response","command":"steer","success":true}'
@@ -93,8 +101,25 @@ while IFS= read -r line; do :; done
 		t.Fatalf("Pi prompt did not settle: status=%q events=%#v", status, rt.snapshotEvents())
 	}
 	events := rt.snapshotEvents()
-	if !hasAgentEvent(events, "reasoning_delta", "considering") || !hasAgentEvent(events, "assistant_delta", "hello from pi") || !hasAgentEvent(events, "tool", "read start") {
+	if !hasAgentEvent(events, "reasoning_delta", "considering") || !hasAgentEvent(events, "assistant_delta", "hello from pi") || !hasAgentEvent(events, "tool", "read README.md") {
 		t.Fatalf("unexpected Pi events: %#v", events)
+	}
+	if !hasAgentEvent(events, "tool", "read") {
+		t.Fatalf("expected Pi tool end event: %#v", events)
+	}
+	for _, event := range events {
+		if event.Method == "message_start" || event.Method == "message_end" || event.Method == "turn_start" || event.Method == "turn_end" || event.Method == "agent_start" || event.Method == "agent_end" || event.Method == "tool_execution_update" {
+			t.Fatalf("Pi lifecycle noise should be dropped: %#v", events)
+		}
+	}
+	settled := 0
+	for _, event := range events {
+		if event.Method == "session/prompt" && event.Text == "Pi Coding Agent turn finished." {
+			settled++
+		}
+	}
+	if settled != 1 {
+		t.Fatalf("expected one Pi turn finished event: %#v", events)
 	}
 	if err := provider.SendInput(rt, "change direction"); err != nil {
 		t.Fatal(err)

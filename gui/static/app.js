@@ -2051,7 +2051,7 @@ function isAgentTurnStart(event) {
 
 function isAgentTurnCompletion(event) {
   return event?.method === "turn/completed" ||
-    (event?.method === "session/prompt" && /^(OpenCode|Kimi Code) turn finished:/i.test(event.text || ""));
+    (event?.method === "session/prompt" && /^(OpenCode|Kimi Code|Pi Coding Agent) turn finished/i.test(event.text || ""));
 }
 
 function groupToolEvents(events) {
@@ -2095,6 +2095,7 @@ function shouldDisplayAgentEvent(event, completedItems = new Map()) {
     if (itemType === "userMessage" || itemType === "agentMessage" || itemType === "reasoning") return false;
     if (event.method === "item/commandExecution/outputDelta" || event.method === "command/exec/outputDelta") return false;
     if (event.method === "item/completed") return true;
+    if (event.method === "tool_execution_start" || event.method === "tool_execution_end") return true;
     if (event.method !== "item/started") {
       if (event.method !== "session/update") return false;
       if ((itemType === "tool_call" || itemType === "tool_call_update") && !agentToolCallHasIdentity(event)) return false;

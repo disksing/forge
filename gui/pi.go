@@ -384,10 +384,15 @@ func (c *piRPCClient) handleEvent(raw json.RawMessage, eventType string) {
 			Type  string `json:"type"`
 			Delta string `json:"delta"`
 		} `json:"assistantMessageEvent"`
-		ToolCallID   string `json:"toolCallId"`
-		ToolName     string `json:"toolName"`
-		Error        string `json:"error"`
-		ErrorMessage string `json:"errorMessage"`
+		ToolCallID   string          `json:"toolCallId"`
+		ToolName     string          `json:"toolName"`
+		Args         json.RawMessage `json:"args"`
+		IsError      bool            `json:"isError"`
+		Error        string          `json:"error"`
+		ErrorMessage string          `json:"errorMessage"`
+		Attempt      int             `json:"attempt"`
+		MaxAttempts  int             `json:"maxAttempts"`
+		FinalError   string          `json:"finalError"`
 	}
 	_ = json.Unmarshal(raw, &event)
 	switch eventType {
@@ -404,31 +409,65 @@ func (c *piRPCClient) handleEvent(raw json.RawMessage, eventType string) {
 			}
 			c.rt.addEvent(c.rt.manager, "error", eventType, text, raw, "")
 		}
-	case "tool_execution_start", "tool_execution_update", "tool_execution_end":
-		text := strings.TrimSpace(event.ToolName)
-		if text == "" {
-			text = "Pi tool"
+	case "tool_execution_start", "tool_execution_end":
+		text := piToolSummary(event.ToolName, event.Args)
+		if eventType == "tool_execution_end" && event.IsError {
+			text += " failed"
 		}
-		text += " " + strings.TrimPrefix(eventType, "tool_execution_")
 		c.rt.addEvent(c.rt.manager, "tool", eventType, text, raw, "")
 	case "agent_settled":
-		c.rt.addEvent(c.rt.manager, "system", eventType, piProviderName+" turn finished.", raw, "")
+		c.rt.addEvent(c.rt.manager, "system", "session/prompt", piProviderName+" turn finished.", raw, "")
 		if c.rt.isSchedulerTurn() {
 			c.rt.finishSchedulerTurn(c.rt.manager, piProviderName+" turn settled")
 		} else {
 			c.rt.markIdle(c.rt.manager)
 		}
+	case "auto_retry_start":
+		text := fmt.Sprintf("Pi request failed; retrying (%d/%d).", event.Attempt, event.MaxAttempts)
+		if detail := strings.TrimSpace(event.ErrorMessage); detail != "" {
+			text += " " + detail
+		}
+		c.rt.addEvent(c.rt.manager, "system", eventType, text, raw, "")
+	case "auto_retry_end":
+		text := "Pi request retry finished."
+		if detail := strings.TrimSpace(event.FinalError); detail != "" {
+			text = "Pi request retry failed: " + detail
+		}
+		c.rt.addEvent(c.rt.manager, "system", eventType, text, raw, "")
 	case "extension_error":
 		text := event.Error
 		if text == "" {
 			text = "Pi extension failed"
 		}
 		c.rt.addEvent(c.rt.manager, "error", eventType, text, raw, "")
-	case "agent_start", "turn_start", "turn_end", "agent_end":
-		c.rt.addEvent(c.rt.manager, "system", eventType, strings.ReplaceAll(eventType, "_", " ")+".", raw, "")
 	default:
-		c.rt.addEvent(c.rt.manager, "event", eventType, strings.ReplaceAll(eventType, "_", " ")+".", raw, "")
+		// Lifecycle events (agent_start, turn_start/end, agent_end, message_start/end,
+		// tool_execution_update) carry no displayable content; recording them only
+		// floods the chat with noise, so they are dropped here.
 	}
+}
+
+func piToolSummary(toolName string, args json.RawMessage) string {
+	name := strings.TrimSpace(toolName)
+	if name == "" {
+		name = "Pi tool"
+	}
+	var fields map[string]any
+	if len(args) > 0 && json.Unmarshal(args, &fields) == nil {
+		for _, key := range []string{"command", "path", "pattern", "query", "url"} {
+			value, ok := fields[key].(string)
+			if !ok || strings.TrimSpace(value) == "" {
+				continue
+			}
+			value = strings.Join(strings.Fields(value), " ")
+			const maxLength = 80
+			if len(value) > maxLength {
+				value = value[:maxLength-1] + "…"
+			}
+			return name + " " + value
+		}
+	}
+	return name
 }
 
 func (c *piRPCClient) stderrLoop(reader io.Reader) {
