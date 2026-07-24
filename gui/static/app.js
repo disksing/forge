@@ -3026,6 +3026,13 @@ function agentToolEventRow(event) {
 }
 
 function toolEventSummary(event) {
+  // Pi tool events (tool_execution_start/end) already carry a backend-computed
+  // summary in event.text (e.g. "read README.md"); their raw shape keeps the
+  // useful bits in toolName/args, which the generic parsing below cannot read.
+  if (event.method === "tool_execution_start" || event.method === "tool_execution_end") {
+    const text = String(event.text || "").trim();
+    if (text) return text;
+  }
   const data = agentEventData(event);
   const item = data?.item || data?.toolCall || data?.update?.toolCall || data;
   const itemType = agentEventItemType(event);
