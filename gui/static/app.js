@@ -2531,11 +2531,13 @@ function renderSettingsModal() {
       <aside class="settings-tabs">
         <div class="settings-title">System Settings</div>
         ${settingsTabButton("workspace", "hard-drive", "Workspace")}
-        ${settingsTabButton("agent", "bot", "Agent")}
+        ${settingsTabButton("providers", "cpu", "Providers")}
+        ${settingsTabButton("agents", "bot", "Agents")}
+        ${settingsTabButton("profiles", "route", "Profiles")}
       </aside>
       <div class="settings-content">
         <button type="button" class="settings-close" data-settings-close title="Close">${icon("x")}</button>
-        ${state.settings.tab === "workspace" ? settingsWorkspacePanel(data) : settingsAgentPanel(data)}
+        ${settingsActivePanel(data)}
       </div>
     </section>
   `;
@@ -2544,14 +2546,22 @@ function renderSettingsModal() {
 }
 
 function settingsTabButton(id, iconName, label) {
-  const dirty = id === "agent" && state.settings.agentDirty;
+  const draftTab = id === "agents" || id === "profiles";
+  const dirty = draftTab && state.settings.agentDirty;
   return `
     <button type="button" class="settings-tab ${state.settings.tab === id ? "active" : ""}${dirty ? " dirty" : ""}" data-settings-tab="${id}">
       ${icon(iconName)}
       <span>${escapeHTML(label)}</span>
-      ${id === "agent" ? `<span class="settings-tab-dot" aria-hidden="true"></span>` : ""}
+      ${draftTab ? `<span class="settings-tab-dot" aria-hidden="true"></span>` : ""}
     </button>
   `;
+}
+
+function settingsActivePanel(data) {
+  if (state.settings.tab === "providers") return settingsProvidersPanel(data);
+  if (state.settings.tab === "agents") return settingsAgentsPanel(data);
+  if (state.settings.tab === "profiles") return settingsProfilesPanel(data);
+  return settingsWorkspacePanel(data);
 }
 
 function settingsWorkspacePanel(data) {
@@ -2590,31 +2600,41 @@ function settingsWorkspacePanel(data) {
   `;
 }
 
-function settingsAgentPanel(data) {
+function settingsProvidersPanel(data) {
   const providers = data.agentProviders || [];
-  const agents = data.agents || [];
   const codex = data.codex || { running: false };
   const opencode = data.opencode || { running: false };
   const kimi = data.kimi || { running: false };
   const pi = data.pi || { running: false };
-  const dirty = Boolean(state.settings.agentDirty);
   return `
     <div class="settings-panel settings-agent-panel">
       <div class="settings-panel-header">
-        <h2>Agents</h2>
-        <p>Providers define available runtimes. Agents package provider options for session start.</p>
+        <h2>Providers</h2>
+        <p>Providers are the available agent runtimes. Enabling a provider starts its local service.</p>
       </div>
       <section class="settings-agent-section">
         <div class="settings-section-heading">
-          <h3>Providers</h3>
+          <h3>Runtimes</h3>
           <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
         </div>
         <div class="settings-provider-list">
           ${providers.map((provider) => settingsProviderRow(provider, { codex, opencode, kimi, pi })).join("")}
         </div>
       </section>
+    </div>
+  `;
+}
+
+function settingsAgentsPanel(data) {
+  const providers = data.agentProviders || [];
+  const agents = data.agents || [];
+  return `
+    <div class="settings-panel settings-agent-panel" data-settings-section="agents">
+      <div class="settings-panel-header">
+        <h2>Agents</h2>
+        <p>Agents package provider options for session start. Choose the default chat agent.</p>
+      </div>
       ${settingsDefaultChatAgentSection(data)}
-      ${settingsAgentProfilesSection(data)}
       <section class="settings-agent-section">
         <div class="settings-section-heading">
           <h3>Configured Agents</h3>
@@ -2625,10 +2645,30 @@ function settingsAgentPanel(data) {
         </div>
       </section>
       ${settingsNewAgentCard(providers)}
-      <div class="settings-form-actions settings-save-bar">
-        <span class="settings-save-hint${dirty ? " visible" : ""}" id="settingsSaveHint">${dirty ? "Unsaved changes" : ""}</span>
-        <button type="button" id="settingsSaveButton" ${dirty ? "" : "disabled"}>${icon("save")}<span>Save All</span></button>
+      ${settingsAgentSaveBar()}
+    </div>
+  `;
+}
+
+function settingsProfilesPanel(data) {
+  return `
+    <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
+      <div class="settings-panel-header">
+        <h2>AutoRun Profiles</h2>
+        <p>Portable profile names map AutoRun preferences to local agents. Keys must be unique.</p>
       </div>
+      ${settingsAgentProfilesSection(data)}
+      ${settingsAgentSaveBar()}
+    </div>
+  `;
+}
+
+function settingsAgentSaveBar() {
+  const dirty = Boolean(state.settings.agentDirty);
+  return `
+    <div class="settings-form-actions settings-save-bar">
+      <span class="settings-save-hint${dirty ? " visible" : ""}" id="settingsSaveHint">${dirty ? "Unsaved changes" : ""}</span>
+      <button type="button" id="settingsSaveButton" ${dirty ? "" : "disabled"}>${icon("save")}<span>Save All</span></button>
     </div>
   `;
 }
@@ -2644,10 +2684,9 @@ function settingsAgentProfilesSection(data) {
   return `
     <section class="settings-agent-section">
       <div class="settings-section-heading">
-        <h3>AutoRun Agent Profiles</h3>
+        <h3>Profile Routes</h3>
         <span>${profiles.length} routes</span>
       </div>
-      <p class="settings-section-copy">Portable Profile names map AutoRun preferences to local Agents. Keys must be unique.</p>
       <div class="settings-profile-table">
         <div class="settings-profile-row settings-profile-head">
           <span>Profile key</span><span>Summary</span><span>Local Agent</span><span></span>
@@ -4084,21 +4123,28 @@ async function toggleAgentProvider(providerId) {
 
 function syncSettingsDraftFromDOM() {
   if (!state.settings.open) return;
-  if (!document.querySelector(".settings-agent-panel")) return;
   const data = state.settings.data || {};
-  state.settings.data = {
-    ...data,
-    agents: collectSettingsAgents(),
-    agentProfiles: collectSettingsAgentProfiles(),
-    defaultChatAgentId: $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "",
-  };
+  const next = { ...data };
+  let touched = false;
+  // Agent settings are split across tabs; only collect sections currently rendered
+  // so drafts on other tabs survive tab switches.
+  if (document.querySelector('[data-settings-section="agents"]')) {
+    next.agents = collectSettingsAgents();
+    next.defaultChatAgentId = $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "";
+    touched = true;
+  }
+  if (document.querySelector('[data-settings-section="profiles"]')) {
+    next.agentProfiles = collectSettingsAgentProfiles();
+    touched = true;
+  }
+  if (touched) state.settings.data = next;
 }
 
 function markAgentSettingsDirty() {
   if (state.settings.agentDirty) return;
   state.settings.agentDirty = true;
   updateSettingsSaveBar();
-  document.querySelector('[data-settings-tab="agent"]')?.classList.add("dirty");
+  document.querySelectorAll('[data-settings-tab="agents"], [data-settings-tab="profiles"]').forEach((tab) => tab.classList.add("dirty"));
 }
 
 function updateSettingsSaveBar() {

@@ -4173,13 +4173,6 @@ i[data-lucide] {
   gap: 10px;
 }
 
-.settings-section-copy {
-  margin: 0;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .settings-section-heading {
   min-height: 22px;
   display: flex;
