@@ -244,8 +244,8 @@ How Forge works:
 
 Usage:
   forge --version
-  forge init
-  forge migrate
+  forge init [--language=<language>]
+  forge migrate [--language=<language>]
 
   forge repo add [--bare] <name> <url>
   forge repo list
@@ -287,12 +287,13 @@ Commands:
   forge --version
     Print the build-time branch and sha.
 
-  forge init
+  forge init [--language=<language>]
     Initialize the current directory as a new AgentWorkspace. Fails when run
-    from inside an existing workspace.
+    from inside an existing workspace. Supported languages: en, zh-CN.
 
-  forge migrate
-    Refresh forge-managed AGENTS.md blocks in the enclosing workspace.
+  forge migrate [--language=<language>]
+    Refresh forge-managed AGENTS.md blocks in the enclosing workspace. Pass
+    --language to switch the workspace language between en and zh-CN.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may

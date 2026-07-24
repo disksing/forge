@@ -72,7 +72,7 @@ Create a workspace and its first project:
 mkdir AgentWorkspace
 cd AgentWorkspace
 
-forge init
+forge init --language=en
 forge project create --slug forge-dev "Develop Forge"
 forge repo add forge https://github.com/disksing/forge.git
 forge task create --project=project1 --slug first-change \
@@ -163,6 +163,7 @@ Selectors may be omitted when the current directory already identifies the task 
 ```json
 {
   "version": 1,
+  "language": "en",
   "agentCommand": ["codex", "--dangerously-bypass-approvals-and-sandbox"]
 }
 ```
@@ -279,8 +280,8 @@ Run `forge help` for full command descriptions. The current command surface is:
 
 ```text
 forge --version
-forge init
-forge migrate
+forge init [--language=<language>]
+forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
@@ -312,6 +313,12 @@ forge workspace resource --id=<resource> --json
 
 forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 ```
+
+`forge init` and `forge migrate` accept `--language=en` or `--language=zh-CN`.
+The selected language is stored in `forge.json` and controls generated Markdown
+templates and Forge-managed `AGENTS.md` prompts. Existing workspaces without a
+language setting default to English. Use `forge migrate --language=zh-CN` (or
+`--language=en`) to switch languages.
 
 `forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
 

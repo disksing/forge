@@ -102,6 +102,157 @@ func TestForgeStartHelper(t *testing.T) {
 	}
 }
 
+func TestInitDefaultsToEnglishAndPersistsLanguage(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		var config Config
+		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Language != defaultLanguage {
+			t.Fatalf("expected default language %q, got %+v", defaultLanguage, config)
+		}
+		if !strings.Contains(readFile(t, filepath.Join(root, "AGENTS.md")), "This directory is an AgentWorkspace managed by forge.") {
+			t.Fatal("default workspace prompt should remain English")
+		}
+	})
+}
+
+func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init", "--language", "zh-CN")
+
+		var config Config
+		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Language != languageSimplifiedChinese {
+			t.Fatalf("expected zh-CN workspace config, got %+v", config)
+		}
+		if got := readFile(t, filepath.Join(root, wikiDir, "index.md")); got != defaultWikiIndexZH {
+			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
+		}
+		rootAgentsPath := filepath.Join(root, "AGENTS.md")
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") {
+			t.Fatalf("expected Chinese workspace prompt, got:\n%s", got)
+		}
+
+		run(t, "project", "create", "中文项目")
+		projectPath := filepath.Join(root, "project1")
+		projectMD := readFile(t, filepath.Join(projectPath, projectMDFile))
+		if !strings.Contains(projectMD, "## 背景") || !strings.Contains(projectMD, "## 范围") || !strings.Contains(projectMD, "## 验收标准") {
+			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
+		}
+		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") {
+			t.Fatalf("expected Chinese project prompt, got:\n%s", got)
+		}
+		var projectLogs []LogEntry
+		if err := json.Unmarshal([]byte(run(t, "project", "log", "list", "--project=project1", "--json")), &projectLogs); err != nil {
+			t.Fatal(err)
+		}
+		if len(projectLogs) != 1 || projectLogs[0].Title != "项目已创建" {
+			t.Fatalf("expected localized project creation log, got %+v", projectLogs)
+		}
+
+		run(t, "task", "create", "--project=project1", "中文任务")
+		taskPath := filepath.Join(projectPath, "task1")
+		taskMDPath := filepath.Join(taskPath, taskMDFile)
+		workMDPath := filepath.Join(taskPath, "work.md")
+		taskAgentsPath := filepath.Join(taskPath, "AGENTS.md")
+		if got := readFile(t, taskMDPath); !strings.Contains(got, "## 背景") || !strings.Contains(got, "长期有效的任务约定") {
+			t.Fatalf("expected Chinese task template, got:\n%s", got)
+		}
+		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
+			t.Fatalf("expected Chinese work template, got:\n%s", got)
+		}
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") {
+			t.Fatalf("expected Chinese task prompt, got:\n%s", got)
+		}
+		var taskLogs []LogEntry
+		if err := json.Unmarshal([]byte(run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")), &taskLogs); err != nil {
+			t.Fatal(err)
+		}
+		if len(taskLogs) != 1 || taskLogs[0].Title != "任务已创建" {
+			t.Fatalf("expected localized task creation log, got %+v", taskLogs)
+		}
+
+		appendFile(t, projectAgentsPath, "\n# 团队说明\n\n保留这行。\n")
+		chineseTaskMD := readFile(t, taskMDPath)
+		if err := os.Chdir(taskPath); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "migrate", "--language=en")
+		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Language != defaultLanguage {
+			t.Fatalf("expected migration to persist English, got %+v", config)
+		}
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "This directory is an AgentWorkspace managed by forge.") || strings.Contains(got, "此目录是由 Forge 管理") {
+			t.Fatalf("expected English workspace prompt after migration, got:\n%s", got)
+		}
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# Project Agent Instructions") || !strings.Contains(got, "保留这行。") {
+			t.Fatalf("expected English project prompt with manual content preserved, got:\n%s", got)
+		}
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# Task Agent Instructions") {
+			t.Fatalf("expected English task prompt after migration, got:\n%s", got)
+		}
+		if got := readFile(t, taskMDPath); got != chineseTaskMD {
+			t.Fatalf("migration should not translate existing task.md\nbefore:\n%s\nafter:\n%s", chineseTaskMD, got)
+		}
+
+		run(t, "task", "create", "--project=project1", "English task")
+		if got := readFile(t, filepath.Join(projectPath, "task2", taskMDFile)); !strings.Contains(got, "## Background") {
+			t.Fatalf("expected new task to use migrated language, got:\n%s", got)
+		}
+
+		run(t, "migrate", "--language=zh-CN")
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") {
+			t.Fatalf("expected migration to switch prompts back to Chinese, got:\n%s", got)
+		}
+	})
+}
+
+func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		if _, err := runErr(t, "init", "--language=fr"); err == nil || !strings.Contains(err.Error(), "unsupported language") {
+			t.Fatalf("expected unsupported init language error, got %v", err)
+		}
+		assertMissing(t, filepath.Join(root, configFile))
+
+		run(t, "init", "--language=zh_CN")
+		var config Config
+		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Language != languageSimplifiedChinese {
+			t.Fatalf("expected language alias to normalize to zh-CN, got %+v", config)
+		}
+		if _, err := runErr(t, "migrate", "--language"); err == nil || !strings.Contains(err.Error(), "--language requires a value") {
+			t.Fatalf("expected missing language value error, got %v", err)
+		}
+	})
+
+	withTempCwd(t, func(root string) {
+		if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, archiveDir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(root, configFile), `{"version":1}`+"\n")
+		run(t, "migrate")
+		var config Config
+		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if config.Language != defaultLanguage {
+			t.Fatalf("expected legacy workspace to migrate to explicit English, got %+v", config)
+		}
+	})
+}
+
 func TestTaskLifecycle(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -547,15 +698,15 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"Agent\n  execution is provided by the separate forge-start binary",
 		"The workspace root\n  does not require a lock.",
 		"Usage:",
-		"  forge init\n  forge migrate",
+		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
-		"  forge init",
-		"  forge migrate",
+		"  forge init [--language=<language>]",
+		"  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",

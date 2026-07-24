@@ -8,8 +8,9 @@ import (
 )
 
 func runInit(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: forge init")
+	language, err := parseLanguageOption(args, defaultLanguage)
+	if err != nil {
+		return fmt.Errorf("usage: forge init [--language=<language>]: %w", err)
 	}
 
 	root, err := os.Getwd()
@@ -28,21 +29,22 @@ func runInit(args []string) error {
 	if err := os.MkdirAll(filepath.Join(root, archiveDir), 0o755); err != nil {
 		return err
 	}
-	config := Config{Version: 1}
+	config := Config{Version: 1, Language: language}
 	if err := readJSON(filepath.Join(root, configFile), &config); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	config.Version = 1
+	config.Language = language
 	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
-	if err := ensureWorkspaceWiki(root); err != nil {
+	if err := ensureWorkspaceWiki(root, language); err != nil {
 		return err
 	}
-	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
+	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md"), language); err != nil {
 		return err
 	}
-	if err := updateOpenTaskAgentsMD(root); err != nil {
+	if err := updateOpenTaskAgentsMD(root, language); err != nil {
 		return err
 	}
 
@@ -51,12 +53,17 @@ func runInit(args []string) error {
 }
 
 func runWorkspaceMigrate(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: forge migrate")
-	}
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
+	}
+	config, err := readWorkspaceConfig(root)
+	if err != nil {
+		return err
+	}
+	language, err := parseLanguageOption(args, config.Language)
+	if err != nil {
+		return fmt.Errorf("usage: forge migrate [--language=<language>]: %w", err)
 	}
 	updatedResources, err := migrateResourceSchemas(root)
 	if err != nil {
@@ -66,20 +73,25 @@ func runWorkspaceMigrate(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureWorkspaceWiki(root); err != nil {
+	if err := ensureWorkspaceWiki(root, language); err != nil {
 		return err
 	}
-	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md")); err != nil {
+	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md"), language); err != nil {
 		return err
 	}
-	if err := updateOpenTaskAgentsMD(root); err != nil {
+	if err := updateOpenTaskAgentsMD(root, language); err != nil {
+		return err
+	}
+	config.Version = 1
+	config.Language = language
+	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
 	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated, %d project work.md files removed)\n", root, updatedResources, removedProjectWorkFiles)
 	return nil
 }
 
-func ensureWorkspaceWiki(root string) error {
+func ensureWorkspaceWiki(root, language string) error {
 	dir := filepath.Join(root, wikiDir)
 	info, err := os.Lstat(dir)
 	switch {
@@ -108,7 +120,7 @@ func ensureWorkspaceWiki(root string) error {
 		}
 		return err
 	}
-	if _, err := file.WriteString(defaultWikiIndex); err != nil {
+	if _, err := file.WriteString(defaultWikiIndexForLanguage(language)); err != nil {
 		file.Close()
 		return err
 	}
@@ -144,8 +156,8 @@ func removeProjectWorkFiles(root string) (int, error) {
 	return removed, err
 }
 
-func updateAgentsMD(path string) error {
-	return updateAgentsMDWithBlock(path, forgePromptBlock())
+func updateAgentsMD(path, language string) error {
+	return updateAgentsMDWithBlock(path, forgePromptBlock(language))
 }
 
 func updateAgentsMDWithBlock(path, block string) error {
@@ -184,8 +196,8 @@ func upsertManagedBlock(content, block string) (string, error) {
 	return content + "\n\n" + block + "\n", nil
 }
 
-func forgePromptBlock() string {
-	return forgePromptStart + "\n" + workspaceAgentsPrompt + forgePromptEnd
+func forgePromptBlock(language string) string {
+	return forgePromptStart + "\n" + workspaceAgentsPromptForLanguage(language) + forgePromptEnd
 }
 
 func findEnclosingWorkspaceRoot(start string) (string, error) {
@@ -260,8 +272,8 @@ This directory is an AgentWorkspace managed by forge.
 Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
-forge init
-forge migrate
+forge init [--language=<language>]
+forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
@@ -300,8 +312,8 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 Notes:
 
-- ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace.
-- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace.
+- ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace. Use ` + "`--language`" + ` to select ` + "`en`" + ` or ` + "`zh-CN`" + `.
+- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace. Use ` + "`--language`" + ` to switch the workspace language.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
