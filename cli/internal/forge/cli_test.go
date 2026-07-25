@@ -1730,6 +1730,141 @@ func TestTaskArchiveEndsOpenTaskSessions(t *testing.T) {
 	})
 }
 
+func TestTaskArchivePreservesSessionControllingAnotherPrimaryResource(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Archive target")
+		run(t, "task", "create", "--project=project1", "Temporary task")
+		run(t, "project", "create", "Primary project")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project2")
+		run(t, "session", "lock", "--id", id, "--project=project1")
+		run(t, "session", "lock", "--id", id, "--project=project1", "--task=task1")
+
+		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(archived, "project1/archive/task1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			t.Fatal("archiving a temporary task should preserve the session")
+		}
+		session := store.Sessions[index]
+		if session.Primary == nil || session.Primary.ResourceID != "project2" {
+			t.Fatalf("expected project2 to remain the primary control, got: %#v", session.Primary)
+		}
+		if got := formatSessionControls(session.Controls); got != "project1:project1,project2:project2" {
+			t.Fatalf("expected only the archived task control to be removed, got: %s", got)
+		}
+
+		archived = run(t, "project", "archive", "--project=project1")
+		if !strings.Contains(archived, "archive/project1") {
+			t.Fatalf("expected project archive path, got:\n%s", archived)
+		}
+		store, err = readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index = findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			t.Fatal("archiving a temporary project should preserve the session")
+		}
+		session = store.Sessions[index]
+		if got := formatSessionControls(session.Controls); got != "project2:project2" {
+			t.Fatalf("expected the archived project control to be removed, got: %s", got)
+		}
+	})
+}
+
+func TestProjectArchiveEndsSessionWhosePrimaryResourceIsArchived(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Primary project")
+		run(t, "project", "create", "Temporary project")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project1")
+		run(t, "session", "lock", "--id", id, "--project=project2")
+
+		run(t, "project", "archive", "--project=project1")
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findSessionIndex(store.Sessions, id) >= 0 {
+			t.Fatalf("expected archive of the primary resource to end the session, got: %#v", store.Sessions)
+		}
+	})
+}
+
+func TestTaskArchiveEndsAmbiguousLegacyMultiControlSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Archive target")
+		run(t, "task", "create", "--project=project1", "Temporary task")
+		run(t, "project", "create", "Other project")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project2")
+		run(t, "session", "lock", "--id", id, "--project=project1", "--task=task1")
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			t.Fatal("expected session to exist")
+		}
+		store.Sessions[index].Primary = nil
+		if err := writeSessionStore(root, store); err != nil {
+			t.Fatal(err)
+		}
+
+		run(t, "task", "archive", "--project=project1", "--task=task1")
+		store, err = readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if findSessionIndex(store.Sessions, id) >= 0 {
+			t.Fatalf("expected archive to end an ambiguous legacy session, got: %#v", store.Sessions)
+		}
+	})
+}
+
+func TestSessionStoreInfersPrimaryForLegacySingleControlSession(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		legacy := SessionStore{
+			Version: 1,
+			Sessions: []Session{{
+				ID:        "legacy",
+				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "10m"},
+				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
+				StartedAt: time.Now().Format(time.RFC3339),
+				UpdatedAt: time.Now().Format(time.RFC3339),
+			}},
+		}
+		if err := writeJSON(filepath.Join(root, sessionStateFile), legacy); err != nil {
+			t.Fatal(err)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.Sessions) != 1 || store.Sessions[0].Primary == nil {
+			t.Fatalf("expected legacy single control to become primary, got: %#v", store.Sessions)
+		}
+		if got := store.Sessions[0].Primary.ResourceID; got != "project1" {
+			t.Fatalf("expected project1 primary, got %q", got)
+		}
+	})
+}
+
 func TestProjectArchiveEndsOpenProjectSessions(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")

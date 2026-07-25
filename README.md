@@ -171,6 +171,7 @@ Selectors may be omitted when the current directory already identifies the task 
 ```
 
 Agents launched by `forge-start` or Forge GUI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
+The first resource locked by a session is its primary resource; later controls are temporary. Archiving the primary resource ends the session, while archiving a temporarily controlled resource removes only the archived controls and preserves the primary session.
 
 ## AutoRun
 

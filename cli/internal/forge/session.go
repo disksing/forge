@@ -39,6 +39,7 @@ type Session struct {
 	ID        string           `json:"id"`
 	Liveness  SessionLiveness  `json:"liveness"`
 	Timeout   string           `json:"timeout,omitempty"`
+	Primary   *SessionControl  `json:"primary,omitempty"`
 	Controls  []SessionControl `json:"controls"`
 	StartedAt string           `json:"startedAt"`
 	UpdatedAt string           `json:"updatedAt"`
@@ -269,10 +270,13 @@ func updateSessionLock(options sessionTargetOptions, lock bool) error {
 			if err := ensureNoSessionControlConflicts(store, options.ID, control); err != nil {
 				return err
 			}
-			store.Sessions[index].Controls = addSessionControl(store.Sessions[index].Controls, control)
+			addSessionControl(&store.Sessions[index], control)
 		}
 		if !noLock && !lock {
 			store.Sessions[index].Controls = removeSessionControl(store.Sessions[index].Controls, control)
+			if store.Sessions[index].Primary != nil && store.Sessions[index].Primary.Path == control.Path {
+				store.Sessions[index].Primary = nil
+			}
 		}
 		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
 		session = store.Sessions[index]
@@ -305,7 +309,7 @@ func lockSessionResource(root, sessionID, resourceID string) (Session, error) {
 		if err := ensureNoSessionControlConflicts(store, sessionID, control); err != nil {
 			return err
 		}
-		store.Sessions[index].Controls = addSessionControl(store.Sessions[index].Controls, control)
+		addSessionControl(&store.Sessions[index], control)
 		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
 		session = store.Sessions[index]
 		return nil
@@ -657,15 +661,18 @@ func sessionPathsOverlap(a, b string) bool {
 	return a == b || a == "" || b == "" || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
 }
 
-func addSessionControl(controls []SessionControl, control SessionControl) []SessionControl {
-	for _, existing := range controls {
+func addSessionControl(session *Session, control SessionControl) {
+	for _, existing := range session.Controls {
 		if existing.Path == control.Path {
-			return controls
+			return
 		}
 	}
-	controls = append(controls, control)
-	sortSessionControls(controls)
-	return controls
+	if session.Primary == nil && len(session.Controls) == 0 {
+		primary := control
+		session.Primary = &primary
+	}
+	session.Controls = append(session.Controls, control)
+	sortSessionControls(session.Controls)
 }
 
 func removeSessionControl(controls []SessionControl, control SessionControl) []SessionControl {
@@ -742,20 +749,36 @@ func controlPathArchived(root, path string) bool {
 	return isArchivedPath(root, filepath.Join(root, filepath.FromSlash(path)))
 }
 
-func endSessionsControllingPath(root, targetRel string) error {
+func releaseSessionsControllingPath(root, targetRel string) error {
 	return withLockedSessionStore(root, func(store *SessionStore) error {
 		pruneStaleSessions(store)
 		pruneArchivedResourceSessions(root, store)
 		active := store.Sessions[:0]
+		now := time.Now().Format(time.RFC3339)
 		for _, session := range store.Sessions {
-			if sessionControlsPath(session, targetRel) {
+			if sessionPrimaryControlsPath(session, targetRel) {
 				continue
+			}
+			controls := removeSessionControlsWithinPath(session.Controls, targetRel)
+			if len(controls) != len(session.Controls) {
+				session.Controls = controls
+				session.UpdatedAt = now
 			}
 			active = append(active, session)
 		}
 		store.Sessions = active
 		return nil
 	})
+}
+
+func sessionPrimaryControlsPath(session Session, targetRel string) bool {
+	if session.Primary != nil {
+		return sessionPathsOverlap(session.Primary.Path, targetRel)
+	}
+	// Sessions written before primary controls were recorded are ambiguous.
+	// Preserve the historical fail-safe behavior instead of allowing an agent
+	// whose working resource may have been archived to continue without a lock.
+	return sessionControlsPath(session, targetRel)
 }
 
 func sessionControlsPath(session Session, targetRel string) bool {
@@ -765,6 +788,29 @@ func sessionControlsPath(session Session, targetRel string) bool {
 		}
 	}
 	return false
+}
+
+func removeSessionControlsWithinPath(controls []SessionControl, targetRel string) []SessionControl {
+	remaining := make([]SessionControl, 0, len(controls))
+	for _, control := range controls {
+		if sessionPathWithin(control.Path, targetRel) {
+			continue
+		}
+		remaining = append(remaining, control)
+	}
+	return remaining
+}
+
+func sessionPathWithin(path, parent string) bool {
+	path = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(path))), "/")
+	parent = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(parent))), "/")
+	if path == "." {
+		path = ""
+	}
+	if parent == "." {
+		parent = ""
+	}
+	return path == parent || parent == "" || strings.HasPrefix(path, parent+"/")
 }
 
 func sessionActive(session Session) bool {
@@ -876,6 +922,10 @@ func readSessionStore(root string) (SessionStore, error) {
 		if store.Sessions[i].Liveness.Type == "" && store.Sessions[i].Timeout != "" {
 			store.Sessions[i].Liveness = SessionLiveness{Type: "heartbeat", Timeout: store.Sessions[i].Timeout}
 			store.Sessions[i].Timeout = ""
+		}
+		if store.Sessions[i].Primary == nil && len(store.Sessions[i].Controls) == 1 {
+			primary := store.Sessions[i].Controls[0]
+			store.Sessions[i].Primary = &primary
 		}
 	}
 	return store, nil

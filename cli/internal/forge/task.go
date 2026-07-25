@@ -135,7 +135,7 @@ func archiveResource(id string) error {
 			return err
 		}
 	}
-	if err := endSessionsControllingPath(root, relPath(root, src)); err != nil {
+	if err := releaseSessionsControllingPath(root, relPath(root, src)); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
