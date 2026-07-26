@@ -322,7 +322,8 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	for _, want := range []string{
 		`AutoRun Profiles`,
 		`settings-profile-table`,
-		`/api/settings/agent-profiles`,
+		`/api/settings/agenthub`,
+		`agentName: profile.agentId`,
 		`preferredAgentProfiles`,
 		`Actual Agent:`,
 		`Legacy Agent:`,
@@ -333,28 +334,33 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	}
 }
 
-func TestAgentSettingsSplitIntoTabs(t *testing.T) {
+func TestAgentHubSettingsReplaceLocalProviderEditors(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
 	for _, want := range []string{
-		`settingsTabButton("providers", "cpu", "Providers")`,
-		`settingsTabButton("agents", "bot", "Agents")`,
+		`settingsTabButton("agenthub", "network", "AgentHub")`,
 		`settingsTabButton("profiles", "route", "Profiles")`,
-		`function settingsProvidersPanel(data)`,
-		`function settingsAgentsPanel(data)`,
+		`function settingsAgentHubPanel(data)`,
+		`Provider and agent definitions are read-only here.`,
+		`status.capabilities`,
+		`data-settings-section="agenthub"`,
 		`function settingsProfilesPanel(data)`,
-		`data-settings-section="agents"`,
 		`data-settings-section="profiles"`,
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("settings tab split is missing %q", want)
+			t.Fatalf("AgentHub settings UI is missing %q", want)
 		}
 	}
-	if strings.Contains(source, `settingsTabButton("agent",`) {
-		t.Fatal("old single Agent settings tab should be removed")
+	for _, removed := range []string{
+		`settingsTabButton("providers",`,
+		`settingsTabButton("agents",`,
+	} {
+		if strings.Contains(source, removed) {
+			t.Fatalf("local provider/agent editor tab remains: %q", removed)
+		}
 	}
 	start := strings.Index(source, "function syncSettingsDraftFromDOM()")
 	end := strings.Index(source, "function markAgentSettingsDirty()")
@@ -362,7 +368,7 @@ func TestAgentSettingsSplitIntoTabs(t *testing.T) {
 		t.Fatal("could not isolate syncSettingsDraftFromDOM")
 	}
 	sync := source[start:end]
-	for _, want := range []string{`data-settings-section="agents"`, `data-settings-section="profiles"`} {
+	for _, want := range []string{`data-settings-section="agenthub"`, `data-settings-section="profiles"`} {
 		if !strings.Contains(sync, want) {
 			t.Fatalf("draft sync should only collect rendered sections, missing %q", want)
 		}

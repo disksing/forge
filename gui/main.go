@@ -34,6 +34,9 @@ type config struct {
 	Version            int                   `json:"version"`
 	ActiveID           string                `json:"activeId,omitempty"`
 	Workspaces         []guiWorkspace        `json:"workspaces"`
+	AgentHubEndpoint   string                `json:"agentHubEndpoint,omitempty"`
+	AgentHubInstanceID string                `json:"agentHubInstanceId,omitempty"`
+	DefaultAgentName   string                `json:"defaultAgentHubAgentName,omitempty"`
 	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
 	AgentProviders     []agentProviderConfig `json:"agentProviders"`
 	Agents             []agentConfig         `json:"agents"`
@@ -68,7 +71,8 @@ type agentConfig struct {
 type agentProfileRoute struct {
 	Key         string `json:"key"`
 	Description string `json:"description,omitempty"`
-	AgentID     string `json:"agentId"`
+	AgentID     string `json:"agentId,omitempty"`
+	AgentName   string `json:"agentName,omitempty"`
 }
 
 type guiWorkspace struct {
@@ -222,6 +226,10 @@ func main() {
 	if err := s.prepareForgeCLI(); err != nil {
 		log.Fatal(err)
 	}
+	usesAgentHub, err := s.validatePersistedAgentHubConfig(context.Background())
+	if err != nil {
+		log.Fatalf("validate AgentHub configuration: %v", err)
+	}
 	s.codex = newCodexAppServer()
 	s.opencode = newOpencodeAppServer()
 	s.kimi = newKimiAppServer()
@@ -243,8 +251,10 @@ func main() {
 	if err := s.cleanupStaleInternalSessions(context.Background()); err != nil {
 		log.Printf("cleanup stale internal sessions: %v", err)
 	}
-	if err := s.startProvidersIfEnabled(); err != nil {
-		log.Printf("start managed agent providers: %v", err)
+	if !usesAgentHub {
+		if err := s.startProvidersIfEnabled(); err != nil {
+			log.Printf("start managed agent providers: %v", err)
+		}
 	}
 	go s.runTaskScheduler(context.Background())
 
@@ -1265,6 +1275,13 @@ func (s *server) loadConfig() (config, error) {
 	if cfg.Workspaces == nil {
 		cfg.Workspaces = []guiWorkspace{}
 	}
+	if cfg.Version >= agentHubConfigVersion {
+		cfg.AgentHubEndpoint, err = normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
+		if err != nil {
+			return config{}, err
+		}
+		return cfg, nil
+	}
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)
 	cfg.AgentProfiles, err = normalizeAgentProfileRoutes(cfg.AgentProfiles, cfg.Agents)
@@ -1278,6 +1295,27 @@ func (s *server) loadConfig() (config, error) {
 func (s *server) saveConfig(cfg config) error {
 	if cfg.Version == 0 {
 		cfg.Version = 1
+	}
+	if cfg.Version >= agentHubConfigVersion {
+		routes := make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles))
+		for _, route := range cfg.AgentProfiles {
+			routes = append(routes, agentHubProfileRoute{
+				Key: route.Key, Description: route.Description, AgentName: route.AgentName,
+			})
+		}
+		data, err := json.MarshalIndent(agentHubGUIConfig{
+			Version:                  agentHubConfigVersion,
+			ActiveID:                 cfg.ActiveID,
+			Workspaces:               cfg.Workspaces,
+			AgentHubEndpoint:         cfg.AgentHubEndpoint,
+			AgentHubInstanceID:       cfg.AgentHubInstanceID,
+			DefaultAgentHubAgentName: cfg.DefaultAgentName,
+			AgentProfiles:            routes,
+		}, "", "  ")
+		if err != nil {
+			return err
+		}
+		return atomicWriteConfig(s.config, append(data, '\n'))
 	}
 	cfg.AgentProviders = normalizeAgentProviders(cfg.AgentProviders)
 	cfg.Agents = normalizeAgents(cfg.Agents, cfg.AgentProviders)

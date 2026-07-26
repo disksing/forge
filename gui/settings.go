@@ -64,6 +64,8 @@ func (s *server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch path {
+	case "agenthub":
+		s.handleAgentHubSettings(w, r)
 	case "agent/default-chat":
 		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)

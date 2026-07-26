@@ -2535,8 +2535,7 @@ function renderSettingsModal() {
       <aside class="settings-tabs">
         <div class="settings-title">System Settings</div>
         ${settingsTabButton("workspace", "hard-drive", "Workspace")}
-        ${settingsTabButton("providers", "cpu", "Providers")}
-        ${settingsTabButton("agents", "bot", "Agents")}
+        ${settingsTabButton("agenthub", "network", "AgentHub")}
         ${settingsTabButton("profiles", "route", "Profiles")}
       </aside>
       <div class="settings-content">
@@ -2562,10 +2561,57 @@ function settingsTabButton(id, iconName, label) {
 }
 
 function settingsActivePanel(data) {
-  if (state.settings.tab === "providers") return settingsProvidersPanel(data);
-  if (state.settings.tab === "agents") return settingsAgentsPanel(data);
+  if (state.settings.tab === "agenthub") return settingsAgentHubPanel(data);
   if (state.settings.tab === "profiles") return settingsProfilesPanel(data);
   return settingsWorkspacePanel(data);
+}
+
+function settingsAgentHubPanel(data) {
+  const hub = data.agentHub || {};
+  const status = hub.status || {};
+  const catalog = hub.catalog || { providers: [], agents: [], probes: [] };
+  const connected = Boolean(hub.connected);
+  const compatible = Boolean(hub.compatible);
+  return `
+    <div class="settings-panel settings-agent-panel" data-settings-section="agenthub">
+      <div class="settings-panel-header">
+        <h2>AgentHub</h2>
+        <p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p>
+      </div>
+      <section class="settings-agent-section">
+        <div class="settings-section-heading">
+          <h3>Connection</h3>
+          <span class="settings-pill">${connected && compatible ? "Compatible" : connected ? "Incompatible" : "Unavailable"}</span>
+        </div>
+        <label class="settings-default-agent">
+          <span>Endpoint</span>
+          <input id="settingsAgentHubEndpoint" value="${escapeHTML(hub.configuredEndpoint || "http://127.0.0.1:4646")}" />
+        </label>
+        <small>${escapeHTML(hub.error || `API ${status.apiVersion || "unknown"} · AgentHub ${status.version || "unknown"}`)}</small>
+        <div class="settings-provider-list">
+          ${(status.capabilities || []).map((capability) => `<span class="settings-pill">${escapeHTML(capability)}</span>`).join("")}
+        </div>
+      </section>
+      <section class="settings-agent-section">
+        <div class="settings-section-heading">
+          <h3>Catalog</h3>
+          <span>${catalog.agents?.length || 0} agents · ${catalog.providers?.length || 0} providers</span>
+        </div>
+        ${settingsDefaultChatAgentSection(data)}
+        <div class="settings-agent-list">
+          ${(catalog.agents || []).map((agent) => `
+            <div class="settings-service-row">
+              <div class="settings-provider-main">
+                <span class="settings-agent-mark">${escapeHTML((agent.name || "A").slice(0, 1).toUpperCase())}</span>
+                <span><strong>${escapeHTML(agent.name)}</strong><small>${escapeHTML(agent.providerId)} · ${agent.available ? "Available" : escapeHTML(agent.unavailableReason || "Unavailable")}</small></span>
+              </div>
+            </div>
+          `).join("") || `<div class="settings-empty">No AgentHub agents available.</div>`}
+        </div>
+      </section>
+      ${settingsAgentSaveBar()}
+    </div>
+  `;
 }
 
 function settingsWorkspacePanel(data) {
@@ -2659,7 +2705,7 @@ function settingsProfilesPanel(data) {
     <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
       <div class="settings-panel-header">
         <h2>AutoRun Profiles</h2>
-        <p>Portable profile names map AutoRun preferences to local agents. Keys must be unique.</p>
+        <p>Portable profile names map AutoRun preferences to AgentHub agent names. Keys must be unique.</p>
       </div>
       ${settingsAgentProfilesSection(data)}
       ${settingsAgentSaveBar()}
@@ -2693,13 +2739,13 @@ function settingsAgentProfilesSection(data) {
       </div>
       <div class="settings-profile-table">
         <div class="settings-profile-row settings-profile-head">
-          <span>Profile key</span><span>Summary</span><span>Local Agent</span><span></span>
+          <span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span>
         </div>
         ${profiles.map((profile, index) => `
           <div class="settings-profile-row" data-profile-index="${index}">
             <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" />
             <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" />
-            <select data-profile-field="agentId" aria-label="Local Agent">${targetOptions(profile.agentId)}</select>
+            <select data-profile-field="agentId" aria-label="AgentHub Agent">${targetOptions(profile.agentId)}</select>
             <button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>
           </div>
         `).join("")}
@@ -2949,6 +2995,7 @@ function bindSettingsEvents() {
     if (label) label.textContent = event.target.selectedOptions[0]?.textContent || "None";
     markAgentSettingsDirty();
   });
+  $("settingsAgentHubEndpoint")?.addEventListener("input", markAgentSettingsDirty);
   $("settingsAddAgentButton")?.addEventListener("click", () => {
     addSettingsAgent().catch((err) => toast(err.message));
   });
@@ -4029,7 +4076,16 @@ function closeSettings() {
 }
 
 async function refreshSettings() {
-  state.settings.data = await api("/api/settings");
+  const [base, agentHub] = await Promise.all([api("/api/settings"), api("/api/settings/agenthub")]);
+  const catalogAgents = (agentHub.catalog?.agents || []).map((agent) => ({ ...agent, id: agent.name }));
+  state.settings.data = {
+    ...base,
+    agentHub,
+    agentProviders: agentHub.catalog?.providers || [],
+    agents: catalogAgents,
+    agentProfiles: (agentHub.config?.agentProfiles || []).map((profile) => ({ ...profile, agentId: profile.agentName })),
+    defaultChatAgentId: agentHub.config?.defaultAgentHubAgentName || "",
+  };
 }
 
 function snapshotAgentDraft() {
@@ -4141,6 +4197,14 @@ function syncSettingsDraftFromDOM() {
     next.agentProfiles = collectSettingsAgentProfiles();
     touched = true;
   }
+  if (document.querySelector('[data-settings-section="agenthub"]')) {
+    next.agentHub = {
+      ...(data.agentHub || {}),
+      configuredEndpoint: $("settingsAgentHubEndpoint")?.value.trim() || data.agentHub?.configuredEndpoint || "",
+    };
+    next.defaultChatAgentId = $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "";
+    touched = true;
+  }
   if (touched) state.settings.data = next;
 }
 
@@ -4148,7 +4212,7 @@ function markAgentSettingsDirty() {
   if (state.settings.agentDirty) return;
   state.settings.agentDirty = true;
   updateSettingsSaveBar();
-  document.querySelectorAll('[data-settings-tab="agents"], [data-settings-tab="profiles"]').forEach((tab) => tab.classList.add("dirty"));
+  document.querySelectorAll('[data-settings-tab="agenthub"], [data-settings-tab="profiles"]').forEach((tab) => tab.classList.add("dirty"));
 }
 
 function updateSettingsSaveBar() {
@@ -4164,19 +4228,19 @@ function updateSettingsSaveBar() {
 async function saveAgentSettings() {
   syncSettingsDraftFromDOM();
   const data = state.settings.data || {};
-  await api("/api/settings/agents", {
+  await api("/api/settings/agenthub", {
     method: "PUT",
-    body: JSON.stringify(data.agents || []),
+    body: JSON.stringify({
+      endpoint: data.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
+      defaultAgentName: data.defaultChatAgentId || "",
+      agentProfiles: (data.agentProfiles || []).map((profile) => ({
+        key: profile.key,
+        description: profile.description,
+        agentName: profile.agentId,
+      })),
+    }),
   });
-  await api("/api/settings/agent-profiles", {
-    method: "PUT",
-    body: JSON.stringify(data.agentProfiles || []),
-  });
-  await api("/api/settings/agent/default-chat", {
-    method: "PUT",
-    body: JSON.stringify({ agentId: data.defaultChatAgentId || "" }),
-  });
-  state.settings.data = await api("/api/settings");
+  await refreshSettings();
   state.config = await api("/api/workspaces");
   state.settings.agentDirty = false;
   applyAgentConfig();
@@ -4185,7 +4249,7 @@ async function saveAgentSettings() {
   bindAgentEvents();
   renderSettingsModal();
   refreshIcons();
-  toast("Agent settings saved.");
+  toast("AgentHub settings saved.");
 }
 
 function collectSettingsAgentProfiles() {
