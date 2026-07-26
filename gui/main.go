@@ -226,7 +226,7 @@ func main() {
 	if err := s.prepareForgeCLI(); err != nil {
 		log.Fatal(err)
 	}
-	usesAgentHub, err := s.validatePersistedAgentHubConfig(context.Background())
+	_, err = s.validatePersistedAgentHubConfig(context.Background())
 	if err != nil {
 		log.Fatalf("validate AgentHub configuration: %v", err)
 	}
@@ -251,10 +251,8 @@ func main() {
 	if err := s.cleanupStaleInternalSessions(context.Background()); err != nil {
 		log.Printf("cleanup stale internal sessions: %v", err)
 	}
-	if !usesAgentHub {
-		if err := s.startProvidersIfEnabled(); err != nil {
-			log.Printf("start managed agent providers: %v", err)
-		}
+	if err := s.agents.recoverAgentHubRuns(context.Background()); err != nil {
+		log.Printf("recover AgentHub runs: %v", err)
 	}
 	go s.runTaskScheduler(context.Background())
 

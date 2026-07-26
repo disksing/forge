@@ -461,7 +461,7 @@ function taskOperationalState(item) {
 function deriveTaskPrimaryState(autoRun, sessions) {
   const autoRunState = autoRun?.state || "";
   const approval = sessions.find((session) => session.agentRunStatus === "waiting_approval");
-  const active = sessions.find((session) => ["starting", "running"].includes(session.agentRunStatus));
+  const active = sessions.find((session) => ["starting", "running", "stopping", "recovering"].includes(session.agentRunStatus));
   const idle = sessions.find((session) => session.agentRunStatus === "idle");
 
   if (autoRunState === "failed") {
@@ -471,7 +471,7 @@ function deriveTaskPrimaryState(autoRun, sessions) {
     return taskPrimaryState("approval", "task-status-attention", "shield-question", "Session waiting for approval", approval);
   }
   if (autoRunState === "running") {
-    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running"].includes(session.agentRunStatus));
+    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running", "stopping", "recovering"].includes(session.agentRunStatus));
     if (scheduler) {
       return taskPrimaryState("auto-running", "task-status-auto-running", "loader-circle", "AutoRun running", scheduler);
     }
@@ -2291,6 +2291,8 @@ const RUN_STATUS_TONES = {
   starting: "running",
   running: "running",
   waiting_approval: "attention",
+  stopping: "attention",
+  recovering: "attention",
   stopped: "muted",
   failed: "danger",
   completed: "done",
@@ -2463,6 +2465,8 @@ function isAgentSessionReady(run) {
 
 function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
   if (!sessionReady) return "Agent session is starting.";
+  if (run.status === "stopping") return "AgentHub is stopping the provider.";
+  if (run.status === "recovering") return "AgentHub event recovery is in progress.";
   if (run.status === "waiting_approval") return "Resolve the pending approval before sending input.";
   if (run.schedulerTurn && run.provider === "codex" && !run.codexTurnId) return "AutoRun turn is starting.";
   if (run.schedulerTurn && ["opencode", "kimi"].includes(run.provider) && run.status === "running") return `${providerName(run.provider)} cannot accept input during an active turn.`;
@@ -3631,7 +3635,7 @@ function currentAgentRun() {
 }
 
 function isLiveAgentRun(run) {
-  return ["starting", "running", "waiting_approval", "idle"].includes(run?.status);
+  return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status);
 }
 
 async function submitTTYInput(event) {

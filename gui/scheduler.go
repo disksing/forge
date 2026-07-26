@@ -69,14 +69,16 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hasEnabledProvider := false
-	for _, provider := range cfg.AgentProviders {
-		if provider.Enabled {
-			hasEnabledProvider = true
-			break
+	hasRunnableAgent := cfg.Version >= agentHubConfigVersion && strings.TrimSpace(cfg.DefaultAgentName) != ""
+	if cfg.Version < agentHubConfigVersion {
+		for _, provider := range cfg.AgentProviders {
+			if provider.Enabled {
+				hasRunnableAgent = true
+				break
+			}
 		}
 	}
-	if !hasEnabledProvider {
+	if !hasRunnableAgent {
 		return nil
 	}
 	var failures []error
@@ -230,6 +232,9 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 }
 
 func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+	if cfg.Version >= agentHubConfigVersion {
+		return resolveAgentHubAutoRunAgent(cfg, task)
+	}
 	if len(task.PreferredAgentProfiles) > 0 {
 		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
 		for _, raw := range task.PreferredAgentProfiles {
@@ -261,6 +266,40 @@ func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSe
 		return autoRunAgentSelection{}, errors.New("no enabled Agent is configured for AutoRun")
 	}
 	return autoRunAgentSelection{AgentID: fallback.ID, Reason: "using default Agent"}, nil
+}
+
+func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+	if len(task.PreferredAgentProfiles) > 0 {
+		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
+		for _, raw := range task.PreferredAgentProfiles {
+			profile := strings.ToLower(strings.TrimSpace(raw))
+			if profile == "" || seen[profile] {
+				continue
+			}
+			seen[profile] = true
+			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
+			if ok && strings.TrimSpace(route.AgentName) != "" {
+				return autoRunAgentSelection{
+					AgentID: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile,
+				}, nil
+			}
+		}
+		fallback := strings.TrimSpace(cfg.DefaultAgentName)
+		if fallback == "" {
+			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
+		}
+		return autoRunAgentSelection{
+			AgentID: fallback, Reason: "preferred Agent Profiles unavailable; using default AgentHub agent " + fallback,
+		}, nil
+	}
+	if legacyName := strings.TrimSpace(task.AgentID); legacyName != "" {
+		return autoRunAgentSelection{AgentID: legacyName, Reason: "using legacy AutoRun agentId as an AgentHub agent name"}, nil
+	}
+	fallback := strings.TrimSpace(cfg.DefaultAgentName)
+	if fallback == "" {
+		return autoRunAgentSelection{}, errors.New("no default AgentHub agent is configured for AutoRun")
+	}
+	return autoRunAgentSelection{AgentID: fallback, Reason: "using default AgentHub agent"}, nil
 }
 
 func agentConfigAvailable(cfg config, agentID string) bool {
