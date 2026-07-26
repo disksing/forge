@@ -295,6 +295,25 @@ func TestResolveAutoRunAgentUsesOrderedProfilesAndFallback(t *testing.T) {
 	}
 }
 
+func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
+	cfg := config{
+		Version:          agentHubConfigVersion,
+		DefaultAgentName: "kimi-k3",
+		AgentProfiles: []agentProfileRoute{
+			{Key: "deep", AgentName: "gpt-5.6-sol"},
+			{Key: "fast", AgentName: "gpt-5.3-codex-spark"},
+		},
+	}
+	selection, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing", "deep"}})
+	if err != nil || selection.AgentID != "gpt-5.6-sol" || selection.Profile != "deep" {
+		t.Fatalf("expected AgentHub Profile route, got selection=%+v err=%v", selection, err)
+	}
+	selection, err = resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
+	if err != nil || selection.AgentID != "kimi-k3" || selection.Profile != "" {
+		t.Fatalf("expected AgentHub default fallback, got selection=%+v err=%v", selection, err)
+	}
+}
+
 func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRun, active bool) {
 	t.Helper()
 	if err := saveAgentRun(workspace, run); err != nil {

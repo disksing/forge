@@ -1,0 +1,533 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type runtimeFakeAgentHub struct {
+	mu              sync.Mutex
+	sessions        map[string]agentHubSession
+	events          map[string][]agentHubEvent
+	nextSession     int
+	abortNextCreate bool
+	duplicateSource bool
+	gapAfter        int64
+	messageSteers   []bool
+	actions         []string
+}
+
+func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
+	return &runtimeFakeAgentHub{
+		sessions: make(map[string]agentHubSession),
+		events:   make(map[string][]agentHubEvent),
+	}
+}
+
+func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/sessions" {
+		if r.Method == http.MethodGet {
+			f.list(w, r)
+			return
+		}
+		if r.Method == http.MethodPost {
+			f.create(w, r)
+			return
+		}
+	}
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
+	if len(parts) < 3 || parts[0] != "v1" || parts[1] != "sessions" {
+		http.NotFound(w, r)
+		return
+	}
+	id, _ := url.PathUnescape(parts[2])
+	if len(parts) == 3 && r.Method == http.MethodGet {
+		f.mu.Lock()
+		session, ok := f.sessions[id]
+		f.mu.Unlock()
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeRuntimeFakeJSON(w, map[string]any{"session": session})
+		return
+	}
+	if len(parts) == 4 && parts[3] == "events" {
+		f.serveEvents(w, r, id)
+		return
+	}
+	if len(parts) == 4 && parts[3] == "messages" {
+		var body struct {
+			Text  string `json:"text"`
+			Steer bool   `json:"steer"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.messageSteers = append(f.messageSteers, body.Steer)
+		eventType := "message.user"
+		if body.Steer {
+			eventType = "message.user.steer"
+		}
+		f.appendLocked(id, eventType, map[string]any{"text": body.Text})
+		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
+		session := f.sessions[id]
+		session.State = "busy"
+		f.sessions[id] = session
+		f.mu.Unlock()
+		writeRuntimeFakeJSON(w, map[string]any{"session": session})
+		return
+	}
+	if len(parts) == 5 && parts[3] == "approvals" {
+		approvalID, _ := url.PathUnescape(parts[4])
+		var body struct {
+			Decision string `json:"decision"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		f.actions = append(f.actions, "approval:"+approvalID+":"+body.Decision)
+		f.appendLocked(id, "approval.resolved", map[string]any{"approvalId": approvalID, "decision": body.Decision})
+		session := f.sessions[id]
+		session.State = "busy"
+		session.PendingApprovalIDs = nil
+		f.sessions[id] = session
+		f.mu.Unlock()
+		writeRuntimeFakeJSON(w, map[string]any{"session": session})
+		return
+	}
+	if len(parts) == 4 && r.Method == http.MethodPost {
+		action := parts[3]
+		f.mu.Lock()
+		f.actions = append(f.actions, action)
+		session := f.sessions[id]
+		switch action {
+		case "interrupt":
+			f.appendLocked(id, "turn.cancelled", map[string]any{"reason": "requested"})
+			f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
+			session.State = "ready"
+		case "stop":
+			f.appendLocked(id, "session.state", map[string]any{"state": "stopping"})
+			f.appendLocked(id, "session.state", map[string]any{"state": "stopped", "reason": "requested"})
+			session.State = "stopped"
+			session.StopReason = "requested"
+		case "resume":
+			f.appendLocked(id, "session.state", map[string]any{"state": "starting"})
+			f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
+			session.State = "ready"
+		}
+		session.LastEventID = int64(len(f.events[id]))
+		f.sessions[id] = session
+		f.mu.Unlock()
+		writeRuntimeFakeJSON(w, map[string]any{"session": session})
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func writeRuntimeFakeJSON(w http.ResponseWriter, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(value)
+}
+
+func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
+	var request agentHubCreateSessionRequest
+	_ = json.NewDecoder(r.Body).Decode(&request)
+	f.mu.Lock()
+	f.nextSession++
+	id := fmt.Sprintf("ses_%d", f.nextSession)
+	session := agentHubSession{
+		ID: id, Title: request.Title, Cwd: request.Cwd, AgentName: request.AgentName,
+		LaunchEnvironment: request.LaunchEnvironment, Source: request.Source, Provider: "fake",
+		State: "ready", CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+	f.sessions[id] = session
+	f.appendLocked(id, "session.created", session)
+	f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
+	if request.InitialMessage != nil {
+		f.appendLocked(id, "message.user", map[string]any{"text": request.InitialMessage.Text})
+		f.appendLocked(id, "turn.started", map[string]any{"text": request.InitialMessage.Text})
+		session.State = "busy"
+	}
+	session.LastEventID = int64(len(f.events[id]))
+	f.sessions[id] = session
+	abort := f.abortNextCreate
+	f.abortNextCreate = false
+	f.mu.Unlock()
+	if abort {
+		panic(http.ErrAbortHandler)
+	}
+	w.WriteHeader(http.StatusCreated)
+	writeRuntimeFakeJSON(w, map[string]any{"session": session})
+}
+
+func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var sessions []agentHubSession
+	if f.duplicateSource {
+		source := &agentHubSource{
+			App: r.URL.Query().Get("sourceApp"), InstanceID: r.URL.Query().Get("sourceInstanceId"),
+			ExternalID: r.URL.Query().Get("sourceExternalId"),
+		}
+		sessions = append(sessions,
+			agentHubSession{ID: "ses_duplicate_1", Source: source},
+			agentHubSession{ID: "ses_duplicate_2", Source: source},
+		)
+		writeRuntimeFakeJSON(w, map[string]any{"sessions": sessions})
+		return
+	}
+	for _, session := range f.sessions {
+		if sourceMatchesQuery(session.Source, r.URL.Query()) {
+			sessions = append(sessions, session)
+		}
+	}
+	writeRuntimeFakeJSON(w, map[string]any{"sessions": sessions})
+}
+
+func sourceMatchesQuery(source *agentHubSource, query url.Values) bool {
+	if query.Get("sourceApp") == "" && query.Get("sourceInstanceId") == "" && query.Get("sourceExternalId") == "" {
+		return true
+	}
+	return source != nil && source.App == query.Get("sourceApp") &&
+		source.InstanceID == query.Get("sourceInstanceId") && source.ExternalID == query.Get("sourceExternalId")
+}
+
+func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request, id string) {
+	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	if limit <= 0 {
+		limit = agentHubEventsPageSize
+	}
+	f.mu.Lock()
+	all := append([]agentHubEvent(nil), f.events[id]...)
+	gapAfter := f.gapAfter
+	f.mu.Unlock()
+	var events []agentHubEvent
+	for _, event := range all {
+		if event.ID <= after {
+			continue
+		}
+		if gapAfter > 0 && after < gapAfter && event.ID == gapAfter {
+			continue
+		}
+		events = append(events, event)
+		if len(events) == limit {
+			break
+		}
+	}
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, event := range events {
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "id: %d\ndata: %s\n\n", event.ID, data)
+		}
+		return
+	}
+	next := after
+	if len(events) > 0 {
+		next = events[len(events)-1].ID
+	}
+	writeRuntimeFakeJSON(w, map[string]any{
+		"events": events,
+		"page": map[string]any{
+			"after": after, "limit": limit, "nextAfter": next, "hasMore": next < int64(len(all)),
+		},
+		"latestCursor": len(all),
+	})
+}
+
+func (f *runtimeFakeAgentHub) appendLocked(sessionID, eventType string, data any) agentHubEvent {
+	raw, _ := json.Marshal(data)
+	event := agentHubEvent{
+		ID: int64(len(f.events[sessionID]) + 1), Time: time.Now().Format(time.RFC3339),
+		Type: eventType, SessionID: sessionID, Data: raw,
+	}
+	f.events[sessionID] = append(f.events[sessionID], event)
+	session := f.sessions[sessionID]
+	session.LastEventID = event.ID
+	session.UpdatedAt = event.Time
+	f.sessions[sessionID] = session
+	return event
+}
+
+func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspace, string) {
+	t.Helper()
+	workspacePath := t.TempDir()
+	workspace := guiWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configData, _ := json.Marshal(agentHubGUIConfig{
+		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-runtime-test",
+		DefaultAgentHubAgentName: "fake-agent",
+	})
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	forgePath := filepath.Join(t.TempDir(), "forge-fake")
+	script := `#!/bin/sh
+if [ "$1" = "session" ] && [ "$2" = "new" ]; then
+  printf '%s\n' "session-test"
+  exit 0
+fi
+if [ "$1" = "session" ] && { [ "$2" = "lock" ] || [ "$2" = "end" ]; }; then
+  printf '{}\n'
+  exit 0
+fi
+echo "unexpected forge args: $*" >&2
+exit 1
+`
+	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	server := &server{config: configPath, forgePath: forgePath, addr: "127.0.0.1:4936"}
+	manager := newAgentManager(server)
+	server.agents = manager
+	return manager, workspace, configPath
+}
+
+func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorkspace, body string) (*httptest.ResponseRecorder, agentRunDetail) {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/agent/runs", strings.NewReader(body))
+	recorder := httptest.NewRecorder()
+	manager.startRun(recorder, request, workspace.ID)
+	var detail agentRunDetail
+	_ = json.Unmarshal(recorder.Body.Bytes(), &detail)
+	return recorder, detail
+}
+
+func stopRuntimeTestStream(rt *agentRuntime) {
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	cancel, done := rt.agentHubCancel, rt.agentHubStreamDone
+	rt.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if done != nil {
+		<-done
+	}
+}
+
+func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.abortNextCreate = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Lost response","agentId":"fake-agent"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	if detail.Run.AgentHubSessionID != "ses_1" || detail.Run.SourceExternalID != workspace.ID+"/"+detail.Run.ID {
+		t.Fatalf("unexpected recovered projection: %#v", detail.Run)
+	}
+	fake.mu.Lock()
+	session := fake.sessions["ses_1"]
+	fake.mu.Unlock()
+	if session.Source == nil || session.Source.App != "forge" || session.Source.InstanceID != "forge-runtime-test" ||
+		session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
+		t.Fatalf("source or launch environment missing: %#v", session)
+	}
+	if _, err := os.Stat(agentEventsPath(workspace.Path, detail.Run.ID)); !os.IsNotExist(err) {
+		t.Fatalf("AgentHub run must not create a local event fact log: %v", err)
+	}
+	stopRuntimeTestStream(manager.runtimeByID(detail.Run.ID))
+}
+
+func TestAgentHubRuntimeDuplicateSourceKeepsRunRecovering(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.duplicateSource = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"title":"Conflict","agentId":"fake-agent"}`)
+	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), "multiple AgentHub sessions") {
+		t.Fatalf("expected duplicate source failure, got %d %s", recorder.Code, recorder.Body.String())
+	}
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("conflicted run projection missing: runs=%#v err=%v", runs, err)
+	}
+	if runs[0].Status != "recovering" || runs[0].ForgeSessionID == "" {
+		t.Fatalf("duplicate conflict did not conservatively retain lock projection: %#v", runs[0])
+	}
+	if _, err := os.Stat(runs[0].ForgeSessionContextPath); err != nil {
+		t.Fatalf("Forge session context was removed after ambiguous conflict: %v", err)
+	}
+}
+
+func TestAgentHubRuntimePaginationUnknownGapAndSSE(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.mu.Lock()
+	fake.sessions["ses_page"] = agentHubSession{ID: "ses_page", State: "ready"}
+	for index := 0; index < 505; index++ {
+		eventType := "provider.event"
+		if index == 500 {
+			eventType = "future.event"
+		}
+		fake.appendLocked("ses_page", eventType, map[string]any{"index": index})
+	}
+	fake.mu.Unlock()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	client, _ := newAgentHubClient(hub.URL, hub.Client())
+	run := agentRun{ID: "run-page", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_page", Status: "idle"}
+	rt := newAgentHubRuntime(manager, workspace, run, client, nil)
+	if err := rt.catchUpAgentHub(context.Background(), manager, 505); err != nil {
+		t.Fatal(err)
+	}
+	projected, events, _ := rt.snapshotDetail()
+	if projected.AgentHubEventCursor != 505 || len(events) != agentEventMaxCount {
+		t.Fatalf("pagination failed: cursor=%d events=%d", projected.AgentHubEventCursor, len(events))
+	}
+	if events[len(events)-5].Text != "Unknown AgentHub event: future.event" {
+		t.Fatalf("unknown event was not retained safely: %#v", events[len(events)-5])
+	}
+	fake.mu.Lock()
+	fake.appendLocked("ses_page", "message.assistant.delta", map[string]any{"text": "live"})
+	fake.mu.Unlock()
+	var live []agentHubEvent
+	if err := client.StreamEvents(context.Background(), "ses_page", 505, func(event agentHubEvent) error {
+		live = append(live, event)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(live) != 1 || live[0].ID != 506 {
+		t.Fatalf("unexpected SSE replay: %#v", live)
+	}
+
+	gapRun := agentRun{ID: "run-gap", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_page", Status: "idle"}
+	gapRT := newAgentHubRuntime(manager, workspace, gapRun, client, nil)
+	fake.mu.Lock()
+	fake.gapAfter = 250
+	fake.mu.Unlock()
+	err := gapRT.catchUpAgentHub(context.Background(), manager, 506)
+	if err == nil || !strings.Contains(err.Error(), "cursor gap") {
+		t.Fatalf("expected gap error, got %v", err)
+	}
+	gapRT.mu.Lock()
+	cursor := gapRT.run.AgentHubEventCursor
+	gapRT.mu.Unlock()
+	if cursor != 249 {
+		t.Fatalf("projection advanced across gap to %d", cursor)
+	}
+}
+
+func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Controls","agentId":"fake-agent"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %s", recorder.Body.String())
+	}
+	runID := detail.Run.ID
+
+	call := func(path, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+		manager.handle(rec, request, workspace.ID, parts[4:])
+		return rec
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/input", `{"text":"hello"}`); rec.Code != http.StatusOK {
+		t.Fatalf("message failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/input", `{"text":"steer"}`); rec.Code != http.StatusOK {
+		t.Fatalf("steer failed: %d %s", rec.Code, rec.Body.String())
+	}
+	rt := manager.runtimeByID(runID)
+	fake.mu.Lock()
+	fake.appendLocked(detail.Run.AgentHubSessionID, "approval.requested", map[string]any{"approvalId": "approve-1", "method": "tool"})
+	session := fake.sessions[detail.Run.AgentHubSessionID]
+	session.State = "waiting_approval"
+	fake.sessions[detail.Run.AgentHubSessionID] = session
+	last := session.LastEventID
+	fake.mu.Unlock()
+	if err := rt.catchUpAgentHub(context.Background(), manager, last); err != nil {
+		t.Fatal(err)
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/approval", `{"requestId":"approve-1","decision":"accept"}`); rec.Code != http.StatusOK {
+		t.Fatalf("approval failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/interrupt", `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("interrupt failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/stop", `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("stop failed: %d %s", rec.Code, rec.Body.String())
+	}
+	rt.mu.Lock()
+	stopped := rt.run.Status
+	rt.mu.Unlock()
+	if stopped != "stopped" {
+		t.Fatalf("run stopped without durable projection: %s", stopped)
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/resume", `{}`); rec.Code != http.StatusOK {
+		t.Fatalf("resume failed: %d %s", rec.Code, rec.Body.String())
+	}
+	fake.mu.Lock()
+	steers := append([]bool(nil), fake.messageSteers...)
+	actions := strings.Join(fake.actions, ",")
+	fake.mu.Unlock()
+	if len(steers) != 2 || steers[0] || !steers[1] {
+		t.Fatalf("message/steer routing mismatch: %#v", steers)
+	}
+	for _, expected := range []string{"approval:approve-1:accept", "interrupt", "stop", "resume"} {
+		if !strings.Contains(actions, expected) {
+			t.Fatalf("missing control %q in %q", expected, actions)
+		}
+	}
+
+	stopRuntimeTestStream(rt)
+	restartedServer := &server{config: configPath, forgePath: manager.server.forgePath, addr: manager.server.addr}
+	restarted := newAgentManager(restartedServer)
+	restartedServer.agents = restarted
+	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	recovered := restarted.runtimeByID(runID)
+	if recovered == nil {
+		t.Fatal("GUI restart did not recover AgentHub runtime")
+	}
+	recoveredRun, recoveredEvents, _ := recovered.snapshotDetail()
+	fake.mu.Lock()
+	eventCount := len(fake.events[detail.Run.AgentHubSessionID])
+	fake.mu.Unlock()
+	if recoveredRun.AgentHubEventCursor != int64(eventCount) || len(recoveredEvents) == 0 {
+		t.Fatalf("restart did not rebuild history: run=%#v events=%d durable=%d", recoveredRun, len(recoveredEvents), eventCount)
+	}
+	stopRuntimeTestStream(recovered)
+}
+
+func TestAgentHubRuntimeStoppingAndRecoveryUI(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, expected := range []string{
+		`stopping: "attention"`,
+		`recovering: "attention"`,
+		`AgentHub is stopping the provider.`,
+		`AgentHub event recovery is in progress.`,
+	} {
+		if !strings.Contains(source, expected) {
+			t.Fatalf("AgentHub runtime UI is missing %q", expected)
+		}
+	}
+}

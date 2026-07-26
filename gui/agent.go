@@ -129,18 +129,23 @@ type resourceDetailPath struct {
 }
 
 type agentRuntime struct {
-	mu                sync.Mutex
-	workspace         guiWorkspace
-	manager           *agentManager
-	run               agentRun
-	events            []agentEvent
-	nextEventID       int64
-	provider          agentProvider
-	pending           map[string]pendingApproval
-	done              chan struct{}
-	doneOnce          sync.Once
-	stopRequested     bool
-	opencodeTerminals map[string]*opencodeTerminal
+	mu                 sync.Mutex
+	workspace          guiWorkspace
+	manager            *agentManager
+	run                agentRun
+	events             []agentEvent
+	nextEventID        int64
+	agentHub           *agentHubClient
+	agentHubState      string
+	agentHubCancel     context.CancelFunc
+	agentHubSync       sync.Mutex
+	agentHubStreamDone chan struct{}
+	provider           agentProvider
+	pending            map[string]pendingApproval
+	done               chan struct{}
+	doneOnce           sync.Once
+	stopRequested      bool
+	opencodeTerminals  map[string]*opencodeTerminal
 }
 
 type agentManager struct {
@@ -202,6 +207,12 @@ func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceI
 			return
 		}
 		m.stopRun(w, r, workspaceID, runID)
+	case "interrupt":
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		m.interruptRun(w, r, workspaceID, runID)
 	case "resume":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -392,7 +403,7 @@ func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspac
 			rt.mu.Lock()
 			runs[i] = rt.run
 			rt.mu.Unlock()
-		} else if isLiveAgentStatus(runs[i].Status) {
+		} else if isLiveAgentStatus(runs[i].Status) && strings.TrimSpace(runs[i].AgentHubSessionID) == "" {
 			runs[i].Status = "stopped"
 		}
 	}
@@ -421,128 +432,6 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 		return strings.TrimSpace(run.ResourceID) == ""
 	}
 	return run.ResourceID == resourceID
-}
-
-func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	workspace, err := m.server.workspace(workspaceID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	var req startAgentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	req.Prompt = strings.TrimSpace(req.Prompt)
-	agent, provider, err := m.resolveAgentConfig(req)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	now := time.Now().Format(time.RFC3339)
-	run := agentRun{
-		ID:                   newRunID(),
-		WorkspaceID:          workspace.ID,
-		ResourceID:           strings.TrimSpace(req.ResourceID),
-		AgentID:              agent.ID,
-		AgentProfile:         strings.TrimSpace(req.AgentProfile),
-		AgentSelectionReason: strings.TrimSpace(req.AgentSelectionReason),
-		Provider:             provider.ID,
-		Title:                strings.TrimSpace(req.Title),
-		Cwd:                  cwd,
-		Status:               "starting",
-		CreatedAt:            now,
-		UpdatedAt:            now,
-		SchedulerTurn:        req.SchedulerTurn,
-		AutoRunGeneration:    req.AutoRunGeneration,
-	}
-	applyAgentRunOptions(&run, agent, provider.Type)
-	if resumeID := strings.TrimSpace(req.ResumeRunID); resumeID != "" {
-		previous, _, _, loadErr := loadAgentRunDetail(workspace.Path, resumeID)
-		if loadErr != nil {
-			writeError(w, fmt.Errorf("load resume run: %w", loadErr), http.StatusBadRequest)
-			return
-		}
-		previousProvider := strings.TrimSpace(previous.Provider)
-		if previousProvider == "" {
-			previousProvider = codexProviderID
-		}
-		if previousProvider == provider.ID {
-			run.CodexThreadID = previous.CodexThreadID
-			run.ProviderSessionID = previous.ProviderSessionID
-		}
-	}
-	if run.Title == "" {
-		run.Title = provider.Name + " run"
-	}
-	rt := &agentRuntime{
-		workspace:   workspace,
-		manager:     m,
-		run:         run,
-		nextEventID: 1,
-		pending:     make(map[string]pendingApproval),
-		done:        make(chan struct{}),
-	}
-	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	run.ForgeSessionID = forgeSessionID
-	rt.setRun(run)
-	m.registerRuntime(rt)
-	registered := true
-	cleanup := func() {
-		if registered {
-			m.removeRuntime(run.ID)
-			registered = false
-		}
-		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
-		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
-	}
-	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
-		cleanup()
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if run.SchedulerTurn {
-		if err := m.startAutoRun(r.Context(), workspace, run); err != nil {
-			cleanup()
-			writeError(w, err, http.StatusBadRequest)
-			return
-		}
-	}
-	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
-	if err != nil {
-		cleanup()
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	run.ForgeSessionContextPath = contextPath
-	rt.setRun(run)
-	if err := ensureAgentDirs(workspace.Path); err != nil {
-		cleanup()
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
-		cleanup()
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	registered = false
-	rt.addEvent(m, "system", "", "Starting "+provider.Name+" provider.", nil, "")
-	if forgeSessionID != "" {
-		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
-	}
-	go rt.startProvider(m, req.Prompt)
-	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
 }
 
 func applyAgentRunOptions(run *agentRun, agent agentConfig, providerType string) {
@@ -606,28 +495,6 @@ func findAgentProvider(providers []agentProviderConfig, id string) (agentProvide
 		}
 	}
 	return agentProviderConfig{}, false
-}
-
-func (m *agentManager) ensureRunProviderEnabled(run agentRun) error {
-	cfg, err := m.server.loadConfig()
-	if err != nil {
-		return err
-	}
-	providerID := strings.TrimSpace(run.Provider)
-	if providerID == "" {
-		providerID = codexProviderID
-	}
-	provider, ok := findAgentProvider(cfg.AgentProviders, providerID)
-	if !ok {
-		return fmt.Errorf("agent provider not found: %s", providerID)
-	}
-	if !provider.Enabled {
-		return fmt.Errorf("agent provider is disabled: %s", provider.Name)
-	}
-	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) && provider.Type != piProviderID {
-		return fmt.Errorf("unsupported agent provider: %s", provider.Name)
-	}
-	return nil
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, runID string) (string, error) {
@@ -767,14 +634,6 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 	return dirAbs, nil
 }
 
-func (rt *agentRuntime) removeForgeSessionContext() {
-	rt.mu.Lock()
-	contextPath := rt.run.ForgeSessionContextPath
-	sessionID := rt.run.ForgeSessionID
-	rt.mu.Unlock()
-	removeForgeSessionContextFile(contextPath, sessionID)
-}
-
 func removeForgeSessionContextFile(contextPath, sessionID string) {
 	contextPath = strings.TrimSpace(contextPath)
 	if contextPath == "" {
@@ -856,6 +715,9 @@ func (s *server) cleanupStaleInternalSessionsForWorkspace(ctx context.Context, w
 	now := time.Now().Format(time.RFC3339)
 	changed := repaired
 	for i := range runs {
+		if strings.TrimSpace(runs[i].AgentHubSessionID) != "" {
+			continue
+		}
 		sessionID := strings.TrimSpace(runs[i].ForgeSessionID)
 		if sessionID == "" {
 			continue
@@ -960,7 +822,7 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	if isLiveAgentStatus(run.Status) {
+	if isLiveAgentStatus(run.Status) && strings.TrimSpace(run.AgentHubSessionID) == "" {
 		run.Status = "stopped"
 	}
 	writeJSON(w, agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
@@ -975,6 +837,20 @@ func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspa
 	beforeID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("before")), 10, 64)
 	if beforeID > 0 {
 		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
+		if rt != nil {
+			rt.mu.Lock()
+			agentHubRun := rt.agentHub != nil
+			rt.mu.Unlock()
+			if agentHubRun {
+				events, hasMore, err := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
+				if err != nil {
+					writeError(w, err, http.StatusBadGateway)
+					return
+				}
+				writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
+				return
+			}
+		}
 		events, hasMore, err := loadAgentEventsPage(workspace.Path, runID, beforeID, limit)
 		if err != nil {
 			writeError(w, err, http.StatusNotFound)
@@ -1010,6 +886,13 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 	text := strings.TrimSpace(req.Text)
 	if text == "" {
 		writeError(w, errors.New("text is required"), http.StatusBadRequest)
+		return
+	}
+	rt.mu.Lock()
+	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	rt.mu.Unlock()
+	if agentHubRun {
+		m.sendAgentHubInput(w, r, rt, req, text)
 		return
 	}
 	if req.SchedulerTurn {
@@ -1059,6 +942,13 @@ func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspace
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
 		return
 	}
+	rt.mu.Lock()
+	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	rt.mu.Unlock()
+	if agentHubRun {
+		m.stopAgentHubRun(w, r, rt)
+		return
+	}
 	rt.stop(m)
 	writeJSON(w, map[string]string{"status": "stopped"})
 }
@@ -1071,6 +961,10 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if rt != nil {
 		run, events, truncated := rt.snapshotDetail()
+		if strings.TrimSpace(run.AgentHubSessionID) != "" {
+			m.resumeAttachedAgentHubRun(w, r, rt)
+			return
+		}
 		detail := agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated}
 		writeJSON(w, detail)
 		return
@@ -1084,85 +978,7 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, errors.New("legacy direct run is read-only and cannot be resumed after the AgentHub migration"), http.StatusBadRequest)
 		return
 	}
-	if err := m.ensureRunProviderEnabled(run); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if _, err := m.server.providerForRun(run); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	now := time.Now().Format(time.RFC3339)
-	run.ForgeSessionID = forgeSessionID
-	run.CodexTurnID = ""
-	run.Status = "starting"
-	run.SchedulerTurn = false
-	run.AutoRunGeneration = 0
-	run.UpdatedAt = now
-	rt = &agentRuntime{
-		workspace:   workspace,
-		manager:     m,
-		run:         run,
-		events:      append([]agentEvent(nil), events...),
-		nextEventID: nextAgentEventID(events),
-		pending:     make(map[string]pendingApproval),
-		done:        make(chan struct{}),
-	}
-	m.registerRuntime(rt)
-	registered := true
-	cleanup := func() {
-		if registered {
-			m.removeRuntime(run.ID)
-			registered = false
-		}
-		removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
-		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
-	}
-	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
-		cleanup()
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
-	if err != nil {
-		cleanup()
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	run.ForgeSessionContextPath = contextPath
-	rt.setRun(run)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
-		cleanup()
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	registered = false
-	rt.addEvent(m, "system", "session/resume", "Resuming "+providerNameForRun(run)+" session.", nil, "")
-	if forgeSessionID != "" {
-		rt.addEvent(m, "system", "forge/session/new", fmt.Sprintf("Forge session created: %s", forgeSessionID), nil, "")
-	}
-	go rt.startProvider(m, "")
-	writeJSON(w, agentRunDetail{Run: run, Events: rt.snapshotEvents()})
-}
-
-func providerNameForRun(run agentRun) string {
-	switch run.Provider {
-	case "", codexProviderID:
-		return codexProviderName
-	case opencodeProviderID:
-		return opencodeProviderName
-	case kimiProviderID:
-		return kimiProviderName
-	case piProviderID:
-		return piProviderName
-	default:
-		return run.Provider
-	}
+	m.resumeAgentHubRun(w, r, workspace, run, events)
 }
 
 func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -1174,6 +990,13 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 	var req agentApprovalRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	rt.mu.Lock()
+	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	rt.mu.Unlock()
+	if agentHubRun {
+		m.resolveAgentHubApproval(w, r, rt, req)
 		return
 	}
 	if err := rt.resolveApproval(m, req.RequestID, req.Decision); err != nil {
@@ -1204,7 +1027,15 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 	defer m.unsubscribe(runID, ch)
 	var events []agentEvent
 	if rt != nil {
-		if afterID > 0 {
+		rt.mu.Lock()
+		agentHubRun := rt.agentHub != nil
+		rt.mu.Unlock()
+		if agentHubRun && afterID > 0 {
+			events, err = rt.agentHubEventsAfter(r.Context(), afterID)
+			if err != nil {
+				return
+			}
+		} else if afterID > 0 {
 			events = rt.snapshotEventsAfter(afterID)
 		} else {
 			_, events, _ = rt.snapshotDetail()
@@ -1288,10 +1119,6 @@ func (m *agentManager) publish(runID string, event agentEvent) {
 	}
 }
 
-func (m *agentManager) providerForRun(run agentRun) (agentProvider, error) {
-	return m.server.providerForRun(run)
-}
-
 func (m *agentManager) runtimeByID(runID string) *agentRuntime {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1312,116 +1139,28 @@ func (m *agentManager) runtimeByThreadID(threadID string) *agentRuntime {
 	return nil
 }
 
-func (rt *agentRuntime) startProvider(m *agentManager, prompt string) {
-	defer func() {
-		rt.mu.Lock()
-		provider := rt.provider
-		rt.mu.Unlock()
-		if provider != nil {
-			_ = provider.CloseSession(rt)
-		}
-		rt.removeForgeSessionContext()
-		if err := m.endForgeSession(context.Background(), rt.workspace, rt.run.ForgeSessionID); err != nil {
-			rt.addEvent(m, "error", "forge/session/end", err.Error(), nil, "")
-		} else if rt.run.ForgeSessionID != "" {
-			rt.addEvent(m, "system", "forge/session/end", "Forge session ended.", nil, "")
-		}
-		m.removeRuntime(rt.run.ID)
-	}()
-	provider, err := m.providerForRun(rt.run)
-	if err != nil {
-		rt.addEvent(m, "error", "", err.Error(), nil, "")
-		if rt.isSchedulerTurn() {
-			rt.recordSchedulerFailure(m, err.Error())
-		}
-		rt.updateStatus(m, "failed")
-		return
-	}
-	if err := provider.Start(m); err != nil {
-		rt.addEvent(m, "error", "", err.Error(), nil, "")
-		if rt.isSchedulerTurn() {
-			rt.recordSchedulerFailure(m, err.Error())
-		}
-		rt.updateStatus(m, "failed")
-		return
-	}
-	rt.mu.Lock()
-	rt.provider = provider
-	rt.mu.Unlock()
-	existingSessionID := strings.TrimSpace(rt.run.ProviderSessionID)
-	if existingSessionID == "" {
-		existingSessionID = strings.TrimSpace(rt.run.CodexThreadID)
-	}
-	if existingSessionID != "" {
-		err = provider.ResumeSession(rt)
-	} else {
-		err = provider.NewSession(rt)
-	}
-	if err != nil {
-		rt.addEvent(m, "error", "", fmt.Sprintf("session start failed: %v", err), nil, "")
-		if existingSessionID != "" {
-			rt.mu.Lock()
-			rt.run.ProviderSessionID = ""
-			rt.run.CodexThreadID = ""
-			failedRun := rt.run
-			rt.mu.Unlock()
-			_ = saveAgentRun(rt.workspace.Path, failedRun)
-		}
-		if rt.isSchedulerTurn() {
-			rt.recordSchedulerFailure(m, err.Error())
-		}
-		rt.updateStatus(m, "failed")
-		return
-	}
-	if strings.TrimSpace(prompt) == "" {
-		rt.addEvent(m, "system", "session/ready", providerNameForRun(rt.run)+" session is ready and waiting for input.", nil, "")
-		rt.markIdle(m)
-	} else {
-		if err := rt.sendPrompt(m, prompt); err != nil {
-			rt.addEvent(m, "error", "prompt", err.Error(), nil, "")
-			if rt.isSchedulerTurn() {
-				rt.recordSchedulerFailure(m, err.Error())
-			}
-			rt.updateStatus(m, "failed")
-			rt.signalDone()
-		}
-	}
-	select {
-	case <-rt.done:
-	case <-provider.Done():
-	}
-	rt.mu.Lock()
-	status := rt.run.Status
-	rt.mu.Unlock()
-	if status == "running" || status == "waiting_approval" || status == "starting" {
-		if rt.isSchedulerTurn() {
-			rt.recordSchedulerFailure(m, "Session closed before AutoRun result was submitted")
-		}
-		rt.updateStatus(m, "stopped")
-	}
-}
-
 func closedProviderDone() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
 	return ch
 }
 
-func (rt *agentRuntime) sendPrompt(m *agentManager, text string) error {
-	rt.mu.Lock()
-	provider := rt.provider
-	rt.mu.Unlock()
-	if provider == nil {
-		return errors.New("agent provider is not ready")
-	}
-	return provider.SendPrompt(rt, text)
-}
-
 func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	rt.mu.Lock()
 	provider := rt.provider
 	status := rt.run.Status
+	client := rt.agentHub
+	sessionID := rt.run.AgentHubSessionID
+	hubState := rt.agentHubState
 	rt.mu.Unlock()
+	if client != nil && sessionID != "" {
+		session, err := client.Message(context.Background(), sessionID, text, hubState == "busy" || hubState == "waiting_approval")
+		if err != nil {
+			_ = rt.catchUpAgentHub(context.Background(), m, 0)
+			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
+		}
+		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
+	}
 	if provider == nil {
 		return errors.New("agent run is not ready")
 	}
@@ -1451,6 +1190,8 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 func (rt *agentRuntime) sendSchedulerPrompt(m *agentManager, text string) error {
 	rt.mu.Lock()
 	provider := rt.provider
+	client := rt.agentHub
+	sessionID := rt.run.AgentHubSessionID
 	if rt.run.Status != "starting" {
 		rt.mu.Unlock()
 		return errors.New("session is busy")
@@ -1459,6 +1200,14 @@ func (rt *agentRuntime) sendSchedulerPrompt(m *agentManager, text string) error 
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
 	rt.mu.Unlock()
+	if client != nil && sessionID != "" {
+		session, err := client.Message(context.Background(), sessionID, text, false)
+		if err != nil {
+			_ = rt.catchUpAgentHub(context.Background(), m, 0)
+			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
+		}
+		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
+	}
 	if provider == nil {
 		return errors.New("agent run is not ready")
 	}
@@ -1588,6 +1337,13 @@ func (rt *agentRuntime) handleNotification(m *agentManager, method string, param
 
 func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string, data json.RawMessage, pendingRequestID string) {
 	rt.mu.Lock()
+	agentHubRun := rt.agentHub != nil
+	rt.mu.Unlock()
+	if agentHubRun {
+		rt.addAgentHubDiagnostic(m, eventType, method, text)
+		return
+	}
+	rt.mu.Lock()
 	event := agentEvent{
 		ID:               rt.nextEventID,
 		Time:             time.Now().Format(time.RFC3339),
@@ -1713,7 +1469,8 @@ func isAgentOutputEvent(eventType, method string) bool {
 }
 
 func isLiveAgentStatus(status string) bool {
-	return status == "starting" || status == "running" || status == "waiting_approval" || status == "idle"
+	return status == "starting" || status == "running" || status == "waiting_approval" ||
+		status == "idle" || status == "stopping" || status == "recovering"
 }
 
 func nextAgentEventID(events []agentEvent) int64 {
