@@ -39,6 +39,8 @@ type agentRun struct {
 	AgentHubEventCursor     int64  `json:"agentHubEventCursor,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
+	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
+	PendingInitialMessage   string `json:"pendingInitialMessage,omitempty"`
 	Title                   string `json:"title"`
 	Cwd                     string `json:"cwd"`
 	Status                  string `json:"status"`
@@ -497,8 +499,22 @@ func findAgentProvider(providers []agentProviderConfig, id string) (agentProvide
 	return agentProviderConfig{}, false
 }
 
-func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, runID string) (string, error) {
-	out, err := m.server.runForge(ctx, workspace.Path, "session", "new", "--gui-run", "--workspace-id", workspace.ID, "--run-id", runID, "--endpoint", m.server.internalEndpoint())
+func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, run agentRun, cfg config) (string, error) {
+	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
+	if err != nil {
+		return "", err
+	}
+	sourceExternalID := strings.TrimSpace(run.SourceExternalID)
+	if sourceExternalID == "" {
+		sourceExternalID = workspace.ID + "/" + run.ID
+	}
+	out, err := m.server.runForge(ctx, workspace.Path,
+		"session", "new", "--agenthub",
+		"--endpoint", endpoint,
+		"--source-instance-id", cfg.AgentHubInstanceID,
+		"--source-external-id", sourceExternalID,
+		"--starting-grace", "30s",
+	)
 	if err != nil {
 		return "", err
 	}
@@ -507,6 +523,15 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 		return "", errors.New("forge session new returned an empty id")
 	}
 	return sessionID, nil
+}
+
+func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace guiWorkspace, forgeSessionID, agentHubSessionID string) error {
+	if strings.TrimSpace(forgeSessionID) == "" || strings.TrimSpace(agentHubSessionID) == "" {
+		return errors.New("Forge and AgentHub session ids are required")
+	}
+	_, err := m.server.runForge(ctx, workspace.Path, "session", "bind-agenthub",
+		"--id", forgeSessionID, "--agenthub-session-id", agentHubSessionID)
+	return err
 }
 
 func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorkspace, sessionID, resourceID string) error {
@@ -896,28 +921,8 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	if req.SchedulerTurn {
-		rt.mu.Lock()
-		run := rt.run
-		if run.Status != "idle" {
-			rt.mu.Unlock()
-			writeError(w, errors.New("session is busy"), http.StatusConflict)
-			return
-		}
-		run.Status = "starting"
-		run.SchedulerTurn = true
-		run.AutoRunGeneration = req.AutoRunGeneration
-		rt.run = run
-		rt.mu.Unlock()
-		if err := m.startAutoRun(r.Context(), rt.workspace, run); err != nil {
-			rt.mu.Lock()
-			rt.run.Status = "idle"
-			rt.run.SchedulerTurn = false
-			rt.run.AutoRunGeneration = 0
-			rt.mu.Unlock()
-			writeError(w, err, http.StatusBadRequest)
-			return
-		}
-		_ = saveAgentRun(rt.workspace.Path, run)
+		writeError(w, errors.New("AutoRun cannot use a legacy direct-provider session; start a new AgentHub run"), http.StatusConflict)
+		return
 	}
 	var sendErr error
 	if req.SchedulerTurn {
@@ -1310,18 +1315,12 @@ func (rt *agentRuntime) handleNotification(m *agentManager, method string, param
 		rt.addEvent(m, "system", method, "Turn started.", params, "")
 	case "turn/completed":
 		rt.addEvent(m, "system", method, "Turn completed.", params, "")
-		if rt.isSchedulerTurn() {
-			rt.finishSchedulerTurn(m, eventText(method, params))
-		} else {
-			rt.markIdle(m)
-		}
+		// Provider-native terminals are historical chat projection only.
+		// AutoRun advances exclusively from canonical AgentHub turn events.
+		rt.markIdle(m)
 	case "turn/failed", "error":
 		rt.addEvent(m, "error", method, eventText(method, params), params, "")
-		if rt.isSchedulerTurn() {
-			rt.finishSchedulerTurn(m, eventText(method, params))
-		} else {
-			rt.markIdle(m)
-		}
+		rt.markIdle(m)
 	case "item/agentMessage/delta":
 		text, ok := agentMessageDeltaText(params)
 		if !ok {
@@ -1394,6 +1393,11 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 	rt.mu.Lock()
 	run := rt.run
 	rt.mu.Unlock()
+	var task struct {
+		AutoRun *struct {
+			State string `json:"state"`
+		} `json:"autoRun"`
+	}
 	selector, err := forgeTaskSelectorArgs(run.ResourceID)
 	if err == nil {
 		args := []string{"task", "autorun", "retry"}
@@ -1402,11 +1406,6 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 		showArgs = append(showArgs, selector...)
 		var out []byte
 		out, err = m.server.runForge(context.Background(), rt.workspace.Path, showArgs...)
-		var task struct {
-			AutoRun *struct {
-				State string `json:"state"`
-			} `json:"autoRun"`
-		}
 		if err == nil {
 			err = json.Unmarshal(out, &task)
 		}
@@ -1432,11 +1431,57 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 		rt.updateStatus(m, "failed")
 		rt.signalDone()
 	} else {
-		rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun scheduler turn finished.", nil, "")
 		rt.mu.Lock()
 		rt.run.SchedulerTurn = false
+		run = rt.run
 		rt.mu.Unlock()
-		rt.markIdle(m)
+		_ = saveAgentRun(rt.workspace.Path, run)
+		state := ""
+		if task.AutoRun != nil {
+			state = task.AutoRun.State
+		}
+		switch state {
+		case "completed", "failed":
+			rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun reached a terminal state; stopping its AgentHub session.", nil, "")
+			rt.stopAgentHubAfterAutoRunTerminal(m)
+		default:
+			// waiting and paused generations intentionally retain the same
+			// AgentHub + Forge session, so a later resume keeps the original
+			// launchEnvironment.FORGE_SESSION_ID valid.
+			rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.", nil, "")
+			rt.markIdle(m)
+		}
+	}
+}
+
+func (rt *agentRuntime) stopAgentHubAfterAutoRunTerminal(m *agentManager) {
+	rt.mu.Lock()
+	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
+	if client == nil || strings.TrimSpace(sessionID) == "" {
+		rt.mu.Unlock()
+		rt.addEvent(m, "error", "forge/autorun/stop", "terminal AutoRun has no AgentHub session; resource lock retained", nil, "")
+		return
+	}
+	rt.run.Status = "stopping"
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	run := rt.run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+	session, err := client.Stop(context.Background(), sessionID)
+	if err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("stop terminal AutoRun AgentHub session: %w", err))
+		return
+	}
+	if err := rt.catchUpAgentHub(context.Background(), m, session.LastEventID); err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("confirm terminal AutoRun stopped state: %w", err))
+		return
+	}
+	rt.mu.Lock()
+	stopped := rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved
+	rt.mu.Unlock()
+	if !stopped {
+		rt.setRecoveryError(m, errors.New("AgentHub stop has not reached durable stopped; resource lock retained"))
+		rt.startAgentHubStream(m)
 	}
 }
 

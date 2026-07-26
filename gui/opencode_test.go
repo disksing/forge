@@ -384,7 +384,7 @@ func TestOpencodePromptResultMarksInteractiveRunIdle(t *testing.T) {
 	}
 }
 
-func TestOpencodePromptResultFinishesSchedulerTurn(t *testing.T) {
+func TestOpencodePromptResultDoesNotAdvanceSchedulerTurn(t *testing.T) {
 	workspace := t.TempDir()
 	argsPath := filepath.Join(workspace, "args.txt")
 	forgePath := filepath.Join(workspace, "forge-fake")
@@ -416,11 +416,8 @@ printf '{"autoRun":{"state":"completed"}}\n'
 	if rt.run.Status != "idle" {
 		t.Fatalf("expected idle status, got %q", rt.run.Status)
 	}
-	args := string(mustReadFile(t, argsPath))
-	for _, expected := range []string{"task show", "--project project1", "--task task1"} {
-		if !strings.Contains(args, expected) {
-			t.Fatalf("expected settle args to contain %q, got %q", expected, args)
-		}
+	if _, err := os.Stat(argsPath); !os.IsNotExist(err) {
+		t.Fatalf("provider-native terminal must not invoke Forge AutoRun, stat err=%v", err)
 	}
 }
 

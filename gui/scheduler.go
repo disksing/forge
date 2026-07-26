@@ -70,9 +70,9 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 		return err
 	}
 	hasRunnableAgent := cfg.Version >= agentHubConfigVersion && strings.TrimSpace(cfg.DefaultAgentName) != ""
-	if cfg.Version < agentHubConfigVersion {
-		for _, provider := range cfg.AgentProviders {
-			if provider.Enabled {
+	if cfg.Version >= agentHubConfigVersion && !hasRunnableAgent {
+		for _, route := range cfg.AgentProfiles {
+			if strings.TrimSpace(route.AgentName) != "" {
 				hasRunnableAgent = true
 				break
 			}
@@ -165,8 +165,29 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)
 	}
 	for _, run := range runs {
-		if run.ResourceID != task.ID || !s.agentRunActive(run.ID) {
+		if run.ResourceID != task.ID {
 			continue
+		}
+		if !s.agentRunActive(run.ID) && isLiveAgentStatus(run.Status) &&
+			(strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != "") {
+			cfg, client, recoverErr := s.agents.agentHubRuntimeConfig()
+			if recoverErr != nil {
+				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
+			}
+			if recoverErr = s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run); recoverErr != nil {
+				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
+			}
+			if recovered := s.agents.runtimeByID(run.ID); recovered != nil {
+				recovered.mu.Lock()
+				run = recovered.run
+				recovered.mu.Unlock()
+			}
+		}
+		if !s.agentRunActive(run.ID) {
+			continue
+		}
+		if strings.TrimSpace(run.AgentHubSessionID) == "" {
+			return runnableTaskDispatchFailed, fmt.Errorf("active run %s is a legacy direct-provider session; AutoRun requires AgentHub, stop the legacy run and retry", run.ID)
 		}
 		if len(task.PreferredAgentProfiles) == 0 && task.AgentID != "" && run.AgentID != task.AgentID {
 			return runnableTaskDispatchFailed, fmt.Errorf("active run %s uses agent %s, AutoRun requires %s", run.ID, run.AgentID, task.AgentID)
@@ -197,18 +218,6 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		SchedulerTurn:        true,
 		AutoRunGeneration:    task.Generation,
 	}
-	for _, run := range runs {
-		if run.ResourceID != task.ID || s.agentRunActive(run.ID) {
-			continue
-		}
-		if run.AgentID != selection.AgentID {
-			break
-		}
-		if strings.TrimSpace(run.ProviderSessionID) != "" || strings.TrimSpace(run.CodexThreadID) != "" {
-			req.ResumeRunID = run.ID
-		}
-		break
-	}
 	body, err := json.Marshal(req)
 	if err != nil {
 		return runnableTaskDispatchFailed, err
@@ -232,40 +241,10 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 }
 
 func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
-	if cfg.Version >= agentHubConfigVersion {
-		return resolveAgentHubAutoRunAgent(cfg, task)
+	if cfg.Version < agentHubConfigVersion {
+		return autoRunAgentSelection{}, errors.New("AutoRun requires migrated AgentHub settings; save AgentHub settings before dispatching this task")
 	}
-	if len(task.PreferredAgentProfiles) > 0 {
-		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
-		for _, raw := range task.PreferredAgentProfiles {
-			profile := strings.ToLower(strings.TrimSpace(raw))
-			if profile == "" || seen[profile] {
-				continue
-			}
-			seen[profile] = true
-			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
-			if !ok || !agentConfigAvailable(cfg, route.AgentID) {
-				continue
-			}
-			return autoRunAgentSelection{AgentID: route.AgentID, Profile: profile, Reason: "matched preferred Agent Profile " + profile}, nil
-		}
-		fallback, ok := defaultAvailableAgent(cfg)
-		if !ok {
-			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no enabled fallback Agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
-		}
-		return autoRunAgentSelection{AgentID: fallback.ID, Reason: "preferred Agent Profiles unavailable; using fallback " + fallback.ID}, nil
-	}
-	if legacyID := strings.TrimSpace(task.AgentID); legacyID != "" {
-		if !agentConfigAvailable(cfg, legacyID) {
-			return autoRunAgentSelection{}, fmt.Errorf("legacy AutoRun agentId %s is unavailable; restore that GUI Agent or migrate the task to preferredAgentProfiles", legacyID)
-		}
-		return autoRunAgentSelection{AgentID: legacyID, Reason: "using legacy AutoRun agentId"}, nil
-	}
-	fallback, ok := defaultAvailableAgent(cfg)
-	if !ok {
-		return autoRunAgentSelection{}, errors.New("no enabled Agent is configured for AutoRun")
-	}
-	return autoRunAgentSelection{AgentID: fallback.ID, Reason: "using default Agent"}, nil
+	return resolveAgentHubAutoRunAgent(cfg, task)
 }
 
 func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
@@ -293,7 +272,7 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 		}, nil
 	}
 	if legacyName := strings.TrimSpace(task.AgentID); legacyName != "" {
-		return autoRunAgentSelection{AgentID: legacyName, Reason: "using legacy AutoRun agentId as an AgentHub agent name"}, nil
+		return autoRunAgentSelection{}, fmt.Errorf("legacy AutoRun agentId %s cannot be dispatched through AgentHub; migrate the task to preferredAgentProfiles or clear agentId to use the default AgentHub agent", legacyName)
 	}
 	fallback := strings.TrimSpace(cfg.DefaultAgentName)
 	if fallback == "" {
@@ -302,6 +281,8 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 	return autoRunAgentSelection{AgentID: fallback, Reason: "using default AgentHub agent"}, nil
 }
 
+// agentConfigAvailable remains a legacy-history/settings helper. AutoRun does
+// not call it and has no direct-provider dispatch branch.
 func agentConfigAvailable(cfg config, agentID string) bool {
 	agent, ok := findAgentConfig(cfg.Agents, agentID)
 	if !ok {
@@ -309,18 +290,6 @@ func agentConfigAvailable(cfg config, agentID string) bool {
 	}
 	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
 	return ok && provider.Enabled && (provider.Type == codexProviderID || isACPProviderType(provider.Type) || provider.Type == piProviderID)
-}
-
-func defaultAvailableAgent(cfg config) (agentConfig, bool) {
-	if agent, ok := findAgentConfig(cfg.Agents, cfg.DefaultChatAgentID); ok && agentConfigAvailable(cfg, agent.ID) {
-		return agent, true
-	}
-	for _, agent := range cfg.Agents {
-		if agentConfigAvailable(cfg, agent.ID) {
-			return agent, true
-		}
-	}
-	return agentConfig{}, false
 }
 
 func (s *server) agentRunActive(runID string) bool {

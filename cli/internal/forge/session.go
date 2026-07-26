@@ -21,7 +21,9 @@ const (
 	sessionStateFile       = "forge-sessions.json"
 	sessionLockFile        = ".forge-sessions.lock"
 	defaultSessionTimeout  = 5 * time.Minute
-	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]"
+	defaultStartingGrace   = 30 * time.Second
+	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] [--starting-grace <duration>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]"
+	sessionBindUsage       = "usage: forge session bind-agenthub --id=<id> --agenthub-session-id=<id>"
 	sessionHeartbeatUsage  = "usage: forge session heartbeat --id=<id>"
 	sessionLockUsage       = "usage: forge session lock --id=<id> [--project=<project>] [--task=<task>]"
 	sessionUnlockUsage     = "usage: forge session unlock --id=<id> [--project=<project>] [--task=<task>]"
@@ -46,12 +48,20 @@ type Session struct {
 }
 
 type SessionLiveness struct {
-	Type        string `json:"type"`
-	PID         int    `json:"pid,omitempty"`
-	Timeout     string `json:"timeout,omitempty"`
-	WorkspaceID string `json:"workspaceId,omitempty"`
-	RunID       string `json:"runId,omitempty"`
-	Endpoint    string `json:"endpoint,omitempty"`
+	Type               string `json:"type"`
+	PID                int    `json:"pid,omitempty"`
+	Timeout            string `json:"timeout,omitempty"`
+	WorkspaceID        string `json:"workspaceId,omitempty"`
+	RunID              string `json:"runId,omitempty"`
+	Endpoint           string `json:"endpoint,omitempty"`
+	SourceApp          string `json:"sourceApp,omitempty"`
+	SourceInstanceID   string `json:"sourceInstanceId,omitempty"`
+	SourceExternalID   string `json:"sourceExternalId,omitempty"`
+	AgentHubSessionID  string `json:"agentHubSessionId,omitempty"`
+	StartingGrace      string `json:"startingGrace,omitempty"`
+	LastKnownState     string `json:"lastKnownState,omitempty"`
+	LastCheckedAt      string `json:"lastCheckedAt,omitempty"`
+	LivenessDiagnostic string `json:"livenessDiagnostic,omitempty"`
 }
 
 type SessionControl struct {
@@ -74,6 +84,8 @@ func runSession(args []string) error {
 		return sessionNew(args[1:])
 	case "heartbeat":
 		return sessionHeartbeat(args[1:])
+	case "bind-agenthub":
+		return sessionBindAgentHub(args[1:])
 	case "lock":
 		return sessionLock(args[1:])
 	case "unlock":
@@ -90,6 +102,62 @@ func runSession(args []string) error {
 	default:
 		return fmt.Errorf("unknown session subcommand %q", args[0])
 	}
+}
+
+func sessionBindAgentHub(args []string) error {
+	var sessionID, agentHubSessionID string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case strings.HasPrefix(arg, "--id="):
+			sessionID = strings.TrimSpace(strings.TrimPrefix(arg, "--id="))
+		case arg == "--id":
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return errors.New(sessionBindUsage)
+			}
+			sessionID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--agenthub-session-id="):
+			agentHubSessionID = strings.TrimSpace(strings.TrimPrefix(arg, "--agenthub-session-id="))
+		case arg == "--agenthub-session-id":
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return errors.New(sessionBindUsage)
+			}
+			agentHubSessionID = strings.TrimSpace(value)
+		default:
+			return errors.New(sessionBindUsage)
+		}
+	}
+	if sessionID == "" || agentHubSessionID == "" {
+		return errors.New(sessionBindUsage)
+	}
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, sessionID)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", sessionID)
+		}
+		if store.Sessions[index].Liveness.Type != "agenthub" {
+			return fmt.Errorf("session %s does not use AgentHub liveness", sessionID)
+		}
+		current := strings.TrimSpace(store.Sessions[index].Liveness.AgentHubSessionID)
+		if current != "" && current != agentHubSessionID {
+			return fmt.Errorf("session %s is already bound to AgentHub session %s", sessionID, current)
+		}
+		store.Sessions[index].Liveness.AgentHubSessionID = agentHubSessionID
+		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func sessionNew(args []string) error {
@@ -324,17 +392,28 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 	heartbeatSet := false
 	pidSet := false
 	guiRunSet := false
+	agentHubSet := false
+	agentHubFlagSeen := false
+	for _, arg := range args {
+		if arg == "--agenthub" {
+			if agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			agentHubSet = true
+			liveness = SessionLiveness{Type: "agenthub", SourceApp: "forge", StartingGrace: defaultStartingGrace.String()}
+		}
+	}
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--heartbeat":
-			if heartbeatSet || pidSet || guiRunSet {
+			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			heartbeatSet = true
 			liveness = SessionLiveness{Type: "heartbeat", Timeout: liveness.Timeout}
 		case strings.HasPrefix(arg, "--pid="):
-			if heartbeatSet || pidSet || guiRunSet {
+			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			pid, err := parseSessionPID(strings.TrimPrefix(arg, "--pid="))
@@ -344,7 +423,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
 		case arg == "--pid":
-			if heartbeatSet || pidSet || guiRunSet {
+			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -358,20 +437,25 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
 		case arg == "--gui-run":
-			if heartbeatSet || pidSet || guiRunSet {
+			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			guiRunSet = true
 			liveness = SessionLiveness{Type: "forge-gui-run"}
+		case arg == "--agenthub":
+			if heartbeatSet || pidSet || guiRunSet || agentHubFlagSeen {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			agentHubFlagSeen = true
 		case strings.HasPrefix(arg, "--workspace-id="):
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			guiRunSet = true
 			liveness.Type = "forge-gui-run"
 			liveness.WorkspaceID = strings.TrimSpace(strings.TrimPrefix(arg, "--workspace-id="))
 		case arg == "--workspace-id":
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -382,14 +466,14 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			liveness.Type = "forge-gui-run"
 			liveness.WorkspaceID = strings.TrimSpace(value)
 		case strings.HasPrefix(arg, "--run-id="):
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			guiRunSet = true
 			liveness.Type = "forge-gui-run"
 			liveness.RunID = strings.TrimSpace(strings.TrimPrefix(arg, "--run-id="))
 		case arg == "--run-id":
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -403,8 +487,10 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			if heartbeatSet || pidSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
+			if !agentHubSet {
+				guiRunSet = true
+				liveness.Type = "forge-gui-run"
+			}
 			liveness.Endpoint = strings.TrimSpace(strings.TrimPrefix(arg, "--endpoint="))
 		case arg == "--endpoint":
 			if heartbeatSet || pidSet {
@@ -414,11 +500,78 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			if !ok {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
+			if !agentHubSet {
+				guiRunSet = true
+				liveness.Type = "forge-gui-run"
+			}
 			liveness.Endpoint = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--source-instance-id="):
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.SourceInstanceID = strings.TrimSpace(strings.TrimPrefix(arg, "--source-instance-id="))
+		case arg == "--source-instance-id":
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.SourceInstanceID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--source-external-id="):
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.SourceExternalID = strings.TrimSpace(strings.TrimPrefix(arg, "--source-external-id="))
+		case arg == "--source-external-id":
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.SourceExternalID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--agenthub-session-id="):
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.AgentHubSessionID = strings.TrimSpace(strings.TrimPrefix(arg, "--agenthub-session-id="))
+		case arg == "--agenthub-session-id":
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			liveness.AgentHubSessionID = strings.TrimSpace(value)
+		case strings.HasPrefix(arg, "--starting-grace="):
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value := strings.TrimSpace(strings.TrimPrefix(arg, "--starting-grace="))
+			parsed, err := parseSessionTimeout(value)
+			if err != nil {
+				return SessionLiveness{}, err
+			}
+			liveness.StartingGrace = parsed.String()
+		case arg == "--starting-grace":
+			if !agentHubSet {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			value, ok := nextFlagValue(args, &i)
+			if !ok {
+				return SessionLiveness{}, errors.New(sessionNewUsage)
+			}
+			parsed, err := parseSessionTimeout(value)
+			if err != nil {
+				return SessionLiveness{}, err
+			}
+			liveness.StartingGrace = parsed.String()
 		case strings.HasPrefix(arg, "--timeout="):
-			if pidSet || guiRunSet {
+			if pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--timeout="))
@@ -429,7 +582,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			liveness.Type = "heartbeat"
 			liveness.Timeout = parsed.String()
 		case arg == "--timeout":
-			if pidSet || guiRunSet {
+			if pidSet || guiRunSet || agentHubSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -456,6 +609,23 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 		if _, err := url.ParseRequestURI(liveness.Endpoint); err != nil {
 			return SessionLiveness{}, fmt.Errorf("invalid endpoint %q: %w", liveness.Endpoint, err)
 		}
+	}
+	if agentHubSet {
+		liveness.Type = "agenthub"
+		liveness.PID = 0
+		liveness.Timeout = ""
+		liveness.WorkspaceID = ""
+		liveness.RunID = ""
+		if liveness.Endpoint == "" || liveness.SourceInstanceID == "" || liveness.SourceExternalID == "" {
+			return SessionLiveness{}, errors.New(sessionNewUsage)
+		}
+		if parsed, err := url.ParseRequestURI(liveness.Endpoint); err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			if err == nil {
+				err = errors.New("endpoint must be an absolute http or https URL")
+			}
+			return SessionLiveness{}, fmt.Errorf("invalid endpoint %q: %w", liveness.Endpoint, err)
+		}
+		liveness.Endpoint = strings.TrimRight(liveness.Endpoint, "/")
 	}
 	return liveness, nil
 }
@@ -698,7 +868,7 @@ func pruneStaleSessions(store *SessionStore) []Session {
 	var active []Session
 	var removed []Session
 	for _, session := range store.Sessions {
-		if sessionActive(session) {
+		if sessionActiveWithProjection(&session) {
 			active = append(active, session)
 		} else {
 			removed = append(removed, session)
@@ -814,6 +984,13 @@ func sessionPathWithin(path, parent string) bool {
 }
 
 func sessionActive(session Session) bool {
+	return sessionActiveWithProjection(&session)
+}
+
+func sessionActiveWithProjection(session *Session) bool {
+	if session == nil {
+		return false
+	}
 	switch session.Liveness.Type {
 	case "pid":
 		return sessionPIDActive(session.Liveness.PID)
@@ -829,9 +1006,195 @@ func sessionActive(session Session) bool {
 		return time.Since(updatedAt) <= timeout
 	case "forge-gui-run":
 		return sessionForgeGUIRunActive(session.ID, session.Liveness)
+	case "agenthub":
+		return sessionAgentHubActive(session)
 	default:
 		return false
 	}
+}
+
+type sessionAgentHubSession struct {
+	ID     string `json:"id"`
+	State  string `json:"state"`
+	Source *struct {
+		App        string `json:"app"`
+		InstanceID string `json:"instanceId"`
+		ExternalID string `json:"externalId"`
+	} `json:"source"`
+}
+
+func sessionAgentHubActive(session *Session) bool {
+	liveness := &session.Liveness
+	now := time.Now()
+	liveness.LastCheckedAt = now.Format(time.RFC3339)
+	unknown := func(format string, args ...any) bool {
+		liveness.LastKnownState = "unknown"
+		liveness.LivenessDiagnostic = fmt.Sprintf(format, args...)
+		return true
+	}
+	if strings.TrimSpace(session.ID) == "" || strings.TrimSpace(liveness.Endpoint) == "" ||
+		strings.TrimSpace(liveness.SourceApp) == "" || strings.TrimSpace(liveness.SourceInstanceID) == "" ||
+		strings.TrimSpace(liveness.SourceExternalID) == "" {
+		return unknown("AgentHub liveness metadata is incomplete; lock retained")
+	}
+	client := &http.Client{Timeout: time.Second}
+	var status struct {
+		APIVersion   string   `json:"apiVersion"`
+		Capabilities []string `json:"capabilities"`
+	}
+	if err := sessionAgentHubGetJSON(client, strings.TrimRight(liveness.Endpoint, "/")+"/v1/status", &status); err != nil {
+		return unknown("AgentHub status is unreachable: %v; lock retained", err)
+	}
+	if status.APIVersion != "1" {
+		return unknown("AgentHub apiVersion %q is unsupported; lock retained", status.APIVersion)
+	}
+	capabilities := make(map[string]bool, len(status.Capabilities))
+	for _, capability := range status.Capabilities {
+		capabilities[capability] = true
+	}
+	for _, required := range []string{"session.source", "session.strict-stopped", "events.lossless-replay"} {
+		if !capabilities[required] {
+			return unknown("AgentHub capability %s is missing; lock retained", required)
+		}
+	}
+
+	target, err := sessionAgentHubResolveSession(client, liveness)
+	if err != nil {
+		grace, _ := time.ParseDuration(liveness.StartingGrace)
+		startedAt, _ := time.Parse(time.RFC3339, session.StartedAt)
+		if strings.TrimSpace(liveness.AgentHubSessionID) == "" && grace > 0 && !startedAt.IsZero() && now.Sub(startedAt) <= grace {
+			liveness.LastKnownState = "starting"
+			liveness.LivenessDiagnostic = "AgentHub session has not appeared by source within starting grace; lock retained"
+			return true
+		}
+		return unknown("%v; lock retained", err)
+	}
+	if liveness.AgentHubSessionID == "" {
+		liveness.AgentHubSessionID = target.ID
+	}
+	liveness.LastKnownState = target.State
+	liveness.LivenessDiagnostic = ""
+	switch target.State {
+	case "stopped":
+		return false
+	case "archived":
+		stopped, err := sessionAgentHubArchivedAfterStopped(client, liveness.Endpoint, target.ID)
+		if err != nil {
+			return unknown("cannot prove archived AgentHub session passed through stopped: %v; lock retained", err)
+		}
+		if !stopped {
+			return unknown("archived AgentHub session has no continuous durable stopped history; lock retained")
+		}
+		liveness.LastKnownState = "archived-after-stopped"
+		return false
+	case "starting", "ready", "busy", "waiting_approval", "stopping":
+		return true
+	default:
+		return unknown("AgentHub session state %q is unknown; lock retained", target.State)
+	}
+}
+
+func sessionAgentHubResolveSession(client *http.Client, liveness *SessionLiveness) (sessionAgentHubSession, error) {
+	var target sessionAgentHubSession
+	if id := strings.TrimSpace(liveness.AgentHubSessionID); id != "" {
+		endpoint := strings.TrimRight(liveness.Endpoint, "/") + "/v1/sessions/" + url.PathEscape(id)
+		var response struct {
+			Session sessionAgentHubSession `json:"session"`
+		}
+		if err := sessionAgentHubGetJSON(client, endpoint, &response); err != nil {
+			return target, fmt.Errorf("query AgentHub session %s: %w", id, err)
+		}
+		target = response.Session
+	} else {
+		query := make(url.Values)
+		query.Set("includeArchived", "true")
+		query.Set("sourceApp", liveness.SourceApp)
+		query.Set("sourceInstanceId", liveness.SourceInstanceID)
+		query.Set("sourceExternalId", liveness.SourceExternalID)
+		endpoint := strings.TrimRight(liveness.Endpoint, "/") + "/v1/sessions?" + query.Encode()
+		var response struct {
+			Sessions []sessionAgentHubSession `json:"sessions"`
+		}
+		if err := sessionAgentHubGetJSON(client, endpoint, &response); err != nil {
+			return target, fmt.Errorf("query AgentHub source: %w", err)
+		}
+		if len(response.Sessions) != 1 {
+			return target, fmt.Errorf("AgentHub source resolved to %d sessions", len(response.Sessions))
+		}
+		target = response.Sessions[0]
+	}
+	if target.Source == nil || target.Source.App != liveness.SourceApp ||
+		target.Source.InstanceID != liveness.SourceInstanceID || target.Source.ExternalID != liveness.SourceExternalID {
+		return sessionAgentHubSession{}, errors.New("AgentHub session source does not match persisted Forge source")
+	}
+	return target, nil
+}
+
+func sessionAgentHubArchivedAfterStopped(client *http.Client, endpoint, sessionID string) (bool, error) {
+	cursor := int64(0)
+	sawStopped := false
+	for {
+		var page struct {
+			Events []struct {
+				ID   int64           `json:"id"`
+				Type string          `json:"type"`
+				Data json.RawMessage `json:"data"`
+			} `json:"events"`
+			LatestCursor int64 `json:"latestCursor"`
+		}
+		requestURL := fmt.Sprintf("%s/v1/sessions/%s/events?after=%d&limit=500", strings.TrimRight(endpoint, "/"), url.PathEscape(sessionID), cursor)
+		if err := sessionAgentHubGetJSON(client, requestURL, &page); err != nil {
+			return false, err
+		}
+		progressed := false
+		for _, event := range page.Events {
+			if event.ID <= cursor {
+				continue
+			}
+			if event.ID != cursor+1 {
+				return false, fmt.Errorf("cursor gap: expected %d, got %d", cursor+1, event.ID)
+			}
+			cursor = event.ID
+			progressed = true
+			if event.Type == "session.state" {
+				var data struct {
+					State string `json:"state"`
+				}
+				if err := json.Unmarshal(event.Data, &data); err != nil {
+					return false, fmt.Errorf("decode session.state %d: %w", event.ID, err)
+				}
+				if data.State == "stopped" {
+					sawStopped = true
+				}
+			}
+		}
+		if cursor >= page.LatestCursor {
+			return sawStopped, nil
+		}
+		if !progressed {
+			return false, fmt.Errorf("event replay stopped at %d before %d", cursor, page.LatestCursor)
+		}
+	}
+}
+
+func sessionAgentHubGetJSON(client *http.Client, endpoint string, output any) error {
+	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("returned HTTP %d", response.StatusCode)
+	}
+	if err := json.NewDecoder(response.Body).Decode(output); err != nil {
+		return fmt.Errorf("decode response: %w", err)
+	}
+	return nil
 }
 
 func sessionForgeGUIRunActive(sessionID string, liveness SessionLiveness) bool {
@@ -999,6 +1362,11 @@ func formatSessionLiveness(liveness SessionLiveness) string {
 		return fmt.Sprintf("heartbeat:%s", liveness.Timeout)
 	case "forge-gui-run":
 		return fmt.Sprintf("forge-gui-run:%s", liveness.RunID)
+	case "agenthub":
+		if liveness.AgentHubSessionID != "" {
+			return fmt.Sprintf("agenthub:%s:%s", liveness.AgentHubSessionID, liveness.LastKnownState)
+		}
+		return fmt.Sprintf("agenthub:%s:%s", liveness.SourceExternalID, liveness.LastKnownState)
 	default:
 		return "unknown"
 	}

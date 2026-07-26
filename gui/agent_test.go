@@ -928,7 +928,7 @@ func TestIsAgentOutputEvent(t *testing.T) {
 	}
 }
 
-func TestCreateForgeSessionUsesGUIRunLiveness(t *testing.T) {
+func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 	workspace := t.TempDir()
 	tmp := t.TempDir()
 	argsPath := filepath.Join(tmp, "args.txt")
@@ -948,7 +948,9 @@ exit 1
 	t.Setenv("FORGE_FAKE_ARGS", argsPath)
 
 	m := newAgentManager(&server{forgePath: forgePath, addr: "127.0.0.1:4936"})
-	id, err := m.createForgeSession(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, "run-one")
+	id, err := m.createForgeSession(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, agentRun{
+		ID: "run-one", SourceExternalID: "workspace-one/run-one",
+	}, config{AgentHubEndpoint: "http://127.0.0.1:4646", AgentHubInstanceID: "forge-one"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -959,7 +961,7 @@ exit 1
 	if err != nil {
 		t.Fatal(err)
 	}
-	expected := "session new --gui-run --workspace-id workspace-one --run-id run-one --endpoint http://127.0.0.1:4936\n"
+	expected := "session new --agenthub --endpoint http://127.0.0.1:4646 --source-instance-id forge-one --source-external-id workspace-one/run-one --starting-grace 30s\n"
 	if string(args) != expected {
 		t.Fatalf("expected session new args %q, got %q", expected, string(args))
 	}
@@ -1165,7 +1167,7 @@ exit 1
 	}
 }
 
-func TestSchedulerTurnCompletionObservesSubmittedResult(t *testing.T) {
+func TestProviderNativeTurnCompletionDoesNotAdvanceScheduler(t *testing.T) {
 	workspace := t.TempDir()
 	argsPath := filepath.Join(workspace, "args.txt")
 	forgePath := filepath.Join(workspace, "forge-fake")
@@ -1201,11 +1203,8 @@ printf '{"autoRun":{"state":"waiting"}}\n'
 	if status != "idle" {
 		t.Fatalf("expected session to remain idle, got %q", status)
 	}
-	args := string(mustReadFile(t, argsPath))
-	for _, expected := range []string{"task show", "--project project1", "--task task1"} {
-		if !strings.Contains(args, expected) {
-			t.Fatalf("expected settle args to contain %q, got %q", expected, args)
-		}
+	if _, err := os.Stat(argsPath); !os.IsNotExist(err) {
+		t.Fatalf("provider-native terminal must not invoke Forge AutoRun, stat err=%v", err)
 	}
 }
 
