@@ -27,11 +27,6 @@ const state = {
     workspacePath: "",
     createWorkspace: false,
     saving: false,
-    newAgent: {
-      name: "",
-      providerId: "codex",
-      options: {},
-    },
     newProfile: {
       key: "",
       description: "",
@@ -126,7 +121,8 @@ async function api(path, options = {}) {
 
 async function load() {
   const route = parseRoute();
-  state.config = await api("/api/workspaces");
+  const [base, agentHub] = await Promise.all([api("/api/workspaces"), api("/api/settings/agenthub")]);
+  state.config = configWithAgentHubCatalog(base, agentHub);
   applyAgentConfig();
   state.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId : state.config.activeId || state.config.workspaces[0]?.id || "";
   state.selectedId = route.resourceId || "workspace";
@@ -534,7 +530,7 @@ function deriveTaskLockState(locks) {
 function taskLockOwnerLabel(session) {
   if (session.source === "external") return "an external session";
   const agent = (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId);
-  return `${agent?.name || session.agentRunAgentId || providerName(session.agentRunProvider) || "Forge GUI"} session`;
+  return `${agent?.name || session.agentRunAgentId || "Forge GUI"} session`;
 }
 
 function taskOperationalLabel(autoRun, sessions, lock, primary) {
@@ -678,8 +674,8 @@ function renderSessions() {
     const agent = isInternal
       ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId)
       : null;
-    const providerLabel = isInternal ? providerName(session.agentRunProvider || "codex") : "External";
-    const label = isInternal ? agent?.name || session.agentRunAgentId || providerLabel : "External";
+    const providerLabel = isInternal ? "AgentHub" : "External";
+    const label = isInternal ? agent?.name || session.agentRunAgentId || "AgentHub" : "External";
     const title = sessionDisplayTitle(session, resourceId);
     const metaParts = [providerLabel];
     if (controls.length > 1) {
@@ -1723,7 +1719,7 @@ async function loadOlderAgentEvents() {
   if (!state.agent.historyBeforeId) return;
   const log = $("ttyLog");
   const previousHeight = log?.scrollHeight || 0;
-  // Raw provider events can contain thousands of reasoning/tool updates
+  // Raw session events can contain thousands of reasoning/tool updates
   // between two chat messages. Keep paging until the button reveals at least
   // one earlier conversation message, not merely another tool group.
   const targetVisibleCount = visibleAgentMessageCount() + AGENT_MANUAL_VISIBLE_EVENT_COUNT;
@@ -2045,8 +2041,7 @@ function clearsTransientAgentReasoning(event) {
 }
 
 function isTransientAgentStatus(event) {
-  return ["session/resume", "thread/start", "thread/resume", "thread/goal/cleared", "session/ready"].includes(event?.method) ||
-    (event?.type === "system" && /^Starting .+ provider\.$/i.test(event.text || ""));
+  return ["session/resume", "thread/start", "thread/resume", "thread/goal/cleared", "session/ready"].includes(event?.method);
 }
 
 function clearsTransientAgentStatus(event) {
@@ -2074,8 +2069,7 @@ function isAgentTurnStart(event) {
 }
 
 function isAgentTurnCompletion(event) {
-  return event?.method === "turn/completed" ||
-    (event?.method === "session/prompt" && /^(OpenCode|Kimi Code|Pi Coding Agent) turn finished/i.test(event.text || ""));
+  return event?.method === "turn/completed";
 }
 
 function groupToolEvents(events) {
@@ -2246,45 +2240,14 @@ function agentSelectOptions(agents) {
 
 function agentConfigSummary(agent) {
   if (!agent) return "";
-  const options = normalizedProviderAgentOptions(agent.providerId, agent.options);
   const parts = [providerName(agent.providerId)];
-  if (isBuildPlanProviderType(agent.providerId)) {
-    parts.push(options.mode === "plan" ? "Plan" : "Build");
-  } else {
-    parts.push(sandboxLabel(options.sandbox), approvalLabel(options.approval));
-  }
-  if (options.model) parts.push(options.model);
+  if (agent.options?.model) parts.push(agent.options.model);
   return parts.filter(Boolean).join(" · ");
 }
 
 function providerName(providerId) {
-  const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
+  const provider = (state.config?.agentHubProviders || state.settings.data?.agentHub?.catalog?.providers || []).find((item) => item.id === providerId);
   return provider?.name || providerId || "Provider";
-}
-
-function agentProviderType(providerId) {
-  const provider = (state.config?.agentProviders || state.settings.data?.agentProviders || []).find((item) => item.id === providerId);
-  return provider?.type || providerId || "codex";
-}
-
-function isACPProviderType(providerId) {
-  return ["opencode", "kimi"].includes(agentProviderType(providerId));
-}
-
-function isBuildPlanProviderType(providerId) {
-  return isACPProviderType(providerId) || agentProviderType(providerId) === "pi";
-}
-
-function sandboxLabel(value) {
-  if (value === "danger-full-access") return "Full Access";
-  if (value === "read-only") return "Read-only";
-  return "Workspace";
-}
-
-function approvalLabel(value) {
-  if (value === "never") return "Never";
-  if (value === "untrusted") return "Untrusted";
-  return "On request";
 }
 
 const RUN_STATUS_TONES = {
@@ -2468,8 +2431,6 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
   if (run.status === "stopping") return "AgentHub is stopping the provider.";
   if (run.status === "recovering") return "AgentHub event recovery is in progress.";
   if (run.status === "waiting_approval") return "Resolve the pending approval before sending input.";
-  if (run.schedulerTurn && run.provider === "codex" && !run.codexTurnId) return "AutoRun turn is starting.";
-  if (run.schedulerTurn && ["opencode", "kimi"].includes(run.provider) && run.status === "running") return `${providerName(run.provider)} cannot accept input during an active turn.`;
   return "";
 }
 
@@ -2522,14 +2483,9 @@ function renderSettingsModal() {
   const data = state.settings.data || {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
-    defaultChatAgentId: state.config?.defaultChatAgentId || "",
-    agentProviders: state.config?.agentProviders || [],
+    defaultAgentName: state.config?.defaultAgentName || "",
     agents: state.config?.agents || [],
     agentProfiles: state.config?.agentProfiles || [],
-    codex: { running: false },
-    opencode: { running: false },
-    kimi: { running: false },
-    pi: { running: false },
   };
   const entering = state.modalEnter === "settings";
   if (entering) state.modalEnter = "";
@@ -2654,56 +2610,6 @@ function settingsWorkspacePanel(data) {
   `;
 }
 
-function settingsProvidersPanel(data) {
-  const providers = data.agentProviders || [];
-  const codex = data.codex || { running: false };
-  const opencode = data.opencode || { running: false };
-  const kimi = data.kimi || { running: false };
-  const pi = data.pi || { running: false };
-  return `
-    <div class="settings-panel settings-agent-panel">
-      <div class="settings-panel-header">
-        <h2>Providers</h2>
-        <p>Providers are the available agent runtimes. Enabling a provider starts its local service.</p>
-      </div>
-      <section class="settings-agent-section">
-        <div class="settings-section-heading">
-          <h3>Runtimes</h3>
-          <span>${providers.filter((provider) => provider.enabled).length}/${providers.length} enabled</span>
-        </div>
-        <div class="settings-provider-list">
-          ${providers.map((provider) => settingsProviderRow(provider, { codex, opencode, kimi, pi })).join("")}
-        </div>
-      </section>
-    </div>
-  `;
-}
-
-function settingsAgentsPanel(data) {
-  const providers = data.agentProviders || [];
-  const agents = data.agents || [];
-  return `
-    <div class="settings-panel settings-agent-panel" data-settings-section="agents">
-      <div class="settings-panel-header">
-        <h2>Agents</h2>
-        <p>Agents package provider options for session start. Choose the default chat agent.</p>
-      </div>
-      ${settingsDefaultChatAgentSection(data)}
-      <section class="settings-agent-section">
-        <div class="settings-section-heading">
-          <h3>Configured Agents</h3>
-          <span>${agents.length} total</span>
-        </div>
-        <div class="settings-agent-list">
-          ${agents.map((agent, index) => settingsAgentRow(agent, providers, index)).join("") || `<div class="settings-empty">No agents configured. Add one below.</div>`}
-        </div>
-      </section>
-      ${settingsNewAgentCard(providers)}
-      ${settingsAgentSaveBar()}
-    </div>
-  `;
-}
-
 function settingsProfilesPanel(data) {
   return `
     <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
@@ -2766,8 +2672,8 @@ function settingsAgentProfilesSection(data) {
 
 function settingsDefaultChatAgentSection(data) {
   const agents = settingsEnabledAgents(data);
-  const defaultID = agents.some((agent) => agent.id === data.defaultChatAgentId)
-    ? data.defaultChatAgentId
+  const defaultID = agents.some((agent) => agent.id === data.defaultAgentName)
+    ? data.defaultAgentName
     : agents[0]?.id || "";
   return `
     <section class="settings-agent-section">
@@ -2786,174 +2692,7 @@ function settingsDefaultChatAgentSection(data) {
 }
 
 function settingsEnabledAgents(data) {
-  const enabledProviders = new Set((data.agentProviders || []).filter((provider) => provider.enabled).map((provider) => provider.id));
-  return (data.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
-}
-
-function settingsProviderRow(provider, statuses) {
-  const enabled = Boolean(provider.enabled);
-  let status = enabled ? "Enabled" : "Disabled";
-  const runtime = statuses?.[provider.id];
-  if (runtime?.running) {
-    status = runtime.pid ? `Enabled · PID ${escapeHTML(String(runtime.pid))}` : "Enabled · Ready";
-  }
-  const iconName = provider.id === "codex" ? "terminal" : provider.id === "opencode" ? "code-2" : provider.id === "kimi" ? "sparkles" : provider.id === "pi" ? "bot" : "box";
-  return `
-    <div class="settings-service-row">
-      <div class="settings-provider-main">
-        <span class="settings-provider-mark">${icon(iconName)}</span>
-        <span>
-          <strong>${escapeHTML(provider.name || provider.id)}</strong>
-          <small>${escapeHTML(provider.type || provider.id)} · ${status}</small>
-        </span>
-      </div>
-      <button type="button" data-toggle-provider="${escapeHTML(provider.id)}" class="${enabled ? "settings-secondary-button" : ""}">
-        ${icon(enabled ? "toggle-right" : "toggle-left")}
-        <span>${enabled ? "Disable" : "Enable"}</span>
-      </button>
-    </div>
-  `;
-}
-
-function settingsAgentRow(agent, providers, index) {
-  const normalized = { ...agent, options: normalizedProviderAgentOptions(agent.providerId, agent.options) };
-  const expanded = Boolean(state.settings.expandedAgents?.has(agent.id));
-  return `
-    <div class="settings-agent-card settings-agent-row${expanded ? " expanded" : ""}" data-agent-index="${index}">
-      <div class="settings-agent-card-head">
-        <button type="button" class="settings-agent-toggle" data-expand-agent="${escapeHTML(agent.id)}" aria-expanded="${expanded ? "true" : "false"}" title="${expanded ? "Collapse" : "Expand"}">${icon(expanded ? "chevron-down" : "chevron-right")}</button>
-        <span class="settings-agent-mark">${escapeHTML((agent.name || agent.id || "A").slice(0, 1).toUpperCase())}</span>
-        <span class="settings-agent-title">${escapeHTML(agent.name || agent.id || "Untitled agent")}</span>
-        <label class="settings-agent-name-field">
-          <span>Name</span>
-          <input data-agent-field="name" value="${escapeHTML(agent.name || "")}" placeholder="Agent name" />
-        </label>
-        <span class="settings-agent-summary" title="${escapeHTML(agentConfigSummary(normalized))}">${escapeHTML(agentConfigSummary(normalized))}</span>
-        <button type="button" class="settings-danger-button" data-remove-agent="${escapeHTML(agent.id)}" title="Delete agent">${icon("trash-2")}</button>
-      </div>
-      <div class="settings-agent-fields">
-        <label>
-          <span>Provider</span>
-          <select data-agent-field="providerId">
-            ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${normalized.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
-          </select>
-        </label>
-        ${settingsProviderOptionFields(normalized.providerId, normalized.options, "data-agent-option")}
-      </div>
-    </div>
-  `;
-}
-
-function settingsNewAgentCard(providers) {
-  const draft = normalizedNewAgentDraft(providers);
-  return `
-    <section class="settings-agent-section">
-      <div class="settings-section-heading">
-        <h3>New Agent</h3>
-      </div>
-      <div class="settings-agent-card settings-agent-new">
-        <div class="settings-agent-card-head">
-          <span class="settings-agent-mark muted">${icon("plus")}</span>
-          <label class="settings-agent-name-field">
-            <span>Name</span>
-            <input id="settingsNewAgentName" value="${escapeHTML(draft.name)}" placeholder="Agent name" />
-          </label>
-          <button type="button" id="settingsAddAgentButton">${icon("plus")}<span>Add</span></button>
-        </div>
-        <div class="settings-agent-fields">
-          <label>
-            <span>Provider</span>
-            <select id="settingsNewAgentProvider">
-              ${providers.map((provider) => `<option value="${escapeHTML(provider.id)}" ${draft.providerId === provider.id ? "selected" : ""}>${escapeHTML(provider.name || provider.id)}</option>`).join("")}
-            </select>
-          </label>
-          ${settingsProviderOptionFields(draft.providerId, draft.options, "data-new-agent-option")}
-        </div>
-      </div>
-    </section>
-  `;
-}
-
-function settingsProviderOptionFields(providerId, options, attribute) {
-  if (isBuildPlanProviderType(providerId)) {
-    return `
-      <label>
-        <span>Mode</span>
-        <select ${attribute}="mode">
-          <option value="build" ${options.mode === "build" ? "selected" : ""}>Build</option>
-          <option value="plan" ${options.mode === "plan" ? "selected" : ""}>Plan</option>
-        </select>
-      </label>
-      <label>
-        <span>Model</span>
-        <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="${escapeHTML(providerName(providerId))} default" />
-      </label>
-    `;
-  }
-  return `
-    <label>
-      <span>Sandbox</span>
-      <select ${attribute}="sandbox">${sandboxOptions(options.sandbox)}</select>
-    </label>
-    <label>
-      <span>Approval</span>
-      <select ${attribute}="approval">${approvalOptions(options.approval)}</select>
-    </label>
-    <label>
-      <span>Model</span>
-      <input ${attribute}="model" value="${escapeHTML(options.model || "")}" placeholder="Codex default" />
-    </label>
-  `;
-}
-
-function normalizedProviderAgentOptions(providerId, options = {}) {
-  const model = String(options?.model || "").trim();
-  if (isBuildPlanProviderType(providerId)) {
-    return {
-      mode: options?.mode === "plan" ? "plan" : "build",
-      ...(model ? { model } : {}),
-    };
-  }
-  return {
-    sandbox: ["workspace-write", "read-only", "danger-full-access"].includes(options?.sandbox)
-      ? options.sandbox
-      : "workspace-write",
-    approval: ["on-request", "never", "untrusted"].includes(options?.approval)
-      ? options.approval
-      : "on-request",
-    ...(model ? { model } : {}),
-  };
-}
-
-function normalizedNewAgentDraft(providers) {
-  const available = providers || [];
-  const configured = state.settings.newAgent || {};
-  const providerId = available.some((provider) => provider.id === configured.providerId)
-    ? configured.providerId
-    : available[0]?.id || "codex";
-  const draft = {
-    name: configured.name || "",
-    providerId,
-    options: normalizedProviderAgentOptions(providerId, configured.options),
-  };
-  state.settings.newAgent = draft;
-  return draft;
-}
-
-function sandboxOptions(value) {
-  return `
-    <option value="workspace-write" ${value === "workspace-write" ? "selected" : ""}>Workspace</option>
-    <option value="read-only" ${value === "read-only" ? "selected" : ""}>Read-only</option>
-    <option value="danger-full-access" ${value === "danger-full-access" ? "selected" : ""}>Full Access</option>
-  `;
-}
-
-function approvalOptions(value) {
-  return `
-    <option value="on-request" ${value === "on-request" ? "selected" : ""}>On request</option>
-    <option value="never" ${value === "never" ? "selected" : ""}>Never</option>
-    <option value="untrusted" ${value === "untrusted" ? "selected" : ""}>Untrusted</option>
-  `;
+  return (data.agents || []).filter((agent) => agent.available !== false);
 }
 
 function bindSettingsEvents() {
@@ -2980,9 +2719,6 @@ function bindSettingsEvents() {
   document.querySelectorAll("[data-remove-workspace]").forEach((button) => {
     button.addEventListener("click", () => removeSettingsWorkspace(button.dataset.removeWorkspace).catch((err) => toast(err.message)));
   });
-  document.querySelectorAll("[data-toggle-provider]").forEach((button) => {
-    button.addEventListener("click", () => toggleAgentProvider(button.dataset.toggleProvider).catch((err) => toast(err.message)));
-  });
   $("settingsSaveButton")?.addEventListener("click", () => {
     saveAgentSettings().catch((err) => toast(err.message));
   });
@@ -2994,52 +2730,15 @@ function bindSettingsEvents() {
   $("settingsNewProfileDescription")?.addEventListener("input", (event) => { state.settings.newProfile.description = event.target.value; });
   $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentId = event.target.value; });
   $("settingsDefaultChatAgent")?.addEventListener("change", (event) => {
-    state.settings.data = { ...(state.settings.data || {}), defaultChatAgentId: event.target.value };
+    state.settings.data = { ...(state.settings.data || {}), defaultAgentName: event.target.value };
     const label = $("settingsDefaultChatAgentLabel");
     if (label) label.textContent = event.target.selectedOptions[0]?.textContent || "None";
     markAgentSettingsDirty();
   });
   $("settingsAgentHubEndpoint")?.addEventListener("input", markAgentSettingsDirty);
-  $("settingsAddAgentButton")?.addEventListener("click", () => {
-    addSettingsAgent().catch((err) => toast(err.message));
-  });
-  document.querySelectorAll("[data-remove-agent]").forEach((button) => {
-    button.addEventListener("click", () => removeSettingsAgent(button.dataset.removeAgent));
-  });
-  document.querySelectorAll("[data-expand-agent]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const id = button.dataset.expandAgent;
-      if (!state.settings.expandedAgents) state.settings.expandedAgents = new Set();
-      if (state.settings.expandedAgents.has(id)) {
-        state.settings.expandedAgents.delete(id);
-      } else {
-        state.settings.expandedAgents.add(id);
-      }
-      renderSettingsModal();
-    });
-  });
-  document.querySelectorAll(".settings-agent-row [data-agent-field], .settings-agent-row [data-agent-option], .settings-profile-row [data-profile-field]").forEach((field) => {
+  document.querySelectorAll(".settings-profile-row [data-profile-field]").forEach((field) => {
     field.addEventListener("input", markAgentSettingsDirty);
     field.addEventListener("change", markAgentSettingsDirty);
-  });
-  document.querySelectorAll('.settings-agent-row [data-agent-field="providerId"]').forEach((select) => {
-    select.addEventListener("change", () => changeSettingsAgentProvider(Number(select.closest("[data-agent-index]")?.dataset.agentIndex), select.value));
-  });
-  $("settingsNewAgentName")?.addEventListener("input", (event) => {
-    state.settings.newAgent.name = event.target.value;
-  });
-  $("settingsNewAgentProvider")?.addEventListener("change", (event) => {
-    state.settings.newAgent = {
-      name: $("settingsNewAgentName")?.value || "",
-      providerId: event.target.value,
-      options: normalizedProviderAgentOptions(event.target.value),
-    };
-    renderSettingsModal();
-  });
-  document.querySelectorAll("[data-new-agent-option]").forEach((field) => {
-    field.addEventListener("input", () => {
-      state.settings.newAgent.options[field.dataset.newAgentOption] = field.value;
-    });
   });
 }
 
@@ -4046,14 +3745,12 @@ function selectedAgentConfig() {
 }
 
 function enabledAgentConfigs() {
-  const providers = state.config?.agentProviders || [];
-  const enabledProviders = new Set(providers.filter((provider) => provider.enabled).map((provider) => provider.id));
-  return (state.config?.agents || []).filter((agent) => enabledProviders.has(agent.providerId));
+  return (state.config?.agents || []).filter((agent) => agent.available !== false);
 }
 
 function defaultChatAgentID() {
   const agents = enabledAgentConfigs();
-  const configured = state.config?.defaultChatAgentId || state.settings.data?.defaultChatAgentId || "";
+  const configured = state.config?.defaultAgentName || state.settings.data?.defaultAgentName || "";
   if (agents.some((agent) => agent.id === configured)) {
     return configured;
   }
@@ -4085,10 +3782,23 @@ async function refreshSettings() {
   state.settings.data = {
     ...base,
     agentHub,
-    agentProviders: agentHub.catalog?.providers || [],
     agents: catalogAgents,
     agentProfiles: (agentHub.config?.agentProfiles || []).map((profile) => ({ ...profile, agentId: profile.agentName })),
-    defaultChatAgentId: agentHub.config?.defaultAgentHubAgentName || "",
+    defaultAgentName: agentHub.config?.defaultAgentHubAgentName || "",
+  };
+  state.config = configWithAgentHubCatalog({ ...(state.config || {}), ...base }, agentHub);
+}
+
+function configWithAgentHubCatalog(base, agentHub) {
+  const agents = (agentHub.catalog?.agents || [])
+    .filter((agent) => agent.available !== false)
+    .map((agent) => ({ ...agent, id: agent.name }));
+  return {
+    ...base,
+    agents,
+    agentHubProviders: agentHub.catalog?.providers || [],
+    defaultAgentName: agentHub.config?.defaultAgentHubAgentName || "",
+    agentProfiles: agentHub.config?.agentProfiles || [],
   };
 }
 
@@ -4097,7 +3807,7 @@ function snapshotAgentDraft() {
   return {
     agents: data.agents || [],
     agentProfiles: data.agentProfiles || [],
-    defaultChatAgentId: data.defaultChatAgentId || "",
+    defaultAgentName: data.defaultAgentName || "",
   };
 }
 
@@ -4156,35 +3866,6 @@ async function removeSettingsWorkspace(id) {
   toast("Workspace removed from Forge GUI.");
 }
 
-async function toggleAgentProvider(providerId) {
-  const providers = state.settings.data?.agentProviders || [];
-  const provider = providers.find((item) => item.id === providerId);
-  if (!provider) return;
-  const enabled = Boolean(provider.enabled);
-  if (provider.id === "codex") {
-    await api(`/api/settings/codex/${enabled ? "stop" : "start"}`, { method: "POST" });
-  } else if (provider.id === "opencode") {
-    await api(`/api/settings/opencode/${enabled ? "stop" : "start"}`, { method: "POST" });
-  } else if (provider.id === "kimi") {
-    await api(`/api/settings/kimi/${enabled ? "stop" : "start"}`, { method: "POST" });
-  } else if (provider.id === "pi") {
-    await api(`/api/settings/pi/${enabled ? "stop" : "start"}`, { method: "POST" });
-  }
-  await api("/api/settings/agent/providers", {
-    method: "PUT",
-    body: JSON.stringify(providers.map((item) => item.id === provider.id ? { ...item, enabled: !enabled } : item)),
-  });
-  await refreshSettingsPreservingAgentDraft();
-  state.config = await api("/api/workspaces");
-  applyAgentConfig();
-  renderAgent();
-  renderTTYComposer();
-  bindAgentEvents();
-  renderSettingsModal();
-  refreshIcons();
-  toast(enabled ? "Agent provider disabled." : "Agent provider enabled.");
-}
-
 function syncSettingsDraftFromDOM() {
   if (!state.settings.open) return;
   const data = state.settings.data || {};
@@ -4192,11 +3873,6 @@ function syncSettingsDraftFromDOM() {
   let touched = false;
   // Agent settings are split across tabs; only collect sections currently rendered
   // so drafts on other tabs survive tab switches.
-  if (document.querySelector('[data-settings-section="agents"]')) {
-    next.agents = collectSettingsAgents();
-    next.defaultChatAgentId = $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "";
-    touched = true;
-  }
   if (document.querySelector('[data-settings-section="profiles"]')) {
     next.agentProfiles = collectSettingsAgentProfiles();
     touched = true;
@@ -4206,7 +3882,7 @@ function syncSettingsDraftFromDOM() {
       ...(data.agentHub || {}),
       configuredEndpoint: $("settingsAgentHubEndpoint")?.value.trim() || data.agentHub?.configuredEndpoint || "",
     };
-    next.defaultChatAgentId = $("settingsDefaultChatAgent")?.value || data.defaultChatAgentId || "";
+    next.defaultAgentName = $("settingsDefaultChatAgent")?.value || data.defaultAgentName || "";
     touched = true;
   }
   if (touched) state.settings.data = next;
@@ -4236,7 +3912,7 @@ async function saveAgentSettings() {
     method: "PUT",
     body: JSON.stringify({
       endpoint: data.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
-      defaultAgentName: data.defaultChatAgentId || "",
+      defaultAgentName: data.defaultAgentName || "",
       agentProfiles: (data.agentProfiles || []).map((profile) => ({
         key: profile.key,
         description: profile.description,
@@ -4245,7 +3921,7 @@ async function saveAgentSettings() {
     }),
   });
   await refreshSettings();
-  state.config = await api("/api/workspaces");
+  state.config = configWithAgentHubCatalog(await api("/api/workspaces"), state.settings.data.agentHub);
   state.settings.agentDirty = false;
   applyAgentConfig();
   renderAgent();
@@ -4294,97 +3970,6 @@ function removeSettingsProfile(index) {
   markAgentSettingsDirty();
   state.settings.suppressDraftSync = true;
   renderSettingsModal();
-}
-
-function collectSettingsAgents() {
-  const existing = state.settings.data?.agents || [];
-  return Array.from(document.querySelectorAll(".settings-agent-row")).map((row, index) => {
-    const source = existing[index] || {};
-    const field = (name) => row.querySelector(`[data-agent-field="${name}"]`)?.value.trim() || "";
-    const providerId = field("providerId");
-    const rawOptions = {};
-    row.querySelectorAll("[data-agent-option]").forEach((optionField) => {
-      rawOptions[optionField.dataset.agentOption] = optionField.value.trim();
-    });
-    return {
-      id: source.id || slugID(field("name")),
-      name: field("name"),
-      providerId,
-      options: normalizedProviderAgentOptions(providerId, rawOptions),
-    };
-  });
-}
-
-function changeSettingsAgentProvider(index, providerId) {
-  if (!Number.isInteger(index) || index < 0) return;
-  syncSettingsDraftFromDOM();
-  const agents = [...(state.settings.data?.agents || [])];
-  if (!agents[index]) return;
-  agents[index] = {
-    ...agents[index],
-    providerId,
-    options: normalizedProviderAgentOptions(providerId, agents[index].options),
-  };
-  state.settings.data = { ...(state.settings.data || {}), agents };
-  markAgentSettingsDirty();
-  state.settings.suppressDraftSync = true;
-  renderSettingsModal();
-}
-
-async function addSettingsAgent() {
-  const draft = normalizedNewAgentDraft(state.settings.data?.agentProviders || []);
-  const name = $("settingsNewAgentName")?.value.trim() || draft.name.trim();
-  if (!name) throw new Error("Agent name is required.");
-  syncSettingsDraftFromDOM();
-  const current = state.settings.data?.agents || [];
-  const next = {
-    id: uniqueAgentID(name, current),
-    name,
-    providerId: draft.providerId,
-    options: normalizedProviderAgentOptions(draft.providerId, draft.options),
-  };
-  state.settings.data = {
-    ...(state.settings.data || {}),
-    agents: [...current, next],
-  };
-  state.settings.newAgent = { name: "", providerId: draft.providerId, options: normalizedProviderAgentOptions(draft.providerId) };
-  if (!state.settings.expandedAgents) state.settings.expandedAgents = new Set();
-  state.settings.expandedAgents.add(next.id);
-  markAgentSettingsDirty();
-  state.settings.suppressDraftSync = true;
-  renderSettingsModal();
-}
-
-function removeSettingsAgent(id) {
-  if (!id) return;
-  syncSettingsDraftFromDOM();
-  const current = state.settings.data?.agents || [];
-  state.settings.data = {
-    ...(state.settings.data || {}),
-    agents: current.filter((agent) => agent.id !== id),
-  };
-  state.settings.expandedAgents?.delete(id);
-  markAgentSettingsDirty();
-  state.settings.suppressDraftSync = true;
-  renderSettingsModal();
-}
-
-function uniqueAgentID(name, agents) {
-  const base = slugID(name) || "agent";
-  const used = new Set(agents.map((agent) => agent.id));
-  if (!used.has(base)) return base;
-  for (let i = 2; ; i += 1) {
-    const candidate = `${base}-${i}`;
-    if (!used.has(candidate)) return candidate;
-  }
-}
-
-function slugID(value) {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 }
 
 function formatBytes(size) {

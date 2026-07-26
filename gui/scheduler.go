@@ -281,17 +281,6 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 	return autoRunAgentSelection{AgentID: fallback, Reason: "using default AgentHub agent"}, nil
 }
 
-// agentConfigAvailable remains a legacy-history/settings helper. AutoRun does
-// not call it and has no direct-provider dispatch branch.
-func agentConfigAvailable(cfg config, agentID string) bool {
-	agent, ok := findAgentConfig(cfg.Agents, agentID)
-	if !ok {
-		return false
-	}
-	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
-	return ok && provider.Enabled && (provider.Type == codexProviderID || isACPProviderType(provider.Type) || provider.Type == piProviderID)
-}
-
 func (s *server) agentRunActive(runID string) bool {
 	if s.agents == nil {
 		return false

@@ -37,13 +37,25 @@ type agentHubProfileRoute struct {
 }
 
 type legacyGUIConfig struct {
-	Version            int                   `json:"version"`
-	ActiveID           string                `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace        `json:"workspaces"`
-	DefaultChatAgentID string                `json:"defaultChatAgentId,omitempty"`
-	AgentProviders     []agentProviderConfig `json:"agentProviders"`
-	Agents             []agentConfig         `json:"agents"`
-	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
+	Version            int                  `json:"version"`
+	ActiveID           string               `json:"activeId,omitempty"`
+	Workspaces         []guiWorkspace       `json:"workspaces"`
+	DefaultChatAgentID string               `json:"defaultChatAgentId,omitempty"`
+	Agents             []legacyAgentConfig  `json:"agents"`
+	AgentProfiles      []legacyProfileRoute `json:"agentProfiles,omitempty"`
+}
+
+type legacyAgentConfig struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	ProviderID string            `json:"providerId"`
+	Options    map[string]string `json:"options,omitempty"`
+}
+
+type legacyProfileRoute struct {
+	Key         string `json:"key"`
+	Description string `json:"description,omitempty"`
+	AgentID     string `json:"agentId,omitempty"`
 }
 
 func effectiveAgentHubEndpoint(configured string) (string, error) {
@@ -193,7 +205,7 @@ func migrateLegacyConfig(legacy legacyGUIConfig, endpoint, instanceID string, ca
 	}, catalog)
 }
 
-func matchLegacyAgent(legacy agentConfig, candidates []agentHubAgent) (string, error) {
+func matchLegacyAgent(legacy legacyAgentConfig, candidates []agentHubAgent) (string, error) {
 	type scored struct {
 		name  string
 		score int
