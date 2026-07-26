@@ -676,7 +676,7 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 	}
 	run := agentRun{
 		ID: "run-crashed", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
-		AgentID: "fake-agent", AgentHubAgentName: "fake-agent", Provider: agentHubProjectionProvider,
+		AgentID: "fake-agent", AgentHubAgentName: "fake-agent",
 		SourceExternalID: workspace.ID + "/run-crashed", ForgeSessionID: "session-test",
 		Title: "Recovered AutoRun", Cwd: workspace.Path, Status: "starting",
 		SchedulerTurn: true, AutoRunGeneration: 4, PendingInitialMessage: "recover after SIGKILL",

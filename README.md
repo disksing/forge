@@ -10,7 +10,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
-- **Interactive and autonomous agents.** Forge GUI supports Codex app-server, OpenCode ACP, Kimi Code ACP, and Pi JSONL RPC, including streaming chat, resumable history, file uploads, and mid-run user intervention.
+- **Interactive and autonomous agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
 - **Dependency-aware AutoRun.** Tasks can be queued with preferred Agent Profiles and prerequisite task generations. The GUI scheduler resumes ready work, records retries, and exposes queued, running, waiting, paused, completed, and failed states.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
 
@@ -22,15 +22,18 @@ Forge separates concerns deliberately:
 Forge CLI / forge-start ───────┐
                               ├── AgentWorkspace files (source of truth)
 Forge GUI ── invokes CLI ─────┤
-          ├── agent providers │
+          ├── AgentHub client │
           └── Git diff viewer ┘
+
+AgentHub ── provider processes and durable agent sessions
 
 shared checkout in repos/ ── git worktree ── task-owned branch in worktree/
 ```
 
 - The **CLI** owns deterministic workspace mutations and JSON views used by other tools.
 - **`forge-start`** launches a terminal agent inside one resource with a managed session and lock.
-- The **GUI** renders workspace state, manages agent providers and sessions, and schedules AutoRun turns through the CLI.
+- The **GUI** renders workspace state, routes chat and AutoRun through AgentHub, and schedules workspace state transitions through the CLI.
+- **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
 
 The workspace root itself is not lockable. Project and task resources are independently lockable, so unrelated tasks can progress concurrently.
@@ -39,10 +42,7 @@ The workspace root itself is not lockable. Project and task resources are indepe
 
 - Go 1.22 or newer
 - Git
-- One or more optional agent CLIs for GUI chat or AutoRun:
-  - `codex` with `codex app-server`
-  - `opencode` with `opencode acp`
-  - `kimi` with `kimi acp`
+- A compatible AgentHub service for GUI chat and AutoRun
 
 ## Build
 
@@ -86,7 +86,7 @@ Open the GUI for that workspace:
 FORGE_CLI="$(command -v forge)" forge-gui --workspace "$PWD"
 ```
 
-Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). The GUI can also create or add workspaces, create projects and tasks, apply project task templates, and configure agents.
+Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint, default catalog agent, and portable Agent Profiles in Settings. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
 
 The GUI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
 
@@ -97,35 +97,25 @@ The main UI is split into navigation, resource details, and agent chat:
 - **Navigation:** switch workspaces, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** start, stop, resume, or revisit agent sessions; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
-- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, enable providers, configure provider-specific agents, select the default chat agent, and map portable Agent Profiles to local agents.
+- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, select the default AgentHub agent, and map portable Agent Profiles to catalog agents.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
-### Agent Providers
+### AgentHub execution
 
-Forge ships with three provider adapters:
+Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. A new chat or AutoRun resolves a Forge Profile to an AgentHub `agentName`, creates or resumes a durable AgentHub session, and projects canonical AgentHub events into the GUI.
 
-| Provider | Process | Agent options |
-| --- | --- | --- |
-| Codex | `codex app-server` | model, sandbox, approval policy |
-| OpenCode | `opencode acp` | model, `build` or `plan` mode |
-| Kimi Code | `kimi acp` | model, `build` or `plan` mode |
-
-Codex is enabled by default. OpenCode and Kimi Code can be enabled in **Settings → Agent** after their CLIs are installed and authenticated. Multiple providers and agents can be enabled at the same time.
-
-Forge configures Kimi Code `build` sessions with the ACP `yolo` mode so regular tool calls do not pause for approval; `plan` sessions remain read-only. An unexpected Kimi permission request is still surfaced for manual review instead of being approved by Forge.
+Forge retains workspace/task/session-lock/Profile control. A resource lock is released only after AgentHub confirms durable `stopped`; an unreachable or unknown AgentHub state keeps the lock. Historical pre-AgentHub runs and their local event logs remain readable, but input, approval, interrupt, stop, and resume operations are rejected for those runs.
 
 Useful overrides:
 
 ```text
-FORGE_CLI            forge executable used by the GUI
-FORGE_CODEX_CLI      Codex executable
-FORGE_OPENCODE_CLI   OpenCode executable
-FORGE_KIMI_CLI       Kimi Code executable
-FORGE_GUI_CONFIG     GUI configuration file
+FORGE_CLI           forge executable used by the GUI
+FORGE_AGENTHUB_URL  AgentHub endpoint override
+FORGE_GUI_CONFIG    GUI configuration file
 ```
 
-Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for provider setup, ACP behavior, and live smoke tests.
+Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for the AgentHub boundary, migration behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -175,7 +165,7 @@ The first resource locked by a session is its primary resource; later controls a
 
 ## AutoRun
 
-AutoRun adds a generation-numbered state machine to a task. The GUI scheduler finds runnable tasks, resolves preferred Agent Profiles to locally configured agents, starts or resumes a session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`.
+AutoRun adds a generation-numbered state machine to a task. The GUI scheduler finds runnable tasks, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`.
 
 Create an autonomous task:
 
@@ -189,7 +179,7 @@ forge task create \
   "Implement the change"
 ```
 
-Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `review`, or `codex` to machine-local agent configurations; if none are available, the scheduler falls back to an enabled default agent.
+Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `review`, or `codex` to AgentHub agent names; if none are available, the scheduler falls back to the configured default AgentHub agent.
 
 Tasks can wait for exact generations of other tasks:
 
@@ -360,7 +350,7 @@ FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 
 ## Companion Tools
 
-- [Forge GUI provider guide](gui/README.md): provider configuration, ACP implementation details, environment variables, and live tests.
+- [Forge GUI AgentHub guide](gui/README.md): the execution boundary, settings, migration behavior, environment variables, and isolated testing.
 - [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
 
 ## License

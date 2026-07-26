@@ -31,10 +31,6 @@ type agentRun struct {
 	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
-	Provider                string `json:"provider"`
-	ProviderSessionID       string `json:"providerSessionId,omitempty"`
-	CodexThreadID           string `json:"codexThreadId,omitempty"`
-	CodexTurnID             string `json:"codexTurnId,omitempty"`
 	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
 	AgentHubEventCursor     int64  `json:"agentHubEventCursor,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
@@ -44,9 +40,6 @@ type agentRun struct {
 	Title                   string `json:"title"`
 	Cwd                     string `json:"cwd"`
 	Status                  string `json:"status"`
-	Model                   string `json:"model,omitempty"`
-	Sandbox                 string `json:"sandbox"`
-	Approval                string `json:"approval"`
 	CreatedAt               string `json:"createdAt"`
 	UpdatedAt               string `json:"updatedAt"`
 	LastOutputAt            string `json:"lastOutputAt,omitempty"`
@@ -95,7 +88,6 @@ type startAgentRequest struct {
 	Cwd                  string `json:"cwd"`
 	SchedulerTurn        bool   `json:"schedulerTurn,omitempty"`
 	AutoRunGeneration    int    `json:"autoRunGeneration,omitempty"`
-	ResumeRunID          string `json:"resumeRunId,omitempty"`
 }
 
 type agentInputRequest struct {
@@ -107,12 +99,6 @@ type agentInputRequest struct {
 type agentApprovalRequest struct {
 	RequestID string `json:"requestId"`
 	Decision  string `json:"decision"`
-}
-
-type pendingApproval struct {
-	id     json.RawMessage
-	method string
-	params json.RawMessage
 }
 
 type forgeSessionContext struct {
@@ -142,12 +128,6 @@ type agentRuntime struct {
 	agentHubCancel     context.CancelFunc
 	agentHubSync       sync.Mutex
 	agentHubStreamDone chan struct{}
-	provider           agentProvider
-	pending            map[string]pendingApproval
-	done               chan struct{}
-	doneOnce           sync.Once
-	stopRequested      bool
-	opencodeTerminals  map[string]*opencodeTerminal
 }
 
 type agentManager struct {
@@ -436,69 +416,6 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 	return run.ResourceID == resourceID
 }
 
-func applyAgentRunOptions(run *agentRun, agent agentConfig, providerType string) {
-	run.Model = agentOption(agent, agentOptionModel)
-	if isBuildPlanProviderType(providerType) {
-		if agentOption(agent, agentOptionMode) == "plan" {
-			run.Sandbox = "read-only"
-		} else {
-			run.Sandbox = "workspace-write"
-		}
-	} else {
-		run.Sandbox = normalizeSandbox(agentOption(agent, agentOptionSandbox))
-		run.Approval = normalizeApproval(agentOption(agent, agentOptionApproval))
-	}
-}
-
-func (m *agentManager) resolveAgentConfig(req startAgentRequest) (agentConfig, agentProviderConfig, error) {
-	cfg, err := m.server.loadConfig()
-	if err != nil {
-		return agentConfig{}, agentProviderConfig{}, err
-	}
-	agentID := strings.TrimSpace(req.AgentID)
-	if agentID == "" {
-		agentID = cfg.DefaultChatAgentID
-	}
-	if agentID == "" {
-		return agentConfig{}, agentProviderConfig{}, errors.New("no default agent is configured")
-	}
-	agent, ok := findAgentConfig(cfg.Agents, agentID)
-	if !ok {
-		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent not found: %s", agentID)
-	}
-	provider, ok := findAgentProvider(cfg.AgentProviders, agent.ProviderID)
-	if !ok {
-		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider not found: %s", agent.ProviderID)
-	}
-	if !provider.Enabled {
-		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("agent provider is disabled: %s", provider.Name)
-	}
-	if provider.Type != codexProviderID && !isACPProviderType(provider.Type) && provider.Type != piProviderID {
-		return agentConfig{}, agentProviderConfig{}, fmt.Errorf("unsupported agent provider: %s", provider.Name)
-	}
-	return agent, provider, nil
-}
-
-func findAgentConfig(agents []agentConfig, id string) (agentConfig, bool) {
-	id = strings.TrimSpace(id)
-	for _, agent := range agents {
-		if agent.ID == id {
-			return agent, true
-		}
-	}
-	return agentConfig{}, false
-}
-
-func findAgentProvider(providers []agentProviderConfig, id string) (agentProviderConfig, bool) {
-	id = strings.TrimSpace(id)
-	for _, provider := range providers {
-		if provider.ID == id {
-			return provider, true
-		}
-	}
-	return agentProviderConfig{}, false
-}
-
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, run agentRun, cfg config) (string, error) {
 	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
@@ -696,94 +613,6 @@ func forgeSessionLockArgs(sessionID, resourceID string) ([]string, error) {
 	return append(args, "--project", resourceID), nil
 }
 
-func (s *server) cleanupStaleInternalSessions(ctx context.Context) error {
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return err
-	}
-	var failures []string
-	for _, workspace := range cfg.Workspaces {
-		if err := s.cleanupStaleInternalSessionsForWorkspace(ctx, workspace); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", workspace.Path, err))
-		}
-	}
-	if len(failures) > 0 {
-		return errors.New(strings.Join(failures, "; "))
-	}
-	return nil
-}
-
-func (s *server) cleanupStaleInternalSessionsForWorkspace(ctx context.Context, workspace guiWorkspace) error {
-	agentIndexMu.Lock()
-	runs, repaired, err := loadAgentRunsLocked(workspace.Path)
-	agentIndexMu.Unlock()
-	if err != nil {
-		return err
-	}
-	sessionIDs := make(map[string]bool)
-	for _, run := range runs {
-		sessionID := strings.TrimSpace(run.ForgeSessionID)
-		if sessionID != "" {
-			sessionIDs[sessionID] = true
-		}
-	}
-	if len(sessionIDs) == 0 {
-		if repaired {
-			return rewriteAgentRuns(workspace.Path, runs)
-		}
-		return nil
-	}
-	active, err := s.activeForgeSessionIDs(ctx, workspace.Path)
-	if err != nil {
-		return err
-	}
-	now := time.Now().Format(time.RFC3339)
-	changed := repaired
-	for i := range runs {
-		if strings.TrimSpace(runs[i].AgentHubSessionID) != "" {
-			continue
-		}
-		sessionID := strings.TrimSpace(runs[i].ForgeSessionID)
-		if sessionID == "" {
-			continue
-		}
-		if active[sessionID] {
-			if _, err := s.runForge(ctx, workspace.Path, "session", "end", "--id", sessionID); err != nil && !strings.Contains(err.Error(), "session not found") {
-				return err
-			}
-		}
-		removeForgeSessionContextFile(runs[i].ForgeSessionContextPath, sessionID)
-		runs[i].ForgeSessionID = ""
-		runs[i].ForgeSessionContextPath = ""
-		runs[i].CodexTurnID = ""
-		if isLiveAgentStatus(runs[i].Status) {
-			runs[i].Status = "stopped"
-			runs[i].UpdatedAt = now
-		}
-		changed = true
-	}
-	if !changed {
-		return nil
-	}
-	return rewriteAgentRuns(workspace.Path, runs)
-}
-
-func (s *server) activeForgeSessionIDs(ctx context.Context, workspacePath string) (map[string]bool, error) {
-	out, err := s.runForge(ctx, workspacePath, "session", "list")
-	if err != nil {
-		return nil, err
-	}
-	active := make(map[string]bool)
-	scanner := bufio.NewScanner(bytes.NewReader(out))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) > 0 {
-			active[fields[0]] = true
-		}
-	}
-	return active, scanner.Err()
-}
-
 func rewriteAgentRuns(workspacePath string, runs []agentRun) error {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
@@ -824,9 +653,8 @@ func (m *agentManager) handleSessionLiveness(w http.ResponseWriter, r *http.Requ
 	rt.mu.Unlock()
 	active := strings.TrimSpace(run.ForgeSessionID) == sessionID && isLiveAgentStatus(run.Status)
 	writeJSON(w, map[string]any{
-		"active":        active,
-		"status":        run.Status,
-		"codexThreadId": run.CodexThreadID,
+		"active": active,
+		"status": run.Status,
 	})
 }
 
@@ -920,25 +748,7 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 		m.sendAgentHubInput(w, r, rt, req, text)
 		return
 	}
-	if req.SchedulerTurn {
-		writeError(w, errors.New("AutoRun cannot use a legacy direct-provider session; start a new AgentHub run"), http.StatusConflict)
-		return
-	}
-	var sendErr error
-	if req.SchedulerTurn {
-		sendErr = rt.sendSchedulerPrompt(m, text)
-	} else {
-		sendErr = rt.sendInput(m, text)
-	}
-	if sendErr != nil {
-		if req.SchedulerTurn {
-			rt.recordSchedulerFailure(m, sendErr.Error())
-			rt.markIdle(m)
-		}
-		writeError(w, sendErr, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]string{"status": "accepted"})
+	writeError(w, errors.New("legacy direct run is read-only and cannot accept input after the AgentHub migration"), http.StatusConflict)
 }
 
 func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -954,8 +764,7 @@ func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspace
 		m.stopAgentHubRun(w, r, rt)
 		return
 	}
-	rt.stop(m)
-	writeJSON(w, map[string]string{"status": "stopped"})
+	writeError(w, errors.New("legacy direct run is read-only and cannot be controlled after the AgentHub migration"), http.StatusConflict)
 }
 
 func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -965,13 +774,12 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	if rt != nil {
-		run, events, truncated := rt.snapshotDetail()
+		run, _, _ := rt.snapshotDetail()
 		if strings.TrimSpace(run.AgentHubSessionID) != "" {
 			m.resumeAttachedAgentHubRun(w, r, rt)
 			return
 		}
-		detail := agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated}
-		writeJSON(w, detail)
+		writeError(w, errors.New("legacy direct run is read-only and cannot be resumed after the AgentHub migration"), http.StatusConflict)
 		return
 	}
 	run, events, _, err := loadAgentRunDetail(workspace.Path, runID)
@@ -1004,11 +812,7 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 		m.resolveAgentHubApproval(w, r, rt, req)
 		return
 	}
-	if err := rt.resolveApproval(m, req.RequestID, req.Decision); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	writeJSON(w, map[string]string{"status": "resolved"})
+	writeError(w, errors.New("legacy direct run is read-only and cannot resolve approvals after the AgentHub migration"), http.StatusConflict)
 }
 
 func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -1130,30 +934,8 @@ func (m *agentManager) runtimeByID(runID string) *agentRuntime {
 	return m.runtimes[runID]
 }
 
-func (m *agentManager) runtimeByThreadID(threadID string) *agentRuntime {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, rt := range m.runtimes {
-		rt.mu.Lock()
-		matches := rt.run.CodexThreadID == threadID
-		rt.mu.Unlock()
-		if matches {
-			return rt
-		}
-	}
-	return nil
-}
-
-func closedProviderDone() <-chan struct{} {
-	ch := make(chan struct{})
-	close(ch)
-	return ch
-}
-
 func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	rt.mu.Lock()
-	provider := rt.provider
-	status := rt.run.Status
 	client := rt.agentHub
 	sessionID := rt.run.AgentHubSessionID
 	hubState := rt.agentHubState
@@ -1166,172 +948,7 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 		}
 		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
 	}
-	if provider == nil {
-		return errors.New("agent run is not ready")
-	}
-	if status == "waiting_approval" {
-		return errors.New("approval is required before sending more input")
-	}
-	if status == "starting" {
-		return errors.New("session is starting")
-	}
-	var err error
-	if status == "running" {
-		err = provider.SendInput(rt, text)
-	} else {
-		rt.updateStatus(m, "running")
-		err = provider.SendPrompt(rt, text)
-		if err != nil {
-			rt.updateStatus(m, status)
-		}
-	}
-	if err != nil {
-		return err
-	}
-	rt.addEvent(m, "user", "", text, nil, "")
-	return nil
-}
-
-func (rt *agentRuntime) sendSchedulerPrompt(m *agentManager, text string) error {
-	rt.mu.Lock()
-	provider := rt.provider
-	client := rt.agentHub
-	sessionID := rt.run.AgentHubSessionID
-	if rt.run.Status != "starting" {
-		rt.mu.Unlock()
-		return errors.New("session is busy")
-	}
-	rt.run.Status = "running"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	if client != nil && sessionID != "" {
-		session, err := client.Message(context.Background(), sessionID, text, false)
-		if err != nil {
-			_ = rt.catchUpAgentHub(context.Background(), m, 0)
-			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
-		}
-		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
-	}
-	if provider == nil {
-		return errors.New("agent run is not ready")
-	}
-	_ = saveAgentRun(rt.workspace.Path, run)
-	rt.addEvent(m, "user", "", text, nil, "")
-	return provider.SendPrompt(rt, text)
-}
-
-func (rt *agentRuntime) stop(m *agentManager) bool {
-	rt.mu.Lock()
-	if rt.stopRequested {
-		rt.mu.Unlock()
-		return false
-	}
-	rt.stopRequested = true
-	provider := rt.provider
-	schedulerTurn := rt.run.SchedulerTurn
-	rt.run.SchedulerTurn = false
-	rt.run.Status = "stopped"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
-	if schedulerTurn {
-		rt.recordSchedulerFailure(m, "Session stopped before AutoRun result was submitted")
-	}
-	if provider != nil {
-		_ = provider.Interrupt(rt)
-	}
-	rt.addEvent(m, "system", "interrupt", "Stop requested.", nil, "")
-	rt.signalDone()
-	return true
-}
-
-func (rt *agentRuntime) resolveApproval(m *agentManager, requestID, decision string) error {
-	requestID = strings.TrimSpace(requestID)
-	decision = strings.TrimSpace(decision)
-	if requestID == "" {
-		return errors.New("requestId is required")
-	}
-	rt.mu.Lock()
-	pending, ok := rt.pending[requestID]
-	provider := rt.provider
-	rt.mu.Unlock()
-	if !ok || provider == nil {
-		return fmt.Errorf("approval request not found: %s", requestID)
-	}
-	response, err := provider.ResolveApproval(pending, decision)
-	if err != nil {
-		return err
-	}
-	rt.mu.Lock()
-	delete(rt.pending, requestID)
-	rt.mu.Unlock()
-	rt.addEvent(m, "approval_resolved", pending.method, fmt.Sprintf("Approval %s: %s", requestID, decision), mustJSON(response), "")
-	rt.updateStatus(m, "running")
-	return nil
-}
-
-func (rt *agentRuntime) handleServerRequest(client *codexClient, id json.RawMessage, method string, params json.RawMessage) {
-	if isApprovalMethod(method) {
-		rt.queueApprovalRequest(client.manager, id, method, params)
-		return
-	}
-	_ = client.respond(id, map[string]any{"error": "unsupported by Forge GUI"})
-	rt.addEvent(client.manager, "server_request", method, fmt.Sprintf("Unsupported app-server request: %s", method), params, "")
-}
-
-func (rt *agentRuntime) queueApprovalRequest(m *agentManager, id json.RawMessage, method string, params json.RawMessage) {
-	requestID := string(id)
-	rt.mu.Lock()
-	rt.pending[requestID] = pendingApproval{
-		id:     append(json.RawMessage(nil), id...),
-		method: method,
-		params: append(json.RawMessage(nil), params...),
-	}
-	if !rt.stopRequested {
-		rt.run.Status = "waiting_approval"
-	}
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
-	rt.addEvent(m, "approval_requested", method, approvalSummary(method, params), params, requestID)
-}
-
-func (rt *agentRuntime) handleNotification(m *agentManager, method string, params json.RawMessage) {
-	switch method {
-	case "turn/started":
-		turnID := nestedString(params, "turn", "id")
-		rt.mu.Lock()
-		rt.run.CodexTurnID = turnID
-		if !rt.stopRequested {
-			rt.run.Status = "running"
-		}
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-		run := rt.run
-		rt.mu.Unlock()
-		_ = saveAgentRun(rt.workspace.Path, run)
-		rt.addEvent(m, "system", method, "Turn started.", params, "")
-	case "turn/completed":
-		rt.addEvent(m, "system", method, "Turn completed.", params, "")
-		// Provider-native terminals are historical chat projection only.
-		// AutoRun advances exclusively from canonical AgentHub turn events.
-		rt.markIdle(m)
-	case "turn/failed", "error":
-		rt.addEvent(m, "error", method, eventText(method, params), params, "")
-		rt.markIdle(m)
-	case "item/agentMessage/delta":
-		text, ok := agentMessageDeltaText(params)
-		if !ok {
-			text = eventText(method, params)
-		}
-		rt.addEvent(m, "assistant_delta", method, text, params, "")
-	case "item/started", "item/completed", "item/updated", "item/commandExecution/outputDelta", "command/exec/outputDelta":
-		rt.addEvent(m, "tool", method, eventText(method, params), params, "")
-	default:
-		rt.addEvent(m, "event", method, eventText(method, params), params, "")
-	}
+	return errors.New("agent run is not attached to AgentHub")
 }
 
 func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string, data json.RawMessage, pendingRequestID string) {
@@ -1372,10 +989,6 @@ func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string
 
 func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	rt.mu.Lock()
-	if rt.stopRequested && status != "stopped" {
-		rt.mu.Unlock()
-		return
-	}
 	rt.run.Status = status
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
@@ -1420,7 +1033,6 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 				prompt := "Continue the current AutoRun. Before ending this scheduler turn, update the result with forge task autorun complete, wait, pause, or fail as your last side-effecting command."
 				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
 					err = sendErr
-					rt.signalDone()
 				}
 				return
 			}
@@ -1429,7 +1041,6 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 	if err != nil {
 		rt.addEvent(m, "error", "forge/autorun/finish", err.Error(), nil, "")
 		rt.updateStatus(m, "failed")
-		rt.signalDone()
 	} else {
 		rt.mu.Lock()
 		rt.run.SchedulerTurn = false
@@ -1530,20 +1141,11 @@ func nextAgentEventID(events []agentEvent) int64 {
 
 func (rt *agentRuntime) markIdle(m *agentManager) {
 	rt.mu.Lock()
-	if !rt.stopRequested {
-		rt.run.Status = "idle"
-	}
-	rt.run.CodexTurnID = ""
+	rt.run.Status = "idle"
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
-}
-
-func (rt *agentRuntime) signalDone() {
-	rt.doneOnce.Do(func() {
-		close(rt.done)
-	})
 }
 
 func (rt *agentRuntime) snapshotEvents() []agentEvent {
@@ -1821,24 +1423,6 @@ func agentCwd(workspacePath, requested string) (string, error) {
 	return safeWorkspacePath(workspacePath, requested)
 }
 
-func normalizeSandbox(value string) string {
-	switch strings.TrimSpace(value) {
-	case "read-only", "danger-full-access":
-		return strings.TrimSpace(value)
-	default:
-		return "workspace-write"
-	}
-}
-
-func normalizeApproval(value string) string {
-	switch strings.TrimSpace(value) {
-	case "untrusted", "on-request", "never":
-		return strings.TrimSpace(value)
-	default:
-		return "on-request"
-	}
-}
-
 func newRunID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
@@ -1869,16 +1453,6 @@ func eventText(method string, params json.RawMessage) string {
 		return method
 	}
 	return compactJSON(params)
-}
-
-func agentMessageDeltaText(params json.RawMessage) (string, bool) {
-	var value struct {
-		Delta *string `json:"delta"`
-	}
-	if err := json.Unmarshal(params, &value); err != nil || value.Delta == nil {
-		return "", false
-	}
-	return *value.Delta, true
 }
 
 func firstString(data json.RawMessage, keys ...string) string {
@@ -1931,12 +1505,6 @@ func findString(value any, keys ...string) string {
 	return ""
 }
 
-func rawString(raw json.RawMessage) string {
-	var value string
-	_ = json.Unmarshal(raw, &value)
-	return value
-}
-
 func compactJSON(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
@@ -1950,9 +1518,4 @@ func compactJSON(raw json.RawMessage) string {
 		return string(raw)
 	}
 	return string(data)
-}
-
-func mustJSON(value any) json.RawMessage {
-	data, _ := json.Marshal(value)
-	return data
 }

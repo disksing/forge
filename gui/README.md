@@ -1,104 +1,67 @@
-# Forge GUI Agent Providers
+# Forge GUI 与 AgentHub
 
-Forge GUI 支持多种 agent provider。当前内置：
+Forge GUI 只通过 AgentHub 执行 agent 和维护会话。Forge 自身不再内置 Codex app-server、ACP、Kimi、OpenCode 或 Pi runner，也不会查找、探测、启动、复用或停止这些 provider CLI。
 
-- **Codex app-server** (`codex`)：默认 provider，通过 `codex app-server` 子进程运行。
-- **OpenCode ACP** (`opencode`)：通过 `opencode acp` 子进程运行，使用 ACP（Agent Client Protocol）协议。
-- **Kimi Code ACP** (`kimi`)：通过 `kimi acp` 子进程运行，使用 ACP（Agent Client Protocol）协议。
-- **Pi Coding Agent** (`pi`)：每个会话通过独立的 `pi --mode rpc` 子进程运行，使用 pi JSONL RPC 协议。
+## 职责边界
 
-## 配置 OpenCode Provider
+Forge 保留以下控制面：
 
-在 settings 面板的 Agent 标签页中：
+- AgentWorkspace、project、task、artifact、Wiki 与 Git worktree 展示；
+- Forge session、资源锁和 AutoRun generation；
+- 默认 AgentHub agent 与 Forge Profile 到 AgentHub `agentName` 的路由；
+- AgentHub durable session 的创建、消息、审批、恢复、停止和 canonical event 投影。
 
-1. 启用 `OpenCode` provider。
-2. 创建一个新 agent，Provider 选择 `OpenCode`。
-3. 选择 `build` 或 `plan` mode，并可选配置 OpenCode model。
+AgentHub 拥有以下执行面：
 
-配置保存后，即可在任务目录启动使用 OpenCode 的交互式或非交互式运行。
+- provider 与 agent catalog；
+- provider CLI 路径、环境变量、模型、mode、sandbox 和 approval 等 provider 专属配置；
+- provider 进程生命周期与 provider-native session/event 适配；
+- durable agent session 和 canonical event history。
 
-## 配置 Kimi Code Provider
+Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpoint、默认 catalog agent 和 Forge Profile 路由，不可在 Forge 中新增、编辑、启用或关闭 provider/agent 定义。
 
-先安装 Kimi Code CLI，并在终端运行 `kimi` 完成登录。然后在 GUI 的 System Settings → Agent 中：
+## 配置
 
-1. 启用 `Kimi Code` provider。
-2. 创建一个新 agent，Provider 选择 `Kimi Code`。
-3. 选择 `build` 或 `plan` mode，并可选配置 Kimi Code model。
+持久化 GUI 配置使用 schema version 2，仅包含 workspace、AgentHub endpoint、Forge instance ID、默认 AgentHub agent 和 Profile 路由。可用环境变量：
 
-Forge 优先从 `FORGE_KIMI_CLI` 和 GUI 进程的 `PATH` 查找命令；若均未找到，会自动尝试 Kimi Code 官方安装器使用的 `~/.kimi-code/bin/kimi`，然后执行 `kimi acp`。
+- `FORGE_CLI`：GUI 调用的 Forge CLI。
+- `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
+- `FORGE_GUI_CONFIG`：GUI 配置文件路径。
 
-## 配置 Pi Coding Agent Provider
+旧版 GUI 配置首次迁移时会在相邻位置创建一次性备份：
 
-先安装 pi CLI，并完成所需模型的登录或 API key 配置。然后在 GUI 的 System Settings → Agent 中：
+```text
+<gui-config>.pre-agenthub-v1.bak
+```
 
-1. 启用 `Pi Coding Agent` provider。
-2. 创建一个新 agent，Provider 选择 `Pi Coding Agent`。
-3. 选择 `build` 或 `plan` mode，并可选填写 pi 支持的 model pattern。
+迁移只有在 AgentHub 状态、API 能力和 catalog 校验通过、且旧默认 agent/Profile 都能唯一映射时才会写入。迁移后的新配置不会写回 `agentProviders`、`agents`、provider enable 状态或 provider 专属 option。
 
-Forge 默认从 GUI 进程的 `PATH` 查找 `pi`，也可用 `FORGE_PI_CLI` 指定可执行文件。`plan` mode 会把 pi 的内置工具限制为 `read,grep,find,ls`；`build` mode 使用 pi 默认工具。
+## 会话与锁
 
-agent 只共享名称和 provider 两个公共字段，运行参数保存在 provider 专属的 `options` 中：
+新 chat 和 AutoRun 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。
 
-- Codex：`model`、`sandbox`、`approval`。
-- OpenCode / Kimi Code / Pi Coding Agent：`model`、`mode`（`build` / `plan`）。
+只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁。AgentHub 不可达、状态未知、event cursor gap、重复 source 或未证明先经过 stopped 的 archived 状态都保守持锁。
 
-settings 会随 provider 动态切换字段，服务端保存时也会过滤不属于该 provider 的 option。
-ACP provider 的 model 必须使用 `session/new` 返回的 option value；配置值不存在时，Forge 会终止启动并在错误中列出可用值，不再静默使用 provider 默认模型。
+迁移前的 run 索引和本地 JSONL event 仍可在 GUI 中查看。旧 provider 字段只作为未知 JSON 输入被忽略，不会重新写入；旧 run 的 input、approval、interrupt、stop 和 resume 操作会明确拒绝，绝不会启动旧 provider 进程。
 
-## 环境变量
+## 隔离验证
 
-- `FORGE_CODEX_CLI`：自定义 `codex` 可执行文件路径（默认使用 `codex`）。
-- `FORGE_OPENCODE_CLI`：自定义 `opencode` 可执行文件路径（默认使用 `opencode`）。
-- `FORGE_KIMI_CLI`：自定义 `kimi` 可执行文件路径（默认使用 `kimi`）。
-- `FORGE_PI_CLI`：自定义 `pi` 可执行文件路径（默认使用 `pi`）。
-- `FORGE_GUI_CONFIG`：自定义 GUI 配置文件路径。每个运行中的 GUI 会独占其配置文件；测试时如需启动第二实例，必须使用独立配置文件、端口和 workspace。
-
-例如，启动与主 GUI 完全隔离的测试实例：
+不要用开发构建连接真实 workspace 或修改真实 GUI 配置。测试第二个 GUI 时必须隔离配置、端口和 workspace，并使用 fake AgentHub 或专用测试 AgentHub：
 
 ```sh
 FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
-  forge-gui-bin --addr 127.0.0.1:4999 \
+FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
+  forge-gui --addr 127.0.0.1:14936 \
   --workspace /tmp/forge-workspace-test
 ```
 
-如果另一个 GUI 已持有相同配置的锁，新实例会拒绝启动。锁由进程持有，退出或崩溃后由操作系统自动释放。
-
-## ACP Provider 实现说明
-
-OpenCode 与 Kimi Code provider 作为独立 ACP Client：
-
-- 分别启动 `opencode acp` 或 `kimi acp` 子进程并通过 stdio JSON-RPC 通信。
-- 使用 ACP v1，并校验 provider 返回的协议版本与可选 session capabilities。
-- 在 `initialize` 中声明 Client 能力：`fs.readTextFile`、`fs.writeTextFile`、`terminal`。
-- 实现 ACP Client 方法：`fs/read_text_file`、`fs/write_text_file`、`terminal/*`、`session/request_permission`。
-- 将 `session/update` 通知映射为 forge-gui 事件类型（`assistant_delta`、`tool`、`system` 等）。
-- 将 `agent_thought_chunk` 按 `messageId` 聚合为瞬时 reasoning 内容，在工具调用、回答或回合状态到来后移除；被 reasoning 分隔的工具调用会随之重新合并，usage、available commands 等元数据不进入聊天正文。
-- 将 `session/request_permission` 映射为现有审批 UI。
-- 文件与终端操作严格限制在 workspace 目录内。
-- scheduler turn 结束时读取 AutoRun 的即时状态；若仍为 `running`，记录 retry 并在共享三次预算内继续。
-- model 和 mode 会映射到对应 provider 的 session config options。
-
-## Pi RPC Provider 实现说明
-
-- 每个 Forge run 启动一个工作目录隔离的 `pi --mode rpc` 子进程，因此支持多会话并发。
-- 使用 `get_state` 获取并持久化 pi session id，恢复时通过 `--session` 重新打开。
-- 将 `prompt`、`steer` 和 `abort` 分别映射到 Forge 的新 prompt、运行中输入和停止操作。
-- 将 pi 的文本、thinking、tool execution 和 `agent_settled` 事件映射到现有聊天事件与 AutoRun 回合状态。
-
-## 验证
-
-默认测试使用假 ACP/RPC 子进程覆盖 Kimi Code 和 Pi 会话，不依赖本机安装这些 CLI：
+常用验证：
 
 ```sh
-go test ./gui/...
+go test ./...
+go vet ./...
+node --check gui/static/app.js
+git diff --check
 ```
 
-如已安装并配置 OpenCode，可运行真实 ACP prompt 与文件写入冒烟测试：
-
-```sh
-FORGE_TEST_OPENCODE=1 go test -v ./gui -run '^TestOpencodeLivePrompt$'
-```
-
-## 多 Provider 管理
-
-多个 provider 可以同时启用。每个 provider 管理自己的子进程；settings 中可单独启停。agent 通过 `providerId` 指定使用哪个 provider。
+仓库的静态防回归测试会阻止生产代码重新引入 provider CLI 启动、direct runner selector/fallback、旧设置 API 或新 run 的 legacy provider 字段。

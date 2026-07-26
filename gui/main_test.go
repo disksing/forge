@@ -101,7 +101,7 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	}
 
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -189,7 +189,7 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "gui.json")
 	s := &server{config: configPath, forgePath: forgePath}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +239,7 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	t.Setenv("FORGE_TEST_ARGS", outputPath)
 
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -271,7 +271,7 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	}
 	t.Setenv("FORGE_TEST_ARGS", outputPath)
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -685,7 +685,7 @@ func TestRawFileDownloadServesAttachment(t *testing.T) {
 	}
 
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1405,7 +1405,7 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 	}
 
 	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: 1, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 

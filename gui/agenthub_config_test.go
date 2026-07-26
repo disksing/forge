@@ -93,7 +93,7 @@ func TestAgentHubRunProjectionSchemaAndLegacyHistory(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","status":"stopped"}`), &legacy); err != nil {
 		t.Fatal(err)
 	}
-	if legacy.ProviderSessionID != "thread-1" || legacy.AgentHubSessionID != "" {
+	if legacy.ID != "old" || legacy.AgentHubSessionID != "" {
 		t.Fatalf("legacy run history did not remain readable: %+v", legacy)
 	}
 }

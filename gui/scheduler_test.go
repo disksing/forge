@@ -132,12 +132,11 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	registerSchedulerRun(t, s, workspace, agentRun{
-		ID:            "run-orphaned",
-		WorkspaceID:   "workspace-one",
-		ResourceID:    "project1.task1",
-		AgentID:       "agent-one",
-		Status:        "stopped",
-		CodexThreadID: "thread-one",
+		ID:          "run-orphaned",
+		WorkspaceID: "workspace-one",
+		ResourceID:  "project1.task1",
+		AgentID:     "agent-one",
+		Status:      "stopped",
 	}, false)
 
 	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
@@ -146,7 +145,7 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected orphaned task recovery to start, got result=%q err=%v", result, err)
 	}
-	if request.ResourceID != "project1.task1" || request.ResumeRunID != "" || request.AutoRunGeneration != 3 {
+	if request.ResourceID != "project1.task1" || request.AutoRunGeneration != 3 {
 		t.Fatalf("unexpected recovery request: %#v", request)
 	}
 	if request.AgentID != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
@@ -261,22 +260,7 @@ esac
 }
 
 func TestResolveAutoRunAgentRejectsLegacyDirectConfiguration(t *testing.T) {
-	cfg := config{
-		DefaultChatAgentID: "default",
-		AgentProviders: []agentProviderConfig{
-			{ID: codexProviderID, Type: codexProviderID, Enabled: true},
-			{ID: opencodeProviderID, Type: opencodeProviderID, Enabled: false},
-		},
-		Agents: []agentConfig{
-			{ID: "default", ProviderID: codexProviderID},
-			{ID: "kimi", ProviderID: opencodeProviderID},
-			{ID: "review", ProviderID: codexProviderID},
-		},
-		AgentProfiles: []agentProfileRoute{
-			{Key: "kimi", AgentID: "kimi"},
-			{Key: "review", AgentID: "review"},
-		},
-	}
+	cfg := config{Version: 1}
 	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}}); err == nil || !strings.Contains(err.Error(), "AgentHub settings") {
 		t.Fatalf("expected direct configuration migration error, got %v", err)
 	}
@@ -305,7 +289,6 @@ func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRu
 	t.Helper()
 	if run.AgentHubSessionID == "" {
 		run.AgentHubSessionID = "ses_" + run.ID
-		run.Provider = agentHubProjectionProvider
 	}
 	if err := saveAgentRun(workspace, run); err != nil {
 		t.Fatal(err)

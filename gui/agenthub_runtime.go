@@ -10,8 +10,6 @@ import (
 	"time"
 )
 
-const agentHubProjectionProvider = "agenthub"
-
 func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) {
 	cfg, err := m.server.loadConfig()
 	if err != nil {
@@ -60,12 +58,10 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	var req startAgentRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&req); err != nil {
 		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if strings.TrimSpace(req.ResumeRunID) != "" {
-		writeError(w, errors.New("creating a new run from a legacy provider session is not supported after the AgentHub migration"), http.StatusBadRequest)
 		return
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
@@ -91,7 +87,6 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		AgentID:               agentName,
 		AgentProfile:          strings.TrimSpace(req.AgentProfile),
 		AgentSelectionReason:  strings.TrimSpace(req.AgentSelectionReason),
-		Provider:              agentHubProjectionProvider,
 		AgentHubAgentName:     agentName,
 		Title:                 strings.TrimSpace(req.Title),
 		Cwd:                   cwd,
@@ -261,8 +256,7 @@ func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSess
 func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient, events []agentEvent) *agentRuntime {
 	return &agentRuntime{
 		workspace: workspace, manager: m, run: run, events: append([]agentEvent(nil), events...),
-		nextEventID: nextAgentEventID(events), agentHub: client, pending: make(map[string]pendingApproval),
-		done: make(chan struct{}),
+		nextEventID: nextAgentEventID(events), agentHub: client,
 	}
 }
 
@@ -464,15 +458,6 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 	}
 	if source.Type == "session.archived" && !rt.run.AgentHubStoppedObserved {
 		rt.run.Status = "recovering"
-	}
-	if source.Type == "session.provider" {
-		var data struct {
-			Provider string `json:"provider"`
-		}
-		_ = json.Unmarshal(source.Data, &data)
-		if data.Provider != "" {
-			rt.run.Provider = agentHubProjectionProvider
-		}
 	}
 	if source.Type == "turn.started" {
 		rt.run.Status = "running"
