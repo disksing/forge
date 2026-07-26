@@ -3,6 +3,7 @@ package forge
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -702,7 +703,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"Commands:",
 		"  forge init [--language=<language>]",
@@ -710,7 +711,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]",
+		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
 		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 	}
 	offset := 0
@@ -1061,6 +1062,109 @@ func TestSessionNewSupportsForgeGUIRunLiveness(t *testing.T) {
 		shown := run(t, "session", "show", "--id", id)
 		if !strings.Contains(shown, `"type": "forge-gui-run"`) || !strings.Contains(shown, `"workspaceId": "workspace-one"`) || !strings.Contains(shown, `"runId": "run-one"`) || !strings.Contains(shown, `"endpoint": "`+server.URL+`"`) {
 			t.Fatalf("expected forge gui liveness in show JSON, got:\n%s", shown)
+		}
+	})
+}
+
+func TestAgentHubSessionLivenessReleasesOnlyAfterDurableStopped(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "AgentHub lock")
+		state := "ready"
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/status":
+				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
+			case "/v1/sessions/ses_lock":
+				fmt.Fprintf(w, `{"session":{"id":"ses_lock","state":%q,"source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`, state)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
+		run(t, "session", "bind-agenthub", "--id", id, "--agenthub-session-id", "ses_lock")
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+		for _, activeState := range []string{"ready", "busy", "stopping"} {
+			state = activeState
+			listed := run(t, "session", "list")
+			if !strings.Contains(listed, id) {
+				t.Fatalf("state %s released the lock early: %s", activeState, listed)
+			}
+		}
+		state = "stopped"
+		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
+			t.Fatalf("durable stopped session was not pruned: %s", listed)
+		}
+	})
+}
+
+func TestAgentHubSessionLivenessRetainsLockWhenUnreachableOrUnknown(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "AgentHub lock")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/status":
+				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
+			case "/v1/sessions/ses_lock":
+				_, _ = w.Write([]byte(`{"session":{"id":"ses_lock","state":"mystery","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
+			"--agenthub-session-id", "ses_lock"))
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
+			t.Fatalf("unknown state released the lock: %s", listed)
+		}
+		server.Close()
+		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
+			t.Fatalf("unreachable AgentHub released the lock: %s", listed)
+		}
+		shown := run(t, "session", "show", "--id", id)
+		if !strings.Contains(shown, `"lastKnownState": "unknown"`) || !strings.Contains(shown, "lock retained") {
+			t.Fatalf("missing fail-closed diagnostic: %s", shown)
+		}
+	})
+}
+
+func TestArchivedAgentHubSessionRequiresContinuousStoppedHistory(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "AgentHub lock")
+		gapped := true
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/status":
+				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
+			case "/v1/sessions/ses_archive":
+				_, _ = w.Write([]byte(`{"session":{"id":"ses_archive","state":"archived","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
+			case "/v1/sessions/ses_archive/events":
+				if gapped {
+					_, _ = w.Write([]byte(`{"events":[{"id":1,"type":"session.created","data":{}},{"id":3,"type":"session.state","data":{"state":"stopped"}}],"latestCursor":3}`))
+				} else {
+					_, _ = w.Write([]byte(`{"events":[{"id":1,"type":"session.created","data":{}},{"id":2,"type":"session.state","data":{"state":"stopped"}},{"id":3,"type":"session.archived","data":{}}],"latestCursor":3}`))
+				}
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
+			"--agenthub-session-id", "ses_archive"))
+		run(t, "session", "lock", "--id", id, "--project", "project1")
+		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
+			t.Fatalf("cursor gap released archived lock: %s", listed)
+		}
+		gapped = false
+		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
+			t.Fatalf("continuous stopped history did not release archived lock: %s", listed)
 		}
 	})
 }

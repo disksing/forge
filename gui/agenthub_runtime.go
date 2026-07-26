@@ -85,21 +85,22 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	now := time.Now().Format(time.RFC3339)
 	run := agentRun{
-		ID:                   newRunID(),
-		WorkspaceID:          workspace.ID,
-		ResourceID:           strings.TrimSpace(req.ResourceID),
-		AgentID:              agentName,
-		AgentProfile:         strings.TrimSpace(req.AgentProfile),
-		AgentSelectionReason: strings.TrimSpace(req.AgentSelectionReason),
-		Provider:             agentHubProjectionProvider,
-		AgentHubAgentName:    agentName,
-		Title:                strings.TrimSpace(req.Title),
-		Cwd:                  cwd,
-		Status:               "starting",
-		CreatedAt:            now,
-		UpdatedAt:            now,
-		SchedulerTurn:        req.SchedulerTurn,
-		AutoRunGeneration:    req.AutoRunGeneration,
+		ID:                    newRunID(),
+		WorkspaceID:           workspace.ID,
+		ResourceID:            strings.TrimSpace(req.ResourceID),
+		AgentID:               agentName,
+		AgentProfile:          strings.TrimSpace(req.AgentProfile),
+		AgentSelectionReason:  strings.TrimSpace(req.AgentSelectionReason),
+		Provider:              agentHubProjectionProvider,
+		AgentHubAgentName:     agentName,
+		Title:                 strings.TrimSpace(req.Title),
+		Cwd:                   cwd,
+		Status:                "starting",
+		CreatedAt:             now,
+		UpdatedAt:             now,
+		SchedulerTurn:         req.SchedulerTurn,
+		AutoRunGeneration:     req.AutoRunGeneration,
+		PendingInitialMessage: strings.TrimSpace(req.Prompt),
 	}
 	if run.Title == "" {
 		run.Title = agentName + " run"
@@ -107,7 +108,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	run.SourceExternalID = workspace.ID + "/" + run.ID
 	rt := newAgentHubRuntime(m, workspace, run, client, nil)
 
-	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run.ID)
+	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run, cfg)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -161,12 +162,18 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	run.AgentHubSessionID = session.ID
+	run.PendingInitialMessage = ""
 	run.AgentHubAgentName = session.AgentName
 	if run.AgentHubAgentName == "" {
 		run.AgentHubAgentName = agentName
 	}
 	rt.setRun(run)
 	cleanup = false
+	if err := m.bindForgeSessionAgentHub(r.Context(), workspace, forgeSessionID, session.ID); err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("persist AgentHub session binding: %w", err))
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		rt.setRecoveryError(m, err)
 		writeError(w, err, http.StatusInternalServerError)
@@ -268,6 +275,7 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 	}
 	cursor := int64(0)
 	var history []agentEvent
+	sawStopped := false
 	for {
 		page, err := client.Events(ctx, sessionID, cursor, agentHubEventsPageSize)
 		if err != nil {
@@ -284,7 +292,10 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 			if source.ID != cursor+1 {
 				return fmt.Errorf("AgentHub history cursor gap: expected %d, got %d", cursor+1, source.ID)
 			}
-			event, _, _ := translateAgentHubEvent(source)
+			event, state, _ := translateAgentHubEvent(source)
+			if state == "stopped" {
+				sawStopped = true
+			}
 			history = append(history, event)
 			if len(history) > agentEventMaxCount {
 				history = history[len(history)-agentEventMaxCount:]
@@ -305,6 +316,12 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 	rt.mu.Lock()
 	rt.events = append([]agentEvent(nil), history...)
 	rt.nextEventID = nextAgentEventID(history)
+	if sawStopped {
+		rt.run.AgentHubStoppedObserved = true
+		if rt.agentHubState == "archived" || rt.run.Status == "recovering" {
+			rt.run.Status = "stopped"
+		}
+	}
 	rt.mu.Unlock()
 	return nil
 }
@@ -441,6 +458,12 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 	rt.agentHubState = stateOrCurrent(state, rt.agentHubState)
 	if state != "" {
 		rt.run.Status = forgeStatusForAgentHubState(state)
+		if state == "stopped" {
+			rt.run.AgentHubStoppedObserved = true
+		}
+	}
+	if source.Type == "session.archived" && !rt.run.AgentHubStoppedObserved {
+		rt.run.Status = "recovering"
 	}
 	if source.Type == "session.provider" {
 		var data struct {
@@ -495,6 +518,9 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		return err
 	}
 	m.publish(run.ID, event)
+	if run.Status == "stopped" && run.AgentHubStoppedObserved {
+		go rt.releaseForgeSessionAfterStopped(m)
+	}
 	if schedulerTerminal && run.SchedulerTurn {
 		go rt.finishSchedulerTurn(m, event.Text)
 	}
@@ -566,8 +592,10 @@ func forgeStatusForAgentHubState(state string) string {
 		return "waiting_approval"
 	case "stopping":
 		return "stopping"
-	case "stopped", "archived":
+	case "stopped":
 		return "stopped"
+	case "archived":
+		return "recovering"
 	case "failed":
 		return "recovering"
 	default:
@@ -639,11 +667,17 @@ func (rt *agentRuntime) restoreAgentHubSessionProjection(ctx context.Context) {
 	if rt.run.Status == "recovering" {
 		rt.agentHubState = session.State
 		rt.run.Status = forgeStatusForAgentHubState(session.State)
+		if session.State == "stopped" {
+			rt.run.AgentHubStoppedObserved = true
+		}
 		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
 	}
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
+	if run.Status == "stopped" && run.AgentHubStoppedObserved {
+		go rt.releaseForgeSessionAfterStopped(rt.manager)
+	}
 }
 
 func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
@@ -658,6 +692,29 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 	if err != nil {
 		rt.addAgentHubDiagnostic(m, "error", "agenthub/recovery", err.Error())
 	}
+}
+
+func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) {
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	if !run.AgentHubStoppedObserved || run.Status != "stopped" || strings.TrimSpace(run.ForgeSessionID) == "" {
+		return
+	}
+	if err := m.endForgeSession(context.Background(), rt.workspace, run.ForgeSessionID); err != nil {
+		rt.addAgentHubDiagnostic(m, "error", "forge/session/end", "durable stopped observed but Forge session release failed: "+err.Error())
+		return
+	}
+	removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
+	rt.mu.Lock()
+	if rt.run.ForgeSessionID == run.ForgeSessionID && rt.run.AgentHubStoppedObserved {
+		rt.run.ForgeSessionID = ""
+		rt.run.ForgeSessionContextPath = ""
+		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		run = rt.run
+	}
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
 func (rt *agentRuntime) addAgentHubDiagnostic(m *agentManager, eventType, method, text string) {
@@ -832,26 +889,9 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	rt := newAgentHubRuntime(m, workspace, run, client, nil)
 	m.registerRuntime(rt)
 	if run.ForgeSessionID == "" {
-		forgeSessionID, createErr := m.createForgeSession(r.Context(), workspace, run.ID)
-		if createErr != nil {
-			m.removeRuntime(run.ID)
-			writeError(w, createErr, http.StatusBadRequest)
-			return
-		}
-		run.ForgeSessionID = forgeSessionID
-		if createErr = m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); createErr != nil {
-			m.removeRuntime(run.ID)
-			writeError(w, createErr, http.StatusBadRequest)
-			return
-		}
-		contextPath, createErr := m.writeForgeSessionContext(r.Context(), workspace, run)
-		if createErr != nil {
-			m.removeRuntime(run.ID)
-			writeError(w, createErr, http.StatusInternalServerError)
-			return
-		}
-		run.ForgeSessionContextPath = contextPath
-		rt.setRun(run)
+		m.removeRuntime(run.ID)
+		writeError(w, errors.New("cannot resume this AgentHub session because its original Forge session is no longer active; start a new Forge run so launchEnvironment receives a valid FORGE_SESSION_ID"), http.StatusConflict)
+		return
 	}
 	session, err = client.Resume(r.Context(), session.ID)
 	if err != nil {
@@ -910,6 +950,20 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 		_ = saveAgentRun(workspace.Path, run)
 		return err
 	}
+	if len(sessions) == 0 && strings.TrimSpace(run.ForgeSessionID) != "" {
+		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
+			Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
+			LaunchEnvironment: map[string]string{"FORGE_SESSION_ID": run.ForgeSessionID},
+			Source:            &source,
+			InitialMessage:    agentHubInitialMessage(run.PendingInitialMessage),
+		})
+		if createErr != nil {
+			run.Status = "recovering"
+			_ = saveAgentRun(workspace.Path, run)
+			return createErr
+		}
+		sessions = []agentHubSession{recovered}
+	}
 	if len(sessions) != 1 {
 		run.Status = "recovering"
 		_ = saveAgentRun(workspace.Path, run)
@@ -921,10 +975,27 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 	session := sessions[0]
 	run.AgentHubSessionID = session.ID
 	run.AgentHubAgentName = session.AgentName
+	run.PendingInitialMessage = ""
 	run.Status = forgeStatusForAgentHubState(session.State)
+	if session.State == "stopped" {
+		run.AgentHubStoppedObserved = true
+	}
+	if session.State == "archived" && !run.AgentHubStoppedObserved {
+		run.Status = "recovering"
+	}
 	rt := newAgentHubRuntime(m, workspace, run, client, nil)
 	rt.agentHubState = session.State
 	m.registerRuntime(rt)
+	if run.ForgeSessionID == "" && session.State != "stopped" && session.State != "archived" {
+		rt.setRecoveryError(m, errors.New("active AgentHub session has no matching Forge session; refusing to create a replacement because launchEnvironment would retain the old FORGE_SESSION_ID"))
+		return errors.New("active AgentHub session has no matching Forge session")
+	}
+	if run.ForgeSessionID != "" {
+		if err := m.bindForgeSessionAgentHub(ctx, workspace, run.ForgeSessionID, session.ID); err != nil {
+			rt.setRecoveryError(m, err)
+			return err
+		}
+	}
 	if err := rt.loadAgentHubHistory(ctx, session.LastEventID); err != nil {
 		rt.setRecoveryError(m, err)
 		return err
@@ -935,6 +1006,12 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 	}
 	if session.State != "archived" {
 		rt.startAgentHubStream(m)
+	}
+	rt.mu.Lock()
+	stopped := rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved
+	rt.mu.Unlock()
+	if stopped {
+		go rt.releaseForgeSessionAfterStopped(m)
 	}
 	return nil
 }

@@ -120,7 +120,7 @@ func TestStartRunnableTaskReturnsExplicitNonStartResults(t *testing.T) {
 	}
 }
 
-func TestStartRunnableTaskRecoversOrphanedRunningTask(t *testing.T) {
+func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	workspace := t.TempDir()
 	var request startAgentRequest
 	s := newSchedulerTestServer(t, workspace, nil, func(w http.ResponseWriter, r *http.Request) {
@@ -136,7 +136,7 @@ func TestStartRunnableTaskRecoversOrphanedRunningTask(t *testing.T) {
 		WorkspaceID:   "workspace-one",
 		ResourceID:    "project1.task1",
 		AgentID:       "agent-one",
-		Status:        "running",
+		Status:        "stopped",
 		CodexThreadID: "thread-one",
 	}, false)
 
@@ -146,7 +146,7 @@ func TestStartRunnableTaskRecoversOrphanedRunningTask(t *testing.T) {
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected orphaned task recovery to start, got result=%q err=%v", result, err)
 	}
-	if request.ResourceID != "project1.task1" || request.ResumeRunID != "run-orphaned" || request.AutoRunGeneration != 3 {
+	if request.ResourceID != "project1.task1" || request.ResumeRunID != "" || request.AutoRunGeneration != 3 {
 		t.Fatalf("unexpected recovery request: %#v", request)
 	}
 	if request.AgentID != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
@@ -247,17 +247,12 @@ esac
 	}
 	s.agents = newAgentManager(s)
 	if err := s.saveConfig(config{
-		Version:            1,
-		Workspaces:         []guiWorkspace{{ID: "workspace-one", Path: workspace}},
-		DefaultChatAgentID: "agent-one",
-		AgentProviders:     []agentProviderConfig{{ID: codexProviderID, Name: "Codex", Type: codexProviderID, Enabled: true}},
-		Agents: []agentConfig{
-			{ID: "agent-one", Name: "Agent One", ProviderID: codexProviderID},
-			{ID: "agent-two", Name: "Agent Two", ProviderID: codexProviderID},
-		},
+		Version:          agentHubConfigVersion,
+		Workspaces:       []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+		DefaultAgentName: "agent-one",
 		AgentProfiles: []agentProfileRoute{
-			{Key: "codex", AgentID: "agent-one"},
-			{Key: "kimi", AgentID: "agent-two"},
+			{Key: "codex", AgentName: "agent-one"},
+			{Key: "kimi", AgentName: "agent-two"},
 		},
 	}); err != nil {
 		t.Fatal(err)
@@ -265,7 +260,7 @@ esac
 	return s
 }
 
-func TestResolveAutoRunAgentUsesOrderedProfilesAndFallback(t *testing.T) {
+func TestResolveAutoRunAgentRejectsLegacyDirectConfiguration(t *testing.T) {
 	cfg := config{
 		DefaultChatAgentID: "default",
 		AgentProviders: []agentProviderConfig{
@@ -282,16 +277,8 @@ func TestResolveAutoRunAgentUsesOrderedProfilesAndFallback(t *testing.T) {
 			{Key: "review", AgentID: "review"},
 		},
 	}
-	selection, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}})
-	if err != nil || selection.AgentID != "review" || selection.Profile != "review" {
-		t.Fatalf("expected first available Profile, got selection=%+v err=%v", selection, err)
-	}
-	selection, err = resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
-	if err != nil || selection.AgentID != "default" || selection.Profile != "" || !strings.Contains(selection.Reason, "fallback") {
-		t.Fatalf("expected default fallback, got selection=%+v err=%v", selection, err)
-	}
-	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{AgentID: "removed"}); err == nil || !strings.Contains(err.Error(), "migrate") {
-		t.Fatalf("expected actionable legacy migration error, got %v", err)
+	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}}); err == nil || !strings.Contains(err.Error(), "AgentHub settings") {
+		t.Fatalf("expected direct configuration migration error, got %v", err)
 	}
 }
 
@@ -316,6 +303,10 @@ func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
 
 func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRun, active bool) {
 	t.Helper()
+	if run.AgentHubSessionID == "" {
+		run.AgentHubSessionID = "ses_" + run.ID
+		run.Provider = agentHubProjectionProvider
+	}
 	if err := saveAgentRun(workspace, run); err != nil {
 		t.Fatal(err)
 	}

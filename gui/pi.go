@@ -434,11 +434,7 @@ func (c *piRPCClient) handleEvent(raw json.RawMessage, eventType string) {
 		c.rt.addEvent(c.rt.manager, "tool", eventType, text, raw, "")
 	case "agent_settled":
 		c.rt.addEvent(c.rt.manager, "system", "session/prompt", piProviderName+" turn finished.", raw, "")
-		if c.rt.isSchedulerTurn() {
-			c.rt.finishSchedulerTurn(c.rt.manager, piProviderName+" turn settled")
-		} else {
-			c.rt.markIdle(c.rt.manager)
-		}
+		c.rt.markIdle(c.rt.manager)
 	case "auto_retry_start":
 		text := fmt.Sprintf("Pi request failed; retrying (%d/%d).", event.Attempt, event.MaxAttempts)
 		if detail := strings.TrimSpace(event.ErrorMessage); detail != "" {

@@ -270,7 +270,8 @@ Usage:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
   forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+  forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
   forge session heartbeat --id=<id>
   forge session lock --id=<id> [--project=<project>] [--task=<task>]
   forge session unlock --id=<id> [--project=<project>] [--task=<task>]
@@ -378,11 +379,16 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
     Create a session and print its unique id. Heartbeat liveness is the
     default and can use --timeout. PID liveness stays active while the process
-    exists. GUI run liveness stays active while the Forge GUI local endpoint
-    reports that its managed run is active.
+    exists. AgentHub liveness keeps locks through unknown/unreachable states
+    and releases them only after durable stopped. GUI run liveness is retained
+    for compatibility with historical sessions.
+
+  forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
+    Persist the final AgentHub session id after source-based creation or
+    recovery. Existing bindings cannot be changed to a different session.
 
   forge session heartbeat --id=<id>
     Update a session's heartbeat timestamp.

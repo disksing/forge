@@ -969,11 +969,7 @@ func (rt *agentRuntime) handleOpencodePromptResult(requestErr error, result json
 	}
 	if requestErr != nil {
 		rt.addEvent(rt.manager, "error", "session/prompt", requestErr.Error(), nil, "")
-		if rt.isSchedulerTurn() {
-			rt.finishSchedulerTurn(rt.manager, requestErr.Error())
-		} else {
-			rt.markIdle(rt.manager)
-		}
+		rt.markIdle(rt.manager)
 		return
 	}
 	stopReason := firstString(result, "stopReason")
@@ -982,10 +978,6 @@ func (rt *agentRuntime) handleOpencodePromptResult(requestErr error, result json
 	}
 	providerName := acpProviderNameForRun(rt.run)
 	rt.addEvent(rt.manager, "system", "session/prompt", providerName+" turn finished: "+stopReason+".", result, "")
-	if rt.isSchedulerTurn() {
-		rt.finishSchedulerTurn(rt.manager, providerName+" stop reason: "+stopReason)
-		return
-	}
 	rt.markIdle(rt.manager)
 }
 
