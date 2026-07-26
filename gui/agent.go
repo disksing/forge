@@ -35,6 +35,10 @@ type agentRun struct {
 	ProviderSessionID       string `json:"providerSessionId,omitempty"`
 	CodexThreadID           string `json:"codexThreadId,omitempty"`
 	CodexTurnID             string `json:"codexTurnId,omitempty"`
+	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
+	AgentHubEventCursor     int64  `json:"agentHubEventCursor,omitempty"`
+	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
+	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	Title                   string `json:"title"`
 	Cwd                     string `json:"cwd"`
 	Status                  string `json:"status"`
@@ -1076,8 +1080,8 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	if strings.TrimSpace(run.ProviderSessionID) == "" && strings.TrimSpace(run.CodexThreadID) == "" {
-		writeError(w, errors.New("run cannot be resumed because it has no provider session id"), http.StatusBadRequest)
+	if strings.TrimSpace(run.AgentHubSessionID) == "" {
+		writeError(w, errors.New("legacy direct run is read-only and cannot be resumed after the AgentHub migration"), http.StatusBadRequest)
 		return
 	}
 	if err := m.ensureRunProviderEnabled(run); err != nil {
