@@ -1148,6 +1148,11 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 		`item.kind === "thinking"`,
 		`item.kind === "tools"`,
 		`item.kind === "approval"`,
+		`escapeHTML(agentThinkingTitle(item))`,
+		`return duration ? ` + "`Thought for ${duration}`" + ` : "Thought"`,
+		`data-option-id="${escapeHTML(option.optionId)}"`,
+		`data-agent-approval-reply-form="${escapeHTML(item.approvalId)}"`,
+		`body: JSON.stringify({ requestId, ...reply })`,
 		`item.kind === "lifecycle"`,
 		`item.kind === "error"`,
 		`item.kind === "unknown"`,
@@ -1168,6 +1173,51 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 		if strings.Contains(app, forbidden) {
 			t.Fatalf("legacy event compatibility remains in app.js: %q", forbidden)
 		}
+	}
+}
+
+func TestAgentTimelinePresentationHelpers(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for timeline presentation helper tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {};
+vm.createContext(context);
+vm.runInContext(extract("agentThinkingDuration") + "\n" + extract("agentThinkingTitle"), context);
+const cases = [
+  [{ active: true }, "Thinking…"],
+  [{ startTime: "2026-01-01T00:00:00Z", time: "2026-01-01T00:00:12Z" }, "Thought for 12 seconds"],
+  [{ startTime: "2026-01-01T00:00:00Z", time: "2026-01-01T00:01:02Z" }, "Thought for 1m2s"],
+  [{ startTime: "bad", time: "2026-01-01T00:01:02Z" }, "Thought"],
+  [{ time: "2026-01-01T00:01:02Z" }, "Thought"],
+];
+for (const [item, want] of cases) {
+  const got = context.agentThinkingTitle(item);
+  if (got !== want) throw new Error("thinking title: got " + got + ", want " + want);
+}
+`
+	appPath := filepath.Join("static", "app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("timeline presentation helpers failed: %v\n%s", err, output)
 	}
 }
 
@@ -1219,6 +1269,44 @@ if (Array.isArray(fixture.scenarios)) {
 	}
 }
 
+func TestVendoredAgentHubTimelineProjectsQuestionsAndThinkingStart(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for shared timeline feature conformance")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const context = {};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
+const timeline = context.AgentHubEventTimeline.buildTimeline([
+  { id: 1, time: "2026-01-01T00:00:00Z", type: "message.reasoning.delta", data: { text: "first" } },
+  { id: 2, time: "2026-01-01T00:01:02Z", type: "message.reasoning.delta", data: { text: " second" } },
+  { id: 3, time: "2026-01-01T00:01:03Z", type: "approval.requested", data: {
+    approvalId: "ask-1",
+    method: "session/request_permission",
+    params: {
+      toolCall: { title: "AskUserQuestion", content: [{ type: "content", content: { type: "text", text: "Choose one" } }] },
+      options: [{ optionId: "a", name: "Alpha", kind: "allow_once" }]
+    }
+  } }
+]);
+const thinking = timeline.find((item) => item.kind === "thinking");
+const approval = timeline.find((item) => item.kind === "approval");
+if (thinking.startTime !== "2026-01-01T00:00:00Z" || thinking.time !== "2026-01-01T00:01:02Z") {
+  throw new Error("thinking timestamps were not projected");
+}
+if (approval.question !== "Choose one" || approval.options.length !== 1 || approval.options[0].optionId !== "a") {
+  throw new Error("question approval was not projected");
+}
+`
+	bundlePath := filepath.Join("static", "vendor", "agenthub-event-timeline", "event-timeline.iife.js")
+	if output, err := exec.Command(node, "-e", script, bundlePath).CombinedOutput(); err != nil {
+		t.Fatalf("shared timeline feature conformance failed: %v\n%s", err, output)
+	}
+}
+
 func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 	bundle, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/event-timeline.iife.js")
 	if err != nil {
@@ -1240,9 +1328,9 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 	sum := sha256.Sum256(bundle)
 	actual := hex.EncodeToString(sum[:])
 	if source.Version != "1.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
-		source.Revision != "a5506f27eeef1bfdf414d8c7385faadf299379e7" ||
+		source.Revision != "0fc78f4feef72c9116944e6b7851202561ac941d" ||
 		source.SHA256 != actual ||
-		actual != "789659286d490d14105f32e281fab9744a57d04cf890f38114afc127d57d9713" {
+		actual != "243fe2eca293fe709174d2e9770c1560f9122afb80ec7f7c653473b5d0fdd7c4" {
 		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
 	}
 	if _, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/LICENSE"); err != nil {

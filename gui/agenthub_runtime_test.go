@@ -92,13 +92,23 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(parts) == 5 && parts[3] == "approvals" {
 		approvalID, _ := url.PathUnescape(parts[4])
-		var body struct {
-			Decision string `json:"decision"`
-		}
+		var body agentHubApprovalReply
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		answer := body.Decision
+		if body.OptionID != "" {
+			answer = "option=" + body.OptionID
+		}
+		if body.Text != "" {
+			answer = "text=" + body.Text
+		}
 		f.mu.Lock()
-		f.actions = append(f.actions, "approval:"+approvalID+":"+body.Decision)
-		f.appendLocked(id, "approval.resolved", map[string]any{"approvalId": approvalID, "decision": body.Decision})
+		f.actions = append(f.actions, "approval:"+approvalID+":"+answer)
+		f.appendLocked(id, "approval.resolved", map[string]any{
+			"approvalId": approvalID,
+			"decision":   body.Decision,
+			"optionId":   body.OptionID,
+			"text":       body.Text,
+		})
 		session := f.sessions[id]
 		session.State = "busy"
 		session.PendingApprovalIDs = nil
@@ -557,6 +567,12 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/approval", `{"requestId":"approve-1","decision":"accept"}`); rec.Code != http.StatusOK {
 		t.Fatalf("approval failed: %d %s", rec.Code, rec.Body.String())
 	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/approval", `{"requestId":"approve-2","optionId":"option-a"}`); rec.Code != http.StatusOK {
+		t.Fatalf("option approval failed: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/approval", `{"requestId":"approve-3","text":"another answer"}`); rec.Code != http.StatusOK {
+		t.Fatalf("text approval failed: %d %s", rec.Code, rec.Body.String())
+	}
 	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/interrupt", `{}`); rec.Code != http.StatusOK {
 		t.Fatalf("interrupt failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -579,7 +595,14 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	if len(steers) != 2 || steers[0] || !steers[1] {
 		t.Fatalf("message/steer routing mismatch: %#v", steers)
 	}
-	for _, expected := range []string{"approval:approve-1:accept", "interrupt", "stop", "resume"} {
+	for _, expected := range []string{
+		"approval:approve-1:accept",
+		"approval:approve-2:option=option-a",
+		"approval:approve-3:text=another answer",
+		"interrupt",
+		"stop",
+		"resume",
+	} {
 		if !strings.Contains(actions, expected) {
 			t.Fatalf("missing control %q in %q", expected, actions)
 		}
@@ -604,6 +627,36 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		t.Fatalf("restart did not rebuild history: run=%#v events=%d durable=%d", recoveredRun, len(recoveredEvents), eventCount)
 	}
 	stopRuntimeTestStream(recovered)
+}
+
+func TestNormalizeAgentHubApprovalReply(t *testing.T) {
+	tests := []struct {
+		name    string
+		request agentApprovalRequest
+		want    agentHubApprovalReply
+		wantErr bool
+	}{
+		{name: "decision", request: agentApprovalRequest{Decision: "accept"}, want: agentHubApprovalReply{Decision: "accept"}},
+		{name: "option", request: agentApprovalRequest{OptionID: " option-a "}, want: agentHubApprovalReply{OptionID: "option-a"}},
+		{name: "text", request: agentApprovalRequest{Text: " another answer "}, want: agentHubApprovalReply{Text: "another answer"}},
+		{name: "missing", request: agentApprovalRequest{}, wantErr: true},
+		{name: "combined", request: agentApprovalRequest{Decision: "accept", OptionID: "option-a"}, wantErr: true},
+		{name: "unknown decision", request: agentApprovalRequest{Decision: "yes"}, wantErr: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := normalizeAgentHubApprovalReply(test.request)
+			if test.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got %#v", got)
+				}
+				return
+			}
+			if err != nil || got != test.want {
+				t.Fatalf("got %#v, %v; want %#v", got, err, test.want)
+			}
+		})
+	}
 }
 
 func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {

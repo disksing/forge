@@ -865,7 +865,9 @@ body.resizing-y {
 }
 
 .agent-button-row button,
-.approval-actions button {
+.approval-actions button,
+.approval-options button,
+.approval-reply button {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
@@ -881,6 +883,7 @@ body.resizing-y {
 
 .agent-button-row .secondary-button,
 .approval-actions .secondary-button,
+.approval-options .secondary-button,
 .secondary-button {
   border-color: #e2e8f0;
   background: #fff;
@@ -1666,7 +1669,53 @@ body.resizing-y {
 .approval-actions {
   margin-top: 9px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.agent-event.approval .approval-question {
+  color: #1e293b;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.approval-options {
+  margin-top: 9px;
+  display: grid;
+  gap: 7px;
+}
+
+.approval-options button {
+  justify-content: flex-start;
+  min-height: 34px;
+  text-align: left;
+}
+
+.approval-reply {
+  margin-top: 9px;
+  display: flex;
+  gap: 7px;
+}
+
+.approval-reply input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #d6b656;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #1e293b;
+  font: inherit;
+}
+
+.approval-reply input:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  outline-offset: 1px;
+}
+
+.approval-reply button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
 .tty-input {

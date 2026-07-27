@@ -84,6 +84,7 @@ const state = {
     loadingOlder: false,
     sendingInput: false,
     toolGroupOpen: new Map(),
+    approvalDrafts: new Map(),
   },
   tty: [
     { type: "system", text: "Forge GUI initialized." },
@@ -1689,6 +1690,7 @@ function reconcileActiveAgentRun(runs) {
   state.agent.historyBeforeId = 0;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
+  state.agent.approvalDrafts.clear();
   return true;
 }
 
@@ -1852,6 +1854,7 @@ function resetAgentState() {
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
   state.agent.toolGroupOpen.clear();
+  state.agent.approvalDrafts.clear();
   clearAgentRenderTimer();
 }
 
@@ -2550,7 +2553,7 @@ function agentTimelineItemRow(item, index, items) {
   if (item.kind === "thinking") {
     return `
       <details class="agent-reasoning-note"${item.active ? " open" : ""}>
-        <summary>${icon("brain-circuit")}<span>${item.active ? "Thinking…" : "Reasoning"}</span><span class="agent-reasoning-chevron">${icon("chevron-right")}</span></summary>
+        <summary>${icon("brain-circuit")}<span>${escapeHTML(agentThinkingTitle(item))}</span><span class="agent-reasoning-chevron">${icon("chevron-right")}</span></summary>
         <p>${escapeHTML(item.text)}</p>
       </details>
     `;
@@ -2626,21 +2629,66 @@ function agentTimelineToolSummary(call) {
 
 function agentTimelineApprovalRow(item) {
   const detail = item.detail ? `<p>${escapeHTML(item.detail)}</p>` : "";
-  const actions = item.status === "pending"
-    ? `
+  const question = item.question ? `<p class="approval-question">${escapeHTML(item.question)}</p>` : "";
+  const options = Array.isArray(item.options) ? item.options : [];
+  const draftKey = agentApprovalDraftKey(item.approvalId);
+  const draft = state.agent.approvalDrafts.get(draftKey) || "";
+  const optionActions = options.map((option) => {
+    const label = option.name || humanizeApprovalKind(option.kind) || option.optionId;
+    const rejectClass = String(option.kind || "").startsWith("reject") ? " secondary-button" : "";
+    return `<button data-agent-approval="${escapeHTML(item.approvalId)}" data-option-id="${escapeHTML(option.optionId)}" class="approval-option${rejectClass}">${escapeHTML(label)}</button>`;
+  }).join("");
+  const answerActions = options.length
+    ? `<div class="approval-options">${optionActions}</div>`
+    : `
       <div class="approval-actions">
-        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="accept">${icon("check")}<span>Approve</span></button>
-        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="decline" class="secondary-button">${icon("x")}<span>Deny</span></button>
+        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="accept">${icon("check")}<span>Allow once</span></button>
+        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="decline" class="secondary-button">${icon("x")}<span>Decline</span></button>
       </div>
+    `;
+  const customReply = item.question
+    ? `
+      <form class="approval-reply" data-agent-approval-reply-form="${escapeHTML(item.approvalId)}">
+        <input data-agent-approval-reply="${escapeHTML(item.approvalId)}" value="${escapeHTML(draft)}" placeholder="Reply with a custom answer…" aria-label="Custom reply">
+        <button type="submit"${draft.trim() ? "" : " disabled"}>Send</button>
+      </form>
     `
-    : `<p>${escapeHTML(item.decision || (item.status === "accepted" ? "Allowed" : "Declined"))}</p>`;
+    : "";
+  const actions = item.status === "pending"
+    ? `${answerActions}${customReply}`
+    : `<p>${escapeHTML(`${item.decision || (item.status === "accepted" ? "Allowed" : "Declined")}${item.reply ? `: ${item.reply}` : ""}`)}</p>`;
   return `
     <div class="agent-event approval">
       <div>${icon("shield-question")}<strong>${escapeHTML(item.title)}</strong></div>
+      ${question}
       ${detail}
       ${actions}
     </div>
   `;
+}
+
+function agentApprovalDraftKey(approvalId) {
+  return `${state.agent.activeRunId || "run"}:${approvalId || "approval"}`;
+}
+
+function humanizeApprovalKind(kind) {
+  return String(kind || "").replace(/[_-]+/g, " ").trim();
+}
+
+function agentThinkingTitle(item) {
+  if (item.active) return "Thinking…";
+  const duration = agentThinkingDuration(item.startTime, item.time);
+  return duration ? `Thought for ${duration}` : "Thought";
+}
+
+function agentThinkingDuration(start, end) {
+  if (!start || !end) return "";
+  const from = new Date(start).getTime();
+  const to = new Date(end).getTime();
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return "";
+  const seconds = Math.round((to - from) / 1000);
+  if (seconds < 60) return `${seconds} ${seconds === 1 ? "second" : "seconds"}`;
+  return `${Math.floor(seconds / 60)}m${seconds % 60}s`;
 }
 
 function forgeNoticeRow(notice) {
@@ -2705,7 +2753,27 @@ function bindAgentEvents() {
   });
   document.querySelectorAll("[data-agent-approval]").forEach((button) => {
     button.addEventListener("click", () => {
-      resolveAgentApproval(button.dataset.agentApproval, button.dataset.decision).catch((err) => toast(err.message));
+      const reply = button.dataset.optionId
+        ? { optionId: button.dataset.optionId }
+        : { decision: button.dataset.decision };
+      resolveAgentApproval(button.dataset.agentApproval, reply).catch((err) => toast(err.message));
+    });
+  });
+  document.querySelectorAll("[data-agent-approval-reply]").forEach((input) => {
+    input.addEventListener("input", () => {
+      state.agent.approvalDrafts.set(agentApprovalDraftKey(input.dataset.agentApprovalReply), input.value);
+      const submit = input.form?.querySelector('button[type="submit"]');
+      if (submit) submit.disabled = !input.value.trim();
+    });
+  });
+  document.querySelectorAll("[data-agent-approval-reply-form]").forEach((form) => {
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const requestId = form.dataset.agentApprovalReplyForm;
+      const input = form.querySelector("[data-agent-approval-reply]");
+      const text = input?.value.trim() || "";
+      if (!text) return;
+      resolveAgentApproval(requestId, { text }).catch((err) => toast(err.message));
     });
   });
 }
@@ -2997,6 +3065,7 @@ async function switchAgentRun(runId) {
     state.agent.ttyDraft = "";
     state.agent.ttyMultiline = false;
     state.agent.historyOpen = false;
+    state.agent.approvalDrafts.clear();
     await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
     renderAll();
   });
@@ -3021,12 +3090,13 @@ async function resumeAgentRun() {
   });
 }
 
-async function resolveAgentApproval(requestId, decision) {
+async function resolveAgentApproval(requestId, reply) {
   if (!state.agent.activeRunId || !requestId) return;
   await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/approval`, {
     method: "POST",
-    body: JSON.stringify({ requestId, decision }),
+    body: JSON.stringify({ requestId, ...reply }),
   });
+  state.agent.approvalDrafts.delete(agentApprovalDraftKey(requestId));
   await loadAgentRuns();
   renderAll();
 }

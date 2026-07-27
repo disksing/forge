@@ -105,6 +105,8 @@ type agentInputRequest struct {
 type agentApprovalRequest struct {
 	RequestID string `json:"requestId"`
 	Decision  string `json:"decision"`
+	OptionID  string `json:"optionId"`
+	Text      string `json:"text"`
 }
 
 type forgeSessionContext struct {

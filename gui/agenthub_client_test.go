@@ -14,6 +14,7 @@ import (
 
 func TestAgentHubClientContract(t *testing.T) {
 	var methods []string
+	var approvalReplies []agentHubApprovalReply
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		methods = append(methods, r.Method+" "+r.URL.RequestURI())
 		w.Header().Set("Content-Type", "application/json")
@@ -54,6 +55,13 @@ func TestAgentHubClientContract(t *testing.T) {
 				"future":       "ignored",
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sessions/ses_1":
+			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/sessions/ses_1/approvals/"):
+			var reply agentHubApprovalReply
+			if err := json.NewDecoder(r.Body).Decode(&reply); err != nil {
+				t.Errorf("decode approval reply: %v", err)
+			}
+			approvalReplies = append(approvalReplies, reply)
 			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/sessions/ses_1/"):
 			if r.Header.Get("Content-Type") != "application/json" {
@@ -106,7 +114,13 @@ func TestAgentHubClientContract(t *testing.T) {
 	if _, err := client.Message(ctx, "ses_1", "steer", true); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Approval(ctx, "ses_1", "approval/1", "accept"); err != nil {
+	if _, err := client.Approval(ctx, "ses_1", "approval/1", agentHubApprovalReply{Decision: "accept"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Approval(ctx, "ses_1", "approval/2", agentHubApprovalReply{OptionID: "option-a"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.Approval(ctx, "ses_1", "approval/3", agentHubApprovalReply{Text: "another answer"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Interrupt(ctx, "ses_1"); err != nil {
@@ -122,8 +136,16 @@ func TestAgentHubClientContract(t *testing.T) {
 	if err != nil || archived.State != "archived" {
 		t.Fatalf("archive: %+v, %v", archived, err)
 	}
-	if len(methods) != 13 {
+	if len(methods) != 15 {
 		t.Fatalf("expected all client operations, got %d: %v", len(methods), methods)
+	}
+	wantReplies := []agentHubApprovalReply{
+		{Decision: "accept"},
+		{OptionID: "option-a"},
+		{Text: "another answer"},
+	}
+	if fmt.Sprint(approvalReplies) != fmt.Sprint(wantReplies) {
+		t.Fatalf("unexpected approval payloads: got %#v want %#v", approvalReplies, wantReplies)
 	}
 }
 

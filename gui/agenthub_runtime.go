@@ -836,10 +836,15 @@ func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Re
 		writeError(w, errors.New("requestId is required"), http.StatusBadRequest)
 		return
 	}
+	reply, err := normalizeAgentHubApprovalReply(req)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
-	session, err := client.Approval(r.Context(), run.AgentHubSessionID, req.RequestID, req.Decision)
+	session, err := client.Approval(r.Context(), run.AgentHubSessionID, req.RequestID, reply)
 	if err != nil {
 		_ = rt.catchUpAgentHub(context.WithoutCancel(r.Context()), m, 0)
 		writeError(w, fmt.Errorf("AgentHub approval outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
@@ -850,6 +855,35 @@ func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Re
 		return
 	}
 	writeJSON(w, map[string]string{"status": "resolved"})
+}
+
+func normalizeAgentHubApprovalReply(req agentApprovalRequest) (agentHubApprovalReply, error) {
+	reply := agentHubApprovalReply{
+		Decision: strings.TrimSpace(req.Decision),
+		OptionID: strings.TrimSpace(req.OptionID),
+		Text:     strings.TrimSpace(req.Text),
+	}
+	modes := 0
+	if reply.Decision != "" {
+		modes++
+	}
+	if reply.OptionID != "" {
+		modes++
+	}
+	if reply.Text != "" {
+		modes++
+	}
+	if modes != 1 {
+		return agentHubApprovalReply{}, errors.New("exactly one of decision, optionId, or text is required")
+	}
+	if reply.Decision != "" {
+		switch reply.Decision {
+		case "accept", "acceptForSession", "decline", "cancel":
+		default:
+			return agentHubApprovalReply{}, errors.New("decision must be accept, acceptForSession, decline, or cancel")
+		}
+	}
+	return reply, nil
 }
 
 func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {

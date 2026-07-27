@@ -134,6 +134,12 @@ type agentHubCreateSessionRequest struct {
 	} `json:"initialMessage,omitempty"`
 }
 
+type agentHubApprovalReply struct {
+	Decision string `json:"decision,omitempty"`
+	OptionID string `json:"optionId,omitempty"`
+	Text     string `json:"text,omitempty"`
+}
+
 type agentHubSessionFilter struct {
 	IncludeArchived  bool
 	Archived         bool
@@ -322,14 +328,12 @@ func (c *agentHubClient) Message(ctx context.Context, sessionID, text string, st
 	return response.Session, err
 }
 
-func (c *agentHubClient) Approval(ctx context.Context, sessionID, approvalID, decision string) (agentHubSession, error) {
+func (c *agentHubClient) Approval(ctx context.Context, sessionID, approvalID string, reply agentHubApprovalReply) (agentHubSession, error) {
 	var response struct {
 		Session agentHubSession `json:"session"`
 	}
 	path := sessionPath(sessionID) + "/approvals/" + url.PathEscape(approvalID)
-	err := c.doJSON(ctx, http.MethodPost, path, struct {
-		Decision string `json:"decision"`
-	}{Decision: decision}, &response)
+	err := c.doJSON(ctx, http.MethodPost, path, reply, &response)
 	return response.Session, err
 }
 
