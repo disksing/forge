@@ -48,7 +48,7 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 REST、历史分页与 SSE 都向浏览器传递 AgentHub API v1 canonical event。浏览器使用 vendored `@agenthub/event-timeline` IIFE 的 `buildTimeline` 进行唯一的过滤、delta 合并、tool payload 解释、call 关联和终态收敛，再由 Forge 的 DOM renderer 展示。
 
-当前固定版本为 1.0.0，AgentHub source revision 为 `0fc78f4feef72c9116944e6b7851202561ac941d`，IIFE SHA-256 为 `243fe2eca293fe709174d2e9770c1560f9122afb80ec7f7c653473b5d0fdd7c4`。该 revision 包含 AskUserQuestion 投影、thinking 起始时间，以及 AgentHub provider 长 Turn 超时修复；最后一项属于 AgentHub runtime，Forge 不重复实现 15 分钟 deadline。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
+当前固定版本为 1.0.0，AgentHub source revision 为 `cc95176d99e335cbb98e173c16ab23ecfdc83010`，IIFE SHA-256 为 `7fe8bb718d0aa6e8b55d72ab6efca46a94b27af5715fe58b2b4c52c3ce04e0e5`。该 revision 包含 AskUserQuestion 投影、thinking 起始时间，以及 AgentHub provider 长 Turn 超时修复；最后一项属于 AgentHub runtime，Forge 不重复实现 15 分钟 deadline。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
 
 ```sh
 scripts/update-agenthub-event-timeline /path/to/agenthub
