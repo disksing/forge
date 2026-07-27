@@ -731,6 +731,74 @@ func waitForRuntimeTest(t *testing.T, condition func() bool) {
 	t.Fatal("condition was not reached before timeout")
 }
 
+func TestTranslateAgentHubToolEventUnwrapsProviderEnvelope(t *testing.T) {
+	cases := []struct {
+		name       string
+		data       string
+		wantMethod string
+		wantText   string
+		checkData  func(t *testing.T, data json.RawMessage)
+	}{
+		{
+			name:       "codex item started",
+			data:       `{"method":"item/started","raw":{"item":{"id":"call-1","type":"commandExecution","command":"ls","status":"inProgress"}}}`,
+			wantMethod: "item/started",
+			wantText:   "inProgress",
+			checkData: func(t *testing.T, data json.RawMessage) {
+				if got := nestedString(data, "item", "id"); got != "call-1" {
+					t.Fatalf("codex payload lost item.id: %s", data)
+				}
+			},
+		},
+		{
+			name:       "acp session update unwraps inner update",
+			data:       `{"method":"session/update","raw":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"tc-1","title":"Read file","rawInput":{"path":"a.go"}}}}`,
+			wantMethod: "session/update",
+			wantText:   "a.go",
+			checkData: func(t *testing.T, data json.RawMessage) {
+				if got := firstString(data, "toolCallId"); got != "tc-1" {
+					t.Fatalf("ACP payload must expose inner update toolCallId: %s", data)
+				}
+			},
+		},
+		{
+			name:       "pi tool execution start",
+			data:       `{"method":"tool_execution_start","raw":{"toolName":"read","args":{"path":"README.md"}}}`,
+			wantMethod: "tool_execution_start",
+			wantText:   "README.md",
+			checkData: func(t *testing.T, data json.RawMessage) {
+				if got := firstString(data, "toolName"); got != "read" {
+					t.Fatalf("pi payload lost toolName: %s", data)
+				}
+			},
+		},
+		{
+			name:       "malformed envelope falls back safely",
+			data:       `{"unexpected":true}`,
+			wantMethod: "tool.event",
+			wantText:   "tool.event",
+			checkData:  func(t *testing.T, data json.RawMessage) {},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			event, _, _ := translateAgentHubEvent(agentHubEvent{
+				ID: 1, Time: "2026-07-27T00:00:00Z", Type: "tool.event", Data: json.RawMessage(tc.data),
+			})
+			if event.Type != "tool" {
+				t.Fatalf("tool.event must project as type tool, got %q", event.Type)
+			}
+			if event.Method != tc.wantMethod {
+				t.Fatalf("method = %q, want %q", event.Method, tc.wantMethod)
+			}
+			if event.Text != tc.wantText {
+				t.Fatalf("text = %q, want %q", event.Text, tc.wantText)
+			}
+			tc.checkData(t, event.Data)
+		})
+	}
+}
+
 func TestAgentHubRuntimeStoppingAndRecoveryUI(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

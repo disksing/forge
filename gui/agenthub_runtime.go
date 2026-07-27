@@ -534,7 +534,29 @@ func translateAgentHubEvent(source agentHubEvent) (agentEvent, string, bool) {
 	case "message.reasoning.delta":
 		event.Type, event.Text = "reasoning_delta", firstString(source.Data, "text")
 	case "tool.event":
-		event.Type, event.Text = "tool", eventText(source.Type, source.Data)
+		event.Type = "tool"
+		// AgentHub wraps provider tool events in a {method, raw} envelope; the
+		// GUI renderer expects the original provider method and payload.
+		var envelope struct {
+			Method string          `json:"method"`
+			Raw    json.RawMessage `json:"raw"`
+		}
+		if err := json.Unmarshal(source.Data, &envelope); err == nil {
+			if envelope.Method != "" {
+				event.Method = envelope.Method
+			}
+			if len(envelope.Raw) > 0 {
+				event.Data = envelope.Raw
+				// ACP payloads are session/update params; the legacy contract
+				// carried the inner update object (with toolCallId) directly.
+				if envelope.Method == "session/update" {
+					if inner := nestedRawMessage(envelope.Raw, "update"); len(inner) > 0 {
+						event.Data = inner
+					}
+				}
+			}
+		}
+		event.Text = eventText(event.Method, event.Data)
 	case "approval.requested":
 		event.Type = "approval_requested"
 		event.PendingRequestID = firstString(source.Data, "approvalId")
