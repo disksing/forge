@@ -40,6 +40,8 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 新 chat 和 AutoRun 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。
 
+AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
+
 只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁。AgentHub 不可达、状态未知、event cursor gap、重复 source 或未证明先经过 stopped 的 archived 状态都保守持锁。
 
 迁移前的 run 索引和本地 JSONL event 保留在磁盘，但 Forge 不再读取、展示、迁移或写入这些 event，也不会列出或控制未绑定 AgentHub 的旧 direct run。回滚时可由旧二进制继续读取原文件。

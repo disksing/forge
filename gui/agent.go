@@ -1078,46 +1078,14 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 		}
 		switch state {
 		case "completed", "failed":
-			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; stopping its AgentHub session.")
-			rt.stopAgentHubAfterAutoRunTerminal(m)
+			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; session retained until manually stopped.")
 		default:
 			// waiting and paused generations intentionally retain the same
 			// AgentHub + Forge session, so a later resume keeps the original
 			// launchEnvironment.FORGE_SESSION_ID valid.
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")
-			rt.markIdle(m)
 		}
-	}
-}
-
-func (rt *agentRuntime) stopAgentHubAfterAutoRunTerminal(m *agentManager) {
-	rt.mu.Lock()
-	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
-	if client == nil || strings.TrimSpace(sessionID) == "" {
-		rt.mu.Unlock()
-		rt.addForgeNotice(m, "error", "forge/autorun/stop", "terminal AutoRun has no AgentHub session; resource lock retained")
-		return
-	}
-	rt.run.Status = "stopping"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
-	session, err := client.Stop(context.Background(), sessionID)
-	if err != nil {
-		rt.setRecoveryError(m, fmt.Errorf("stop terminal AutoRun AgentHub session: %w", err))
-		return
-	}
-	if err := rt.catchUpAgentHub(context.Background(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, fmt.Errorf("confirm terminal AutoRun stopped state: %w", err))
-		return
-	}
-	rt.mu.Lock()
-	stopped := rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved
-	rt.mu.Unlock()
-	if !stopped {
-		rt.setRecoveryError(m, errors.New("AgentHub stop has not reached durable stopped; resource lock retained"))
-		rt.startAgentHubStream(m)
+		rt.markIdle(m)
 	}
 }
 

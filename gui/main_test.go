@@ -989,6 +989,22 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	}
 }
 
+func TestTTYComposerOnlyOffersResumeWithActiveForgeSession(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`const canResume = Boolean(activeRun.forgeSessionId) && !activeRun.agentHubStoppedObserved;`,
+		`agentComposerActions({ includeResume: canResume })`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("TTY composer resume guard is missing %q", want)
+		}
+	}
+}
+
 func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

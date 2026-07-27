@@ -585,8 +585,14 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	if stopped != "stopped" {
 		t.Fatalf("run stopped without durable projection: %s", stopped)
 	}
-	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/resume", `{}`); rec.Code != http.StatusOK {
-		t.Fatalf("resume failed: %d %s", rec.Code, rec.Body.String())
+	waitForRuntimeTest(t, func() bool {
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		return rt.run.ForgeSessionID == ""
+	})
+	resumeRec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/resume", `{}`)
+	if resumeRec.Code != http.StatusConflict || !strings.Contains(resumeRec.Body.String(), "original Forge session is no longer active") {
+		t.Fatalf("resume without Forge session should fail before AgentHub resume: %d %s", resumeRec.Code, resumeRec.Body.String())
 	}
 	fake.mu.Lock()
 	steers := append([]bool(nil), fake.messageSteers...)
@@ -601,11 +607,13 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		"approval:approve-3:text=another answer",
 		"interrupt",
 		"stop",
-		"resume",
 	} {
 		if !strings.Contains(actions, expected) {
 			t.Fatalf("missing control %q in %q", expected, actions)
 		}
+	}
+	if strings.Contains(actions, "resume") {
+		t.Fatalf("AgentHub resumed after its Forge session was released: %q", actions)
 	}
 
 	stopRuntimeTestStream(rt)
@@ -710,86 +718,88 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	stopRuntimeTestStream(rt)
 }
 
-func TestAgentHubAutoRunWaitResumeKeepsLaunchEnvironmentAndTerminalStops(t *testing.T) {
-	fake := newRuntimeFakeAgentHub()
-	hub := httptest.NewServer(fake)
-	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "waiting")
-	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("start failed: %s", rec.Body.String())
-	}
-	rt := manager.runtimeByID(detail.Run.ID)
-	sessionID := detail.Run.AgentHubSessionID
-	fake.mu.Lock()
-	fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "waiting"})
-	session := fake.sessions[sessionID]
-	session.State = "ready"
-	fake.sessions[sessionID] = session
-	highWater := session.LastEventID
-	fake.mu.Unlock()
-	if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
-		t.Fatal(err)
-	}
-	waitForRuntimeTest(t, func() bool {
-		rt.mu.Lock()
-		defer rt.mu.Unlock()
-		return rt.run.Status == "idle" && !rt.run.SchedulerTurn
-	})
-	rt.mu.Lock()
-	forgeSessionID := rt.run.ForgeSessionID
-	rt.mu.Unlock()
-	if forgeSessionID != "session-test" {
-		t.Fatalf("wait changed Forge session id: %q", forgeSessionID)
-	}
-	fake.mu.Lock()
-	created := fake.nextSession
-	launchID := fake.sessions[sessionID].LaunchEnvironment["FORGE_SESSION_ID"]
-	fake.mu.Unlock()
-	if created != 1 || launchID != forgeSessionID {
-		t.Fatalf("wait changed session identity: created=%d launch=%q forge=%q", created, launchID, forgeSessionID)
-	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-	if logData := string(mustReadFile(t, logPath)); strings.Contains(logData, "session end") {
-		t.Fatalf("wait released the Forge session:\n%s", logData)
-	}
+func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
+	for _, terminalState := range []string{"completed", "failed"} {
+		t.Run(terminalState, func(t *testing.T) {
+			fake := newRuntimeFakeAgentHub()
+			hub := httptest.NewServer(fake)
+			defer hub.Close()
+			manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+			t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "waiting")
+			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("start failed: %s", rec.Body.String())
+			}
+			rt := manager.runtimeByID(detail.Run.ID)
+			sessionID := detail.Run.AgentHubSessionID
+			fake.mu.Lock()
+			fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "waiting"})
+			session := fake.sessions[sessionID]
+			session.State = "ready"
+			fake.sessions[sessionID] = session
+			highWater := session.LastEventID
+			fake.mu.Unlock()
+			if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+				t.Fatal(err)
+			}
+			waitForRuntimeTest(t, func() bool {
+				rt.mu.Lock()
+				defer rt.mu.Unlock()
+				return rt.run.Status == "idle" && !rt.run.SchedulerTurn
+			})
 
-	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "completed")
-	inputReq := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"resume generation","schedulerTurn":true,"autoRunGeneration":1}`))
-	inputRec := httptest.NewRecorder()
-	manager.sendAgentHubInput(inputRec, inputReq, rt, agentInputRequest{
-		Text: "resume generation", SchedulerTurn: true, AutoRunGeneration: 1,
-	}, "resume generation")
-	if inputRec.Code != http.StatusOK {
-		t.Fatalf("resume failed: %d %s", inputRec.Code, inputRec.Body.String())
+			t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", terminalState)
+			inputReq := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"resume generation","schedulerTurn":true,"autoRunGeneration":1}`))
+			inputRec := httptest.NewRecorder()
+			manager.sendAgentHubInput(inputRec, inputReq, rt, agentInputRequest{
+				Text: "resume generation", SchedulerTurn: true, AutoRunGeneration: 1,
+			}, "resume generation")
+			if inputRec.Code != http.StatusOK {
+				t.Fatalf("resume failed: %d %s", inputRec.Code, inputRec.Body.String())
+			}
+			fake.mu.Lock()
+			eventType := "turn.completed"
+			if terminalState == "failed" {
+				eventType = "turn.failed"
+			}
+			fake.appendLocked(sessionID, eventType, map[string]any{"summary": terminalState})
+			session = fake.sessions[sessionID]
+			session.State = "ready"
+			fake.sessions[sessionID] = session
+			highWater = session.LastEventID
+			fake.mu.Unlock()
+			if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+				t.Fatal(err)
+			}
+			waitForRuntimeTest(t, func() bool {
+				rt.mu.Lock()
+				defer rt.mu.Unlock()
+				return rt.run.Status == "idle" && !rt.run.SchedulerTurn
+			})
+			rt.mu.Lock()
+			forgeSessionID := rt.run.ForgeSessionID
+			rt.mu.Unlock()
+			if forgeSessionID != "session-test" {
+				t.Fatalf("terminal AutoRun changed Forge session id: %q", forgeSessionID)
+			}
+			fake.mu.Lock()
+			created := fake.nextSession
+			launchID := fake.sessions[sessionID].LaunchEnvironment["FORGE_SESSION_ID"]
+			actions := strings.Join(fake.actions, ",")
+			fake.mu.Unlock()
+			if created != 1 || launchID != forgeSessionID {
+				t.Fatalf("terminal AutoRun changed session identity: created=%d launch=%q forge=%q", created, launchID, forgeSessionID)
+			}
+			if strings.Contains(actions, "stop") {
+				t.Fatalf("terminal AutoRun stopped AgentHub: %s", actions)
+			}
+			logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
+			if logData := string(mustReadFile(t, logPath)); strings.Contains(logData, "session end") {
+				t.Fatalf("terminal AutoRun released the Forge session:\n%s", logData)
+			}
+			stopRuntimeTestStream(rt)
+		})
 	}
-	fake.mu.Lock()
-	fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "complete"})
-	session = fake.sessions[sessionID]
-	session.State = "ready"
-	fake.sessions[sessionID] = session
-	highWater = session.LastEventID
-	fake.mu.Unlock()
-	if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
-		t.Fatal(err)
-	}
-	waitForRuntimeTest(t, func() bool {
-		rt.mu.Lock()
-		defer rt.mu.Unlock()
-		return rt.run.Status == "stopped" && rt.run.ForgeSessionID == ""
-	})
-	fake.mu.Lock()
-	created = fake.nextSession
-	actions := strings.Join(fake.actions, ",")
-	fake.mu.Unlock()
-	if created != 1 || !strings.Contains(actions, "stop") {
-		t.Fatalf("terminal resume lifecycle mismatch: created=%d actions=%s", created, actions)
-	}
-	if logData := string(mustReadFile(t, logPath)); !strings.Contains(logData, "session end --id session-test") {
-		t.Fatalf("terminal AutoRun did not release Forge session:\n%s", logData)
-	}
-	stopRuntimeTestStream(rt)
 }
 
 func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T) {

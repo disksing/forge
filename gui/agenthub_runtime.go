@@ -890,6 +890,10 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
+	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
+		writeError(w, missingForgeSessionResumeError(), http.StatusConflict)
+		return
+	}
 	session, err := client.Resume(r.Context(), run.AgentHubSessionID)
 	if err != nil {
 		rt.setRecoveryError(m, err)
@@ -907,6 +911,10 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 }
 
 func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
+	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
+		writeError(w, missingForgeSessionResumeError(), http.StatusConflict)
+		return
+	}
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		writeError(w, err, http.StatusServiceUnavailable)
@@ -931,11 +939,6 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	run.AgentHubSessionID = session.ID
 	rt := newAgentHubRuntime(m, workspace, run, client, nil)
 	m.registerRuntime(rt)
-	if run.ForgeSessionID == "" {
-		m.removeRuntime(run.ID)
-		writeError(w, errors.New("cannot resume this AgentHub session because its original Forge session is no longer active; start a new Forge run so launchEnvironment receives a valid FORGE_SESSION_ID"), http.StatusConflict)
-		return
-	}
 	session, err = client.Resume(r.Context(), session.ID)
 	if err != nil {
 		rt.setRecoveryError(m, err)
@@ -955,6 +958,10 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	rt.startAgentHubStream(m)
 	current, events, truncated := rt.snapshotDetail()
 	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
+}
+
+func missingForgeSessionResumeError() error {
+	return errors.New("cannot resume this AgentHub session because its original Forge session is no longer active; start a new Forge run so launchEnvironment receives a valid FORGE_SESSION_ID")
 }
 
 func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {

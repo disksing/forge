@@ -2205,13 +2205,14 @@ function renderTTYComposer() {
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
     return;
   }
-  const key = `resume:${activeRun.id}:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+  const canResume = Boolean(activeRun.forgeSessionId) && !activeRun.agentHubStoppedObserved;
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
   composer.innerHTML = `
-    ${agentComposerActions({ includeResume: true })}
+    ${agentComposerActions({ includeResume: canResume })}
   `;
 }
 
