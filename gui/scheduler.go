@@ -145,21 +145,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			return runnableTaskDispatchFailed, err
 		}
 	}
-	prompt := strings.TrimSpace(task.Prompt)
-	if prompt == "" {
-		prompt = "Read task.md and complete the task."
-	}
-	if task.State == "running" {
-		prompt = "Recover and continue the current AutoRun generation. Read task.md, work.md, and the relevant AutoRun entries in log.jsonl before continuing.\n\n" + prompt
-	}
-	if len(task.After) > 0 {
-		var completed []string
-		for _, dep := range task.After {
-			completed = append(completed, fmt.Sprintf("%s@%d", dep.TaskID, dep.Generation))
-		}
-		prompt += "\n\nThe following prerequisite task runs completed: " + strings.Join(completed, ", ") + ". Read their task files and results before continuing."
-	}
-	prompt += "\n\nThis is an AutoRun scheduler turn. Before ending, call exactly one of forge task autorun complete, wait, pause, or fail as your last side-effecting command."
+	prompt := buildAutoRunPrompt(workspace.Path, task)
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {
 		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)

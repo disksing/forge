@@ -1030,7 +1030,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 			}
 			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
 				rt.markIdle(m)
-				prompt := "Continue the current AutoRun. Before ending this scheduler turn, update the result with forge task autorun complete, wait, pause, or fail as your last side-effecting command."
+				prompt := autoRunContinuePrompt(rt.workspace.Path)
 				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
 					err = sendErr
 				}

@@ -156,6 +156,84 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	}
 }
 
+func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
+	task := runnableTaskCandidate{
+		State:  "running",
+		Prompt: "保留用户 prompt",
+		After: []runnableTaskDependency{
+			{TaskID: "project1.task2", Generation: 3},
+			{TaskID: "project1.task4", Generation: 5},
+		},
+	}
+
+	t.Run("simplified Chinese", func(t *testing.T) {
+		workspace := t.TempDir()
+		if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{"language":"zh-CN"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		got := buildAutoRunPrompt(workspace, task)
+		for _, want := range []string{
+			"恢复并继续当前 AutoRun generation",
+			"保留用户 prompt",
+			"以下前置任务运行已完成：project1.task2@3, project1.task4@5",
+			"这是一个 AutoRun 调度器回合",
+			"最后一个有副作用的命令必须且只能是 forge task autorun complete、wait、pause 或 fail 之一",
+		} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("Chinese prompt does not contain %q:\n%s", want, got)
+			}
+		}
+		if strings.Contains(got, "This is an AutoRun scheduler turn") {
+			t.Fatalf("Chinese prompt retained an English scheduler instruction:\n%s", got)
+		}
+	})
+
+	t.Run("English and fallback", func(t *testing.T) {
+		for _, language := range []string{"en", "fr", "", "malformed"} {
+			workspace := t.TempDir()
+			switch language {
+			case "":
+			case "malformed":
+				if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			default:
+				data := []byte(`{"language":"` + language + `"}`)
+				if err := os.WriteFile(filepath.Join(workspace, "forge.json"), data, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := buildAutoRunPrompt(workspace, task)
+			for _, want := range []string{
+				"Recover and continue the current AutoRun generation",
+				"保留用户 prompt",
+				"The following prerequisite task runs completed: project1.task2@3, project1.task4@5",
+				"This is an AutoRun scheduler turn",
+			} {
+				if !strings.Contains(got, want) {
+					t.Fatalf("prompt for language %q does not contain %q:\n%s", language, want, got)
+				}
+			}
+		}
+	})
+}
+
+func TestAutoRunLocalizedDefaultAndContinuePrompts(t *testing.T) {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{"language":"zh_CN"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got := buildAutoRunPrompt(workspace, runnableTaskCandidate{State: "queued"})
+	if !strings.Contains(got, "读取 task.md 并完成任务。") {
+		t.Fatalf("Chinese default task prompt is missing:\n%s", got)
+	}
+	continuePrompt := autoRunContinuePrompt(workspace)
+	if !strings.Contains(continuePrompt, "继续当前 AutoRun") ||
+		!strings.Contains(continuePrompt, "forge task autorun complete、wait、pause 或 fail") {
+		t.Fatalf("unexpected Chinese continuation prompt: %q", continuePrompt)
+	}
+}
+
 func TestStartRunnableTaskReusesIdleSession(t *testing.T) {
 	workspace := t.TempDir()
 	var input agentInputRequest
