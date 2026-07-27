@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -358,7 +359,8 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 		session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
 		t.Fatalf("source or launch environment missing: %#v", session)
 	}
-	if _, err := os.Stat(agentEventsPath(workspace.Path, detail.Run.ID)); !os.IsNotExist(err) {
+	legacyEventPath := filepath.Join(workspace.Path, ".forge", "gui-agent", "runs", detail.Run.ID+".jsonl")
+	if _, err := os.Stat(legacyEventPath); !os.IsNotExist(err) {
 		t.Fatalf("AgentHub run must not create a local event fact log: %v", err)
 	}
 	stopRuntimeTestStream(manager.runtimeByID(detail.Run.ID))
@@ -408,11 +410,12 @@ func TestAgentHubRuntimePaginationUnknownGapAndSSE(t *testing.T) {
 		t.Fatal(err)
 	}
 	projected, events, _ := rt.snapshotDetail()
-	if projected.AgentHubEventCursor != 505 || len(events) != agentEventMaxCount {
+	if projected.AgentHubEventCursor != 505 || len(events) != agentHubEventMaxCount {
 		t.Fatalf("pagination failed: cursor=%d events=%d", projected.AgentHubEventCursor, len(events))
 	}
-	if events[len(events)-5].Text != "Unknown AgentHub event: future.event" {
-		t.Fatalf("unknown event was not retained safely: %#v", events[len(events)-5])
+	unknown := events[len(events)-5]
+	if unknown.Type != "future.event" || unknown.SessionID != "ses_page" || unknown.ID != 501 {
+		t.Fatalf("unknown canonical event was not retained unchanged: %#v", unknown)
 	}
 	fake.mu.Lock()
 	fake.appendLocked("ses_page", "message.assistant.delta", map[string]any{"text": "live"})
@@ -442,6 +445,77 @@ func TestAgentHubRuntimePaginationUnknownGapAndSSE(t *testing.T) {
 	gapRT.mu.Unlock()
 	if cursor != 249 {
 		t.Fatalf("projection advanced across gap to %d", cursor)
+	}
+}
+
+func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
+	workspace := guiWorkspace{ID: "workspace-one", Path: t.TempDir()}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	writeCurrentTestConfig(t, configPath, workspace.Path)
+	manager := newAgentManager(&server{config: configPath})
+	canonical := agentHubEvent{
+		ID: 7, Time: "2026-07-27T00:00:00Z", Type: "tool.event",
+		SessionID: "ses_canonical", TurnID: "turn_one",
+		Data: json.RawMessage(`{"method":"item/started","raw":{"item":{"id":"call_one","type":"commandExecution"}}}`),
+	}
+	rt := &agentRuntime{
+		workspace: workspace,
+		run: agentRun{
+			ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: canonical.SessionID,
+			AgentHubEventCursor: canonical.ID, Status: "running",
+		},
+		events: []agentHubEvent{canonical},
+	}
+	manager.registerRuntime(rt)
+
+	detailRecorder := httptest.NewRecorder()
+	manager.getRun(detailRecorder, httptest.NewRequest(http.MethodGet, "/runs/run-one", nil), workspace.ID, "run-one")
+	if detailRecorder.Code != http.StatusOK {
+		t.Fatalf("detail failed: %d %s", detailRecorder.Code, detailRecorder.Body.String())
+	}
+	var detail agentRunDetail
+	if err := json.Unmarshal(detailRecorder.Body.Bytes(), &detail); err != nil {
+		t.Fatal(err)
+	}
+	var gotData, wantData any
+	if len(detail.Events) == 1 {
+		_ = json.Unmarshal(detail.Events[0].Data, &gotData)
+		_ = json.Unmarshal(canonical.Data, &wantData)
+	}
+	if len(detail.Events) != 1 || detail.Events[0].Type != canonical.Type ||
+		detail.Events[0].SessionID != canonical.SessionID || detail.Events[0].TurnID != canonical.TurnID ||
+		!reflect.DeepEqual(gotData, wantData) {
+		t.Fatalf("REST changed canonical event: %#v", detail.Events)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	streamRecorder := httptest.NewRecorder()
+	manager.stream(
+		streamRecorder,
+		httptest.NewRequest(http.MethodGet, "/runs/run-one/stream", nil).WithContext(ctx),
+		workspace.ID,
+		"run-one",
+	)
+	body := streamRecorder.Body.String()
+	if !strings.Contains(body, `"type":"tool.event"`) ||
+		!strings.Contains(body, `"sessionId":"ses_canonical"`) ||
+		!strings.Contains(body, `"turnId":"turn_one"`) ||
+		strings.Contains(body, `"text":`) ||
+		strings.Contains(body, `"pendingRequestId":`) {
+		t.Fatalf("SSE did not preserve canonical schema: %s", body)
+	}
+
+	noticeRecorder := httptest.NewRecorder()
+	writeForgeNoticeSSE(noticeRecorder, forgeNotice{
+		Source: "forge", Type: "forge.notice", Time: canonical.Time,
+		Data: forgeNoticeData{Level: "error", Method: "agenthub/recovery", Text: "synthetic"},
+	})
+	noticeBody := noticeRecorder.Body.String()
+	if !strings.HasPrefix(noticeBody, "event: forge.notice\n") ||
+		strings.Contains(noticeBody, "\nid:") ||
+		!strings.Contains(noticeBody, `"source":"forge"`) {
+		t.Fatalf("Forge notice did not use its independent SSE envelope: %s", noticeBody)
 	}
 }
 
@@ -729,74 +803,6 @@ func waitForRuntimeTest(t *testing.T, condition func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition was not reached before timeout")
-}
-
-func TestTranslateAgentHubToolEventUnwrapsProviderEnvelope(t *testing.T) {
-	cases := []struct {
-		name       string
-		data       string
-		wantMethod string
-		wantText   string
-		checkData  func(t *testing.T, data json.RawMessage)
-	}{
-		{
-			name:       "codex item started",
-			data:       `{"method":"item/started","raw":{"item":{"id":"call-1","type":"commandExecution","command":"ls","status":"inProgress"}}}`,
-			wantMethod: "item/started",
-			wantText:   "inProgress",
-			checkData: func(t *testing.T, data json.RawMessage) {
-				if got := nestedString(data, "item", "id"); got != "call-1" {
-					t.Fatalf("codex payload lost item.id: %s", data)
-				}
-			},
-		},
-		{
-			name:       "acp session update unwraps inner update",
-			data:       `{"method":"session/update","raw":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"tc-1","title":"Read file","rawInput":{"path":"a.go"}}}}`,
-			wantMethod: "session/update",
-			wantText:   "a.go",
-			checkData: func(t *testing.T, data json.RawMessage) {
-				if got := firstString(data, "toolCallId"); got != "tc-1" {
-					t.Fatalf("ACP payload must expose inner update toolCallId: %s", data)
-				}
-			},
-		},
-		{
-			name:       "pi tool execution start",
-			data:       `{"method":"tool_execution_start","raw":{"toolName":"read","args":{"path":"README.md"}}}`,
-			wantMethod: "tool_execution_start",
-			wantText:   "README.md",
-			checkData: func(t *testing.T, data json.RawMessage) {
-				if got := firstString(data, "toolName"); got != "read" {
-					t.Fatalf("pi payload lost toolName: %s", data)
-				}
-			},
-		},
-		{
-			name:       "malformed envelope falls back safely",
-			data:       `{"unexpected":true}`,
-			wantMethod: "tool.event",
-			wantText:   "tool.event",
-			checkData:  func(t *testing.T, data json.RawMessage) {},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			event, _, _ := translateAgentHubEvent(agentHubEvent{
-				ID: 1, Time: "2026-07-27T00:00:00Z", Type: "tool.event", Data: json.RawMessage(tc.data),
-			})
-			if event.Type != "tool" {
-				t.Fatalf("tool.event must project as type tool, got %q", event.Type)
-			}
-			if event.Method != tc.wantMethod {
-				t.Fatalf("method = %q, want %q", event.Method, tc.wantMethod)
-			}
-			if event.Text != tc.wantText {
-				t.Fatalf("text = %q, want %q", event.Text, tc.wantText)
-			}
-			tc.checkData(t, event.Data)
-		})
-	}
 }
 
 func TestAgentHubRuntimeStoppingAndRecoveryUI(t *testing.T) {

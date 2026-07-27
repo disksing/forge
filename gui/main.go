@@ -951,7 +951,7 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 	}
 	bySessionID := make(map[string]agentRun)
 	for _, run := range runs {
-		if run.ForgeSessionID != "" {
+		if isAgentHubRun(run) && run.ForgeSessionID != "" {
 			bySessionID[run.ForgeSessionID] = run
 		}
 	}

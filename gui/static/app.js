@@ -65,10 +65,10 @@ const state = {
     runs: [],
     activeRunId: "",
     events: [],
+    notices: [],
     stream: null,
     streamRunId: "",
     renderTimer: null,
-    fullRenderPending: false,
     draftPrompt: "",
     ttyDraft: "",
     ttyMultiline: false,
@@ -98,7 +98,6 @@ const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
-const AGENT_ACTIVE_TOOL_EVENT_LIMIT = 3;
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -248,7 +247,7 @@ async function autoRefresh() {
       changed = true;
     }
     if (reconcileActiveAgentRun(runs)) {
-      await loadAgentEvents();
+      await loadCanonicalAgentEvents();
       connectAgentStream();
       changed = true;
     }
@@ -628,6 +627,7 @@ async function selectResource(id, options = {}) {
     state.agent.runs = [];
     state.agent.activeRunId = "";
     state.agent.events = [];
+    state.agent.notices = [];
     state.agent.historyBeforeId = 0;
     state.agent.ttyDraft = "";
     state.agent.ttyMultiline = false;
@@ -1652,9 +1652,10 @@ async function loadAgentRuns() {
   state.agent.runs = await fetchAgentRuns();
   reconcileActiveAgentRun(state.agent.runs);
   if (state.agent.activeRunId) {
-    await loadAgentEvents();
+    await loadCanonicalAgentEvents();
   } else {
     state.agent.events = [];
+    state.agent.notices = [];
     state.agent.historyBeforeId = 0;
   }
   connectAgentStream();
@@ -1665,7 +1666,7 @@ async function refreshAgentRunMetadata() {
   const runs = await fetchAgentRuns();
   state.agent.runs = runs;
   if (reconcileActiveAgentRun(runs)) {
-    await loadAgentEvents();
+    await loadCanonicalAgentEvents();
     connectAgentStream();
   }
 }
@@ -1675,6 +1676,7 @@ function reconcileActiveAgentRun(runs) {
   if (state.agent.activeRunId === nextRunId) return false;
   state.agent.activeRunId = nextRunId;
   state.agent.events = [];
+  state.agent.notices = [];
   state.agent.eventsHasMore = false;
   state.agent.historyBeforeId = 0;
   state.agent.ttyDraft = "";
@@ -1695,9 +1697,10 @@ async function refreshTreeSessions() {
   state.tree.sessions = tree.sessions || [];
 }
 
-async function loadAgentEvents() {
+async function loadCanonicalAgentEvents() {
   if (!state.activeWorkspaceId || !state.agent.activeRunId) {
     state.agent.events = [];
+    state.agent.notices = [];
     state.agent.eventsHasMore = false;
     state.agent.historyBeforeId = 0;
     return;
@@ -1705,14 +1708,14 @@ async function loadAgentEvents() {
   const detail = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}`);
   const events = detail.events || [];
   state.agent.historyBeforeId = oldestRawAgentEventID(events);
-  state.agent.events = coalesceAgentEvents(events);
+  state.agent.events = mergeCanonicalAgentEvents(events);
   state.agent.eventsHasMore = Boolean(detail.eventsHasMore || detail.eventsTruncated);
   await ensureVisibleAgentEvents(AGENT_INITIAL_VISIBLE_EVENT_COUNT, { maxPages: AGENT_INITIAL_AUTO_PAGE_LIMIT });
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
   if (index >= 0) {
     state.agent.runs[index] = detail.run;
   }
-	}
+}
 
 async function loadOlderAgentEvents() {
   if (!state.activeWorkspaceId || !state.agent.activeRunId || state.agent.loadingOlder) return;
@@ -1765,18 +1768,18 @@ async function loadOlderAgentEventsPage(pageLimit = AGENT_OLDER_RAW_PAGE_LIMIT) 
     return false;
   }
   if (nextBefore) state.agent.historyBeforeId = nextBefore;
-  state.agent.events = coalesceAgentEvents([...older, ...state.agent.events]);
+  state.agent.events = mergeCanonicalAgentEvents([...older, ...state.agent.events]);
   state.agent.eventsHasMore = Boolean(body.hasMore);
   return older.length > 0;
 }
 
 function visibleAgentEventCount() {
-  return displayAgentEvents(state.agent.events).length;
+  return projectAgentTimeline().length;
 }
 
 function visibleAgentMessageCount() {
-  return displayAgentEvents(state.agent.events).filter((event) =>
-    ["assistant_delta", "user", "error", "approval_requested"].includes(event.type)
+  return projectAgentTimeline().filter((item) =>
+    ["message", "error", "approval"].includes(item.kind)
   ).length;
 }
 
@@ -1801,6 +1804,7 @@ async function reloadAgentRunsForSelection() {
   closeAgentStream();
   state.agent.activeRunId = "";
   state.agent.events = [];
+  state.agent.notices = [];
   state.agent.historyBeforeId = 0;
   state.agent.ttyDraft = "";
   state.agent.ttyMultiline = false;
@@ -1813,6 +1817,7 @@ function resetAgentState() {
   state.agent.runs = [];
   state.agent.activeRunId = "";
   state.agent.events = [];
+  state.agent.notices = [];
   state.agent.eventsHasMore = false;
   state.agent.historyBeforeId = 0;
   state.agent.loadingOlder = false;
@@ -1838,11 +1843,18 @@ function connectAgentStream() {
   const stream = new EventSource(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stream${query}`);
   stream.onmessage = (event) => {
     try {
-      appendAgentEvent(JSON.parse(event.data));
+      appendCanonicalAgentEvent(JSON.parse(event.data));
     } catch (err) {
       console.warn("agent event parse failed", err);
     }
   };
+  stream.addEventListener("forge.notice", (event) => {
+    try {
+      appendForgeNotice(JSON.parse(event.data));
+    } catch (err) {
+      console.warn("Forge notice parse failed", err);
+    }
+  });
   stream.onerror = () => {
     if (state.agent.stream !== stream) {
       stream.close();
@@ -1868,41 +1880,35 @@ function closeAgentStream() {
   state.agent.streamRunId = "";
 }
 
-function appendAgentEvent(event) {
-  if (!event || isKnownAgentEvent(event)) return;
-  event = normalizeAgentEvent(event);
-  const last = state.agent.events[state.agent.events.length - 1];
-  const mergedDelta = canMergeAgentDelta(last, event);
-  if (mergedDelta) {
-    last.id = event.id;
-    last.time = event.time || last.time;
-    last.text = `${last.text ?? agentDeltaText(last)}${event.text ?? agentDeltaText(event)}`;
-    last.data = event.data || last.data;
-  } else {
-    state.agent.events.push(event);
-  }
-  if (["turn/completed", "turn/failed", "error"].includes(event.method) || event.type === "approval_requested") {
+function appendCanonicalAgentEvent(event) {
+  if (!event || isKnownCanonicalAgentEvent(event)) return;
+  state.agent.events.push(event);
+  if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
     refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
-    scheduleAgentRender({ full: !mergedDelta });
+    scheduleAgentRender();
   }
 }
 
-function isKnownAgentEvent(event) {
+function appendForgeNotice(notice) {
+  if (notice?.source !== "forge" || notice?.type !== "forge.notice") return;
+  state.agent.notices.push(notice);
+  if (state.agent.notices.length > 20) state.agent.notices.shift();
+  scheduleAgentRender();
+}
+
+function isKnownCanonicalAgentEvent(event) {
   if (!event?.id) return false;
   if (state.agent.events.some((existing) => existing.id === event.id)) return true;
   const maxLoadedId = state.agent.events.reduce((max, existing) => Math.max(max, existing.id || 0), 0);
   return maxLoadedId > 0 && event.id <= maxLoadedId;
 }
 
-function scheduleAgentRender(options = {}) {
-  state.agent.fullRenderPending = state.agent.fullRenderPending || Boolean(options.full);
+function scheduleAgentRender() {
   if (state.agent.renderTimer) return;
   state.agent.renderTimer = window.setTimeout(() => {
     state.agent.renderTimer = null;
-    const full = state.agent.fullRenderPending;
-    state.agent.fullRenderPending = false;
-    if (full || !renderLatestAgentDelta()) renderTTY();
+    renderTTY();
     refreshIcons();
   }, 80);
 }
@@ -1912,260 +1918,21 @@ function clearAgentRenderTimer() {
     window.clearTimeout(state.agent.renderTimer);
   }
   state.agent.renderTimer = null;
-  state.agent.fullRenderPending = false;
 }
 
-function renderLatestAgentDelta() {
-  const event = state.agent.events[state.agent.events.length - 1];
-  if (!isAgentDelta(event)) return false;
-  const log = $("ttyLog");
-  if (!log) return false;
-  const stickToBottom = isTTYNearBottom(log);
-  const previousScrollTop = log.scrollTop;
-  if (event.type === "assistant_delta") {
-    const rows = log.querySelectorAll(".agent-message-row.assistant .agent-message-content");
-    const content = rows[rows.length - 1];
-    if (!content) return false;
-    content.innerHTML = renderMarkdown(agentDisplayText(event));
-  } else {
-    const notes = log.querySelectorAll(".agent-reasoning-note p");
-    const content = notes[notes.length - 1];
-    if (!content) return false;
-    content.textContent = agentDisplayText(event);
+function mergeCanonicalAgentEvents(events) {
+  const byID = new Map();
+  for (const event of events || []) {
+    if (Number(event?.id) > 0) byID.set(Number(event.id), event);
   }
-  if (stickToBottom) {
-    log.scrollTop = log.scrollHeight;
-  } else {
-    log.scrollTop = previousScrollTop;
+  return [...byID.values()].sort((left, right) => Number(left.id) - Number(right.id));
+}
+
+function projectAgentTimeline() {
+  if (!window.AgentHubEventTimeline?.buildTimeline) {
+    throw new Error("AgentHub Event Timeline library is unavailable");
   }
-  return true;
-}
-
-function coalesceAgentEvents(events) {
-  const result = [];
-  for (const sourceEvent of events) {
-    const event = normalizeAgentEvent(sourceEvent);
-    const last = result[result.length - 1];
-    if (canMergeAgentDelta(last, event)) {
-      last.id = event.id;
-      last.time = event.time || last.time;
-      last.text = `${last.text ?? agentDeltaText(last)}${event.text ?? agentDeltaText(event)}`;
-      last.data = event.data || last.data;
-    } else {
-      result.push(event);
-    }
-  }
-  return result;
-}
-
-function normalizeAgentEvent(event) {
-  if (!isAgentDelta(event)) return { ...event };
-  return { ...event, text: agentNormalizedText(event) };
-}
-
-function isAgentDelta(event) {
-  return event?.type === "assistant_delta" || event?.type === "reasoning_delta";
-}
-
-function agentNormalizedText(event) {
-  if (typeof event.text === "string" && event.text !== event.method) {
-    return event.text;
-  }
-  return agentDeltaText(event);
-}
-
-function agentDeltaText(event) {
-  const delta = agentEventDeltaValue(event);
-  if (delta.found) return delta.value;
-  if (event.text === event.method) return "";
-  return event.text || "";
-}
-
-function canMergeAgentDelta(previous, next) {
-  if (!isAgentDelta(previous) || !isAgentDelta(next) || previous.type !== next.type) {
-    return false;
-  }
-  const previousItemId = agentEventItemId(previous);
-  const nextItemId = agentEventItemId(next);
-  if (previousItemId && nextItemId) {
-    return previousItemId === nextItemId;
-  }
-  return previous.method === next.method;
-}
-
-function displayAgentEvents(events) {
-  const coalesced = markTransientAgentReasoning(markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events))));
-  const completedItems = new Map();
-  for (const event of coalesced) {
-    if (event.type === "tool" && event.method === "item/completed") {
-      const id = agentEventItemId(event);
-      if (id) completedItems.set(id, event);
-    }
-  }
-  const visible = coalesced.filter((event) => shouldDisplayAgentEvent(event, completedItems));
-  return groupToolEvents(visible);
-}
-
-function markTransientAgentStatus(events) {
-  const result = events.map((event) => ({ ...event }));
-  let activeStatus = -1;
-  for (let index = 0; index < result.length; index++) {
-    const event = result[index];
-    if (isTransientAgentStatus(event)) {
-      activeStatus = index;
-    } else if (clearsTransientAgentStatus(event)) {
-      activeStatus = -1;
-    }
-  }
-  if (activeStatus >= 0) result[activeStatus].isActiveTransientStatus = true;
-  return result;
-}
-
-function markTransientAgentReasoning(events) {
-  const result = events.map((event) => ({ ...event }));
-  let activeReasoning = -1;
-  for (let index = 0; index < result.length; index++) {
-    const event = result[index];
-    if (event.type === "reasoning_delta") {
-      activeReasoning = index;
-    } else if (clearsTransientAgentReasoning(event)) {
-      activeReasoning = -1;
-    }
-  }
-  if (activeReasoning >= 0) result[activeReasoning].isActiveTransientReasoning = true;
-  return result;
-}
-
-function clearsTransientAgentReasoning(event) {
-  return event?.type !== "reasoning_delta" && event?.type !== "metadata";
-}
-
-function isTransientAgentStatus(event) {
-  return ["session/resume", "thread/start", "thread/resume", "thread/goal/cleared", "session/ready"].includes(event?.method);
-}
-
-function clearsTransientAgentStatus(event) {
-  if (["user", "assistant_delta", "reasoning_delta", "tool", "approval_requested", "error"].includes(event?.type)) return true;
-  return ["turn/started", "turn/completed", "turn/failed", "session/prompt"].includes(event?.method);
-}
-
-function markFinalAgentResponses(events) {
-  const result = events.map((event) => ({ ...event }));
-  let lastAssistant = -1;
-  for (let index = 0; index < result.length; index++) {
-    const event = result[index];
-    if (event.type === "assistant_delta") lastAssistant = index;
-    if (isAgentTurnStart(event) || event.type === "user") lastAssistant = -1;
-    if (isAgentTurnCompletion(event) && lastAssistant >= 0) {
-      result[lastAssistant].isFinalResponse = true;
-      lastAssistant = -1;
-    }
-  }
-  return result;
-}
-
-function isAgentTurnStart(event) {
-  return event?.method === "turn/started";
-}
-
-function isAgentTurnCompletion(event) {
-  return event?.method === "turn/completed";
-}
-
-function groupToolEvents(events) {
-  const result = [];
-  for (const event of events) {
-    if (event.type !== "tool") {
-      const previous = result[result.length - 1];
-      if (event.type === "assistant_delta" && previous?.type === "tool_group") {
-        previous.collapsed = true;
-      }
-      result.push(event);
-      continue;
-    }
-    const last = result[result.length - 1];
-    if (last?.type === "tool_group") {
-      const previous = last.events[last.events.length - 1];
-      const previousID = agentEventItemId(previous);
-      const nextID = agentEventItemId(event);
-      if (previousID && previousID === nextID) {
-        last.events[last.events.length - 1] = event;
-      } else {
-        last.events.push(event);
-      }
-    } else {
-      result.push({ type: "tool_group", events: [event], collapsed: false });
-    }
-  }
-  return result;
-}
-
-function shouldDisplayAgentEvent(event, completedItems = new Map()) {
-  if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus);
-  if (event.type === "reasoning_delta") return Boolean(event.isActiveTransientReasoning);
-  if (event.type === "assistant_delta" || event.type === "approval_requested" || event.type === "error") return true;
-  if (event.type === "metadata") return false;
-  if (event.type === "system" && event.method === "session/prompt") return false;
-  if (event.method === "session/ready" || event.method === "turn/failed") return true;
-  if (event.type === "user") return true;
-  if (event.type === "tool") {
-    const itemType = agentEventItemType(event);
-    if (itemType === "userMessage" || itemType === "agentMessage" || itemType === "reasoning") return false;
-    if (event.method === "item/commandExecution/outputDelta" || event.method === "command/exec/outputDelta") return false;
-    if (event.method === "item/completed") return true;
-    if (event.method === "tool_execution_start" || event.method === "tool_execution_end") return true;
-    if (event.method !== "item/started") {
-      if (event.method !== "session/update") return false;
-      if ((itemType === "tool_call" || itemType === "tool_call_update") && !agentToolCallHasIdentity(event)) return false;
-      return true;
-    }
-    const itemId = agentEventItemId(event);
-    return !itemId || !completedItems.has(itemId);
-  }
-  return ![
-    "remoteControl/status/changed",
-    "mcpServer/startupStatus/updated",
-    "thread/status/changed",
-    "thread/tokenUsage/updated",
-    "account/rateLimits/updated",
-    "thread/started",
-    "thread/start",
-    "turn/started",
-    "turn/diff/updated",
-    "turn/completed",
-    "item/commandExecution/terminalInteraction",
-    "forge/session/new",
-    "forge/session/end",
-    "forge/session/heartbeat",
-  ].includes(event.method);
-}
-
-function agentEventItemType(event) {
-  const data = agentEventData(event);
-  return data?.item?.type || data?.sessionUpdate || data?.update?.sessionUpdate || "";
-}
-
-function agentToolCallHasIdentity(event) {
-  const data = agentEventData(event);
-  const item = data?.item || data?.toolCall || data?.update?.toolCall || data;
-  for (const key of ["name", "tool", "title", "command", "cmd"]) {
-    const value = item?.[key] ?? item?.rawInput?.[key] ?? item?.input?.[key] ?? item?.arguments?.[key];
-    if (typeof value === "string" && value.trim()) return true;
-    if (Array.isArray(value) && value.length) return true;
-  }
-  return false;
-}
-function agentEventItemId(event) {
-  const data = agentEventData(event);
-  return data?.messageId || data?.itemId || data?.item?.id || data?.toolCallId || data?.toolCall?.id || "";
-}
-
-function agentEventData(event) {
-  try {
-    return typeof event?.data === "string" ? JSON.parse(event.data) : event?.data || {};
-  } catch (_) {
-    return {};
-  }
+  return window.AgentHubEventTimeline.buildTimeline(state.agent.events);
 }
 
 function renderAgent() {
@@ -2315,12 +2082,13 @@ function renderTTY(options = {}) {
     : previousRunId !== nextRunId || isTTYNearBottom(log);
   renderTTYComposer();
   if (state.agent.activeRunId) {
-    const events = displayAgentEvents(state.agent.events);
+    const items = projectAgentTimeline();
+    const notices = state.agent.notices.map(forgeNoticeRow).join("");
     const olderButton = state.agent.eventsHasMore
       ? `<button type="button" id="loadOlderAgentEventsButton" class="load-older-events">${state.agent.loadingOlder ? icon("loader-circle") : icon("chevrons-up")}<span>${state.agent.loadingOlder ? "Loading..." : "Load older messages"}</span></button>`
       : "";
-    log.innerHTML = events.length || olderButton
-      ? `${olderButton}${events.map(agentEventRow).join("")}`
+    log.innerHTML = items.length || notices || olderButton
+      ? `${olderButton}${items.map((item, index) => agentTimelineItemRow(item, index, items)).join("")}${notices}`
       : `<div class="tty-empty">${icon("loader-circle")}<strong>Waiting for agent events</strong></div>`;
   } else {
     const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start an agent session.";
@@ -2422,7 +2190,7 @@ function renderTTYComposer() {
 function isAgentSessionReady(run) {
   if (!isLiveAgentRun(run)) return false;
   if (run.status !== "starting") return true;
-  if (state.agent.events.some((event) => event.method === "session/ready")) return true;
+  if (state.agent.events.some((event) => event.type === "session.state" && event.data?.state === "ready")) return true;
   return state.agent.eventsHasMore && run.status !== "starting";
 }
 
@@ -2742,216 +2510,117 @@ function bindSettingsEvents() {
   });
 }
 
-function agentEventRow(event) {
-  if (event.type === "tool_group") return agentToolGroupRow(event);
-  const method = event.method && event.type !== "assistant_delta" ? `<small>${escapeHTML(event.method)}</small>` : "";
-  const text = agentDisplayText(event);
-  if (event.type === "assistant_delta" || event.type === "user") {
-    const isAssistant = event.type === "assistant_delta";
-    const responseClass = isAssistant ? (event.isFinalResponse ? " final" : " progress") : "";
+function agentTimelineItemRow(item, index, items) {
+  if (item.kind === "message") {
+    const isAssistant = item.role === "assistant";
     const content = isAssistant
-      ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`
-      : `<p>${escapeHTML(text)}</p>`;
+      ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`
+      : `<p>${escapeHTML(item.text)}</p>`;
     return `
-      <div class="agent-message-row ${escapeHTML(event.type === "user" ? "user" : "assistant")}${responseClass}">
-        <div class="agent-message-bubble">
-          ${content}
-        </div>
+      <div class="agent-message-row ${isAssistant ? "assistant final" : "user"}">
+        <div class="agent-message-bubble">${content}</div>
       </div>
     `;
   }
-  if (event.type === "reasoning_delta") {
+  if (item.kind === "thinking") {
     return `
-      <details class="agent-reasoning-note">
-        <summary>${icon("brain-circuit")}<span>Reasoning</span><span class="agent-reasoning-chevron">${icon("chevron-right")}</span></summary>
-        <p>${escapeHTML(text)}</p>
+      <details class="agent-reasoning-note"${item.active ? " open" : ""}>
+        <summary>${icon("brain-circuit")}<span>${item.active ? "Thinking…" : "Reasoning"}</span><span class="agent-reasoning-chevron">${icon("chevron-right")}</span></summary>
+        <p>${escapeHTML(item.text)}</p>
       </details>
     `;
   }
-  if (event.type === "system" || event.type === "event") {
-    return `<div class="agent-system-note">${escapeHTML(text)}</div>`;
+  if (item.kind === "tools") return agentTimelineToolsRow(item, index === items.length - 1);
+  if (item.kind === "approval") return agentTimelineApprovalRow(item);
+  if (item.kind === "lifecycle") {
+    return `<div class="agent-system-note agent-lifecycle-${escapeHTML(item.tone || "muted")}">${escapeHTML(item.text)}</div>`;
   }
-  if (event.type === "tool") {
-    return `<div class="agent-activity-note">${agentEventIcon(event)}<span>${escapeHTML(toolEventSummary(event))}</span></div>`;
+  if (item.kind === "error") {
+    return `<div class="agent-event error"><div>${icon("triangle-alert")}<strong>Provider error</strong></div><p>${escapeHTML(item.text)}</p></div>`;
   }
-  if (event.type === "approval_requested") {
+  if (item.kind === "unknown") {
     return `
-      <div class="agent-event approval">
-        <div>${icon("shield-question")}<strong>${escapeHTML(text)}</strong>${method}</div>
-        <div class="approval-actions">
-          <button data-agent-approval="${escapeHTML(event.pendingRequestId)}" data-decision="accept">${icon("check")}<span>Approve</span></button>
-          <button data-agent-approval="${escapeHTML(event.pendingRequestId)}" data-decision="decline" class="secondary-button">${icon("x")}<span>Deny</span></button>
-        </div>
-      </div>
+      <details class="agent-tool-item agent-unknown-event">
+        <summary>${icon("info")}<span>Unhandled event: ${escapeHTML(item.type)}</span><small>${escapeHTML(relativeTime(item.time))}</small></summary>
+        <pre>${escapeHTML(item.preview || "This event carries no payload.")}</pre>
+      </details>
     `;
   }
-  return `
-    <div class="agent-event ${escapeHTML(event.type)}">
-      <div>${agentEventIcon(event)}<strong>${escapeHTML(agentEventTitle(event))}</strong>${method}</div>
-      <p>${escapeHTML(text)}</p>
-    </div>
-  `;
+  return "";
 }
 
-function agentToolGroupRow(group) {
-  const events = group.events || [];
-  const key = agentToolGroupKey(group);
+function agentTimelineToolsRow(group, isLast) {
+  const calls = group.calls || [];
+  const key = agentTimelineToolGroupKey(group);
   const userOpen = state.agent.toolGroupOpen.get(key);
-  const open = typeof userOpen === "boolean" ? userOpen : !group.collapsed;
-  const visibleEvents = visibleAgentToolEvents(group, userOpen);
-  const summaries = events.map(toolEventSummary);
+  const open = typeof userOpen === "boolean"
+    ? userOpen
+    : isLast || calls.some((call) => call.status === "running");
+  const summaries = calls.map(agentTimelineToolSummary);
   const preview = summaries.slice(0, 2).join(" · ");
   const remaining = Math.max(0, summaries.length - 2);
   return `
     <details class="agent-tool-group" data-tool-group-key="${escapeHTML(key)}"${open ? " open" : ""}>
       <summary>
         <span class="agent-tool-group-icon">${icon("wrench")}</span>
-        <span class="agent-tool-group-title">${events.length} tool ${events.length === 1 ? "call" : "calls"}</span>
+        <span class="agent-tool-group-title">${calls.length} tool ${calls.length === 1 ? "call" : "calls"}</span>
         <span class="agent-tool-group-preview">${escapeHTML(preview)}${remaining ? ` · +${remaining} more` : ""}</span>
         <span class="agent-tool-group-chevron">${icon("chevron-right")}</span>
       </summary>
       <div class="agent-tool-list">
-        ${visibleEvents.map(agentToolEventRow).join("")}
+        ${calls.map(agentTimelineToolCallRow).join("")}
       </div>
     </details>
   `;
 }
 
-function visibleAgentToolEvents(group, userOpen) {
-  const events = group.events || [];
-  if (group.collapsed || userOpen === true) return events;
-  return events.slice(-AGENT_ACTIVE_TOOL_EVENT_LIMIT);
+function agentTimelineToolGroupKey(group) {
+  return `${state.agent.activeRunId || "run"}:${group.key || group.time || "tools"}`;
 }
 
-function agentToolGroupKey(group) {
-  const first = group.events?.[0] || {};
-  const eventKey = agentEventItemId(first) || first.id || first.time || "tool";
-  return `${state.agent.activeRunId || "run"}:${eventKey}`;
-}
-
-function agentToolEventRow(event) {
+function agentTimelineToolCallRow(call) {
+  const statusIcon = call.status === "running"
+    ? icon("loader-circle")
+    : call.status === "failed" ? icon("x-circle") : icon("check-circle");
+  const details = [call.error, call.output, call.rawPreview].filter(Boolean).join("\n\n");
   return `
-    <details class="agent-tool-item">
+    <details class="agent-tool-item agent-tool-${escapeHTML(call.status || "completed")}">
       <summary>
-        ${agentEventIcon(event)}
-        <span>${escapeHTML(toolEventSummary(event))}</span>
-        <small>${escapeHTML(event.method || "tool")}</small>
+        ${statusIcon}
+        <span>${escapeHTML(agentTimelineToolSummary(call))}</span>
+        <small>${escapeHTML(call.method || "tool")}</small>
       </summary>
-      <pre>${escapeHTML(toolEventDetails(event))}</pre>
+      ${details ? `<pre>${escapeHTML(details)}</pre>` : ""}
     </details>
   `;
 }
 
-function toolEventSummary(event) {
-  // Pi tool events (tool_execution_start/end) already carry a backend-computed
-  // summary in event.text (e.g. "read README.md"); their raw shape keeps the
-  // useful bits in toolName/args, which the generic parsing below cannot read.
-  if (event.method === "tool_execution_start" || event.method === "tool_execution_end") {
-    const text = String(event.text || "").trim();
-    if (text) return text;
-  }
-  const data = agentEventData(event);
-  const item = data?.item || data?.toolCall || data?.update?.toolCall || data;
-  const itemType = agentEventItemType(event);
-  const command = firstAgentToolValue(item, ["command", "cmd"]);
-  const paths = agentToolPaths(item);
-  const toolName = firstAgentToolValue(item, ["name", "tool", "title"]);
-  if (itemType === "commandExecution") return toolSummaryWithDetail("Command", command);
-  if (itemType === "fileChange") return toolSummaryWithDetail("File change", paths.join(", "));
-  if (itemType === "mcpToolCall") {
-    const server = firstAgentToolValue(item, ["server", "serverName"]);
-    return toolSummaryWithDetail("MCP", [server, toolName].filter(Boolean).join(" / "));
-  }
-  if (itemType === "webSearch") return toolSummaryWithDetail("Web search", firstAgentToolValue(item, ["query"]));
-  if (itemType === "tool_call" || itemType === "tool_call_update") return toolSummaryWithDetail("Tool", toolName || command);
-  return toolSummaryWithDetail(readableAgentToolType(itemType) || "Tool", toolName || command || paths.join(", "));
+function agentTimelineToolSummary(call) {
+  return [call.name, call.summary].filter(Boolean).join(" · ") || "Tool call";
 }
 
-function toolSummaryWithDetail(label, detail) {
-  const compact = String(detail || "").replace(/\s+/g, " ").trim();
-  if (!compact) return label;
-  return `${label} · ${compact.length > 88 ? `${compact.slice(0, 85)}…` : compact}`;
+function agentTimelineApprovalRow(item) {
+  const detail = item.detail ? `<p>${escapeHTML(item.detail)}</p>` : "";
+  const actions = item.status === "pending"
+    ? `
+      <div class="approval-actions">
+        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="accept">${icon("check")}<span>Approve</span></button>
+        <button data-agent-approval="${escapeHTML(item.approvalId)}" data-decision="decline" class="secondary-button">${icon("x")}<span>Deny</span></button>
+      </div>
+    `
+    : `<p>${escapeHTML(item.decision || (item.status === "accepted" ? "Allowed" : "Declined"))}</p>`;
+  return `
+    <div class="agent-event approval">
+      <div>${icon("shield-question")}<strong>${escapeHTML(item.title)}</strong></div>
+      ${detail}
+      ${actions}
+    </div>
+  `;
 }
 
-function firstAgentToolValue(item, keys) {
-  for (const key of keys) {
-    const value = item?.[key] ?? item?.rawInput?.[key] ?? item?.input?.[key] ?? item?.arguments?.[key];
-    if (typeof value === "string" && value.trim()) return value.trim();
-    if (Array.isArray(value) && value.length) return value.join(" ");
-  }
-  return "";
-}
-
-function agentToolPaths(item) {
-  const values = [item?.path, item?.filePath, item?.rawInput?.path, item?.input?.path];
-  for (const change of item?.changes || []) values.push(change?.path, change?.filePath);
-  return [...new Set(values.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))];
-}
-
-function readableAgentToolType(value) {
-  return String(value || "")
-    .replace(/[_-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/^./, (letter) => letter.toUpperCase());
-}
-
-function toolEventDetails(event) {
-  const data = agentEventData(event);
-  const serialized = Object.keys(data).length ? JSON.stringify(data, null, 2) : agentDisplayText(event);
-  if (serialized.length <= 12000) return serialized;
-  return `${serialized.slice(0, 12000)}\n… details truncated`;
-}
-
-function agentDisplayText(event) {
-  if (isAgentDelta(event)) {
-    return agentDeltaDisplayText(event);
-  }
-  return event.text || event.method || event.type;
-}
-
-function agentDeltaDisplayText(event) {
-  if (typeof event.text === "string" && event.text !== event.method) {
-    return event.text;
-  }
-  return agentDeltaText(event);
-}
-
-function agentEventDeltaValue(event) {
-  try {
-    const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
-    if (data && Object.prototype.hasOwnProperty.call(data, "delta") && typeof data.delta === "string") {
-      return { found: true, value: data.delta };
-    }
-    if (typeof data?.content?.text === "string") {
-      return { found: true, value: data.content.text };
-    }
-    for (const key of ["text", "message"]) {
-      if (typeof data?.[key] === "string" && data[key].trim() !== "") {
-        return { found: true, value: data[key] };
-      }
-    }
-  } catch (_) {
-    return { found: false, value: "" };
-  }
-  return { found: false, value: "" };
-}
-
-function agentEventIcon(event) {
-  if (event.type === "assistant_delta") return icon("bot");
-  if (event.type === "reasoning_delta") return icon("brain-circuit");
-  if (event.type === "user") return icon("user");
-  if (event.type === "error") return icon("triangle-alert");
-  if (event.type === "tool") return icon("terminal");
-  return icon("circle-dot");
-}
-
-function agentEventTitle(event) {
-  if (event.type === "assistant_delta") return "Codex";
-  if (event.type === "reasoning_delta") return "Reasoning";
-  if (event.type === "user") return "You";
-  if (event.type === "error") return "Error";
-  if (event.type === "tool") return "Tool";
-  return "Event";
+function forgeNoticeRow(notice) {
+  const level = notice?.data?.level === "error" ? "error" : "system";
+  return `<div class="agent-event ${level}"><div>${icon(level === "error" ? "triangle-alert" : "info")}<strong>Forge</strong></div><p>${escapeHTML(notice?.data?.text || "")}</p></div>`;
 }
 
 function bindAgentEvents() {

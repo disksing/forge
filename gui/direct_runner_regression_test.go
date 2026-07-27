@@ -97,3 +97,28 @@ func TestFrontendHasNoDirectRunnerSettingsOrFallback(t *testing.T) {
 		}
 	}
 }
+
+func TestProductionHasNoLegacyEventPipeline(t *testing.T) {
+	files := []string{"agent.go", "agenthub_runtime.go", filepath.Join("static", "app.js")}
+	forbidden := []string{
+		"translateAgentHub" + "Event",
+		"displayAgent" + "Events",
+		"coalesceAgent" + "Events",
+		"shouldDisplayAgent" + "Event",
+		"appendAgent" + "Event",
+		"loadAgent" + "Events",
+		"agentEvents" + "Path",
+		"toolEvent" + "Summary",
+	}
+	for _, name := range files {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, token := range forbidden {
+			if strings.Contains(string(data), token) {
+				t.Fatalf("production file %s reintroduced legacy event pipeline symbol %q", name, token)
+			}
+		}
+	}
+}

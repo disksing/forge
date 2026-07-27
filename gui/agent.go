@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -47,28 +46,35 @@ type agentRun struct {
 	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
 }
 
-type agentEvent struct {
-	ID               int64           `json:"id"`
-	Time             string          `json:"time"`
-	Type             string          `json:"type"`
-	Method           string          `json:"method,omitempty"`
-	Text             string          `json:"text,omitempty"`
-	Data             json.RawMessage `json:"data,omitempty"`
-	PendingRequestID string          `json:"pendingRequestId,omitempty"`
-}
-
 type agentRunDetail struct {
-	Run             agentRun     `json:"run"`
-	Events          []agentEvent `json:"events"`
-	EventsTruncated bool         `json:"eventsTruncated,omitempty"`
-	EventsHasMore   bool         `json:"eventsHasMore,omitempty"`
+	Run             agentRun        `json:"run"`
+	Events          []agentHubEvent `json:"events"`
+	EventsTruncated bool            `json:"eventsTruncated,omitempty"`
+	EventsHasMore   bool            `json:"eventsHasMore,omitempty"`
 }
 
 const (
-	agentEventTailBytes = 1024 * 1024
-	agentEventMaxCount  = 500
-	agentUploadMaxBytes = 512 * 1024 * 1024
+	agentHubEventMaxCount = 500
+	agentUploadMaxBytes   = 512 * 1024 * 1024
 )
+
+type forgeNotice struct {
+	Source string          `json:"source"`
+	Type   string          `json:"type"`
+	Time   string          `json:"time"`
+	Data   forgeNoticeData `json:"data"`
+}
+
+type forgeNoticeData struct {
+	Level  string `json:"level"`
+	Method string `json:"method"`
+	Text   string `json:"text"`
+}
+
+type agentStreamMessage struct {
+	Event  *agentHubEvent
+	Notice *forgeNotice
+}
 
 type agentUploadResponse struct {
 	Path string `json:"path"`
@@ -121,8 +127,7 @@ type agentRuntime struct {
 	workspace          guiWorkspace
 	manager            *agentManager
 	run                agentRun
-	events             []agentEvent
-	nextEventID        int64
+	events             []agentHubEvent
 	agentHub           *agentHubClient
 	agentHubState      string
 	agentHubCancel     context.CancelFunc
@@ -134,14 +139,14 @@ type agentManager struct {
 	server      *server
 	mu          sync.Mutex
 	runtimes    map[string]*agentRuntime
-	subscribers map[string]map[chan agentEvent]bool
+	subscribers map[string]map[chan agentStreamMessage]bool
 }
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
 		server:      s,
 		runtimes:    make(map[string]*agentRuntime),
-		subscribers: make(map[string]map[chan agentEvent]bool),
+		subscribers: make(map[string]map[chan agentStreamMessage]bool),
 	}
 }
 
@@ -236,13 +241,13 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 		run = rt.run
 		rt.mu.Unlock()
 	} else {
-		run, _, _, err = loadAgentRunDetail(workspace.Path, runID)
+		run, err = loadAgentRun(workspace.Path, runID)
 		if err != nil {
 			writeError(w, err, http.StatusNotFound)
 			return
 		}
 	}
-	if run.WorkspaceID != workspaceID {
+	if run.WorkspaceID != workspaceID || !isAgentHubRun(run) {
 		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
 		return
 	}
@@ -379,17 +384,21 @@ func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
+	filtered := runs[:0]
 	m.mu.Lock()
-	for i := range runs {
-		if rt := m.runtimes[runs[i].ID]; rt != nil {
-			rt.mu.Lock()
-			runs[i] = rt.run
-			rt.mu.Unlock()
-		} else if isLiveAgentStatus(runs[i].Status) && strings.TrimSpace(runs[i].AgentHubSessionID) == "" {
-			runs[i].Status = "stopped"
+	for _, run := range runs {
+		if !isAgentHubRun(run) {
+			continue
 		}
+		if rt := m.runtimes[run.ID]; rt != nil {
+			rt.mu.Lock()
+			run = rt.run
+			rt.mu.Unlock()
+		}
+		filtered = append(filtered, run)
 	}
 	m.mu.Unlock()
+	runs = filtered
 	sort.SliceStable(runs, func(i, j int) bool {
 		return runs[i].UpdatedAt > runs[j].UpdatedAt
 	})
@@ -403,6 +412,10 @@ func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspac
 		runs = filtered
 	}
 	writeJSON(w, map[string]any{"runs": runs})
+}
+
+func isAgentHubRun(run agentRun) bool {
+	return strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != ""
 }
 
 func agentRunMatchesResource(run agentRun, resourceID string) bool {
@@ -670,15 +683,21 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 		writeJSON(w, detail)
 		return
 	}
-	run, events, truncated, err := loadAgentRunDetail(workspace.Path, runID)
-	if err != nil {
+	run, err := loadAgentRun(workspace.Path, runID)
+	if err != nil || !isAgentHubRun(run) {
+		if err == nil {
+			err = fmt.Errorf("run not found: %s", runID)
+		}
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	if isLiveAgentStatus(run.Status) && strings.TrimSpace(run.AgentHubSessionID) == "" {
-		run.Status = "stopped"
+	rt, err = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
+	if err != nil {
+		writeError(w, err, http.StatusBadGateway)
+		return
 	}
-	writeJSON(w, agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
+	current, events, truncated := rt.snapshotDetail()
+	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
 }
 
 func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -691,22 +710,30 @@ func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspa
 	if beforeID > 0 {
 		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
 		if rt != nil {
-			rt.mu.Lock()
-			agentHubRun := rt.agentHub != nil
-			rt.mu.Unlock()
-			if agentHubRun {
-				events, hasMore, err := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
-				if err != nil {
-					writeError(w, err, http.StatusBadGateway)
-					return
-				}
-				writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
+			events, hasMore, err := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
+			if err != nil {
+				writeError(w, err, http.StatusBadGateway)
 				return
 			}
+			writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
+			return
 		}
-		events, hasMore, err := loadAgentEventsPage(workspace.Path, runID, beforeID, limit)
-		if err != nil {
-			writeError(w, err, http.StatusNotFound)
+		run, loadErr := loadAgentRun(workspace.Path, runID)
+		if loadErr != nil || !isAgentHubRun(run) {
+			if loadErr == nil {
+				loadErr = fmt.Errorf("run not found: %s", runID)
+			}
+			writeError(w, loadErr, http.StatusNotFound)
+			return
+		}
+		rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
+		if loadErr != nil {
+			writeError(w, loadErr, http.StatusBadGateway)
+			return
+		}
+		events, hasMore, loadErr := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
+		if loadErr != nil {
+			writeError(w, loadErr, http.StatusBadGateway)
 			return
 		}
 		writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
@@ -717,11 +744,20 @@ func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspa
 		writeJSON(w, map[string]any{"events": events, "eventsTruncated": truncated, "hasMore": truncated})
 		return
 	}
-	_, events, truncated, err := loadAgentRunDetail(workspace.Path, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
+	run, loadErr := loadAgentRun(workspace.Path, runID)
+	if loadErr != nil || !isAgentHubRun(run) {
+		if loadErr == nil {
+			loadErr = fmt.Errorf("run not found: %s", runID)
+		}
+		writeError(w, loadErr, http.StatusNotFound)
 		return
 	}
+	rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
+	if loadErr != nil {
+		writeError(w, loadErr, http.StatusBadGateway)
+		return
+	}
+	_, events, truncated := rt.snapshotDetail()
 	writeJSON(w, map[string]any{"events": events, "eventsTruncated": truncated, "hasMore": truncated})
 }
 
@@ -742,13 +778,13 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	rt.mu.Lock()
-	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
 	rt.mu.Unlock()
-	if agentHubRun {
-		m.sendAgentHubInput(w, r, rt, req, text)
+	if sessionID == "" {
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	writeError(w, errors.New("legacy direct run is read-only and cannot accept input after the AgentHub migration"), http.StatusConflict)
+	m.sendAgentHubInput(w, r, rt, req, text)
 }
 
 func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -758,13 +794,13 @@ func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 	rt.mu.Lock()
-	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
 	rt.mu.Unlock()
-	if agentHubRun {
-		m.stopAgentHubRun(w, r, rt)
+	if sessionID == "" {
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	writeError(w, errors.New("legacy direct run is read-only and cannot be controlled after the AgentHub migration"), http.StatusConflict)
+	m.stopAgentHubRun(w, r, rt)
 }
 
 func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -779,19 +815,19 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 			m.resumeAttachedAgentHubRun(w, r, rt)
 			return
 		}
-		writeError(w, errors.New("legacy direct run is read-only and cannot be resumed after the AgentHub migration"), http.StatusConflict)
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	run, events, _, err := loadAgentRunDetail(workspace.Path, runID)
+	run, err := loadAgentRun(workspace.Path, runID)
 	if err != nil {
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" {
-		writeError(w, errors.New("legacy direct run is read-only and cannot be resumed after the AgentHub migration"), http.StatusBadRequest)
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	m.resumeAgentHubRun(w, r, workspace, run, events)
+	m.resumeAgentHubRun(w, r, workspace, run)
 }
 
 func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -806,13 +842,13 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 		return
 	}
 	rt.mu.Lock()
-	agentHubRun := strings.TrimSpace(rt.run.AgentHubSessionID) != ""
+	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
 	rt.mu.Unlock()
-	if agentHubRun {
-		m.resolveAgentHubApproval(w, r, rt, req)
+	if sessionID == "" {
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	writeError(w, errors.New("legacy direct run is read-only and cannot resolve approvals after the AgentHub migration"), http.StatusConflict)
+	m.resolveAgentHubApproval(w, r, rt, req)
 }
 
 func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -831,15 +867,15 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 	w.Header().Set("Connection", "keep-alive")
 	afterID := agentStreamAfterID(r)
 	lastSentID := afterID
-	ch := make(chan agentEvent, agentEventMaxCount)
+	ch := make(chan agentStreamMessage, agentHubEventMaxCount)
 	m.subscribe(runID, ch)
 	defer m.unsubscribe(runID, ch)
-	var events []agentEvent
+	var events []agentHubEvent
 	if rt != nil {
 		rt.mu.Lock()
-		agentHubRun := rt.agentHub != nil
+		hasAgentHubClient := rt.agentHub != nil
 		rt.mu.Unlock()
-		if agentHubRun && afterID > 0 {
+		if afterID > 0 && hasAgentHubClient {
 			events, err = rt.agentHubEventsAfter(r.Context(), afterID)
 			if err != nil {
 				return
@@ -850,8 +886,15 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 			_, events, _ = rt.snapshotDetail()
 		}
 	} else {
-		_, events, _, _ = loadAgentRunDetail(workspace.Path, runID)
-		events = agentEventsAfter(events, afterID)
+		run, loadErr := loadAgentRun(workspace.Path, runID)
+		if loadErr != nil || !isAgentHubRun(run) {
+			return
+		}
+		rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
+		if loadErr != nil {
+			return
+		}
+		_, events, _ = rt.snapshotDetail()
 	}
 	for _, event := range events {
 		if event.ID <= lastSentID {
@@ -861,7 +904,7 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 		lastSentID = event.ID
 	}
 	flusher.Flush()
-	if rt == nil {
+	if m.runtimeByID(runID) == nil {
 		return
 	}
 	// Catch events published while the initial snapshot was being written. The
@@ -874,12 +917,17 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 	flusher.Flush()
 	for {
 		select {
-		case event := <-ch:
-			if event.ID <= lastSentID {
+		case message := <-ch:
+			if message.Notice != nil {
+				writeForgeNoticeSSE(w, *message.Notice)
+				flusher.Flush()
 				continue
 			}
-			writeSSE(w, event)
-			lastSentID = event.ID
+			if message.Event == nil || message.Event.ID <= lastSentID {
+				continue
+			}
+			writeSSE(w, *message.Event)
+			lastSentID = message.Event.ID
 			flusher.Flush()
 		case <-r.Context().Done():
 			return
@@ -901,28 +949,41 @@ func (m *agentManager) workspaceRuntime(workspaceID, runID string) (guiWorkspace
 	return workspace, rt, nil
 }
 
-func (m *agentManager) subscribe(runID string, ch chan agentEvent) {
+func (m *agentManager) subscribe(runID string, ch chan agentStreamMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.subscribers[runID] == nil {
-		m.subscribers[runID] = make(map[chan agentEvent]bool)
+		m.subscribers[runID] = make(map[chan agentStreamMessage]bool)
 	}
 	m.subscribers[runID][ch] = true
 }
 
-func (m *agentManager) unsubscribe(runID string, ch chan agentEvent) {
+func (m *agentManager) unsubscribe(runID string, ch chan agentStreamMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.subscribers[runID], ch)
 	close(ch)
 }
 
-func (m *agentManager) publish(runID string, event agentEvent) {
+func (m *agentManager) publish(runID string, event agentHubEvent) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for ch := range m.subscribers[runID] {
+		eventCopy := event
 		select {
-		case ch <- event:
+		case ch <- agentStreamMessage{Event: &eventCopy}:
+		default:
+		}
+	}
+}
+
+func (m *agentManager) publishNotice(runID string, notice forgeNotice) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ch := range m.subscribers[runID] {
+		noticeCopy := notice
+		select {
+		case ch <- agentStreamMessage{Notice: &noticeCopy}:
 		default:
 		}
 	}
@@ -949,42 +1010,6 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
 	}
 	return errors.New("agent run is not attached to AgentHub")
-}
-
-func (rt *agentRuntime) addEvent(m *agentManager, eventType, method, text string, data json.RawMessage, pendingRequestID string) {
-	rt.mu.Lock()
-	agentHubRun := rt.agentHub != nil
-	rt.mu.Unlock()
-	if agentHubRun {
-		rt.addAgentHubDiagnostic(m, eventType, method, text)
-		return
-	}
-	rt.mu.Lock()
-	event := agentEvent{
-		ID:               rt.nextEventID,
-		Time:             time.Now().Format(time.RFC3339),
-		Type:             eventType,
-		Method:           method,
-		Text:             text,
-		Data:             data,
-		PendingRequestID: pendingRequestID,
-	}
-	rt.nextEventID++
-	rt.events = append(rt.events, event)
-	if len(rt.events) > agentEventMaxCount {
-		copy(rt.events, rt.events[len(rt.events)-agentEventMaxCount:])
-		clear(rt.events[agentEventMaxCount:])
-		rt.events = rt.events[:agentEventMaxCount]
-	}
-	rt.run.UpdatedAt = event.Time
-	if isAgentOutputEvent(eventType, method) {
-		rt.run.LastOutputAt = event.Time
-	}
-	run := rt.run
-	rt.mu.Unlock()
-	_ = appendAgentEvent(rt.workspace.Path, run.ID, event)
-	_ = saveAgentRun(rt.workspace.Path, run)
-	m.publish(run.ID, event)
 }
 
 func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
@@ -1039,7 +1064,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 		}
 	}
 	if err != nil {
-		rt.addEvent(m, "error", "forge/autorun/finish", err.Error(), nil, "")
+		rt.addForgeNotice(m, "error", "forge/autorun/finish", err.Error())
 		rt.updateStatus(m, "failed")
 	} else {
 		rt.mu.Lock()
@@ -1053,13 +1078,13 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 		}
 		switch state {
 		case "completed", "failed":
-			rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun reached a terminal state; stopping its AgentHub session.", nil, "")
+			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; stopping its AgentHub session.")
 			rt.stopAgentHubAfterAutoRunTerminal(m)
 		default:
 			// waiting and paused generations intentionally retain the same
 			// AgentHub + Forge session, so a later resume keeps the original
 			// launchEnvironment.FORGE_SESSION_ID valid.
-			rt.addEvent(m, "system", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.", nil, "")
+			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")
 			rt.markIdle(m)
 		}
 	}
@@ -1070,7 +1095,7 @@ func (rt *agentRuntime) stopAgentHubAfterAutoRunTerminal(m *agentManager) {
 	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
 	if client == nil || strings.TrimSpace(sessionID) == "" {
 		rt.mu.Unlock()
-		rt.addEvent(m, "error", "forge/autorun/stop", "terminal AutoRun has no AgentHub session; resource lock retained", nil, "")
+		rt.addForgeNotice(m, "error", "forge/autorun/stop", "terminal AutoRun has no AgentHub session; resource lock retained")
 		return
 	}
 	rt.run.Status = "stopping"
@@ -1108,7 +1133,7 @@ func (rt *agentRuntime) recordSchedulerFailure(m *agentManager, reason string) {
 		_, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
 	}
 	if err != nil {
-		rt.addEvent(m, "error", "forge/autorun/retry", err.Error(), nil, "")
+		rt.addForgeNotice(m, "error", "forge/autorun/retry", err.Error())
 	}
 }
 
@@ -1118,25 +1143,9 @@ func (rt *agentRuntime) setRun(run agentRun) {
 	rt.run = run
 }
 
-func isAgentOutputEvent(eventType, method string) bool {
-	return eventType == "assistant_delta" || eventType == "reasoning_delta" ||
-		method == "item/commandExecution/outputDelta" ||
-		method == "command/exec/outputDelta"
-}
-
 func isLiveAgentStatus(status string) bool {
 	return status == "starting" || status == "running" || status == "waiting_approval" ||
 		status == "idle" || status == "stopping" || status == "recovering"
-}
-
-func nextAgentEventID(events []agentEvent) int64 {
-	var next int64 = 1
-	for _, event := range events {
-		if event.ID >= next {
-			next = event.ID + 1
-		}
-	}
-	return next
 }
 
 func (rt *agentRuntime) markIdle(m *agentManager) {
@@ -1148,28 +1157,28 @@ func (rt *agentRuntime) markIdle(m *agentManager) {
 	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
-func (rt *agentRuntime) snapshotEvents() []agentEvent {
+func (rt *agentRuntime) snapshotEvents() []agentHubEvent {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return append([]agentEvent(nil), rt.events...)
+	return append([]agentHubEvent(nil), rt.events...)
 }
 
-func (rt *agentRuntime) snapshotDetail() (agentRun, []agentEvent, bool) {
+func (rt *agentRuntime) snapshotDetail() (agentRun, []agentHubEvent, bool) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	events, truncated := tailAgentEvents(rt.events, agentEventMaxCount)
+	events, truncated := tailAgentEvents(rt.events, agentHubEventMaxCount)
 	return rt.run, events, truncated
 }
 
-func (rt *agentRuntime) snapshotEventsAfter(afterID int64) []agentEvent {
+func (rt *agentRuntime) snapshotEventsAfter(afterID int64) []agentHubEvent {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return agentEventsAfter(rt.events, afterID)
+	return agentHubEventsAfter(rt.events, afterID)
 }
 
-func tailAgentEvents(events []agentEvent, limit int) ([]agentEvent, bool) {
-	if limit <= 0 || limit > agentEventMaxCount {
-		limit = agentEventMaxCount
+func tailAgentEvents(events []agentHubEvent, limit int) ([]agentHubEvent, bool) {
+	if limit <= 0 || limit > agentHubEventMaxCount {
+		limit = agentHubEventMaxCount
 	}
 	truncated := len(events) > limit
 	if len(events) > limit {
@@ -1178,17 +1187,17 @@ func tailAgentEvents(events []agentEvent, limit int) ([]agentEvent, bool) {
 	if len(events) > 0 && events[0].ID > 1 {
 		truncated = true
 	}
-	return append([]agentEvent(nil), events...), truncated
+	return append([]agentHubEvent(nil), events...), truncated
 }
 
-func agentEventsAfter(events []agentEvent, afterID int64) []agentEvent {
+func agentHubEventsAfter(events []agentHubEvent, afterID int64) []agentHubEvent {
 	if afterID <= 0 {
-		return append([]agentEvent(nil), events...)
+		return append([]agentHubEvent(nil), events...)
 	}
 	start := sort.Search(len(events), func(i int) bool {
 		return events[i].ID > afterID
 	})
-	return append([]agentEvent(nil), events[start:]...)
+	return append([]agentHubEvent(nil), events[start:]...)
 }
 
 func agentStreamAfterID(r *http.Request) int64 {
@@ -1280,117 +1289,21 @@ func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {
 	return nil
 }
 
-func loadAgentRunDetail(workspacePath, runID string) (agentRun, []agentEvent, bool, error) {
+func loadAgentRun(workspacePath, runID string) (agentRun, error) {
 	runs, err := loadAgentRuns(workspacePath)
 	if err != nil {
-		return agentRun{}, nil, false, err
+		return agentRun{}, err
 	}
-	var run agentRun
-	found := false
 	for _, item := range runs {
 		if item.ID == runID {
-			run = item
-			found = true
-			break
+			return item, nil
 		}
 	}
-	if !found {
-		return agentRun{}, nil, false, fmt.Errorf("run not found: %s", runID)
-	}
-	events, truncated, err := loadAgentEvents(workspacePath, runID)
-	if err != nil {
-		return agentRun{}, nil, false, err
-	}
-	return run, events, truncated, nil
-}
-
-func loadAgentEvents(workspacePath, runID string) ([]agentEvent, bool, error) {
-	file, err := os.Open(agentEventsPath(workspacePath, runID))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []agentEvent{}, false, nil
-		}
-		return nil, false, err
-	}
-	defer file.Close()
-	truncated := false
-	if info, err := file.Stat(); err == nil && info.Size() > agentEventTailBytes {
-		if _, err := file.Seek(info.Size()-agentEventTailBytes, io.SeekStart); err == nil {
-			truncated = true
-		}
-	}
-	var events []agentEvent
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	if truncated {
-		// Discard the first partial line after seeking into the tail window.
-		scanner.Scan()
-	}
-	for scanner.Scan() {
-		var event agentEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err == nil {
-			events = append(events, event)
-			if len(events) > agentEventMaxCount {
-				truncated = true
-				events = events[len(events)-agentEventMaxCount:]
-			}
-		}
-	}
-	return events, truncated, scanner.Err()
-}
-
-func loadAgentEventsPage(workspacePath, runID string, beforeID int64, limit int) ([]agentEvent, bool, error) {
-	if limit <= 0 || limit > agentEventMaxCount {
-		limit = agentEventMaxCount
-	}
-	file, err := os.Open(agentEventsPath(workspacePath, runID))
-	if err != nil {
-		if os.IsNotExist(err) {
-			return []agentEvent{}, false, nil
-		}
-		return nil, false, err
-	}
-	defer file.Close()
-	var events []agentEvent
-	hasMore := false
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), 8*1024*1024)
-	for scanner.Scan() {
-		var event agentEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
-			continue
-		}
-		if beforeID > 0 && event.ID >= beforeID {
-			continue
-		}
-		events = append(events, event)
-		if len(events) > limit {
-			hasMore = true
-			events = events[len(events)-limit:]
-		}
-	}
-	return events, hasMore, scanner.Err()
-}
-
-func appendAgentEvent(workspacePath, runID string, event agentEvent) error {
-	if err := ensureAgentDirs(workspacePath); err != nil {
-		return err
-	}
-	file, err := os.OpenFile(agentEventsPath(workspacePath, runID), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-	data, err := json.Marshal(event)
-	if err != nil {
-		return err
-	}
-	_, err = file.Write(append(data, '\n'))
-	return err
+	return agentRun{}, fmt.Errorf("run not found: %s", runID)
 }
 
 func ensureAgentDirs(workspacePath string) error {
-	return os.MkdirAll(filepath.Join(agentRoot(workspacePath), "runs"), 0o755)
+	return os.MkdirAll(agentRoot(workspacePath), 0o755)
 }
 
 func agentRoot(workspacePath string) string {
@@ -1399,10 +1312,6 @@ func agentRoot(workspacePath string) string {
 
 func agentIndexPath(workspacePath string) string {
 	return filepath.Join(agentRoot(workspacePath), "runs.json")
-}
-
-func agentEventsPath(workspacePath, runID string) string {
-	return filepath.Join(agentRoot(workspacePath), "runs", runID+".jsonl")
 }
 
 func agentCwd(workspacePath, requested string) (string, error) {
@@ -1431,99 +1340,14 @@ func newRunID() string {
 	return "run-" + hex.EncodeToString(b[:])
 }
 
-func writeSSE(w http.ResponseWriter, event agentEvent) {
+func writeSSE(w http.ResponseWriter, event agentHubEvent) {
 	data, _ := json.Marshal(event)
 	_, _ = fmt.Fprintf(w, "id: %d\n", event.ID)
 	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
-func eventText(method string, params json.RawMessage) string {
-	for _, key := range []string{"delta", "text", "message", "summary", "status", "command", "path"} {
-		if value := firstString(params, key); value != "" {
-			return value
-		}
-	}
-	if itemType := nestedString(params, "item", "type"); itemType != "" {
-		if status := nestedString(params, "item", "status"); status != "" {
-			return itemType + " " + status
-		}
-		return itemType
-	}
-	if method != "" {
-		return method
-	}
-	return compactJSON(params)
-}
-
-func firstString(data json.RawMessage, keys ...string) string {
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return ""
-	}
-	return findString(value, keys...)
-}
-
-func nestedRawMessage(data json.RawMessage, key string) json.RawMessage {
-	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(data, &obj); err != nil {
-		return nil
-	}
-	return obj[key]
-}
-
-func nestedString(data json.RawMessage, path ...string) string {
-	var value any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return ""
-	}
-	current := value
-	for _, key := range path {
-		obj, ok := current.(map[string]any)
-		if !ok {
-			return ""
-		}
-		current = obj[key]
-	}
-	if text, ok := current.(string); ok {
-		return text
-	}
-	return ""
-}
-
-func findString(value any, keys ...string) string {
-	switch v := value.(type) {
-	case map[string]any:
-		for _, key := range keys {
-			if text, ok := v[key].(string); ok && strings.TrimSpace(text) != "" {
-				return text
-			}
-		}
-		for _, child := range v {
-			if text := findString(child, keys...); text != "" {
-				return text
-			}
-		}
-	case []any:
-		for _, child := range v {
-			if text := findString(child, keys...); text != "" {
-				return text
-			}
-		}
-	}
-	return ""
-}
-
-func compactJSON(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var value any
-	if err := json.Unmarshal(raw, &value); err != nil {
-		return string(raw)
-	}
-	data, err := json.Marshal(value)
-	if err != nil {
-		return string(raw)
-	}
-	return string(data)
+func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {
+	data, _ := json.Marshal(notice)
+	_, _ = fmt.Fprint(w, "event: forge.notice\n")
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }

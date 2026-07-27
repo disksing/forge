@@ -42,7 +42,19 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁。AgentHub 不可达、状态未知、event cursor gap、重复 source 或未证明先经过 stopped 的 archived 状态都保守持锁。
 
-迁移前的 run 索引和本地 JSONL event 仍可在 GUI 中查看。旧 provider 字段只作为未知 JSON 输入被忽略，不会重新写入；旧 run 的 input、approval、interrupt、stop 和 resume 操作会明确拒绝，绝不会启动旧 provider 进程。
+迁移前的 run 索引和本地 JSONL event 保留在磁盘，但 Forge 不再读取、展示、迁移或写入这些 event，也不会列出或控制未绑定 AgentHub 的旧 direct run。回滚时可由旧二进制继续读取原文件。
+
+## Event Timeline
+
+REST、历史分页与 SSE 都向浏览器传递 AgentHub API v1 canonical event。浏览器使用 vendored `@agenthub/event-timeline` IIFE 的 `buildTimeline` 进行唯一的过滤、delta 合并、tool payload 解释、call 关联和终态收敛，再由 Forge 的 DOM renderer 展示。
+
+当前固定版本为 1.0.0，AgentHub source revision 为 `bb375f5597711f2dd20fed4c02a550000d351978`，IIFE SHA-256 为 `2530f07b2b1c6c53dc495ae205743d67f058574ab24bb4a0d30c88208f4bdd04`。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
+
+```sh
+scripts/update-agenthub-event-timeline /path/to/agenthub
+```
+
+Forge recovery 和 AutoRun 诊断使用独立 `forge.notice` SSE event，不伪装成 canonical event，也不进入共享 timeline projector。
 
 ## 隔离验证
 
@@ -61,6 +73,7 @@ FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
 go test ./...
 go vet ./...
 node --check gui/static/app.js
+node --check gui/static/vendor/agenthub-event-timeline/event-timeline.iife.js
 git diff --check
 ```
 

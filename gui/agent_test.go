@@ -78,7 +78,7 @@ func testUploadAgentManager(t *testing.T, workspace, cwd string) *agentManager {
 	manager := newAgentManager(&server{config: configPath})
 	manager.registerRuntime(&agentRuntime{
 		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Cwd: cwd, Status: "idle"},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Cwd: cwd, Status: "idle"},
 	})
 	return manager
 }
@@ -116,7 +116,7 @@ func agentUploadRequest(t *testing.T, name, content string) *http.Request {
 	return request
 }
 
-func TestLegacyRunHistoryRemainsReadableButLegacyFieldsAreNeverRewritten(t *testing.T) {
+func TestLegacyRunEventFileRemainsUntouchedAndIsNotExposed(t *testing.T) {
 	workspace := t.TempDir()
 	indexPath := agentIndexPath(workspace)
 	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
@@ -141,36 +141,38 @@ func TestLegacyRunHistoryRemainsReadableButLegacyFieldsAreNeverRewritten(t *test
 	if err := os.WriteFile(indexPath, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	eventsPath := agentEventsPath(workspace, "legacy-run")
+	eventsPath := filepath.Join(workspace, ".forge", "gui-agent", "runs", "legacy-run.jsonl")
 	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(eventsPath, []byte(`{"id":1,"type":"assistant_delta","text":"historical output"}`+"\n"), 0o644); err != nil {
+	original := []byte(`{"id":1,"type":"old-event","text":"historical output"}` + "\n")
+	if err := os.WriteFile(eventsPath, original, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	run, events, _, err := loadAgentRunDetail(workspace, "legacy-run")
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	writeCurrentTestConfig(t, configPath, workspace)
+	manager := newAgentManager(&server{config: configPath})
+	list := httptest.NewRecorder()
+	manager.listRuns(list, httptest.NewRequest(http.MethodGet, "/runs", nil), "workspace-one")
+	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "legacy-run") {
+		t.Fatalf("legacy direct run must not be listed: %d %s", list.Code, list.Body.String())
+	}
+	detail := httptest.NewRecorder()
+	manager.getRun(detail, httptest.NewRequest(http.MethodGet, "/runs/legacy-run", nil), "workspace-one", "legacy-run")
+	if detail.Code != http.StatusNotFound {
+		t.Fatalf("legacy direct run detail must not be exposed: %d %s", detail.Code, detail.Body.String())
+	}
+	after, err := os.ReadFile(eventsPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Title != "Historical run" || len(events) != 1 || events[0].Text != "historical output" {
-		t.Fatalf("legacy history was not preserved: run=%#v events=%#v", run, events)
-	}
-	if err := saveAgentRun(workspace, run); err != nil {
-		t.Fatal(err)
-	}
-	saved, err := os.ReadFile(indexPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"providerSessionId", "codexThreadId", "codexTurnId", `"provider"`, `"model"`, `"sandbox"`, `"approval"`} {
-		if bytes.Contains(saved, []byte(forbidden)) {
-			t.Fatalf("legacy field %q was rewritten into the current run schema:\n%s", forbidden, saved)
-		}
+	if !bytes.Equal(after, original) {
+		t.Fatalf("legacy event file changed:\n%s", after)
 	}
 }
 
-func TestLegacyRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
+func TestUnboundRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 	workspace := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "gui.json")
 	writeCurrentTestConfig(t, configPath, workspace)
@@ -192,11 +194,11 @@ func TestLegacyRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "/"+endpoint.path, strings.NewReader(endpoint.body))
 		recorder := httptest.NewRecorder()
 		endpoint.call(recorder, request, "workspace-one", "legacy-run")
-		if recorder.Code != http.StatusConflict {
-			t.Fatalf("%s should reject legacy control, got %d: %s", endpoint.path, recorder.Code, recorder.Body.String())
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("%s should reject unbound control, got %d: %s", endpoint.path, recorder.Code, recorder.Body.String())
 		}
-		if !strings.Contains(recorder.Body.String(), "read-only") {
-			t.Fatalf("%s rejection should explain read-only history: %s", endpoint.path, recorder.Body.String())
+		if !strings.Contains(recorder.Body.String(), "not attached to AgentHub") {
+			t.Fatalf("%s rejection should explain missing AgentHub binding: %s", endpoint.path, recorder.Body.String())
 		}
 	}
 }

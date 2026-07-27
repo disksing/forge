@@ -1,0 +1,39 @@
+#!/bin/sh
+set -eu
+
+repo=${1:?usage: scripts/update-agenthub-event-timeline /path/to/agenthub [revision]}
+revision=${2:-bb375f5597711f2dd20fed4c02a550000d351978}
+expected_revision=bb375f5597711f2dd20fed4c02a550000d351978
+expected_sha=2530f07b2b1c6c53dc495ae205743d67f058574ab24bb4a0d30c88208f4bdd04
+
+resolved=$(git -C "$repo" rev-parse "$revision^{commit}")
+if [ "$resolved" != "$expected_revision" ]; then
+  echo "revision $resolved is not the pinned AgentHub revision $expected_revision" >&2
+  exit 1
+fi
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
+git -C "$repo" archive "$resolved" packages/event-timeline | tar -x -C "$tmp"
+package="$tmp/packages/event-timeline"
+(cd "$package" && npm run build && npm test)
+
+actual_sha=$(shasum -a 256 "$package/dist/event-timeline.iife.js" | awk '{print $1}')
+if [ "$actual_sha" != "$expected_sha" ]; then
+  echo "IIFE SHA-256 mismatch: got $actual_sha, want $expected_sha" >&2
+  exit 1
+fi
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+vendor="$root/gui/static/vendor/agenthub-event-timeline"
+fixtures="$root/gui/testdata/agenthub-event-timeline"
+mkdir -p "$vendor" "$fixtures"
+cp "$package/dist/event-timeline.iife.js" "$vendor/event-timeline.iife.js"
+cp "$package/dist/manifest.json" "$vendor/upstream-manifest.json"
+cp "$package/LICENSE" "$vendor/LICENSE"
+cp "$package/fixtures/canonical-events.json" "$fixtures/canonical-events.json"
+cp "$package/fixtures/pagination-fragments.json" "$fixtures/pagination-fragments.json"
+cp "$package/snapshots/canonical-events.timeline.json" "$fixtures/canonical-events.timeline.json"
+cp "$package/snapshots/pagination-fragments.timeline.json" "$fixtures/pagination-fragments.timeline.json"
+
+echo "updated @agenthub/event-timeline 1.0.0 from $resolved ($actual_sha)"

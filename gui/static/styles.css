@@ -1368,13 +1368,6 @@ body.resizing-y {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.agent-message-row.assistant.progress .agent-message-bubble {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-  color: #475569;
-  box-shadow: none;
-}
-
 .agent-message-row.assistant.final .agent-message-bubble {
   border-color: #93c5fd;
   border-left: 4px solid #2563eb;
@@ -1512,6 +1505,18 @@ body.resizing-y {
   white-space: pre-wrap;
 }
 
+.agent-tool-running summary > svg {
+  color: #2563eb;
+}
+
+.agent-tool-completed summary > svg {
+  color: #16a34a;
+}
+
+.agent-tool-failed summary > svg {
+  color: #dc2626;
+}
+
 .agent-reasoning-note {
   width: min(92%, 720px);
   margin: 8px 0;
@@ -1566,25 +1571,16 @@ body.resizing-y {
   text-align: center;
 }
 
-.agent-activity-note {
-  width: max-content;
-  max-width: 92%;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin: 8px 0;
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #64748b;
-  padding: 5px 9px;
-  font-size: 12px;
-  font-weight: 700;
+.agent-lifecycle-ok {
+  color: #15803d;
 }
 
-.agent-activity-note svg {
-  width: 14px;
-  height: 14px;
+.agent-lifecycle-danger {
+  color: #dc2626;
+}
+
+.agent-lifecycle-info {
+  color: #2563eb;
 }
 
 .tty-line {
@@ -1655,16 +1651,6 @@ body.resizing-y {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
-}
-
-.agent-event.assistant_delta {
-  border-color: #bfdbfe;
-  background: #eff6ff;
-}
-
-.agent-event.user {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
 }
 
 .agent-event.error {

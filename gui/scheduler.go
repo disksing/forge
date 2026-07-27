@@ -173,7 +173,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			continue
 		}
 		if strings.TrimSpace(run.AgentHubSessionID) == "" {
-			return runnableTaskDispatchFailed, fmt.Errorf("active run %s is a legacy direct-provider session; AutoRun requires AgentHub, stop the legacy run and retry", run.ID)
+			return runnableTaskDispatchFailed, fmt.Errorf("active run %s is not attached to AgentHub", run.ID)
 		}
 		if len(task.PreferredAgentProfiles) == 0 && task.AgentID != "" && run.AgentID != task.AgentID {
 			return runnableTaskDispatchFailed, fmt.Errorf("active run %s uses agent %s, AutoRun requires %s", run.ID, run.AgentID, task.AgentID)

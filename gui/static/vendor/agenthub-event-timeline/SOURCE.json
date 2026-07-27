@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "package": "@agenthub/event-timeline",
+  "version": "1.0.0",
+  "apiEventContractVersion": "agenthub.api.v1",
+  "repository": "https://github.com/disksing/agenthub",
+  "revision": "bb375f5597711f2dd20fed4c02a550000d351978",
+  "artifact": "event-timeline.iife.js",
+  "sha256": "2530f07b2b1c6c53dc495ae205743d67f058574ab24bb4a0d30c88208f4bdd04",
+  "license": "BSD-3-Clause"
+}

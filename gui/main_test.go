@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"io/fs"
@@ -954,371 +956,128 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 	}
 }
 
-func TestAgentChatRendersMarkdownFinalResponsesAndToolGroups(t *testing.T) {
+func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(indexData), `/vendor/agenthub-event-timeline/event-timeline.iife.js`) {
+		t.Fatal("shared AgentHub timeline bundle is not loaded")
+	}
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	app := string(appData)
 	for _, want := range []string{
-		`markTransientAgentReasoning(markTransientAgentStatus(markFinalAgentResponses(coalesceAgentEvents(events))))`,
-		`<div class="agent-message-content markdown-rendered">${renderMarkdown(text)}</div>`,
-		`function groupToolEvents(events)`,
-		`previous.collapsed = true`,
-		`const open = typeof userOpen === "boolean" ? userOpen : !group.collapsed`,
-		`const visibleEvents = visibleAgentToolEvents(group, userOpen)`,
-		`${visibleEvents.map(agentToolEventRow).join("")}`,
-		`data-tool-group-key="${escapeHTML(key)}"${open ? " open" : ""}`,
-		`function bindAgentToolGroupEvents()`,
+		`window.AgentHubEventTimeline.buildTimeline(state.agent.events)`,
+		`stream.addEventListener("forge.notice"`,
 		`state.agent.toolGroupOpen.set(details.dataset.toolGroupKey, !details.open)`,
-		`function toolEventDetails(event)`,
-		`function markTransientAgentStatus(events)`,
-		`if (isTransientAgentStatus(event)) return Boolean(event.isActiveTransientStatus)`,
-		`function markTransientAgentReasoning(events)`,
-		`if (activeReasoning >= 0) result[activeReasoning].isActiveTransientReasoning = true`,
-		`return event?.type !== "reasoning_delta" && event?.type !== "metadata"`,
-		`if (event.type === "reasoning_delta") return Boolean(event.isActiveTransientReasoning)`,
-		`function isAgentSessionReady(run)`,
-		`function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run))`,
+		`<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`,
+		`return window.DOMPurify.sanitize(window.marked.parse(String(content ?? "")))`,
+		`item.kind === "message"`,
+		`item.kind === "thinking"`,
+		`item.kind === "tools"`,
+		`item.kind === "approval"`,
+		`item.kind === "lifecycle"`,
+		`item.kind === "error"`,
+		`item.kind === "unknown"`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("agent chat rendering is missing %q", want)
+			t.Fatalf("canonical timeline integration is missing %q", want)
 		}
 	}
-
-	stylesData, err := staticFiles.ReadFile("static/styles.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	styles := string(stylesData)
-	for _, want := range []string{`.agent-message-row.assistant.final`, `.agent-message-content`, `.agent-tool-group[open]`, `.agent-tool-item pre`, `.tty-input:focus-within`} {
-		if !strings.Contains(styles, want) {
-			t.Fatalf("agent chat styles are missing %q", want)
-		}
-	}
-	if strings.Contains(app, "Final response") || strings.Contains(app, "Progress update") {
-		t.Fatal("agent message bubbles should rely on visual hierarchy without response labels")
-	}
-}
-
-func TestAgentChatLimitsOnlyActiveUntouchedToolGroups(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required for the agent tool group behavior test")
-	}
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
-	start := strings.Index(app, "function visibleAgentToolEvents(group, userOpen)")
-	end := strings.Index(app, "function agentToolGroupKey(group)")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate active tool group visibility helper")
-	}
-
-	script := `
-const AGENT_ACTIVE_TOOL_EVENT_LIMIT = 3;
-` + app[start:end] + `
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-const events = [1, 2, 3, 4, 5].map((id) => ({ id }));
-const active = { events, collapsed: false };
-const completed = { events: [...events], collapsed: true };
-
-let visible = visibleAgentToolEvents(active);
-assert(visible.map((event) => event.id).join(",") === "3,4,5", "an untouched active group should show its latest three calls");
-assert(active.events.length === 5, "limiting the active group must not discard its full event history");
-
-active.events.push({ id: 6 });
-visible = visibleAgentToolEvents(active);
-assert(visible.map((event) => event.id).join(",") === "4,5,6", "the active window should advance with new calls");
-
-visible = visibleAgentToolEvents(active, true);
-assert(visible.length === 6, "a manually expanded active group should show every call");
-
-visible = visibleAgentToolEvents(completed);
-assert(visible.length === 5, "a completed group should retain every call for manual expansion");
-`
-
-	testFile := filepath.Join(t.TempDir(), "agent-active-tool-group.js")
-	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
-		t.Fatalf("agent active tool group behavior test failed: %v\n%s", err, output)
-	}
-}
-
-func TestAgentChatBoundsHistoryAndStreamsAfterLoadedCursor(t *testing.T) {
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
-	for _, want := range []string{
-		`const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;`,
-		`const AGENT_OLDER_RAW_PAGE_LIMIT = 250;`,
-		`const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;`,
-		`const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;`,
-		`const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;`,
-		`const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;`,
-		`state.agent.historyBeforeId = oldestRawAgentEventID(events);`,
-		`function latestAgentEventID()`,
-		`const after = latestAgentEventID();`,
-		`/stream${query}`,
-		`if (!isLiveAgentRun(currentAgentRun()))`,
-		`async function refreshAgentRunMetadata()`,
-		`refreshAgentRunMetadata().then(renderAll)`,
-		`scheduleAgentRender({ full: !mergedDelta })`,
-		`function renderLatestAgentDelta()`,
-		`content.innerHTML = renderMarkdown(agentDisplayText(event));`,
+	for _, forbidden := range []string{
+		"displayAgent" + "Events",
+		"coalesceAgent" + "Events",
+		"shouldDisplayAgent" + "Event",
+		"groupTool" + "Events",
+		"toolEvent" + "Summary",
+		"assistant" + "_delta",
+		"approval" + "_requested",
 	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("bounded agent history behavior is missing %q", want)
+		if strings.Contains(app, forbidden) {
+			t.Fatalf("legacy event compatibility remains in app.js: %q", forbidden)
 		}
 	}
-	if strings.Contains(app, `loadAgentRuns().then(renderAll)`) {
-		t.Fatal("turn completion should refresh run metadata without reloading the full event tail")
-	}
 }
 
-func TestLoadOlderAgentEventsAdvancesRawCursorAcrossCoalescedDelta(t *testing.T) {
+func TestVendoredAgentHubTimelineMatchesSharedFixtures(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is required for the agent history behavior test")
+		t.Skip("node is required for shared timeline conformance")
 	}
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
-	start := strings.Index(app, "async function loadOlderAgentEvents()")
-	end := strings.Index(app, "function fetchAgentRuns()")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate agent history loading functions")
-	}
-
 	script := `
-const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
-const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
-const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
-const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
-const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
-const state = {
-  activeWorkspaceId: "workspace",
-  agent: {
-    activeRunId: "run",
-    loadingOlder: false,
-    eventsHasMore: true,
-    historyBeforeId: 3000,
-    events: [{ id: 3000, type: "assistant_delta", text: "current", data: { messageId: "long-message" } }],
-  },
-};
-const pages = new Map([
-  [3000, [{ id: 2500, type: "assistant_delta", text: "earlier chunk", data: { messageId: "long-message" } }]],
-  [2500, [{ id: 2000, type: "assistant_delta", text: "older reply", data: { messageId: "older-message" } }]],
-]);
-const requestedBefore = [];
-const requestedLimits = [];
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-function $(id) {
-  return id === "ttyLog" ? { scrollHeight: 0, scrollTop: 0 } : null;
-}
-function renderTTY() {}
-function refreshIcons() {}
-function displayAgentEvents(events) {
-  return events.filter((event) => event.type === "assistant_delta" || event.type === "user");
-}
-function coalesceAgentEvents(events) {
-  const result = [];
-  for (const event of events) {
-    const last = result[result.length - 1];
-    if (last?.type === event.type && last?.data?.messageId === event?.data?.messageId) {
-      last.id = event.id;
-      last.text += event.text;
-    } else {
-      result.push({ ...event, data: { ...event.data } });
+const fs = require("node:fs");
+const vm = require("node:vm");
+const [bundlePath, fixturePath, snapshotPath] = process.argv.slice(1);
+const context = {};
+vm.createContext(context);
+vm.runInContext(fs.readFileSync(bundlePath, "utf8"), context);
+const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
+const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
+if (Array.isArray(fixture.scenarios)) {
+  for (const scenario of fixture.scenarios) {
+    const actual = context.AgentHubEventTimeline.buildTimeline(scenario.events);
+    const expected = snapshot.scenarios[scenario.name];
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error("timeline snapshot mismatch: " + scenario.name);
     }
   }
-  return result;
-}
-async function api(url) {
-  const params = new URL(url, "http://forge.test").searchParams;
-  const before = Number(params.get("before"));
-  requestedBefore.push(before);
-  requestedLimits.push(Number(params.get("limit")));
-  return { events: pages.get(before) || [], hasMore: before > 2500 };
-}
-` + app[start:end] + `
-(async () => {
-  await loadOlderAgentEvents();
-  assert(requestedBefore.join(",") === "3000,2500", "raw history cursor should advance even when display coalescing keeps a newer event id");
-  assert(requestedLimits.join(",") === "500,500", "manual history should use bounded 500-event pages until a visible message is found");
-  assert(visibleAgentEventCount() === 2, "older visible reply was not loaded through reasoning noise");
-  assert(state.agent.events[0].text === "older reply", "older events should be prepended in chronological order");
-  assert(state.agent.historyBeforeId === 2000, "raw history cursor should track the oldest server event id");
-})().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+} else {
+  const events = [];
+  fixture.pages.forEach((page, index) => {
+    events.push(...page);
+    const actual = context.AgentHubEventTimeline.buildTimeline(events);
+    if (JSON.stringify(actual) !== JSON.stringify(snapshot.stages[index])) {
+      throw new Error("pagination timeline snapshot mismatch at stage " + index);
+    }
+  });
+  }
 `
-
-	testFile := filepath.Join(t.TempDir(), "agent-load-older-events.js")
-	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
-		t.Fatalf("agent history behavior test failed: %v\n%s", err, output)
-	}
-}
-
-func TestAgentChatReasoningIsTransientAndDoesNotSplitToolGroups(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required for the agent chat behavior test")
-	}
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
-	start := strings.Index(app, "function coalesceAgentEvents(events)")
-	end := strings.Index(app, "function renderAgent()")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate agent event transformation functions")
-	}
-
-	script := `
-const state = { agent: { activeRunId: "run" } };
-` + app[start:end] + `
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-function tool(id, update = false) {
-  return {
-    id: id + (update ? 100 : 0),
-    type: "tool",
-    method: "session/update",
-    data: { sessionUpdate: update ? "tool_call_update" : "tool_call", toolCallId: id, status: update ? "completed" : "pending", title: "tool-" + id },
-  };
-}
-function reasoning(id, text) {
-  return { id, type: "reasoning_delta", method: "session/update", text, data: { messageId: id } };
-}
-
-let displayed = displayAgentEvents([tool(1), reasoning(2, "working")]);
-assert(displayed.length === 2, "the active reasoning phase should remain briefly visible");
-assert(displayed[0].type === "tool_group" && displayed[1].type === "reasoning_delta", "active reasoning should follow the first tool group");
-
-displayed = displayAgentEvents([
-  tool(1),
-  reasoning(2, "working"),
-  tool(3),
-  tool(3, true),
-  tool(4),
-  tool(4, true),
-]);
-assert(displayed.length === 1 && displayed[0].type === "tool_group", "completed reasoning should disappear without splitting tools");
-assert(displayed[0].events.length === 3, "tool updates should replace their call while N and M calls merge");
-assert(displayed[0].events.map(agentEventItemId).join(",") === "1,3,4", "the merged group should preserve tool order");
-
-displayed = displayAgentEvents([
-  tool(1),
-  reasoning(2, "working"),
-  { id: 3, type: "system", method: "session/prompt", text: "OpenCode turn finished: end_turn." },
-  { id: 4, type: "system", method: "session/prompt", text: "Kimi Code turn finished: end_turn." },
-]);
-assert(displayed.every((event) => event.type !== "reasoning_delta"), "turn completion should remove stale reasoning");
-assert(displayed.length === 1 && displayed[0].type === "tool_group", "turn completion notices should not render as chat messages");
-`
-
-	testFile := filepath.Join(t.TempDir(), "agent-chat-events.js")
-	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
-		t.Fatalf("agent chat behavior test failed: %v\n%s", err, output)
+	for _, fixture := range []string{"canonical-events", "pagination-fragments"} {
+		t.Run(fixture, func(t *testing.T) {
+			args := []string{
+				"-e", script,
+				filepath.Join("static", "vendor", "agenthub-event-timeline", "event-timeline.iife.js"),
+				filepath.Join("testdata", "agenthub-event-timeline", fixture+".json"),
+				filepath.Join("testdata", "agenthub-event-timeline", fixture+".timeline.json"),
+			}
+			if output, err := exec.Command(node, args...).CombinedOutput(); err != nil {
+				t.Fatalf("shared timeline conformance failed: %v\n%s", err, output)
+			}
+		})
 	}
 }
 
-func TestAgentChatHidesUntitledToolCallUpdates(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required for the agent chat behavior test")
-	}
-	appData, err := staticFiles.ReadFile("static/app.js")
+func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
+	bundle, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/event-timeline.iife.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := string(appData)
-	start := strings.Index(app, "function coalesceAgentEvents(events)")
-	end := strings.Index(app, "function renderAgent()")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate agent event transformation functions")
-	}
-
-	script := `
-const state = { agent: { activeRunId: "run" } };
-` + app[start:end] + `
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-function titledCall(id) {
-  return {
-    id,
-    type: "tool",
-    method: "session/update",
-    data: { sessionUpdate: "tool_call", toolCallId: id, title: "read", kind: "read", status: "pending" },
-  };
-}
-function titledUpdate(id) {
-  return {
-    id: id + 100,
-    type: "tool",
-    method: "session/update",
-    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "completed", title: "README.md" },
-  };
-}
-function untitledProgress(id) {
-  return {
-    id: id + 200,
-    type: "tool",
-    method: "session/update",
-    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "in_progress", content: [{ type: "content", content: { type: "text", text: "partial-json-chunk" } }] },
-  };
-}
-function untitledCompleted(id) {
-  return {
-    id: id + 300,
-    type: "tool",
-    method: "session/update",
-    data: { sessionUpdate: "tool_call_update", toolCallId: id, status: "completed" },
-  };
-}
-
-let displayed = displayAgentEvents([titledCall(1), untitledProgress(1), untitledProgress(1), untitledCompleted(1)]);
-assert(displayed.length === 1 && displayed[0].type === "tool_group", "untitled updates should not split or extend the tool group");
-assert(displayed[0].events.length === 1, "untitled tool_call progress and completed updates should be hidden");
-assert(displayed[0].events[0].data.title === "read", "the titled tool call should remain visible");
-
-displayed = displayAgentEvents([titledCall(1), titledUpdate(1)]);
-assert(displayed.length === 1 && displayed[0].events.length === 1, "a titled update should replace its call in the group");
-assert(displayed[0].events[0].data.title === "README.md", "titled completed updates should stay visible");
-
-displayed = displayAgentEvents([untitledProgress(9), untitledCompleted(9)]);
-assert(displayed.length === 0, "a fully untitled tool call should disappear entirely");
-`
-
-	testFile := filepath.Join(t.TempDir(), "agent-chat-untitled-tools.js")
-	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+	sourceData, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/SOURCE.json")
+	if err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
-		t.Fatalf("agent chat behavior test failed: %v\n%s", err, output)
+	var source struct {
+		Version                 string `json:"version"`
+		APIEventContractVersion string `json:"apiEventContractVersion"`
+		Revision                string `json:"revision"`
+		SHA256                  string `json:"sha256"`
+	}
+	if err := json.Unmarshal(sourceData, &source); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(bundle)
+	actual := hex.EncodeToString(sum[:])
+	if source.Version != "1.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
+		source.Revision != "bb375f5597711f2dd20fed4c02a550000d351978" ||
+		source.SHA256 != actual ||
+		actual != "2530f07b2b1c6c53dc495ae205743d67f058574ab24bb4a0d30c88208f4bdd04" {
+		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
+	}
+	if _, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/LICENSE"); err != nil {
+		t.Fatal("vendored BSD-3-Clause license is missing")
 	}
 }
 

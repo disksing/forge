@@ -15,13 +15,16 @@ import (
 func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
 	workspace := t.TempDir()
 	manager := coreTestManager(t, workspace)
-	events := make([]agentEvent, agentEventMaxCount+20)
+	events := make([]agentHubEvent, agentHubEventMaxCount+20)
 	for index := range events {
-		events[index] = agentEvent{ID: int64(index + 1), Type: "event", Text: fmt.Sprintf("event-%d", index+1)}
+		events[index] = agentHubEvent{
+			ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one",
+			Data: json.RawMessage(fmt.Sprintf(`{"index":%d}`, index+1)),
+		}
 	}
 	manager.registerRuntime(&agentRuntime{
 		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Status: "idle"},
 		events:    events,
 	})
 
@@ -34,7 +37,7 @@ func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Events) != agentEventMaxCount || detail.Events[0].ID != 21 ||
+	if len(detail.Events) != agentHubEventMaxCount || detail.Events[0].ID != 21 ||
 		detail.Events[len(detail.Events)-1].ID != int64(len(events)) || !detail.EventsTruncated || !detail.EventsHasMore {
 		t.Fatalf("unexpected active event tail: %#v", detail)
 	}
@@ -42,19 +45,25 @@ func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
 
 func TestAgentRuntimeRetainsBoundedEventTail(t *testing.T) {
 	workspace := t.TempDir()
-	initial := make([]agentEvent, agentEventMaxCount)
+	initial := make([]agentHubEvent, agentHubEventMaxCount)
 	for index := range initial {
-		initial[index] = agentEvent{ID: int64(index + 1), Type: "event"}
+		initial[index] = agentHubEvent{ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one"}
 	}
 	runtime := &agentRuntime{
-		workspace:   guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:         agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
-		events:      initial,
-		nextEventID: int64(agentEventMaxCount + 1),
+		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		run: agentRun{
+			ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one",
+			AgentHubEventCursor: agentHubEventMaxCount, Status: "idle",
+		},
+		events: initial,
 	}
-	runtime.addEvent(newAgentManager(&server{}), "event", "test", "new event", nil, "")
+	if err := runtime.applyAgentHubEvent(newAgentManager(&server{}), agentHubEvent{
+		ID: agentHubEventMaxCount + 1, Type: "provider.event", SessionID: "ses_one",
+	}); err != nil {
+		t.Fatal(err)
+	}
 	events := runtime.snapshotEvents()
-	if len(events) != agentEventMaxCount || events[0].ID != 2 || events[len(events)-1].ID != int64(agentEventMaxCount+1) {
+	if len(events) != agentHubEventMaxCount || events[0].ID != 2 || events[len(events)-1].ID != int64(agentHubEventMaxCount+1) {
 		t.Fatalf("runtime did not retain bounded tail: %#v", events)
 	}
 }
@@ -62,13 +71,16 @@ func TestAgentRuntimeRetainsBoundedEventTail(t *testing.T) {
 func TestAgentStreamStartsAfterClientCursor(t *testing.T) {
 	workspace := t.TempDir()
 	manager := coreTestManager(t, workspace)
-	events := make([]agentEvent, 5)
+	events := make([]agentHubEvent, 5)
 	for index := range events {
-		events[index] = agentEvent{ID: int64(index + 1), Type: "event", Text: fmt.Sprintf("event-%d", index+1)}
+		events[index] = agentHubEvent{
+			ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one",
+			Data: json.RawMessage(fmt.Sprintf(`{"index":%d}`, index+1)),
+		}
 	}
 	manager.registerRuntime(&agentRuntime{
 		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Status: "idle"},
 		events:    events,
 	})
 	ctx, cancel := context.WithCancel(context.Background())
@@ -142,8 +154,8 @@ func TestListRunsFiltersWorkspaceScope(t *testing.T) {
 	workspace := t.TempDir()
 	now := "2026-01-01T00:00:00Z"
 	runs := []agentRun{
-		{ID: "workspace-run", WorkspaceID: "workspace-one", Title: "Workspace", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
-		{ID: "task-run", WorkspaceID: "workspace-one", ResourceID: "project1.task1", Title: "Task", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
+		{ID: "workspace-run", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_workspace", Title: "Workspace", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
+		{ID: "task-run", WorkspaceID: "workspace-one", ResourceID: "project1.task1", AgentHubSessionID: "ses_task", Title: "Task", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
 	}
 	if err := rewriteAgentRuns(workspace, runs); err != nil {
 		t.Fatal(err)

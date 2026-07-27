@@ -253,11 +253,26 @@ func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSess
 		source.App, source.InstanceID, source.ExternalID, strings.Join(ids, ", "))
 }
 
-func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient, events []agentEvent) *agentRuntime {
+func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient, events []agentHubEvent) *agentRuntime {
 	return &agentRuntime{
-		workspace: workspace, manager: m, run: run, events: append([]agentEvent(nil), events...),
-		nextEventID: nextAgentEventID(events), agentHub: client,
+		workspace: workspace, manager: m, run: run, events: append([]agentHubEvent(nil), events...),
+		agentHub: client,
 	}
+}
+
+func (m *agentManager) loadAgentHubRuntimeForRead(ctx context.Context, workspace guiWorkspace, run agentRun) (*agentRuntime, error) {
+	if strings.TrimSpace(run.AgentHubSessionID) == "" {
+		return nil, errors.New("run is not attached to AgentHub")
+	}
+	_, client, err := m.agentHubRuntimeConfig()
+	if err != nil {
+		return nil, err
+	}
+	rt := newAgentHubRuntime(m, workspace, run, client, nil)
+	if err := rt.loadAgentHubHistory(ctx, 0); err != nil {
+		return nil, err
+	}
+	return rt, nil
 }
 
 func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64) error {
@@ -268,7 +283,7 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 		return errors.New("AgentHub runtime is not attached to a session")
 	}
 	cursor := int64(0)
-	var history []agentEvent
+	var history []agentHubEvent
 	sawStopped := false
 	for {
 		page, err := client.Events(ctx, sessionID, cursor, agentHubEventsPageSize)
@@ -286,13 +301,13 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 			if source.ID != cursor+1 {
 				return fmt.Errorf("AgentHub history cursor gap: expected %d, got %d", cursor+1, source.ID)
 			}
-			event, state, _ := translateAgentHubEvent(source)
+			state, _, _ := agentHubEventControl(source)
 			if state == "stopped" {
 				sawStopped = true
 			}
-			history = append(history, event)
-			if len(history) > agentEventMaxCount {
-				history = history[len(history)-agentEventMaxCount:]
+			history = append(history, source)
+			if len(history) > agentHubEventMaxCount {
+				history = history[len(history)-agentHubEventMaxCount:]
 			}
 			cursor = source.ID
 			progressed = true
@@ -308,8 +323,7 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 		}
 	}
 	rt.mu.Lock()
-	rt.events = append([]agentEvent(nil), history...)
-	rt.nextEventID = nextAgentEventID(history)
+	rt.events = append([]agentHubEvent(nil), history...)
 	if sawStopped {
 		rt.run.AgentHubStoppedObserved = true
 		if rt.agentHubState == "archived" || rt.run.Status == "recovering" {
@@ -320,11 +334,11 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 	return nil
 }
 
-func (rt *agentRuntime) agentHubEventsAfter(ctx context.Context, after int64) ([]agentEvent, error) {
+func (rt *agentRuntime) agentHubEventsAfter(ctx context.Context, after int64) ([]agentHubEvent, error) {
 	rt.mu.Lock()
 	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
 	rt.mu.Unlock()
-	var result []agentEvent
+	var result []agentHubEvent
 	highWater := int64(0)
 	cursor := after
 	for {
@@ -343,8 +357,7 @@ func (rt *agentRuntime) agentHubEventsAfter(ctx context.Context, after int64) ([
 			if source.ID != cursor+1 {
 				return nil, fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", cursor+1, source.ID)
 			}
-			event, _, _ := translateAgentHubEvent(source)
-			result = append(result, event)
+			result = append(result, source)
 			cursor = source.ID
 			progressed = true
 			if cursor >= highWater {
@@ -360,9 +373,9 @@ func (rt *agentRuntime) agentHubEventsAfter(ctx context.Context, after int64) ([
 	}
 }
 
-func (rt *agentRuntime) agentHubEventsBefore(ctx context.Context, before int64, limit int) ([]agentEvent, bool, error) {
-	if limit <= 0 || limit > agentEventMaxCount {
-		limit = agentEventMaxCount
+func (rt *agentRuntime) agentHubEventsBefore(ctx context.Context, before int64, limit int) ([]agentHubEvent, bool, error) {
+	if limit <= 0 || limit > agentHubEventMaxCount {
+		limit = agentHubEventMaxCount
 	}
 	events, err := rt.agentHubEventsAfter(ctx, 0)
 	if err != nil {
@@ -378,7 +391,7 @@ func (rt *agentRuntime) agentHubEventsBefore(ctx context.Context, before int64, 
 	if len(filtered) > limit {
 		filtered = filtered[len(filtered)-limit:]
 	}
-	return append([]agentEvent(nil), filtered...), hasMore, nil
+	return append([]agentHubEvent(nil), filtered...), hasMore, nil
 }
 
 func (rt *agentRuntime) catchUpAgentHub(ctx context.Context, m *agentManager, requestedHighWater int64) error {
@@ -447,7 +460,7 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		rt.mu.Unlock()
 		return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", cursor+1, source.ID)
 	}
-	event, state, schedulerTerminal := translateAgentHubEvent(source)
+	state, schedulerTerminal, schedulerSummary := agentHubEventControl(source)
 	rt.run.AgentHubEventCursor = source.ID
 	rt.agentHubState = stateOrCurrent(state, rt.agentHubState)
 	if state != "" {
@@ -477,37 +490,41 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		rt.run.Status = "running"
 		rt.agentHubState = "busy"
 	}
-	rt.run.UpdatedAt = event.Time
-	if isAgentOutputEvent(event.Type, event.Method) {
-		rt.run.LastOutputAt = event.Time
+	eventTime := source.Time
+	if eventTime == "" {
+		eventTime = time.Now().Format(time.RFC3339)
+	}
+	rt.run.UpdatedAt = eventTime
+	if isAgentHubOutputEvent(source) {
+		rt.run.LastOutputAt = eventTime
 	}
 	alreadyPresent := false
 	for index := len(rt.events) - 1; index >= 0; index-- {
-		if rt.events[index].ID == event.ID {
+		if rt.events[index].ID == source.ID {
 			alreadyPresent = true
 			break
 		}
-		if rt.events[index].ID < event.ID {
+		if rt.events[index].ID < source.ID {
 			break
 		}
 	}
 	if !alreadyPresent {
-		rt.events = append(rt.events, event)
+		rt.events = append(rt.events, source)
 	}
-	if len(rt.events) > agentEventMaxCount {
-		rt.events = append([]agentEvent(nil), rt.events[len(rt.events)-agentEventMaxCount:]...)
+	if len(rt.events) > agentHubEventMaxCount {
+		rt.events = append([]agentHubEvent(nil), rt.events[len(rt.events)-agentHubEventMaxCount:]...)
 	}
 	run := rt.run
 	rt.mu.Unlock()
 	if err := saveAgentRun(rt.workspace.Path, run); err != nil {
 		return err
 	}
-	m.publish(run.ID, event)
+	m.publish(run.ID, source)
 	if run.Status == "stopped" && run.AgentHubStoppedObserved {
 		go rt.releaseForgeSessionAfterStopped(m)
 	}
 	if schedulerTerminal && run.SchedulerTurn {
-		go rt.finishSchedulerTurn(m, event.Text)
+		go rt.finishSchedulerTurn(m, schedulerSummary)
 	}
 	return nil
 }
@@ -519,72 +536,50 @@ func stateOrCurrent(value, current string) string {
 	return current
 }
 
-func translateAgentHubEvent(source agentHubEvent) (agentEvent, string, bool) {
-	event := agentEvent{ID: source.ID, Time: source.Time, Method: source.Type, Data: source.Data}
-	if event.Time == "" {
-		event.Time = time.Now().Format(time.RFC3339)
+func agentHubEventControl(event agentHubEvent) (state string, schedulerTerminal bool, schedulerSummary string) {
+	if event.Type == "session.state" {
+		state = agentHubEventDataString(event.Data, "state")
 	}
-	state := ""
-	schedulerTerminal := false
-	switch source.Type {
-	case "message.user", "message.user.steer":
-		event.Type, event.Text = "user", firstString(source.Data, "text")
-	case "message.assistant.delta":
-		event.Type, event.Text = "assistant_delta", firstString(source.Data, "text")
-	case "message.reasoning.delta":
-		event.Type, event.Text = "reasoning_delta", firstString(source.Data, "text")
-	case "tool.event":
-		event.Type = "tool"
-		// AgentHub wraps provider tool events in a {method, raw} envelope; the
-		// GUI renderer expects the original provider method and payload.
-		var envelope struct {
-			Method string          `json:"method"`
-			Raw    json.RawMessage `json:"raw"`
+	switch event.Type {
+	case "turn.completed":
+		summary := agentHubEventDataString(event.Data, "summary")
+		if summary == "" {
+			summary = "AgentHub turn completed"
 		}
-		if err := json.Unmarshal(source.Data, &envelope); err == nil {
-			if envelope.Method != "" {
-				event.Method = envelope.Method
-			}
-			if len(envelope.Raw) > 0 {
-				event.Data = envelope.Raw
-				// ACP payloads are session/update params; the legacy contract
-				// carried the inner update object (with toolCallId) directly.
-				if envelope.Method == "session/update" {
-					if inner := nestedRawMessage(envelope.Raw, "update"); len(inner) > 0 {
-						event.Data = inner
-					}
-				}
-			}
+		return state, true, summary
+	case "turn.cancelled":
+		summary := agentHubEventDataString(event.Data, "summary")
+		if summary == "" {
+			summary = "AgentHub turn cancelled"
 		}
-		event.Text = eventText(event.Method, event.Data)
-	case "approval.requested":
-		event.Type = "approval_requested"
-		event.PendingRequestID = firstString(source.Data, "approvalId")
-		event.Text = eventText(source.Type, source.Data)
-	case "approval.resolved":
-		event.Type, event.Text = "approval_resolved", eventText(source.Type, source.Data)
-	case "provider.error":
-		event.Type, event.Text = "error", eventText(source.Type, source.Data)
+		return state, true, summary
 	case "turn.failed":
-		event.Type, event.Text, schedulerTerminal = "error", eventText(source.Type, source.Data), true
-	case "turn.completed", "turn.cancelled":
-		event.Type, event.Text, schedulerTerminal = "system", eventText(source.Type, source.Data), true
-	case "session.state":
-		event.Type = "system"
-		state = firstString(source.Data, "state")
-		event.Text = "AgentHub session " + state
-		if reason := firstString(source.Data, "reason"); reason != "" {
-			event.Text += ": " + reason
+		summary := agentHubEventDataString(event.Data, "error")
+		if summary == "" {
+			summary = agentHubEventDataString(event.Data, "message")
 		}
-	case "session.created", "session.provider", "session.agent", "session.archived", "turn.started":
-		event.Type, event.Text = "system", eventText(source.Type, source.Data)
-	case "provider.stderr", "provider.warning", "provider.event", "provider.process.started":
-		event.Type, event.Text = "event", eventText(source.Type, source.Data)
+		if summary == "" {
+			summary = "AgentHub turn failed"
+		}
+		return state, true, summary
 	default:
-		event.Type = "event"
-		event.Text = "Unknown AgentHub event: " + source.Type
+		return state, false, ""
 	}
-	return event, state, schedulerTerminal
+}
+
+func agentHubEventDataString(data json.RawMessage, key string) string {
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return ""
+	}
+	text, _ := value[key].(string)
+	return strings.TrimSpace(text)
+}
+
+func isAgentHubOutputEvent(event agentHubEvent) bool {
+	return event.Type == "message.assistant.delta" ||
+		event.Type == "message.reasoning.delta" ||
+		event.Type == "tool.event"
 }
 
 func forgeStatusForAgentHubState(state string) string {
@@ -697,7 +692,7 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
 	if err != nil {
-		rt.addAgentHubDiagnostic(m, "error", "agenthub/recovery", err.Error())
+		rt.addForgeNotice(m, "error", "agenthub/recovery", err.Error())
 	}
 }
 
@@ -709,7 +704,7 @@ func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) {
 		return
 	}
 	if err := m.endForgeSession(context.Background(), rt.workspace, run.ForgeSessionID); err != nil {
-		rt.addAgentHubDiagnostic(m, "error", "forge/session/end", "durable stopped observed but Forge session release failed: "+err.Error())
+		rt.addForgeNotice(m, "error", "forge/session/end", "durable stopped observed but Forge session release failed: "+err.Error())
 		return
 	}
 	removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
@@ -724,14 +719,21 @@ func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) {
 	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
-func (rt *agentRuntime) addAgentHubDiagnostic(m *agentManager, eventType, method, text string) {
+func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text string) {
 	rt.mu.Lock()
-	id := rt.run.AgentHubEventCursor
-	event := agentEvent{ID: id, Time: time.Now().Format(time.RFC3339), Type: eventType, Method: method, Text: text}
+	runID := rt.run.ID
 	rt.mu.Unlock()
-	// Diagnostics are intentionally ephemeral. AgentHub remains the durable
-	// conversation fact source and the projection stores only its cursor.
-	m.publish(rt.run.ID, event)
+	notice := forgeNotice{
+		Source: "forge",
+		Type:   "forge.notice",
+		Time:   time.Now().Format(time.RFC3339),
+		Data: forgeNoticeData{
+			Level:  level,
+			Method: method,
+			Text:   text,
+		},
+	}
+	m.publishNotice(runID, notice)
 }
 
 func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentInputRequest, text string) {
@@ -813,7 +815,7 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
 	if client == nil || run.AgentHubSessionID == "" {
-		writeError(w, errors.New("legacy direct run is read-only and cannot be interrupted after the AgentHub migration"), http.StatusBadRequest)
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
 	session, err := client.Interrupt(r.Context(), run.AgentHubSessionID)
@@ -870,7 +872,7 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
 }
 
-func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun, historical []agentEvent) {
+func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		writeError(w, err, http.StatusServiceUnavailable)
@@ -919,7 +921,6 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	rt.startAgentHubStream(m)
 	current, events, truncated := rt.snapshotDetail()
 	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
-	_ = historical // Legacy local events are deliberately not mixed into AgentHub history.
 }
 
 func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {

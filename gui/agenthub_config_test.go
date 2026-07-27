@@ -70,7 +70,7 @@ func TestAgentHubSettingsSaveValidatesAndMigrates(t *testing.T) {
 	}
 }
 
-func TestAgentHubRunProjectionSchemaAndLegacyHistory(t *testing.T) {
+func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 	data, err := json.Marshal(agentRun{
 		ID: "run-1", WorkspaceID: "workspace-1", AgentHubSessionID: "ses_1",
 		AgentHubEventCursor: 42, AgentHubAgentName: "gpt-5.6-sol",
@@ -94,7 +94,7 @@ func TestAgentHubRunProjectionSchemaAndLegacyHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if legacy.ID != "old" || legacy.AgentHubSessionID != "" {
-		t.Fatalf("legacy run history did not remain readable: %+v", legacy)
+		t.Fatalf("old run index record did not decode safely: %+v", legacy)
 	}
 }
 
