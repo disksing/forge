@@ -1156,6 +1156,10 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 		`item.kind === "lifecycle"`,
 		`item.kind === "error"`,
 		`item.kind === "unknown"`,
+		`agentMessageSenderName(item)`,
+		`agentClockTime(item.time)`,
+		`<div class="agent-message-meta">`,
+		`<span class="agent-note-time">`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("canonical timeline integration is missing %q", want)

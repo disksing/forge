@@ -2544,9 +2544,17 @@ function agentTimelineItemRow(item, index, items) {
     const content = isAssistant
       ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`
       : `<p>${escapeHTML(item.text)}</p>`;
+    const steerTag = item.steer ? `<span class="agent-message-tag">steer</span>` : "";
     return `
       <div class="agent-message-row ${isAssistant ? "assistant final" : "user"}">
-        <div class="agent-message-bubble">${content}</div>
+        <div class="agent-message-main">
+          <div class="agent-message-meta">
+            <strong>${escapeHTML(agentMessageSenderName(item))}</strong>
+            ${steerTag}
+            <span>${escapeHTML(agentClockTime(item.time))}</span>
+          </div>
+          <div class="agent-message-bubble">${content}</div>
+        </div>
       </div>
     `;
   }
@@ -2561,7 +2569,9 @@ function agentTimelineItemRow(item, index, items) {
   if (item.kind === "tools") return agentTimelineToolsRow(item, index === items.length - 1);
   if (item.kind === "approval") return agentTimelineApprovalRow(item);
   if (item.kind === "lifecycle") {
-    return `<div class="agent-system-note agent-lifecycle-${escapeHTML(item.tone || "muted")}">${escapeHTML(item.text)}</div>`;
+    const tone = item.tone || "muted";
+    const iconName = tone === "ok" ? "check-circle" : tone === "danger" ? "triangle-alert" : tone === "info" ? "info" : "clock";
+    return `<div class="agent-system-note agent-lifecycle-${escapeHTML(tone)}">${icon(iconName)}<span>${escapeHTML(item.text)}</span><span class="agent-note-time">${escapeHTML(agentClockTime(item.time))}</span></div>`;
   }
   if (item.kind === "error") {
     return `<div class="agent-event error"><div>${icon("triangle-alert")}<strong>Provider error</strong></div><p>${escapeHTML(item.text)}</p></div>`;
@@ -2673,6 +2683,20 @@ function agentApprovalDraftKey(approvalId) {
 
 function humanizeApprovalKind(kind) {
   return String(kind || "").replace(/[_-]+/g, " ").trim();
+}
+
+function agentMessageSenderName(item) {
+  if (item.role !== "assistant") return "You";
+  const run = currentAgentRun();
+  const agents = state.config?.agents || [];
+  const configured = agents.find((agent) => agent.id === run?.agentId);
+  return agentDisplayName(configured || selectedAgentConfig());
+}
+
+function agentClockTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 }
 
 function agentThinkingTitle(item) {
