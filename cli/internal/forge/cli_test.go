@@ -35,6 +35,17 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+func TestSortSessionsUsesStartedAtInstantNewestFirst(t *testing.T) {
+	sessions := []Session{
+		{ID: "older", StartedAt: "2026-07-27T16:19:55+08:00"},
+		{ID: "newer", StartedAt: "2026-07-27T09:01:15Z"},
+	}
+	sortSessions(sessions)
+	if sessions[0].ID != "newer" || sessions[1].ID != "older" {
+		t.Fatalf("expected sessions newest first by parsed instant, got: %#v", sessions)
+	}
+}
+
 func TestForgeCLIHasNoStartSubcommand(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected forge start to be removed, got %v", err)
@@ -1830,6 +1841,34 @@ func TestTaskArchiveEndsOpenTaskSessions(t *testing.T) {
 		}
 		if findSessionIndex(store.Sessions, id) >= 0 {
 			t.Fatalf("expected archive to end task session, got: %#v", store.Sessions)
+		}
+	})
+}
+
+func TestTaskArchivePreservesSessionWhosePrimaryIsParentProject(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Primary project")
+		run(t, "task", "create", "--project=project1", "Archived child")
+		id := strings.TrimSpace(run(t, "session", "new"))
+		run(t, "session", "lock", "--id", id, "--project=project1")
+
+		run(t, "task", "archive", "--project=project1", "--task=task1")
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			t.Fatal("archiving a child task should preserve its parent project session")
+		}
+		session := store.Sessions[index]
+		if session.Primary == nil || session.Primary.ResourceID != "project1" {
+			t.Fatalf("expected project1 to remain the primary control, got: %#v", session.Primary)
+		}
+		if got := formatSessionControls(session.Controls); got != "project1:project1" {
+			t.Fatalf("expected the project control to remain, got: %s", got)
 		}
 	})
 }

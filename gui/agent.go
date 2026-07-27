@@ -401,9 +401,7 @@ func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspac
 	}
 	m.mu.Unlock()
 	runs = filtered
-	sort.SliceStable(runs, func(i, j int) bool {
-		return runs[i].UpdatedAt > runs[j].UpdatedAt
-	})
+	sortAgentRunsNewestFirst(runs)
 	if resourceID != "" {
 		filtered := runs[:0]
 		for _, run := range runs {
@@ -1221,6 +1219,7 @@ func loadAgentRuns(workspacePath string) ([]agentRun, error) {
 	if repaired {
 		_ = writeAgentRunsIndexLocked(workspacePath, runs)
 	}
+	sortAgentRunsNewestFirst(runs)
 	return runs, nil
 }
 
@@ -1261,13 +1260,42 @@ func saveAgentRun(workspacePath string, run agentRun) error {
 	if !found {
 		runs = append(runs, run)
 	}
-	sort.SliceStable(runs, func(i, j int) bool {
-		return runs[i].UpdatedAt > runs[j].UpdatedAt
-	})
+	sortAgentRunsNewestFirst(runs)
 	if len(runs) > 50 {
 		runs = runs[:50]
 	}
 	return writeAgentRunsIndexLocked(workspacePath, runs)
+}
+
+func sortAgentRunsNewestFirst(runs []agentRun) {
+	sort.SliceStable(runs, func(i, j int) bool {
+		left := agentRunRecency(runs[i])
+		right := agentRunRecency(runs[j])
+		if !left.Equal(right) {
+			return left.After(right)
+		}
+		leftCreated := agentRunTime(runs[i].CreatedAt)
+		rightCreated := agentRunTime(runs[j].CreatedAt)
+		if !leftCreated.Equal(rightCreated) {
+			return leftCreated.After(rightCreated)
+		}
+		return runs[i].ID > runs[j].ID
+	})
+}
+
+func agentRunRecency(run agentRun) time.Time {
+	if parsed := agentRunTime(run.UpdatedAt); !parsed.IsZero() {
+		return parsed
+	}
+	return agentRunTime(run.CreatedAt)
+}
+
+func agentRunTime(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
 }
 
 func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {

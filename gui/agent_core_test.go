@@ -174,6 +174,37 @@ func TestListRunsFiltersWorkspaceScope(t *testing.T) {
 	}
 }
 
+func TestListRunsSortsRFC3339TimestampsByInstant(t *testing.T) {
+	workspace := t.TempDir()
+	runs := []agentRun{
+		{
+			ID: "older", WorkspaceID: "workspace-one", ResourceID: "project1",
+			AgentHubSessionID: "ses_older", Status: "stopped",
+			CreatedAt: "2026-07-27T15:02:26+08:00", UpdatedAt: "2026-07-27T16:19:55+08:00",
+		},
+		{
+			ID: "newer", WorkspaceID: "workspace-one", ResourceID: "project1",
+			AgentHubSessionID: "ses_newer", Status: "idle",
+			CreatedAt: "2026-07-27T17:01:15+08:00", UpdatedAt: "2026-07-27T09:01:45.789913Z",
+		},
+	}
+	if err := rewriteAgentRuns(workspace, runs); err != nil {
+		t.Fatal(err)
+	}
+	manager := coreTestManager(t, workspace)
+	recorder := httptest.NewRecorder()
+	manager.listRuns(recorder, httptest.NewRequest(http.MethodGet, "/runs?resourceId=project1", nil), "workspace-one")
+	var response struct {
+		Runs []agentRun `json:"runs"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusOK || len(response.Runs) != 2 || response.Runs[0].ID != "newer" {
+		t.Fatalf("expected parsed RFC3339 instant ordering, code=%d runs=%#v", recorder.Code, response.Runs)
+	}
+}
+
 func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 	workspace := t.TempDir()
 	temp := t.TempDir()

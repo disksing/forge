@@ -943,7 +943,7 @@ func releaseSessionsControllingPath(root, targetRel string) error {
 
 func sessionPrimaryControlsPath(session Session, targetRel string) bool {
 	if session.Primary != nil {
-		return sessionPathsOverlap(session.Primary.Path, targetRel)
+		return sessionPathWithin(session.Primary.Path, targetRel)
 	}
 	// Sessions written before primary controls were recorded are ambiguous.
 	// Preserve the historical fail-safe behavior instead of allowing an agent
@@ -1332,9 +1332,22 @@ func printSessionJSON(session Session) error {
 }
 
 func sortSessions(sessions []Session) {
-	sort.Slice(sessions, func(i, j int) bool {
-		return sessions[i].ID < sessions[j].ID
+	sort.SliceStable(sessions, func(i, j int) bool {
+		left, leftOK := parseSessionTime(sessions[i].StartedAt)
+		right, rightOK := parseSessionTime(sessions[j].StartedAt)
+		if leftOK && rightOK && !left.Equal(right) {
+			return left.After(right)
+		}
+		if leftOK != rightOK {
+			return leftOK
+		}
+		return sessions[i].ID > sessions[j].ID
 	})
+}
+
+func parseSessionTime(value string) (time.Time, bool) {
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
+	return parsed, err == nil
 }
 
 func sortSessionControls(controls []SessionControl) {
