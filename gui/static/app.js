@@ -56,6 +56,9 @@ const state = {
   },
   autoRefreshTimer: null,
   autoRefreshInFlight: false,
+  autoRefreshVersion: 0,
+  treeRequestVersion: 0,
+  agentSessionMutationCount: 0,
   iconRefreshScheduled: false,
   mobile: {
     sidebarOpen: false,
@@ -209,10 +212,12 @@ function startAutoRefresh() {
 }
 
 async function autoRefresh() {
-  if (!state.activeWorkspaceId || state.autoRefreshInFlight || document.hidden) return;
+  if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || document.hidden) return;
+  const refreshVersion = state.autoRefreshVersion;
   state.autoRefreshInFlight = true;
   try {
-    const tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
+    const tree = await fetchCurrentTree();
+    if (!tree || refreshVersion !== state.autoRefreshVersion) return;
     let changed = !sameJSON(state.tree, tree);
     if (changed) {
       state.tree = tree;
@@ -235,12 +240,14 @@ async function autoRefresh() {
       }
     } else if (state.selectedId) {
       const detail = await fetchDetail(state.selectedId);
+      if (refreshVersion !== state.autoRefreshVersion) return;
       if (!sameJSON(state.details[state.selectedId], detail)) {
         state.details[state.selectedId] = detail;
         changed = true;
       }
     }
     const runs = await fetchAgentRuns();
+    if (refreshVersion !== state.autoRefreshVersion) return;
     const runsChanged = !sameJSON(state.agent.runs, runs);
     if (runsChanged) {
       state.agent.runs = runs;
@@ -248,6 +255,7 @@ async function autoRefresh() {
     }
     if (reconcileActiveAgentRun(runs)) {
       await loadCanonicalAgentEvents();
+      if (refreshVersion !== state.autoRefreshVersion) return;
       connectAgentStream();
       changed = true;
     }
@@ -1691,10 +1699,27 @@ function preferredAgentRunID(runs) {
   return runs[0]?.id || "";
 }
 
-async function refreshTreeSessions() {
-  if (!state.activeWorkspaceId || !state.tree) return;
+async function fetchCurrentTree() {
+  const requestVersion = ++state.treeRequestVersion;
   const tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
-  state.tree.sessions = tree.sessions || [];
+  return requestVersion === state.treeRequestVersion ? tree : null;
+}
+
+async function refreshTreeAfterAgentSessionMutation() {
+  if (!state.activeWorkspaceId || !state.tree) return;
+  const tree = await fetchCurrentTree();
+  if (tree) state.tree = tree;
+}
+
+async function mutateAgentSession(action) {
+  state.agentSessionMutationCount++;
+  state.autoRefreshVersion++;
+  state.treeRequestVersion++;
+  try {
+    return await action();
+  } finally {
+    state.agentSessionMutationCount--;
+  }
 }
 
 async function loadCanonicalAgentEvents() {
@@ -2686,30 +2711,32 @@ function bindAgentEvents() {
 }
 
 async function startAgentRun() {
-  if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
-  const selected = findResource(state.selectedId);
-  const agent = selectedAgentConfig();
-  if (!agent) throw new Error("Select an enabled agent first.");
-  const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
-    method: "POST",
-    body: JSON.stringify({
-      agentId: agent.id,
-      resourceId: selected?.id || "",
-      title: selected?.title || workspaceName(),
-      prompt: "",
-      cwd: agentDefaultCwd(),
-    }),
+  return mutateAgentSession(async () => {
+    if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
+    const selected = findResource(state.selectedId);
+    const agent = selectedAgentConfig();
+    if (!agent) throw new Error("Select an enabled agent first.");
+    const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: agent.id,
+        resourceId: selected?.id || "",
+        title: selected?.title || workspaceName(),
+        prompt: "",
+        cwd: agentDefaultCwd(),
+      }),
+    });
+    state.agent.draftPrompt = "";
+    state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
+    state.agent.optionsOpen = false;
+    state.agent.agentChooserOpen = false;
+    state.agent.historyOpen = false;
+    state.agent.activeRunId = response.run.id;
+    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+    renderAll();
+    toast("Agent session started.");
   });
-  state.agent.draftPrompt = "";
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
-  state.agent.optionsOpen = false;
-  state.agent.agentChooserOpen = false;
-  state.agent.historyOpen = false;
-  state.agent.activeRunId = response.run.id;
-  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
-  renderAll();
-  toast("Agent session started.");
 }
 
 async function sendAgentInput(text) {
@@ -2951,24 +2978,28 @@ function uploadAgentFile(item) {
 
 async function stopAgentRun() {
   if (!state.agent.activeRunId) return;
-  await closeAgentRun(state.agent.activeRunId);
-  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
-  renderAll();
-  toast("Agent session closed.");
+  return mutateAgentSession(async () => {
+    await closeAgentRun(state.agent.activeRunId);
+    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+    renderAll();
+    toast("Agent session closed.");
+  });
 }
 
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
-  const previousRun = currentAgentRun();
-  if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
-    await closeAgentRun(previousRun.id);
-  }
-  state.agent.activeRunId = runId;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
-  state.agent.historyOpen = false;
-  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
-  renderAll();
+  return mutateAgentSession(async () => {
+    const previousRun = currentAgentRun();
+    if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
+      await closeAgentRun(previousRun.id);
+    }
+    state.agent.activeRunId = runId;
+    state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
+    state.agent.historyOpen = false;
+    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+    renderAll();
+  });
 }
 
 async function closeAgentRun(runId) {
@@ -2978,14 +3009,16 @@ async function closeAgentRun(runId) {
 
 async function resumeAgentRun() {
   if (!state.agent.activeRunId) return;
-  const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });
-  state.agent.activeRunId = response.run.id;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
-  state.agent.historyOpen = false;
-  await Promise.all([loadAgentRuns(), refreshTreeSessions()]);
-  renderAll();
-  toast("Agent session resumed.");
+  return mutateAgentSession(async () => {
+    const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });
+    state.agent.activeRunId = response.run.id;
+    state.agent.ttyDraft = "";
+    state.agent.ttyMultiline = false;
+    state.agent.historyOpen = false;
+    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+    renderAll();
+    toast("Agent session resumed.");
+  });
 }
 
 async function resolveAgentApproval(requestId, decision) {

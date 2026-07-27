@@ -577,6 +577,175 @@ assertEqual(
 	}
 }
 
+func TestProjectSessionStartRejectsStaleBackgroundSnapshots(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the project session refresh behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	extract := func(startMarker, endMarker string) string {
+		t.Helper()
+		start := strings.Index(app, startMarker)
+		if start < 0 {
+			t.Fatalf("could not find %q", startMarker)
+		}
+		end := strings.Index(app[start:], endMarker)
+		if end < 0 {
+			t.Fatalf("could not find %q after %q", endMarker, startMarker)
+		}
+		return app[start : start+end]
+	}
+
+	autoRefreshSource := extract("async function autoRefresh()", "function renderAll()")
+	treeRefreshSource := extract("async function fetchCurrentTree()", "async function loadCanonicalAgentEvents()")
+	startRunSource := extract("async function startAgentRun()", "async function sendAgentInput(text)")
+	script := `
+const oldTree = { projects: [{ id: "project1", title: "Forge" }], sessions: [] };
+const newSession = { id: "session-new", resourceId: "project1" };
+const newTree = { projects: oldTree.projects, sessions: [newSession] };
+const state = {
+  activeWorkspaceId: "workspace-one",
+  selectedId: "project1",
+  tree: oldTree,
+  details: { project1: {} },
+  workspaceAgents: null,
+  expandedProjects: new Set(),
+  preview: null,
+  taskOperationalStateKey: "",
+  autoRefreshInFlight: false,
+  autoRefreshVersion: 0,
+  treeRequestVersion: 0,
+  agentSessionMutationCount: 0,
+  agent: {
+    runs: [],
+    activeRunId: "",
+    draftPrompt: "draft",
+    ttyDraft: "draft",
+    ttyMultiline: true,
+    optionsOpen: true,
+    agentChooserOpen: true,
+    historyOpen: true,
+  },
+};
+const document = { hidden: false };
+let scenario = "";
+let resolveOldTree;
+let oldTreeResponse;
+let resolveOldRuns;
+let oldRunsResponse;
+let treeRequests = 0;
+let runRequests = 0;
+let rendered = 0;
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function resetState(nextScenario) {
+  scenario = nextScenario;
+  state.tree = oldTree;
+  state.details = { project1: {} };
+  state.autoRefreshInFlight = false;
+  state.autoRefreshVersion = 0;
+  state.treeRequestVersion = 0;
+  state.agentSessionMutationCount = 0;
+  state.agent.runs = [];
+  state.agent.activeRunId = "";
+  treeRequests = 0;
+  runRequests = 0;
+  rendered = 0;
+  oldTreeResponse = new Promise((resolve) => { resolveOldTree = resolve; });
+  oldRunsResponse = new Promise((resolve) => { resolveOldRuns = resolve; });
+}
+async function waitFor(predicate, message) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (predicate()) return;
+    await Promise.resolve();
+  }
+  throw new Error(message);
+}
+async function api(path, options = {}) {
+  if (path.endsWith("/tree")) {
+    treeRequests++;
+    if (treeRequests === 1) return scenario === "tree" ? oldTreeResponse : oldTree;
+    if (treeRequests === 2) return newTree;
+    throw new Error("unexpected tree request " + treeRequests);
+  }
+  if (path.endsWith("/agent/runs") && options.method === "POST") {
+    const request = JSON.parse(options.body);
+    assert(request.resourceId === "project1", "project session used the wrong resource id");
+    return { run: { id: "run-new" } };
+  }
+  throw new Error("unexpected API request " + path);
+}
+function sameJSON(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
+async function refreshFilePreview() {}
+function ensureValidSelection() { return false; }
+function syncURL() {}
+function ensureSelectedProjectExpanded() {}
+async function loadWorkspaceAgents() {}
+async function fetchDetail() { return {}; }
+async function fetchAgentRuns() {
+  runRequests++;
+  if (scenario === "runs" && runRequests === 1) return oldRunsResponse;
+  return [{ id: "run-new" }];
+}
+function reconcileActiveAgentRun() { return false; }
+async function loadCanonicalAgentEvents() {}
+function connectAgentStream() {}
+function taskOperationalStateKey() { return ""; }
+function renderAll() { rendered++; }
+function findResource(id) { return id === "project1" ? { id, title: "Forge", path: "project1-forge" } : null; }
+function selectedAgentConfig() { return { id: "agent-one" }; }
+function workspaceName() { return "Workspace"; }
+function agentDefaultCwd() { return "project1-forge"; }
+async function loadAgentRuns() { state.agent.runs = await fetchAgentRuns(); }
+function toast() {}
+` + autoRefreshSource + treeRefreshSource + startRunSource + `
+(async function run() {
+  resetState("tree");
+  const backgroundRefresh = autoRefresh();
+  await Promise.resolve();
+  assert(treeRequests === 1, "background refresh did not start its tree request");
+
+  await startAgentRun();
+  assert(state.tree.sessions[0]?.id === "session-new", "new project session was not rendered after creation");
+  assert(rendered === 1, "session creation should render exactly once before the stale response");
+
+  resolveOldTree(oldTree);
+  await backgroundRefresh;
+  assert(state.tree.sessions[0]?.id === "session-new", "stale background tree removed the new project session");
+  assert(rendered === 1, "discarded stale refresh should not re-render");
+
+  resetState("runs");
+  const backgroundRunRefresh = autoRefresh();
+  await waitFor(() => runRequests === 1, "background refresh did not start its run request");
+
+  await startAgentRun();
+  assert(state.tree.sessions[0]?.id === "session-new", "new project session tree was not rendered");
+  assert(state.agent.runs[0]?.id === "run-new", "new project run was not rendered");
+
+  resolveOldRuns([]);
+  await backgroundRunRefresh;
+  assert(state.agent.runs[0]?.id === "run-new", "stale background runs removed the new project session");
+  assert(rendered === 1, "discarded stale run refresh should not re-render");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`
+
+	testFile := filepath.Join(t.TempDir(), "project-session-refresh.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("project session refresh behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
