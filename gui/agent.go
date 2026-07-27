@@ -1463,6 +1463,14 @@ func firstString(data json.RawMessage, keys ...string) string {
 	return findString(value, keys...)
 }
 
+func nestedRawMessage(data json.RawMessage, key string) json.RawMessage {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		return nil
+	}
+	return obj[key]
+}
+
 func nestedString(data json.RawMessage, path ...string) string {
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
