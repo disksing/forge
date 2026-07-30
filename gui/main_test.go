@@ -1348,9 +1348,9 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 	sum := sha256.Sum256(bundle)
 	actual := hex.EncodeToString(sum[:])
 	if source.Version != "1.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
-		source.Revision != "cc95176d99e335cbb98e173c16ab23ecfdc83010" ||
+		source.Revision != "ef426b68071449f1b869114e9a987e31fef8be3d" ||
 		source.SHA256 != actual ||
-		actual != "7fe8bb718d0aa6e8b55d72ab6efca46a94b27af5715fe58b2b4c52c3ce04e0e5" {
+		actual != "fca046328813c9e3d6b782083cafad0a00cd54868ddda565a9b4689c67e037c5" {
 		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
 	}
 	if _, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/LICENSE"); err != nil {
