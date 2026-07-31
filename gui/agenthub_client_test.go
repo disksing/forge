@@ -269,6 +269,62 @@ func writeFakeAgentHubJSON(t *testing.T, w http.ResponseWriter, value any) {
 	}
 }
 
+func TestAgentHubClientLargeEventPage(t *testing.T) {
+	// Event pages used to be truncated by an 8 MiB decode limit, which
+	// surfaced as "decode AgentHub response: unexpected EOF". A page well
+	// above the old limit must decode cleanly.
+	payload := strings.Repeat("x", 12<<20)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		writeFakeAgentHubJSON(t, w, map[string]any{
+			"events": []any{map[string]any{
+				"id": 1, "type": "tool.output", "sessionId": "ses_1",
+				"data": map[string]any{"text": payload},
+			}},
+			"page":         map[string]any{"after": 0, "limit": 1, "nextAfter": 1, "hasMore": false},
+			"latestCursor": 1,
+		})
+	}))
+	defer server.Close()
+	client, err := newAgentHubClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := client.Events(context.Background(), "ses_1", 0, 1)
+	if err != nil {
+		t.Fatalf("events above old 8 MiB limit: %v", err)
+	}
+	if len(page.Events) != 1 || !strings.Contains(string(page.Events[0].Data), payload[:64]) {
+		t.Fatalf("unexpected events page: %+v", page)
+	}
+}
+
+func TestAgentHubClientResponseSizeLimit(t *testing.T) {
+	limit := agentHubMaxResponseBytes
+	agentHubMaxResponseBytes = 1 << 10
+	defer func() { agentHubMaxResponseBytes = limit }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		writeFakeAgentHubJSON(t, w, map[string]any{
+			"apiVersion":   "1",
+			"capabilities": requiredAgentHubCapabilities,
+			"version":      strings.Repeat("x", 2<<10),
+		})
+	}))
+	defer server.Close()
+	client, err := newAgentHubClient(server.URL, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.Status(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected size limit error, got %v", err)
+	}
+	if strings.Contains(err.Error(), "unexpected EOF") {
+		t.Fatalf("size limit must not surface as truncation error: %v", err)
+	}
+}
+
 func TestAgentHubClientNetworkFailure(t *testing.T) {
 	client, err := newAgentHubClient("http://127.0.0.1:1", &http.Client{Timeout: 100 * time.Millisecond})
 	if err != nil {

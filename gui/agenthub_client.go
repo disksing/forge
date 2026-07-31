@@ -19,8 +19,14 @@ const (
 	defaultAgentHubEndpoint = "http://127.0.0.1:4646"
 	agentHubAPIVersion      = "1"
 	agentHubRequestTimeout  = 30 * time.Second
-	agentHubEventsPageSize  = 500
+	agentHubEventsPageSize  = 200
 )
+
+// agentHubMaxResponseBytes caps how much of an AgentHub response body the
+// client will buffer while decoding. AgentHub is a local trusted service and
+// event pages can legitimately reach tens of megabytes, so the cap only
+// guards against runaway memory usage. It is a variable so tests can lower it.
+var agentHubMaxResponseBytes int64 = 256 << 20
 
 var requiredAgentHubCapabilities = []string{
 	"session.source",
@@ -396,8 +402,14 @@ func (c *agentHubClient) doJSON(ctx context.Context, method, path string, body, 
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return decodeAgentHubError(response)
 	}
-	decoder := json.NewDecoder(io.LimitReader(response.Body, 8<<20))
-	if err := decoder.Decode(output); err != nil {
+	data, err := io.ReadAll(io.LimitReader(response.Body, agentHubMaxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read AgentHub response: %w", err)
+	}
+	if int64(len(data)) > agentHubMaxResponseBytes {
+		return fmt.Errorf("AgentHub response exceeds %d MiB limit", agentHubMaxResponseBytes>>20)
+	}
+	if err := json.Unmarshal(data, output); err != nil {
 		return fmt.Errorf("decode AgentHub response: %w", err)
 	}
 	return nil
