@@ -117,6 +117,7 @@ type diffResponse struct {
 type guiState struct {
 	Version          int      `json:"version"`
 	ExpandedProjects []string `json:"expandedProjects"`
+	LastResourceID   string   `json:"lastResourceId,omitempty"`
 }
 
 type guiSession struct {
