@@ -453,14 +453,19 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 	}
 	cursor := rt.run.AgentHubEventCursor
 	if source.ID <= cursor {
-		// Delta-merge replacement: AgentHub folds consecutive text deltas
-		// into the tail durable event and republishes it under the id this
-		// runtime already applied. Swap in the accumulated content; the
-		// cursor and run status stay untouched because no new durable event
-		// exists.
+		// Delta-merge frame: AgentHub folds consecutive text deltas into
+		// the tail durable event. Live frames are append patches carrying
+		// only the new fragment; replayed frames carry the full accumulated
+		// event. Extend or swap the stored copy; the cursor and run status
+		// stay untouched because no new durable event exists.
+		isPatch := agentHubEventDataFlag(source.Data, "append")
 		for index := len(rt.events) - 1; index >= 0; index-- {
 			if rt.events[index].ID == source.ID {
-				rt.events[index] = source
+				if isPatch {
+					rt.events[index] = appendAgentHubEventFragment(rt.events[index], source)
+				} else {
+					rt.events[index] = source
+				}
 				break
 			}
 			if rt.events[index].ID < source.ID {
@@ -554,6 +559,44 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		go rt.finishSchedulerTurn(m, schedulerSummary)
 	}
 	return nil
+}
+
+// agentHubEventDataFlag reports whether the event payload carries a true
+// boolean flag.
+func agentHubEventDataFlag(data json.RawMessage, key string) bool {
+	var value map[string]any
+	if err := json.Unmarshal(data, &value); err != nil {
+		return false
+	}
+	flag, _ := value[key].(bool)
+	return flag
+}
+
+// appendAgentHubEventFragment folds a live delta-merge append patch into the
+// stored event: the fragment extends the accumulated text and the event time
+// tracks the newest fragment. The stored event is returned unchanged when
+// either payload is not a text delta, so a malformed patch never shrinks the
+// accumulated content.
+func appendAgentHubEventFragment(stored, patch agentHubEvent) agentHubEvent {
+	var storedData, patchData map[string]any
+	if err := json.Unmarshal(stored.Data, &storedData); err != nil {
+		return stored
+	}
+	if err := json.Unmarshal(patch.Data, &patchData); err != nil {
+		return stored
+	}
+	current, _ := storedData["text"].(string)
+	fragment, _ := patchData["text"].(string)
+	storedData["text"] = current + fragment
+	merged, err := json.Marshal(storedData)
+	if err != nil {
+		return stored
+	}
+	stored.Data = merged
+	if patch.Time != "" {
+		stored.Time = patch.Time
+	}
+	return stored
 }
 
 func stateOrCurrent(value, current string) string {

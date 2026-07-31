@@ -866,7 +866,15 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 	afterID := agentStreamAfterID(r)
-	lastSentID := afterID
+	// Delta-merge append patches never advance a client's cursor, so the
+	// event at the cursor may hold fragments the client missed while
+	// disconnected. Replay from one before the cursor to re-send that event
+	// with its current content before continuing with newer events.
+	replayAfter := afterID
+	if replayAfter > 0 {
+		replayAfter--
+	}
+	lastSentID := replayAfter
 	ch := make(chan agentStreamMessage, agentHubEventMaxCount)
 	m.subscribe(runID, ch)
 	defer m.unsubscribe(runID, ch)
@@ -876,12 +884,12 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 		hasAgentHubClient := rt.agentHub != nil
 		rt.mu.Unlock()
 		if afterID > 0 && hasAgentHubClient {
-			events, err = rt.agentHubEventsAfter(r.Context(), afterID)
+			events, err = rt.agentHubEventsAfter(r.Context(), replayAfter)
 			if err != nil {
 				return
 			}
 		} else if afterID > 0 {
-			events = rt.snapshotEventsAfter(afterID)
+			events = rt.snapshotEventsAfter(replayAfter)
 		} else {
 			_, events, _ = rt.snapshotDetail()
 		}

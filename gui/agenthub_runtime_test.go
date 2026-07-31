@@ -679,6 +679,74 @@ func TestAgentHubRuntimeAppliesDeltaMergeReplacement(t *testing.T) {
 	}
 }
 
+func TestAgentHubRuntimeAppliesDeltaMergePatch(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	run := agentRun{ID: "run-patch", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_patch", Status: "running"}
+	rt := newAgentHubRuntime(manager, workspace, run, nil, nil)
+	messages := make(chan agentStreamMessage, 4)
+	manager.subscribe(run.ID, messages)
+	defer manager.unsubscribe(run.ID, messages)
+	delta := func(id int64, text string, patch bool) agentHubEvent {
+		payload := map[string]any{"text": text, "method": "item/agentMessage/delta"}
+		if patch {
+			payload["append"] = true
+		}
+		raw, _ := json.Marshal(payload)
+		return agentHubEvent{
+			ID: id, Time: "2026-07-31T15:00:00Z", Type: "message.assistant.delta",
+			SessionID: "ses_patch", TurnID: "turn_1", Data: raw,
+		}
+	}
+	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello", false)); err != nil {
+		t.Fatal(err)
+	}
+	<-messages
+	if err := rt.applyAgentHubEvent(manager, delta(1, "!", true)); err != nil {
+		t.Fatal(err)
+	}
+	// The stored event accumulates the fragment...
+	rt.mu.Lock()
+	if rt.run.AgentHubEventCursor != 1 {
+		t.Fatalf("patch moved the cursor to %d", rt.run.AgentHubEventCursor)
+	}
+	if len(rt.events) != 1 {
+		t.Fatalf("patch appended instead of extending: %+v", rt.events)
+	}
+	var stored map[string]any
+	if err := json.Unmarshal(rt.events[0].Data, &stored); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Unlock()
+	if stored["text"] != "Hello!" {
+		t.Fatalf("stored text after patch = %v, want %q", stored["text"], "Hello!")
+	}
+	// ...while subscribers receive only the patch frame.
+	broadcast := (<-messages).Event
+	if broadcast == nil {
+		t.Fatal("expected a published patch frame")
+	}
+	var patch map[string]any
+	if err := json.Unmarshal(broadcast.Data, &patch); err != nil {
+		t.Fatal(err)
+	}
+	if patch["append"] != true || patch["text"] != "!" {
+		t.Fatalf("published frame = %+v, want append patch with only the fragment", patch)
+	}
+	// A full replacement frame still swaps the whole event (reconnect heal).
+	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello world!", false)); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	var healed map[string]any
+	if err := json.Unmarshal(rt.events[0].Data, &healed); err != nil {
+		t.Fatal(err)
+	}
+	if healed["text"] != "Hello world!" {
+		t.Fatalf("stored text after replacement = %v", healed["text"])
+	}
+}
+
 func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 	tests := []struct {
 		name    string

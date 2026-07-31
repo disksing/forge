@@ -89,8 +89,10 @@ func TestAgentStreamStartsAfterClientCursor(t *testing.T) {
 	request.Header.Set("Last-Event-ID", "4")
 	recorder := httptest.NewRecorder()
 	manager.stream(recorder, request, "workspace-one", "run-one")
-	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "id: 4\n") ||
-		!strings.Contains(recorder.Body.String(), "id: 5\n") {
+	// The replay re-sends the cursor event (id 4) with its current content
+	// before newer events, so delta merges missed while disconnected heal.
+	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "id: 3\n") ||
+		!strings.Contains(recorder.Body.String(), "id: 4\n") || !strings.Contains(recorder.Body.String(), "id: 5\n") {
 		t.Fatalf("stream did not honor newest cursor: code=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }

@@ -1921,11 +1921,23 @@ function closeAgentStream() {
 
 function appendCanonicalAgentEvent(event) {
   if (!event) return;
-  // Delta-merge replacements republish an id the list already holds: swap
-  // the stored event for the accumulated content in place.
   const existingIndex = state.agent.events.findIndex((existing) => existing.id === event.id);
   if (existingIndex >= 0) {
-    state.agent.events[existingIndex] = event;
+    const existing = state.agent.events[existingIndex];
+    if (event.data?.append === true) {
+      // Live delta-merge patch: extend the stored event with the fragment
+      // instead of re-receiving the accumulated content.
+      const currentText = typeof existing.data?.text === "string" ? existing.data.text : "";
+      const fragment = typeof event.data?.text === "string" ? event.data.text : "";
+      state.agent.events[existingIndex] = {
+        ...existing,
+        time: event.time || existing.time,
+        data: { ...existing.data, text: currentText + fragment },
+      };
+    } else {
+      // Full replacement: history replay or the reconnect cursor re-send.
+      state.agent.events[existingIndex] = event;
+    }
     scheduleAgentRender();
     return;
   }
