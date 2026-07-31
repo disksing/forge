@@ -637,6 +637,48 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	stopRuntimeTestStream(recovered)
 }
 
+func TestAgentHubRuntimeAppliesDeltaMergeReplacement(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	run := agentRun{ID: "run-merge", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_merge", Status: "running"}
+	rt := newAgentHubRuntime(manager, workspace, run, nil, nil)
+	delta := func(id int64, text string) agentHubEvent {
+		raw, _ := json.Marshal(map[string]any{"text": text})
+		return agentHubEvent{
+			ID: id, Time: "2026-07-31T15:00:00Z", Type: "message.assistant.delta",
+			SessionID: "ses_merge", TurnID: "turn_1", Data: raw,
+		}
+	}
+	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello!")); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Lock()
+	if rt.run.AgentHubEventCursor != 1 {
+		t.Fatalf("replacement moved the cursor to %d", rt.run.AgentHubEventCursor)
+	}
+	if len(rt.events) != 1 {
+		t.Fatalf("replacement appended instead of swapping: %+v", rt.events)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(rt.events[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Unlock()
+	if payload["text"] != "Hello!" {
+		t.Fatalf("replacement content = %v, want merged text", payload["text"])
+	}
+	if err := rt.applyAgentHubEvent(manager, delta(2, "next")); err != nil {
+		t.Fatal(err)
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if rt.run.AgentHubEventCursor != 2 || len(rt.events) != 2 {
+		t.Fatalf("new event after replacement failed: cursor=%d events=%d", rt.run.AgentHubEventCursor, len(rt.events))
+	}
+}
+
 func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 	tests := []struct {
 		name    string

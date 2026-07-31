@@ -923,11 +923,17 @@ func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceI
 				flusher.Flush()
 				continue
 			}
-			if message.Event == nil || message.Event.ID <= lastSentID {
+			if message.Event == nil {
 				continue
 			}
+			// Ids at or below the last sent id are delta-merge replacements:
+			// forward them so the browser swaps in the accumulated content.
+			// Handoff duplicates of already-sent events are idempotent for the
+			// same reason.
+			if message.Event.ID > lastSentID {
+				lastSentID = message.Event.ID
+			}
 			writeSSE(w, *message.Event)
-			lastSentID = message.Event.ID
 			flusher.Flush()
 		case <-r.Context().Done():
 			return

@@ -233,6 +233,39 @@ func TestAgentHubSSEAndCursorGap(t *testing.T) {
 	}
 }
 
+// AgentHub folds consecutive text deltas into the tail durable event and
+// republishes the merged event under the id the client already holds. Such
+// replacement frames must pass through without moving the cursor, and only
+// an id beyond cursor+1 remains a gap.
+func TestAgentHubSSEDeltaMergeReplacements(t *testing.T) {
+	stream := strings.Join([]string{
+		"id: 1",
+		`data: {"id":1,"type":"message.assistant.delta","sessionId":"ses_1","data":{"text":"Hello"}}`,
+		"",
+		"id: 1",
+		`data: {"id":1,"type":"message.assistant.delta","sessionId":"ses_1","data":{"text":"Hello!"}}`,
+		"",
+		"id: 2",
+		`data: {"id":2,"type":"turn.completed","sessionId":"ses_1","data":{}}`,
+		"",
+	}, "\n")
+	var events []agentHubEvent
+	if err := readAgentHubSSE(strings.NewReader(stream), 0, func(event agentHubEvent) error {
+		events = append(events, event)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 3 || events[0].ID != 1 || events[1].ID != 1 || events[2].ID != 2 {
+		t.Fatalf("replacement frames must pass through: %+v", events)
+	}
+	gap := "id: 3\ndata: {\"id\":3,\"type\":\"turn.completed\",\"sessionId\":\"ses_1\"}\n\n"
+	err := readAgentHubSSE(strings.NewReader(gap), 1, func(agentHubEvent) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "cursor gap") {
+		t.Fatalf("expected cursor gap, got %v", err)
+	}
+}
+
 func TestNormalizeAgentHubEndpoint(t *testing.T) {
 	t.Setenv("FORGE_AGENTHUB_URL", "")
 	got, err := normalizeAgentHubEndpoint("")

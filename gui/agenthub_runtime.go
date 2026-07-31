@@ -453,7 +453,34 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 	}
 	cursor := rt.run.AgentHubEventCursor
 	if source.ID <= cursor {
+		// Delta-merge replacement: AgentHub folds consecutive text deltas
+		// into the tail durable event and republishes it under the id this
+		// runtime already applied. Swap in the accumulated content; the
+		// cursor and run status stay untouched because no new durable event
+		// exists.
+		for index := len(rt.events) - 1; index >= 0; index-- {
+			if rt.events[index].ID == source.ID {
+				rt.events[index] = source
+				break
+			}
+			if rt.events[index].ID < source.ID {
+				break
+			}
+		}
+		eventTime := source.Time
+		if eventTime == "" {
+			eventTime = time.Now().Format(time.RFC3339)
+		}
+		rt.run.UpdatedAt = eventTime
+		if isAgentHubOutputEvent(source) {
+			rt.run.LastOutputAt = eventTime
+		}
+		run := rt.run
 		rt.mu.Unlock()
+		if err := saveAgentRun(rt.workspace.Path, run); err != nil {
+			return err
+		}
+		m.publish(run.ID, source)
 		return nil
 	}
 	if source.ID != cursor+1 {

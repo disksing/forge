@@ -450,10 +450,16 @@ func readAgentHubSSE(reader io.Reader, after int64, receive func(agentHubEvent) 
 				return fmt.Errorf("AgentHub SSE id mismatch: frame %d, payload %d", frameID, event.ID)
 			}
 		}
-		if event.ID != after+1 {
-			return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", after+1, event.ID)
+		if event.ID > after {
+			if event.ID != after+1 {
+				return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", after+1, event.ID)
+			}
+			after = event.ID
 		}
-		after = event.ID
+		// Frames at or below the cursor are delta-merge replacements: the
+		// store folded a new fragment into an already-delivered event and
+		// republished it under the same id. Pass them through so the receiver
+		// can swap in the accumulated content; only new ids move the cursor.
 		eventID = ""
 		data = data[:0]
 		return receive(event)
