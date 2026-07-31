@@ -1920,7 +1920,16 @@ function closeAgentStream() {
 }
 
 function appendCanonicalAgentEvent(event) {
-  if (!event || isKnownCanonicalAgentEvent(event)) return;
+  if (!event) return;
+  // Delta-merge replacements republish an id the list already holds: swap
+  // the stored event for the accumulated content in place.
+  const existingIndex = state.agent.events.findIndex((existing) => existing.id === event.id);
+  if (existingIndex >= 0) {
+    state.agent.events[existingIndex] = event;
+    scheduleAgentRender();
+    return;
+  }
+  if (isKnownCanonicalAgentEvent(event)) return;
   state.agent.events.push(event);
   if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
     refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
