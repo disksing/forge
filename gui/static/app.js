@@ -9,6 +9,7 @@ const state = {
   activeWorkspaceId: "",
   workspaceMenuOpen: false,
   selectedId: "",
+  lastResourceId: "",
   expandedProjects: new Set(),
   expandedPaths: new Set(),
   expandedMarkdownFiles: new Set(),
@@ -132,6 +133,9 @@ async function load() {
   renderWorkspaceSelect();
   if (state.activeWorkspaceId) {
     await loadUIState();
+    if (!route.resourceId && state.lastResourceId) {
+      state.selectedId = state.lastResourceId;
+    }
     await loadTree({ replaceURL: true });
   } else {
     state.tree = null;
@@ -190,6 +194,7 @@ async function loadWorkspaceAgents(options = {}) {
 async function loadUIState() {
   const uiState = await api(`/api/workspaces/${state.activeWorkspaceId}/ui-state`);
   state.expandedProjects = new Set(uiState.expandedProjects || []);
+  state.lastResourceId = uiState.lastResourceId || "";
 }
 
 async function saveUIState() {
@@ -199,8 +204,10 @@ async function saveUIState() {
     body: JSON.stringify({
       version: 1,
       expandedProjects: [...state.expandedProjects],
+      lastResourceId: state.selectedId,
     }),
   });
+  state.lastResourceId = state.selectedId;
 }
 
 function startAutoRefresh() {
@@ -381,6 +388,8 @@ async function switchWorkspace(id) {
     return;
   }
   setMobileSidebar(false);
+  // Record the page open in the workspace being left so it can be restored later.
+  await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
   state.selectedId = "workspace";
   state.sessionMenu = null;
@@ -389,6 +398,7 @@ async function switchWorkspace(id) {
   resetAgentState();
   renderWorkspaceSelect();
   await loadUIState();
+  state.selectedId = state.lastResourceId || "workspace";
   await loadTree();
 }
 
@@ -646,6 +656,7 @@ async function selectResource(id, options = {}) {
   setMobileSidebar(false);
   ensureSelectedProjectExpanded(false);
   syncURL();
+  saveUIState().catch((err) => console.warn("failed to save UI state", err));
   renderSelectionPanels();
   await Promise.all([
     id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: Boolean(options.forceDetail) }),
@@ -4067,6 +4078,9 @@ window.addEventListener("popstate", async () => {
   renderWorkspaceSelect();
   if (workspaceChanged) {
     await loadUIState();
+    if (!route.resourceId && state.lastResourceId) {
+      state.selectedId = state.lastResourceId;
+    }
     await loadTree({ updateURL: false });
   } else {
     ensureValidSelection();

@@ -1493,3 +1493,80 @@ func TestFileSectionHeaderHostsOpenActionOnSameRow(t *testing.T) {
 		t.Fatal("markdown preview toolbar styles should be removed with the toolbar")
 	}
 }
+
+func TestUIStateRoundTripsLastResource(t *testing.T) {
+	workspace := t.TempDir()
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	put := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/ui-state", strings.NewReader(`{"version":1,"expandedProjects":["project1"],"lastResourceId":"project1.task2"}`))
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, put)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state PUT to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var saved guiState
+	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.LastResourceID != "project1.task2" {
+		t.Fatalf("expected PUT response to echo lastResourceId, got %+v", saved)
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/ui-state", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, get)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state GET to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var loaded guiState
+	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if loaded.LastResourceID != "project1.task2" || len(loaded.ExpandedProjects) != 1 || loaded.ExpandedProjects[0] != "project1" {
+		t.Fatalf("expected persisted ui-state, got %+v", loaded)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "gui-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"lastResourceId": "project1.task2"`) {
+		t.Fatalf("expected gui-state.json to persist lastResourceId, got %s", data)
+	}
+}
+
+func TestWorkspaceRestoresLastSelectedResource(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+
+	for _, want := range []string{
+		`state.lastResourceId = uiState.lastResourceId || "";`,
+		`lastResourceId: state.selectedId,`,
+		`await loadUIState();
+    if (!route.resourceId && state.lastResourceId) {
+      state.selectedId = state.lastResourceId;
+    }
+    await loadTree({ replaceURL: true });`,
+		`await loadUIState();
+  state.selectedId = state.lastResourceId || "workspace";
+  await loadTree();`,
+		`await loadUIState();
+    if (!route.resourceId && state.lastResourceId) {
+      state.selectedId = state.lastResourceId;
+    }
+    await loadTree({ updateURL: false });`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("workspace last-page restore is missing %q", want)
+		}
+	}
+	if got := strings.Count(source, "saveUIState().catch("); got < 2 {
+		t.Fatalf("selection changes and workspace switches should persist UI state; got %d saveUIState().catch call sites", got)
+	}
+}
