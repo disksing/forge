@@ -828,6 +828,40 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	stopRuntimeTestStream(rt)
 }
 
+func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "running")
+	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start failed: %s", rec.Body.String())
+	}
+	rt := manager.runtimeByID(detail.Run.ID)
+	sessionID := detail.Run.AgentHubSessionID
+	fake.mu.Lock()
+	fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "stale turn summary"})
+	session := fake.sessions[sessionID]
+	session.State = "ready"
+	fake.sessions[sessionID] = session
+	highWater := session.LastEventID
+	fake.mu.Unlock()
+	if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
+	waitForRuntimeTest(t, func() bool {
+		data, err := os.ReadFile(logPath)
+		return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
+	})
+	logData := string(mustReadFile(t, logPath))
+	if strings.Contains(logData, "stale turn summary") {
+		t.Fatalf("AutoRun retry reused the previous turn summary:\n%s", logData)
+	}
+	stopRuntimeTestStream(rt)
+}
+
 func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 	for _, terminalState := range []string{"completed", "failed"} {
 		t.Run(terminalState, func(t *testing.T) {

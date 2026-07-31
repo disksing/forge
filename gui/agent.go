@@ -1041,7 +1041,7 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 	return rt.run.SchedulerTurn
 }
 
-func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
+func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 	rt.mu.Lock()
 	run := rt.run
 	rt.mu.Unlock()
@@ -1062,7 +1062,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 			err = json.Unmarshal(out, &task)
 		}
 		if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
-			args = append(args, "--reason="+strings.TrimSpace(summary))
+			args = append(args, "--reason=agent did not set AutoRun state")
 			out, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
 			if err == nil {
 				_ = json.Unmarshal(out, &task)

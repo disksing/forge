@@ -301,7 +301,7 @@ func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64
 			if source.ID != cursor+1 {
 				return fmt.Errorf("AgentHub history cursor gap: expected %d, got %d", cursor+1, source.ID)
 			}
-			state, _, _ := agentHubEventControl(source)
+			state, _ := agentHubEventControl(source)
 			if state == "stopped" {
 				sawStopped = true
 			}
@@ -492,7 +492,7 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		rt.mu.Unlock()
 		return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", cursor+1, source.ID)
 	}
-	state, schedulerTerminal, schedulerSummary := agentHubEventControl(source)
+	state, schedulerTerminal := agentHubEventControl(source)
 	rt.run.AgentHubEventCursor = source.ID
 	rt.agentHubState = stateOrCurrent(state, rt.agentHubState)
 	if state != "" {
@@ -556,7 +556,7 @@ func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent
 		go rt.releaseForgeSessionAfterStopped(m)
 	}
 	if schedulerTerminal && run.SchedulerTurn {
-		go rt.finishSchedulerTurn(m, schedulerSummary)
+		go rt.finishSchedulerTurn(m)
 	}
 	return nil
 }
@@ -606,34 +606,15 @@ func stateOrCurrent(value, current string) string {
 	return current
 }
 
-func agentHubEventControl(event agentHubEvent) (state string, schedulerTerminal bool, schedulerSummary string) {
+func agentHubEventControl(event agentHubEvent) (state string, schedulerTerminal bool) {
 	if event.Type == "session.state" {
 		state = agentHubEventDataString(event.Data, "state")
 	}
 	switch event.Type {
-	case "turn.completed":
-		summary := agentHubEventDataString(event.Data, "summary")
-		if summary == "" {
-			summary = "AgentHub turn completed"
-		}
-		return state, true, summary
-	case "turn.cancelled":
-		summary := agentHubEventDataString(event.Data, "summary")
-		if summary == "" {
-			summary = "AgentHub turn cancelled"
-		}
-		return state, true, summary
-	case "turn.failed":
-		summary := agentHubEventDataString(event.Data, "error")
-		if summary == "" {
-			summary = agentHubEventDataString(event.Data, "message")
-		}
-		if summary == "" {
-			summary = "AgentHub turn failed"
-		}
-		return state, true, summary
+	case "turn.completed", "turn.cancelled", "turn.failed":
+		return state, true
 	default:
-		return state, false, ""
+		return state, false
 	}
 }
 
