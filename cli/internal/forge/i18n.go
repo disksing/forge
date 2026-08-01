@@ -218,6 +218,7 @@ func taskAgentsPromptZH(resource Resource) string {
 	backgroundLine := "将 task.md 作为长期有效的任务约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
 	recoveryLine := "将 work.md 作为可替换的恢复检查点：只记录当前重点、下一步行动、阻塞以及恢复所需状态；不要重复任务约定或追加已完成步骤的历史。仅在有用时保留可选模块，删除空模块，并将任意资源链接或 ID 放入“资源”。"
 	pendingLine := "可能改变范围、验收标准或稳定约束的问题应保存在 task.md 中，并在实现前请用户确认。短期执行问题放在 work.md 中。调查形成长期决策后，将其提升到 task.md，并从 work.md 删除临时说明。"
+	agentsLine := "总是读取父项目 AGENTS.md（../AGENTS.md）和 workspace 根目录的 AGENTS.md（../../AGENTS.md），了解项目约定、全局 Forge session、锁和文件职责规则。"
 	extra := `
 - 此任务属于一个项目。需要更广泛的上下文时，读取父项目目录中的 project.json、project.md 和 log.jsonl。
 - 父项目文件仅作参考；除非用户明确要求，否则修改应限定在此任务目录及其 worktree 中。
@@ -234,6 +235,7 @@ func taskAgentsPromptZH(resource Resource) string {
 		backgroundLine = "将 project.md 作为长期有效的项目约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
 		recoveryLine = "短期实现状态应放在任务的 work.md 中；项目自身没有 work.md 恢复快照。"
 		pendingLine = "可能改变项目范围、验收标准或稳定约束的问题应保存在 project.md 中；需要时请用户确认，并把长期有效的答案记录在那里。"
+		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Forge session、锁和文件职责规则。"
 		extra = `
 - 项目任务模板位于 templates/*.md。每个模板由 YAML front matter 和 Markdown 正文组成；正文会完整复制为新任务的 task.md。
 - 模板必须包含非空 title。还可设置 autorun（true 或 false）、agent-profiles、兼容字段 agent 和 prompt。Agent 设置与 prompt 仅在 autorun 为 true 时生效。不要添加其他 front matter 字段。
@@ -256,7 +258,7 @@ func taskAgentsPromptZH(resource Resource) string {
 
 你正在一个 %s中工作。
 
-- 读取 workspace 根目录的 AGENTS.md，了解全局 Forge session、锁和文件职责规则。
+- %s
 - %s
 - %s
 - Forge session 所有权：如果环境变量或注入的 Forge session 上下文中存在 `+"`FORGE_SESSION_ID`"+`，请复用它；外层启动器已注册 session 并锁定此目录对应的资源，因此不要创建新 session，不要锁定/解锁当前资源，也不要自行结束外层 session。
@@ -276,7 +278,7 @@ func taskAgentsPromptZH(resource Resource) string {
 - 在任务中工作时，使用 `+"`forge task log add <title> --details <details>`"+` 记录重要执行事件；在项目中工作时使用 `+"`forge project log add <title> --details <details>`"+`。
 - 生成的报告、截图、补丁和其他输出应放在 artifacts/ 下。
 %s
-`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
+`, title, scope, agentsLine, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
 }
 
 const defaultWikiIndexZH = `# Workspace Wiki

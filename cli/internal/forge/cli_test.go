@@ -156,8 +156,8 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
 		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") {
-			t.Fatalf("expected Chinese project prompt, got:\n%s", got)
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") {
+			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
 		var projectLogs []LogEntry
 		if err := json.Unmarshal([]byte(run(t, "project", "log", "list", "--project=project1", "--json")), &projectLogs); err != nil {
@@ -178,8 +178,8 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
 			t.Fatalf("expected Chinese work template, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") {
-			t.Fatalf("expected Chinese task prompt, got:\n%s", got)
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") {
+			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
 		var taskLogs []LogEntry
 		if err := json.Unmarshal([]byte(run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")), &taskLogs); err != nil {
@@ -337,6 +337,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "Project task templates live in templates/*.md") || !strings.Contains(projectAgents, "autorun: true") {
 			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
 		}
+		if !strings.Contains(projectAgents, "workspace root AGENTS.md (../AGENTS.md)") {
+			t.Fatalf("project AGENTS.md should reference workspace AGENTS.md by relative path, got:\n%s", projectAgents)
+		}
 		templateContent := "---\ntitle: Daily inspection\nautorun: true\nagent-profiles: [kimi, codex]\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
 		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "daily.md"), []byte(templateContent), 0o644); err != nil {
 			t.Fatal(err)
@@ -381,8 +384,8 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
 		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
-		if !strings.Contains(subtaskAgents, "workspace root AGENTS.md") {
-			t.Fatalf("expected subtask AGENTS.md to reference workspace AGENTS.md, got:\n%s", subtaskAgents)
+		if !strings.Contains(subtaskAgents, "parent project AGENTS.md (../AGENTS.md)") || !strings.Contains(subtaskAgents, "workspace root AGENTS.md (../../AGENTS.md)") {
+			t.Fatalf("expected subtask AGENTS.md to reference project and workspace AGENTS.md by relative paths, got:\n%s", subtaskAgents)
 		}
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
