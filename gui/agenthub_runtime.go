@@ -807,21 +807,12 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 	steer := state == "busy" || state == "waiting_approval"
 	session, err := client.Message(r.Context(), run.AgentHubSessionID, text, steer)
 	if err != nil {
-		// Message/steer is non-idempotent. Never repeat it. Reconcile durable
-		// events and report the ambiguous outcome to the caller.
-		_ = rt.catchUpAgentHub(context.WithoutCancel(r.Context()), m, 0)
+		// Message/steer is non-idempotent. Never repeat it; the session poller
+		// reconciles the projection. Report the ambiguous outcome to the caller.
 		writeError(w, fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
 		return
 	}
-	rt.mu.Lock()
-	rt.agentHubState = session.State
-	rt.run.Status = forgeStatusForAgentHubState(session.State)
-	rt.mu.Unlock()
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
+	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, map[string]string{"status": "accepted"})
 }
 
@@ -838,19 +829,28 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
-	rt.mu.Lock()
-	status := rt.run.Status
-	rt.mu.Unlock()
-	if status != "stopped" {
-		err := errors.New("AgentHub stop returned without a durable stopped event")
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
+	rt.applyAgentHubSessionState(m, session)
+	// Stop stays fail-closed: confirm the durable stopped state with short
+	// session polls before releasing the caller.
+	deadline := time.Now().Add(agentHubStopConfirmTimeout)
+	for !rt.agentHubStopped() {
+		if !time.Now().Before(deadline) {
+			err := errors.New("AgentHub stop did not reach a durable stopped state within the confirmation window")
+			rt.setRecoveryError(m, err)
+			writeError(w, err, http.StatusBadGateway)
+			return
+		}
+		timer := time.NewTimer(agentHubStopConfirmInterval)
+		select {
+		case <-r.Context().Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		session, err := client.GetSession(r.Context(), run.AgentHubSessionID)
+		if err == nil {
+			rt.applyAgentHubSessionState(m, session)
+		}
 	}
 	writeJSON(w, map[string]string{"status": "stopped"})
 }
@@ -870,14 +870,10 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 	}
 	session, err := client.Interrupt(r.Context(), run.AgentHubSessionID)
 	if err != nil {
-		_ = rt.catchUpAgentHub(context.WithoutCancel(r.Context()), m, 0)
 		writeError(w, fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
 		return
 	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
+	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, map[string]string{"status": "interrupted"})
 }
 
@@ -896,14 +892,10 @@ func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Re
 	rt.mu.Unlock()
 	session, err := client.Approval(r.Context(), run.AgentHubSessionID, req.RequestID, reply)
 	if err != nil {
-		_ = rt.catchUpAgentHub(context.WithoutCancel(r.Context()), m, 0)
 		writeError(w, fmt.Errorf("AgentHub approval outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
 		return
 	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
+	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, map[string]string{"status": "resolved"})
 }
 
@@ -950,11 +942,7 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
+	rt.applyAgentHubSessionState(m, session)
 	rt.startAgentHubStream(m)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
@@ -994,16 +982,7 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
-	if err := rt.loadAgentHubHistory(r.Context(), session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
+	rt.applyAgentHubSessionState(m, session)
 	rt.startAgentHubStream(m)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }

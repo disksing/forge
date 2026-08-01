@@ -27,6 +27,7 @@ type runtimeFakeAgentHub struct {
 	stopAtStopping  bool
 	messageSteers   []bool
 	actions         []string
+	listCalls       int
 }
 
 func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
@@ -187,6 +188,7 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.listCalls++
 	var sessions []agentHubSession
 	if f.duplicateSource {
 		source := &agentHubSource{
@@ -212,8 +214,10 @@ func sourceMatchesQuery(source *agentHubSource, query url.Values) bool {
 	if query.Get("sourceApp") == "" && query.Get("sourceInstanceId") == "" && query.Get("sourceExternalId") == "" {
 		return true
 	}
-	return source != nil && source.App == query.Get("sourceApp") &&
-		source.InstanceID == query.Get("sourceInstanceId") && source.ExternalID == query.Get("sourceExternalId")
+	return source != nil &&
+		(query.Get("sourceApp") == "" || source.App == query.Get("sourceApp")) &&
+		(query.Get("sourceInstanceId") == "" || source.InstanceID == query.Get("sourceInstanceId")) &&
+		(query.Get("sourceExternalId") == "" || source.ExternalID == query.Get("sourceExternalId"))
 }
 
 func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request, id string) {
@@ -758,6 +762,11 @@ func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 }
 
 func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
+	oldTimeout, oldInterval := agentHubStopConfirmTimeout, agentHubStopConfirmInterval
+	agentHubStopConfirmTimeout, agentHubStopConfirmInterval = 300*time.Millisecond, 50*time.Millisecond
+	defer func() {
+		agentHubStopConfirmTimeout, agentHubStopConfirmInterval = oldTimeout, oldInterval
+	}()
 	fake := newRuntimeFakeAgentHub()
 	fake.stopAtStopping = true
 	hub := httptest.NewServer(fake)
@@ -792,9 +801,8 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	session.State = "stopped"
 	session.StopReason = "provider-exited"
 	fake.sessions[sessionID] = session
-	highWater := session.LastEventID
 	fake.mu.Unlock()
-	if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuntimeTest(t, func() bool {

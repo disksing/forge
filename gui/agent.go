@@ -124,16 +124,17 @@ type resourceDetailPath struct {
 }
 
 type agentRuntime struct {
-	mu                 sync.Mutex
-	workspace          guiWorkspace
-	manager            *agentManager
-	run                agentRun
-	events             []agentHubEvent
-	agentHub           *agentHubClient
-	agentHubState      string
-	agentHubCancel     context.CancelFunc
-	agentHubSync       sync.Mutex
-	agentHubStreamDone chan struct{}
+	mu                     sync.Mutex
+	workspace              guiWorkspace
+	manager                *agentManager
+	run                    agentRun
+	events                 []agentHubEvent
+	agentHub               *agentHubClient
+	agentHubState          string
+	agentHubCancel         context.CancelFunc
+	agentHubSync           sync.Mutex
+	agentHubStreamDone     chan struct{}
+	schedulerTurnFinishing bool
 }
 
 type agentManager struct {
@@ -875,8 +876,20 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 
 func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 	rt.mu.Lock()
+	if !rt.run.SchedulerTurn || rt.schedulerTurnFinishing {
+		// Duplicate triggers from the session poller and the event pipeline are
+		// expected; only one finish may run per turn.
+		rt.mu.Unlock()
+		return
+	}
+	rt.schedulerTurnFinishing = true
 	run := rt.run
 	rt.mu.Unlock()
+	defer func() {
+		rt.mu.Lock()
+		rt.schedulerTurnFinishing = false
+		rt.mu.Unlock()
+	}()
 	var task struct {
 		AutoRun *struct {
 			State string `json:"state"`
@@ -900,7 +913,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 				_ = json.Unmarshal(out, &task)
 			}
 			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
-				rt.markIdle(m)
+				rt.markIdleUnlessStopped(m)
 				prompt := autoRunContinuePrompt(rt.workspace.Path)
 				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
 					err = sendErr
@@ -931,7 +944,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 			// launchEnvironment.FORGE_SESSION_ID valid.
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")
 		}
-		rt.markIdle(m)
+		rt.markIdleUnlessStopped(m)
 	}
 }
 
@@ -969,6 +982,19 @@ func (rt *agentRuntime) markIdle(m *agentManager) {
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+// markIdleUnlessStopped is markIdle for scheduler turn completion: a run with
+// a durable stopped observation must not be resurrected to idle, or the Forge
+// session release keyed on the stopped status would never fire.
+func (rt *agentRuntime) markIdleUnlessStopped(m *agentManager) {
+	rt.mu.Lock()
+	if rt.run.AgentHubStoppedObserved && rt.run.Status == "stopped" {
+		rt.mu.Unlock()
+		return
+	}
+	rt.mu.Unlock()
+	rt.markIdle(m)
 }
 
 func (rt *agentRuntime) snapshotEvents() []agentHubEvent {

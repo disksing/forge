@@ -207,6 +207,7 @@ func main() {
 	if err := s.agents.recoverAgentHubRuns(context.Background()); err != nil {
 		log.Printf("recover AgentHub runs: %v", err)
 	}
+	s.agents.startAgentHubPoller(context.Background())
 	go s.runTaskScheduler(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
