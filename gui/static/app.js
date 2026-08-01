@@ -31,7 +31,7 @@ const state = {
     newProfile: {
       key: "",
       description: "",
-      agentId: "",
+      agentName: "",
     },
   },
   createDialog: {
@@ -45,7 +45,6 @@ const state = {
     slug: "",
     autorun: false,
     preferredAgentProfiles: [],
-    legacyAgentId: "",
     prompt: "",
     submitting: false,
   },
@@ -77,7 +76,7 @@ const state = {
     draftPrompt: "",
     ttyDraft: "",
     ttyMultiline: false,
-    agentId: "",
+    agentName: "",
     optionsOpen: false,
     agentChooserOpen: false,
     historyOpen: false,
@@ -591,8 +590,8 @@ function deriveTaskLockState(locks) {
 
 function taskLockOwnerLabel(session) {
   if (session.source === "external") return "an external session";
-  const agent = (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId);
-  return `${agent?.name || session.agentRunAgentId || "Forge GUI"} session`;
+  const agent = (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName);
+  return `${agent?.name || session.agentRunAgentName || "Forge GUI"} session`;
 }
 
 function taskOperationalLabel(autoRun, sessions, lock, statuses) {
@@ -744,10 +743,10 @@ function renderSessions() {
     row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""}`;
     if (clickable) row.type = "button";
     const agent = isInternal
-      ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId)
+      ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName)
       : null;
     const providerLabel = isInternal ? "AgentHub" : "External";
-    const label = isInternal ? agent?.name || session.agentRunAgentId || "AgentHub" : "External";
+    const label = isInternal ? agent?.name || session.agentRunAgentName || "AgentHub" : "External";
     const title = sessionDisplayTitle(session, resourceId);
     const metaParts = [providerLabel];
     if (controls.length > 1) {
@@ -2088,7 +2087,7 @@ function autoRunStatus(detail) {
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
-    ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentId || ""}`
+    ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentHubAgentName || ""}`
     : "";
   return `
     <section class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
@@ -2100,7 +2099,7 @@ function autoRunStatus(detail) {
         </span>
         ${icon(state.agent.autoRunExpanded ? "chevron-up" : "chevron-down", "autorun-expand-icon")}
       </div>
-      <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : run.agentId ? ` · Legacy Agent: ${escapeHTML(run.agentId)}` : " · Workspace default"}</small>
+      <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
       ${dependencies ? `<p>${blocked ? "Blocked by" : "Waiting for"} ${escapeHTML(dependencies)}</p>` : ""}
       ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
@@ -2123,7 +2122,7 @@ function autoRunPresentation(state) {
 
 function agentSelectOptions(agents) {
   return agents.map((agent) => `
-    <option value="${escapeHTML(agent.id)}" ${state.agent.agentId === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>
+    <option value="${escapeHTML(agent.id)}" ${state.agent.agentName === agent.id ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>
   `).join("") || `<option value="">No enabled agents</option>`;
 }
 
@@ -2262,7 +2261,7 @@ function renderTTYComposer() {
   if (!activeRun) {
     state.agent.ttyDraft = "";
     state.agent.ttyMultiline = false;
-    const key = `none:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = agentComposerActions();
@@ -2271,7 +2270,7 @@ function renderTTYComposer() {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}`;
+    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -2317,7 +2316,7 @@ function renderTTYComposer() {
   // A stopped AgentHub session resumes with a freshly created Forge session,
   // so the button only needs the AgentHub attachment, not a live Forge session.
   const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
@@ -2544,23 +2543,23 @@ function settingsAgentSaveBar() {
 function settingsAgentProfilesSection(data) {
   const profiles = data.agentProfiles || [];
   const agents = data.agents || [];
-  const draftAgentId = agents.some((agent) => agent.id === state.settings.newProfile.agentId)
-    ? state.settings.newProfile.agentId
-    : agents[0]?.id || "";
-  state.settings.newProfile.agentId = draftAgentId;
-  const targetOptions = (selected) => {
-    const selectedValue = String(selected || "");
-    const known = agents.some((agent) => agent.id === selectedValue);
-    const unknown = selectedValue && !known
-      ? `<option value="${escapeHTML(selectedValue)}" selected>${escapeHTML(selectedValue)} (Unavailable)</option>`
-      : "";
-    const options = agents.map((agent) => {
-      const name = agent.name || agent.id;
-      const suffix = agent.available === false ? ` (${agent.unavailableReason || "Unavailable"})` : "";
-      return `<option value="${escapeHTML(agent.id)}" ${agent.id === selectedValue ? "selected" : ""}>${escapeHTML(name + suffix)}</option>`;
-    }).join("");
-    return unknown + options;
-  };
+	const draftAgentName = agents.some((agent) => agent.id === state.settings.newProfile.agentName)
+	  ? state.settings.newProfile.agentName
+	  : agents[0]?.id || "";
+	  state.settings.newProfile.agentName = draftAgentName;
+	  const targetOptions = (selected) => {
+	    const selectedValue = String(selected || "");
+	    const known = agents.some((agent) => agent.id === selectedValue);
+	    const unknown = selectedValue && !known
+	      ? `<option value="${escapeHTML(selectedValue)}" selected>${escapeHTML(selectedValue)} (Unavailable)</option>`
+	      : "";
+	    const options = agents.map((agent) => {
+	      const name = agent.name || agent.id;
+	      const suffix = agent.available === false ? ` (${agent.unavailableReason || "Unavailable"})` : "";
+	      return `<option value="${escapeHTML(agent.id)}" ${agent.id === selectedValue ? "selected" : ""}>${escapeHTML(name + suffix)}</option>`;
+	    }).join("");
+	    return unknown + options;
+	  };
   return `
     <section class="settings-agent-section">
       <div class="settings-section-heading">
@@ -2571,21 +2570,21 @@ function settingsAgentProfilesSection(data) {
         <div class="settings-profile-row settings-profile-head">
           <span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span>
         </div>
-        ${profiles.map((profile, index) => {
-          const system = SYSTEM_AGENT_PROFILE_KEYS.has(String(profile.key || "").trim().toLowerCase());
-          return `
-          <div class="settings-profile-row${system ? " settings-profile-system" : ""}" data-profile-index="${index}">
-            <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" ${system ? "disabled" : ""} />
-            <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" ${system ? "disabled" : ""} />
-            <select data-profile-field="agentId" aria-label="AgentHub Agent">${targetOptions(profile.agentId)}</select>
-            ${system ? `<span class="settings-profile-system-label">System</span>` : `<button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>`}
-          </div>
-        `;
+	        ${profiles.map((profile, index) => {
+	          const system = SYSTEM_AGENT_PROFILE_KEYS.has(String(profile.key || "").trim().toLowerCase());
+	          return `
+	          <div class="settings-profile-row${system ? " settings-profile-system" : ""}" data-profile-index="${index}">
+	            <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" ${system ? "disabled" : ""} />
+	            <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" ${system ? "disabled" : ""} />
+	            <select data-profile-field="agentName" aria-label="AgentHub Agent">${targetOptions(profile.agentName)}</select>
+	            ${system ? `<span class="settings-profile-system-label">System</span>` : `<button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>`}
+	          </div>
+	        `;
         }).join("")}
         <div class="settings-profile-row settings-profile-new">
           <input id="settingsNewProfileKey" value="${escapeHTML(state.settings.newProfile.key)}" placeholder="New key" aria-label="New profile key" />
           <input id="settingsNewProfileDescription" value="${escapeHTML(state.settings.newProfile.description)}" placeholder="New profile summary" aria-label="New profile summary" />
-          <select id="settingsNewProfileAgent" aria-label="New profile agent" ${agents.length ? "" : "disabled"}>${targetOptions(draftAgentId) || `<option value="">No Agents</option>`}</select>
+          <select id="settingsNewProfileAgent" aria-label="New profile agent" ${agents.length ? "" : "disabled"}>${targetOptions(draftAgentName) || `<option value="">No Agents</option>`}</select>
           <button type="button" id="settingsAddProfileButton" ${agents.length ? "" : "disabled"}>${icon("plus")}<span>Add</span></button>
         </div>
       </div>
@@ -2626,7 +2625,7 @@ function bindSettingsEvents() {
   });
   $("settingsNewProfileKey")?.addEventListener("input", (event) => { state.settings.newProfile.key = event.target.value; });
   $("settingsNewProfileDescription")?.addEventListener("input", (event) => { state.settings.newProfile.description = event.target.value; });
-  $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentId = event.target.value; });
+	  $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentName = event.target.value; });
   $("settingsAgentHubEndpoint")?.addEventListener("input", markAgentSettingsDirty);
   document.querySelectorAll(".settings-profile-row [data-profile-field]").forEach((field) => {
     field.addEventListener("input", markAgentSettingsDirty);
@@ -2785,7 +2784,7 @@ function agentMessageSenderName(item) {
   if (item.role !== "assistant") return "You";
   const run = currentAgentRun();
   const agents = state.config?.agents || [];
-  const configured = agents.find((agent) => agent.id === run?.agentId);
+  const configured = agents.find((agent) => agent.id === run?.agentHubAgentName);
   return agentDisplayName(configured || selectedAgentConfig());
 }
 
@@ -2837,7 +2836,7 @@ function bindAgentEvents() {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      state.agent.agentId = button.dataset.agentChoice;
+      state.agent.agentName = button.dataset.agentChoice;
       state.agent.agentChooserOpen = false;
       renderTTYComposer();
       bindAgentEvents();
@@ -2929,7 +2928,7 @@ async function startAgentRun() {
     const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
       method: "POST",
       body: JSON.stringify({
-        agentId: agent.id,
+        agentName: agent.id,
         resourceId: selected?.id || "",
         title: selected?.title || workspaceName(),
         prompt: "",
@@ -3347,7 +3346,6 @@ function openCreateDialog(type, projectId = "") {
     slug: "",
     autorun: false,
     preferredAgentProfiles: [],
-    legacyAgentId: "",
     prompt: "",
     submitting: false,
   };
@@ -3367,7 +3365,6 @@ function closeCreateDialog() {
     slug: "",
     autorun: false,
     preferredAgentProfiles: [],
-    legacyAgentId: "",
     prompt: "",
     submitting: false,
   };
@@ -3497,7 +3494,6 @@ function applyCreateDialogTemplate(name) {
     dialog.detail = template.detail || "";
     dialog.autorun = Boolean(template.autorun);
     dialog.preferredAgentProfiles = template.preferredAgentProfiles || [];
-    dialog.legacyAgentId = template.agentId || "";
     dialog.prompt = template.prompt || "";
   }
   renderCreateDialog();
@@ -3539,7 +3535,6 @@ async function submitCreateDialog(event) {
           slug: dialog.slug,
           autorun: dialog.autorun,
           preferredAgentProfiles: dialog.autorun ? dialog.preferredAgentProfiles : [],
-          agentId: dialog.autorun && !dialog.preferredAgentProfiles.length ? dialog.legacyAgentId : "",
           prompt: dialog.autorun ? dialog.prompt : "",
         }),
       });
@@ -3653,33 +3648,23 @@ function workspaceName() {
 
 function applyAgentConfig() {
   const agents = enabledAgentConfigs();
-  const defaultAgentId = defaultChatAgentID();
-  if (!agents.some((agent) => agent.id === state.agent.agentId)) {
-    state.agent.agentId = defaultAgentId;
+  const defaultAgentName = defaultChatAgentName();
+  if (!agents.some((agent) => agent.id === state.agent.agentName)) {
+    state.agent.agentName = defaultAgentName;
   }
 }
 
 function selectedAgentConfig() {
   const agents = enabledAgentConfigs();
-  const agentId = state.agent.agentId || defaultChatAgentID();
-  const selected = agents.find((agent) => agent.id === agentId);
-  if (selected) return selected;
-  if (agentId) {
-    return {
-      id: agentId,
-      name: agentId,
-      available: false,
-      unavailableReason: "Configured AgentHub agent is unavailable",
-    };
-  }
-  return agents[0] || null;
+	  const agentName = state.agent.agentName || defaultChatAgentName();
+	  return agents.find((agent) => agent.id === agentName) || agents[0] || null;
 }
 
 function enabledAgentConfigs() {
   return (state.config?.agents || []).filter((agent) => agent.available !== false);
 }
 
-function defaultChatAgentID() {
+function defaultChatAgentName() {
   const agents = enabledAgentConfigs();
   const configured = configuredAgentProfileName(state.config?.agentProfiles, "default")
     || configuredAgentProfileName(state.settings.data?.agentProfiles, "default");
@@ -3690,7 +3675,7 @@ function defaultChatAgentID() {
 function configuredAgentProfileName(profiles, key) {
   const normalizedKey = String(key || "").trim().toLowerCase();
   const profile = (profiles || []).find((item) => String(item.key || "").trim().toLowerCase() === normalizedKey);
-  return String(profile?.agentName || profile?.agentId || "").trim();
+  return String(profile?.agentName || "").trim();
 }
 
 async function openSettings(tab = "workspace") {
@@ -3719,7 +3704,7 @@ async function refreshSettings() {
     ...base,
     agentHub,
     agents: catalogAgents,
-    agentProfiles: (agentHub.config?.agentProfiles || []).map((profile) => ({ ...profile, agentId: profile.agentName })),
+	    agentProfiles: agentHub.config?.agentProfiles || [],
   };
   state.config = configWithAgentHubCatalog({ ...(state.config || {}), ...base }, agentHub);
 }
@@ -3847,7 +3832,7 @@ async function saveAgentSettings() {
       agentProfiles: (data.agentProfiles || []).map((profile) => ({
         key: profile.key,
         description: profile.description,
-        agentName: profile.agentId,
+        agentName: profile.agentName,
       })),
     }),
   });
@@ -3866,13 +3851,13 @@ async function saveAgentSettings() {
 function collectSettingsAgentProfiles() {
   return Array.from(document.querySelectorAll(".settings-profile-row[data-profile-index]")).map((row) => {
     const field = (name) => row.querySelector(`[data-profile-field="${name}"]`)?.value.trim() || "";
-    return { key: field("key"), description: field("description"), agentId: field("agentId") };
+    return { key: field("key"), description: field("description"), agentName: field("agentName") };
   });
 }
 
 function addSettingsProfile() {
   const key = state.settings.newProfile.key.trim().toLowerCase();
-  const agentId = state.settings.newProfile.agentId;
+  const agentName = state.settings.newProfile.agentName;
   if (!key) {
     toast("Profile key is required.");
     return;
@@ -3889,9 +3874,9 @@ function addSettingsProfile() {
   }
   state.settings.data = {
     ...(state.settings.data || {}),
-    agentProfiles: [...current, { key, description: state.settings.newProfile.description.trim(), agentId }],
+    agentProfiles: [...current, { key, description: state.settings.newProfile.description.trim(), agentName }],
   };
-  state.settings.newProfile = { key: "", description: "", agentId };
+  state.settings.newProfile = { key: "", description: "", agentName };
   markAgentSettingsDirty();
   state.settings.suppressDraftSync = true;
   renderSettingsModal();

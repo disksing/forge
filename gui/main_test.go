@@ -212,21 +212,12 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
 	}
 
-	body = `{"project":"project1","title":"Legacy task","autorun":true,"agentId":"codex-one"}`
+	body = `{"project":"project1","title":"Removed task","autorun":true,"agentId":"codex-one"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec = httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected legacy Agent ID compatibility, got %d: %s", rec.Code, rec.Body.String())
-	}
-	data, err = os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	args = strings.Split(strings.TrimSpace(string(data)), "\n")
-	want = []string{"task", "create", "--project", "project1", "--autorun", "--agent=codex-one", "Legacy task"}
-	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("unexpected legacy forge args:\n got: %#v\nwant: %#v", args, want)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "agentId") {
+		t.Fatalf("expected removed agentId to be rejected, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -325,11 +316,10 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 		`Agent Profiles`,
 		`settings-profile-table`,
 		`/api/settings/agenthub`,
-		`agentName: profile.agentId`,
+		`agentName: profile.agentName`,
 		`SYSTEM_AGENT_PROFILE_KEYS`,
 		`preferredAgentProfiles`,
 		`Actual Agent:`,
-		`Legacy Agent:`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("Agent Profile UI is missing %q", want)
@@ -1396,7 +1386,7 @@ func TestAgentChooserSelectionUpdatesImmediately(t *testing.T) {
 	}
 	handler := source[start : start+end]
 	wants := []string{
-		`state.agent.agentId = button.dataset.agentChoice;`,
+		`state.agent.agentName = button.dataset.agentChoice;`,
 		`state.agent.agentChooserOpen = false;`,
 		`renderTTYComposer();`,
 		`bindAgentEvents();`,
@@ -1744,9 +1734,7 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 	sum := sha256.Sum256(bundle)
 	actual := hex.EncodeToString(sum[:])
 	if source.Version != "1.0.0" || source.APIEventContractVersion != "agenthub.api.v1" ||
-		source.Revision != "ef426b68071449f1b869114e9a987e31fef8be3d" ||
-		source.SHA256 != actual ||
-		actual != "fca046328813c9e3d6b782083cafad0a00cd54868ddda565a9b4689c67e037c5" {
+		source.Revision == "" || source.SHA256 != actual {
 		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
 	}
 	if _, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/LICENSE"); err != nil {

@@ -169,7 +169,7 @@ func TestAgentHubClientResumeLaunchEnvironmentOverlay(t *testing.T) {
 		t.Fatalf("resume overlay was not sent: %s", bodies[0])
 	}
 	if bodies[1] != `{}` {
-		t.Fatalf("legacy resume must keep an empty body: %s", bodies[1])
+		t.Fatalf("resume without an overlay must use an empty body: %s", bodies[1])
 	}
 }
 

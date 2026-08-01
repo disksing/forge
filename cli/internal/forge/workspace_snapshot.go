@@ -70,7 +70,6 @@ type TaskTemplate struct {
 	Detail                 string   `json:"detail"`
 	AutoRun                bool     `json:"autorun,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	AgentID                string   `json:"agentId,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
 	Content                string   `json:"content"`
 }
@@ -318,8 +317,6 @@ func parseTaskTemplate(name, content string) (TaskTemplate, error) {
 				return template, fmt.Errorf("task template %s has invalid autorun value", name)
 			}
 			template.AutoRun = value == "true"
-		case "agent":
-			template.AgentID = value
 		case "agent-profiles":
 			value = strings.TrimSpace(strings.Trim(value, "[]"))
 			profiles, err := normalizeAgentProfiles(strings.Split(value, ","))

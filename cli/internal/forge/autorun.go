@@ -23,7 +23,6 @@ const (
 type autoRunCommandOptions struct {
 	TaskID                 string
 	PreferredAgentProfiles []string
-	AgentID                string
 	Prompt                 string
 	After                  []string
 	Summary                string
@@ -40,7 +39,6 @@ type runnableTask struct {
 	Reason                 string              `json:"reason"`
 	Prompt                 string              `json:"prompt,omitempty"`
 	PreferredAgentProfiles []string            `json:"preferredAgentProfiles,omitempty"`
-	AgentID                string              `json:"agentId,omitempty"`
 	After                  []AutoRunDependency `json:"after,omitempty"`
 }
 
@@ -73,7 +71,7 @@ func autoRunUsage(command string) string {
 	base := "usage: forge task autorun "
 	switch command {
 	case "queue":
-		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...]"
+		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...]"
 	case "start", "resume":
 		return base + command + " [--project=<project>] [--task=<task>]"
 	case "complete":
@@ -112,8 +110,6 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			project = value
 		case "task":
 			task = value
-		case "agent":
-			opts.AgentID = value
 		case "agent-profile":
 			opts.PreferredAgentProfiles = append(opts.PreferredAgentProfiles, value)
 		case "prompt":
@@ -127,9 +123,6 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 		default:
 			return opts, errors.New(usage)
 		}
-	}
-	if opts.AgentID != "" && len(opts.PreferredAgentProfiles) > 0 {
-		return opts, errors.New("--agent-profile and legacy --agent are mutually exclusive")
 	}
 	var err error
 	if task == "" {
@@ -147,7 +140,7 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 func autoRunQueue(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		generation := 1
-		agentID, prompt := opts.AgentID, opts.Prompt
+		prompt := opts.Prompt
 		preferredAgentProfiles, err := normalizeAgentProfiles(opts.PreferredAgentProfiles)
 		if err != nil {
 			return err
@@ -157,8 +150,7 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 				return fmt.Errorf("cannot queue AutoRun in %s state", task.AutoRun.State)
 			}
 			generation = task.AutoRun.Generation + 1
-			if agentID == "" && len(preferredAgentProfiles) == 0 {
-				agentID = task.AutoRun.AgentID
+			if len(preferredAgentProfiles) == 0 {
 				preferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
 			}
 			if prompt == "" {
@@ -175,7 +167,7 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 		if len(after) > 0 {
 			state = autoRunStateWaiting
 		}
-		task.AutoRun = &AutoRun{Generation: generation, State: state, PreferredAgentProfiles: preferredAgentProfiles, AgentID: agentID, Prompt: prompt, After: after}
+		task.AutoRun = &AutoRun{Generation: generation, State: state, PreferredAgentProfiles: preferredAgentProfiles, Prompt: prompt, After: after}
 		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation)); err != nil {
 			return err
 		}

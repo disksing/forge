@@ -8,13 +8,22 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"testing"
 )
 
-func TestAgentHubSettingsSaveValidatesAndMigrates(t *testing.T) {
+func TestReadAgentHubConfigRejectsRemovedVersion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(path, []byte(`{"version":2,"workspaces":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readAgentHubConfigFile(path); err == nil || !strings.Contains(err.Error(), "unsupported Forge GUI configuration version") {
+		t.Fatalf("expected removed config version to be rejected, got %v", err)
+	}
+}
+
+func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,14 +41,7 @@ func TestAgentHubSettingsSaveValidatesAndMigrates(t *testing.T) {
 	}))
 	defer fake.Close()
 	t.Setenv("FORGE_AGENTHUB_URL", "")
-	original, err := os.ReadFile(filepath.Join("testdata", "legacy-gui-config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	path := filepath.Join(t.TempDir(), "gui.json")
-	if err := os.WriteFile(path, original, 0o600); err != nil {
-		t.Fatal(err)
-	}
 	server := &server{config: path}
 	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
 		"endpoint":`+strconv.Quote(fake.URL)+`,
@@ -51,19 +53,19 @@ func TestAgentHubSettingsSaveValidatesAndMigrates(t *testing.T) {
 		]
 	}`))
 	recorder := httptest.NewRecorder()
-	server.handleSettings(recorder, request)
+	server.handleAgentHubSettings(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("save returned %d: %s", recorder.Code, recorder.Body.String())
-	}
-	if _, err := os.Stat(agentHubMigrationBackupPath(path, 1)); err != nil {
-		t.Fatalf("migration backup missing: %v", err)
 	}
 	saved, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(saved, []byte(`"agentProviders"`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) {
+	if !bytes.Contains(saved, []byte(`"version": 3`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) {
 		t.Fatalf("unexpected persisted config: %s", saved)
+	}
+	if bytes.Contains(saved, []byte(`"agentProviders"`)) || bytes.Contains(saved, []byte(`"defaultChatAgentId"`)) {
+		t.Fatalf("persisted config contains removed fields: %s", saved)
 	}
 	usesAgentHub, err := server.validatePersistedAgentHubConfig(context.Background())
 	if err != nil || !usesAgentHub {
@@ -101,7 +103,7 @@ func TestAgentHubSettingsSaveAllowsUnavailableProfileTarget(t *testing.T) {
 		]
 	}`))
 	recorder := httptest.NewRecorder()
-	server.handleSettings(recorder, request)
+	server.handleAgentHubSettings(recorder, request)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("save rejected unavailable targets: %d: %s", recorder.Code, recorder.Body.String())
 	}
@@ -142,231 +144,12 @@ func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 			t.Fatalf("run projection is missing %s: %s", field, data)
 		}
 	}
-	var legacy agentRun
-	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","agentHubEventCursor":42,"status":"stopped"}`), &legacy); err != nil {
+	var current agentRun
+	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","agentHubEventCursor":42,"status":"stopped"}`), &current); err != nil {
 		t.Fatal(err)
 	}
-	if legacy.ID != "old" || legacy.AgentHubSessionID != "" {
-		t.Fatalf("old run index record did not decode safely: %+v", legacy)
-	}
-}
-
-func TestMigrateCurrentGUIConfigFixture(t *testing.T) {
-	var legacy legacyGUIConfig
-	readJSONFixture(t, "legacy-gui-config.json", &legacy)
-	var catalog agentHubCatalog
-	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := migrateLegacyConfig(legacy, "http://192.168.2.150:4646/", "forge-test-instance", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Version != 3 || cfg.AgentHubEndpoint != "http://192.168.2.150:4646" || cfg.AgentHubInstanceID != "forge-test-instance" {
-		t.Fatalf("unexpected migrated config: %+v", cfg)
-	}
-	got := make(map[string]string)
-	for _, route := range cfg.AgentProfiles {
-		got[route.Key] = route.AgentName
-	}
-	want := map[string]string{
-		"default": "kimi-k3", "fast": "kimi-k3", "reasoning": "kimi-k3",
-		"codex": "gpt-5.6-sol", "deep": "gpt-5.6-sol", "kimi": "kimi-k3",
-		"frontend": "kimi-k3", "grok": "grok-4.5",
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("unexpected profile migration:\ngot  %#v\nwant %#v", got, want)
-	}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, removed := range []string{"defaultChatAgentId", "agentProviders", `"agents"`, `"agentId"`} {
-		if bytes.Contains(data, []byte(removed)) {
-			t.Errorf("migrated config still contains legacy field %s: %s", removed, data)
-		}
-	}
-}
-
-func TestLegacyConfigFileMigrationBacksUpAndWritesAtomically(t *testing.T) {
-	original, err := os.ReadFile(filepath.Join("testdata", "legacy-gui-config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var catalog agentHubCatalog
-	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	path := filepath.Join(t.TempDir(), "gui.json")
-	if err := os.WriteFile(path, original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	cfg, backup, err := migrateLegacyGUIConfigFile(path, defaultAgentHubEndpoint, "forge-test", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if configuredAgentHubProfileTarget(cfg.AgentProfiles, "default") != "kimi-k3" || backup != agentHubMigrationBackupPath(path, 1) {
-		t.Fatalf("unexpected migration result: %+v, %q", cfg, backup)
-	}
-	backupData, err := os.ReadFile(backup)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(backupData, original) {
-		t.Fatal("backup differs from the original config bytes")
-	}
-	var saved map[string]json.RawMessage
-	savedData, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(savedData, &saved); err != nil {
-		t.Fatal(err)
-	}
-	for _, field := range []string{"agentProviders", "agents", "defaultChatAgentId"} {
-		if _, exists := saved[field]; exists {
-			t.Fatalf("legacy field %q was persisted", field)
-		}
-	}
-	if mode := fileMode(t, path); mode != 0o600 {
-		t.Fatalf("migrated config mode is %o, want 600", mode)
-	}
-	if mode := fileMode(t, backup); mode != 0o600 {
-		t.Fatalf("backup mode is %o, want 600", mode)
-	}
-}
-
-func TestConsecutiveAgentHubMigrationsKeepBackupsBySourceVersion(t *testing.T) {
-	var catalog agentHubCatalog
-	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/v1/status":
-			writeFakeAgentHubJSON(t, w, map[string]any{
-				"apiVersion": "1", "capabilities": requiredAgentHubCapabilities, "version": "test",
-			})
-		case "/v1/agents":
-			writeFakeAgentHubJSON(t, w, catalog)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer fake.Close()
-	path := filepath.Join(t.TempDir(), "gui.json")
-	v1Backup := []byte("previous version 1 config\n")
-	if err := os.WriteFile(agentHubMigrationBackupPath(path, 1), v1Backup, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	v2Config, err := json.MarshalIndent(legacyGUIConfig{
-		Version:                  2,
-		ActiveID:                 "workspace-one",
-		Workspaces:               []guiWorkspace{},
-		AgentHubEndpoint:         defaultAgentHubEndpoint,
-		AgentHubInstanceID:       "forge-existing",
-		DefaultAgentHubAgentName: "kimi-k3",
-		AgentProfiles: []legacyProfileRoute{
-			{Key: "codex", Description: "deep", AgentName: "gpt-5.6-sol"},
-		},
-	}, "", "  ")
-	if err != nil {
-		t.Fatal(err)
-	}
-	v2Config = append(v2Config, '\n')
-	if err := os.WriteFile(path, v2Config, 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	server := &server{config: path}
-	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
-		"endpoint":`+strconv.Quote(fake.URL)+`,
-		"agentProfiles":[
-			{"key":"default","agentName":"kimi-k3"},
-			{"key":"fast","agentName":"gpt-5.3-codex-spark"},
-			{"key":"reasoning","agentName":"gpt-5.6-sol"},
-			{"key":"codex","description":"deep","agentName":"gpt-5.6-sol"}
-		]
-	}`))
-	recorder := httptest.NewRecorder()
-	server.handleSettings(recorder, request)
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("save returned %d: %s", recorder.Code, recorder.Body.String())
-	}
-	saved, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cfg agentHubGUIConfig
-	if err := json.Unmarshal(saved, &cfg); err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Version != agentHubConfigVersion {
-		t.Fatalf("saved version = %d, want %d", cfg.Version, agentHubConfigVersion)
-	}
-	wantBackup := agentHubMigrationBackupPath(path, 2)
-	if got, err := os.ReadFile(agentHubMigrationBackupPath(path, 1)); err != nil || !bytes.Equal(got, v1Backup) {
-		t.Fatalf("version 1 backup changed: data=%q err=%v", got, err)
-	}
-	if got, err := os.ReadFile(wantBackup); err != nil || !bytes.Equal(got, v2Config) {
-		t.Fatalf("version 2 backup mismatch: data=%q err=%v", got, err)
-	}
-}
-
-func TestCurrentAgentHubConfigMigrationReservesSystemProfiles(t *testing.T) {
-	var catalog agentHubCatalog
-	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := migrateLegacyConfig(legacyGUIConfig{
-		Version:                  2,
-		ActiveID:                 "workspace-one",
-		AgentHubEndpoint:         "http://old-agenthub:4646",
-		AgentHubInstanceID:       "old-instance",
-		DefaultAgentHubAgentName: "missing-default-agent",
-		AgentProfiles: []legacyProfileRoute{
-			{Key: "fast", Description: "old fast", AgentName: "old-fast-agent"},
-			{Key: "custom", Description: "keep me", AgentName: "old-custom-agent"},
-		},
-	}, "http://new-agenthub:4646", "new-instance", catalog)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Version != agentHubConfigVersion || cfg.AgentHubEndpoint != "http://new-agenthub:4646" || cfg.AgentHubInstanceID != "old-instance" {
-		t.Fatalf("unexpected current config migration: %+v", cfg)
-	}
-	for _, key := range []string{"default", "fast", "reasoning"} {
-		if got := configuredAgentHubProfileTarget(cfg.AgentProfiles, key); got != "missing-default-agent" {
-			t.Fatalf("system profile %s did not inherit the old default target: %q", key, got)
-		}
-	}
-	if _, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "fast"); !ok {
-		t.Fatalf("system fast profile is missing: %+v", cfg.AgentProfiles)
-	}
-	custom, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "custom")
-	if !ok || custom.AgentName != "old-custom-agent" || custom.Description != "keep me" {
-		t.Fatalf("custom profile was not preserved: %+v", cfg.AgentProfiles)
-	}
-}
-
-func TestLegacyMigrationFailurePreservesOriginalBytes(t *testing.T) {
-	original, err := os.ReadFile(filepath.Join("testdata", "legacy-gui-config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var catalog agentHubCatalog
-	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	catalog.Agents = append(catalog.Agents, catalog.Agents[1])
-	path := filepath.Join(t.TempDir(), "gui.json")
-	if err := os.WriteFile(path, original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, backup, err := migrateLegacyGUIConfigFile(path, defaultAgentHubEndpoint, "forge-test", catalog)
-	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
-		t.Fatalf("expected actionable ambiguity error, got %v", err)
-	}
-	if backup != "" {
-		t.Fatalf("failed preflight should not create a backup, got %q", backup)
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, original) {
-		t.Fatal("failed migration changed the original config bytes")
+	if current.ID != "old" || current.AgentHubSessionID != "" {
+		t.Fatalf("unknown old run fields changed current projection: %+v", current)
 	}
 }
 
@@ -389,8 +172,11 @@ func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.AgentHubInstanceID != "stable-id" || configuredAgentHubProfileTarget(cfg.AgentProfiles, "default") != "gpt-5.6-sol" || cfg.AgentProfiles[3].Key != "deep" {
+	if cfg.Version != agentHubConfigVersion || cfg.AgentHubInstanceID != "stable-id" || configuredAgentHubProfileTarget(cfg.AgentProfiles, "default") != "gpt-5.6-sol" {
 		t.Fatalf("unexpected normalized config: %+v", cfg)
+	}
+	if len(cfg.AgentProfiles) != len(systemAgentProfileDefinitions)+1 || configuredAgentHubProfileTarget(cfg.AgentProfiles, "deep") != "gpt-5.6-sol" {
+		t.Fatalf("unexpected normalized profile routes: %+v", cfg.AgentProfiles)
 	}
 	for index := range cfg.AgentProfiles {
 		if cfg.AgentProfiles[index].Key == "deep" {
@@ -428,9 +214,6 @@ func TestSystemAgentProfilesAreFixedAndReserved(t *testing.T) {
 			t.Fatalf("system profile %s was not fixed: %+v", definition.Key, cfg.AgentProfiles)
 		}
 	}
-	if _, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "DEFAULT"); !ok {
-		t.Fatalf("normalized default system profile is missing: %+v", cfg.AgentProfiles)
-	}
 	custom, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "custom")
 	if !ok || custom.AgentName != "missing-agent" {
 		t.Fatalf("unavailable custom target was not preserved: %+v", cfg.AgentProfiles)
@@ -464,13 +247,4 @@ func readJSONFixture(t *testing.T, name string, output any) {
 	if err := json.Unmarshal(data, output); err != nil {
 		t.Fatal(err)
 	}
-}
-
-func fileMode(t *testing.T, path string) os.FileMode {
-	t.Helper()
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return info.Mode().Perm()
 }

@@ -2,7 +2,6 @@ package forge
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,49 +89,7 @@ func TestReadResourceRequiresCurrentSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := readResourceAtDir(dir)
-	if err == nil || !strings.Contains(err.Error(), "run forge migrate") {
-		t.Fatalf("expected migration instruction, got %v", err)
-	}
-}
-
-func TestMigrateResourceSchemasAddsVersionAndPreservesUnknownFields(t *testing.T) {
-	root := t.TempDir()
-	projectDir := filepath.Join(root, "project1")
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	project := newProject("project1", "Project", "")
-	project.SchemaVersion = 0
-	data, err := json.Marshal(project)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var raw map[string]any
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatal(err)
-	}
-	delete(raw, "schemaVersion")
-	raw["futureField"] = "preserved"
-	path := filepath.Join(projectDir, projectJSONFile)
-	if err := writeJSON(path, raw); err != nil {
-		t.Fatal(err)
-	}
-
-	updated, err := migrateResourceSchemas(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated != 1 {
-		t.Fatalf("expected one update, got %d", updated)
-	}
-	var migrated map[string]any
-	if err := readJSON(path, &migrated); err != nil {
-		t.Fatal(err)
-	}
-	if migrated["schemaVersion"] != float64(resourceSchemaVersion) || migrated["futureField"] != "preserved" {
-		t.Fatalf("unexpected migrated metadata: %#v", migrated)
-	}
-	if _, err := readResourceAtDir(projectDir); err != nil {
-		t.Fatalf("migrated resource should load: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "unsupported schemaVersion") {
+		t.Fatalf("expected unsupported schema error, got %v", err)
 	}
 }

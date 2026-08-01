@@ -105,7 +105,7 @@ The desktop panes and session list are resizable. On smaller screens, navigation
 
 Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. A new chat or AutoRun resolves a Forge Profile to an AgentHub `agentName`, creates or resumes a durable AgentHub session, and projects canonical AgentHub events into the GUI.
 
-Forge retains workspace/task/session-lock/Profile control. A resource lock is released only after AgentHub confirms durable `stopped`; an unreachable or unknown AgentHub state keeps the lock. Historical pre-AgentHub runs and their local event logs remain readable, but input, approval, interrupt, stop, and resume operations are rejected for those runs.
+Forge retains workspace/task/session-lock/Profile control. A resource lock is released only after AgentHub confirms durable `stopped`; an unreachable or unknown AgentHub state keeps the lock. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
 
 Useful overrides:
 
@@ -115,7 +115,7 @@ FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file
 ```
 
-Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for the AgentHub boundary, migration behavior, and isolated validation.
+Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -221,7 +221,7 @@ prompt: Inspect the project and report findings.
 Inspect the current project state and report anything that needs attention.
 ```
 
-Supported front matter fields are `title`, `autorun`, `agent-profiles`, legacy `agent`, and `prompt`. Agent settings and prompts apply only to AutoRun templates.
+Supported front matter fields are `title`, `autorun`, `agent-profiles`, and `prompt`. Agent Profiles and prompts apply only to AutoRun templates.
 
 ## Workspace Layout
 
@@ -290,7 +290,7 @@ forge resource archive --id=<resource>
 forge task create [--project=<project>] [--slug <slug>]
                   [--detail <detail>|--task-markdown <markdown>]
                   [--autorun] [--agent-profile=<profile>...]
-                  [--agent=<legacy-agent-id>] [--prompt=<prompt>]
+                  [--prompt=<prompt>]
                   [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all]
                 [--runnable [--include-blocked] [--json]]
@@ -350,7 +350,7 @@ FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 
 ## Companion Tools
 
-- [Forge GUI AgentHub guide](gui/README.md): the execution boundary, settings, migration behavior, environment variables, and isolated testing.
+- [Forge GUI AgentHub guide](gui/README.md): the execution boundary, current settings, environment variables, and isolated testing.
 - [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
 
 ## License

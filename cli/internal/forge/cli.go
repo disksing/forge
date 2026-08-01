@@ -10,7 +10,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -180,7 +180,7 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.PreferredAgentProfiles, options.AgentID, options.Prompt, options.After)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.PreferredAgentProfiles, options.Prompt, options.After)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -259,7 +259,7 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
   forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -270,7 +270,7 @@ Usage:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
   forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
   forge session heartbeat --id=<id>
   forge session lock --id=<id> [--project=<project>] [--task=<task>]
@@ -322,7 +322,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -379,12 +379,11 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
     Create a session and print its unique id. Heartbeat liveness is the
     default and can use --timeout. PID liveness stays active while the process
     exists. AgentHub liveness keeps locks through unknown/unreachable states
-    and releases them only after durable stopped. GUI run liveness is retained
-    for compatibility with historical sessions.
+    and releases them only after durable stopped.
 
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
     Persist the final AgentHub session id after source-based creation or
@@ -471,7 +470,6 @@ type taskCreateOptions struct {
 	Slug                   string
 	AutoRun                bool
 	PreferredAgentProfiles []string
-	AgentID                string
 	Prompt                 string
 	After                  []string
 }
@@ -562,10 +560,6 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			options.AutoRun = true
 			continue
 		}
-		if strings.HasPrefix(arg, "--agent=") {
-			options.AgentID = strings.TrimSpace(strings.TrimPrefix(arg, "--agent="))
-			continue
-		}
 		if strings.HasPrefix(arg, "--agent-profile=") {
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--agent-profile="))
 			if value == "" {
@@ -596,9 +590,6 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 	}
 	if options.DetailSet && options.TaskMarkdownSet {
 		return taskCreateOptions{}, errors.New("--detail and --task-markdown are mutually exclusive")
-	}
-	if options.AgentID != "" && len(options.PreferredAgentProfiles) > 0 {
-		return taskCreateOptions{}, errors.New("--agent-profile and legacy --agent are mutually exclusive")
 	}
 	options.Title = strings.Join(title, " ")
 	return options, nil

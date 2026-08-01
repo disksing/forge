@@ -25,14 +25,13 @@ type runnableTaskCandidate struct {
 	State                  string                   `json:"state"`
 	Prompt                 string                   `json:"prompt"`
 	PreferredAgentProfiles []string                 `json:"preferredAgentProfiles,omitempty"`
-	AgentID                string                   `json:"agentId"`
 	After                  []runnableTaskDependency `json:"after,omitempty"`
 }
 
 type autoRunAgentSelection struct {
-	AgentID string
-	Profile string
-	Reason  string
+	AgentName string
+	Profile   string
+	Reason    string
 }
 
 type runnableTaskDependency struct {
@@ -175,9 +174,6 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		if strings.TrimSpace(run.AgentHubSessionID) == "" {
 			return runnableTaskDispatchFailed, fmt.Errorf("active run %s is not attached to AgentHub", run.ID)
 		}
-		if len(task.PreferredAgentProfiles) == 0 && task.AgentID != "" && run.AgentID != task.AgentID {
-			return runnableTaskDispatchFailed, fmt.Errorf("active run %s uses agent %s, AutoRun requires %s", run.ID, run.AgentID, task.AgentID)
-		}
 		if run.Status != "idle" {
 			return runnableTaskSkippedActive, nil
 		}
@@ -195,7 +191,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskDispatchFailed, err
 	}
 	req := startAgentRequest{
-		AgentID:              selection.AgentID,
+		AgentName:            selection.AgentName,
 		AgentProfile:         selection.Profile,
 		AgentSelectionReason: selection.Reason,
 		ResourceID:           task.ID,
@@ -228,7 +224,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 
 func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
 	if cfg.Version < agentHubConfigVersion {
-		return autoRunAgentSelection{}, errors.New("AutoRun requires migrated AgentHub settings; save AgentHub settings before dispatching this task")
+		return autoRunAgentSelection{}, errors.New("AutoRun requires current AgentHub settings; save AgentHub settings before dispatching this task")
 	}
 	return resolveAgentHubAutoRunAgent(cfg, task)
 }
@@ -245,7 +241,7 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
 			if ok && strings.TrimSpace(route.AgentName) != "" {
 				return autoRunAgentSelection{
-					AgentID: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile,
+					AgentName: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile,
 				}, nil
 			}
 		}
@@ -254,17 +250,14 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
 		}
 		return autoRunAgentSelection{
-			AgentID: fallback, Reason: "preferred Agent Profiles unavailable; using default AgentHub agent " + fallback,
+			AgentName: fallback, Reason: "preferred Agent Profiles unavailable; using default AgentHub agent " + fallback,
 		}, nil
-	}
-	if legacyName := strings.TrimSpace(task.AgentID); legacyName != "" {
-		return autoRunAgentSelection{}, fmt.Errorf("legacy AutoRun agentId %s cannot be dispatched through AgentHub; migrate the task to preferredAgentProfiles or clear agentId to use the default AgentHub agent", legacyName)
 	}
 	fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 	if fallback == "" {
 		return autoRunAgentSelection{}, errors.New("no default AgentHub agent is configured for AutoRun")
 	}
-	return autoRunAgentSelection{AgentID: fallback, Reason: "using default AgentHub agent"}, nil
+	return autoRunAgentSelection{AgentName: fallback, Reason: "using default AgentHub agent"}, nil
 }
 
 func (s *server) agentRunActive(runID string) bool {
