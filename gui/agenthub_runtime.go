@@ -180,8 +180,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	rt.startAgentHubStream(m)
-	current, events, truncated := rt.snapshotDetail()
-	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
+	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
 func agentHubInitialMessage(text string) *struct {
@@ -957,8 +956,7 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 		return
 	}
 	rt.startAgentHubStream(m)
-	current, events, truncated := rt.snapshotDetail()
-	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
+	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
 func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
@@ -1007,8 +1005,7 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	rt.startAgentHubStream(m)
-	current, events, truncated := rt.snapshotDetail()
-	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
+	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
 func missingForgeSessionResumeError() error {

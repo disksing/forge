@@ -1744,10 +1744,13 @@ async function loadCanonicalAgentEvents() {
     return;
   }
   const detail = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}`);
-  const events = detail.events || [];
+  // Event history comes from the AgentHub proxy; the detail response only
+  // carries run metadata. Open with the durable tail window, then page up.
+  const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?latest=true&limit=${AGENT_OLDER_RAW_PAGE_LIMIT}`);
+  const events = body.events || [];
   state.agent.historyBeforeId = oldestRawAgentEventID(events);
   state.agent.events = mergeCanonicalAgentEvents(events);
-  state.agent.eventsHasMore = Boolean(detail.eventsHasMore || detail.eventsTruncated);
+  state.agent.eventsHasMore = Boolean(body.page?.hasMoreBefore);
   await ensureVisibleAgentEvents(AGENT_INITIAL_VISIBLE_EVENT_COUNT, { maxPages: AGENT_INITIAL_AUTO_PAGE_LIMIT });
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
   if (index >= 0) {
@@ -1807,7 +1810,7 @@ async function loadOlderAgentEventsPage(pageLimit = AGENT_OLDER_RAW_PAGE_LIMIT) 
   }
   if (nextBefore) state.agent.historyBeforeId = nextBefore;
   state.agent.events = mergeCanonicalAgentEvents([...older, ...state.agent.events]);
-  state.agent.eventsHasMore = Boolean(body.hasMore);
+  state.agent.eventsHasMore = Boolean(body.page?.hasMoreBefore);
   return older.length > 0;
 }
 

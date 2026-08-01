@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
+func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
 	workspace := t.TempDir()
 	manager := coreTestManager(t, workspace)
 	events := make([]agentHubEvent, agentHubEventMaxCount+20)
@@ -37,9 +37,15 @@ func TestActiveAgentRunDetailReturnsOnlyRecentEvents(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if len(detail.Events) != agentHubEventMaxCount || detail.Events[0].ID != 21 ||
-		detail.Events[len(detail.Events)-1].ID != int64(len(events)) || !detail.EventsTruncated || !detail.EventsHasMore {
-		t.Fatalf("unexpected active event tail: %#v", detail)
+	if detail.Run.ID != "run-one" || detail.Run.AgentHubSessionID != "ses_one" || detail.Run.Status != "idle" {
+		t.Fatalf("unexpected run metadata: %#v", detail.Run)
+	}
+	// Event history is served by the AgentHub proxy, never embedded in the
+	// detail response.
+	for _, forbidden := range []string{`"events"`, `"eventsTruncated"`, `"eventsHasMore"`} {
+		if strings.Contains(recorder.Body.String(), forbidden) {
+			t.Fatalf("run detail must not embed event history, found %s in %s", forbidden, recorder.Body.String())
+		}
 	}
 }
 
@@ -65,35 +71,6 @@ func TestAgentRuntimeRetainsBoundedEventTail(t *testing.T) {
 	events := runtime.snapshotEvents()
 	if len(events) != agentHubEventMaxCount || events[0].ID != 2 || events[len(events)-1].ID != int64(agentHubEventMaxCount+1) {
 		t.Fatalf("runtime did not retain bounded tail: %#v", events)
-	}
-}
-
-func TestAgentStreamStartsAfterClientCursor(t *testing.T) {
-	workspace := t.TempDir()
-	manager := coreTestManager(t, workspace)
-	events := make([]agentHubEvent, 5)
-	for index := range events {
-		events[index] = agentHubEvent{
-			ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one",
-			Data: json.RawMessage(fmt.Sprintf(`{"index":%d}`, index+1)),
-		}
-	}
-	manager.registerRuntime(&agentRuntime{
-		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Status: "idle"},
-		events:    events,
-	})
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	request := httptest.NewRequest(http.MethodGet, "/runs/run-one/stream?after=3", nil).WithContext(ctx)
-	request.Header.Set("Last-Event-ID", "4")
-	recorder := httptest.NewRecorder()
-	manager.stream(recorder, request, "workspace-one", "run-one")
-	// The replay re-sends the cursor event (id 4) with its current content
-	// before newer events, so delta merges missed while disconnected heal.
-	if recorder.Code != http.StatusOK || strings.Contains(recorder.Body.String(), "id: 3\n") ||
-		!strings.Contains(recorder.Body.String(), "id: 4\n") || !strings.Contains(recorder.Body.String(), "id: 5\n") {
-		t.Fatalf("stream did not honor newest cursor: code=%d body=%q", recorder.Code, recorder.Body.String())
 	}
 }
 

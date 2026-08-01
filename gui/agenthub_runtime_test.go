@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -458,7 +457,7 @@ func TestAgentHubRuntimePaginationUnknownGapAndSSE(t *testing.T) {
 	}
 }
 
-func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
+func TestAgentHubRunDetailOmitsEventsAndNoticeKeepsEnvelope(t *testing.T) {
 	workspace := guiWorkspace{ID: "workspace-one", Path: t.TempDir()}
 	configPath := filepath.Join(t.TempDir(), "gui.json")
 	writeCurrentTestConfig(t, configPath, workspace.Path)
@@ -487,33 +486,14 @@ func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
 	if err := json.Unmarshal(detailRecorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	var gotData, wantData any
-	if len(detail.Events) == 1 {
-		_ = json.Unmarshal(detail.Events[0].Data, &gotData)
-		_ = json.Unmarshal(canonical.Data, &wantData)
+	if detail.Run.AgentHubSessionID != canonical.SessionID || detail.Run.Status != "running" {
+		t.Fatalf("detail lost run metadata: %#v", detail.Run)
 	}
-	if len(detail.Events) != 1 || detail.Events[0].Type != canonical.Type ||
-		detail.Events[0].SessionID != canonical.SessionID || detail.Events[0].TurnID != canonical.TurnID ||
-		!reflect.DeepEqual(gotData, wantData) {
-		t.Fatalf("REST changed canonical event: %#v", detail.Events)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	streamRecorder := httptest.NewRecorder()
-	manager.stream(
-		streamRecorder,
-		httptest.NewRequest(http.MethodGet, "/runs/run-one/stream", nil).WithContext(ctx),
-		workspace.ID,
-		"run-one",
-	)
-	body := streamRecorder.Body.String()
-	if !strings.Contains(body, `"type":"tool.event"`) ||
-		!strings.Contains(body, `"sessionId":"ses_canonical"`) ||
-		!strings.Contains(body, `"turnId":"turn_one"`) ||
-		strings.Contains(body, `"text":`) ||
-		strings.Contains(body, `"pendingRequestId":`) {
-		t.Fatalf("SSE did not preserve canonical schema: %s", body)
+	// Canonical events now flow exclusively through the AgentHub proxy; the
+	// detail response must not embed them.
+	if strings.Contains(detailRecorder.Body.String(), `"events"`) ||
+		strings.Contains(detailRecorder.Body.String(), "tool.event") {
+		t.Fatalf("run detail must not embed event history: %s", detailRecorder.Body.String())
 	}
 
 	noticeRecorder := httptest.NewRecorder()
