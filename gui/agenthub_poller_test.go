@@ -95,9 +95,16 @@ func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 				t.Fatal(err)
 			}
 			logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
+			rt := manager.runtimeByID("run-sched")
 			waitForRuntimeTest(t, func() bool {
 				data, err := os.ReadFile(logPath)
-				return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
+				if err != nil || !strings.Contains(string(data), "--reason=agent did not set AutoRun state") {
+					return false
+				}
+				rt.mu.Lock()
+				finishing := rt.schedulerTurnFinishing
+				rt.mu.Unlock()
+				return !finishing
 			})
 		})
 	}
@@ -125,7 +132,10 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 	rt := manager.runtimeByID("run-sched")
 	waitForRuntimeTest(t, func() bool {
 		run := pollerRunState(rt)
-		return run.ForgeSessionID == "" && run.Status == "stopped" && !run.SchedulerTurn
+		rt.mu.Lock()
+		finishing := rt.schedulerTurnFinishing
+		rt.mu.Unlock()
+		return run.ForgeSessionID == "" && run.Status == "stopped" && !run.SchedulerTurn && !finishing
 	})
 	run := pollerRunState(rt)
 	if !run.AgentHubStoppedObserved {
