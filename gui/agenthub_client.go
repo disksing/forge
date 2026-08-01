@@ -28,6 +28,7 @@ var agentHubMaxResponseBytes int64 = 256 << 20
 var requiredAgentHubCapabilities = []string{
 	"session.source",
 	"session.launch-environment",
+	"session.launch-environment-update",
 	"session.strict-stopped",
 	"events.lossless-replay",
 	"events.canonical-turn-terminals",
@@ -300,8 +301,19 @@ func (c *agentHubClient) Stop(ctx context.Context, sessionID string) (agentHubSe
 	return c.sessionAction(ctx, sessionID, "stop")
 }
 
-func (c *agentHubClient) Resume(ctx context.Context, sessionID string) (agentHubSession, error) {
-	return c.sessionAction(ctx, sessionID, "resume")
+// agentHubResumeRequest carries the optional launchEnvironment overlay that
+// replaces selected launch environment entries when a stopped session resumes.
+type agentHubResumeRequest struct {
+	LaunchEnvironment map[string]string `json:"launchEnvironment,omitempty"`
+}
+
+func (c *agentHubClient) Resume(ctx context.Context, sessionID string, launchEnvironment map[string]string) (agentHubSession, error) {
+	var response struct {
+		Session agentHubSession `json:"session"`
+	}
+	err := c.doJSON(ctx, http.MethodPost, sessionPath(sessionID)+"/resume",
+		agentHubResumeRequest{LaunchEnvironment: launchEnvironment}, &response)
+	return response.Session, err
 }
 
 func (c *agentHubClient) Archive(ctx context.Context, sessionID string) (agentHubSession, error) {

@@ -157,7 +157,7 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	})
 	hub := httptest.NewServer(blocking)
 	defer hub.Close()
-	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
 		SourceExternalID: workspace.ID + "/run-live", ForgeSessionID: "session-live",
@@ -181,4 +181,11 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 		defer rt.mu.Unlock()
 		return rt.run.Status == "idle"
 	})
+	// Let the background recovery pass finish its Forge session bind and
+	// projection saves before the deferred cancel and TempDir cleanup race it.
+	waitForRuntimeTest(t, func() bool {
+		data, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "forge.log"))
+		return err == nil && strings.Contains(string(data), "session bind-agenthub --id session-live --agenthub-session-id ses_live")
+	})
+	time.Sleep(100 * time.Millisecond)
 }

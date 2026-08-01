@@ -200,6 +200,50 @@ func TestAgentHubPollerMissingSessionMarksLiveRunRecovering(t *testing.T) {
 	}
 }
 
+func TestAgentHubPollerReadyClearsStoppedObserved(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-resumed", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_resumed",
+		SourceExternalID: workspace.ID + "/run-resumed", Status: "stopped",
+		AgentHubStoppedObserved: true,
+		CreatedAt:               "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_resumed", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	run := pollerRunState(manager.runtimeByID("run-resumed"))
+	if run.Status != "idle" || run.AgentHubStoppedObserved {
+		t.Fatalf("ready session must clear the stopped observation: %#v", run)
+	}
+}
+
+func TestAgentHubApplySessionStateStartingClearsStoppedObserved(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	now := time.Now().Format(time.RFC3339)
+	run := agentRun{
+		ID: "run-starting", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_starting",
+		SourceExternalID: workspace.ID + "/run-starting", Status: "stopped",
+		AgentHubStoppedObserved: true, Cwd: workspace.Path, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, run, nil)
+	manager.registerRuntime(rt)
+	rt.applyAgentHubSessionState(manager, agentHubSession{ID: "ses_starting", State: "starting", UpdatedAt: now})
+	updated := pollerRunState(rt)
+	if updated.Status != "starting" || updated.AgentHubStoppedObserved {
+		t.Fatalf("starting session must clear the stopped observation: %#v", updated)
+	}
+}
+
 func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)

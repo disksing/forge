@@ -746,6 +746,126 @@ function toast() {}
 	}
 }
 
+func TestAgentInitialEventsLoadDoesNotAutoPage(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, removed := range []string{"AGENT_INITIAL_VISIBLE_EVENT_COUNT", "AGENT_INITIAL_AUTO_PAGE_LIMIT"} {
+		if strings.Contains(app, removed) {
+			t.Fatalf("app.js still references removed initial paging constant %q", removed)
+		}
+	}
+	extract := func(startMarker, endMarker string) string {
+		t.Helper()
+		start := strings.Index(app, startMarker)
+		if start < 0 {
+			t.Fatalf("could not find %q", startMarker)
+		}
+		end := strings.Index(app[start:], endMarker)
+		if end < 0 {
+			t.Fatalf("could not find %q after %q", endMarker, startMarker)
+		}
+		return app[start : start+end]
+	}
+	initialLoad := extract("async function loadCanonicalAgentEvents()", "async function loadOlderAgentEvents()")
+	if strings.Contains(initialLoad, "ensureVisibleAgentEvents") {
+		t.Fatal("initial event load must not page upward automatically")
+	}
+	if !strings.Contains(app, `const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);`) {
+		t.Fatal("closed composer must offer Resume for any AgentHub-attached run")
+	}
+
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the agent events paging behavior test")
+	}
+	constants := extract("const AGENT_OLDER_RAW_PAGE_LIMIT", "const MARKDOWN_PREVIEW_CHAR_LIMIT")
+	paging := extract("async function loadCanonicalAgentEvents()", "function fetchAgentRuns()")
+	script := `
+const state = {
+  activeWorkspaceId: "workspace-one",
+  agent: {
+    runs: [{ id: "run-one" }],
+    activeRunId: "run-one",
+    events: [],
+    notices: [],
+    eventsHasMore: false,
+    historyBeforeId: 0,
+    loadingOlder: false,
+  },
+};
+const requests = [];
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+async function api(path) {
+  requests.push(path);
+  if (path.endsWith("/agent/runs/run-one")) return { run: { id: "run-one", status: "idle" } };
+  if (path.includes("latest=true")) {
+    return {
+      events: [
+        { id: 3, type: "message.user" },
+        { id: 4, type: "message.assistant" },
+        { id: 5, type: "tool.event" },
+      ],
+      page: { hasMoreBefore: true },
+    };
+  }
+  if (path.includes("before=")) {
+    return {
+      events: [
+        { id: 1, type: "message.user" },
+        { id: 2, type: "message.assistant" },
+      ],
+      page: { hasMoreBefore: false },
+    };
+  }
+  throw new Error("unexpected API request " + path);
+}
+function mergeCanonicalAgentEvents(events) {
+  const byId = new Map();
+  for (const event of events) byId.set(event.id, event);
+  return [...byId.values()].sort((left, right) => left.id - right.id);
+}
+function projectAgentTimeline() {
+  return state.agent.events.map((event) => ({ kind: event.type.startsWith("message") ? "message" : "tool" }));
+}
+function $(id) { return null; }
+function renderTTY() {}
+function refreshIcons() {}
+` + constants + paging + `
+(async function run() {
+  await loadCanonicalAgentEvents();
+  const eventsRequests = requests.filter((path) => path.includes("/events"));
+  assert(eventsRequests.length === 1, "initial load must issue exactly one events request, got " + JSON.stringify(eventsRequests));
+  assert(eventsRequests[0].includes("latest=true"), "initial load must request the latest page");
+  assert(!eventsRequests[0].includes("before="), "initial load must not page upward");
+  assert(state.agent.eventsHasMore, "initial load must keep the older-page cursor");
+  assert(state.agent.historyBeforeId === 3, "initial load recorded the wrong history cursor");
+
+  await loadOlderAgentEvents();
+  const olderRequests = requests.filter((path) => path.includes("before="));
+  assert(olderRequests.length === 1, "manual Load older must page upward exactly once, got " + JSON.stringify(olderRequests));
+  assert(olderRequests[0].includes("before=3"), "manual Load older used the wrong cursor");
+  assert(state.agent.events.length === 5, "older page was not merged");
+  assert(!state.agent.eventsHasMore, "older page must update the hasMore cursor");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`
+
+	testFile := filepath.Join(t.TempDir(), "agent-events-paging.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("agent events paging behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
@@ -989,18 +1109,25 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	}
 }
 
-func TestTTYComposerOnlyOffersResumeWithActiveForgeSession(t *testing.T) {
+func TestTTYComposerOffersResumeForAgentHubAttachedRuns(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
 	for _, want := range []string{
-		`const canResume = Boolean(activeRun.forgeSessionId) && !activeRun.agentHubStoppedObserved;`,
+		`const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);`,
 		`agentComposerActions({ includeResume: canResume })`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY composer resume guard is missing %q", want)
+		}
+	}
+	for _, removed := range []string{
+		`const canResume = Boolean(activeRun.forgeSessionId)`,
+	} {
+		if strings.Contains(source, removed) {
+			t.Fatalf("TTY composer resume must not require an active Forge session: %q", removed)
 		}
 	}
 }

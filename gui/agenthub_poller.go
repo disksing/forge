@@ -136,6 +136,10 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 		previousState = agentHubStateForForgeStatus(current.Status)
 	}
 	stoppedObserved := current.AgentHubStoppedObserved || session.State == "stopped"
+	if session.State == "ready" || session.State == "starting" {
+		// A resumed session proves the stopped observation is stale.
+		stoppedObserved = false
+	}
 	newStatus := forgeStatusForAgentHubState(session.State)
 	if session.State == "archived" && !stoppedObserved {
 		// An archived session that never reached durable stopped keeps the
@@ -211,6 +215,10 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	rt.run.Status = forgeStatusForAgentHubState(session.State)
 	if session.State == "stopped" {
 		rt.run.AgentHubStoppedObserved = true
+	}
+	if session.State == "ready" || session.State == "starting" {
+		// A resumed session proves the stopped observation is stale.
+		rt.run.AgentHubStoppedObserved = false
 	}
 	if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
 		rt.run.UpdatedAt = session.UpdatedAt
