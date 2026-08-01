@@ -156,6 +156,29 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	}
 }
 
+func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
+	fake := &proxyFakeAgentHub{eventsBody: `{"events":[],"page":{"hasMoreBefore":true}}`}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace := newProxyTestManager(t, hub.URL)
+	registerProxyTestRun(manager, workspace, agentRun{
+		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
+	})
+
+	latest := httptest.NewRecorder()
+	manager.handle(latest, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?latest=true&limit=250", nil),
+		workspace.ID, []string{"runs", "run-one", "events"})
+	if latest.Code != http.StatusOK {
+		t.Fatalf("latest page failed: %d %s", latest.Code, latest.Body.String())
+	}
+	fake.mu.Lock()
+	queries := len(fake.eventsQueries)
+	fake.mu.Unlock()
+	if queries != 1 {
+		t.Fatalf("one client page must fan out to exactly one upstream events request, got %d", queries)
+	}
+}
+
 func TestAgentHubProxyEventsWithoutRuntimeLoadsRunFromDisk(t *testing.T) {
 	fake := &proxyFakeAgentHub{eventsBody: `{"events":[],"page":{"after":3,"nextAfter":3,"hasMore":false},"latestCursor":3}`}
 	hub := httptest.NewServer(fake)

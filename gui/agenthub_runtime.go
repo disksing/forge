@@ -478,10 +478,10 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
 	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
-		writeError(w, missingForgeSessionResumeError(), http.StatusConflict)
+		m.resumeStoppedAgentHubRun(w, r, rt)
 		return
 	}
-	session, err := client.Resume(r.Context(), run.AgentHubSessionID)
+	session, err := client.Resume(r.Context(), run.AgentHubSessionID, nil)
 	if err != nil {
 		rt.setRecoveryError(m, err)
 		writeError(w, err, http.StatusBadGateway)
@@ -491,14 +491,103 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
-func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
-	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
-		writeError(w, missingForgeSessionResumeError(), http.StatusConflict)
-		return
-	}
+// resumeStoppedAgentHubRun resumes a stopped AgentHub session whose original
+// Forge session is gone. It safely creates a replacement Forge session first
+// and passes its id to AgentHub as a launchEnvironment overlay so the resumed
+// provider process receives a valid FORGE_SESSION_ID. Any failure before the
+// AgentHub resume succeeds releases the replacement session and context.
+func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	workspace := rt.workspace
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		writeError(w, err, http.StatusServiceUnavailable)
+		return
+	}
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	if strings.TrimSpace(run.AgentHubSessionID) == "" {
+		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
+		return
+	}
+	// Release the previous Forge session and context if the stopped run still
+	// holds them, mirroring the durable stopped release path.
+	if previousID := strings.TrimSpace(run.ForgeSessionID); previousID != "" {
+		if err := m.endForgeSession(r.Context(), workspace, previousID); err != nil {
+			writeError(w, fmt.Errorf("release previous Forge session: %w", err), http.StatusInternalServerError)
+			return
+		}
+		removeForgeSessionContextFile(run.ForgeSessionContextPath, previousID)
+		run.ForgeSessionID = ""
+		run.ForgeSessionContextPath = ""
+		run.UpdatedAt = time.Now().Format(time.RFC3339)
+		rt.setRun(run)
+		_ = saveAgentRun(workspace.Path, run)
+	}
+	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run, cfg)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	run.ForgeSessionID = forgeSessionID
+	rt.setRun(run)
+	cleanup := true
+	defer func() {
+		if !cleanup {
+			return
+		}
+		removeForgeSessionContextFile(run.ForgeSessionContextPath, forgeSessionID)
+		_ = m.endForgeSession(context.Background(), workspace, forgeSessionID)
+		rt.mu.Lock()
+		if rt.run.ForgeSessionID == forgeSessionID {
+			rt.run.ForgeSessionID = ""
+			rt.run.ForgeSessionContextPath = ""
+			rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+			run = rt.run
+		}
+		rt.mu.Unlock()
+		_ = saveAgentRun(workspace.Path, run)
+	}()
+	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	contextPath, err := m.writeForgeSessionContext(r.Context(), workspace, run)
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	run.ForgeSessionContextPath = contextPath
+	rt.setRun(run)
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if err := m.bindForgeSessionAgentHub(r.Context(), workspace, forgeSessionID, run.AgentHubSessionID); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	session, err := client.Resume(r.Context(), run.AgentHubSessionID, map[string]string{"FORGE_SESSION_ID": forgeSessionID})
+	if err != nil {
+		rt.setRecoveryError(m, err)
+		writeError(w, err, http.StatusBadGateway)
+		return
+	}
+	cleanup = false
+	rt.applyAgentHubSessionState(m, session)
+	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
+}
+
+func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
+	cfg, client, err := m.agentHubRuntimeConfig()
+	if err != nil {
+		writeError(w, err, http.StatusServiceUnavailable)
+		return
+	}
+	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
+		rt := newAgentHubRuntime(m, workspace, run, client)
+		m.registerRuntime(rt)
+		m.resumeStoppedAgentHubRun(w, r, rt)
 		return
 	}
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
@@ -520,7 +609,7 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	run.AgentHubSessionID = session.ID
 	rt := newAgentHubRuntime(m, workspace, run, client)
 	m.registerRuntime(rt)
-	session, err = client.Resume(r.Context(), session.ID)
+	session, err = client.Resume(r.Context(), session.ID, nil)
 	if err != nil {
 		rt.setRecoveryError(m, err)
 		writeError(w, err, http.StatusBadGateway)
@@ -528,10 +617,6 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	}
 	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
-}
-
-func missingForgeSessionResumeError() error {
-	return errors.New("cannot resume this AgentHub session because its original Forge session is no longer active; start a new Forge run so launchEnvironment receives a valid FORGE_SESSION_ID")
 }
 
 // recoverAgentHubRuns rebuilds lightweight runtime projections at startup from

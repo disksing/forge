@@ -97,11 +97,9 @@ const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
-const AGENT_INITIAL_VISIBLE_EVENT_COUNT = 40;
 const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
-const AGENT_INITIAL_AUTO_PAGE_LIMIT = 2;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
@@ -1745,13 +1743,13 @@ async function loadCanonicalAgentEvents() {
   }
   const detail = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}`);
   // Event history comes from the AgentHub proxy; the detail response only
-  // carries run metadata. Open with the durable tail window, then page up.
+  // carries run metadata. Open with exactly one durable tail page; older
+  // pages load only when the user clicks "Load older messages".
   const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?latest=true&limit=${AGENT_OLDER_RAW_PAGE_LIMIT}`);
   const events = body.events || [];
   state.agent.historyBeforeId = oldestRawAgentEventID(events);
   state.agent.events = mergeCanonicalAgentEvents(events);
   state.agent.eventsHasMore = Boolean(body.page?.hasMoreBefore);
-  await ensureVisibleAgentEvents(AGENT_INITIAL_VISIBLE_EVENT_COUNT, { maxPages: AGENT_INITIAL_AUTO_PAGE_LIMIT });
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
   if (index >= 0) {
     state.agent.runs[index] = detail.run;
@@ -1787,8 +1785,8 @@ async function loadOlderAgentEvents() {
 }
 
 async function ensureVisibleAgentEvents(targetCount, options = {}) {
-  const maxPages = options.maxPages || AGENT_INITIAL_AUTO_PAGE_LIMIT;
-  const pageLimit = options.pageLimit || AGENT_OLDER_RAW_PAGE_LIMIT;
+  const maxPages = options.maxPages || AGENT_MANUAL_AUTO_PAGE_LIMIT;
+  const pageLimit = options.pageLimit || AGENT_MANUAL_RAW_PAGE_LIMIT;
   const visibleCount = options.visibleCount || visibleAgentEventCount;
   let pages = 0;
   while (state.agent.eventsHasMore && visibleCount() < targetCount && pages < maxPages) {
@@ -2240,7 +2238,9 @@ function renderTTYComposer() {
     $("ttyForm")?.addEventListener("submit", submitTTYInput);
     return;
   }
-  const canResume = Boolean(activeRun.forgeSessionId) && !activeRun.agentHubStoppedObserved;
+  // A stopped AgentHub session resumes with a freshly created Forge session,
+  // so the button only needs the AgentHub attachment, not a live Forge session.
+  const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
   const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentId}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
