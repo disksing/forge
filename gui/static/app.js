@@ -86,6 +86,7 @@ const state = {
     sendingInput: false,
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
+    renderDeferredForSelection: false,
   },
   tty: [
     { type: "system", text: "Forge GUI initialized." },
@@ -1868,6 +1869,7 @@ function resetAgentState() {
   state.agent.ttyMultiline = false;
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
+  state.agent.renderDeferredForSelection = false;
   clearAgentRenderTimer();
 }
 
@@ -2134,6 +2136,12 @@ function agentRunRow(run) {
   `;
 }
 
+function ttyLogHasActiveSelection(log) {
+  const selection = window.getSelection?.();
+  if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
+  return selection.getRangeAt(0).intersectsNode(log);
+}
+
 function renderTTY(options = {}) {
   const log = $("ttyLog");
   const previousRunId = log.dataset.agentRunId || "";
@@ -2144,6 +2152,14 @@ function renderTTY(options = {}) {
     ? options.stickToBottom
     : previousRunId !== nextRunId || isTTYNearBottom(log);
   renderTTYComposer();
+  // Re-rendering replaces the log DOM and destroys any in-progress text
+  // selection. Defer the render while the user is selecting text in the
+  // current session log; the selectionchange listener flushes it later.
+  if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {
+    state.agent.renderDeferredForSelection = true;
+    return;
+  }
+  state.agent.renderDeferredForSelection = false;
   if (state.agent.activeRunId) {
     const items = projectAgentTimeline();
     const notices = state.agent.notices.map(forgeNoticeRow).join("");
@@ -3998,6 +4014,17 @@ document.addEventListener("mousedown", (event) => {
   if (event.target.closest(".workspace-select-row")) return;
   state.workspaceMenuOpen = false;
   renderWorkspaceSelect();
+});
+
+// Session log renders are deferred while the user selects text there. Flush
+// the pending render once the selection collapses so new events appear.
+document.addEventListener("selectionchange", () => {
+  if (!state.agent.renderDeferredForSelection) return;
+  const log = $("ttyLog");
+  if (log && ttyLogHasActiveSelection(log)) return;
+  state.agent.renderDeferredForSelection = false;
+  renderTTY();
+  refreshIcons();
 });
 
 $("newProjectButton").onclick = () => showProjectForm();

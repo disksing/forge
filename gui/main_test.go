@@ -1158,6 +1158,88 @@ func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
 	}
 }
 
+func TestTTYRenderDefersWhileTextSelected(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`function ttyLogHasActiveSelection(log) {`,
+		`selection.getRangeAt(0).intersectsNode(log)`,
+		`if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {`,
+		`state.agent.renderDeferredForSelection = true;`,
+		`document.addEventListener("selectionchange", () => {`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("TTY selection-safe render is missing %q", want)
+		}
+	}
+
+	guard := strings.Index(source, `if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {`)
+	replace := strings.Index(source, `log.innerHTML =`)
+	if guard < 0 || replace < 0 || guard > replace {
+		t.Fatal("TTY render must defer before replacing the session log DOM")
+	}
+
+	listener := strings.Index(source, `document.addEventListener("selectionchange", () => {`)
+	flush := strings.Index(source[listener:], `renderTTY();`)
+	if listener < 0 || flush < 0 {
+		t.Fatal("selectionchange listener must flush the deferred TTY render")
+	}
+}
+
+func TestTTYLogActiveSelectionDetection(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for TTY selection detection tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const marker = "function ttyLogHasActiveSelection(";
+const start = source.indexOf(marker);
+if (start < 0) throw new Error("missing ttyLogHasActiveSelection");
+const open = source.indexOf("{", start);
+let depth = 0;
+let end = -1;
+for (let index = open; index < source.length; index++) {
+  if (source[index] === "{") depth++;
+  if (source[index] === "}") {
+    depth--;
+    if (depth === 0) { end = index + 1; break; }
+  }
+}
+if (end < 0) throw new Error("unterminated ttyLogHasActiveSelection");
+const log = {};
+function selectionFor(intersects) {
+  return {
+    isCollapsed: false,
+    rangeCount: 1,
+    getRangeAt: () => ({ intersectsNode: (node) => node === log && intersects }),
+  };
+}
+const cases = [
+  [undefined, false],
+  [{ isCollapsed: true, rangeCount: 0, getRangeAt: () => { throw new Error("no range"); } }, false],
+  [selectionFor(true), true],
+  [selectionFor(false), false],
+];
+for (const [selection, want] of cases) {
+  const context = { window: { getSelection: () => selection } };
+  vm.createContext(context);
+  vm.runInContext(source.slice(start, end), context);
+  const got = context.ttyLogHasActiveSelection(log);
+  if (got !== want) throw new Error("ttyLogHasActiveSelection(" + JSON.stringify(selection) + ") = " + got + ", want " + want);
+}
+`
+	appPath := filepath.Join("static", "app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("TTY selection detection failed: %v\n%s", err, output)
+	}
+}
+
 func TestAgentChooserSelectionUpdatesImmediately(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
