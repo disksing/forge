@@ -469,7 +469,7 @@ func TestAgentUploadUIIncludesSelectionPasteProgressAndDraftBackfill(t *testing.
 	}
 }
 
-func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
+func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -477,13 +477,17 @@ func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 	app := string(appData)
 	for _, want := range []string{
 		`function taskOperationalState(item)`,
-		`function deriveTaskPrimaryState(autoRun, sessions)`,
+		`function deriveTaskAutoRunState(autoRun, sessions)`,
+		`function deriveTaskSessionState(sessions)`,
+		`function sessionStatusPresentation(session)`,
 		`session.schedulerTurn && session.autoRunGeneration === autoRun.generation`,
 		`function taskAgentSessions(resourceId)`,
 		`session.resourceId === resourceId`,
 		`function taskLocks(resourceId)`,
 		`sessionControls(session).some((control) => control.resourceId === resourceId)`,
 		`class="task-status-slot`,
+		`[taskState.autoRun, taskState.session].filter(Boolean)`,
+		`statuses.map((status) =>`,
 		`task-lock-indicator`,
 		`button.setAttribute("aria-label"`,
 		`button.setAttribute("aria-describedby"`,
@@ -492,18 +496,15 @@ func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 			t.Fatalf("combined task tree status is missing %q", want)
 		}
 	}
-	if strings.Contains(app, `function taskSessionState(resourceId)`) {
-		t.Fatal("tree status should not use the legacy session-only state derivation")
-	}
-
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
 		t.Fatal(err)
 	}
 	styles := string(stylesData)
 	for _, want := range []string{
-		`.task-status-auto-running .task-status-indicator`,
-		`.task-status-session-running .task-status-indicator`,
+		`.task-status-indicator.task-status-auto-running`,
+		`.task-status-indicator.task-status-session-running`,
+		`animation: task-status-spin 1.8s linear infinite;`,
 		`.task-lock-external`,
 		`.task-status-tooltip`,
 		`@media (prefers-reduced-motion: reduce)`,
@@ -511,6 +512,11 @@ func TestTreeTaskStatusCombinesAutoRunSessionsAndLocks(t *testing.T) {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("combined task tree status styles are missing %q", want)
 		}
+	}
+	if strings.Contains(styles, `.task-status-indicator.task-status-auto-running {
+	  color: var(--green);
+  animation:`) {
+		t.Fatal("AutoRun running indicator should remain static")
 	}
 }
 
@@ -877,9 +883,10 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 		`if (taskState.label)`,
 		`const sessions = taskAgentSessions(item.id);`,
 		`const locks = taskLocks(item.id);`,
-		`const primary = deriveTaskPrimaryState(item.autoRun, sessions);`,
+		`const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);`,
+		`const session = deriveTaskSessionState(sessions);`,
 		`const projectState = taskOperationalState(project);`,
-		"parts.push(`${project.id}:${projectState.kind}:${projectState.iconName}:${projectState.recentOutput}:${projectState.lock?.kind || \"none\"}:${projectState.label}`);",
+		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}`);",
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("project tree session and lock status is missing %q", want)
@@ -890,6 +897,44 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 	}
 	if strings.Contains(app, `kind === "task" && taskState.label`) {
 		t.Fatal("project tree status should expose the same accessible label and tooltip as task status")
+	}
+}
+
+func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const status = isInternal`,
+		`sessionStatusPresentation(session)`,
+		`taskStatusState("session-external", "session-status-external", "message-square"`,
+		`class="session-status-icon task-status-indicator`,
+		`row.setAttribute("aria-label"`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("session status icon rendering is missing %q", want)
+		}
+	}
+	if strings.Contains(app, `icon(isInternal ? "bot" : "message-square")`) {
+		t.Fatal("session list should not use source icons as its primary status icon")
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.session-row .session-status-icon`,
+		`.session-row .session-status-external`,
+		`color: inherit;`,
+		`.task-status-indicator.task-status-session-running`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("session status icon styling is missing %q", want)
+		}
 	}
 }
 

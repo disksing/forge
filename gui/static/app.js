@@ -432,8 +432,10 @@ function renderTree() {
 function treeButton(item, kind) {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
-  const hasTaskState = Boolean(taskState.iconName || taskState.lock);
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${hasTaskState ? "has-task-status" : ""} ${taskState.className} ${state.selectedId === item.id ? "active" : ""}`;
+  const statuses = [taskState.autoRun, taskState.session].filter(Boolean);
+  const hasTaskState = statuses.length > 0 || taskState.lock;
+  const statusClassName = statuses.map((status) => status.className).filter(Boolean).join(" ");
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${hasTaskState ? "has-task-status" : ""} ${statusClassName} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
@@ -443,8 +445,8 @@ function treeButton(item, kind) {
   }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
-    <span class="task-status-slot ${taskState.lock && !taskState.iconName ? "task-status-lock-only" : ""}" aria-hidden="true">
-      ${taskState.iconName ? `<span class="task-status-indicator ${taskState.recentOutput ? "task-status-fresh" : ""}">${icon(taskState.iconName, "task-status-icon")}</span>` : ""}
+    <span class="task-status-slot ${taskState.lock && statuses.length === 0 ? "task-status-lock-only" : ""} ${statuses.length > 1 ? "task-status-dual" : ""}" aria-hidden="true">
+      ${statuses.map((status) => `<span class="task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}">${icon(status.iconName, "task-status-icon")}</span>`).join("")}
       ${taskState.lock ? `<span class="task-lock-indicator ${taskState.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
     </span>
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
@@ -461,67 +463,96 @@ function treeButton(item, kind) {
 }
 
 function noTaskOperationalState() {
-  return { kind: "none", className: "", iconName: "", label: "", lock: null, recentOutput: false };
+  return { autoRun: null, session: null, className: "", label: "", lock: null };
 }
 
 function taskOperationalState(item) {
   const sessions = taskAgentSessions(item.id);
   const locks = taskLocks(item.id);
-  const primary = deriveTaskPrimaryState(item.autoRun, sessions);
+  const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);
+  const session = deriveTaskSessionState(sessions);
   const lock = deriveTaskLockState(locks);
+  const statuses = [autoRun, session].filter(Boolean);
   return {
-    ...primary,
+    autoRun,
+    session,
+    className: statuses.map((status) => status.className).filter(Boolean).join(" "),
     lock,
-    label: taskOperationalLabel(item.autoRun, sessions, lock, primary),
+    label: taskOperationalLabel(item.autoRun, sessions, lock, { autoRun, session }),
   };
 }
 
-function deriveTaskPrimaryState(autoRun, sessions) {
+function deriveTaskAutoRunState(autoRun, sessions) {
+  if (!autoRun) return null;
   const autoRunState = autoRun?.state || "";
-  const approval = sessions.find((session) => session.agentRunStatus === "waiting_approval");
-  const active = sessions.find((session) => ["starting", "running", "stopping", "recovering"].includes(session.agentRunStatus));
-  const idle = sessions.find((session) => session.agentRunStatus === "idle");
-
-  if (autoRunState === "failed") {
-    return taskPrimaryState("failed", "task-status-danger", "triangle-alert", "AutoRun failed");
-  }
-  if (approval) {
-    return taskPrimaryState("approval", "task-status-attention", "shield-question", "Session waiting for approval", approval);
-  }
   if (autoRunState === "running") {
-    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running", "stopping", "recovering"].includes(session.agentRunStatus));
+    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
     if (scheduler) {
-      return taskPrimaryState("auto-running", "task-status-auto-running", "loader-circle", "AutoRun running", scheduler);
+      return taskStatusState("auto-running", "task-status-auto-running", "workflow", "AutoRun running", "auto-run");
     }
-    return taskPrimaryState("recovering", "task-status-attention", "rotate-ccw", "AutoRun waiting for scheduler recovery");
+    return taskStatusState("auto-recovering", "task-status-attention", "rotate-ccw", "AutoRun waiting for scheduler recovery", "auto-run");
   }
-  if (active) {
-    return taskPrimaryState("session-running", "task-status-session-running", "bot", "Agent session running", active);
+  if (autoRunState === "failed") {
+    return taskStatusState("failed", "task-status-danger", "triangle-alert", "AutoRun failed", "auto-run");
   }
   if (autoRunState === "paused") {
-    return taskPrimaryState("paused", "task-status-attention", "square", "AutoRun paused");
-  }
-  if (idle) {
-    return taskPrimaryState("session-idle", "task-status-info", "message-square", "Session waiting for input", idle);
+    return taskStatusState("paused", "task-status-attention", "square", "AutoRun paused", "auto-run");
   }
   if (autoRunState === "waiting") {
-    return taskPrimaryState("waiting", "task-status-attention", "git-branch", "AutoRun waiting for dependencies");
+    return taskStatusState("waiting", "task-status-attention", "git-branch", "AutoRun waiting for dependencies", "auto-run");
   }
   if (autoRunState === "queued") {
-    return taskPrimaryState("queued", "task-status-queued", "clock", "AutoRun queued");
+    return taskStatusState("queued", "task-status-queued", "clock", "AutoRun queued", "auto-run");
   }
   if (autoRunState === "completed") {
-    return taskPrimaryState("completed", "task-status-completed", "check-circle-2", "AutoRun completed");
+    return taskStatusState("completed", "task-status-completed", "check-circle-2", "AutoRun completed", "auto-run");
   }
-  return noTaskOperationalState();
+  return taskStatusState("unknown", "task-status-neutral", "circle-help", `AutoRun ${autoRunState || "unknown"}`, "auto-run");
 }
 
-function taskPrimaryState(kind, className, iconName, primaryLabel, session = null) {
+function deriveTaskSessionState(sessions) {
+  const approval = sessions.find((session) => session.agentRunStatus === "waiting_approval");
+  if (approval) return sessionStatusPresentation(approval);
+  const starting = sessions.find((session) => session.agentRunStatus === "starting");
+  if (starting) return sessionStatusPresentation(starting);
+  const running = sessions.find((session) => session.agentRunStatus === "running");
+  if (running) return sessionStatusPresentation(running);
+  const stopping = sessions.find((session) => session.agentRunStatus === "stopping");
+  if (stopping) return sessionStatusPresentation(stopping);
+  const recovering = sessions.find((session) => session.agentRunStatus === "recovering");
+  if (recovering) return sessionStatusPresentation(recovering);
+  const idle = sessions.find((session) => session.agentRunStatus === "idle");
+  if (idle) return sessionStatusPresentation(idle);
+  return sessions.length > 0 ? sessionStatusPresentation(sessions[0]) : null;
+}
+
+function sessionStatusPresentation(session) {
+  const status = session?.agentRunStatus || "";
+  switch (status) {
+    case "starting":
+      return taskStatusState("session-starting", "task-status-session-running", "loader-circle", "Session starting", "session", session);
+    case "running":
+      return taskStatusState("session-running", "task-status-session-running", "loader-circle", "Session running", "session", session);
+    case "waiting_approval":
+      return taskStatusState("session-approval", "task-status-attention", "shield-question", "Session waiting for approval", "session", session);
+    case "stopping":
+      return taskStatusState("session-stopping", "task-status-session-stopping", "loader-circle", "Session stopping", "session", session);
+    case "recovering":
+      return taskStatusState("session-recovering", "task-status-attention", "rotate-ccw", "Session recovering", "session", session);
+    case "idle":
+      return taskStatusState("session-idle", "task-status-info", "message-square", "Session waiting for input", "session", session);
+    default:
+      return taskStatusState("session-active", "task-status-neutral", "circle-dot", status ? `Session ${status}` : "Session active", "session", session);
+  }
+}
+
+function taskStatusState(kind, className, iconName, label, dimension, session = null) {
   return {
     kind,
     className,
     iconName,
-    primaryLabel,
+    label,
+    dimension,
     recentOutput: Boolean(session && hasRecentAgentOutput(session)),
   };
 }
@@ -555,7 +586,7 @@ function taskLockOwnerLabel(session) {
   return `${agent?.name || session.agentRunAgentId || "Forge GUI"} session`;
 }
 
-function taskOperationalLabel(autoRun, sessions, lock, primary) {
+function taskOperationalLabel(autoRun, sessions, lock, statuses) {
   const parts = [];
   if (autoRun) {
     parts.push(`AutoRun ${autoRun.state}, generation ${autoRun.generation}`);
@@ -563,10 +594,10 @@ function taskOperationalLabel(autoRun, sessions, lock, primary) {
   if (sessions.length === 1) {
     parts.push(taskAgentSessionLabel(sessions[0]));
   } else if (sessions.length > 1) {
-    const statuses = [...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ");
-    parts.push(`${sessions.length} agent sessions: ${statuses}`);
+    const sessionStatuses = [...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ");
+    parts.push(`${sessions.length} agent sessions: ${sessionStatuses}`);
   }
-  if (primary.kind === "recovering") {
+  if (statuses.autoRun?.kind === "auto-recovering") {
     parts.push("No matching active scheduler session");
   }
   if (lock) parts.push(lock.label);
@@ -584,13 +615,18 @@ function taskOperationalStateKey() {
   const parts = [];
   for (const project of state.tree.projects || []) {
     const projectState = taskOperationalState(project);
-    parts.push(`${project.id}:${projectState.kind}:${projectState.iconName}:${projectState.recentOutput}:${projectState.lock?.kind || "none"}:${projectState.label}`);
+    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
-      parts.push(`${task.id}:${taskState.kind}:${taskState.iconName}:${taskState.recentOutput}:${taskState.lock?.kind || "none"}:${taskState.label}`);
+      parts.push(`${task.id}:auto=${taskStatusKey(taskState.autoRun)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
     }
   }
   return parts.join("|");
+}
+
+function taskStatusKey(status) {
+  if (!status) return "none";
+  return `${status.kind}:${status.iconName}:${status.recentOutput}`;
 }
 
 function hasRecentAgentOutput(session) {
@@ -691,9 +727,12 @@ function renderSessions() {
     const controls = sessionControls(session);
     const resourceId = session.resourceId || controls[0]?.resourceId || "";
     const isInternal = session.source === "internal";
+    const status = isInternal
+      ? sessionStatusPresentation(session)
+      : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
     const clickable = controls.length > 0 || resourceId;
     const row = document.createElement(clickable ? "button" : "div");
-    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${clickable ? "clickable-session" : ""}`;
+    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""}`;
     if (clickable) row.type = "button";
     const agent = isInternal
       ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentId)
@@ -708,8 +747,12 @@ function renderSessions() {
       metaParts.push(resourceId);
     }
     if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
+    row.title = status.label;
+    if (clickable) {
+      row.setAttribute("aria-label", `${title}. ${status.label}. ${providerLabel}`);
+    }
     row.innerHTML = `
-      ${icon(isInternal ? "bot" : "message-square")}
+      <span class="session-status-icon task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}" aria-hidden="true">${icon(status.iconName, "session-status-glyph")}</span>
       <div>
         <strong>${escapeHTML(title)}</strong>
         <span>${escapeHTML(metaParts.join(" · "))}</span>
