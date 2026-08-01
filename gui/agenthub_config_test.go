@@ -73,15 +73,14 @@ func TestAgentHubSettingsSaveValidatesAndMigrates(t *testing.T) {
 func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 	data, err := json.Marshal(agentRun{
 		ID: "run-1", WorkspaceID: "workspace-1", AgentHubSessionID: "ses_1",
-		AgentHubEventCursor: 42, AgentHubAgentName: "gpt-5.6-sol",
-		SourceExternalID: "workspace-1/run-1",
+		AgentHubAgentName: "gpt-5.6-sol",
+		SourceExternalID:  "workspace-1/run-1",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{
 		`"agentHubSessionId":"ses_1"`,
-		`"agentHubEventCursor":42`,
 		`"agentHubAgentName":"gpt-5.6-sol"`,
 		`"sourceExternalId":"workspace-1/run-1"`,
 	} {
@@ -90,7 +89,7 @@ func TestAgentHubRunProjectionSchemaIgnoresUnknownOldFields(t *testing.T) {
 		}
 	}
 	var legacy agentRun
-	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","status":"stopped"}`), &legacy); err != nil {
+	if err := json.Unmarshal([]byte(`{"id":"old","workspaceId":"workspace-1","providerSessionId":"thread-1","agentHubEventCursor":42,"status":"stopped"}`), &legacy); err != nil {
 		t.Fatal(err)
 	}
 	if legacy.ID != "old" || legacy.AgentHubSessionID != "" {

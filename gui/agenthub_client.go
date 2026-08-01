@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -10,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -19,7 +17,6 @@ const (
 	defaultAgentHubEndpoint = "http://127.0.0.1:4646"
 	agentHubAPIVersion      = "1"
 	agentHubRequestTimeout  = 30 * time.Second
-	agentHubEventsPageSize  = 200
 )
 
 // agentHubMaxResponseBytes caps how much of an AgentHub response body the
@@ -164,17 +161,6 @@ type agentHubEvent struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
-type agentHubEventPage struct {
-	Events []agentHubEvent `json:"events"`
-	Page   struct {
-		After     int64 `json:"after"`
-		Limit     int   `json:"limit"`
-		NextAfter int64 `json:"nextAfter"`
-		HasMore   bool  `json:"hasMore"`
-	} `json:"page"`
-	LatestCursor int64 `json:"latestCursor"`
-}
-
 func newAgentHubClient(endpoint string, httpClient *http.Client) (*agentHubClient, error) {
 	normalized, err := normalizeAgentHubEndpoint(endpoint)
 	if err != nil {
@@ -284,43 +270,6 @@ func (c *agentHubClient) ListSessions(ctx context.Context, filter agentHubSessio
 	}
 	err := c.doJSON(ctx, http.MethodGet, path, nil, &response)
 	return response.Sessions, err
-}
-
-func (c *agentHubClient) Events(ctx context.Context, sessionID string, after int64, limit int) (agentHubEventPage, error) {
-	if limit <= 0 {
-		limit = agentHubEventsPageSize
-	}
-	path := fmt.Sprintf("%s/events?after=%d&limit=%d", sessionPath(sessionID), after, limit)
-	var response agentHubEventPage
-	err := c.doJSON(ctx, http.MethodGet, path, nil, &response)
-	return response, err
-}
-
-func (c *agentHubClient) StreamEvents(ctx context.Context, sessionID string, after int64, receive func(agentHubEvent) error) error {
-	if receive == nil {
-		return errors.New("AgentHub event receiver is required")
-	}
-	path := fmt.Sprintf("%s/events?stream=true&after=%d", sessionPath(sessionID), after)
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.endpoint+path, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Accept", "text/event-stream")
-	if after > 0 {
-		request.Header.Set("Last-Event-ID", strconv.FormatInt(after, 10))
-	}
-	response, err := c.httpClient.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return decodeAgentHubError(response)
-	}
-	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
-		return fmt.Errorf("AgentHub events returned unexpected content type %q", response.Header.Get("Content-Type"))
-	}
-	return readAgentHubSSE(response.Body, after, receive)
 }
 
 func (c *agentHubClient) Message(ctx context.Context, sessionID, text string, steer bool) (agentHubSession, error) {
@@ -437,71 +386,6 @@ func decodeAgentHubError(response *http.Response) error {
 		Details:    envelope.Error.Details,
 		RequestID:  envelope.Error.RequestID,
 	}
-}
-
-func readAgentHubSSE(reader io.Reader, after int64, receive func(agentHubEvent) error) error {
-	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 64*1024), 4<<20)
-	var eventID string
-	var data []string
-	dispatch := func() error {
-		if len(data) == 0 {
-			eventID = ""
-			return nil
-		}
-		var event agentHubEvent
-		if err := json.Unmarshal([]byte(strings.Join(data, "\n")), &event); err != nil {
-			return fmt.Errorf("decode AgentHub SSE event: %w", err)
-		}
-		if eventID != "" {
-			frameID, err := strconv.ParseInt(eventID, 10, 64)
-			if err != nil {
-				return fmt.Errorf("invalid AgentHub SSE id %q", eventID)
-			}
-			if event.ID != frameID {
-				return fmt.Errorf("AgentHub SSE id mismatch: frame %d, payload %d", frameID, event.ID)
-			}
-		}
-		if event.ID > after {
-			if event.ID != after+1 {
-				return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", after+1, event.ID)
-			}
-			after = event.ID
-		}
-		// Frames at or below the cursor are delta-merge replacements: the
-		// store folded a new fragment into an already-delivered event and
-		// republished it under the same id. Pass them through so the receiver
-		// can swap in the accumulated content; only new ids move the cursor.
-		eventID = ""
-		data = data[:0]
-		return receive(event)
-	}
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" {
-			if err := dispatch(); err != nil {
-				return err
-			}
-			continue
-		}
-		if strings.HasPrefix(line, ":") {
-			continue
-		}
-		field, value, found := strings.Cut(line, ":")
-		if found {
-			value = strings.TrimPrefix(value, " ")
-		}
-		switch field {
-		case "id":
-			eventID = value
-		case "data":
-			data = append(data, value)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-	return dispatch()
 }
 
 func sessionPath(sessionID string) string {

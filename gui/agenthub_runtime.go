@@ -101,7 +101,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		run.Title = agentName + " run"
 	}
 	run.SourceExternalID = workspace.ID + "/" + run.ID
-	rt := newAgentHubRuntime(m, workspace, run, client, nil)
+	rt := newAgentHubRuntime(m, workspace, run, client)
 
 	forgeSessionID, err := m.createForgeSession(r.Context(), workspace, run, cfg)
 	if err != nil {
@@ -174,12 +174,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	if err := rt.catchUpAgentHub(r.Context(), m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
-	rt.startAgentHubStream(m)
+	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
@@ -252,384 +247,11 @@ func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSess
 		source.App, source.InstanceID, source.ExternalID, strings.Join(ids, ", "))
 }
 
-func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient, events []agentHubEvent) *agentRuntime {
+func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
 	return &agentRuntime{
-		workspace: workspace, manager: m, run: run, events: append([]agentHubEvent(nil), events...),
+		workspace: workspace, manager: m, run: run,
 		agentHub: client,
 	}
-}
-
-func (m *agentManager) loadAgentHubRuntimeForRead(ctx context.Context, workspace guiWorkspace, run agentRun) (*agentRuntime, error) {
-	if strings.TrimSpace(run.AgentHubSessionID) == "" {
-		return nil, errors.New("run is not attached to AgentHub")
-	}
-	_, client, err := m.agentHubRuntimeConfig()
-	if err != nil {
-		return nil, err
-	}
-	rt := newAgentHubRuntime(m, workspace, run, client, nil)
-	if err := rt.loadAgentHubHistory(ctx, 0); err != nil {
-		return nil, err
-	}
-	return rt, nil
-}
-
-func (rt *agentRuntime) loadAgentHubHistory(ctx context.Context, highWater int64) error {
-	rt.mu.Lock()
-	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
-	rt.mu.Unlock()
-	if client == nil || sessionID == "" {
-		return errors.New("AgentHub runtime is not attached to a session")
-	}
-	cursor := int64(0)
-	var history []agentHubEvent
-	sawStopped := false
-	for {
-		page, err := client.Events(ctx, sessionID, cursor, agentHubEventsPageSize)
-		if err != nil {
-			return err
-		}
-		if highWater == 0 {
-			highWater = page.LatestCursor
-		}
-		progressed := false
-		for _, source := range page.Events {
-			if source.ID <= cursor {
-				continue
-			}
-			if source.ID != cursor+1 {
-				return fmt.Errorf("AgentHub history cursor gap: expected %d, got %d", cursor+1, source.ID)
-			}
-			state, _ := agentHubEventControl(source)
-			if state == "stopped" {
-				sawStopped = true
-			}
-			history = append(history, source)
-			if len(history) > agentHubEventMaxCount {
-				history = history[len(history)-agentHubEventMaxCount:]
-			}
-			cursor = source.ID
-			progressed = true
-			if cursor >= highWater {
-				break
-			}
-		}
-		if cursor >= highWater {
-			break
-		}
-		if !progressed {
-			return fmt.Errorf("AgentHub history stopped at cursor %d before high-water %d", cursor, highWater)
-		}
-	}
-	rt.mu.Lock()
-	rt.events = append([]agentHubEvent(nil), history...)
-	if sawStopped {
-		rt.run.AgentHubStoppedObserved = true
-		if rt.agentHubState == "archived" || rt.run.Status == "recovering" {
-			rt.run.Status = "stopped"
-		}
-	}
-	rt.mu.Unlock()
-	return nil
-}
-
-func (rt *agentRuntime) agentHubEventsAfter(ctx context.Context, after int64) ([]agentHubEvent, error) {
-	rt.mu.Lock()
-	client, sessionID := rt.agentHub, rt.run.AgentHubSessionID
-	rt.mu.Unlock()
-	var result []agentHubEvent
-	highWater := int64(0)
-	cursor := after
-	for {
-		page, err := client.Events(ctx, sessionID, cursor, agentHubEventsPageSize)
-		if err != nil {
-			return nil, err
-		}
-		if highWater == 0 {
-			highWater = page.LatestCursor
-		}
-		progressed := false
-		for _, source := range page.Events {
-			if source.ID <= cursor {
-				continue
-			}
-			if source.ID != cursor+1 {
-				return nil, fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", cursor+1, source.ID)
-			}
-			result = append(result, source)
-			cursor = source.ID
-			progressed = true
-			if cursor >= highWater {
-				break
-			}
-		}
-		if cursor >= highWater {
-			return result, nil
-		}
-		if !progressed {
-			return nil, fmt.Errorf("AgentHub event replay stopped at cursor %d before high-water %d", cursor, highWater)
-		}
-	}
-}
-
-func (rt *agentRuntime) agentHubEventsBefore(ctx context.Context, before int64, limit int) ([]agentHubEvent, bool, error) {
-	if limit <= 0 || limit > agentHubEventMaxCount {
-		limit = agentHubEventMaxCount
-	}
-	events, err := rt.agentHubEventsAfter(ctx, 0)
-	if err != nil {
-		return nil, false, err
-	}
-	filtered := events[:0]
-	for _, event := range events {
-		if event.ID < before {
-			filtered = append(filtered, event)
-		}
-	}
-	hasMore := len(filtered) > limit
-	if len(filtered) > limit {
-		filtered = filtered[len(filtered)-limit:]
-	}
-	return append([]agentHubEvent(nil), filtered...), hasMore, nil
-}
-
-func (rt *agentRuntime) catchUpAgentHub(ctx context.Context, m *agentManager, requestedHighWater int64) error {
-	rt.agentHubSync.Lock()
-	defer rt.agentHubSync.Unlock()
-	rt.mu.Lock()
-	client := rt.agentHub
-	sessionID := rt.run.AgentHubSessionID
-	cursor := rt.run.AgentHubEventCursor
-	rt.mu.Unlock()
-	if client == nil || strings.TrimSpace(sessionID) == "" {
-		return errors.New("AgentHub runtime is not attached to a session")
-	}
-	highWater := requestedHighWater
-	first := true
-	for first || cursor < highWater {
-		first = false
-		page, err := client.Events(ctx, sessionID, cursor, agentHubEventsPageSize)
-		if err != nil {
-			return fmt.Errorf("catch up AgentHub events after %d: %w", cursor, err)
-		}
-		if highWater == 0 {
-			highWater = page.LatestCursor
-		}
-		if page.LatestCursor < highWater {
-			return fmt.Errorf("AgentHub durable cursor moved backwards from %d to %d", highWater, page.LatestCursor)
-		}
-		progressed := false
-		for _, event := range page.Events {
-			before := cursor
-			if err := rt.applyAgentHubEvent(m, event); err != nil {
-				return err
-			}
-			rt.mu.Lock()
-			cursor = rt.run.AgentHubEventCursor
-			rt.mu.Unlock()
-			if cursor > before {
-				progressed = true
-			}
-			if cursor >= highWater {
-				break
-			}
-		}
-		if cursor >= highWater {
-			break
-		}
-		if !progressed {
-			return fmt.Errorf("AgentHub event catch-up stopped at cursor %d before high-water %d", cursor, highWater)
-		}
-	}
-	return nil
-}
-
-func (rt *agentRuntime) applyAgentHubEvent(m *agentManager, source agentHubEvent) error {
-	rt.mu.Lock()
-	if source.SessionID != "" && source.SessionID != rt.run.AgentHubSessionID {
-		rt.mu.Unlock()
-		return fmt.Errorf("AgentHub event %d belongs to unexpected session %s", source.ID, source.SessionID)
-	}
-	cursor := rt.run.AgentHubEventCursor
-	if source.ID <= cursor {
-		// Delta-merge frame: AgentHub folds consecutive text deltas into
-		// the tail durable event. Live frames are append patches carrying
-		// only the new fragment; replayed frames carry the full accumulated
-		// event. Extend or swap the stored copy; the cursor and run status
-		// stay untouched because no new durable event exists.
-		isPatch := agentHubEventDataFlag(source.Data, "append")
-		for index := len(rt.events) - 1; index >= 0; index-- {
-			if rt.events[index].ID == source.ID {
-				if isPatch {
-					rt.events[index] = appendAgentHubEventFragment(rt.events[index], source)
-				} else {
-					rt.events[index] = source
-				}
-				break
-			}
-			if rt.events[index].ID < source.ID {
-				break
-			}
-		}
-		eventTime := source.Time
-		if eventTime == "" {
-			eventTime = time.Now().Format(time.RFC3339)
-		}
-		rt.run.UpdatedAt = eventTime
-		if isAgentHubOutputEvent(source) {
-			rt.run.LastOutputAt = eventTime
-		}
-		run := rt.run
-		rt.mu.Unlock()
-		if err := saveAgentRun(rt.workspace.Path, run); err != nil {
-			return err
-		}
-		m.publish(run.ID, source)
-		return nil
-	}
-	if source.ID != cursor+1 {
-		rt.mu.Unlock()
-		return fmt.Errorf("AgentHub event cursor gap: expected %d, got %d", cursor+1, source.ID)
-	}
-	state, schedulerTerminal := agentHubEventControl(source)
-	rt.run.AgentHubEventCursor = source.ID
-	rt.agentHubState = stateOrCurrent(state, rt.agentHubState)
-	if state != "" {
-		rt.run.Status = forgeStatusForAgentHubState(state)
-		if state == "stopped" {
-			rt.run.AgentHubStoppedObserved = true
-		}
-	}
-	if source.Type == "session.archived" && !rt.run.AgentHubStoppedObserved {
-		rt.run.Status = "recovering"
-	}
-	if source.Type == "turn.started" {
-		rt.run.Status = "running"
-		rt.agentHubState = "busy"
-	}
-	if source.Type == "turn.completed" || source.Type == "turn.failed" || source.Type == "turn.cancelled" {
-		if rt.run.Status != "stopping" && rt.run.Status != "stopped" {
-			rt.run.Status = "idle"
-		}
-		rt.agentHubState = "ready"
-	}
-	if source.Type == "approval.requested" {
-		rt.run.Status = "waiting_approval"
-		rt.agentHubState = "waiting_approval"
-	}
-	if source.Type == "approval.resolved" && rt.run.Status == "waiting_approval" {
-		rt.run.Status = "running"
-		rt.agentHubState = "busy"
-	}
-	eventTime := source.Time
-	if eventTime == "" {
-		eventTime = time.Now().Format(time.RFC3339)
-	}
-	rt.run.UpdatedAt = eventTime
-	if isAgentHubOutputEvent(source) {
-		rt.run.LastOutputAt = eventTime
-	}
-	alreadyPresent := false
-	for index := len(rt.events) - 1; index >= 0; index-- {
-		if rt.events[index].ID == source.ID {
-			alreadyPresent = true
-			break
-		}
-		if rt.events[index].ID < source.ID {
-			break
-		}
-	}
-	if !alreadyPresent {
-		rt.events = append(rt.events, source)
-	}
-	if len(rt.events) > agentHubEventMaxCount {
-		rt.events = append([]agentHubEvent(nil), rt.events[len(rt.events)-agentHubEventMaxCount:]...)
-	}
-	run := rt.run
-	rt.mu.Unlock()
-	if err := saveAgentRun(rt.workspace.Path, run); err != nil {
-		return err
-	}
-	m.publish(run.ID, source)
-	if run.Status == "stopped" && run.AgentHubStoppedObserved {
-		go rt.releaseForgeSessionAfterStopped(m)
-	}
-	if schedulerTerminal && run.SchedulerTurn {
-		go rt.finishSchedulerTurn(m)
-	}
-	return nil
-}
-
-// agentHubEventDataFlag reports whether the event payload carries a true
-// boolean flag.
-func agentHubEventDataFlag(data json.RawMessage, key string) bool {
-	var value map[string]any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return false
-	}
-	flag, _ := value[key].(bool)
-	return flag
-}
-
-// appendAgentHubEventFragment folds a live delta-merge append patch into the
-// stored event: the fragment extends the accumulated text and the event time
-// tracks the newest fragment. The stored event is returned unchanged when
-// either payload is not a text delta, so a malformed patch never shrinks the
-// accumulated content.
-func appendAgentHubEventFragment(stored, patch agentHubEvent) agentHubEvent {
-	var storedData, patchData map[string]any
-	if err := json.Unmarshal(stored.Data, &storedData); err != nil {
-		return stored
-	}
-	if err := json.Unmarshal(patch.Data, &patchData); err != nil {
-		return stored
-	}
-	current, _ := storedData["text"].(string)
-	fragment, _ := patchData["text"].(string)
-	storedData["text"] = current + fragment
-	merged, err := json.Marshal(storedData)
-	if err != nil {
-		return stored
-	}
-	stored.Data = merged
-	if patch.Time != "" {
-		stored.Time = patch.Time
-	}
-	return stored
-}
-
-func stateOrCurrent(value, current string) string {
-	if value != "" {
-		return value
-	}
-	return current
-}
-
-func agentHubEventControl(event agentHubEvent) (state string, schedulerTerminal bool) {
-	if event.Type == "session.state" {
-		state = agentHubEventDataString(event.Data, "state")
-	}
-	switch event.Type {
-	case "turn.completed", "turn.cancelled", "turn.failed":
-		return state, true
-	default:
-		return state, false
-	}
-}
-
-func agentHubEventDataString(data json.RawMessage, key string) string {
-	var value map[string]any
-	if err := json.Unmarshal(data, &value); err != nil {
-		return ""
-	}
-	text, _ := value[key].(string)
-	return strings.TrimSpace(text)
-}
-
-func isAgentHubOutputEvent(event agentHubEvent) bool {
-	return event.Type == "message.assistant.delta" ||
-		event.Type == "message.reasoning.delta" ||
-		event.Type == "tool.event"
 }
 
 func forgeStatusForAgentHubState(state string) string {
@@ -652,83 +274,6 @@ func forgeStatusForAgentHubState(state string) string {
 		return "recovering"
 	default:
 		return "recovering"
-	}
-}
-
-func (rt *agentRuntime) startAgentHubStream(m *agentManager) {
-	rt.mu.Lock()
-	if rt.agentHubCancel != nil {
-		rt.mu.Unlock()
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	rt.agentHubCancel = cancel
-	rt.agentHubStreamDone = make(chan struct{})
-	rt.mu.Unlock()
-	go rt.runAgentHubStream(ctx, m)
-}
-
-func (rt *agentRuntime) runAgentHubStream(ctx context.Context, m *agentManager) {
-	rt.mu.Lock()
-	done := rt.agentHubStreamDone
-	rt.mu.Unlock()
-	defer close(done)
-	for {
-		if err := rt.catchUpAgentHub(ctx, m, 0); err != nil {
-			if ctx.Err() != nil {
-				return
-			}
-			rt.setRecoveryError(m, err)
-		} else {
-			rt.restoreAgentHubSessionProjection(ctx)
-		}
-		rt.mu.Lock()
-		client, sessionID, cursor := rt.agentHub, rt.run.AgentHubSessionID, rt.run.AgentHubEventCursor
-		rt.mu.Unlock()
-		err := client.StreamEvents(ctx, sessionID, cursor, func(event agentHubEvent) error {
-			return rt.applyAgentHubEvent(m, event)
-		})
-		if ctx.Err() != nil {
-			return
-		}
-		if err != nil {
-			rt.setRecoveryError(m, err)
-		}
-		timer := time.NewTimer(100 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-	}
-}
-
-func (rt *agentRuntime) restoreAgentHubSessionProjection(ctx context.Context) {
-	rt.mu.Lock()
-	client, sessionID, status := rt.agentHub, rt.run.AgentHubSessionID, rt.run.Status
-	rt.mu.Unlock()
-	if status != "recovering" || client == nil || sessionID == "" {
-		return
-	}
-	session, err := client.GetSession(ctx, sessionID)
-	if err != nil {
-		return
-	}
-	rt.mu.Lock()
-	if rt.run.Status == "recovering" {
-		rt.agentHubState = session.State
-		rt.run.Status = forgeStatusForAgentHubState(session.State)
-		if session.State == "stopped" {
-			rt.run.AgentHubStoppedObserved = true
-		}
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	}
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
-	if run.Status == "stopped" && run.AgentHubStoppedObserved {
-		go rt.releaseForgeSessionAfterStopped(rt.manager)
 	}
 }
 
@@ -943,7 +488,6 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 		return
 	}
 	rt.applyAgentHubSessionState(m, session)
-	rt.startAgentHubStream(m)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
@@ -974,7 +518,7 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 	}
 	session := sessions[0]
 	run.AgentHubSessionID = session.ID
-	rt := newAgentHubRuntime(m, workspace, run, client, nil)
+	rt := newAgentHubRuntime(m, workspace, run, client)
 	m.registerRuntime(rt)
 	session, err = client.Resume(r.Context(), session.ID)
 	if err != nil {
@@ -983,7 +527,6 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	rt.applyAgentHubSessionState(m, session)
-	rt.startAgentHubStream(m)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
@@ -991,10 +534,27 @@ func missingForgeSessionResumeError() error {
 	return errors.New("cannot resume this AgentHub session because its original Forge session is no longer active; start a new Forge run so launchEnvironment receives a valid FORGE_SESSION_ID")
 }
 
+// recoverAgentHubRuns rebuilds lightweight runtime projections at startup from
+// one AgentHub session list and the local run indexes. It never reads event
+// history and never opens event streams.
 func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return err
+	}
+	sessions, err := client.ListSessions(ctx, agentHubSessionFilter{
+		IncludeArchived: true, SourceApp: agentHubSourceApp, SourceInstanceID: cfg.AgentHubInstanceID,
+	})
+	if err != nil {
+		return err
+	}
+	byExternalID := make(map[string]agentHubSession, len(sessions))
+	byID := make(map[string]agentHubSession, len(sessions))
+	for _, session := range sessions {
+		byID[session.ID] = session
+		if session.Source != nil && strings.TrimSpace(session.Source.ExternalID) != "" {
+			byExternalID[session.Source.ExternalID] = session
+		}
 	}
 	var failures []string
 	for _, workspace := range cfg.Workspaces {
@@ -1004,10 +564,19 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 			continue
 		}
 		for _, run := range runs {
-			if run.AgentHubSessionID == "" && run.SourceExternalID == "" {
+			if !isAgentHubRun(run) {
 				continue
 			}
-			if recoverErr := m.recoverAgentHubRun(ctx, cfg, client, workspace, run); recoverErr != nil {
+			// An empty non-nil candidate list means the instance-wide list
+			// already proved the session is gone, so recoverAgentHubRun must not
+			// re-query per run.
+			candidates := []agentHubSession{}
+			if session, ok := byExternalID[strings.TrimSpace(run.SourceExternalID)]; ok {
+				candidates = []agentHubSession{session}
+			} else if session, ok := byID[strings.TrimSpace(run.AgentHubSessionID)]; ok {
+				candidates = []agentHubSession{session}
+			}
+			if recoverErr := m.recoverAgentHubRun(ctx, cfg, client, workspace, run, candidates); recoverErr != nil {
 				failures = append(failures, fmt.Sprintf("%s/%s: %v", workspace.ID, run.ID, recoverErr))
 			}
 		}
@@ -1018,15 +587,24 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 	return nil
 }
 
-func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun) error {
+// recoverAgentHubRun rebuilds the lightweight runtime projection for one run
+// from session state only: no event history is loaded and no event stream is
+// opened. candidates carries the sessions matching the run's source tuple;
+// when nil, the candidates are queried on demand (scheduler dispatch path).
+// Only live runs with a valid Forge session may recreate a missing AgentHub
+// session from the source tuple.
+func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
-	sessions, err := findAgentHubSourceSessions(ctx, client, source)
-	if err != nil {
-		run.Status = "recovering"
-		_ = saveAgentRun(workspace.Path, run)
-		return err
+	if candidates == nil {
+		found, err := findAgentHubSourceSessions(ctx, client, source)
+		if err != nil {
+			m.markAgentRunRecovering(workspace, run)
+			return err
+		}
+		candidates = found
 	}
-	if len(sessions) == 0 && strings.TrimSpace(run.ForgeSessionID) != "" {
+	live := isLiveAgentStatus(run.Status)
+	if len(candidates) == 0 && live && strings.TrimSpace(run.ForgeSessionID) != "" {
 		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
 			Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
 			LaunchEnvironment: map[string]string{"FORGE_SESSION_ID": run.ForgeSessionID},
@@ -1034,60 +612,62 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 			InitialMessage:    agentHubInitialMessage(run.PendingInitialMessage),
 		})
 		if createErr != nil {
-			run.Status = "recovering"
-			_ = saveAgentRun(workspace.Path, run)
+			m.markAgentRunRecovering(workspace, run)
 			return createErr
 		}
-		sessions = []agentHubSession{recovered}
+		candidates = []agentHubSession{recovered}
 	}
-	if len(sessions) != 1 {
-		run.Status = "recovering"
-		_ = saveAgentRun(workspace.Path, run)
-		if len(sessions) > 1 {
-			return duplicateAgentHubSourceError(source, sessions)
+	if len(candidates) != 1 {
+		rt := newAgentHubRuntime(m, workspace, run, client)
+		m.registerRuntime(rt)
+		if live {
+			m.markAgentRunRecovering(workspace, rt.snapshotRun())
 		}
-		return errors.New("session not found by complete source")
+		if len(candidates) > 1 {
+			return duplicateAgentHubSourceError(source, candidates)
+		}
+		return nil
 	}
-	session := sessions[0]
+	session := candidates[0]
+	previousStatus := run.Status
 	run.AgentHubSessionID = session.ID
-	run.AgentHubAgentName = session.AgentName
+	if strings.TrimSpace(session.AgentName) != "" {
+		run.AgentHubAgentName = session.AgentName
+	}
 	run.PendingInitialMessage = ""
-	run.Status = forgeStatusForAgentHubState(session.State)
-	if session.State == "stopped" {
-		run.AgentHubStoppedObserved = true
-	}
-	if session.State == "archived" && !run.AgentHubStoppedObserved {
-		run.Status = "recovering"
-	}
-	rt := newAgentHubRuntime(m, workspace, run, client, nil)
+	rt := newAgentHubRuntime(m, workspace, run, client)
 	rt.agentHubState = session.State
 	m.registerRuntime(rt)
-	if run.ForgeSessionID == "" && session.State != "stopped" && session.State != "archived" {
-		rt.setRecoveryError(m, errors.New("active AgentHub session has no matching Forge session; refusing to create a replacement because launchEnvironment would retain the old FORGE_SESSION_ID"))
-		return errors.New("active AgentHub session has no matching Forge session")
+	if strings.TrimSpace(run.ForgeSessionID) == "" && session.State != "stopped" && session.State != "archived" {
+		err := errors.New("active AgentHub session has no matching Forge session; refusing to create a replacement because launchEnvironment would retain the old FORGE_SESSION_ID")
+		rt.setRecoveryError(m, err)
+		return err
 	}
-	if run.ForgeSessionID != "" {
+	if strings.TrimSpace(run.ForgeSessionID) != "" {
 		if err := m.bindForgeSessionAgentHub(ctx, workspace, run.ForgeSessionID, session.ID); err != nil {
 			rt.setRecoveryError(m, err)
 			return err
 		}
 	}
-	if err := rt.loadAgentHubHistory(ctx, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		return err
-	}
-	if err := rt.catchUpAgentHub(ctx, m, session.LastEventID); err != nil {
-		rt.setRecoveryError(m, err)
-		return err
-	}
-	if session.State != "archived" {
-		rt.startAgentHubStream(m)
-	}
-	rt.mu.Lock()
-	stopped := rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved
-	rt.mu.Unlock()
-	if stopped {
-		go rt.releaseForgeSessionAfterStopped(m)
+	rt.applyAgentHubSessionState(m, session)
+	// A scheduler turn that ended while the GUI was down looks exactly like the
+	// poller edge: busy/waiting_approval persisted locally, ready/stopped now.
+	turnFinished := (previousStatus == "running" || previousStatus == "waiting_approval") &&
+		(session.State == "ready" || session.State == "stopped")
+	if turnFinished && run.SchedulerTurn {
+		go rt.finishSchedulerTurn(m)
 	}
 	return nil
+}
+
+func (m *agentManager) markAgentRunRecovering(workspace guiWorkspace, run agentRun) {
+	run.Status = "recovering"
+	run.UpdatedAt = time.Now().Format(time.RFC3339)
+	if rt := m.runtimeByID(run.ID); rt != nil {
+		rt.mu.Lock()
+		rt.run.Status = run.Status
+		rt.run.UpdatedAt = run.UpdatedAt
+		rt.mu.Unlock()
+	}
+	_ = saveAgentRun(workspace.Path, run)
 }

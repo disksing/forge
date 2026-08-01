@@ -25,10 +25,25 @@ var (
 	agentHubStopConfirmInterval = 200 * time.Millisecond
 )
 
+// startAgentRecovery rebuilds run projections in the background so the HTTP
+// listener can serve immediately; the session poller runs right away and then
+// every interval as the fallback for any run the recovery pass missed.
+func (m *agentManager) startAgentRecovery(ctx context.Context) {
+	go func() {
+		if err := m.recoverAgentHubRuns(ctx); err != nil {
+			log.Printf("recover AgentHub runs: %v", err)
+		}
+	}()
+	m.startAgentHubPoller(ctx)
+}
+
 // startAgentHubPoller polls AgentHub session state in the background until
 // ctx is cancelled.
 func (m *agentManager) startAgentHubPoller(ctx context.Context) {
 	go func() {
+		if err := m.pollAgentHubSessions(ctx); err != nil {
+			log.Printf("poll AgentHub sessions: %v", err)
+		}
 		ticker := time.NewTicker(agentHubPollInterval)
 		defer ticker.Stop()
 		for {
@@ -97,7 +112,7 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 	}
 	rt := m.runtimeByID(run.ID)
 	if rt == nil {
-		rt = newAgentHubRuntime(m, workspace, run, client, nil)
+		rt = newAgentHubRuntime(m, workspace, run, client)
 		m.registerRuntime(rt)
 	}
 	if !found {

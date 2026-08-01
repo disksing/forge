@@ -31,7 +31,6 @@ type agentRun struct {
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
-	AgentHubEventCursor     int64  `json:"agentHubEventCursor,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
@@ -71,7 +70,6 @@ type forgeNoticeData struct {
 }
 
 type agentStreamMessage struct {
-	Event  *agentHubEvent
 	Notice *forgeNotice
 }
 
@@ -128,12 +126,8 @@ type agentRuntime struct {
 	workspace              guiWorkspace
 	manager                *agentManager
 	run                    agentRun
-	events                 []agentHubEvent
 	agentHub               *agentHubClient
 	agentHubState          string
-	agentHubCancel         context.CancelFunc
-	agentHubSync           sync.Mutex
-	agentHubStreamDone     chan struct{}
 	schedulerTurnFinishing bool
 }
 
@@ -812,18 +806,6 @@ func (m *agentManager) unsubscribe(runID string, ch chan agentStreamMessage) {
 	close(ch)
 }
 
-func (m *agentManager) publish(runID string, event agentHubEvent) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for ch := range m.subscribers[runID] {
-		eventCopy := event
-		select {
-		case ch <- agentStreamMessage{Event: &eventCopy}:
-		default:
-		}
-	}
-}
-
 func (m *agentManager) publishNotice(runID string, notice forgeNotice) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -851,10 +833,10 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	if client != nil && sessionID != "" {
 		session, err := client.Message(context.Background(), sessionID, text, hubState == "busy" || hubState == "waiting_approval")
 		if err != nil {
-			_ = rt.catchUpAgentHub(context.Background(), m, 0)
 			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
 		}
-		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
+		rt.applyAgentHubSessionState(m, session)
+		return nil
 	}
 	return errors.New("agent run is not attached to AgentHub")
 }
@@ -877,7 +859,7 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 	rt.mu.Lock()
 	if !rt.run.SchedulerTurn || rt.schedulerTurnFinishing {
-		// Duplicate triggers from the session poller and the event pipeline are
+		// Duplicate triggers from the session poller and startup recovery are
 		// expected; only one finish may run per turn.
 		rt.mu.Unlock()
 		return
@@ -997,53 +979,10 @@ func (rt *agentRuntime) markIdleUnlessStopped(m *agentManager) {
 	rt.markIdle(m)
 }
 
-func (rt *agentRuntime) snapshotEvents() []agentHubEvent {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return append([]agentHubEvent(nil), rt.events...)
-}
-
 func (rt *agentRuntime) snapshotRun() agentRun {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
 	return rt.run
-}
-
-func (rt *agentRuntime) snapshotDetail() (agentRun, []agentHubEvent, bool) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	events, truncated := tailAgentEvents(rt.events, agentHubEventMaxCount)
-	return rt.run, events, truncated
-}
-
-func (rt *agentRuntime) snapshotEventsAfter(afterID int64) []agentHubEvent {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return agentHubEventsAfter(rt.events, afterID)
-}
-
-func tailAgentEvents(events []agentHubEvent, limit int) ([]agentHubEvent, bool) {
-	if limit <= 0 || limit > agentHubEventMaxCount {
-		limit = agentHubEventMaxCount
-	}
-	truncated := len(events) > limit
-	if len(events) > limit {
-		events = events[len(events)-limit:]
-	}
-	if len(events) > 0 && events[0].ID > 1 {
-		truncated = true
-	}
-	return append([]agentHubEvent(nil), events...), truncated
-}
-
-func agentHubEventsAfter(events []agentHubEvent, afterID int64) []agentHubEvent {
-	if afterID <= 0 {
-		return append([]agentHubEvent(nil), events...)
-	}
-	start := sort.Search(len(events), func(i int) bool {
-		return events[i].ID > afterID
-	})
-	return append([]agentHubEvent(nil), events[start:]...)
 }
 
 func agentStreamAfterID(r *http.Request) int64 {
@@ -1214,12 +1153,6 @@ func newRunID() string {
 		return fmt.Sprintf("run-%d", time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
-}
-
-func writeSSE(w http.ResponseWriter, event agentHubEvent) {
-	data, _ := json.Marshal(event)
-	_, _ = fmt.Fprintf(w, "id: %d\n", event.ID)
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {

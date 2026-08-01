@@ -237,7 +237,6 @@ func TestAgentHubStopConfirmsDurableStopped(t *testing.T) {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}
 	rt := manager.runtimeByID(detail.Run.ID)
-	defer stopRuntimeTestStream(rt)
 	go func() {
 		time.Sleep(150 * time.Millisecond)
 		fake.mu.Lock()
@@ -275,7 +274,6 @@ func TestAgentHubStopFailsClosedOnConfirmTimeout(t *testing.T) {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}
 	rt := manager.runtimeByID(detail.Run.ID)
-	defer stopRuntimeTestStream(rt)
 
 	stopRec := httptest.NewRecorder()
 	manager.stopAgentHubRun(stopRec, httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`)), rt)

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,17 +14,9 @@ import (
 func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
 	workspace := t.TempDir()
 	manager := coreTestManager(t, workspace)
-	events := make([]agentHubEvent, agentHubEventMaxCount+20)
-	for index := range events {
-		events[index] = agentHubEvent{
-			ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one",
-			Data: json.RawMessage(fmt.Sprintf(`{"index":%d}`, index+1)),
-		}
-	}
 	manager.registerRuntime(&agentRuntime{
 		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
 		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Status: "idle"},
-		events:    events,
 	})
 
 	recorder := httptest.NewRecorder()
@@ -46,31 +37,6 @@ func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
 		if strings.Contains(recorder.Body.String(), forbidden) {
 			t.Fatalf("run detail must not embed event history, found %s in %s", forbidden, recorder.Body.String())
 		}
-	}
-}
-
-func TestAgentRuntimeRetainsBoundedEventTail(t *testing.T) {
-	workspace := t.TempDir()
-	initial := make([]agentHubEvent, agentHubEventMaxCount)
-	for index := range initial {
-		initial[index] = agentHubEvent{ID: int64(index + 1), Type: "provider.event", SessionID: "ses_one"}
-	}
-	runtime := &agentRuntime{
-		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run: agentRun{
-			ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one",
-			AgentHubEventCursor: agentHubEventMaxCount, Status: "idle",
-		},
-		events: initial,
-	}
-	if err := runtime.applyAgentHubEvent(newAgentManager(&server{}), agentHubEvent{
-		ID: agentHubEventMaxCount + 1, Type: "provider.event", SessionID: "ses_one",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	events := runtime.snapshotEvents()
-	if len(events) != agentHubEventMaxCount || events[0].ID != 2 || events[len(events)-1].ID != int64(agentHubEventMaxCount+1) {
-		t.Fatalf("runtime did not retain bounded tail: %#v", events)
 	}
 }
 
