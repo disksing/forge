@@ -914,6 +914,9 @@ func TestCreateTaskDialogIsLargeAndResponsive(t *testing.T) {
 	if !strings.Contains(string(appData), `class="create-dialog${isTask ? " create-task-dialog" : ""}${entering ? " modal-enter" : ""}"`) {
 		t.Fatal("create task dialog should have a task-specific class")
 	}
+	if !strings.Contains(string(appData), `<div class="create-task-dialog-body">`) {
+		t.Fatal("create task dialog should wrap scrollable fields in a dedicated body so actions stay visible")
+	}
 
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
@@ -925,21 +928,36 @@ func TestCreateTaskDialogIsLargeAndResponsive(t *testing.T) {
   display: flex;
   flex-direction: column;
   width: min(900px, calc(100vw - 48px));
-  height: min(760px, calc(100vh - 48px));
-  height: min(760px, calc(100dvh - 48px));`,
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);`,
 		`.create-task-dialog .create-dialog-form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  gap: 0;
+  overflow: hidden;`,
+		`.create-task-dialog-body {
+  display: grid;
+  gap: 10px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;`,
+		`.create-task-dialog .form-actions {
+  padding-top: 10px;`,
 		`.create-task-dialog textarea[name="detail"] {
   min-height: clamp(180px, 32vh, 340px);`,
 		`.create-task-dialog {
-    height: calc(100vh - 24px);
-    height: calc(100dvh - 24px);`,
+    max-height: calc(100vh - 24px);
+    max-height: calc(100dvh - 24px);`,
 	} {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("responsive create task dialog styles are missing %q", want)
 		}
+	}
+	if strings.Contains(styles, `width: min(900px, calc(100vw - 48px));
+  height: min(760px`) {
+		t.Fatal("create task dialog should size to its content instead of a fixed height")
 	}
 }
 

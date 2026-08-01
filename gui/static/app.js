@@ -3343,6 +3343,7 @@ function renderCreateDialog() {
         </header>
         <form id="createDialogForm" class="details-form create-dialog-form">
           ${isTask ? `
+            <div class="create-task-dialog-body">
             ${templates.length ? `
               <label>
                 <span>Template</span>
@@ -3371,14 +3372,20 @@ function renderCreateDialog() {
                 </label>
               </div>
             ` : ""}
+            <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
+            </div>
+            <div class="form-actions">
+              <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
+              <button type="button" class="secondary" data-create-dialog-close="true" ${dialog.submitting ? "disabled" : ""}>Cancel</button>
+            </div>
           ` : `
             <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
+            <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
+            <div class="form-actions">
+              <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
+              <button type="button" class="secondary" data-create-dialog-close="true" ${dialog.submitting ? "disabled" : ""}>Cancel</button>
+            </div>
           `}
-          <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
-          <div class="form-actions">
-            <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
-            <button type="button" class="secondary" data-create-dialog-close="true" ${dialog.submitting ? "disabled" : ""}>Cancel</button>
-          </div>
         </form>
       </section>
     </div>
