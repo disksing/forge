@@ -186,7 +186,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	}
 	data = append(data, '\n')
 	if legacy != nil {
-		if err := writeMigrationBackup(s.config+agentHubBackupSuffix, original); err != nil {
+		if err := writeMigrationBackup(agentHubMigrationBackupPath(s.config, legacy.Version), original); err != nil {
 			return agentHubSettingsResponse{}, err
 		}
 	}

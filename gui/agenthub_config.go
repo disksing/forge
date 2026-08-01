@@ -17,7 +17,6 @@ import (
 const (
 	agentHubConfigVersion = 3
 	agentHubSourceApp     = "forge"
-	agentHubBackupSuffix  = ".pre-agenthub-v1.bak"
 )
 
 type systemAgentProfileDefinition struct {
@@ -420,7 +419,7 @@ func migrateLegacyGUIConfigFile(path, endpoint, instanceID string, catalog agent
 		return agentHubGUIConfig{}, "", err
 	}
 	data = append(data, '\n')
-	backupPath := path + agentHubBackupSuffix
+	backupPath := agentHubMigrationBackupPath(path, version.Version)
 	if err := writeMigrationBackup(backupPath, original); err != nil {
 		return agentHubGUIConfig{}, "", err
 	}
@@ -428,6 +427,10 @@ func migrateLegacyGUIConfigFile(path, endpoint, instanceID string, catalog agent
 		return agentHubGUIConfig{}, backupPath, err
 	}
 	return cfg, backupPath, nil
+}
+
+func agentHubMigrationBackupPath(path string, sourceVersion int) string {
+	return fmt.Sprintf("%s.pre-agenthub-v%d.bak", path, sourceVersion)
 }
 
 func writeMigrationBackup(path string, data []byte) error {
