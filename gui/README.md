@@ -8,7 +8,7 @@ Forge 保留以下控制面：
 
 - AgentWorkspace、project、task、artifact、Wiki 与 Git worktree 展示；
 - Forge session、资源锁和 AutoRun generation；
-- 默认 AgentHub agent 与 Forge Profile 到 AgentHub `agentName` 的路由；
+- 系统和用户 Profile 到 AgentHub `agentName` 的路由；
 - AgentHub durable session 的创建、消息、审批、恢复、停止和 canonical event 投影。
 
 AgentHub 拥有以下执行面：
@@ -18,11 +18,11 @@ AgentHub 拥有以下执行面：
 - provider 进程生命周期与 provider-native session/event 适配；
 - durable agent session 和 canonical event history。
 
-Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpoint、默认 catalog agent 和 Forge Profile 路由，不可在 Forge 中新增、编辑、启用或关闭 provider/agent 定义。
+Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpoint 和 Forge Profile 路由，不可在 Forge 中新增、编辑、启用或关闭 provider/agent 定义。
 
 ## 配置
 
-持久化 GUI 配置使用 schema version 2，仅包含 workspace、AgentHub endpoint、Forge instance ID、默认 AgentHub agent 和 Profile 路由。可用环境变量：
+持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。可用环境变量：
 
 - `FORGE_CLI`：GUI 调用的 Forge CLI。
 - `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
@@ -34,7 +34,7 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 <gui-config>.pre-agenthub-v1.bak
 ```
 
-迁移只有在 AgentHub 状态、API 能力和 catalog 校验通过、且旧默认 agent/Profile 都能唯一映射时才会写入。迁移后的新配置不会写回 `agentProviders`、`agents`、provider enable 状态或 provider 专属 option。
+迁移只有在 AgentHub 状态、API 能力和 catalog 校验通过、且旧 direct agent 配置能够唯一映射时才会写入。旧默认 agent 会迁移到 `default`、`fast` 和 `reasoning`；与系统 Profile 保留名冲突的旧用户 Profile 会被删除。迁移后的新配置不会写回 `agentProviders`、`agents`、provider enable 状态或 provider 专属 option。Profile 指向的 AgentHub agent 即使当前不可用也可以保存，实际启动时由 AgentHub 返回错误。
 
 ## 会话与锁
 

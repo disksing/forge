@@ -218,11 +218,11 @@ func TestReplaceAgentsUserContentPreservesManagedBlock(t *testing.T) {
 func writeCurrentTestConfig(t *testing.T, path, workspace string) {
 	t.Helper()
 	data, err := json.Marshal(agentHubGUIConfig{
-		Version:                  agentHubConfigVersion,
-		Workspaces:               []guiWorkspace{{ID: "workspace-one", Path: workspace}},
-		AgentHubEndpoint:         defaultAgentHubEndpoint,
-		AgentHubInstanceID:       "forge-test",
-		DefaultAgentHubAgentName: "test-agent",
+		Version:            agentHubConfigVersion,
+		Workspaces:         []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+		AgentHubEndpoint:   defaultAgentHubEndpoint,
+		AgentHubInstanceID: "forge-test",
+		AgentProfiles:      []agentHubProfileRoute{{Key: "default", AgentName: "test-agent"}},
 	})
 	if err != nil {
 		t.Fatal(err)

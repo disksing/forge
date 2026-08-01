@@ -22,9 +22,8 @@ type agentHubSettingsResponse struct {
 }
 
 type updateAgentHubSettingsRequest struct {
-	Endpoint         string                 `json:"endpoint"`
-	DefaultAgentName string                 `json:"defaultAgentName"`
-	AgentProfiles    []agentHubProfileRoute `json:"agentProfiles"`
+	Endpoint      string                 `json:"endpoint"`
+	AgentProfiles []agentHubProfileRoute `json:"agentProfiles"`
 }
 
 func (s *server) handleAgentHubSettings(w http.ResponseWriter, r *http.Request) {
@@ -75,6 +74,13 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 		MigrationRequired:  legacy != nil,
 		Catalog:            agentHubCatalog{Providers: []agentHubProvider{}, Agents: []agentHubAgent{}, Probes: []agentHubProbe{}},
 	}
+	if legacy == nil {
+		cfg, err = normalizeAgentHubConfig(cfg, response.Catalog)
+		if err != nil {
+			return agentHubSettingsResponse{}, err
+		}
+		response.Config = cfg
+	}
 	client, err := newAgentHubClient(effective, nil)
 	if err != nil {
 		response.Error = err.Error()
@@ -99,9 +105,12 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 	}
 	response.Catalog = catalog
 	if legacy != nil {
-		instanceID, err := newAgentHubInstanceID()
-		if err != nil {
-			return agentHubSettingsResponse{}, err
+		instanceID := strings.TrimSpace(legacy.AgentHubInstanceID)
+		if instanceID == "" {
+			instanceID, err = newAgentHubInstanceID()
+			if err != nil {
+				return agentHubSettingsResponse{}, err
+			}
 		}
 		preview, err := migrateLegacyConfig(*legacy, configured, instanceID, catalog)
 		if err != nil {
@@ -109,6 +118,12 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 			return response, nil
 		}
 		response.Config = preview
+	} else {
+		cfg, err = normalizeAgentHubConfig(cfg, catalog)
+		if err != nil {
+			return agentHubSettingsResponse{}, err
+		}
+		response.Config = cfg
 	}
 	return response, nil
 }
@@ -160,7 +175,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		}
 	}
 	cfg.AgentHubEndpoint = configured
-	cfg.DefaultAgentHubAgentName = request.DefaultAgentName
 	cfg.AgentProfiles = request.AgentProfiles
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
 	if err != nil {
@@ -218,9 +232,16 @@ func readAgentHubConfigFile(path string) (agentHubGUIConfig, *legacyGUIConfig, e
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		return agentHubGUIConfig{}, nil, err
 	}
+	endpoint := strings.TrimSpace(legacy.AgentHubEndpoint)
+	if endpoint == "" {
+		endpoint = defaultAgentHubEndpoint
+	}
 	return agentHubGUIConfig{
-		Version: agentHubConfigVersion, ActiveID: legacy.ActiveID, Workspaces: legacy.Workspaces,
-		AgentHubEndpoint: defaultAgentHubEndpoint,
+		Version:            legacy.Version,
+		ActiveID:           legacy.ActiveID,
+		Workspaces:         legacy.Workspaces,
+		AgentHubEndpoint:   endpoint,
+		AgentHubInstanceID: legacy.AgentHubInstanceID,
 	}, &legacy, nil
 }
 

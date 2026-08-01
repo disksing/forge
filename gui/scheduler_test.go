@@ -324,10 +324,10 @@ esac
 	}
 	s.agents = newAgentManager(s)
 	if err := s.saveConfig(config{
-		Version:          agentHubConfigVersion,
-		Workspaces:       []guiWorkspace{{ID: "workspace-one", Path: workspace}},
-		DefaultAgentName: "agent-one",
+		Version:    agentHubConfigVersion,
+		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
 		AgentProfiles: []agentProfileRoute{
+			{Key: "default", AgentName: "agent-one"},
 			{Key: "codex", AgentName: "agent-one"},
 			{Key: "kimi", AgentName: "agent-two"},
 		},
@@ -346,9 +346,9 @@ func TestResolveAutoRunAgentRejectsLegacyDirectConfiguration(t *testing.T) {
 
 func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
 	cfg := config{
-		Version:          agentHubConfigVersion,
-		DefaultAgentName: "kimi-k3",
+		Version: agentHubConfigVersion,
 		AgentProfiles: []agentProfileRoute{
+			{Key: "default", AgentName: "kimi-k3"},
 			{Key: "deep", AgentName: "gpt-5.6-sol"},
 			{Key: "fast", AgentName: "gpt-5.3-codex-spark"},
 		},

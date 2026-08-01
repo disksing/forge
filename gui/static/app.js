@@ -107,6 +107,7 @@ const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
+const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -2392,7 +2393,6 @@ function renderSettingsModal() {
   const data = state.settings.data || {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
-    defaultAgentName: state.config?.defaultAgentName || "",
     agents: state.config?.agents || [],
     agentProfiles: state.config?.agentProfiles || [],
   };
@@ -2466,7 +2466,6 @@ function settingsAgentHubPanel(data) {
           <h3>Catalog</h3>
           <span>${catalog.agents?.length || 0} agents · ${catalog.providers?.length || 0} providers</span>
         </div>
-        ${settingsDefaultChatAgentSection(data)}
         <div class="settings-agent-list">
           ${(catalog.agents || []).map((agent) => `
             <div class="settings-service-row">
@@ -2523,8 +2522,8 @@ function settingsProfilesPanel(data) {
   return `
     <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
       <div class="settings-panel-header">
-        <h2>AutoRun Profiles</h2>
-        <p>Portable profile names map AutoRun preferences to AgentHub agent names. Keys must be unique.</p>
+        <h2>Agent Profiles</h2>
+        <p>Profiles map chat and AutoRun preferences to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p>
       </div>
       ${settingsAgentProfilesSection(data)}
       ${settingsAgentSaveBar()}
@@ -2549,7 +2548,19 @@ function settingsAgentProfilesSection(data) {
     ? state.settings.newProfile.agentId
     : agents[0]?.id || "";
   state.settings.newProfile.agentId = draftAgentId;
-  const targetOptions = (selected) => agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === selected ? "selected" : ""}>${escapeHTML(agent.name || agent.id)}</option>`).join("");
+  const targetOptions = (selected) => {
+    const selectedValue = String(selected || "");
+    const known = agents.some((agent) => agent.id === selectedValue);
+    const unknown = selectedValue && !known
+      ? `<option value="${escapeHTML(selectedValue)}" selected>${escapeHTML(selectedValue)} (Unavailable)</option>`
+      : "";
+    const options = agents.map((agent) => {
+      const name = agent.name || agent.id;
+      const suffix = agent.available === false ? ` (${agent.unavailableReason || "Unavailable"})` : "";
+      return `<option value="${escapeHTML(agent.id)}" ${agent.id === selectedValue ? "selected" : ""}>${escapeHTML(name + suffix)}</option>`;
+    }).join("");
+    return unknown + options;
+  };
   return `
     <section class="settings-agent-section">
       <div class="settings-section-heading">
@@ -2560,14 +2571,17 @@ function settingsAgentProfilesSection(data) {
         <div class="settings-profile-row settings-profile-head">
           <span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span>
         </div>
-        ${profiles.map((profile, index) => `
-          <div class="settings-profile-row" data-profile-index="${index}">
-            <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" />
-            <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" />
+        ${profiles.map((profile, index) => {
+          const system = SYSTEM_AGENT_PROFILE_KEYS.has(String(profile.key || "").trim().toLowerCase());
+          return `
+          <div class="settings-profile-row${system ? " settings-profile-system" : ""}" data-profile-index="${index}">
+            <input data-profile-field="key" value="${escapeHTML(profile.key || "")}" placeholder="kimi" aria-label="Profile key" ${system ? "disabled" : ""} />
+            <input data-profile-field="description" value="${escapeHTML(profile.description || "")}" placeholder="Kimi coding agent" aria-label="Summary" ${system ? "disabled" : ""} />
             <select data-profile-field="agentId" aria-label="AgentHub Agent">${targetOptions(profile.agentId)}</select>
-            <button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>
+            ${system ? `<span class="settings-profile-system-label">System</span>` : `<button type="button" class="settings-danger-button" data-remove-profile="${index}" title="Delete Profile">${icon("trash-2")}</button>`}
           </div>
-        `).join("")}
+        `;
+        }).join("")}
         <div class="settings-profile-row settings-profile-new">
           <input id="settingsNewProfileKey" value="${escapeHTML(state.settings.newProfile.key)}" placeholder="New key" aria-label="New profile key" />
           <input id="settingsNewProfileDescription" value="${escapeHTML(state.settings.newProfile.description)}" placeholder="New profile summary" aria-label="New profile summary" />
@@ -2577,31 +2591,6 @@ function settingsAgentProfilesSection(data) {
       </div>
     </section>
   `;
-}
-
-function settingsDefaultChatAgentSection(data) {
-  const agents = settingsEnabledAgents(data);
-  const defaultID = agents.some((agent) => agent.id === data.defaultAgentName)
-    ? data.defaultAgentName
-    : agents[0]?.id || "";
-  return `
-    <section class="settings-agent-section">
-      <div class="settings-section-heading">
-        <h3>Default Chat Agent</h3>
-        <span id="settingsDefaultChatAgentLabel">${defaultID ? escapeHTML(agentDisplayName(agents.find((agent) => agent.id === defaultID))) : "None"}</span>
-      </div>
-      <label class="settings-default-agent">
-        <span>Agent</span>
-        <select id="settingsDefaultChatAgent" ${agents.length ? "" : "disabled"}>
-          ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === defaultID ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))}</option>`).join("") || `<option value="">No enabled agents</option>`}
-        </select>
-      </label>
-    </section>
-  `;
-}
-
-function settingsEnabledAgents(data) {
-  return (data.agents || []).filter((agent) => agent.available !== false);
 }
 
 function bindSettingsEvents() {
@@ -2638,12 +2627,6 @@ function bindSettingsEvents() {
   $("settingsNewProfileKey")?.addEventListener("input", (event) => { state.settings.newProfile.key = event.target.value; });
   $("settingsNewProfileDescription")?.addEventListener("input", (event) => { state.settings.newProfile.description = event.target.value; });
   $("settingsNewProfileAgent")?.addEventListener("change", (event) => { state.settings.newProfile.agentId = event.target.value; });
-  $("settingsDefaultChatAgent")?.addEventListener("change", (event) => {
-    state.settings.data = { ...(state.settings.data || {}), defaultAgentName: event.target.value };
-    const label = $("settingsDefaultChatAgentLabel");
-    if (label) label.textContent = event.target.selectedOptions[0]?.textContent || "None";
-    markAgentSettingsDirty();
-  });
   $("settingsAgentHubEndpoint")?.addEventListener("input", markAgentSettingsDirty);
   document.querySelectorAll(".settings-profile-row [data-profile-field]").forEach((field) => {
     field.addEventListener("input", markAgentSettingsDirty);
@@ -3679,7 +3662,17 @@ function applyAgentConfig() {
 function selectedAgentConfig() {
   const agents = enabledAgentConfigs();
   const agentId = state.agent.agentId || defaultChatAgentID();
-  return agents.find((agent) => agent.id === agentId) || agents[0] || null;
+  const selected = agents.find((agent) => agent.id === agentId);
+  if (selected) return selected;
+  if (agentId) {
+    return {
+      id: agentId,
+      name: agentId,
+      available: false,
+      unavailableReason: "Configured AgentHub agent is unavailable",
+    };
+  }
+  return agents[0] || null;
 }
 
 function enabledAgentConfigs() {
@@ -3688,11 +3681,16 @@ function enabledAgentConfigs() {
 
 function defaultChatAgentID() {
   const agents = enabledAgentConfigs();
-  const configured = state.config?.defaultAgentName || state.settings.data?.defaultAgentName || "";
-  if (agents.some((agent) => agent.id === configured)) {
-    return configured;
-  }
+  const configured = configuredAgentProfileName(state.config?.agentProfiles, "default")
+    || configuredAgentProfileName(state.settings.data?.agentProfiles, "default");
+  if (configured) return configured;
   return agents[0]?.id || "";
+}
+
+function configuredAgentProfileName(profiles, key) {
+  const normalizedKey = String(key || "").trim().toLowerCase();
+  const profile = (profiles || []).find((item) => String(item.key || "").trim().toLowerCase() === normalizedKey);
+  return String(profile?.agentName || profile?.agentId || "").trim();
 }
 
 async function openSettings(tab = "workspace") {
@@ -3722,7 +3720,6 @@ async function refreshSettings() {
     agentHub,
     agents: catalogAgents,
     agentProfiles: (agentHub.config?.agentProfiles || []).map((profile) => ({ ...profile, agentId: profile.agentName })),
-    defaultAgentName: agentHub.config?.defaultAgentHubAgentName || "",
   };
   state.config = configWithAgentHubCatalog({ ...(state.config || {}), ...base }, agentHub);
 }
@@ -3735,7 +3732,6 @@ function configWithAgentHubCatalog(base, agentHub) {
     ...base,
     agents,
     agentHubProviders: agentHub.catalog?.providers || [],
-    defaultAgentName: agentHub.config?.defaultAgentHubAgentName || "",
     agentProfiles: agentHub.config?.agentProfiles || [],
   };
 }
@@ -3745,7 +3741,6 @@ function snapshotAgentDraft() {
   return {
     agents: data.agents || [],
     agentProfiles: data.agentProfiles || [],
-    defaultAgentName: data.defaultAgentName || "",
   };
 }
 
@@ -3820,7 +3815,6 @@ function syncSettingsDraftFromDOM() {
       ...(data.agentHub || {}),
       configuredEndpoint: $("settingsAgentHubEndpoint")?.value.trim() || data.agentHub?.configuredEndpoint || "",
     };
-    next.defaultAgentName = $("settingsDefaultChatAgent")?.value || data.defaultAgentName || "";
     touched = true;
   }
   if (touched) state.settings.data = next;
@@ -3850,7 +3844,6 @@ async function saveAgentSettings() {
     method: "PUT",
     body: JSON.stringify({
       endpoint: data.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
-      defaultAgentName: data.defaultAgentName || "",
       agentProfiles: (data.agentProfiles || []).map((profile) => ({
         key: profile.key,
         description: profile.description,
@@ -3884,6 +3877,10 @@ function addSettingsProfile() {
     toast("Profile key is required.");
     return;
   }
+  if (SYSTEM_AGENT_PROFILE_KEYS.has(key)) {
+    toast(`${key} is a reserved system profile.`);
+    return;
+  }
   syncSettingsDraftFromDOM();
   const current = state.settings.data?.agentProfiles || [];
   if (current.some((profile) => profile.key.trim().toLowerCase() === key)) {
@@ -3904,6 +3901,10 @@ function removeSettingsProfile(index) {
   syncSettingsDraftFromDOM();
   const current = state.settings.data?.agentProfiles || [];
   if (!Number.isInteger(index) || index < 0 || index >= current.length) return;
+  if (SYSTEM_AGENT_PROFILE_KEYS.has(String(current[index].key || "").trim().toLowerCase())) {
+    toast("System profiles cannot be deleted.");
+    return;
+  }
   state.settings.data = { ...(state.settings.data || {}), agentProfiles: current.filter((_, itemIndex) => itemIndex !== index) };
   markAgentSettingsDirty();
   state.settings.suppressDraftSync = true;

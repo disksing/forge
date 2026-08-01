@@ -4507,6 +4507,25 @@ i[data-lucide] {
   width: 100%;
 }
 
+.settings-profile-system {
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 4px;
+}
+
+.settings-profile-system input:disabled {
+  color: #475569;
+  background: #f1f5f9;
+}
+
+.settings-profile-system-label {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .settings-profile-new {
   border-top: 1px dashed #e2e8f0;
   padding-top: 10px;

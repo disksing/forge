@@ -36,7 +36,6 @@ type config struct {
 	Workspaces         []guiWorkspace      `json:"workspaces"`
 	AgentHubEndpoint   string              `json:"agentHubEndpoint,omitempty"`
 	AgentHubInstanceID string              `json:"agentHubInstanceId,omitempty"`
-	DefaultAgentName   string              `json:"defaultAgentHubAgentName,omitempty"`
 	AgentProfiles      []agentProfileRoute `json:"agentProfiles,omitempty"`
 }
 
@@ -1230,13 +1229,12 @@ func (s *server) saveConfig(cfg config) error {
 		})
 	}
 	data, err := json.MarshalIndent(agentHubGUIConfig{
-		Version:                  agentHubConfigVersion,
-		ActiveID:                 cfg.ActiveID,
-		Workspaces:               cfg.Workspaces,
-		AgentHubEndpoint:         cfg.AgentHubEndpoint,
-		AgentHubInstanceID:       cfg.AgentHubInstanceID,
-		DefaultAgentHubAgentName: cfg.DefaultAgentName,
-		AgentProfiles:            routes,
+		Version:            agentHubConfigVersion,
+		ActiveID:           cfg.ActiveID,
+		Workspaces:         cfg.Workspaces,
+		AgentHubEndpoint:   cfg.AgentHubEndpoint,
+		AgentHubInstanceID: cfg.AgentHubInstanceID,
+		AgentProfiles:      routes,
 	}, "", "  ")
 	if err != nil {
 		return err

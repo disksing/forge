@@ -15,19 +15,29 @@ import (
 )
 
 const (
-	agentHubConfigVersion = 2
+	agentHubConfigVersion = 3
 	agentHubSourceApp     = "forge"
 	agentHubBackupSuffix  = ".pre-agenthub-v1.bak"
 )
 
+type systemAgentProfileDefinition struct {
+	Key         string
+	Description string
+}
+
+var systemAgentProfileDefinitions = []systemAgentProfileDefinition{
+	{Key: "default", Description: "Balanced, recommended agent"},
+	{Key: "fast", Description: "Faster responses for simple tasks"},
+	{Key: "reasoning", Description: "More thorough reasoning for complex tasks"},
+}
+
 type agentHubGUIConfig struct {
-	Version                  int                    `json:"version"`
-	ActiveID                 string                 `json:"activeId,omitempty"`
-	Workspaces               []guiWorkspace         `json:"workspaces"`
-	AgentHubEndpoint         string                 `json:"agentHubEndpoint"`
-	AgentHubInstanceID       string                 `json:"agentHubInstanceId"`
-	DefaultAgentHubAgentName string                 `json:"defaultAgentHubAgentName"`
-	AgentProfiles            []agentHubProfileRoute `json:"agentProfiles,omitempty"`
+	Version            int                    `json:"version"`
+	ActiveID           string                 `json:"activeId,omitempty"`
+	Workspaces         []guiWorkspace         `json:"workspaces"`
+	AgentHubEndpoint   string                 `json:"agentHubEndpoint"`
+	AgentHubInstanceID string                 `json:"agentHubInstanceId"`
+	AgentProfiles      []agentHubProfileRoute `json:"agentProfiles,omitempty"`
 }
 
 type agentHubProfileRoute struct {
@@ -37,12 +47,15 @@ type agentHubProfileRoute struct {
 }
 
 type legacyGUIConfig struct {
-	Version            int                  `json:"version"`
-	ActiveID           string               `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace       `json:"workspaces"`
-	DefaultChatAgentID string               `json:"defaultChatAgentId,omitempty"`
-	Agents             []legacyAgentConfig  `json:"agents"`
-	AgentProfiles      []legacyProfileRoute `json:"agentProfiles,omitempty"`
+	Version                  int                  `json:"version"`
+	ActiveID                 string               `json:"activeId,omitempty"`
+	Workspaces               []guiWorkspace       `json:"workspaces"`
+	AgentHubEndpoint         string               `json:"agentHubEndpoint,omitempty"`
+	AgentHubInstanceID       string               `json:"agentHubInstanceId,omitempty"`
+	DefaultAgentHubAgentName string               `json:"defaultAgentHubAgentName,omitempty"`
+	DefaultChatAgentID       string               `json:"defaultChatAgentId,omitempty"`
+	Agents                   []legacyAgentConfig  `json:"agents"`
+	AgentProfiles            []legacyProfileRoute `json:"agentProfiles,omitempty"`
 }
 
 type legacyAgentConfig struct {
@@ -56,6 +69,7 @@ type legacyProfileRoute struct {
 	Key         string `json:"key"`
 	Description string `json:"description,omitempty"`
 	AgentID     string `json:"agentId,omitempty"`
+	AgentName   string `json:"agentName,omitempty"`
 }
 
 func effectiveAgentHubEndpoint(configured string) (string, error) {
@@ -90,35 +104,68 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 			return agentHubGUIConfig{}, err
 		}
 	}
-	available := availableAgentHubAgents(catalog)
-	cfg.DefaultAgentHubAgentName, err = canonicalAgentHubAgentName(cfg.DefaultAgentHubAgentName, available)
-	if err != nil {
-		return agentHubGUIConfig{}, fmt.Errorf("default AgentHub agent: %w", err)
-	}
-	if cfg.DefaultAgentHubAgentName == "" && len(available) > 0 {
-		cfg.DefaultAgentHubAgentName = available[0].Name
-	}
-	cfg.AgentProfiles, err = normalizeAgentHubProfileRoutes(cfg.AgentProfiles, available)
+	cfg.AgentProfiles, err = normalizeAgentHubProfileRoutes(cfg.AgentProfiles, catalog)
 	if err != nil {
 		return agentHubGUIConfig{}, err
 	}
 	return cfg, nil
 }
 
-func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, agents []agentHubAgent) ([]agentHubProfileRoute, error) {
-	normalized := make([]agentHubProfileRoute, 0, len(routes))
-	seen := make(map[string]bool, len(routes))
+func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agentHubCatalog) ([]agentHubProfileRoute, error) {
+	systemTargets := make(map[string]string, len(systemAgentProfileDefinitions))
 	for _, route := range routes {
 		key := strings.ToLower(strings.TrimSpace(route.Key))
 		if key == "" {
 			return nil, errors.New("Agent Profile key is required")
 		}
+		if isSystemAgentProfileKey(key) {
+			if _, exists := systemTargets[key]; !exists {
+				systemTargets[key] = strings.TrimSpace(route.AgentName)
+			}
+		}
+	}
+
+	available := availableAgentHubAgents(catalog)
+	fallback := ""
+	if len(available) > 0 {
+		fallback = available[0].Name
+	}
+	normalized := make([]agentHubProfileRoute, 0, len(routes)+len(systemAgentProfileDefinitions))
+	seen := make(map[string]bool, len(routes)+len(systemAgentProfileDefinitions))
+	for _, definition := range systemAgentProfileDefinitions {
+		agentName := strings.TrimSpace(systemTargets[definition.Key])
+		if agentName == "" {
+			agentName = fallback
+		}
+		canonicalName, err := canonicalAgentHubAgentName(agentName, catalog.Agents)
+		if err != nil {
+			return nil, fmt.Errorf("system Agent Profile %s: %w", definition.Key, err)
+		}
+		normalized = append(normalized, agentHubProfileRoute{
+			Key:         definition.Key,
+			Description: definition.Description,
+			AgentName:   canonicalName,
+		})
+		seen[definition.Key] = true
+	}
+
+	for _, route := range routes {
+		key := strings.ToLower(strings.TrimSpace(route.Key))
+		if key == "" {
+			return nil, errors.New("Agent Profile key is required")
+		}
+		if isSystemAgentProfileKey(key) {
+			continue
+		}
 		if seen[key] {
 			return nil, fmt.Errorf("duplicate Agent Profile key: %s", key)
 		}
-		agentName, err := canonicalAgentHubAgentName(route.AgentName, agents)
-		if err != nil || agentName == "" {
-			return nil, fmt.Errorf("Agent Profile %s references unavailable AgentHub agent %q", key, route.AgentName)
+		if strings.TrimSpace(route.AgentName) == "" {
+			return nil, fmt.Errorf("Agent Profile %s requires an AgentHub agent", key)
+		}
+		agentName, err := canonicalAgentHubAgentName(route.AgentName, catalog.Agents)
+		if err != nil {
+			return nil, fmt.Errorf("Agent Profile %s: %w", key, err)
 		}
 		seen[key] = true
 		normalized = append(normalized, agentHubProfileRoute{
@@ -128,6 +175,16 @@ func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, agents []agen
 		})
 	}
 	return normalized, nil
+}
+
+func isSystemAgentProfileKey(key string) bool {
+	key = strings.ToLower(strings.TrimSpace(key))
+	for _, definition := range systemAgentProfileDefinitions {
+		if definition.Key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func canonicalAgentHubAgentName(name string, agents []agentHubAgent) (string, error) {
@@ -145,7 +202,7 @@ func canonicalAgentHubAgentName(name string, agents []agentHubAgent) (string, er
 		return matches[0], nil
 	}
 	if len(matches) == 0 {
-		return "", fmt.Errorf("%q is not present in the AgentHub catalog", name)
+		return name, nil
 	}
 	return "", fmt.Errorf("%q is ambiguous in the AgentHub catalog", name)
 }
@@ -161,12 +218,18 @@ func availableAgentHubAgents(catalog agentHubCatalog) []agentHubAgent {
 }
 
 func migrateLegacyConfig(legacy legacyGUIConfig, endpoint, instanceID string, catalog agentHubCatalog) (agentHubGUIConfig, error) {
-	available := availableAgentHubAgents(catalog)
-	if len(available) == 0 {
-		return agentHubGUIConfig{}, errors.New("AgentHub catalog has no available agents")
+	if legacy.Version >= 2 || strings.TrimSpace(legacy.DefaultAgentHubAgentName) != "" {
+		return migrateCurrentAgentHubConfig(legacy, endpoint, instanceID, catalog)
+	}
+	candidates := catalog.Agents
+	if len(candidates) == 0 {
+		return agentHubGUIConfig{}, errors.New("AgentHub catalog has no agents")
 	}
 	requiredLegacyIDs := map[string]bool{strings.TrimSpace(legacy.DefaultChatAgentID): true}
 	for _, route := range legacy.AgentProfiles {
+		if isSystemAgentProfileKey(route.Key) {
+			continue
+		}
 		requiredLegacyIDs[strings.TrimSpace(route.AgentID)] = true
 	}
 	mapped := make(map[string]string, len(requiredLegacyIDs))
@@ -174,7 +237,7 @@ func migrateLegacyConfig(legacy legacyGUIConfig, endpoint, instanceID string, ca
 		if !requiredLegacyIDs[strings.TrimSpace(legacyAgent.ID)] {
 			continue
 		}
-		name, err := matchLegacyAgent(legacyAgent, available)
+		name, err := matchLegacyAgent(legacyAgent, candidates)
 		if err != nil {
 			return agentHubGUIConfig{}, fmt.Errorf("migrate legacy agent %q: %w", legacyAgent.ID, err)
 		}
@@ -186,6 +249,9 @@ func migrateLegacyConfig(legacy legacyGUIConfig, endpoint, instanceID string, ca
 	}
 	routes := make([]agentHubProfileRoute, 0, len(legacy.AgentProfiles))
 	for _, route := range legacy.AgentProfiles {
+		if isSystemAgentProfileKey(route.Key) {
+			continue
+		}
 		name := mapped[strings.TrimSpace(route.AgentID)]
 		if name == "" {
 			return agentHubGUIConfig{}, fmt.Errorf("Agent Profile %q references legacy agent %q, which cannot be mapped uniquely", route.Key, route.AgentID)
@@ -195,13 +261,49 @@ func migrateLegacyConfig(legacy legacyGUIConfig, endpoint, instanceID string, ca
 		})
 	}
 	return normalizeAgentHubConfig(agentHubGUIConfig{
-		Version:                  agentHubConfigVersion,
-		ActiveID:                 legacy.ActiveID,
-		Workspaces:               legacy.Workspaces,
-		AgentHubEndpoint:         endpoint,
-		AgentHubInstanceID:       instanceID,
-		DefaultAgentHubAgentName: defaultName,
-		AgentProfiles:            routes,
+		Version:            agentHubConfigVersion,
+		ActiveID:           legacy.ActiveID,
+		Workspaces:         legacy.Workspaces,
+		AgentHubEndpoint:   endpoint,
+		AgentHubInstanceID: instanceID,
+		AgentProfiles: append([]agentHubProfileRoute{
+			{Key: "default", AgentName: defaultName},
+			{Key: "fast", AgentName: defaultName},
+			{Key: "reasoning", AgentName: defaultName},
+		}, routes...),
+	}, catalog)
+}
+
+func migrateCurrentAgentHubConfig(legacy legacyGUIConfig, endpoint, instanceID string, catalog agentHubCatalog) (agentHubGUIConfig, error) {
+	if strings.TrimSpace(legacy.AgentHubInstanceID) != "" {
+		instanceID = strings.TrimSpace(legacy.AgentHubInstanceID)
+	}
+	defaultName := strings.TrimSpace(legacy.DefaultAgentHubAgentName)
+	routes := make([]agentHubProfileRoute, 0, len(legacy.AgentProfiles)+1)
+	routes = append(routes,
+		agentHubProfileRoute{Key: "default", AgentName: defaultName},
+		agentHubProfileRoute{Key: "fast", AgentName: defaultName},
+		agentHubProfileRoute{Key: "reasoning", AgentName: defaultName},
+	)
+	for _, route := range legacy.AgentProfiles {
+		if isSystemAgentProfileKey(route.Key) {
+			continue
+		}
+		name := strings.TrimSpace(route.AgentName)
+		if name == "" && strings.TrimSpace(route.AgentID) != "" {
+			return agentHubGUIConfig{}, fmt.Errorf("Agent Profile %q uses legacy Agent ID %q and cannot be migrated", route.Key, route.AgentID)
+		}
+		routes = append(routes, agentHubProfileRoute{
+			Key: route.Key, Description: route.Description, AgentName: name,
+		})
+	}
+	return normalizeAgentHubConfig(agentHubGUIConfig{
+		Version:            agentHubConfigVersion,
+		ActiveID:           legacy.ActiveID,
+		Workspaces:         legacy.Workspaces,
+		AgentHubEndpoint:   endpoint,
+		AgentHubInstanceID: instanceID,
+		AgentProfiles:      routes,
 	}, catalog)
 }
 

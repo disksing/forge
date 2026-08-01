@@ -69,7 +69,7 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hasRunnableAgent := cfg.Version >= agentHubConfigVersion && strings.TrimSpace(cfg.DefaultAgentName) != ""
+	hasRunnableAgent := cfg.Version >= agentHubConfigVersion && configuredAgentProfileName(cfg.AgentProfiles, "default") != ""
 	if cfg.Version >= agentHubConfigVersion && !hasRunnableAgent {
 		for _, route := range cfg.AgentProfiles {
 			if strings.TrimSpace(route.AgentName) != "" {
@@ -249,7 +249,7 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 				}, nil
 			}
 		}
-		fallback := strings.TrimSpace(cfg.DefaultAgentName)
+		fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 		if fallback == "" {
 			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
 		}
@@ -260,7 +260,7 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 	if legacyName := strings.TrimSpace(task.AgentID); legacyName != "" {
 		return autoRunAgentSelection{}, fmt.Errorf("legacy AutoRun agentId %s cannot be dispatched through AgentHub; migrate the task to preferredAgentProfiles or clear agentId to use the default AgentHub agent", legacyName)
 	}
-	fallback := strings.TrimSpace(cfg.DefaultAgentName)
+	fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 	if fallback == "" {
 		return autoRunAgentSelection{}, errors.New("no default AgentHub agent is configured for AutoRun")
 	}

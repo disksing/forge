@@ -26,6 +26,7 @@ type runtimeFakeAgentHub struct {
 	gapAfter           int64
 	stopAtStopping     bool
 	failNextResume     bool
+	rejectAgentName    string
 	messageSteers      []bool
 	actions            []string
 	resumeEnvironments []map[string]string
@@ -186,6 +187,14 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	var request agentHubCreateSessionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
 	f.mu.Lock()
+	if f.rejectAgentName != "" && request.AgentName == f.rejectAgentName {
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusBadRequest)
+		writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+			"code": "agent_unavailable", "message": "configured AgentHub agent is unavailable",
+		}})
+		return
+	}
 	f.nextSession++
 	id := fmt.Sprintf("ses_%d", f.nextSession)
 	session := agentHubSession{
@@ -211,6 +220,33 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	writeRuntimeFakeJSON(w, map[string]any{"session": session})
+}
+
+func TestAgentHubRuntimeReportsUnavailableConfiguredProfile(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.rejectAgentName = "missing-agent"
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	configData, err := json.Marshal(agentHubGUIConfig{
+		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-unavailable",
+		AgentProfiles: []agentHubProfileRoute{
+			{Key: "default", AgentName: "missing-agent"},
+			{Key: "fast", AgentName: "missing-agent"},
+			{Key: "reasoning", AgentName: "missing-agent"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
+	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), "unavailable") {
+		t.Fatalf("expected unavailable AgentHub target to fail at runtime, got %d: %s", recorder.Code, recorder.Body.String())
+	}
 }
 
 func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
@@ -319,7 +355,7 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	configData, _ := json.Marshal(agentHubGUIConfig{
 		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
 		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-runtime-test",
-		DefaultAgentHubAgentName: "fake-agent",
+		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
 		t.Fatal(err)

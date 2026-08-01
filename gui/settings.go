@@ -41,9 +41,17 @@ func (s *server) writeSettings(w http.ResponseWriter) {
 func findAgentProfileRoute(routes []agentProfileRoute, key string) (agentProfileRoute, bool) {
 	key = strings.ToLower(strings.TrimSpace(key))
 	for _, route := range routes {
-		if route.Key == key {
+		if strings.ToLower(strings.TrimSpace(route.Key)) == key {
 			return route, true
 		}
 	}
 	return agentProfileRoute{}, false
+}
+
+func configuredAgentProfileName(routes []agentProfileRoute, key string) string {
+	route, ok := findAgentProfileRoute(routes, key)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(route.AgentName)
 }

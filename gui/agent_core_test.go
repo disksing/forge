@@ -235,7 +235,7 @@ func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 	server := &server{forgePath: forgePath, config: filepath.Join(temp, "gui.json")}
 	if err := server.saveConfig(config{
 		Version: agentHubConfigVersion, AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-test",
-		DefaultAgentName: "default-agent",
+		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "default-agent"}},
 	}); err != nil {
 		t.Fatal(err)
 	}

@@ -35,15 +35,10 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 func resolveAgentHubRunAgent(cfg config, req startAgentRequest) (string, error) {
 	name := strings.TrimSpace(req.AgentID)
 	if profile := strings.ToLower(strings.TrimSpace(req.AgentProfile)); name == "" && profile != "" {
-		for _, route := range cfg.AgentProfiles {
-			if strings.EqualFold(strings.TrimSpace(route.Key), profile) {
-				name = strings.TrimSpace(route.AgentName)
-				break
-			}
-		}
+		name = configuredAgentProfileName(cfg.AgentProfiles, profile)
 	}
 	if name == "" {
-		name = strings.TrimSpace(cfg.DefaultAgentName)
+		name = configuredAgentProfileName(cfg.AgentProfiles, "default")
 	}
 	if name == "" {
 		return "", errors.New("no AgentHub agent is configured")

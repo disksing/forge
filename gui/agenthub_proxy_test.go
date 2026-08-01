@@ -88,7 +88,7 @@ func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspa
 	data, err := json.Marshal(agentHubGUIConfig{
 		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
 		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-proxy-test",
-		DefaultAgentHubAgentName: "fake-agent",
+		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
 	if err != nil {
 		t.Fatal(err)
