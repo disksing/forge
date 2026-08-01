@@ -485,7 +485,13 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 		`session.resourceId === resourceId`,
 		`function taskLocks(resourceId)`,
 		`sessionControls(session).some((control) => control.resourceId === resourceId)`,
+		`const hasTaskState = statuses.length > 0 || Boolean(taskState.lock);`,
+		`const taskStatusLayoutClass = hasTaskState`,
+		`const taskStatusMarkup = hasTaskState ?`,
 		`class="task-status-slot`,
+		`task-status-single`,
+		`task-status-dual`,
+		`${taskStatusMarkup}`,
 		`[taskState.autoRun, taskState.session].filter(Boolean)`,
 		`statuses.map((status) =>`,
 		`task-lock-indicator`,
@@ -502,6 +508,12 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 	styles := string(stylesData)
 	for _, want := range []string{
+		`grid-template-columns: 16px 16px minmax(0, 1fr);`,
+		`.tree-item.has-task-status`,
+		`grid-template-columns: 16px 16px 16px minmax(0, 1fr);`,
+		`.tree-item.has-task-status-dual`,
+		`grid-template-columns: 16px 36px 16px minmax(0, 1fr);`,
+		`.task-status-slot.task-status-single .task-lock-indicator`,
 		`.task-status-indicator.task-status-auto-running`,
 		`.task-status-indicator.task-status-session-running`,
 		`animation: task-status-spin 1.8s linear infinite;`,

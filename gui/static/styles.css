@@ -2542,7 +2542,7 @@ i[data-lucide] {
 .tree-item {
   min-height: 30px;
   display: grid;
-  grid-template-columns: 16px 36px 16px minmax(0, 1fr);
+  grid-template-columns: 16px 16px minmax(0, 1fr);
   column-gap: 6px;
   align-items: center;
   padding: 6px 8px;
@@ -2550,6 +2550,14 @@ i[data-lucide] {
   color: #334155;
   font-size: 14px;
   font-weight: 500;
+}
+
+.tree-item.has-task-status {
+  grid-template-columns: 16px 16px 16px minmax(0, 1fr);
+}
+
+.tree-item.has-task-status-dual {
+  grid-template-columns: 16px 36px 16px minmax(0, 1fr);
 }
 
 .tree-item:hover {
@@ -2593,6 +2601,11 @@ i[data-lucide] {
   align-items: center;
   justify-content: flex-start;
   gap: 2px;
+}
+
+.task-status-slot.task-status-single,
+.task-status-slot.task-status-lock-only {
+  width: 16px;
 }
 
 .task-status-indicator {
@@ -2674,8 +2687,9 @@ i[data-lucide] {
   height: 12px;
 }
 
-.task-status-lock-only {
-  width: 16px;
+.task-status-slot.task-status-single .task-lock-indicator {
+  right: -4px;
+  bottom: -4px;
 }
 
 .tree-item:hover .task-lock-indicator {

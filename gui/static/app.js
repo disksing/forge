@@ -433,9 +433,17 @@ function treeButton(item, kind) {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
   const statuses = [taskState.autoRun, taskState.session].filter(Boolean);
-  const hasTaskState = statuses.length > 0 || taskState.lock;
+  const hasTaskState = statuses.length > 0 || Boolean(taskState.lock);
   const statusClassName = statuses.map((status) => status.className).filter(Boolean).join(" ");
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${hasTaskState ? "has-task-status" : ""} ${statusClassName} ${state.selectedId === item.id ? "active" : ""}`;
+  const taskStatusLayoutClass = hasTaskState
+    ? (statuses.length > 1 ? "has-task-status-dual" : "has-task-status")
+    : "";
+  const taskStatusMarkup = hasTaskState ? `
+    <span class="task-status-slot ${taskState.lock && statuses.length === 0 ? "task-status-lock-only" : ""} ${statuses.length === 1 ? "task-status-single" : ""} ${statuses.length > 1 ? "task-status-dual" : ""}" aria-hidden="true">
+      ${statuses.map((status) => `<span class="task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}">${icon(status.iconName, "task-status-icon")}</span>`).join("")}
+      ${taskState.lock ? `<span class="task-lock-indicator ${taskState.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
+    </span>` : "";
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${taskStatusLayoutClass} ${statusClassName} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
@@ -445,10 +453,7 @@ function treeButton(item, kind) {
   }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
-    <span class="task-status-slot ${taskState.lock && statuses.length === 0 ? "task-status-lock-only" : ""} ${statuses.length > 1 ? "task-status-dual" : ""}" aria-hidden="true">
-      ${statuses.map((status) => `<span class="task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}">${icon(status.iconName, "task-status-icon")}</span>`).join("")}
-      ${taskState.lock ? `<span class="task-lock-indicator ${taskState.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
-    </span>
+    ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
     <span class="name">${escapeHTML(title)}</span>
   `;
