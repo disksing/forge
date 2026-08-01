@@ -1023,6 +1023,21 @@ type sessionAgentHubSession struct {
 	} `json:"source"`
 }
 
+func sessionAgentHubWithinStartingGrace(session *Session, now time.Time) bool {
+	if session == nil || strings.TrimSpace(session.Liveness.StartingGrace) == "" {
+		return false
+	}
+	grace, err := time.ParseDuration(session.Liveness.StartingGrace)
+	if err != nil || grace <= 0 {
+		return false
+	}
+	startedAt, err := time.Parse(time.RFC3339, session.StartedAt)
+	if err != nil {
+		return false
+	}
+	return !startedAt.After(now) && now.Sub(startedAt) <= grace
+}
+
 func sessionAgentHubActive(session *Session) bool {
 	liveness := &session.Liveness
 	now := time.Now()
@@ -1058,24 +1073,35 @@ func sessionAgentHubActive(session *Session) bool {
 		}
 	}
 
+	unboundAgentHubSession := strings.TrimSpace(liveness.AgentHubSessionID) == ""
 	target, err := sessionAgentHubResolveSession(client, liveness)
 	if err != nil {
-		grace, _ := time.ParseDuration(liveness.StartingGrace)
-		startedAt, _ := time.Parse(time.RFC3339, session.StartedAt)
-		if strings.TrimSpace(liveness.AgentHubSessionID) == "" && grace > 0 && !startedAt.IsZero() && now.Sub(startedAt) <= grace {
+		if unboundAgentHubSession && sessionAgentHubWithinStartingGrace(session, now) {
 			liveness.LastKnownState = "starting"
 			liveness.LivenessDiagnostic = "AgentHub session has not appeared by source within starting grace; lock retained"
 			return true
 		}
 		return unknown("%v; lock retained", err)
 	}
-	if liveness.AgentHubSessionID == "" {
+	replacementStarting := unboundAgentHubSession && target.State == "stopped" &&
+		sessionAgentHubWithinStartingGrace(session, now)
+	if liveness.AgentHubSessionID == "" && !replacementStarting {
 		liveness.AgentHubSessionID = target.ID
 	}
 	liveness.LastKnownState = target.State
 	liveness.LivenessDiagnostic = ""
 	switch target.State {
 	case "stopped":
+		// A stopped session can still be the predecessor of a replacement
+		// session during Resume. Until the replacement is bound to its
+		// AgentHub session, source matching necessarily finds that predecessor.
+		// Keep the newly-created Forge session through its starting grace so
+		// the caller can acquire the resource lock and issue the resume action.
+		if replacementStarting {
+			liveness.LastKnownState = "starting"
+			liveness.LivenessDiagnostic = "AgentHub predecessor is stopped while a replacement session is starting; lock retained"
+			return true
+		}
 		return false
 	case "archived":
 		stopped, err := sessionAgentHubArchivedAfterStopped(client, liveness.Endpoint, target.ID)

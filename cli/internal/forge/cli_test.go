@@ -1115,6 +1115,52 @@ func TestAgentHubSessionLivenessReleasesOnlyAfterDurableStopped(t *testing.T) {
 	})
 }
 
+func TestAgentHubSessionLivenessRetainsReplacementDuringStartingGrace(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "AgentHub replacement")
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.URL.Path {
+			case "/v1/status":
+				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
+			case "/v1/sessions":
+				_, _ = w.Write([]byte(`{"sessions":[{"id":"ses_previous","state":"stopped","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}]}`))
+			case "/v1/sessions/ses_previous":
+				_, _ = w.Write([]byte(`{"session":{"id":"ses_previous","state":"stopped","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
+			"--starting-grace", "30s"))
+		locked := run(t, "session", "lock", "--id", id, "--project", "project1")
+		if !strings.Contains(locked, `"id": "`+id+`"`) {
+			t.Fatalf("replacement session was pruned before it could be locked: %s", locked)
+		}
+		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
+			t.Fatalf("replacement session was not retained during starting grace: %s", listed)
+		}
+
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(store.Sessions) != 1 {
+			t.Fatalf("expected one replacement session, got %#v", store.Sessions)
+		}
+		store.Sessions[0].StartedAt = time.Now().Add(-time.Minute).Format(time.RFC3339)
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
+			t.Fatalf("stopped predecessor should prune an expired replacement session: %s", listed)
+		}
+	})
+}
+
 func TestAgentHubSessionLivenessRetainsLockWhenUnreachableOrUnknown(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
