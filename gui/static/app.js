@@ -564,7 +564,10 @@ function taskStatusState(kind, className, iconName, label, dimension, session = 
 
 function taskAgentSessions(resourceId) {
   if (!resourceId) return [];
-  return (state.tree?.sessions || []).filter((session) => session.resourceId === resourceId);
+  return (state.tree?.sessions || []).filter((session) =>
+    session.resourceId === resourceId ||
+    sessionControls(session).some((control) => control.resourceId === resourceId),
+  );
 }
 
 function taskLocks(resourceId) {

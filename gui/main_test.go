@@ -532,6 +532,70 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 }
 
+func TestTreeTaskStatusIncludesManuallyControlledSessions(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for manual session status tests")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, marker := range []string{"function sessionControls(session)", "function taskAgentSessions(resourceId)"} {
+		if !strings.Contains(app, marker) {
+			t.Fatalf("manual session status helper is missing %q", marker)
+		}
+	}
+
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {
+  state: {
+    tree: {
+      sessions: [
+        { id: "manual", controls: [{ resourceId: "project1.task1" }] },
+        { id: "internal", resourceId: "project1.task1" },
+        { id: "other", controls: [{ resourceId: "project1.task2" }] },
+      ],
+    },
+  },
+};
+vm.createContext(context);
+vm.runInContext(extract("sessionControls") + "\n" + extract("taskAgentSessions"), context);
+const sessions = context.taskAgentSessions("project1.task1");
+const ids = sessions.map((session) => session.id).sort();
+if (JSON.stringify(ids) !== JSON.stringify(["internal", "manual"])) {
+  throw new Error("manual and internal sessions should match the resource: " + JSON.stringify(ids));
+}
+`
+
+	testFile := filepath.Join(t.TempDir(), "manual-session-status.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+		t.Fatalf("manual session status behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestSessionDisplayTitleUsesLockedResourceTitle(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
