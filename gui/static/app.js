@@ -64,6 +64,7 @@ const state = {
   mobile: {
     sidebarOpen: false,
     view: "details",
+    immersive: false,
   },
   agent: {
     runs: [],
@@ -80,6 +81,8 @@ const state = {
     optionsOpen: false,
     agentChooserOpen: false,
     historyOpen: false,
+    autoRunExpanded: false,
+    sessionActionsOpen: false,
     eventsHasMore: false,
     historyBeforeId: 0,
     loadingOlder: false,
@@ -98,6 +101,7 @@ const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
+const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
 const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
@@ -2035,13 +2039,14 @@ function autoRunStatus(detail) {
     ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentId || ""}`
     : "";
   return `
-    <section class="autorun-status autorun-status-${presentation.key}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
-      <div class="autorun-status-heading">
+    <section class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
+      <div class="autorun-status-heading" data-autorun-toggle role="button" tabindex="0" aria-expanded="${state.agent.autoRunExpanded ? "true" : "false"}">
         <div class="autorun-status-title"><i data-lucide="workflow" class="autorun-title-icon" aria-hidden="true"></i><strong>AutoRun</strong></div>
         <span class="autorun-state autorun-state-${presentation.key}">
           <i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>
           <span>${escapeHTML(presentation.label)}</span>
         </span>
+        ${icon(state.agent.autoRunExpanded ? "chevron-up" : "chevron-down", "autorun-expand-icon")}
       </div>
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : run.agentId ? ` · Legacy Agent: ${escapeHTML(run.agentId)}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
@@ -2214,7 +2219,7 @@ function renderTTYComposer() {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+    const key = `live:${activeRun.id}:${state.agent.agentId}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -2227,8 +2232,9 @@ function renderTTYComposer() {
         <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
         <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>
+        <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
       </form>
-      ${agentComposerActions({ includeClose: true })}
+      ${agentComposerActions({ includeClose: true, collapsible: true })}
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       state.agent.ttyDraft = event.target.value;
@@ -2289,8 +2295,10 @@ function agentComposerActions(options = {}) {
   const agents = enabledAgentConfigs();
   const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
   const agentLabel = selectedAgent ? agentDisplayName(selectedAgent) : "No agent";
+  const collapsible = Boolean(options.collapsible);
+  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${!collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   return `
-    <div class="tty-session-actions">
+    <div class="${actionsClass}">
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
       <div class="tty-new-session-control">
         <button type="button" id="agentStartButton" class="tty-new-session-main" ${selectedAgent ? "" : "disabled"}>
@@ -2812,6 +2820,28 @@ function bindAgentEvents() {
   };
   const uploadButton = $("agentUploadButton");
   if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
+  const actionsToggle = $("agentActionsToggle");
+  if (actionsToggle) actionsToggle.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    state.agent.sessionActionsOpen = !state.agent.sessionActionsOpen;
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
+  };
+  document.querySelectorAll("[data-autorun-toggle]").forEach((heading) => {
+    const toggle = (event) => {
+      if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      event.stopPropagation();
+      state.agent.autoRunExpanded = !state.agent.autoRunExpanded;
+      renderAgent();
+      bindAgentEvents();
+      refreshIcons();
+    };
+    heading.addEventListener("click", toggle);
+    heading.addEventListener("keydown", toggle);
+  });
   document.querySelectorAll("[data-agent-run]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
@@ -3997,6 +4027,30 @@ function setMobileView(view) {
   $("mobileChatButton")?.setAttribute("aria-selected", String(chatActive));
 }
 
+function loadMobileImmersive() {
+  try {
+    return localStorage.getItem(MOBILE_IMMERSIVE_KEY) === "1";
+  } catch (_) {
+    return false;
+  }
+}
+
+function setMobileImmersive(immersive) {
+  state.mobile.immersive = Boolean(immersive);
+  document.body.classList.toggle("chat-immersive", state.mobile.immersive);
+  const button = $("mobileImmersiveButton");
+  if (button) {
+    button.setAttribute("aria-pressed", String(state.mobile.immersive));
+    button.innerHTML = `<i data-lucide="${state.mobile.immersive ? "minimize-2" : "maximize-2"}"></i>`;
+    refreshIcons();
+  }
+  try {
+    localStorage.setItem(MOBILE_IMMERSIVE_KEY, state.mobile.immersive ? "1" : "0");
+  } catch (_) {
+    // Persisting the immersive preference is best-effort.
+  }
+}
+
 $("workspaceSwitcher").onclick = (event) => {
   event.stopPropagation();
   state.workspaceMenuOpen = !state.workspaceMenuOpen;
@@ -4045,6 +4099,8 @@ $("mobileMenuButton").onclick = () => setMobileSidebar(!state.mobile.sidebarOpen
 $("mobileSidebarBackdrop").onclick = () => setMobileSidebar(false);
 $("mobileDetailsButton").onclick = () => setMobileView("details");
 $("mobileChatButton").onclick = () => setMobileView("chat");
+$("mobileImmersiveButton").onclick = () => setMobileImmersive(!state.mobile.immersive);
+setMobileImmersive(loadMobileImmersive());
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && state.uploadDialog.open) {

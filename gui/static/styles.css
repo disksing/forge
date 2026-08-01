@@ -1855,10 +1855,35 @@ body.resizing-y {
   color: #1d4ed8;
 }
 
+.tty-actions-toggle {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+}
+
+.tty-actions-toggle:hover,
+.tty-actions-toggle[aria-expanded="true"] {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
 .tty-send-button svg,
-.tty-upload-button svg {
+.tty-upload-button svg,
+.tty-actions-toggle svg {
   width: 16px;
   height: 16px;
+}
+
+.autorun-expand-icon {
+  display: none;
 }
 
 .upload-dialog-layer {
@@ -4480,7 +4505,7 @@ i[data-lucide] {
   .app-shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: 52px minmax(0, 1fr);
+    grid-template-rows: calc(52px + env(safe-area-inset-top, 0px)) minmax(0, 1fr);
     height: 100vh;
     height: 100dvh;
     min-height: 0;
@@ -4495,6 +4520,7 @@ i[data-lucide] {
     align-items: center;
     gap: 10px;
     padding: 6px 10px;
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
     border-bottom: 1px solid var(--line);
     background: #fff;
   }
@@ -4682,6 +4708,57 @@ i[data-lucide] {
 
   .tty-new-session-control {
     min-width: 0;
+  }
+
+  .mobile-immersive-button[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .tty-composer {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: #fff;
+  }
+
+  .tty-actions-toggle {
+    display: inline-flex;
+  }
+
+  .tty-session-actions.collapsible:not(.open) {
+    display: none;
+  }
+
+  .autorun-collapsible .autorun-status-heading {
+    cursor: pointer;
+    justify-content: flex-start;
+  }
+
+  .autorun-collapsible .autorun-state {
+    margin-left: auto;
+  }
+
+  .autorun-expand-icon {
+    display: block;
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    color: var(--muted);
+  }
+
+  .autorun-collapsible:not(.expanded) {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    border-radius: 9px;
+  }
+
+  .autorun-collapsible:not(.expanded) small,
+  .autorun-collapsible:not(.expanded) p {
+    display: none;
+  }
+
+  .chat-immersive .agent-sessions,
+  .chat-immersive .tty-session-actions {
+    display: none;
   }
 
   .settings-modal {

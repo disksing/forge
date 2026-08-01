@@ -1329,7 +1329,7 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 		`paused: { label: "Paused", icon: "pause" }`,
 		`completed: { label: "Completed", icon: "circle-check" }`,
 		`failed: { label: "Failed", icon: "circle-x" }`,
-		`class="autorun-status autorun-status-${presentation.key}" role="status"`,
+		`class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status"`,
 		`aria-label="AutoRun: ${escapeHTML(presentation.label)}"`,
 		`class="autorun-title-icon" aria-hidden="true"`,
 		`class="autorun-state autorun-state-${presentation.key}"`,
