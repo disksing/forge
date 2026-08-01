@@ -1058,6 +1058,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		return taskAgentsPromptZH(resource)
 	}
 	extra := ""
+	agentsLine := "Always read the parent project AGENTS.md (../AGENTS.md) and workspace root AGENTS.md (../../AGENTS.md) for project conventions and global Forge session, lock, and file-role rules."
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
@@ -1069,6 +1070,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		boundary = "Treat this directory as the current project boundary."
 		writeScope = "Only update files inside this project directory unless a task directory has been explicitly selected."
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
+		agentsLine = "Always read the workspace root AGENTS.md (../AGENTS.md) for global Forge session, lock, and file-role rules."
 	} else if _, ok := resource.(*Task); ok {
 		extra = `
 - This task belongs to a project. Read the parent project directory's project.json, project.md, and log.jsonl when you need broader context.
@@ -1110,7 +1112,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 
 You are working inside a %s.
 
-- Read the workspace root AGENTS.md file for global Forge session, lock, and file-role rules.
+- %s
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
@@ -1130,5 +1132,5 @@ You are working inside a %s.
 - Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
-`, title, scope, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
+`, title, scope, agentsLine, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
 }
