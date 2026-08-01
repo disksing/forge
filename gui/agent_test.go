@@ -116,62 +116,6 @@ func agentUploadRequest(t *testing.T, name, content string) *http.Request {
 	return request
 }
 
-func TestLegacyRunEventFileRemainsUntouchedAndIsNotExposed(t *testing.T) {
-	workspace := t.TempDir()
-	indexPath := agentIndexPath(workspace)
-	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	legacy := `[{
-	  "id":"legacy-run",
-	  "workspaceId":"workspace-one",
-	  "provider":"codex",
-	  "providerSessionId":"thread-1",
-	  "codexThreadId":"thread-1",
-	  "codexTurnId":"turn-1",
-	  "title":"Historical run",
-	  "cwd":"` + filepath.ToSlash(workspace) + `",
-	  "status":"idle",
-	  "model":"gpt-old",
-	  "sandbox":"workspace-write",
-	  "approval":"on-request",
-	  "createdAt":"2026-01-01T00:00:00Z",
-	  "updatedAt":"2026-01-01T00:00:00Z"
-	}]`
-	if err := os.WriteFile(indexPath, []byte(legacy), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	eventsPath := filepath.Join(workspace, ".forge", "gui-agent", "runs", "legacy-run.jsonl")
-	if err := os.MkdirAll(filepath.Dir(eventsPath), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	original := []byte(`{"id":1,"type":"old-event","text":"historical output"}` + "\n")
-	if err := os.WriteFile(eventsPath, original, 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	writeCurrentTestConfig(t, configPath, workspace)
-	manager := newAgentManager(&server{config: configPath})
-	list := httptest.NewRecorder()
-	manager.listRuns(list, httptest.NewRequest(http.MethodGet, "/runs", nil), "workspace-one")
-	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "legacy-run") {
-		t.Fatalf("legacy direct run must not be listed: %d %s", list.Code, list.Body.String())
-	}
-	detail := httptest.NewRecorder()
-	manager.getRun(detail, httptest.NewRequest(http.MethodGet, "/runs/legacy-run", nil), "workspace-one", "legacy-run")
-	if detail.Code != http.StatusNotFound {
-		t.Fatalf("legacy direct run detail must not be exposed: %d %s", detail.Code, detail.Body.String())
-	}
-	after, err := os.ReadFile(eventsPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(after, original) {
-		t.Fatalf("legacy event file changed:\n%s", after)
-	}
-}
-
 func TestUnboundRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 	workspace := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "gui.json")
@@ -179,7 +123,7 @@ func TestUnboundRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 	manager := newAgentManager(&server{config: configPath})
 	manager.registerRuntime(&agentRuntime{
 		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "legacy-run", WorkspaceID: "workspace-one", Status: "idle"},
+		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", Status: "idle"},
 	})
 	for _, endpoint := range []struct {
 		path string
@@ -193,7 +137,7 @@ func TestUnboundRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/"+endpoint.path, strings.NewReader(endpoint.body))
 		recorder := httptest.NewRecorder()
-		endpoint.call(recorder, request, "workspace-one", "legacy-run")
+		endpoint.call(recorder, request, "workspace-one", "run-one")
 		if recorder.Code != http.StatusBadRequest {
 			t.Fatalf("%s should reject unbound control, got %d: %s", endpoint.path, recorder.Code, recorder.Body.String())
 		}

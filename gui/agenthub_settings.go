@@ -18,7 +18,6 @@ type agentHubSettingsResponse struct {
 	Status             *agentHubStatus   `json:"status,omitempty"`
 	Catalog            agentHubCatalog   `json:"catalog"`
 	Error              string            `json:"error,omitempty"`
-	MigrationRequired  bool              `json:"migrationRequired,omitempty"`
 }
 
 type updateAgentHubSettingsRequest struct {
@@ -56,7 +55,7 @@ func (s *server) handleAgentHubSettings(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResponse, error) {
-	cfg, legacy, err := readAgentHubConfigFile(s.config)
+	cfg, err := readAgentHubConfigFile(s.config)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
@@ -72,7 +71,6 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 		Config:             cfg,
 		ConfiguredEndpoint: configured,
 		EffectiveEndpoint:  effective,
-		MigrationRequired:  legacy != nil,
 		Catalog:            agentHubCatalog{Providers: []agentHubProvider{}, Agents: []agentHubAgent{}, Probes: []agentHubProbe{}},
 	}
 	client, err := newAgentHubClient(effective, nil)
@@ -98,23 +96,11 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 		return response, nil
 	}
 	response.Catalog = catalog
-	if legacy != nil {
-		instanceID, err := newAgentHubInstanceID()
-		if err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-		preview, err := migrateLegacyConfig(*legacy, configured, instanceID, catalog)
-		if err != nil {
-			response.Error = err.Error()
-			return response, nil
-		}
-		response.Config = preview
-	}
 	return response, nil
 }
 
 func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHubSettingsRequest) (agentHubSettingsResponse, error) {
-	cfg, legacy, err := readAgentHubConfigFile(s.config)
+	cfg, err := readAgentHubConfigFile(s.config)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
@@ -144,21 +130,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, fmt.Errorf("validate AgentHub catalog: %w", err)
 	}
-	var original []byte
-	if legacy != nil {
-		original, err = os.ReadFile(s.config)
-		if err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-		instanceID, err := newAgentHubInstanceID()
-		if err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-		cfg, err = migrateLegacyConfig(*legacy, configured, instanceID, catalog)
-		if err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-	}
 	cfg.AgentHubEndpoint = configured
 	cfg.DefaultAgentHubAgentName = request.DefaultAgentName
 	cfg.AgentProfiles = request.AgentProfiles
@@ -171,11 +142,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		return agentHubSettingsResponse{}, err
 	}
 	data = append(data, '\n')
-	if legacy != nil {
-		if err := writeMigrationBackup(s.config+agentHubBackupSuffix, original); err != nil {
-			return agentHubSettingsResponse{}, err
-		}
-	}
 	if err := atomicWriteConfig(s.config, data); err != nil {
 		return agentHubSettingsResponse{}, err
 	}
@@ -190,46 +156,39 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	}, nil
 }
 
-func readAgentHubConfigFile(path string) (agentHubGUIConfig, *legacyGUIConfig, error) {
+func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return agentHubGUIConfig{
 				Version: agentHubConfigVersion, Workspaces: []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
-			}, nil, nil
+			}, nil
 		}
-		return agentHubGUIConfig{}, nil, err
+		return agentHubGUIConfig{}, err
 	}
 	var version struct {
 		Version int `json:"version"`
 	}
 	if err := json.Unmarshal(data, &version); err != nil {
-		return agentHubGUIConfig{}, nil, err
+		return agentHubGUIConfig{}, err
 	}
-	if version.Version >= agentHubConfigVersion {
-		var cfg agentHubGUIConfig
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return agentHubGUIConfig{}, nil, err
-		}
-		return cfg, nil, nil
+	if version.Version < agentHubConfigVersion {
+		return agentHubGUIConfig{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", version.Version)
 	}
-	var legacy legacyGUIConfig
-	if err := json.Unmarshal(data, &legacy); err != nil {
-		return agentHubGUIConfig{}, nil, err
+	var cfg agentHubGUIConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return agentHubGUIConfig{}, err
 	}
-	return agentHubGUIConfig{
-		Version: agentHubConfigVersion, ActiveID: legacy.ActiveID, Workspaces: legacy.Workspaces,
-		AgentHubEndpoint: defaultAgentHubEndpoint,
-	}, &legacy, nil
+	return cfg, nil
 }
 
 func (s *server) validatePersistedAgentHubConfig(ctx context.Context) (bool, error) {
-	cfg, legacy, err := readAgentHubConfigFile(s.config)
+	cfg, err := readAgentHubConfigFile(s.config)
 	if err != nil {
 		return false, err
 	}
-	if legacy != nil || cfg.AgentHubInstanceID == "" {
+	if cfg.AgentHubInstanceID == "" {
 		return false, nil
 	}
 	effective, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)

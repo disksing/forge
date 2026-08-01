@@ -128,7 +128,7 @@ type guiSession struct {
 	UpdatedAt            string              `json:"updatedAt"`
 	Source               string              `json:"source"`
 	AgentRunID           string              `json:"agentRunId,omitempty"`
-	AgentRunAgentID      string              `json:"agentRunAgentId,omitempty"`
+	AgentRunAgentName    string              `json:"agentRunAgentName,omitempty"`
 	AgentRunTitle        string              `json:"agentRunTitle,omitempty"`
 	AgentRunStatus       string              `json:"agentRunStatus,omitempty"`
 	AgentRunUpdatedAt    string              `json:"agentRunUpdatedAt,omitempty"`
@@ -219,7 +219,6 @@ func main() {
 	mux.HandleFunc("/api/workspaces/", s.handleWorkspace)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/", s.handleSettings)
-	mux.HandleFunc("/api/internal/", s.handleInternal)
 
 	log.Printf("forge gui listening on http://%s", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
@@ -241,16 +240,6 @@ func (s *server) internalEndpoint() string {
 		return "http://" + net.JoinHostPort(host, port)
 	}
 	return "http://" + strings.TrimRight(addr, "/")
-}
-
-func (s *server) handleInternal(w http.ResponseWriter, r *http.Request) {
-	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/internal"), "/")
-	switch path {
-	case "session-liveness":
-		s.agents.handleSessionLiveness(w, r)
-	default:
-		http.NotFound(w, r)
-	}
 }
 
 func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -463,10 +452,11 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		Slug                   string   `json:"slug"`
 		AutoRun                bool     `json:"autorun"`
 		PreferredAgentProfiles []string `json:"preferredAgentProfiles"`
-		AgentID                string   `json:"agentId"`
 		Prompt                 string   `json:"prompt"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
@@ -481,23 +471,16 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 	args := []string{"task", "create", "--project", body.Project}
 	if body.AutoRun {
 		args = append(args, "--autorun")
-		if len(body.PreferredAgentProfiles) > 0 && strings.TrimSpace(body.AgentID) != "" {
-			writeError(w, errors.New("preferredAgentProfiles and legacy agentId are mutually exclusive"), http.StatusBadRequest)
-			return
-		}
 		for _, profile := range body.PreferredAgentProfiles {
 			if strings.TrimSpace(profile) != "" {
 				args = append(args, "--agent-profile="+strings.TrimSpace(profile))
 			}
 		}
-		if strings.TrimSpace(body.AgentID) != "" {
-			args = append(args, "--agent="+strings.TrimSpace(body.AgentID))
-		}
 		if strings.TrimSpace(body.Prompt) != "" {
 			args = append(args, "--prompt="+strings.TrimSpace(body.Prompt))
 		}
-	} else if len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.AgentID) != "" || strings.TrimSpace(body.Prompt) != "" {
-		writeError(w, errors.New("preferredAgentProfiles, agentId, and prompt require autorun"), http.StatusBadRequest)
+	} else if len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "" {
+		writeError(w, errors.New("preferredAgentProfiles and prompt require autorun"), http.StatusBadRequest)
 		return
 	}
 	if strings.TrimSpace(body.Slug) != "" {
@@ -959,7 +942,7 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 		if run, ok := bySessionID[tree.Sessions[i].ID]; ok {
 			tree.Sessions[i].Source = "internal"
 			tree.Sessions[i].AgentRunID = run.ID
-			tree.Sessions[i].AgentRunAgentID = run.AgentID
+			tree.Sessions[i].AgentRunAgentName = run.AgentHubAgentName
 			tree.Sessions[i].AgentRunTitle = run.Title
 			tree.Sessions[i].AgentRunStatus = run.Status
 			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
@@ -1204,24 +1187,19 @@ func (s *server) loadConfig() (config, error) {
 	if cfg.Workspaces == nil {
 		cfg.Workspaces = []guiWorkspace{}
 	}
-	if cfg.Version >= agentHubConfigVersion {
-		cfg.AgentHubEndpoint, err = normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
-		if err != nil {
-			return config{}, err
-		}
-		return cfg, nil
+	if cfg.Version < agentHubConfigVersion {
+		return config{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", cfg.Version)
 	}
-	// Legacy configuration is decoded only far enough to keep workspace history
-	// visible. It must be migrated through the AgentHub settings endpoint before
-	// any configuration write is allowed.
-	cfg.AgentHubEndpoint = defaultAgentHubEndpoint
-	cfg.AgentProfiles = []agentProfileRoute{}
+	cfg.AgentHubEndpoint, err = normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
+	if err != nil {
+		return config{}, err
+	}
 	return cfg, nil
 }
 
 func (s *server) saveConfig(cfg config) error {
 	if cfg.Version < agentHubConfigVersion {
-		return errors.New("legacy GUI configuration is read-only; migrate it through AgentHub settings before making changes")
+		return fmt.Errorf("unsupported Forge GUI configuration version %d", cfg.Version)
 	}
 	routes := make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles))
 	for _, route := range cfg.AgentProfiles {

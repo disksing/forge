@@ -238,7 +238,7 @@ func taskAgentsPromptZH(resource Resource) string {
 		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Forge session、锁和文件职责规则。"
 		extra = `
 - 项目任务模板位于 templates/*.md。每个模板由 YAML front matter 和 Markdown 正文组成；正文会完整复制为新任务的 task.md。
-- 模板必须包含非空 title。还可设置 autorun（true 或 false）、agent-profiles、兼容字段 agent 和 prompt。Agent 设置与 prompt 仅在 autorun 为 true 时生效。不要添加其他 front matter 字段。
+- 模板必须包含非空 title。还可设置 autorun（true 或 false）、agent-profiles 和 prompt。Agent 设置与 prompt 仅在 autorun 为 true 时生效。不要添加其他 front matter 字段。
 - 模板格式：
 
   ` + "```markdown" + `
@@ -344,7 +344,7 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -355,7 +355,7 @@ forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
 forge session heartbeat --id=<id>
 forge session lock --id=<id> [--project=<project>] [--task=<task>]
@@ -374,7 +374,7 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 
 - ` + "`forge init`" + ` 在当前目录创建新 workspace；在已有 workspace 内执行会失败。使用 ` + "`--language`" + ` 选择 ` + "`en`" + ` 或 ` + "`zh-CN`" + `。
 - ` + "`forge migrate`" + ` 刷新 workspace 中由 Forge 管理的 ` + "`AGENTS.md`" + ` 提示词；使用 ` + "`--language`" + ` 可切换 workspace 语言。
-- ` + "`forge repo add`" + ` 默认创建普通 checkout；需要兼容旧式 bare 仓库时传入 ` + "`--bare`" + `。
+- ` + "`forge repo add`" + ` 默认创建普通 checkout；需要使用 bare repository layout 时传入 ` + "`--bare`" + `。
 - ` + "`forge project create`" + ` 创建新的开放项目目录。使用 ` + "`--slug <slug>`" + ` 可在不改变项目 ID 的情况下追加可读目录后缀。
 - ` + "`forge project list`" + ` 列出开放项目，传入 ` + "`--all`" + ` 时同时列出归档项目。它不会包含任务；项目任务使用 ` + "`forge task list [--project=<project>]`" + `。
 - ` + "`forge project show`" + ` 和 ` + "`forge project archive`" + ` 接受 ` + "`--project=<project>`" + `；project 可为 ` + "`project22`" + ` 形式的完整 ID 或 ` + "`22`" + ` 形式的数字。省略时使用当前目录所属项目。

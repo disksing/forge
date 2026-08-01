@@ -286,7 +286,7 @@ func TestAgentHubStopConfirmsDurableStopped(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","prompt":"work"}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","prompt":"work"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}
@@ -323,7 +323,7 @@ func TestAgentHubStopFailsClosedOnConfirmTimeout(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","prompt":"work"}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","prompt":"work"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}

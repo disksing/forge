@@ -359,7 +359,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected one task template, got: %+v", projectDetail.Templates)
 		}
 		template := projectDetail.Templates[0]
-		if template.Name != "daily" || template.Title != "Daily inspection" || !template.AutoRun || strings.Join(template.PreferredAgentProfiles, ",") != "kimi,codex" || template.AgentID != "" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
+		if template.Name != "daily" || template.Title != "Daily inspection" || !template.AutoRun || strings.Join(template.PreferredAgentProfiles, ",") != "kimi,codex" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
 			t.Fatalf("unexpected parsed task template: %+v", template)
 		}
 
@@ -604,7 +604,7 @@ func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 	})
 }
 
-func TestAutoRunPreferredAgentProfilesAndLegacyCompatibility(t *testing.T) {
+func TestAutoRunPreferredAgentProfiles(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
@@ -613,7 +613,7 @@ func TestAutoRunPreferredAgentProfilesAndLegacyCompatibility(t *testing.T) {
 		if err := json.Unmarshal([]byte(created), &task); err != nil {
 			t.Fatal(err)
 		}
-		if task.AutoRun == nil || strings.Join(task.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || task.AutoRun.AgentID != "" {
+		if task.AutoRun == nil || strings.Join(task.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" {
 			t.Fatalf("unexpected preferred Agent Profiles: %+v", task.AutoRun)
 		}
 		runnable := run(t, "task", "list", "--project=project1", "--runnable", "--json")
@@ -627,12 +627,8 @@ func TestAutoRunPreferredAgentProfilesAndLegacyCompatibility(t *testing.T) {
 			t.Fatalf("requeue did not inherit Agent Profiles:\n%s", requeued)
 		}
 
-		legacy := run(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "Legacy task")
-		if !strings.Contains(legacy, `"agentId": "local-agent"`) || strings.Contains(legacy, `"preferredAgentProfiles"`) {
-			t.Fatalf("legacy exact Agent ID compatibility changed:\n%s", legacy)
-		}
-		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "--agent-profile=kimi", "Invalid"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
-			t.Fatalf("expected mixed legacy and Profile selection to fail, got %v", err)
+		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "Removed legacy task"); err == nil {
+			t.Fatal("expected removed --agent task option to be rejected")
 		}
 		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent-profile=not valid", "Invalid"); err == nil || !strings.Contains(err.Error(), "invalid agent profile") {
 			t.Fatalf("expected invalid Profile to fail, got %v", err)
@@ -1051,35 +1047,6 @@ func TestSessionNewSupportsPIDLiveness(t *testing.T) {
 	})
 }
 
-func TestSessionNewSupportsForgeGUIRunLiveness(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != "/api/internal/session-liveness" {
-				t.Fatalf("unexpected liveness path: %s", r.URL.Path)
-			}
-			if r.URL.Query().Get("workspaceId") != "workspace-one" || r.URL.Query().Get("runId") != "run-one" || !strings.HasPrefix(r.URL.Query().Get("forgeSessionId"), "session-") {
-				t.Fatalf("unexpected liveness query: %s", r.URL.RawQuery)
-			}
-			_, _ = w.Write([]byte(`{"active":true}`))
-		}))
-		defer server.Close()
-
-		id := strings.TrimSpace(run(t, "session", "new", "--gui-run", "--workspace-id", "workspace-one", "--run-id", "run-one", "--endpoint", server.URL))
-		run(t, "session", "lock", "--id", id, "--project", "project1")
-
-		listed := run(t, "session", "list")
-		if !strings.Contains(listed, id+"\tforge-gui-run:run-one") || !strings.Contains(listed, "project1:project1") {
-			t.Fatalf("expected forge gui run liveness session in list, got:\n%s", listed)
-		}
-		shown := run(t, "session", "show", "--id", id)
-		if !strings.Contains(shown, `"type": "forge-gui-run"`) || !strings.Contains(shown, `"workspaceId": "workspace-one"`) || !strings.Contains(shown, `"runId": "run-one"`) || !strings.Contains(shown, `"endpoint": "`+server.URL+`"`) {
-			t.Fatalf("expected forge gui liveness in show JSON, got:\n%s", shown)
-		}
-	})
-}
-
 func TestAgentHubSessionLivenessReleasesOnlyAfterDurableStopped(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -1225,71 +1192,6 @@ func TestArchivedAgentHubSessionRequiresContinuousStoppedHistory(t *testing.T) {
 		gapped = false
 		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
 			t.Fatalf("continuous stopped history did not release archived lock: %s", listed)
-		}
-	})
-}
-
-func TestSessionListPrunesInactiveForgeGUIRunSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"active":false}`))
-		}))
-		defer server.Close()
-		store := SessionStore{
-			Version: 1,
-			Sessions: []Session{{
-				ID:        "gui-run",
-				Liveness:  SessionLiveness{Type: "forge-gui-run", WorkspaceID: "workspace-one", RunID: "run-one", Endpoint: server.URL},
-				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
-				StartedAt: "2026-01-01T00:00:00Z",
-				UpdatedAt: time.Now().Format(time.RFC3339),
-			}},
-		}
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-
-		listed := run(t, "session", "list")
-		if strings.Contains(listed, "gui-run") {
-			t.Fatalf("expected inactive forge gui run session to be pruned, got:\n%s", listed)
-		}
-	})
-}
-
-func TestSessionEndRemovesInactiveForgeGUIRunSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = w.Write([]byte(`{"active":false}`))
-		}))
-		defer server.Close()
-		store := SessionStore{
-			Version: 1,
-			Sessions: []Session{{
-				ID:        "gui-run",
-				Liveness:  SessionLiveness{Type: "forge-gui-run", WorkspaceID: "workspace-one", RunID: "run-one", Endpoint: server.URL},
-				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
-				StartedAt: "2026-01-01T00:00:00Z",
-				UpdatedAt: time.Now().Format(time.RFC3339),
-			}},
-		}
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-
-		ended := run(t, "session", "end", "--id", "gui-run")
-		if !strings.Contains(ended, `"id": "gui-run"`) {
-			t.Fatalf("expected inactive gui session to be ended, got:\n%s", ended)
-		}
-		store, err := readSessionStore(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if findSessionIndex(store.Sessions, "gui-run") >= 0 {
-			t.Fatalf("expected inactive gui session to be removed, got: %#v", store.Sessions)
 		}
 	})
 }
@@ -1686,26 +1588,6 @@ func TestStartUsesConfiguredDefaultAgentCommand(t *testing.T) {
 	})
 }
 
-func TestStartUsesConfiguredDefaultAgentCommandWithArgs(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Default launch with args")
-		output := filepath.Join(root, "default-args.out")
-		t.Setenv("FORGE_START_HELPER", "1")
-		t.Setenv("FORGE_START_OUTPUT", output)
-		command := os.Args[0] + ` -test.run=^TestForgeStartHelper$ -- "configured arg" second`
-		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":`+strconv.Quote(command)+`}`+"\n")
-
-		runStart(t, "--project", "project1")
-
-		got := readFile(t, output)
-		want := realPath(t, filepath.Join(root, "project1")) + "\nconfigured arg\nsecond\n"
-		if got != want {
-			t.Fatalf("expected configured default command with args, got:\n%s", got)
-		}
-	})
-}
-
 func TestStartExplicitCommandOverridesConfiguredDefault(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -1993,7 +1875,7 @@ func TestProjectArchiveEndsSessionWhosePrimaryResourceIsArchived(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveEndsAmbiguousLegacyMultiControlSession(t *testing.T) {
+func TestTaskArchiveEndsAmbiguousSessionWithoutPrimary(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Archive target")
@@ -2022,37 +1904,7 @@ func TestTaskArchiveEndsAmbiguousLegacyMultiControlSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		if findSessionIndex(store.Sessions, id) >= 0 {
-			t.Fatalf("expected archive to end an ambiguous legacy session, got: %#v", store.Sessions)
-		}
-	})
-}
-
-func TestSessionStoreInfersPrimaryForLegacySingleControlSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		legacy := SessionStore{
-			Version: 1,
-			Sessions: []Session{{
-				ID:        "legacy",
-				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "10m"},
-				Controls:  []SessionControl{{ResourceID: "project1", Path: "project1"}},
-				StartedAt: time.Now().Format(time.RFC3339),
-				UpdatedAt: time.Now().Format(time.RFC3339),
-			}},
-		}
-		if err := writeJSON(filepath.Join(root, sessionStateFile), legacy); err != nil {
-			t.Fatal(err)
-		}
-
-		store, err := readSessionStore(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(store.Sessions) != 1 || store.Sessions[0].Primary == nil {
-			t.Fatalf("expected legacy single control to become primary, got: %#v", store.Sessions)
-		}
-		if got := store.Sessions[0].Primary.ResourceID; got != "project1" {
-			t.Fatalf("expected project1 primary, got %q", got)
+			t.Fatalf("expected archive to end an ambiguous session, got: %#v", store.Sessions)
 		}
 	})
 }
@@ -2707,7 +2559,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 			t.Fatal(err)
 		}
 		run(t, "migrate")
-		assertMissing(t, legacyProjectWork)
+		assertFile(t, legacyProjectWork)
 		assertFile(t, filepath.Join(root, "project1", "task1", "work.md"))
 
 		if pathExists(filepath.Join(root, "project1", "task1", configFile)) {

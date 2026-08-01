@@ -152,8 +152,7 @@ func (m *agentManager) proxyAgentHubStream(w http.ResponseWriter, r *http.Reques
 	flusher.Flush()
 
 	// Subscribe to Forge notices for this run so they interleave into the
-	// proxied stream; event messages published by the legacy runtime pipeline
-	// are drained and discarded because events now flow from AgentHub.
+	// proxied stream; canonical event history always flows from AgentHub.
 	messages := make(chan agentStreamMessage, agentHubEventMaxCount)
 	m.subscribe(run.ID, messages)
 	defer m.unsubscribe(run.ID, messages)

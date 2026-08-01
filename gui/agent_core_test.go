@@ -40,7 +40,7 @@ func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
 	}
 }
 
-func TestLoadAgentRunsRepairsTrailingGarbageAndDropsLegacyFields(t *testing.T) {
+func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {
 	workspace := t.TempDir()
 	indexPath := agentIndexPath(workspace)
 	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
@@ -51,17 +51,12 @@ func TestLoadAgentRunsRepairsTrailingGarbageAndDropsLegacyFields(t *testing.T) {
 	if err := os.WriteFile(indexPath, []byte(corrupt), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	runs, err := loadAgentRuns(workspace)
-	if err != nil || len(runs) != 1 || runs[0].ID != "run-one" {
-		t.Fatalf("unexpected repaired runs: runs=%#v err=%v", runs, err)
+	if _, err := loadAgentRuns(workspace); err == nil {
+		t.Fatal("expected malformed run index to be rejected")
 	}
-	repaired := mustReadFile(t, indexPath)
-	if strings.Contains(string(repaired), `"provider"`) {
-		t.Fatalf("repair rewrote a legacy field:\n%s", repaired)
-	}
-	var decoded []agentRun
-	if err := json.Unmarshal(repaired, &decoded); err != nil {
-		t.Fatalf("repaired index is invalid JSON: %v", err)
+	unchanged := mustReadFile(t, indexPath)
+	if !strings.Contains(string(unchanged), "trailing") {
+		t.Fatalf("malformed run index was rewritten: %s", unchanged)
 	}
 }
 
@@ -69,7 +64,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 	workspace := t.TempDir()
 	run := agentRun{
 		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
-		AgentID: "review-agent", ForgeSessionID: "session-one", AgentHubSessionID: "ses_one",
+		AgentHubAgentName: "review-agent", ForgeSessionID: "session-one", AgentHubSessionID: "ses_one",
 		Title: "Run One", Cwd: workspace, Status: "running",
 		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
 		LastOutputAt: "2026-01-01T00:00:02Z", SchedulerTurn: true, AutoRunGeneration: 4,
@@ -85,7 +80,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	internal := tree.Sessions[0]
-	if internal.Source != "internal" || internal.AgentRunID != run.ID || internal.AgentRunAgentID != run.AgentID ||
+	if internal.Source != "internal" || internal.AgentRunID != run.ID || internal.AgentRunAgentName != run.AgentHubAgentName ||
 		internal.AgentRunStatus != run.Status || internal.AgentRunLastOutputAt != run.LastOutputAt ||
 		!internal.SchedulerTurn || internal.AutoRunGeneration != 4 {
 		t.Fatalf("internal session was not enriched: %#v", internal)
@@ -192,32 +187,6 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 	want, _ := filepath.Abs(resourceDir)
 	if got != want {
 		t.Fatalf("expected resource cwd %s, got %s", want, got)
-	}
-}
-
-func TestHandleSessionLivenessUsesAgentHubRuntimeWithoutLegacyFields(t *testing.T) {
-	workspace := t.TempDir()
-	manager := coreTestManager(t, workspace)
-	manager.registerRuntime(&agentRuntime{
-		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run: agentRun{
-			ID: "run-one", WorkspaceID: "workspace-one", ForgeSessionID: "session-one",
-			AgentHubSessionID: "ses_one", Status: "idle",
-		},
-	})
-	request := httptest.NewRequest(http.MethodGet,
-		"/api/internal/session-liveness?workspaceId=workspace-one&runId=run-one&forgeSessionId=session-one", nil)
-	recorder := httptest.NewRecorder()
-	manager.handleSessionLiveness(recorder, request)
-	var response map[string]any
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.Code != http.StatusOK || response["active"] != true || response["status"] != "idle" {
-		t.Fatalf("unexpected liveness response: %d %#v", recorder.Code, response)
-	}
-	if len(response) != 2 {
-		t.Fatalf("liveness response leaked legacy fields: %#v", response)
 	}
 }
 

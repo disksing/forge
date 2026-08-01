@@ -22,7 +22,7 @@ const (
 	sessionLockFile        = ".forge-sessions.lock"
 	defaultSessionTimeout  = 5 * time.Minute
 	defaultStartingGrace   = 30 * time.Second
-	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] [--starting-grace <duration>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]"
+	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] [--starting-grace <duration>] ]"
 	sessionBindUsage       = "usage: forge session bind-agenthub --id=<id> --agenthub-session-id=<id>"
 	sessionHeartbeatUsage  = "usage: forge session heartbeat --id=<id>"
 	sessionLockUsage       = "usage: forge session lock --id=<id> [--project=<project>] [--task=<task>]"
@@ -40,7 +40,6 @@ type SessionStore struct {
 type Session struct {
 	ID        string           `json:"id"`
 	Liveness  SessionLiveness  `json:"liveness"`
-	Timeout   string           `json:"timeout,omitempty"`
 	Primary   *SessionControl  `json:"primary,omitempty"`
 	Controls  []SessionControl `json:"controls"`
 	StartedAt string           `json:"startedAt"`
@@ -51,8 +50,6 @@ type SessionLiveness struct {
 	Type               string `json:"type"`
 	PID                int    `json:"pid,omitempty"`
 	Timeout            string `json:"timeout,omitempty"`
-	WorkspaceID        string `json:"workspaceId,omitempty"`
-	RunID              string `json:"runId,omitempty"`
 	Endpoint           string `json:"endpoint,omitempty"`
 	SourceApp          string `json:"sourceApp,omitempty"`
 	SourceInstanceID   string `json:"sourceInstanceId,omitempty"`
@@ -391,7 +388,6 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 	liveness := SessionLiveness{Type: "heartbeat", Timeout: defaultSessionTimeout.String()}
 	heartbeatSet := false
 	pidSet := false
-	guiRunSet := false
 	agentHubSet := false
 	agentHubFlagSeen := false
 	for _, arg := range args {
@@ -407,13 +403,13 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 		arg := args[i]
 		switch {
 		case arg == "--heartbeat":
-			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			heartbeatSet = true
 			liveness = SessionLiveness{Type: "heartbeat", Timeout: liveness.Timeout}
 		case strings.HasPrefix(arg, "--pid="):
-			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			pid, err := parseSessionPID(strings.TrimPrefix(arg, "--pid="))
@@ -423,7 +419,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
 		case arg == "--pid":
-			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
+			if heartbeatSet || pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -436,73 +432,23 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			}
 			pidSet = true
 			liveness = SessionLiveness{Type: "pid", PID: pid}
-		case arg == "--gui-run":
-			if heartbeatSet || pidSet || guiRunSet || agentHubSet {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			guiRunSet = true
-			liveness = SessionLiveness{Type: "forge-gui-run"}
 		case arg == "--agenthub":
-			if heartbeatSet || pidSet || guiRunSet || agentHubFlagSeen {
+			if heartbeatSet || pidSet || agentHubFlagSeen {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			agentHubFlagSeen = true
-		case strings.HasPrefix(arg, "--workspace-id="):
-			if heartbeatSet || pidSet || agentHubSet {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
-			liveness.WorkspaceID = strings.TrimSpace(strings.TrimPrefix(arg, "--workspace-id="))
-		case arg == "--workspace-id":
-			if heartbeatSet || pidSet || agentHubSet {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			value, ok := nextFlagValue(args, &i)
-			if !ok {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
-			liveness.WorkspaceID = strings.TrimSpace(value)
-		case strings.HasPrefix(arg, "--run-id="):
-			if heartbeatSet || pidSet || agentHubSet {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
-			liveness.RunID = strings.TrimSpace(strings.TrimPrefix(arg, "--run-id="))
-		case arg == "--run-id":
-			if heartbeatSet || pidSet || agentHubSet {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			value, ok := nextFlagValue(args, &i)
-			if !ok {
-				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			guiRunSet = true
-			liveness.Type = "forge-gui-run"
-			liveness.RunID = strings.TrimSpace(value)
 		case strings.HasPrefix(arg, "--endpoint="):
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || !agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			if !agentHubSet {
-				guiRunSet = true
-				liveness.Type = "forge-gui-run"
 			}
 			liveness.Endpoint = strings.TrimSpace(strings.TrimPrefix(arg, "--endpoint="))
 		case arg == "--endpoint":
-			if heartbeatSet || pidSet {
+			if heartbeatSet || pidSet || !agentHubSet {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
 			}
 			value, ok := nextFlagValue(args, &i)
 			if !ok {
 				return SessionLiveness{}, errors.New(sessionNewUsage)
-			}
-			if !agentHubSet {
-				guiRunSet = true
-				liveness.Type = "forge-gui-run"
 			}
 			liveness.Endpoint = strings.TrimSpace(value)
 		case strings.HasPrefix(arg, "--source-instance-id="):
@@ -571,7 +517,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			}
 			liveness.StartingGrace = parsed.String()
 		case strings.HasPrefix(arg, "--timeout="):
-			if pidSet || guiRunSet || agentHubSet {
+			if pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--timeout="))
@@ -582,7 +528,7 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			liveness.Type = "heartbeat"
 			liveness.Timeout = parsed.String()
 		case arg == "--timeout":
-			if pidSet || guiRunSet || agentHubSet {
+			if pidSet || agentHubSet {
 				return SessionLiveness{}, errors.New("--timeout is only valid with heartbeat liveness")
 			}
 			value, ok := nextFlagValue(args, &i)
@@ -599,23 +545,10 @@ func parseSessionNewArgs(args []string) (SessionLiveness, error) {
 			return SessionLiveness{}, errors.New(sessionNewUsage)
 		}
 	}
-	if guiRunSet {
-		liveness.Type = "forge-gui-run"
-		liveness.PID = 0
-		liveness.Timeout = ""
-		if liveness.WorkspaceID == "" || liveness.RunID == "" || liveness.Endpoint == "" {
-			return SessionLiveness{}, errors.New(sessionNewUsage)
-		}
-		if _, err := url.ParseRequestURI(liveness.Endpoint); err != nil {
-			return SessionLiveness{}, fmt.Errorf("invalid endpoint %q: %w", liveness.Endpoint, err)
-		}
-	}
 	if agentHubSet {
 		liveness.Type = "agenthub"
 		liveness.PID = 0
 		liveness.Timeout = ""
-		liveness.WorkspaceID = ""
-		liveness.RunID = ""
 		if liveness.Endpoint == "" || liveness.SourceInstanceID == "" || liveness.SourceExternalID == "" {
 			return SessionLiveness{}, errors.New(sessionNewUsage)
 		}
@@ -945,9 +878,10 @@ func sessionPrimaryControlsPath(session Session, targetRel string) bool {
 	if session.Primary != nil {
 		return sessionPathWithin(session.Primary.Path, targetRel)
 	}
-	// Sessions written before primary controls were recorded are ambiguous.
-	// Preserve the historical fail-safe behavior instead of allowing an agent
-	// whose working resource may have been archived to continue without a lock.
+	// A session can have no primary after its primary control is explicitly
+	// unlocked. Treat that state as ambiguous and keep the fail-safe behavior
+	// instead of allowing an agent whose working resource may have been archived
+	// to continue without a lock.
 	return sessionControlsPath(session, targetRel)
 }
 
@@ -1004,8 +938,6 @@ func sessionActiveWithProjection(session *Session) bool {
 			return false
 		}
 		return time.Since(updatedAt) <= timeout
-	case "forge-gui-run":
-		return sessionForgeGUIRunActive(session.ID, session.Liveness)
 	case "agenthub":
 		return sessionAgentHubActive(session)
 	default:
@@ -1223,38 +1155,6 @@ func sessionAgentHubGetJSON(client *http.Client, endpoint string, output any) er
 	return nil
 }
 
-func sessionForgeGUIRunActive(sessionID string, liveness SessionLiveness) bool {
-	if strings.TrimSpace(sessionID) == "" || strings.TrimSpace(liveness.WorkspaceID) == "" || strings.TrimSpace(liveness.RunID) == "" || strings.TrimSpace(liveness.Endpoint) == "" {
-		return false
-	}
-	endpoint, err := url.Parse(strings.TrimRight(liveness.Endpoint, "/") + "/api/internal/session-liveness")
-	if err != nil {
-		return false
-	}
-	query := endpoint.Query()
-	query.Set("workspaceId", liveness.WorkspaceID)
-	query.Set("runId", liveness.RunID)
-	query.Set("forgeSessionId", sessionID)
-	endpoint.RawQuery = query.Encode()
-
-	client := &http.Client{Timeout: time.Second}
-	resp, err := client.Get(endpoint.String())
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return false
-	}
-	var result struct {
-		Active bool `json:"active"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return false
-	}
-	return result.Active
-}
-
 func sessionPIDActive(pid int) bool {
 	if pid <= 0 {
 		return false
@@ -1301,28 +1201,18 @@ func readSessionStore(root string) (SessionStore, error) {
 		}
 		return SessionStore{}, err
 	}
-	if store.Version == 0 {
-		store.Version = 1
+	if store.Version != 1 {
+		return SessionStore{}, fmt.Errorf("unsupported session store version %d; expected 1", store.Version)
 	}
 	if store.Sessions == nil {
 		store.Sessions = []Session{}
-	}
-	for i := range store.Sessions {
-		if store.Sessions[i].Liveness.Type == "" && store.Sessions[i].Timeout != "" {
-			store.Sessions[i].Liveness = SessionLiveness{Type: "heartbeat", Timeout: store.Sessions[i].Timeout}
-			store.Sessions[i].Timeout = ""
-		}
-		if store.Sessions[i].Primary == nil && len(store.Sessions[i].Controls) == 1 {
-			primary := store.Sessions[i].Controls[0]
-			store.Sessions[i].Primary = &primary
-		}
 	}
 	return store, nil
 }
 
 func writeSessionStore(root string, store SessionStore) error {
-	if store.Version == 0 {
-		store.Version = 1
+	if store.Version != 1 {
+		return fmt.Errorf("unsupported session store version %d; expected 1", store.Version)
 	}
 	if store.Sessions == nil {
 		store.Sessions = []Session{}
@@ -1399,8 +1289,6 @@ func formatSessionLiveness(liveness SessionLiveness) string {
 		return fmt.Sprintf("pid:%d", liveness.PID)
 	case "heartbeat":
 		return fmt.Sprintf("heartbeat:%s", liveness.Timeout)
-	case "forge-gui-run":
-		return fmt.Sprintf("forge-gui-run:%s", liveness.RunID)
 	case "agenthub":
 		if liveness.AgentHubSessionID != "" {
 			return fmt.Sprintf("agenthub:%s:%s", liveness.AgentHubSessionID, liveness.LastKnownState)

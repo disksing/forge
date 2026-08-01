@@ -243,7 +243,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, agentID, prompt string, afterValues []string) error {
+func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string, afterValues []string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -298,9 +298,9 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 		if len(after) > 0 {
 			state = autoRunStateWaiting
 		}
-		task.AutoRun = &AutoRun{PreferredAgentProfiles: preferredAgentProfiles, AgentID: strings.TrimSpace(agentID), Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
-	} else if len(afterValues) > 0 || len(preferredAgentProfiles) > 0 || strings.TrimSpace(agentID) != "" || strings.TrimSpace(prompt) != "" {
-		return errors.New("--agent-profile, --agent, --prompt, and --after require --autorun")
+		task.AutoRun = &AutoRun{PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
+	} else if len(afterValues) > 0 || len(preferredAgentProfiles) > 0 || strings.TrimSpace(prompt) != "" {
+		return errors.New("--agent-profile, --prompt, and --after require --autorun")
 	}
 	markdown := taskMarkdown(title, detail, language)
 	if completeMarkdownSet {
@@ -369,7 +369,6 @@ func projectTaskList(options taskListOptions) error {
 			item.State = entry.Task.AutoRun.State
 			item.Prompt = entry.Task.AutoRun.Prompt
 			item.PreferredAgentProfiles = append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...)
-			item.AgentID = entry.Task.AutoRun.AgentID
 			item.After = entry.Task.AutoRun.After
 		}
 		result = append(result, item)
@@ -504,9 +503,6 @@ func readResourceAtDir(dir string) (Resource, error) {
 		return nil, err
 	}
 	meta := resource.resourceMeta()
-	if meta.SchemaVersion == 0 {
-		return nil, fmt.Errorf("resource metadata needs migration: %s; run forge migrate", path)
-	}
 	if meta.Type != expectedType {
 		return nil, fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, meta.Type)
 	}
@@ -1092,7 +1088,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
 - Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied as a new task's complete task.md file.
-- A template must have a non-empty title. It may also set autorun (true or false), agent-profiles, legacy agent, and prompt. Agent settings and prompt apply only when autorun is true. Do not add other front matter fields.
+- A template must have a non-empty title. It may also set autorun (true or false), agent-profiles, and prompt. Agent settings and prompt apply only when autorun is true. Do not add other front matter fields.
 - Template format:
 
   ` + "```markdown" + `

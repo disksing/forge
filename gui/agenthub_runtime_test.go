@@ -376,7 +376,7 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Lost response","agentId":"fake-agent"}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Lost response","agentName":"fake-agent"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -390,8 +390,8 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 		session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
 		t.Fatalf("source or launch environment missing: %#v", session)
 	}
-	legacyEventPath := filepath.Join(workspace.Path, ".forge", "gui-agent", "runs", detail.Run.ID+".jsonl")
-	if _, err := os.Stat(legacyEventPath); !os.IsNotExist(err) {
+	localEventPath := filepath.Join(workspace.Path, ".forge", "gui-agent", "runs", detail.Run.ID+".jsonl")
+	if _, err := os.Stat(localEventPath); !os.IsNotExist(err) {
 		t.Fatalf("AgentHub run must not create a local event fact log: %v", err)
 	}
 }
@@ -402,7 +402,7 @@ func TestAgentHubRuntimeDuplicateSourceKeepsRunRecovering(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"title":"Conflict","agentId":"fake-agent"}`)
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"title":"Conflict","agentName":"fake-agent"}`)
 	if recorder.Code != http.StatusBadGateway || !strings.Contains(recorder.Body.String(), "multiple AgentHub sessions") {
 		t.Fatalf("expected duplicate source failure, got %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -474,7 +474,7 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Controls","agentId":"fake-agent"}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Controls","agentName":"fake-agent"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}
@@ -630,7 +630,7 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
+	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", rec.Body.String())
 	}
@@ -679,7 +679,7 @@ func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "running")
-	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", rec.Body.String())
 	}
@@ -712,7 +712,7 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			defer hub.Close()
 			manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 			t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "waiting")
-			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("start failed: %s", rec.Body.String())
 			}
@@ -796,8 +796,8 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 	}
 	run := agentRun{
 		ID: "run-crashed", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
-		AgentID: "fake-agent", AgentHubAgentName: "fake-agent",
-		SourceExternalID: workspace.ID + "/run-crashed", ForgeSessionID: "session-test",
+		AgentHubAgentName: "fake-agent",
+		SourceExternalID:  workspace.ID + "/run-crashed", ForgeSessionID: "session-test",
 		Title: "Recovered AutoRun", Cwd: workspace.Path, Status: "starting",
 		SchedulerTurn: true, AutoRunGeneration: 4, PendingInitialMessage: "recover after SIGKILL",
 		CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
@@ -1003,12 +1003,12 @@ func TestAgentHubStoppedResumeFailureCleansUpForgeSession(t *testing.T) {
 	}
 }
 
-func TestAgentHubLiveResumeKeepsLegacyBehavior(t *testing.T) {
+func TestAgentHubLiveResumeDoesNotOverlayLaunchEnvironment(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Live resume","agentId":"fake-agent"}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Live resume","agentName":"fake-agent"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", recorder.Body.String())
 	}

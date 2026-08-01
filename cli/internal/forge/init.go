@@ -65,14 +65,6 @@ func runWorkspaceMigrate(args []string) error {
 	if err != nil {
 		return fmt.Errorf("usage: forge migrate [--language=<language>]: %w", err)
 	}
-	updatedResources, err := migrateResourceSchemas(root)
-	if err != nil {
-		return err
-	}
-	removedProjectWorkFiles, err := removeProjectWorkFiles(root)
-	if err != nil {
-		return err
-	}
 	if err := ensureWorkspaceWiki(root, language); err != nil {
 		return err
 	}
@@ -87,7 +79,7 @@ func runWorkspaceMigrate(args []string) error {
 	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
 		return err
 	}
-	fmt.Printf("migrated AgentWorkspace at %s (%d resource metadata files updated, %d project work.md files removed)\n", root, updatedResources, removedProjectWorkFiles)
+	fmt.Printf("migrated AgentWorkspace at %s\n", root)
 	return nil
 }
 
@@ -125,35 +117,6 @@ func ensureWorkspaceWiki(root, language string) error {
 		return err
 	}
 	return file.Close()
-}
-
-func removeProjectWorkFiles(root string) (int, error) {
-	removed := 0
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if entry.IsDir() && path != root {
-			switch entry.Name() {
-			case ".git", ".forge", reposDir, "worktree", "artifacts":
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if entry.IsDir() || entry.Name() != projectJSONFile {
-			return nil
-		}
-		workPath := filepath.Join(filepath.Dir(path), "work.md")
-		if err := os.Remove(workPath); err != nil {
-			if os.IsNotExist(err) {
-				return nil
-			}
-			return err
-		}
-		removed++
-		return nil
-	})
-	return removed, err
 }
 
 func updateAgentsMD(path, language string) error {
@@ -285,7 +248,7 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--agent=<legacy-agent-id>] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
 forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -296,7 +259,7 @@ forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 forge task autorun queue|start|wait|pause|resume|complete|fail ...
 
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] | --gui-run --workspace-id <id> --run-id <id> --endpoint <url>]
+forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
 forge session heartbeat --id=<id>
 forge session lock --id=<id> [--project=<project>] [--task=<task>]
@@ -315,7 +278,7 @@ Notes:
 
 - ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace. Use ` + "`--language`" + ` to select ` + "`en`" + ` or ` + "`zh-CN`" + `.
 - ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace. Use ` + "`--language`" + ` to switch the workspace language.
-- ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for legacy bare repositories.
+- ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for a bare repository layout.
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
 - ` + "`forge project show`" + ` and ` + "`forge project archive`" + ` accept ` + "`--project=<project>`" + ` where project is a full id like ` + "`project22`" + ` or just a number like ` + "`22`" + `. When omitted, Forge uses the current directory's project.

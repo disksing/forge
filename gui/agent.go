@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -25,7 +24,6 @@ type agentRun struct {
 	ID                      string `json:"id"`
 	WorkspaceID             string `json:"workspaceId"`
 	ResourceID              string `json:"resourceId,omitempty"`
-	AgentID                 string `json:"agentId,omitempty"`
 	AgentProfile            string `json:"agentProfile,omitempty"`
 	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
@@ -82,7 +80,7 @@ type agentUploadResponse struct {
 var agentIndexMu sync.Mutex
 
 type startAgentRequest struct {
-	AgentID              string `json:"agentId"`
+	AgentName            string `json:"agentName"`
 	AgentProfile         string `json:"agentProfile,omitempty"`
 	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
 	ResourceID           string `json:"resourceId"`
@@ -638,33 +636,6 @@ func (m *agentManager) removeRuntime(runID string) {
 	delete(m.runtimes, runID)
 }
 
-func (m *agentManager) handleSessionLiveness(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	workspaceID := strings.TrimSpace(r.URL.Query().Get("workspaceId"))
-	runID := strings.TrimSpace(r.URL.Query().Get("runId"))
-	sessionID := strings.TrimSpace(r.URL.Query().Get("forgeSessionId"))
-	if workspaceID == "" || runID == "" || sessionID == "" {
-		writeError(w, errors.New("workspaceId, runId, and forgeSessionId are required"), http.StatusBadRequest)
-		return
-	}
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil || rt == nil {
-		writeJSON(w, map[string]any{"active": false, "status": "stopped"})
-		return
-	}
-	rt.mu.Lock()
-	run := rt.run
-	rt.mu.Unlock()
-	active := strings.TrimSpace(run.ForgeSessionID) == sessionID && isLiveAgentStatus(run.Status)
-	writeJSON(w, map[string]any{
-		"active": active,
-		"status": run.Status,
-	})
-}
-
 func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil {
@@ -997,40 +968,33 @@ func agentStreamAfterID(r *http.Request) int64 {
 func loadAgentRuns(workspacePath string) ([]agentRun, error) {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	runs, repaired, err := loadAgentRunsLocked(workspacePath)
+	runs, err := loadAgentRunsLocked(workspacePath)
 	if err != nil {
 		return nil, err
-	}
-	if repaired {
-		_ = writeAgentRunsIndexLocked(workspacePath, runs)
 	}
 	sortAgentRunsNewestFirst(runs)
 	return runs, nil
 }
 
-func loadAgentRunsLocked(workspacePath string) ([]agentRun, bool, error) {
+func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
 	data, err := os.ReadFile(agentIndexPath(workspacePath))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []agentRun{}, false, nil
+			return []agentRun{}, nil
 		}
-		return nil, false, err
+		return nil, err
 	}
 	var runs []agentRun
 	if err := json.Unmarshal(data, &runs); err != nil {
-		decoder := json.NewDecoder(bytes.NewReader(data))
-		if decodeErr := decoder.Decode(&runs); decodeErr == nil {
-			return runs, true, nil
-		}
-		return nil, false, err
+		return nil, err
 	}
-	return runs, false, nil
+	return runs, nil
 }
 
 func saveAgentRun(workspacePath string, run agentRun) error {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	runs, _, err := loadAgentRunsLocked(workspacePath)
+	runs, err := loadAgentRunsLocked(workspacePath)
 	if err != nil {
 		return err
 	}

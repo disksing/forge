@@ -14,7 +14,7 @@ import (
 func TestScheduleRunnableTasksScansPastActiveAndFailedCandidates(t *testing.T) {
 	workspace := t.TempDir()
 	tasks := []runnableTaskCandidate{
-		{ID: "project1.task1", Title: "Already running", Generation: 1, State: "running", AgentID: "agent-one"},
+		{ID: "project1.task1", Title: "Already running", Generation: 1, State: "running"},
 		{ID: "project1.task2", Title: "Broken configuration", Generation: 1, State: "queued"},
 		{ID: "project1.task3", Title: "Temporary start failure", Generation: 1, State: "queued"},
 		{ID: "project1.task4", Title: "Independent work", Generation: 1, State: "queued"},
@@ -40,11 +40,11 @@ func TestScheduleRunnableTasksScansPastActiveAndFailedCandidates(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	registerSchedulerRun(t, s, workspace, agentRun{
-		ID:          "run-active",
-		WorkspaceID: "workspace-one",
-		ResourceID:  "project1.task1",
-		AgentID:     "agent-one",
-		Status:      "running",
+		ID:                "run-active",
+		WorkspaceID:       "workspace-one",
+		ResourceID:        "project1.task1",
+		AgentHubAgentName: "agent-one",
+		Status:            "running",
 	}, true)
 
 	err := s.scheduleRunnableTasks(context.Background())
@@ -81,25 +81,18 @@ func TestStartRunnableTaskReturnsExplicitNonStartResults(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	registerSchedulerRun(t, s, workspace, agentRun{
-		ID:          "run-active",
-		WorkspaceID: "workspace-one",
-		ResourceID:  "project1.task1",
-		AgentID:     "agent-one",
-		Status:      "running",
+		ID:                "run-active",
+		WorkspaceID:       "workspace-one",
+		ResourceID:        "project1.task1",
+		AgentHubAgentName: "agent-one",
+		Status:            "running",
 	}, true)
 
 	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Generation: 1, State: "running", AgentID: "agent-one",
+		ID: "project1.task1", Generation: 1, State: "running",
 	})
 	if err != nil || result != runnableTaskSkippedActive {
 		t.Fatalf("expected active run to be skipped, got result=%q err=%v", result, err)
-	}
-
-	result, err = s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Generation: 1, State: "running", AgentID: "agent-two",
-	})
-	if err == nil || result != runnableTaskDispatchFailed || !strings.Contains(err.Error(), "uses agent agent-one") {
-		t.Fatalf("expected agent mismatch failure, got result=%q err=%v", result, err)
 	}
 
 	result, err = s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
@@ -132,11 +125,11 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	registerSchedulerRun(t, s, workspace, agentRun{
-		ID:          "run-orphaned",
-		WorkspaceID: "workspace-one",
-		ResourceID:  "project1.task1",
-		AgentID:     "agent-one",
-		Status:      "stopped",
+		ID:                "run-orphaned",
+		WorkspaceID:       "workspace-one",
+		ResourceID:        "project1.task1",
+		AgentHubAgentName: "agent-one",
+		Status:            "stopped",
 	}, false)
 
 	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
@@ -148,7 +141,7 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	if request.ResourceID != "project1.task1" || request.AutoRunGeneration != 3 {
 		t.Fatalf("unexpected recovery request: %#v", request)
 	}
-	if request.AgentID != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
+	if request.AgentName != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
 		t.Fatalf("unexpected Profile resolution: %#v", request)
 	}
 	if !strings.Contains(request.Prompt, "Recover and continue") {
@@ -248,15 +241,15 @@ func TestStartRunnableTaskReusesIdleSession(t *testing.T) {
 		w.WriteHeader(http.StatusOK)
 	})
 	registerSchedulerRun(t, s, workspace, agentRun{
-		ID:          "run-idle",
-		WorkspaceID: "workspace-one",
-		ResourceID:  "project1.task1",
-		AgentID:     "agent-one",
-		Status:      "idle",
+		ID:                "run-idle",
+		WorkspaceID:       "workspace-one",
+		ResourceID:        "project1.task1",
+		AgentHubAgentName: "agent-one",
+		Status:            "idle",
 	}, true)
 
 	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Generation: 5, State: "queued", AgentID: "agent-one", Prompt: "Next turn",
+		ID: "project1.task1", Generation: 5, State: "queued", Prompt: "Next turn",
 	})
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected idle session reuse to start, got result=%q err=%v", result, err)
@@ -337,10 +330,10 @@ esac
 	return s
 }
 
-func TestResolveAutoRunAgentRejectsLegacyDirectConfiguration(t *testing.T) {
+func TestResolveAutoRunAgentRejectsOutdatedConfiguration(t *testing.T) {
 	cfg := config{Version: 1}
 	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}}); err == nil || !strings.Contains(err.Error(), "AgentHub settings") {
-		t.Fatalf("expected direct configuration migration error, got %v", err)
+		t.Fatalf("expected outdated configuration error, got %v", err)
 	}
 }
 
@@ -354,11 +347,11 @@ func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
 		},
 	}
 	selection, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing", "deep"}})
-	if err != nil || selection.AgentID != "gpt-5.6-sol" || selection.Profile != "deep" {
+	if err != nil || selection.AgentName != "gpt-5.6-sol" || selection.Profile != "deep" {
 		t.Fatalf("expected AgentHub Profile route, got selection=%+v err=%v", selection, err)
 	}
 	selection, err = resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
-	if err != nil || selection.AgentID != "kimi-k3" || selection.Profile != "" {
+	if err != nil || selection.AgentName != "kimi-k3" || selection.Profile != "" {
 		t.Fatalf("expected AgentHub default fallback, got selection=%+v err=%v", selection, err)
 	}
 }

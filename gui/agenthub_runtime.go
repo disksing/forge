@@ -16,7 +16,7 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 		return config{}, nil, err
 	}
 	if cfg.Version < agentHubConfigVersion {
-		return config{}, nil, errors.New("Forge chat requires migrated AgentHub settings; save AgentHub settings before starting a new run")
+		return config{}, nil, errors.New("Forge chat requires current AgentHub settings; save AgentHub settings before starting a new run")
 	}
 	if strings.TrimSpace(cfg.AgentHubInstanceID) == "" {
 		return config{}, nil, errors.New("AgentHub instance id is not configured")
@@ -33,7 +33,7 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 }
 
 func resolveAgentHubRunAgent(cfg config, req startAgentRequest) (string, error) {
-	name := strings.TrimSpace(req.AgentID)
+	name := strings.TrimSpace(req.AgentName)
 	if profile := strings.ToLower(strings.TrimSpace(req.AgentProfile)); name == "" && profile != "" {
 		for _, route := range cfg.AgentProfiles {
 			if strings.EqualFold(strings.TrimSpace(route.Key), profile) {
@@ -84,7 +84,6 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		ID:                    newRunID(),
 		WorkspaceID:           workspace.ID,
 		ResourceID:            strings.TrimSpace(req.ResourceID),
-		AgentID:               agentName,
 		AgentProfile:          strings.TrimSpace(req.AgentProfile),
 		AgentSelectionReason:  strings.TrimSpace(req.AgentSelectionReason),
 		AgentHubAgentName:     agentName,
