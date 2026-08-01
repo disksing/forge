@@ -1282,7 +1282,9 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 	}
 	app := string(appData)
 	for _, want := range []string{
-		`window.AgentHubEventTimeline.buildTimeline(state.agent.events)`,
+		`const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);`,
+		`const visibleEvents = state.agent.events.filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));`,
+		`window.AgentHubEventTimeline.buildTimeline(visibleEvents)`,
 		`stream.addEventListener("forge.notice"`,
 		`state.agent.toolGroupOpen.set(details.dataset.toolGroupKey, !details.open)`,
 		`<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`,
@@ -1365,6 +1367,51 @@ for (const [item, want] of cases) {
 	appPath := filepath.Join("static", "app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("timeline presentation helpers failed: %v\n%s", err, output)
+	}
+}
+
+func TestAgentTimelineHidesLaunchEnvironmentEvents(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for timeline filtering tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+const start = source.indexOf("const AGENT_HIDDEN_EVENT_TYPES");
+const end = source.indexOf("function renderAgent()", start);
+if (start < 0 || end < 0) throw new Error("missing agent timeline projection source");
+const context = {
+  state: {
+    agent: {
+      events: [
+        { id: 1, type: "session.launch-environment" },
+        { id: 2, type: "session.state" },
+      ],
+    },
+  },
+  window: {
+    AgentHubEventTimeline: {
+      buildTimeline(events) {
+        return events.map((event) => ({ type: event.type }));
+      },
+    },
+  },
+};
+vm.createContext(context);
+vm.runInContext(source.slice(start, end), context);
+const actual = context.projectAgentTimeline();
+if (JSON.stringify(actual) !== JSON.stringify([{ type: "session.state" }])) {
+  throw new Error("launch environment event was not hidden: " + JSON.stringify(actual));
+}
+if (context.state.agent.events.length !== 2) {
+  throw new Error("timeline filtering must preserve raw events");
+}
+`
+	appPath := filepath.Join("static", "app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("launch environment timeline filtering failed: %v\n%s", err, output)
 	}
 }
 

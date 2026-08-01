@@ -101,6 +101,7 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -1993,7 +1994,8 @@ function projectAgentTimeline() {
   if (!window.AgentHubEventTimeline?.buildTimeline) {
     throw new Error("AgentHub Event Timeline library is unavailable");
   }
-  return window.AgentHubEventTimeline.buildTimeline(state.agent.events);
+  const visibleEvents = state.agent.events.filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
+  return window.AgentHubEventTimeline.buildTimeline(visibleEvents);
 }
 
 function renderAgent() {
