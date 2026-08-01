@@ -84,6 +84,23 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 		data, err := os.ReadFile(logPath)
 		return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
 	})
+	rt := manager.runtimeByID("run-sched")
+	if rt == nil {
+		t.Fatal("scheduler run was not recovered")
+	}
+	// The recovery branch immediately sends the continuation prompt. Wait for
+	// that asynchronous finish to complete before TempDir cleanup removes the
+	// workspace underneath it.
+	waitForRuntimeTest(t, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return len(fake.messageSteers) == 1
+	})
+	waitForRuntimeTest(t, func() bool {
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		return !rt.schedulerTurnFinishing
+	})
 }
 
 func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
