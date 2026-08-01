@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "apiEventContractVersion": "agenthub.api.v1",
   "repository": "https://github.com/disksing/agenthub",
-  "revision": "task179 compatibility cleanup",
+  "revision": "ce75b8bb75c0594b974bd54fb4bce90c0a205748",
   "artifact": "event-timeline.iife.js",
   "sha256": "cc092bcf16cc790a08590561685326eb083afa048f0bdaa62b840ddefc1dcdd7",
   "license": "BSD-3-Clause"
