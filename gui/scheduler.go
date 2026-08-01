@@ -160,7 +160,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			if recoverErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
 			}
-			if recoverErr = s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run); recoverErr != nil {
+			if recoverErr = s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run, nil); recoverErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
 			}
 			if recovered := s.agents.runtimeByID(run.ID); recovered != nil {

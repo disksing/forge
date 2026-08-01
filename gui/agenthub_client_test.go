@@ -47,13 +47,6 @@ func TestAgentHubClientContract(t *testing.T) {
 				t.Errorf("unexpected session filter: %s", r.URL.RawQuery)
 			}
 			writeFakeAgentHubJSON(t, w, map[string]any{"sessions": []any{sessionData("ses_1", "ready")}})
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/sessions/ses_1/events":
-			writeFakeAgentHubJSON(t, w, map[string]any{
-				"events":       []any{map[string]any{"id": 1, "type": "future.event", "sessionId": "ses_1", "data": map[string]any{"value": 1}}},
-				"page":         map[string]any{"after": 0, "limit": 500, "nextAfter": 1, "hasMore": false},
-				"latestCursor": 1,
-				"future":       "ignored",
-			})
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/sessions/ses_1":
 			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/sessions/ses_1/approvals/"):
@@ -104,10 +97,6 @@ func TestAgentHubClientContract(t *testing.T) {
 	if _, err := client.GetSession(ctx, "ses_1"); err != nil {
 		t.Fatal(err)
 	}
-	page, err := client.Events(ctx, "ses_1", 0, 0)
-	if err != nil || page.Page.NextAfter != 1 || page.Events[0].Type != "future.event" {
-		t.Fatalf("events: %+v, %v", page, err)
-	}
 	if _, err := client.Message(ctx, "ses_1", "hello", false); err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +125,7 @@ func TestAgentHubClientContract(t *testing.T) {
 	if err != nil || archived.State != "archived" {
 		t.Fatalf("archive: %+v, %v", archived, err)
 	}
-	if len(methods) != 15 {
+	if len(methods) != 14 {
 		t.Fatalf("expected all client operations, got %d: %v", len(methods), methods)
 	}
 	wantReplies := []agentHubApprovalReply{
@@ -206,66 +195,6 @@ func TestAgentHubStatusValidation(t *testing.T) {
 	}
 }
 
-func TestAgentHubSSEAndCursorGap(t *testing.T) {
-	stream := strings.Join([]string{
-		": heartbeat",
-		"id: 1",
-		`data: {"id":1,"type":"future.event","sessionId":"ses_1","future":true}`,
-		"",
-		"id: 2",
-		`data: {"id":2,"type":"turn.completed","sessionId":"ses_1","data":{}}`,
-		"",
-	}, "\n")
-	var events []agentHubEvent
-	if err := readAgentHubSSE(strings.NewReader(stream), 0, func(event agentHubEvent) error {
-		events = append(events, event)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 2 || events[0].Type != "future.event" {
-		t.Fatalf("unexpected events: %+v", events)
-	}
-	gap := "id: 3\ndata: {\"id\":3,\"type\":\"turn.completed\",\"sessionId\":\"ses_1\"}\n\n"
-	err := readAgentHubSSE(strings.NewReader(gap), 1, func(agentHubEvent) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "cursor gap") {
-		t.Fatalf("expected cursor gap, got %v", err)
-	}
-}
-
-// AgentHub folds consecutive text deltas into the tail durable event and
-// republishes the merged event under the id the client already holds. Such
-// replacement frames must pass through without moving the cursor, and only
-// an id beyond cursor+1 remains a gap.
-func TestAgentHubSSEDeltaMergeReplacements(t *testing.T) {
-	stream := strings.Join([]string{
-		"id: 1",
-		`data: {"id":1,"type":"message.assistant.delta","sessionId":"ses_1","data":{"text":"Hello"}}`,
-		"",
-		"id: 1",
-		`data: {"id":1,"type":"message.assistant.delta","sessionId":"ses_1","data":{"text":"Hello!"}}`,
-		"",
-		"id: 2",
-		`data: {"id":2,"type":"turn.completed","sessionId":"ses_1","data":{}}`,
-		"",
-	}, "\n")
-	var events []agentHubEvent
-	if err := readAgentHubSSE(strings.NewReader(stream), 0, func(event agentHubEvent) error {
-		events = append(events, event)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(events) != 3 || events[0].ID != 1 || events[1].ID != 1 || events[2].ID != 2 {
-		t.Fatalf("replacement frames must pass through: %+v", events)
-	}
-	gap := "id: 3\ndata: {\"id\":3,\"type\":\"turn.completed\",\"sessionId\":\"ses_1\"}\n\n"
-	err := readAgentHubSSE(strings.NewReader(gap), 1, func(agentHubEvent) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "cursor gap") {
-		t.Fatalf("expected cursor gap, got %v", err)
-	}
-}
-
 func TestNormalizeAgentHubEndpoint(t *testing.T) {
 	t.Setenv("FORGE_AGENTHUB_URL", "")
 	got, err := normalizeAgentHubEndpoint("")
@@ -299,36 +228,6 @@ func writeFakeAgentHubJSON(t *testing.T, w http.ResponseWriter, value any) {
 	t.Helper()
 	if err := json.NewEncoder(w).Encode(value); err != nil {
 		t.Errorf("encode fake response: %v", err)
-	}
-}
-
-func TestAgentHubClientLargeEventPage(t *testing.T) {
-	// Event pages used to be truncated by an 8 MiB decode limit, which
-	// surfaced as "decode AgentHub response: unexpected EOF". A page well
-	// above the old limit must decode cleanly.
-	payload := strings.Repeat("x", 12<<20)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		writeFakeAgentHubJSON(t, w, map[string]any{
-			"events": []any{map[string]any{
-				"id": 1, "type": "tool.output", "sessionId": "ses_1",
-				"data": map[string]any{"text": payload},
-			}},
-			"page":         map[string]any{"after": 0, "limit": 1, "nextAfter": 1, "hasMore": false},
-			"latestCursor": 1,
-		})
-	}))
-	defer server.Close()
-	client, err := newAgentHubClient(server.URL, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	page, err := client.Events(context.Background(), "ses_1", 0, 1)
-	if err != nil {
-		t.Fatalf("events above old 8 MiB limit: %v", err)
-	}
-	if len(page.Events) != 1 || !strings.Contains(string(page.Events[0].Data), payload[:64]) {
-		t.Fatalf("unexpected events page: %+v", page)
 	}
 }
 

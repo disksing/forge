@@ -31,7 +31,6 @@ type agentRun struct {
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
-	AgentHubEventCursor     int64  `json:"agentHubEventCursor,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
@@ -46,11 +45,10 @@ type agentRun struct {
 	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
 }
 
+// agentRunDetail carries run metadata only. Event history is served by the
+// AgentHub proxy endpoints and never embedded in detail responses.
 type agentRunDetail struct {
-	Run             agentRun        `json:"run"`
-	Events          []agentHubEvent `json:"events"`
-	EventsTruncated bool            `json:"eventsTruncated,omitempty"`
-	EventsHasMore   bool            `json:"eventsHasMore,omitempty"`
+	Run agentRun `json:"run"`
 }
 
 const (
@@ -72,7 +70,6 @@ type forgeNoticeData struct {
 }
 
 type agentStreamMessage struct {
-	Event  *agentHubEvent
 	Notice *forgeNotice
 }
 
@@ -125,16 +122,13 @@ type resourceDetailPath struct {
 }
 
 type agentRuntime struct {
-	mu                 sync.Mutex
-	workspace          guiWorkspace
-	manager            *agentManager
-	run                agentRun
-	events             []agentHubEvent
-	agentHub           *agentHubClient
-	agentHubState      string
-	agentHubCancel     context.CancelFunc
-	agentHubSync       sync.Mutex
-	agentHubStreamDone chan struct{}
+	mu                     sync.Mutex
+	workspace              guiWorkspace
+	manager                *agentManager
+	run                    agentRun
+	agentHub               *agentHubClient
+	agentHubState          string
+	schedulerTurnFinishing bool
 }
 
 type agentManager struct {
@@ -219,13 +213,13 @@ func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceI
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		m.getEvents(w, r, workspaceID, runID)
+		m.proxyAgentHubEvents(w, r, workspaceID, runID)
 	case "stream":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		m.stream(w, r, workspaceID, runID)
+		m.proxyAgentHubStream(w, r, workspaceID, runID)
 	default:
 		http.NotFound(w, r)
 	}
@@ -678,9 +672,7 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 		return
 	}
 	if rt != nil {
-		run, events, truncated := rt.snapshotDetail()
-		detail := agentRunDetail{Run: run, Events: events, EventsTruncated: truncated, EventsHasMore: truncated}
-		writeJSON(w, detail)
+		writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 		return
 	}
 	run, err := loadAgentRun(workspace.Path, runID)
@@ -691,74 +683,7 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 		writeError(w, err, http.StatusNotFound)
 		return
 	}
-	rt, err = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
-	if err != nil {
-		writeError(w, err, http.StatusBadGateway)
-		return
-	}
-	current, events, truncated := rt.snapshotDetail()
-	writeJSON(w, agentRunDetail{Run: current, Events: events, EventsTruncated: truncated, EventsHasMore: truncated})
-}
-
-func (m *agentManager) getEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	beforeID, _ := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("before")), 10, 64)
-	if beforeID > 0 {
-		limit, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("limit")))
-		if rt != nil {
-			events, hasMore, err := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
-			if err != nil {
-				writeError(w, err, http.StatusBadGateway)
-				return
-			}
-			writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
-			return
-		}
-		run, loadErr := loadAgentRun(workspace.Path, runID)
-		if loadErr != nil || !isAgentHubRun(run) {
-			if loadErr == nil {
-				loadErr = fmt.Errorf("run not found: %s", runID)
-			}
-			writeError(w, loadErr, http.StatusNotFound)
-			return
-		}
-		rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
-		if loadErr != nil {
-			writeError(w, loadErr, http.StatusBadGateway)
-			return
-		}
-		events, hasMore, loadErr := rt.agentHubEventsBefore(r.Context(), beforeID, limit)
-		if loadErr != nil {
-			writeError(w, loadErr, http.StatusBadGateway)
-			return
-		}
-		writeJSON(w, map[string]any{"events": events, "hasMore": hasMore})
-		return
-	}
-	if rt != nil {
-		_, events, truncated := rt.snapshotDetail()
-		writeJSON(w, map[string]any{"events": events, "eventsTruncated": truncated, "hasMore": truncated})
-		return
-	}
-	run, loadErr := loadAgentRun(workspace.Path, runID)
-	if loadErr != nil || !isAgentHubRun(run) {
-		if loadErr == nil {
-			loadErr = fmt.Errorf("run not found: %s", runID)
-		}
-		writeError(w, loadErr, http.StatusNotFound)
-		return
-	}
-	rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
-	if loadErr != nil {
-		writeError(w, loadErr, http.StatusBadGateway)
-		return
-	}
-	_, events, truncated := rt.snapshotDetail()
-	writeJSON(w, map[string]any{"events": events, "eventsTruncated": truncated, "hasMore": truncated})
+	writeJSON(w, agentRunDetail{Run: run})
 }
 
 func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -810,7 +735,7 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	if rt != nil {
-		run, _, _ := rt.snapshotDetail()
+		run := rt.snapshotRun()
 		if strings.TrimSpace(run.AgentHubSessionID) != "" {
 			m.resumeAttachedAgentHubRun(w, r, rt)
 			return
@@ -851,104 +776,6 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 	m.resolveAgentHubApproval(w, r, rt, req)
 }
 
-func (m *agentManager) stream(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		writeError(w, errors.New("streaming is not supported"), http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	afterID := agentStreamAfterID(r)
-	// Delta-merge append patches never advance a client's cursor, so the
-	// event at the cursor may hold fragments the client missed while
-	// disconnected. Replay from one before the cursor to re-send that event
-	// with its current content before continuing with newer events.
-	replayAfter := afterID
-	if replayAfter > 0 {
-		replayAfter--
-	}
-	lastSentID := replayAfter
-	ch := make(chan agentStreamMessage, agentHubEventMaxCount)
-	m.subscribe(runID, ch)
-	defer m.unsubscribe(runID, ch)
-	var events []agentHubEvent
-	if rt != nil {
-		rt.mu.Lock()
-		hasAgentHubClient := rt.agentHub != nil
-		rt.mu.Unlock()
-		if afterID > 0 && hasAgentHubClient {
-			events, err = rt.agentHubEventsAfter(r.Context(), replayAfter)
-			if err != nil {
-				return
-			}
-		} else if afterID > 0 {
-			events = rt.snapshotEventsAfter(replayAfter)
-		} else {
-			_, events, _ = rt.snapshotDetail()
-		}
-	} else {
-		run, loadErr := loadAgentRun(workspace.Path, runID)
-		if loadErr != nil || !isAgentHubRun(run) {
-			return
-		}
-		rt, loadErr = m.loadAgentHubRuntimeForRead(r.Context(), workspace, run)
-		if loadErr != nil {
-			return
-		}
-		_, events, _ = rt.snapshotDetail()
-	}
-	for _, event := range events {
-		if event.ID <= lastSentID {
-			continue
-		}
-		writeSSE(w, event)
-		lastSentID = event.ID
-	}
-	flusher.Flush()
-	if m.runtimeByID(runID) == nil {
-		return
-	}
-	// Catch events published while the initial snapshot was being written. The
-	// subscriber may contain the same events, so the ID guard below deduplicates
-	// them while preserving a gap-free handoff from history to live updates.
-	for _, event := range rt.snapshotEventsAfter(lastSentID) {
-		writeSSE(w, event)
-		lastSentID = event.ID
-	}
-	flusher.Flush()
-	for {
-		select {
-		case message := <-ch:
-			if message.Notice != nil {
-				writeForgeNoticeSSE(w, *message.Notice)
-				flusher.Flush()
-				continue
-			}
-			if message.Event == nil {
-				continue
-			}
-			// Ids at or below the last sent id are delta-merge replacements:
-			// forward them so the browser swaps in the accumulated content.
-			// Handoff duplicates of already-sent events are idempotent for the
-			// same reason.
-			if message.Event.ID > lastSentID {
-				lastSentID = message.Event.ID
-			}
-			writeSSE(w, *message.Event)
-			flusher.Flush()
-		case <-r.Context().Done():
-			return
-		}
-	}
-}
-
 func (m *agentManager) workspaceRuntime(workspaceID, runID string) (guiWorkspace, *agentRuntime, error) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
@@ -979,18 +806,6 @@ func (m *agentManager) unsubscribe(runID string, ch chan agentStreamMessage) {
 	close(ch)
 }
 
-func (m *agentManager) publish(runID string, event agentHubEvent) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for ch := range m.subscribers[runID] {
-		eventCopy := event
-		select {
-		case ch <- agentStreamMessage{Event: &eventCopy}:
-		default:
-		}
-	}
-}
-
 func (m *agentManager) publishNotice(runID string, notice forgeNotice) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1018,10 +833,10 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	if client != nil && sessionID != "" {
 		session, err := client.Message(context.Background(), sessionID, text, hubState == "busy" || hubState == "waiting_approval")
 		if err != nil {
-			_ = rt.catchUpAgentHub(context.Background(), m, 0)
 			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
 		}
-		return rt.catchUpAgentHub(context.Background(), m, session.LastEventID)
+		rt.applyAgentHubSessionState(m, session)
+		return nil
 	}
 	return errors.New("agent run is not attached to AgentHub")
 }
@@ -1041,10 +856,22 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 	return rt.run.SchedulerTurn
 }
 
-func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
+func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 	rt.mu.Lock()
+	if !rt.run.SchedulerTurn || rt.schedulerTurnFinishing {
+		// Duplicate triggers from the session poller and startup recovery are
+		// expected; only one finish may run per turn.
+		rt.mu.Unlock()
+		return
+	}
+	rt.schedulerTurnFinishing = true
 	run := rt.run
 	rt.mu.Unlock()
+	defer func() {
+		rt.mu.Lock()
+		rt.schedulerTurnFinishing = false
+		rt.mu.Unlock()
+	}()
 	var task struct {
 		AutoRun *struct {
 			State string `json:"state"`
@@ -1062,13 +889,13 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 			err = json.Unmarshal(out, &task)
 		}
 		if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
-			args = append(args, "--reason="+strings.TrimSpace(summary))
+			args = append(args, "--reason=agent did not set AutoRun state")
 			out, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
 			if err == nil {
 				_ = json.Unmarshal(out, &task)
 			}
 			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
-				rt.markIdle(m)
+				rt.markIdleUnlessStopped(m)
 				prompt := autoRunContinuePrompt(rt.workspace.Path)
 				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
 					err = sendErr
@@ -1099,7 +926,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager, summary string) {
 			// launchEnvironment.FORGE_SESSION_ID valid.
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")
 		}
-		rt.markIdle(m)
+		rt.markIdleUnlessStopped(m)
 	}
 }
 
@@ -1139,47 +966,23 @@ func (rt *agentRuntime) markIdle(m *agentManager) {
 	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
-func (rt *agentRuntime) snapshotEvents() []agentHubEvent {
+// markIdleUnlessStopped is markIdle for scheduler turn completion: a run with
+// a durable stopped observation must not be resurrected to idle, or the Forge
+// session release keyed on the stopped status would never fire.
+func (rt *agentRuntime) markIdleUnlessStopped(m *agentManager) {
+	rt.mu.Lock()
+	if rt.run.AgentHubStoppedObserved && rt.run.Status == "stopped" {
+		rt.mu.Unlock()
+		return
+	}
+	rt.mu.Unlock()
+	rt.markIdle(m)
+}
+
+func (rt *agentRuntime) snapshotRun() agentRun {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return append([]agentHubEvent(nil), rt.events...)
-}
-
-func (rt *agentRuntime) snapshotDetail() (agentRun, []agentHubEvent, bool) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	events, truncated := tailAgentEvents(rt.events, agentHubEventMaxCount)
-	return rt.run, events, truncated
-}
-
-func (rt *agentRuntime) snapshotEventsAfter(afterID int64) []agentHubEvent {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return agentHubEventsAfter(rt.events, afterID)
-}
-
-func tailAgentEvents(events []agentHubEvent, limit int) ([]agentHubEvent, bool) {
-	if limit <= 0 || limit > agentHubEventMaxCount {
-		limit = agentHubEventMaxCount
-	}
-	truncated := len(events) > limit
-	if len(events) > limit {
-		events = events[len(events)-limit:]
-	}
-	if len(events) > 0 && events[0].ID > 1 {
-		truncated = true
-	}
-	return append([]agentHubEvent(nil), events...), truncated
-}
-
-func agentHubEventsAfter(events []agentHubEvent, afterID int64) []agentHubEvent {
-	if afterID <= 0 {
-		return append([]agentHubEvent(nil), events...)
-	}
-	start := sort.Search(len(events), func(i int) bool {
-		return events[i].ID > afterID
-	})
-	return append([]agentHubEvent(nil), events[start:]...)
+	return rt.run
 }
 
 func agentStreamAfterID(r *http.Request) int64 {
@@ -1350,12 +1153,6 @@ func newRunID() string {
 		return fmt.Sprintf("run-%d", time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
-}
-
-func writeSSE(w http.ResponseWriter, event agentHubEvent) {
-	data, _ := json.Marshal(event)
-	_, _ = fmt.Fprintf(w, "id: %d\n", event.ID)
-	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {

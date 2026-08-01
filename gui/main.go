@@ -204,9 +204,7 @@ func main() {
 	} else {
 		s.addCurrentDirectoryIfEmpty(context.Background())
 	}
-	if err := s.agents.recoverAgentHubRuns(context.Background()); err != nil {
-		log.Printf("recover AgentHub runs: %v", err)
-	}
+	s.agents.startAgentRecovery(context.Background())
 	go s.runTaskScheduler(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")

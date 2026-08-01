@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -28,6 +27,9 @@ type runtimeFakeAgentHub struct {
 	stopAtStopping  bool
 	messageSteers   []bool
 	actions         []string
+	listCalls       int
+	eventsCalls     int
+	streamCalls     int
 }
 
 func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
@@ -188,6 +190,7 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.listCalls++
 	var sessions []agentHubSession
 	if f.duplicateSource {
 		source := &agentHubSource{
@@ -213,19 +216,26 @@ func sourceMatchesQuery(source *agentHubSource, query url.Values) bool {
 	if query.Get("sourceApp") == "" && query.Get("sourceInstanceId") == "" && query.Get("sourceExternalId") == "" {
 		return true
 	}
-	return source != nil && source.App == query.Get("sourceApp") &&
-		source.InstanceID == query.Get("sourceInstanceId") && source.ExternalID == query.Get("sourceExternalId")
+	return source != nil &&
+		(query.Get("sourceApp") == "" || source.App == query.Get("sourceApp")) &&
+		(query.Get("sourceInstanceId") == "" || source.InstanceID == query.Get("sourceInstanceId")) &&
+		(query.Get("sourceExternalId") == "" || source.ExternalID == query.Get("sourceExternalId"))
 }
 
 func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request, id string) {
 	after, _ := strconv.ParseInt(r.URL.Query().Get("after"), 10, 64)
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 {
-		limit = agentHubEventsPageSize
+		limit = 200
 	}
 	f.mu.Lock()
 	all := append([]agentHubEvent(nil), f.events[id]...)
 	gapAfter := f.gapAfter
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {
+		f.streamCalls++
+	} else {
+		f.eventsCalls++
+	}
 	f.mu.Unlock()
 	var events []agentHubEvent
 	for _, event := range all {
@@ -334,21 +344,6 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	return recorder, detail
 }
 
-func stopRuntimeTestStream(rt *agentRuntime) {
-	if rt == nil {
-		return
-	}
-	rt.mu.Lock()
-	cancel, done := rt.agentHubCancel, rt.agentHubStreamDone
-	rt.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	if done != nil {
-		<-done
-	}
-}
-
 func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.abortNextCreate = true
@@ -373,7 +368,6 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 	if _, err := os.Stat(legacyEventPath); !os.IsNotExist(err) {
 		t.Fatalf("AgentHub run must not create a local event fact log: %v", err)
 	}
-	stopRuntimeTestStream(manager.runtimeByID(detail.Run.ID))
 }
 
 func TestAgentHubRuntimeDuplicateSourceKeepsRunRecovering(t *testing.T) {
@@ -398,67 +392,7 @@ func TestAgentHubRuntimeDuplicateSourceKeepsRunRecovering(t *testing.T) {
 	}
 }
 
-func TestAgentHubRuntimePaginationUnknownGapAndSSE(t *testing.T) {
-	fake := newRuntimeFakeAgentHub()
-	fake.mu.Lock()
-	fake.sessions["ses_page"] = agentHubSession{ID: "ses_page", State: "ready"}
-	for index := 0; index < 505; index++ {
-		eventType := "provider.event"
-		if index == 500 {
-			eventType = "future.event"
-		}
-		fake.appendLocked("ses_page", eventType, map[string]any{"index": index})
-	}
-	fake.mu.Unlock()
-	hub := httptest.NewServer(fake)
-	defer hub.Close()
-	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	client, _ := newAgentHubClient(hub.URL, hub.Client())
-	run := agentRun{ID: "run-page", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_page", Status: "idle"}
-	rt := newAgentHubRuntime(manager, workspace, run, client, nil)
-	if err := rt.catchUpAgentHub(context.Background(), manager, 505); err != nil {
-		t.Fatal(err)
-	}
-	projected, events, _ := rt.snapshotDetail()
-	if projected.AgentHubEventCursor != 505 || len(events) != agentHubEventMaxCount {
-		t.Fatalf("pagination failed: cursor=%d events=%d", projected.AgentHubEventCursor, len(events))
-	}
-	unknown := events[len(events)-5]
-	if unknown.Type != "future.event" || unknown.SessionID != "ses_page" || unknown.ID != 501 {
-		t.Fatalf("unknown canonical event was not retained unchanged: %#v", unknown)
-	}
-	fake.mu.Lock()
-	fake.appendLocked("ses_page", "message.assistant.delta", map[string]any{"text": "live"})
-	fake.mu.Unlock()
-	var live []agentHubEvent
-	if err := client.StreamEvents(context.Background(), "ses_page", 505, func(event agentHubEvent) error {
-		live = append(live, event)
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if len(live) != 1 || live[0].ID != 506 {
-		t.Fatalf("unexpected SSE replay: %#v", live)
-	}
-
-	gapRun := agentRun{ID: "run-gap", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_page", Status: "idle"}
-	gapRT := newAgentHubRuntime(manager, workspace, gapRun, client, nil)
-	fake.mu.Lock()
-	fake.gapAfter = 250
-	fake.mu.Unlock()
-	err := gapRT.catchUpAgentHub(context.Background(), manager, 506)
-	if err == nil || !strings.Contains(err.Error(), "cursor gap") {
-		t.Fatalf("expected gap error, got %v", err)
-	}
-	gapRT.mu.Lock()
-	cursor := gapRT.run.AgentHubEventCursor
-	gapRT.mu.Unlock()
-	if cursor != 249 {
-		t.Fatalf("projection advanced across gap to %d", cursor)
-	}
-}
-
-func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
+func TestAgentHubRunDetailOmitsEventsAndNoticeKeepsEnvelope(t *testing.T) {
 	workspace := guiWorkspace{ID: "workspace-one", Path: t.TempDir()}
 	configPath := filepath.Join(t.TempDir(), "gui.json")
 	writeCurrentTestConfig(t, configPath, workspace.Path)
@@ -472,9 +406,8 @@ func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
 		workspace: workspace,
 		run: agentRun{
 			ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: canonical.SessionID,
-			AgentHubEventCursor: canonical.ID, Status: "running",
+			Status: "running",
 		},
-		events: []agentHubEvent{canonical},
 	}
 	manager.registerRuntime(rt)
 
@@ -487,33 +420,14 @@ func TestAgentHubRESTAndSSEKeepCanonicalEventSchema(t *testing.T) {
 	if err := json.Unmarshal(detailRecorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	var gotData, wantData any
-	if len(detail.Events) == 1 {
-		_ = json.Unmarshal(detail.Events[0].Data, &gotData)
-		_ = json.Unmarshal(canonical.Data, &wantData)
+	if detail.Run.AgentHubSessionID != canonical.SessionID || detail.Run.Status != "running" {
+		t.Fatalf("detail lost run metadata: %#v", detail.Run)
 	}
-	if len(detail.Events) != 1 || detail.Events[0].Type != canonical.Type ||
-		detail.Events[0].SessionID != canonical.SessionID || detail.Events[0].TurnID != canonical.TurnID ||
-		!reflect.DeepEqual(gotData, wantData) {
-		t.Fatalf("REST changed canonical event: %#v", detail.Events)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	streamRecorder := httptest.NewRecorder()
-	manager.stream(
-		streamRecorder,
-		httptest.NewRequest(http.MethodGet, "/runs/run-one/stream", nil).WithContext(ctx),
-		workspace.ID,
-		"run-one",
-	)
-	body := streamRecorder.Body.String()
-	if !strings.Contains(body, `"type":"tool.event"`) ||
-		!strings.Contains(body, `"sessionId":"ses_canonical"`) ||
-		!strings.Contains(body, `"turnId":"turn_one"`) ||
-		strings.Contains(body, `"text":`) ||
-		strings.Contains(body, `"pendingRequestId":`) {
-		t.Fatalf("SSE did not preserve canonical schema: %s", body)
+	// Canonical events now flow exclusively through the AgentHub proxy; the
+	// detail response must not embed them.
+	if strings.Contains(detailRecorder.Body.String(), `"events"`) ||
+		strings.Contains(detailRecorder.Body.String(), "tool.event") {
+		t.Fatalf("run detail must not embed event history: %s", detailRecorder.Body.String())
 	}
 
 	noticeRecorder := httptest.NewRecorder()
@@ -559,11 +473,8 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	session := fake.sessions[detail.Run.AgentHubSessionID]
 	session.State = "waiting_approval"
 	fake.sessions[detail.Run.AgentHubSessionID] = session
-	last := session.LastEventID
 	fake.mu.Unlock()
-	if err := rt.catchUpAgentHub(context.Background(), manager, last); err != nil {
-		t.Fatal(err)
-	}
+	rt.applyAgentHubSessionState(manager, session)
 	if rec := call("/api/workspaces/"+workspace.ID+"/agent/runs/"+runID+"/approval", `{"requestId":"approve-1","decision":"accept"}`); rec.Code != http.StatusOK {
 		t.Fatalf("approval failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -616,7 +527,6 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		t.Fatalf("AgentHub resumed after its Forge session was released: %q", actions)
 	}
 
-	stopRuntimeTestStream(rt)
 	restartedServer := &server{config: configPath, forgePath: manager.server.forgePath, addr: manager.server.addr}
 	restarted := newAgentManager(restartedServer)
 	restartedServer.agents = restarted
@@ -627,123 +537,19 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	if recovered == nil {
 		t.Fatal("GUI restart did not recover AgentHub runtime")
 	}
-	recoveredRun, recoveredEvents, _ := recovered.snapshotDetail()
+	recovered.mu.Lock()
+	recoveredRun := recovered.run
+	recoveredState := recovered.agentHubState
+	recovered.mu.Unlock()
+	if recoveredRun.Status != "stopped" || !recoveredRun.AgentHubStoppedObserved || recoveredState != "stopped" {
+		t.Fatalf("restart did not rebuild a lightweight session projection: run=%#v state=%q", recoveredRun, recoveredState)
+	}
 	fake.mu.Lock()
-	eventCount := len(fake.events[detail.Run.AgentHubSessionID])
+	eventsCalls := fake.eventsCalls
+	streamCalls := fake.streamCalls
 	fake.mu.Unlock()
-	if recoveredRun.AgentHubEventCursor != int64(eventCount) || len(recoveredEvents) == 0 {
-		t.Fatalf("restart did not rebuild history: run=%#v events=%d durable=%d", recoveredRun, len(recoveredEvents), eventCount)
-	}
-	stopRuntimeTestStream(recovered)
-}
-
-func TestAgentHubRuntimeAppliesDeltaMergeReplacement(t *testing.T) {
-	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	run := agentRun{ID: "run-merge", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_merge", Status: "running"}
-	rt := newAgentHubRuntime(manager, workspace, run, nil, nil)
-	delta := func(id int64, text string) agentHubEvent {
-		raw, _ := json.Marshal(map[string]any{"text": text})
-		return agentHubEvent{
-			ID: id, Time: "2026-07-31T15:00:00Z", Type: "message.assistant.delta",
-			SessionID: "ses_merge", TurnID: "turn_1", Data: raw,
-		}
-	}
-	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello")); err != nil {
-		t.Fatal(err)
-	}
-	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello!")); err != nil {
-		t.Fatal(err)
-	}
-	rt.mu.Lock()
-	if rt.run.AgentHubEventCursor != 1 {
-		t.Fatalf("replacement moved the cursor to %d", rt.run.AgentHubEventCursor)
-	}
-	if len(rt.events) != 1 {
-		t.Fatalf("replacement appended instead of swapping: %+v", rt.events)
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(rt.events[0].Data, &payload); err != nil {
-		t.Fatal(err)
-	}
-	rt.mu.Unlock()
-	if payload["text"] != "Hello!" {
-		t.Fatalf("replacement content = %v, want merged text", payload["text"])
-	}
-	if err := rt.applyAgentHubEvent(manager, delta(2, "next")); err != nil {
-		t.Fatal(err)
-	}
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	if rt.run.AgentHubEventCursor != 2 || len(rt.events) != 2 {
-		t.Fatalf("new event after replacement failed: cursor=%d events=%d", rt.run.AgentHubEventCursor, len(rt.events))
-	}
-}
-
-func TestAgentHubRuntimeAppliesDeltaMergePatch(t *testing.T) {
-	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
-	run := agentRun{ID: "run-patch", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_patch", Status: "running"}
-	rt := newAgentHubRuntime(manager, workspace, run, nil, nil)
-	messages := make(chan agentStreamMessage, 4)
-	manager.subscribe(run.ID, messages)
-	defer manager.unsubscribe(run.ID, messages)
-	delta := func(id int64, text string, patch bool) agentHubEvent {
-		payload := map[string]any{"text": text, "method": "item/agentMessage/delta"}
-		if patch {
-			payload["append"] = true
-		}
-		raw, _ := json.Marshal(payload)
-		return agentHubEvent{
-			ID: id, Time: "2026-07-31T15:00:00Z", Type: "message.assistant.delta",
-			SessionID: "ses_patch", TurnID: "turn_1", Data: raw,
-		}
-	}
-	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello", false)); err != nil {
-		t.Fatal(err)
-	}
-	<-messages
-	if err := rt.applyAgentHubEvent(manager, delta(1, "!", true)); err != nil {
-		t.Fatal(err)
-	}
-	// The stored event accumulates the fragment...
-	rt.mu.Lock()
-	if rt.run.AgentHubEventCursor != 1 {
-		t.Fatalf("patch moved the cursor to %d", rt.run.AgentHubEventCursor)
-	}
-	if len(rt.events) != 1 {
-		t.Fatalf("patch appended instead of extending: %+v", rt.events)
-	}
-	var stored map[string]any
-	if err := json.Unmarshal(rt.events[0].Data, &stored); err != nil {
-		t.Fatal(err)
-	}
-	rt.mu.Unlock()
-	if stored["text"] != "Hello!" {
-		t.Fatalf("stored text after patch = %v, want %q", stored["text"], "Hello!")
-	}
-	// ...while subscribers receive only the patch frame.
-	broadcast := (<-messages).Event
-	if broadcast == nil {
-		t.Fatal("expected a published patch frame")
-	}
-	var patch map[string]any
-	if err := json.Unmarshal(broadcast.Data, &patch); err != nil {
-		t.Fatal(err)
-	}
-	if patch["append"] != true || patch["text"] != "!" {
-		t.Fatalf("published frame = %+v, want append patch with only the fragment", patch)
-	}
-	// A full replacement frame still swaps the whole event (reconnect heal).
-	if err := rt.applyAgentHubEvent(manager, delta(1, "Hello world!", false)); err != nil {
-		t.Fatal(err)
-	}
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	var healed map[string]any
-	if err := json.Unmarshal(rt.events[0].Data, &healed); err != nil {
-		t.Fatal(err)
-	}
-	if healed["text"] != "Hello world!" {
-		t.Fatalf("stored text after replacement = %v", healed["text"])
+	if eventsCalls != 0 || streamCalls != 0 {
+		t.Fatalf("restart must not read event history or open streams: events=%d streams=%d", eventsCalls, streamCalls)
 	}
 }
 
@@ -778,6 +584,11 @@ func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 }
 
 func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
+	oldTimeout, oldInterval := agentHubStopConfirmTimeout, agentHubStopConfirmInterval
+	agentHubStopConfirmTimeout, agentHubStopConfirmInterval = 300*time.Millisecond, 50*time.Millisecond
+	defer func() {
+		agentHubStopConfirmTimeout, agentHubStopConfirmInterval = oldTimeout, oldInterval
+	}()
 	fake := newRuntimeFakeAgentHub()
 	fake.stopAtStopping = true
 	hub := httptest.NewServer(fake)
@@ -812,9 +623,8 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	session.State = "stopped"
 	session.StopReason = "provider-exited"
 	fake.sessions[sessionID] = session
-	highWater := session.LastEventID
 	fake.mu.Unlock()
-	if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuntimeTest(t, func() bool {
@@ -825,7 +635,37 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	if logData := string(mustReadFile(t, logPath)); !strings.Contains(logData, "session end --id session-test") {
 		t.Fatalf("durable stopped did not release Forge session:\n%s", logData)
 	}
-	stopRuntimeTestStream(rt)
+}
+
+func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "running")
+	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentId":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start failed: %s", rec.Body.String())
+	}
+	sessionID := detail.Run.AgentHubSessionID
+	fake.mu.Lock()
+	fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "stale turn summary"})
+	session := fake.sessions[sessionID]
+	session.State = "ready"
+	fake.sessions[sessionID] = session
+	fake.mu.Unlock()
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
+	waitForRuntimeTest(t, func() bool {
+		data, err := os.ReadFile(logPath)
+		return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
+	})
+	logData := string(mustReadFile(t, logPath))
+	if strings.Contains(logData, "stale turn summary") {
+		t.Fatalf("AutoRun retry reused the previous turn summary:\n%s", logData)
+	}
 }
 
 func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
@@ -847,9 +687,8 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			session := fake.sessions[sessionID]
 			session.State = "ready"
 			fake.sessions[sessionID] = session
-			highWater := session.LastEventID
 			fake.mu.Unlock()
-			if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+			if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			waitForRuntimeTest(t, func() bool {
@@ -876,9 +715,8 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			session = fake.sessions[sessionID]
 			session.State = "ready"
 			fake.sessions[sessionID] = session
-			highWater = session.LastEventID
 			fake.mu.Unlock()
-			if err := rt.catchUpAgentHub(context.Background(), manager, highWater); err != nil {
+			if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 				t.Fatal(err)
 			}
 			waitForRuntimeTest(t, func() bool {
@@ -907,7 +745,6 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			if logData := string(mustReadFile(t, logPath)); strings.Contains(logData, "session end") {
 				t.Fatalf("terminal AutoRun released the Forge session:\n%s", logData)
 			}
-			stopRuntimeTestStream(rt)
 		})
 	}
 }
@@ -933,12 +770,15 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 		t.Fatal(err)
 	}
 	// This models a GUI/SIGKILL after persisting the Forge session and run
-	// projection but before receiving AgentHub's create response.
-	if err := manager.recoverAgentHubRun(context.Background(), cfg, client, workspace, run); err != nil {
+	// projection but before receiving AgentHub's create response. A nil
+	// candidate list makes recovery query the session by source.
+	if err := manager.recoverAgentHubRun(context.Background(), cfg, client, workspace, run, nil); err != nil {
 		t.Fatal(err)
 	}
 	first := manager.runtimeByID(run.ID)
-	stopRuntimeTestStream(first)
+	if first == nil {
+		t.Fatal("recovery did not register the runtime")
+	}
 	manager.removeRuntime(run.ID)
 	reloaded, err := loadAgentRuns(workspace.Path)
 	if err != nil || len(reloaded) != 1 {
@@ -946,11 +786,12 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 	}
 	// A repeated scheduler/recovery pass must reconcile by full source and
 	// attach the same AgentHub session instead of creating another one.
-	if err := manager.recoverAgentHubRun(context.Background(), cfg, client, workspace, reloaded[0]); err != nil {
+	if err := manager.recoverAgentHubRun(context.Background(), cfg, client, workspace, reloaded[0], nil); err != nil {
 		t.Fatal(err)
 	}
-	second := manager.runtimeByID(run.ID)
-	defer stopRuntimeTestStream(second)
+	if manager.runtimeByID(run.ID) == nil {
+		t.Fatal("repeated recovery did not register the runtime")
+	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
 	if fake.nextSession != 1 {
