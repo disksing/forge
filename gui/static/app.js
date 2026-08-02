@@ -4050,6 +4050,53 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+const MOBILE_LAYOUT_QUERY = window.matchMedia("(max-width: 980px)");
+
+// Keep the fixed mobile app shell aligned with the visual viewport. Mobile
+// browsers scroll the layout viewport when the software keyboard opens and
+// may leave the window scrolled after it closes, which shifts the shell
+// off-screen (top controls unreachable, blank area at the bottom).
+function syncAppViewport() {
+  const root = document.documentElement;
+  const viewport = window.visualViewport;
+  if (!MOBILE_LAYOUT_QUERY.matches || !viewport) {
+    root.style.removeProperty("--app-viewport-height");
+    root.style.removeProperty("--app-viewport-offset-top");
+    root.style.removeProperty("--app-viewport-offset-left");
+    return;
+  }
+  root.style.setProperty("--app-viewport-height", `${viewport.height}px`);
+  root.style.setProperty("--app-viewport-offset-top", `${viewport.offsetTop}px`);
+  root.style.setProperty("--app-viewport-offset-left", `${viewport.offsetLeft}px`);
+}
+
+function resetAppViewportScroll() {
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
+  syncAppViewport();
+}
+
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", syncAppViewport);
+  window.visualViewport.addEventListener("scroll", syncAppViewport);
+}
+if (typeof MOBILE_LAYOUT_QUERY.addEventListener === "function") {
+  MOBILE_LAYOUT_QUERY.addEventListener("change", syncAppViewport);
+}
+window.addEventListener("orientationchange", () => {
+  resetAppViewportScroll();
+  setTimeout(resetAppViewportScroll, 300);
+});
+document.addEventListener("focusout", () => {
+  // The software keyboard is dismissing; some mobile browsers leave the
+  // window scrolled. Reset the scroll offset and re-sync once the keyboard
+  // animation settles.
+  setTimeout(resetAppViewportScroll, 0);
+  setTimeout(resetAppViewportScroll, 300);
+});
+syncAppViewport();
+
 function setMobileSidebar(open) {
   state.mobile.sidebarOpen = Boolean(open);
   document.body.classList.toggle("mobile-sidebar-open", state.mobile.sidebarOpen);

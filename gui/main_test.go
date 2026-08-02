@@ -1777,6 +1777,49 @@ func TestMobileLayoutProvidesNavigationAndViewSwitching(t *testing.T) {
 	}
 }
 
+func TestMobileAppShellTracksVisualViewport(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(indexData), `interactive-widget=resizes-content`) {
+		t.Fatal("viewport meta should resize the layout viewport when the software keyboard opens")
+	}
+
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const MOBILE_LAYOUT_QUERY = window.matchMedia("(max-width: 980px)");`,
+		`function syncAppViewport()`,
+		`window.visualViewport.addEventListener("resize", syncAppViewport)`,
+		`window.visualViewport.addEventListener("scroll", syncAppViewport)`,
+		`window.scrollTo(0, 0)`,
+		`document.addEventListener("focusout"`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("mobile viewport sync behavior is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`top: var(--app-viewport-offset-top, 0px);`,
+		`left: var(--app-viewport-offset-left, 0px);`,
+		`height: var(--app-viewport-height, 100dvh);`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("mobile app shell styles are missing %q", want)
+		}
+	}
+}
+
 func TestProjectDetailsOmitsDescription(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
