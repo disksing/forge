@@ -1516,12 +1516,16 @@ body.resizing-y {
 
 .agent-tool-item > summary span {
   min-width: 0;
-  overflow-wrap: anywhere;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: #334155;
 }
 
 .agent-tool-item > summary small {
   margin-left: auto;
+  flex: 0 0 auto;
   color: #94a3b8;
   font-size: 10px;
 }
