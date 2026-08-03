@@ -305,6 +305,7 @@ function renderAll() {
 
 function renderSelectionPanels() {
   renderTree();
+  renderSessions();
   renderDetails();
   bindWorkspaceAgentsEvents();
   bindArtifactBrowserEvents();
@@ -723,10 +724,26 @@ async function toggleProject(id) {
   await saveUIState();
 }
 
+function sortedSessionsForDisplay(sessions) {
+  return sessions
+    .map((session, index) => ({ session, index }))
+    .sort((a, b) => {
+      const left = Date.parse(a.session.startedAt || "");
+      const right = Date.parse(b.session.startedAt || "");
+      const leftOK = Number.isFinite(left);
+      const rightOK = Number.isFinite(right);
+      if (leftOK && rightOK && left !== right) return left - right;
+      if (leftOK !== rightOK) return leftOK ? -1 : 1;
+      if (a.session.id !== b.session.id) return a.session.id < b.session.id ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.session);
+}
+
 function renderSessions() {
   const list = $("sessionList");
   list.innerHTML = "";
-  const sessions = state.tree?.sessions || [];
+  const sessions = sortedSessionsForDisplay(state.tree?.sessions || []);
   if (sessions.length === 0) {
     list.innerHTML = `<div class="session-row muted-row">${icon("message-square")}<div><strong>No active sessions</strong><span>Start one from a task directory.</span></div></div>`;
     return;
@@ -739,8 +756,11 @@ function renderSessions() {
       ? sessionStatusPresentation(session)
       : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
     const clickable = controls.length > 0 || resourceId;
+    const selectedId = state.selectedId;
+    const isCurrent = Boolean(selectedId) && selectedId !== "workspace" &&
+      (resourceId === selectedId || controls.some((control) => control.resourceId === selectedId));
     const row = document.createElement(clickable ? "button" : "div");
-    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""}`;
+    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""}`;
     if (clickable) row.type = "button";
     const agent = isInternal
       ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName)

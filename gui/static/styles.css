@@ -2798,6 +2798,19 @@ i[data-lucide] {
   background: rgba(226, 232, 240, 0.55);
 }
 
+.session-row.current-session {
+  background: #eff6ff;
+}
+
+.session-row.current-session:hover,
+.session-row.current-session.clickable-session:hover {
+  background: #dbeafe;
+}
+
+.session-row.current-session strong {
+  color: #1d4ed8;
+}
+
 .clickable-session {
   cursor: pointer;
 }
