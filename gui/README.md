@@ -44,7 +44,7 @@ AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentH
 
 REST、历史分页与 SSE 都向浏览器传递 AgentHub API v1 canonical event。浏览器使用 vendored `@agenthub/event-timeline` IIFE 的 `buildTimeline` 进行唯一的过滤、delta 合并、tool payload 解释、call 关联和终态收敛，再由 Forge 的 DOM renderer 展示。
 
-当前固定版本为 1.0.0，AgentHub timeline source revision 为 `ce75b8bb75c0594b974bd54fb4bce90c0a205748`，IIFE SHA-256 为 `cc092bcf16cc790a08590561685326eb083afa048f0bdaa62b840ddefc1dcdd7`。该构建使用 `agentName` 作为唯一 Agent 身份，不再回退到旧 `agentId`。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
+当前固定版本为 1.0.0，AgentHub timeline source revision 为 `a34d8b009c5278d8aa50fcd637ec1d9005bacc28`，IIFE SHA-256 为 `f8b1fa87df04394f617b0ae129c4991f8f401142ebc15a98433dfc184f2ee8eb`。该构建使用 `agentName` 作为唯一 Agent 身份，不再回退到旧 `agentId`。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
 
 ```sh
 scripts/update-agenthub-event-timeline /path/to/agenthub
