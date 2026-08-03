@@ -1582,6 +1582,71 @@ for (const [item, want] of cases) {
 	}
 }
 
+func TestAgentLiveDeltaMergePreservesThinkingStartTime(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for live delta merge tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {
+  state: { agent: { events: [] } },
+  isKnownCanonicalAgentEvent() { return false; },
+  scheduleAgentRender() {},
+};
+vm.createContext(context);
+vm.runInContext(extract("appendCanonicalAgentEvent"), context);
+context.appendCanonicalAgentEvent({
+  id: 7,
+  time: "2026-01-01T00:00:00Z",
+  type: "message.reasoning.delta",
+  data: { text: "first" },
+});
+context.appendCanonicalAgentEvent({
+  id: 7,
+  time: "2026-01-01T00:01:02Z",
+  startTime: "2026-01-01T00:00:00Z",
+  type: "message.reasoning.delta",
+  data: { text: " second", append: true },
+});
+const patched = context.state.agent.events[0];
+if (patched.data.text !== "first second" || patched.time !== "2026-01-01T00:01:02Z" || patched.startTime !== "2026-01-01T00:00:00Z") {
+  throw new Error("append patch lost thinking timestamps: " + JSON.stringify(patched));
+}
+context.appendCanonicalAgentEvent({
+  id: 7,
+  time: "2026-01-01T00:01:03Z",
+  type: "message.reasoning.delta",
+  data: { text: "first second" },
+});
+const healed = context.state.agent.events[0];
+if (healed.startTime !== "2026-01-01T00:00:00Z" || healed.time !== "2026-01-01T00:01:03Z") {
+  throw new Error("full replacement lost thinking start time: " + JSON.stringify(healed));
+}
+`
+	appPath := filepath.Join("static", "app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("live delta merge behavior failed: %v\n%s", err, output)
+	}
+}
+
 func TestAgentTimelineHidesLaunchEnvironmentEvents(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -1702,6 +1767,14 @@ const thinking = timeline.find((item) => item.kind === "thinking");
 const approval = timeline.find((item) => item.kind === "approval");
 if (thinking.startTime !== "2026-01-01T00:00:00Z" || thinking.time !== "2026-01-01T00:01:02Z") {
   throw new Error("thinking timestamps were not projected");
+}
+const folded = context.AgentHubEventTimeline.buildTimeline([
+  { id: 10, time: "2026-01-01T00:02:03Z", startTime: "2026-01-01T00:02:00Z", type: "message.reasoning.delta", data: { text: "folded" } },
+  { id: 11, time: "2026-01-01T00:02:04Z", type: "message.assistant.delta", data: { text: "answer" } },
+]);
+const foldedThinking = folded.find((item) => item.kind === "thinking");
+if (foldedThinking.startTime !== "2026-01-01T00:02:00Z" || foldedThinking.time !== "2026-01-01T00:02:03Z") {
+  throw new Error("folded thinking timestamps were not projected");
 }
 if (approval.question !== "Choose one" || approval.options.length !== 1 || approval.options[0].optionId !== "a") {
   throw new Error("question approval was not projected");

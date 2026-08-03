@@ -1988,14 +1988,17 @@ function appendCanonicalAgentEvent(event) {
       // instead of re-receiving the accumulated content.
       const currentText = typeof existing.data?.text === "string" ? existing.data.text : "";
       const fragment = typeof event.data?.text === "string" ? event.data.text : "";
+      const startTime = event.startTime || existing.startTime || "";
       state.agent.events[existingIndex] = {
         ...existing,
         time: event.time || existing.time,
+        ...(startTime ? { startTime } : {}),
         data: { ...existing.data, text: currentText + fragment },
       };
     } else {
       // Full replacement: history replay or the reconnect cursor re-send.
-      state.agent.events[existingIndex] = event;
+      const startTime = event.startTime || existing.startTime || "";
+      state.agent.events[existingIndex] = startTime ? { ...event, startTime } : event;
     }
     scheduleAgentRender();
     return;
