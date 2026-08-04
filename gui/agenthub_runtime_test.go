@@ -249,6 +249,120 @@ func TestAgentHubRuntimeReportsUnavailableConfiguredProfile(t *testing.T) {
 	}
 }
 
+func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.rejectAgentName = "fake-agent"
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("expected AgentHub create failure, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("stuck run projection missing: runs=%#v err=%v", runs, err)
+	}
+	run := runs[0]
+	if run.Status != "recovering" || run.AgentHubSessionID != "" || run.ForgeSessionID == "" {
+		t.Fatalf("expected recovering run without AgentHub attachment: %#v", run)
+	}
+	if _, err := os.Stat(run.ForgeSessionContextPath); err != nil {
+		t.Fatalf("Forge session context missing before stop: %v", err)
+	}
+
+	stop := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
+		rec := httptest.NewRecorder()
+		manager.stopRun(rec, req, workspace.ID, run.ID)
+		return rec
+	}
+	if rec := stop(); rec.Code != http.StatusOK {
+		t.Fatalf("stop of unattached run should succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
+	logData := string(mustReadFile(t, logPath))
+	if !strings.Contains(logData, "session end --id "+run.ForgeSessionID) {
+		t.Fatalf("Forge session was not ended by stop:\n%s", logData)
+	}
+	if _, err := os.Stat(run.ForgeSessionContextPath); !os.IsNotExist(err) {
+		t.Fatalf("Forge session context was not removed: %v", err)
+	}
+	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != "stopped" || persisted.ForgeSessionID != "" || persisted.ForgeSessionContextPath != "" {
+		t.Fatalf("stop did not persist a terminal projection: %#v", persisted)
+	}
+	if rt := manager.runtimeByID(run.ID); rt == nil || rt.snapshotRun().Status != "stopped" {
+		t.Fatalf("runtime projection was not deactivated: %#v", rt)
+	}
+
+	// Repeated stops are idempotent and must not repeat the cleanup.
+	if rec := stop(); rec.Code != http.StatusOK {
+		t.Fatalf("repeated stop should succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	logData = string(mustReadFile(t, logPath))
+	if strings.Count(logData, "session end") != 1 {
+		t.Fatalf("repeated stop repeated the Forge session cleanup:\n%s", logData)
+	}
+	fake.mu.Lock()
+	actions := append([]string(nil), fake.actions...)
+	fake.mu.Unlock()
+	if len(actions) != 0 {
+		t.Fatalf("unattached stop must not touch AgentHub: %v", actions)
+	}
+}
+
+func TestStopUnattachedAgentHubRunWithoutRuntime(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.rejectAgentName = "fake-agent"
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("expected AgentHub create failure, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("stuck run projection missing: runs=%#v err=%v", runs, err)
+	}
+	run := runs[0]
+
+	// A GUI restart leaves the stuck run without a registered runtime; the
+	// escape hatch must still work from the persisted projection.
+	restarted := newAgentManager(manager.server)
+	if restarted.runtimeByID(run.ID) != nil {
+		t.Fatal("fresh manager unexpectedly has a runtime for the stuck run")
+	}
+	req := httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	restarted.stopRun(rec, req, workspace.ID, run.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stop of persisted unattached run should succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.Status != "stopped" || persisted.ForgeSessionID != "" {
+		t.Fatalf("persisted stop did not reach a terminal projection: %#v", persisted)
+	}
+	if _, err := os.Stat(run.ForgeSessionContextPath); !os.IsNotExist(err) {
+		t.Fatalf("Forge session context was not removed: %v", err)
+	}
+
+	// Idempotency on the disk-only path as well.
+	req = httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
+	rec = httptest.NewRecorder()
+	restarted.stopRun(rec, req, workspace.ID, run.ID)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("repeated persisted stop should succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
 func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

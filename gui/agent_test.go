@@ -131,7 +131,6 @@ func TestUnboundRunControlEndpointsRejectWithoutStartingAnything(t *testing.T) {
 		call func(http.ResponseWriter, *http.Request, string, string)
 	}{
 		{path: "input", body: `{"text":"continue"}`, call: manager.sendInput},
-		{path: "stop", body: `{}`, call: manager.stopRun},
 		{path: "resume", body: `{}`, call: manager.resumeRun},
 		{path: "approval", body: `{"requestId":"old","decision":"accept"}`, call: manager.resolveApproval},
 	} {

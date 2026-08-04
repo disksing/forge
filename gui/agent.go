@@ -684,19 +684,30 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 }
 
 func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil || rt == nil {
+	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	if rt != nil {
+		rt.mu.Lock()
+		sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
+		run := rt.run
+		rt.mu.Unlock()
+		if sessionID != "" {
+			m.stopAgentHubRun(w, r, rt)
+			return
+		}
+		m.stopUnattachedAgentHubRun(w, r, workspace, run, rt)
+		return
+	}
+	run, err := loadAgentRun(workspace.Path, runID)
+	if err != nil || !isAgentHubRun(run) || strings.TrimSpace(run.AgentHubSessionID) != "" {
+		// An attached run needs its live runtime to drive the AgentHub stop.
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
 		return
 	}
-	rt.mu.Lock()
-	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
-	rt.mu.Unlock()
-	if sessionID == "" {
-		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
-	}
-	m.stopAgentHubRun(w, r, rt)
+	m.stopUnattachedAgentHubRun(w, r, workspace, run, nil)
 }
 
 func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {

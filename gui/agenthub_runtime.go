@@ -394,6 +394,44 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 	writeJSON(w, map[string]string{"status": "stopped"})
 }
 
+// stopUnattachedAgentHubRun is the escape hatch for runs that never attached
+// to AgentHub, for example a dispatch whose session creation failed and left
+// the run in recovering. There is no AgentHub session to stop, so the run's
+// Forge session is ended directly to release its resource lock, the session
+// context file is removed, and the run is persisted with a terminal status.
+// Stop is idempotent: a run that already reached a terminal status returns
+// success without repeating cleanup.
+func (m *agentManager) stopUnattachedAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun, rt *agentRuntime) {
+	if !isLiveAgentStatus(run.Status) {
+		writeJSON(w, map[string]string{"status": run.Status})
+		return
+	}
+	if sessionID := strings.TrimSpace(run.ForgeSessionID); sessionID != "" {
+		if err := m.endForgeSession(r.Context(), workspace, sessionID); err != nil {
+			if rt != nil {
+				rt.setRecoveryError(m, err)
+			}
+			writeError(w, fmt.Errorf("release Forge session: %w", err), http.StatusInternalServerError)
+			return
+		}
+	}
+	removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
+	run.Status = "stopped"
+	run.ForgeSessionID = ""
+	run.ForgeSessionContextPath = ""
+	run.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	// The runtime stays registered with the terminal status, mirroring the
+	// post-restart projection of a stopped run.
+	if rt != nil {
+		rt.setRun(run)
+	}
+	writeJSON(w, map[string]string{"status": "stopped"})
+}
+
 func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	_, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil || rt == nil {
