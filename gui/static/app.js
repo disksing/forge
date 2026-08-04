@@ -102,9 +102,15 @@ const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
 const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
-const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 1;
+const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+// Auto-fill keeps paging older raw events after the initial tail page until
+// the log overflows its viewport (with slack), so a tool-heavy tail does not
+// leave the chat area mostly blank. The page cap bounds pathological cases
+// where thousands of raw events collapse into a single tool group.
+const AGENT_AUTOFILL_OVERFLOW_PX = 160;
+const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
@@ -1830,6 +1836,56 @@ async function loadCanonicalAgentEvents() {
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
   if (index >= 0) {
     state.agent.runs[index] = detail.run;
+  }
+  scheduleAgentLogAutoFill();
+}
+
+// scheduleAgentLogAutoFill defers the viewport check until after the caller's
+// render pass so scrollHeight reflects the freshly loaded tail page.
+function scheduleAgentLogAutoFill() {
+  const runId = state.agent.activeRunId;
+  if (!runId || !state.agent.eventsHasMore) return;
+  setTimeout(() => {
+    autoFillAgentLog(runId).catch((err) => toast(err.message));
+  }, 0);
+}
+
+async function autoFillAgentLog(runId) {
+  if (state.agent.activeRunId !== runId) return;
+  if (!state.agent.eventsHasMore || state.agent.loadingOlder) return;
+  const log = $("ttyLog");
+  if (!log || log.dataset.agentRunId !== runId) return;
+  if (log.scrollHeight > log.clientHeight + AGENT_AUTOFILL_OVERFLOW_PX) return;
+  state.agent.loadingOlder = true;
+  renderTTY({ stickToBottom: false });
+  let completed = false;
+  try {
+    let pages = 0;
+    while (pages < AGENT_AUTOFILL_MAX_PAGES) {
+      if (state.agent.activeRunId !== runId || !state.agent.eventsHasMore) break;
+      const currentLog = $("ttyLog");
+      if (!currentLog) break;
+      if (currentLog.scrollHeight > currentLog.clientHeight + AGENT_AUTOFILL_OVERFLOW_PX) break;
+      const loaded = await loadOlderAgentEventsPage(AGENT_OLDER_RAW_PAGE_LIMIT);
+      if (!loaded) break;
+      pages++;
+      // Re-render so the next iteration measures up-to-date content. A
+      // deferred render (active text selection) leaves stale measurements,
+      // so stop instead of paging blindly. Stick-to-bottom follows the
+      // default near-bottom rule so a user scroll is not yanked back.
+      renderTTY();
+      if (state.agent.renderDeferredForSelection) break;
+    }
+    completed = state.agent.activeRunId === runId;
+  } finally {
+    state.agent.loadingOlder = false;
+    if (completed) {
+      renderTTY();
+      refreshIcons();
+    } else if (state.agent.activeRunId) {
+      // The active run changed mid-fill; let the new run fill its own log.
+      scheduleAgentLogAutoFill();
+    }
   }
 }
 
