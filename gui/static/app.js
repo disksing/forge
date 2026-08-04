@@ -3998,7 +3998,8 @@ function startSidebarResize(event) {
   const startX = event.clientX;
   const startWidth = $("app").querySelector(".sidebar").getBoundingClientRect().width;
   startDrag(event.currentTarget, (moveEvent) => {
-    const width = clamp(startWidth + moveEvent.clientX - startX, 220, 420);
+    // No upper bound: long task names must remain fully visible when widened.
+    const width = Math.max(220, startWidth + moveEvent.clientX - startX);
     setCSSPixels("--sidebar-width", width);
   }, saveCurrentPaneSizes);
 }
