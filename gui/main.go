@@ -114,9 +114,12 @@ type diffResponse struct {
 }
 
 type guiState struct {
-	Version          int      `json:"version"`
-	ExpandedProjects []string `json:"expandedProjects"`
-	LastResourceID   string   `json:"lastResourceId,omitempty"`
+	Version          int                 `json:"version"`
+	ExpandedProjects []string            `json:"expandedProjects"`
+	LastResourceID   string              `json:"lastResourceId,omitempty"`
+	ProjectOrder     []string            `json:"projectOrder,omitempty"`
+	TaskOrder        map[string][]string `json:"taskOrder,omitempty"`
+	SessionOrder     []string            `json:"sessionOrder,omitempty"`
 }
 
 type guiSession struct {

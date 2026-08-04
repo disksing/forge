@@ -2038,6 +2038,100 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 	}
 }
 
+func TestUIStateRoundTripsCustomOrder(t *testing.T) {
+	workspace := t.TempDir()
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	put := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/ui-state", strings.NewReader(`{"version":1,"expandedProjects":[],"projectOrder":["project2","project1"],"taskOrder":{"project1":["project1.task3","project1.task1"]},"sessionOrder":["session-b","session-a"]}`))
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, put)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state PUT to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	get := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/ui-state", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, get)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ui-state GET to succeed, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var loaded guiState
+	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.ProjectOrder) != 2 || loaded.ProjectOrder[0] != "project2" || loaded.ProjectOrder[1] != "project1" {
+		t.Fatalf("expected persisted project order, got %+v", loaded.ProjectOrder)
+	}
+	if len(loaded.TaskOrder["project1"]) != 2 || loaded.TaskOrder["project1"][0] != "project1.task3" {
+		t.Fatalf("expected persisted task order, got %+v", loaded.TaskOrder)
+	}
+	if len(loaded.SessionOrder) != 2 || loaded.SessionOrder[0] != "session-b" {
+		t.Fatalf("expected persisted session order, got %+v", loaded.SessionOrder)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "gui-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"projectOrder"`) || !strings.Contains(string(data), `"taskOrder"`) || !strings.Contains(string(data), `"sessionOrder"`) {
+		t.Fatalf("expected gui-state.json to persist custom order fields, got %s", data)
+	}
+}
+
+func TestListCustomOrderHelpers(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the custom order helper test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function applyCustomOrder(items, orderedIds)")
+	if start < 0 {
+		t.Fatal("could not find applyCustomOrder function")
+	}
+	end := strings.Index(app[start:], "function sortedSessionsForDisplay(sessions)")
+	if end < 0 {
+		t.Fatal("could not isolate custom order helpers")
+	}
+	end += start
+
+	script := `
+function ids(items) {
+  return items.map((item) => item.id).join(",");
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(message + ": expected " + expected + ", got " + actual);
+}
+const items = [{ id: "a" }, { id: "b" }, { id: "c" }];
+` + app[start:end] + `
+assertEqual(ids(applyCustomOrder(items, [])), "a,b,c", "empty custom order keeps the default order");
+assertEqual(ids(applyCustomOrder(items, ["c", "a", "b"])), "c,a,b", "custom order reorders known items");
+assertEqual(ids(applyCustomOrder(items, ["c"])), "c,a,b", "items missing from the custom order append in default order");
+assertEqual(ids(applyCustomOrder(items, ["stale", "b", "a"])), "b,a,c", "stale ids are ignored");
+assertEqual(ids(applyCustomOrder(items, null)), "a,b,c", "missing custom order keeps the default order");
+assertEqual(ids(applyCustomOrder(null, ["a"])), "", "missing items produce an empty list");
+assertEqual(moveIdInList(["a", "b", "c"], "a", "c", true).join(","), "b,c,a", "move after the target");
+assertEqual(moveIdInList(["a", "b", "c"], "c", "a", false).join(","), "c,a,b", "move before the target");
+assertEqual(moveIdInList(["a", "b", "c"], "b", "b", true).join(","), "a,b,c", "dropping on itself keeps the order");
+assertEqual(moveIdInList(["a", "b", "c"], "a", "missing", true).join(","), "a,b,c", "missing target keeps the order");
+assertEqual(moveIdInList(["a", "b", "c"], "missing", "b", false).join(","), "a,missing,b,c", "dragged id missing from the list inserts before the target");
+`
+
+	testFile := filepath.Join(t.TempDir(), "custom-order-helpers.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("custom order helper test failed: %v\n%s", err, output)
+	}
+}
+
 func TestWorkspaceRestoresLastSelectedResource(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

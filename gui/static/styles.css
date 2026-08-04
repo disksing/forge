@@ -2894,6 +2894,48 @@ i[data-lucide] {
   background: #ffffff;
 }
 
+.drag-handle {
+  display: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 4px;
+  color: #94a3b8;
+  cursor: grab;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle svg,
+.session-row .drag-handle svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  color: #94a3b8;
+}
+
+.tree-item:hover .drag-handle,
+.session-row:hover .drag-handle {
+  display: grid;
+}
+
+.tree-item.drag-source,
+.session-row.drag-source {
+  opacity: 0.5;
+}
+
+.tree-item.drop-before,
+.session-row.drop-before {
+  box-shadow: inset 0 2px 0 0 #3b82f6;
+}
+
+.tree-item.drop-after,
+.session-row.drop-after {
+  box-shadow: inset 0 -2px 0 0 #3b82f6;
+}
+
 .session-resource-menu {
   margin: -2px 8px 8px 44px;
   padding: 4px;

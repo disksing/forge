@@ -11,6 +11,10 @@ const state = {
   selectedId: "",
   lastResourceId: "",
   expandedProjects: new Set(),
+  projectOrder: [],
+  taskOrder: {},
+  sessionOrder: [],
+  listDrag: null,
   expandedPaths: new Set(),
   expandedMarkdownFiles: new Set(),
   preview: null,
@@ -205,6 +209,9 @@ async function loadUIState() {
   const uiState = await api(`/api/workspaces/${state.activeWorkspaceId}/ui-state`);
   state.expandedProjects = new Set(uiState.expandedProjects || []);
   state.lastResourceId = uiState.lastResourceId || "";
+  state.projectOrder = Array.isArray(uiState.projectOrder) ? uiState.projectOrder : [];
+  state.taskOrder = uiState.taskOrder && typeof uiState.taskOrder === "object" ? uiState.taskOrder : {};
+  state.sessionOrder = Array.isArray(uiState.sessionOrder) ? uiState.sessionOrder : [];
 }
 
 async function saveUIState() {
@@ -215,6 +222,9 @@ async function saveUIState() {
       version: 1,
       expandedProjects: [...state.expandedProjects],
       lastResourceId: state.selectedId,
+      projectOrder: state.projectOrder,
+      taskOrder: state.taskOrder,
+      sessionOrder: state.sessionOrder,
     }),
   });
   state.lastResourceId = state.selectedId;
@@ -230,7 +240,7 @@ function startAutoRefresh() {
 }
 
 async function autoRefresh() {
-  if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || document.hidden) return;
+  if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || state.listDrag || document.hidden) return;
   const refreshVersion = state.autoRefreshVersion;
   state.autoRefreshInFlight = true;
   try {
@@ -422,13 +432,13 @@ function renderTree() {
     state.taskOperationalStateKey = "";
     return;
   }
-  for (const project of state.tree.projects) {
+  for (const project of applyCustomOrder(state.tree.projects, state.projectOrder)) {
     tree.appendChild(treeButton(project, "project"));
     if (isProjectExpanded(project.id)) {
       const group = document.createElement("div");
       group.className = "task-group";
-      for (const task of project.children || []) {
-        group.appendChild(treeButton(task, "task"));
+      for (const task of applyCustomOrder(project.children || [], state.taskOrder[project.id])) {
+        group.appendChild(treeButton(task, "task", project.id));
       }
       tree.appendChild(group);
     }
@@ -436,7 +446,7 @@ function renderTree() {
   state.taskOperationalStateKey = taskOperationalStateKey();
 }
 
-function treeButton(item, kind) {
+function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
   const statuses = [taskState.autoRun, taskState.session].filter(Boolean);
@@ -463,6 +473,7 @@ function treeButton(item, kind) {
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
     <span class="name">${escapeHTML(title)}</span>
+    <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
     if (event.target.closest("[data-project-toggle]")) {
@@ -471,7 +482,99 @@ function treeButton(item, kind) {
     }
     selectResource(item.id).catch((err) => toast(err.message));
   };
+  bindListDrag(button, { kind, id: item.id, projectId });
   return button;
+}
+
+function bindListDrag(row, target) {
+  const handle = row.querySelector(".drag-handle");
+  if (!handle) return;
+  handle.addEventListener("click", (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+  });
+  handle.addEventListener("dragstart", (event) => {
+    event.stopPropagation();
+    state.listDrag = target;
+    row.classList.add("drag-source");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", target.id);
+    }
+  });
+  handle.addEventListener("dragend", () => {
+    state.listDrag = null;
+    clearListDragIndicators();
+  });
+  row.addEventListener("dragover", (event) => {
+    if (!canDropListDrag(target)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    showListDropIndicator(row, event);
+  });
+  row.addEventListener("dragleave", () => {
+    row.classList.remove("drop-before", "drop-after");
+  });
+  row.addEventListener("drop", (event) => {
+    event.preventDefault();
+    if (!canDropListDrag(target)) return;
+    const drag = state.listDrag;
+    const after = listDropAfter(row, event);
+    state.listDrag = null;
+    clearListDragIndicators();
+    commitListDrag(drag, target, after);
+  });
+}
+
+function canDropListDrag(target) {
+  const drag = state.listDrag;
+  if (!drag || drag.id === target.id || drag.kind !== target.kind) return false;
+  if (target.kind === "task" && drag.projectId !== target.projectId) return false;
+  return true;
+}
+
+function listDropAfter(row, event) {
+  const rect = row.getBoundingClientRect();
+  return event.clientY > rect.top + rect.height / 2;
+}
+
+function showListDropIndicator(row, event) {
+  const after = listDropAfter(row, event);
+  row.classList.toggle("drop-before", !after);
+  row.classList.toggle("drop-after", after);
+}
+
+function clearListDragIndicators() {
+  document.querySelectorAll(".drag-source, .drop-before, .drop-after").forEach((el) => {
+    el.classList.remove("drag-source", "drop-before", "drop-after");
+  });
+}
+
+function commitListDrag(drag, target, after) {
+  if (drag.kind === "session") {
+    const sessions = applyCustomOrder(sortedSessionsForDisplay(state.tree?.sessions || []), state.sessionOrder);
+    state.sessionOrder = moveIdInList(sessions.map((session) => session.id), drag.id, target.id, after);
+    renderSessions();
+    refreshIcons();
+  } else if (drag.kind === "task") {
+    const project = findResource(drag.projectId);
+    if (!project) return;
+    const tasks = applyCustomOrder(project.children || [], state.taskOrder[drag.projectId]);
+    state.taskOrder = {
+      ...state.taskOrder,
+      [drag.projectId]: moveIdInList(tasks.map((task) => task.id), drag.id, target.id, after),
+    };
+    renderTree();
+    refreshIcons();
+  } else if (drag.kind === "project") {
+    const projects = applyCustomOrder(state.tree?.projects || [], state.projectOrder);
+    state.projectOrder = moveIdInList(projects.map((project) => project.id), drag.id, target.id, after);
+    renderTree();
+    refreshIcons();
+  } else {
+    return;
+  }
+  saveUIState().catch((err) => toast(err.message));
 }
 
 function noTaskOperationalState() {
@@ -730,6 +833,34 @@ async function toggleProject(id) {
   await saveUIState();
 }
 
+function applyCustomOrder(items, orderedIds) {
+  if (!Array.isArray(items)) return [];
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) return items;
+  const rank = new Map();
+  orderedIds.forEach((id, index) => {
+    if (!rank.has(id)) rank.set(id, index);
+  });
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const left = rank.has(a.item.id) ? rank.get(a.item.id) : rank.size + a.index;
+      const right = rank.has(b.item.id) ? rank.get(b.item.id) : rank.size + b.index;
+      if (left !== right) return left - right;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.item);
+}
+
+function moveIdInList(ids, dragId, targetId, after) {
+  if (!Array.isArray(ids) || dragId === targetId) return ids;
+  const next = ids.filter((id) => id !== dragId);
+  let index = next.indexOf(targetId);
+  if (index < 0) return ids;
+  if (after) index += 1;
+  next.splice(index, 0, dragId);
+  return next;
+}
+
 function sortedSessionsForDisplay(sessions) {
   return sessions
     .map((session, index) => ({ session, index }))
@@ -749,7 +880,7 @@ function sortedSessionsForDisplay(sessions) {
 function renderSessions() {
   const list = $("sessionList");
   list.innerHTML = "";
-  const sessions = sortedSessionsForDisplay(state.tree?.sessions || []);
+  const sessions = applyCustomOrder(sortedSessionsForDisplay(state.tree?.sessions || []), state.sessionOrder);
   if (sessions.length === 0) {
     list.innerHTML = `<div class="session-row muted-row">${icon("message-square")}<div><strong>No active sessions</strong><span>Start one from a task directory.</span></div></div>`;
     return;
@@ -792,10 +923,12 @@ function renderSessions() {
         <span>${escapeHTML(metaParts.join(" · "))}</span>
       </div>
       <span class="session-badge ${isInternal ? "internal" : "external"}">${escapeHTML(label)}</span>
+      <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
     `;
     if (clickable) {
       row.addEventListener("click", () => handleSessionClick(session));
     }
+    bindListDrag(row, { kind: "session", id: session.id, projectId: "" });
     list.appendChild(row);
     if (state.sessionMenu?.sessionId === session.id && controls.length > 1) {
       list.appendChild(sessionResourceMenu(session, controls));
