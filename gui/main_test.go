@@ -1196,7 +1196,7 @@ func TestPageDetailsOmitSummaryStats(t *testing.T) {
 	for _, want := range []string{
 		`<div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>`,
 		`${workspaceAgentsSection()}`,
-		`<h1>${escapeHTML(detail.title)}</h1>`,
+		`<h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>`,
 		`id="newTaskButton"`,
 		`<button class="danger" id="archiveButton"`,
 		`${fileSection(detail)}`,
@@ -2185,5 +2185,80 @@ func TestWorkspaceRestoresLastSelectedResource(t *testing.T) {
 	}
 	if got := strings.Count(source, "saveUIState().catch("); got < 2 {
 		t.Fatalf("selection changes and workspace switches should persist UI state; got %d saveUIState().catch call sites", got)
+	}
+}
+
+func TestResourceRefBadgeShownInTreeAndDetails(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		// Tree rows render the muted "#id" badge next to the resource name.
+		`<span class="name">${escapeHTML(title)}</span>
+    ${resourceRefBadge(item.id)}`,
+		// Details header shows the badge while loading and after loading.
+		`<div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>`,
+		`<h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("resource ref badge is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{".resource-ref {", ".tree-item .resource-ref {", ".title-row h1 .resource-ref {"} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("resource ref badge styles are missing %q", want)
+		}
+	}
+}
+
+func TestResourceRefBadgeHelper(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the resource ref badge test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	start := strings.Index(app, "function resourceRefBadge(id)")
+	if start < 0 {
+		t.Fatal("could not find resourceRefBadge function")
+	}
+	end := strings.Index(app[start:], "function treeButton(item, kind, projectId = \"\")")
+	if end < 0 {
+		t.Fatal("could not isolate resourceRefBadge helper")
+	}
+	end += start
+
+	script := `
+function escapeHTML(value) {
+  return String(value).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(message + ": expected " + expected + ", got " + actual);
+}
+` + app[start:end] + `
+assertEqual(resourceRefBadge(""), "", "empty id renders no badge");
+assertEqual(resourceRefBadge("project1"), '<span class="resource-ref">#1</span>', "project id renders numeric ref");
+assertEqual(resourceRefBadge("project1.task193"), '<span class="resource-ref">#193</span>', "task id renders numeric ref");
+assertEqual(resourceRefBadge("project2.task3"), '<span class="resource-ref">#3</span>', "task number drops the project prefix");
+assertEqual(resourceRefBadge("custom-slug"), '<span class="resource-ref">#custom-slug</span>', "non numeric ids fall back to the last segment");
+`
+
+	testFile := filepath.Join(t.TempDir(), "resource-ref-badge.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("resource ref badge helper test failed: %v\n%s", err, output)
 	}
 }

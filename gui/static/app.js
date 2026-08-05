@@ -446,6 +446,14 @@ function renderTree() {
   state.taskOperationalStateKey = taskOperationalStateKey();
 }
 
+function resourceRefBadge(id) {
+  if (!id) return "";
+  const segment = id.includes(".") ? id.slice(id.lastIndexOf(".") + 1) : id;
+  const match = segment.match(/^(?:project|task)(\d+)$/);
+  const ref = match ? `#${match[1]}` : `#${segment}`;
+  return `<span class="resource-ref">${escapeHTML(ref)}</span>`;
+}
+
 function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
@@ -473,6 +481,7 @@ function treeButton(item, kind, projectId = "") {
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
     <span class="name">${escapeHTML(title)}</span>
+    ${resourceRefBadge(item.id)}
     <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
@@ -1028,7 +1037,7 @@ function renderDetails() {
     setDetailsHTML(panel, `
       <div class="details-header">
         ${breadcrumb(selected, selected.title)}
-        <div class="title-row"><h1>${escapeHTML(selected.title)}</h1></div>
+        <div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>
       </div>
       <div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>
     `);
@@ -1038,7 +1047,7 @@ function renderDetails() {
     <div class="details-header">
       ${breadcrumb(selected, detail.title)}
       <div class="title-row">
-        <h1>${escapeHTML(detail.title)}</h1>
+        <h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>
         <div class="details-actions">
           ${selected.type === "project" ? `<button id="newTaskButton">${icon("plus")}<span>New Task</span></button>` : ""}
           <button class="danger" id="archiveButton">${icon("archive")}<span>Archive</span></button>

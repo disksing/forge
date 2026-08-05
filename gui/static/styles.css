@@ -314,6 +314,24 @@ body.resizing-y {
   white-space: nowrap;
 }
 
+.resource-ref {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+.tree-item .resource-ref {
+  margin-left: 6px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.title-row h1 .resource-ref {
+  margin-left: 10px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
 .task-item {
   padding-left: 28px;
   font-size: 13px;
