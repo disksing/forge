@@ -118,7 +118,7 @@ const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const AGENT_AUTOFILL_OVERFLOW_PX = 160;
 const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
-const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning"]);
+const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning", "scheduler"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 
@@ -2875,7 +2875,7 @@ function settingsProfilesPanel(data) {
     <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
       <div class="settings-panel-header">
         <h2>Agent Profiles</h2>
-        <p>Profiles map chat and AutoRun preferences to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p>
+        <p>Profiles map chat and AutoRun preferences to AgentHub agents. System profiles are reserved; the scheduler profile is a future scheduling route and does not start a Scheduler Agent. Custom profile keys must be unique.</p>
       </div>
       ${settingsAgentProfilesSection(data)}
       ${settingsAgentSaveBar()}

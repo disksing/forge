@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 )
 
@@ -58,6 +59,20 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
+	structuralProfiles, err := normalizeAgentHubProfileRoutes(cfg.AgentProfiles, agentHubCatalog{})
+	if err != nil {
+		return agentHubSettingsResponse{}, err
+	}
+	if !reflect.DeepEqual(cfg.AgentProfiles, structuralProfiles) {
+		cfg.AgentProfiles = structuralProfiles
+		if _, statErr := os.Stat(s.config); statErr == nil {
+			if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
+				return agentHubSettingsResponse{}, err
+			}
+		} else if !os.IsNotExist(statErr) {
+			return agentHubSettingsResponse{}, statErr
+		}
+	}
 	configured := cfg.AgentHubEndpoint
 	if configured == "" {
 		configured = defaultAgentHubEndpoint
@@ -98,6 +113,11 @@ func (s *server) readAgentHubSettings(ctx context.Context) (agentHubSettingsResp
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
+	}
+	if !reflect.DeepEqual(response.Config, cfg) {
+		if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
+			return agentHubSettingsResponse{}, err
+		}
 	}
 	response.Config = cfg
 	return response, nil
@@ -140,12 +160,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return agentHubSettingsResponse{}, err
-	}
-	data = append(data, '\n')
-	if err := atomicWriteConfig(s.config, data); err != nil {
+	if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
 		return agentHubSettingsResponse{}, err
 	}
 	return agentHubSettingsResponse{
@@ -157,6 +172,14 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 		Status:             &status,
 		Catalog:            catalog,
 	}, nil
+}
+
+func writeAgentHubConfigFile(path string, cfg agentHubGUIConfig) error {
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return atomicWriteConfig(path, append(data, '\n'))
 }
 
 func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
@@ -213,6 +236,14 @@ func (s *server) validatePersistedAgentHubConfig(ctx context.Context) (bool, err
 	if err != nil {
 		return true, err
 	}
-	_, err = normalizeAgentHubConfig(cfg, catalog)
-	return true, err
+	normalized, err := normalizeAgentHubConfig(cfg, catalog)
+	if err != nil {
+		return true, err
+	}
+	if !reflect.DeepEqual(cfg, normalized) {
+		if err := writeAgentHubConfigFile(s.config, normalized); err != nil {
+			return true, err
+		}
+	}
+	return true, nil
 }

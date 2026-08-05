@@ -325,6 +325,11 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 		`/api/settings/agenthub`,
 		`agentName: profile.agentName`,
 		`SYSTEM_AGENT_PROFILE_KEYS`,
+		`"scheduler"`,
+		`does not start a Scheduler Agent`,
+		`settings-profile-system-label`,
+		`data-profile-field="agentName"`,
+		`System profiles cannot be deleted.`,
 		`preferredAgentProfiles`,
 		`Actual Agent:`,
 	} {
