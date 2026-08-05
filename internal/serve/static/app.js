@@ -135,7 +135,7 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
-const EXTERNAL_TASK_LOCK_MESSAGE = "This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
+const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
 const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
 const AGENT_DRAFT_STORAGE_VERSION = 1;
 const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
@@ -1644,7 +1644,7 @@ function noTaskOperationalState() {
 
 function taskOperationalState(item) {
   const sessions = taskAgentSessions(item.id);
-  const locks = taskLocks(item.id);
+  const locks = resourceLocks(item.id);
   const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);
   const session = deriveTaskSessionState(sessions);
   const lock = deriveTaskLockState(locks);
@@ -1741,37 +1741,39 @@ function taskAgentSessions(resourceId) {
   );
 }
 
-function taskLocks(resourceId) {
+function resourceLocks(resourceId) {
   if (!resourceId) return [];
   return (state.tree?.sessions || []).filter((session) => sessionControls(session).some((control) => control.resourceId === resourceId));
 }
 
-function selectedTaskHasExternalLock() {
+function selectedLockableResource() {
   const selected = findResource(state.selectedId);
-  if (!selected || selected.type !== "task") return false;
-  const detail = state.details[selected.id];
-  if (detail && detail.type !== "task") return false;
-  return taskLocks(selected.id).some((session) => session.source === "external");
+  if (!selected || (selected.type !== "project" && selected.type !== "task")) return null;
+  const detail = state.details?.[selected.id];
+  if (detail && detail.type !== selected.type) return null;
+  return selected;
 }
 
-function selectedTaskHasInternalLock() {
-  const selected = findResource(state.selectedId);
-  if (!selected || selected.type !== "task") return false;
-  const detail = state.details[selected.id];
-  if (detail && detail.type !== "task") return false;
-  return taskLocks(selected.id).some((session) => session.source === "internal");
+function selectedResourceHasExternalLock() {
+  const selected = selectedLockableResource();
+  return Boolean(selected && resourceLocks(selected.id).some((session) => session.source === "external"));
 }
 
-function selectedTaskHasNewSessionLock() {
-  return selectedTaskHasExternalLock() || selectedTaskHasInternalLock();
+function selectedResourceHasInternalLock() {
+  const selected = selectedLockableResource();
+  return Boolean(selected && resourceLocks(selected.id).some((session) => session.source === "internal"));
 }
 
-function closeNewSessionChooserForTaskLock() {
-  if (selectedTaskHasNewSessionLock()) state.agent.agentChooserOpen = false;
+function selectedResourceHasNewSessionLock() {
+  return selectedResourceHasExternalLock() || selectedResourceHasInternalLock();
 }
 
-function externalTaskLockNotice() {
-  return `<div class="tty-external-lock-notice" role="alert">${icon("lock")}<span>${escapeHTML(EXTERNAL_TASK_LOCK_MESSAGE)}</span></div>`;
+function closeNewSessionChooserForResourceLock() {
+  if (selectedResourceHasNewSessionLock()) state.agent.agentChooserOpen = false;
+}
+
+function externalResourceLockNotice() {
+  return `<div class="tty-external-lock-notice" role="alert">${icon("lock")}<span>${escapeHTML(EXTERNAL_RESOURCE_LOCK_MESSAGE)}</span></div>`;
 }
 
 function deriveTaskLockState(locks) {
@@ -3846,7 +3848,7 @@ function renderTTYComposer(options = {}) {
   if (!skipDraftSync) syncAgentDraftFromDOM();
   const composer = $("ttyComposer");
   if (!composer) return;
-  closeNewSessionChooserForTaskLock();
+  closeNewSessionChooserForResourceLock();
   const activeRun = currentAgentRun();
   if (!activeRun) {
     const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
@@ -3873,7 +3875,7 @@ function renderTTYComposer(options = {}) {
         <span>&gt;</span>
         <textarea id="ttyInput" rows="1" autocomplete="off" data-agent-draft-key="${escapeHTML(state.agent.ttyDraftKey)}" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
-        ${selectedTaskHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
+        ${selectedResourceHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
         <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
       </form>
       ${agentComposerActions({ includeClose: true, includeStopTurn: stopTurnAvailable, turnStopping: stopTurnPending, collapsible: true })}
@@ -3920,7 +3922,7 @@ function isAgentSessionReady(run) {
 }
 
 function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
-  if (selectedTaskHasExternalLock()) return EXTERNAL_TASK_LOCK_MESSAGE;
+  if (selectedResourceHasExternalLock()) return EXTERNAL_RESOURCE_LOCK_MESSAGE;
   if (isAgentTurnStopping(run)) return "Stopping the current turn.";
   if (!sessionReady) return "Agent session is starting.";
   if (run.status === "stopping") return "AgentHub is stopping the provider.";
@@ -3930,21 +3932,21 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
 }
 
 function agentComposerActions(options = {}) {
-  const externalTaskLocked = selectedTaskHasExternalLock();
-  const internalTaskLocked = selectedTaskHasInternalLock();
+  const externalResourceLocked = selectedResourceHasExternalLock();
+  const internalResourceLocked = selectedResourceHasInternalLock();
   const collapsible = Boolean(options.collapsible);
-  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalTaskLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
-  if (externalTaskLocked) {
+  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalResourceLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
+  if (externalResourceLocked) {
     return `
       <div class="${actionsClass}">
-        ${externalTaskLockNotice()}
+        ${externalResourceLockNotice()}
         ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button"${options.turnStopping ? " disabled" : ""} title="${options.turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}">${icon("square")}<span>Close Session</span></button>` : ""}
       </div>
     `;
   }
   const selectedAgent = selectedAgentConfig();
   const agents = enabledAgentConfigs();
-  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0 && !internalTaskLocked;
+  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0 && !internalResourceLocked;
   const sessionStarting = Boolean(state.agent.newSessionStarting);
   const noAgentReason = "No enabled agents are available. Configure an AgentHub Agent in Settings.";
   const sessionButtonTitle = sessionStarting
@@ -3964,7 +3966,7 @@ function agentComposerActions(options = {}) {
     <div class="${actionsClass}">
       ${autoRunComposerAction()}
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
-      ${internalTaskLocked ? "" : `
+      ${internalResourceLocked ? "" : `
         <div class="tty-new-session-control">
           <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
             ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
@@ -3999,7 +4001,7 @@ function autoRunComposerAction() {
   const selected = findResource(state.selectedId);
   const detail = selected ? state.details[selected.id] : null;
   if (!detail || detail.type !== "task") return "";
-  if (selectedTaskHasExternalLock()) return "";
+  if (selectedResourceHasExternalLock()) return "";
   const autoRun = detail.autoRun || null;
   const stateName = autoRun?.state || "";
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
@@ -4054,15 +4056,22 @@ function autoRunComposerAction() {
 function autoRunComposerKey() {
   const selected = findResource(state.selectedId);
   const detail = selected ? state.details[selected.id] : null;
-  if (!detail || detail.type !== "task") return "no-task";
+  const resourceLockKey = selectedResourceLockComposerKey();
+  if (!detail || detail.type !== "task") return `${resourceLockKey}:no-task`;
   const autoRun = detail.autoRun;
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
   const sessionKey = liveRuns.length
     ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
     : "no-session";
-  const lockKey = selectedTaskHasExternalLock() ? "external-lock" : "unlocked";
-  const internalLockKey = selectedTaskHasInternalLock() ? "internal-lock" : "unlocked";
-  return `${lockKey}:${internalLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+  return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+}
+
+function selectedResourceLockComposerKey() {
+  const selected = selectedLockableResource();
+  if (!selected) return "no-resource";
+  const external = selectedResourceHasExternalLock() ? "external-lock" : "unlocked";
+  const internal = selectedResourceHasInternalLock() ? "internal-lock" : "unlocked";
+  return `${selected.type}:${selected.id}:${external}:${internal}`;
 }
 
 async function startChatAutoRun() {
@@ -4070,8 +4079,8 @@ async function startChatAutoRun() {
     const selected = findResource(state.selectedId);
     const detail = selected ? state.details[selected.id] : null;
     if (!detail || detail.type !== "task") throw new Error("Select a task first.");
-    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
-      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
+      throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
     const liveSession = state.agent.runs.some((run) => isLiveAgentRun(run));
     let agentName = "";
@@ -4593,7 +4602,7 @@ function bindAgentEvents() {
   if (startButton) startButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0 || (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock())) return;
+    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0 || (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock())) return;
     state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
     renderTTYComposer();
     bindAgentEvents();
@@ -4706,8 +4715,8 @@ async function startAgentRun(agentName = "") {
   return mutateAgentSession(async () => {
     if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
     const selected = findResource(state.selectedId);
-    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
-      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
+      throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
     const requestedAgentName = String(agentName || "").trim();
     const agent = requestedAgentName
@@ -4756,8 +4765,8 @@ async function startAgentRun(agentName = "") {
 
 async function sendAgentInput(text) {
   if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
-  if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
-    throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+  if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
+    throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
   }
   return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
@@ -5064,8 +5073,8 @@ async function closeAgentRun(runId) {
 async function resumeAgentRun() {
   if (!state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
-    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
-      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
+      throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
     flushAgentDraft();
     const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });

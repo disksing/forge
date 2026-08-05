@@ -8,38 +8,38 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-const externalTaskLockMessage = "This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released."
+const externalResourceLockMessage = "This resource is locked by an external session. New sessions and AutoRun are unavailable until the lock is released."
 
-// externalTaskLockError is deliberately a stable, user-facing conflict. The
+// externalResourceLockError is deliberately a stable, user-facing conflict. The
 // frontend uses the same message for the optimistic composer state, while
 // every server entry point re-checks the current Workspace projection.
-type externalTaskLockError struct {
+type externalResourceLockError struct {
 	ResourceID string
 }
 
-func (e *externalTaskLockError) Error() string {
-	return externalTaskLockMessage
+func (e *externalResourceLockError) Error() string {
+	return externalResourceLockMessage
 }
 
-func isExternalTaskLockError(err error) bool {
-	var target *externalTaskLockError
+func isExternalResourceLockError(err error) bool {
+	var target *externalResourceLockError
 	return errors.As(err, &target)
 }
 
-func writeTaskOperationError(w http.ResponseWriter, err error, fallbackStatus int) {
-	if isExternalTaskLockError(err) {
+func writeResourceOperationError(w http.ResponseWriter, err error, fallbackStatus int) {
+	if isExternalResourceLockError(err) {
 		writeError(w, err, http.StatusConflict)
 		return
 	}
 	writeError(w, err, fallbackStatus)
 }
 
-// requireTaskNotExternallyLocked mirrors the GUI tree projection: a Forge
+// requireResourceNotExternallyLocked mirrors the GUI tree projection: a Forge
 // session is internal only when the serve-owned AgentHub run index points at
-// it. Any remaining session controlling the selected task is external. The
+// it. Any remaining session controlling the selected resource is external. The
 // check is intentionally performed from a fresh on-disk Workspace snapshot
 // so stale Chat markup cannot bypass the resource lock.
-func (s *server) requireTaskNotExternallyLocked(workspace guiWorkspace, resourceID string) error {
+func (s *server) requireResourceNotExternallyLocked(workspace guiWorkspace, resourceID string) error {
 	resourceID = strings.TrimSpace(resourceID)
 	if resourceID == "" {
 		return nil
@@ -52,7 +52,7 @@ func (s *server) requireTaskNotExternallyLocked(workspace guiWorkspace, resource
 	if err != nil {
 		return err
 	}
-	if resource.Task == nil {
+	if resource.Resource() == nil {
 		return nil
 	}
 	typedTree, err := forgeWorkspace.Tree()
@@ -69,7 +69,7 @@ func (s *server) requireTaskNotExternallyLocked(workspace guiWorkspace, resource
 		}
 		for _, control := range session.Controls {
 			if strings.TrimSpace(control.ResourceID) == resourceID {
-				return &externalTaskLockError{ResourceID: resourceID}
+				return &externalResourceLockError{ResourceID: resourceID}
 			}
 		}
 	}

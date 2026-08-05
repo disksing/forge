@@ -37,9 +37,9 @@ GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 �
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
 
-当当前选中的 Task 存在 `source=external` 的有效 Session 锁时，composer 隐藏 New Session、Start/Resume AutoRun 和 Resume Session 入口，显示“此 Task 被外部 Session 锁定”的提示，并暂停输入与上传。外部锁释放后，下一次 tree 刷新恢复正常操作。服务端在创建/恢复 Session、发送输入和手动或调度 AutoRun 的执行路径再次读取同一锁投影；页面过期或直接调用 API 只返回 conflict，不创建 AgentHub session、不推进 AutoRun generation，也不发送消息。
+当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New Session、Start/Resume AutoRun 和 Resume Session 入口，并暂停输入与上传。外部锁释放后，下一次 tree 刷新恢复正常操作。服务端在创建/恢复 Session、发送输入和手动或调度 AutoRun 的执行路径再次读取同一锁投影；页面过期或直接调用 API 只返回 conflict，不创建 AgentHub session、不推进 AutoRun generation，也不发送消息。
 
-当当前选中的 Task 存在 `source=internal` 的有效 Forge GUI Session 锁时，composer 隐藏 New Session 并关闭已展开的 Agent 选择列表；判定依据是该 Task 的所有 `sessionControls` 锁投影，不依赖当前查看的 Agent Run 或其状态。当前 Session 的输入、审批、Close Session 和 idle AutoRun 复用入口保持可用；下一次 tree 刷新观察到锁释放后恢复 New Session。
+当当前选中的 Project 或 Task 存在 `source=internal` 的有效 Forge GUI Session 锁时，composer 隐藏 New Session 并关闭已展开的 Agent 选择列表；判定依据是该 Resource 的所有 `sessionControls` 锁投影，不依赖当前查看的 Agent Run 或其状态。当前 Session 的输入、审批、Close Session 和 idle Task AutoRun 复用入口保持可用；下一次 tree 刷新观察到锁释放后恢复 New Session。AutoRun 仍只适用于 Task。
 
 AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
 

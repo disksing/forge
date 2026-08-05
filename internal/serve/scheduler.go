@@ -164,8 +164,8 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	default:
 		return runnableTaskNotRunnable, nil
 	}
-	if err := s.requireTaskNotExternallyLocked(workspace, task.ID); err != nil {
-		if isExternalTaskLockError(err) {
+	if err := s.requireResourceNotExternallyLocked(workspace, task.ID); err != nil {
+		if isExternalResourceLockError(err) {
 			return runnableTaskNotRunnable, nil
 		}
 		return runnableTaskDispatchFailed, err
@@ -349,8 +349,8 @@ func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWor
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode == http.StatusConflict {
-		if strings.Contains(string(responseBody), externalTaskLockMessage) {
-			return &externalTaskLockError{}
+		if strings.Contains(string(responseBody), externalResourceLockMessage) {
+			return &externalResourceLockError{}
 		}
 		return errAutoRunSessionBusy
 	}

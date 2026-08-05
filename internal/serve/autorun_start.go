@@ -78,8 +78,8 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, errors.New("AutoRun can only be started on a task"), http.StatusBadRequest)
 		return
 	}
-	if err := s.requireTaskNotExternallyLocked(workspace, resourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := s.requireResourceNotExternallyLocked(workspace, resourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 
@@ -111,8 +111,8 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		prompt := buildAutoRunPrompt(workspace.Path, candidate)
 		run, startErr := s.createChatAutoRunSession(r.Context(), workspace, candidate, agentName, prompt, true, expectedState)
 		if startErr != nil {
-			if isExternalTaskLockError(startErr) {
-				writeTaskOperationError(w, startErr, http.StatusConflict)
+			if isExternalResourceLockError(startErr) {
+				writeResourceOperationError(w, startErr, http.StatusConflict)
 				return
 			}
 			writeError(w, fmt.Errorf("AutoRun generation %d could not be started: %w", candidate.Generation, startErr), http.StatusBadGateway)
@@ -168,8 +168,8 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		// The state and log are durably updated before the standard scheduler
 		// turn message is sent, so a lost message never loses the transition.
 		if err := s.startAutoRunInOpenSession(r.Context(), workspace, reusable.ID, candidate.Generation, prompt); err != nil {
-			if isExternalTaskLockError(err) {
-				writeTaskOperationError(w, err, http.StatusConflict)
+			if isExternalResourceLockError(err) {
+				writeResourceOperationError(w, err, http.StatusConflict)
 				return
 			}
 			if errors.Is(err, errAutoRunSessionBusy) {
@@ -337,8 +337,8 @@ func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWork
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		if response.StatusCode == http.StatusConflict && strings.Contains(string(responseBody), externalTaskLockMessage) {
-			return nil, &externalTaskLockError{ResourceID: task.ID}
+		if response.StatusCode == http.StatusConflict && strings.Contains(string(responseBody), externalResourceLockMessage) {
+			return nil, &externalResourceLockError{ResourceID: task.ID}
 		}
 		return nil, fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
