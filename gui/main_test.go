@@ -2195,9 +2195,9 @@ func TestResourceRefBadgeShownInTreeAndDetails(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		// Tree rows render the muted "#id" badge next to the resource name.
-		`<span class="name">${escapeHTML(title)}</span>
-    ${resourceRefBadge(item.id)}`,
+		// Tree rows render the muted "#id" badge right after the resource name,
+		// inside the same grid cell so the drag handle stays on the same row.
+		`<span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>`,
 		// Details header shows the badge while loading and after loading.
 		`<div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>`,
 		`<h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>`,

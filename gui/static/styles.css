@@ -309,9 +309,16 @@ body.resizing-y {
 
 .tree-item .name {
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.tree-item .name .name-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .resource-ref {
@@ -321,7 +328,6 @@ body.resizing-y {
 }
 
 .tree-item .resource-ref {
-  margin-left: 6px;
   flex-shrink: 0;
   font-size: 12px;
 }

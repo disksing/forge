@@ -480,8 +480,7 @@ function treeButton(item, kind, projectId = "") {
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
-    <span class="name">${escapeHTML(title)}</span>
-    ${resourceRefBadge(item.id)}
+    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>
     <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
