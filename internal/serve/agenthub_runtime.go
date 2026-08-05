@@ -48,6 +48,36 @@ func resolveAgentHubRunAgent(cfg config, req startAgentRequest) (string, error) 
 	return name, nil
 }
 
+// validateAgentHubRunAgent runs before Forge creates a session or changes the
+// task. AgentHub may reject an unavailable configured target during session
+// creation, but validating against the catalog first keeps a manual AutoRun
+// start atomic: an unavailable selection cannot leave a queued generation or
+// a Forge lock behind.
+func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", errors.New("no AgentHub agent is configured")
+	}
+	catalog, err := client.Agents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("query AgentHub agents: %w", err)
+	}
+	for _, agent := range catalog.Agents {
+		if !strings.EqualFold(strings.TrimSpace(agent.Name), requested) {
+			continue
+		}
+		if !agent.Available {
+			reason := strings.TrimSpace(agent.UnavailableReason)
+			if reason == "" {
+				reason = "the AgentHub agent is unavailable"
+			}
+			return "", fmt.Errorf("AgentHub agent %q is unavailable: %s", agent.Name, reason)
+		}
+		return strings.TrimSpace(agent.Name), nil
+	}
+	return "", fmt.Errorf("AgentHub agent %q is unavailable or not present in the catalog", requested)
+}
+
 func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
@@ -73,6 +103,11 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	agentName, err := resolveAgentHubRunAgent(cfg, req)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	agentName, err = validateAgentHubRunAgent(r.Context(), client, agentName)
+	if err != nil {
+		writeError(w, err, http.StatusBadGateway)
 		return
 	}
 	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
@@ -129,7 +164,12 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	if run.SchedulerTurn {
 		if req.QueueAutoRun {
-			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState)
+			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState, app.AutoRunQueueInput{
+				TaskID:    run.ResourceID,
+				AgentName: req.AutoRunAgentName, AgentNameSet: req.AutoRunAgentNameSet,
+				Prompt: req.AutoRunPrompt, PromptSet: req.AutoRunPromptSet,
+				CompletionCriteria: req.AutoRunCompletionCriteria, CompletionCriteriaSet: req.AutoRunCompletionCriteriaSet,
+			})
 			if queueErr != nil {
 				writeResourceOperationError(w, queueErr, http.StatusConflict)
 				return

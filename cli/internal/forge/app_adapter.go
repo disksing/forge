@@ -110,11 +110,12 @@ func applicationTaskCreate(input app.CreateTaskInput) error {
 	return printJSON(task)
 }
 
-func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string) app.CreateTaskInput {
+func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) app.CreateTaskInput {
 	return app.CreateTaskInput{
 		ProjectID: parentID, Title: title, Detail: detail, CompleteMarkdown: completeMarkdown,
 		CompleteMarkdownSet: completeMarkdownSet, Slug: slug, AutoRun: autorun,
-		PreferredAgentProfiles: append([]string(nil), preferredAgentProfiles...), Prompt: prompt,
+		AgentName: agentName, PreferredAgentProfiles: append([]string(nil), preferredAgentProfiles...), Prompt: prompt,
+		CompletionCriteria: completionCriteria,
 	}
 }
 
@@ -140,8 +141,9 @@ func applicationTaskList(options taskListOptions) error {
 	for _, entry := range result.Runnable {
 		runnable = append(runnable, runnableTask{
 			ID: entry.ID, Path: entry.Path, Title: entry.Title, Generation: entry.Generation,
-			State: entry.State, Ready: entry.Ready, Reason: entry.Reason, Prompt: entry.Prompt,
+			State: entry.State, Ready: entry.Ready, Reason: entry.Reason, AgentName: entry.AgentName, Prompt: entry.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.PreferredAgentProfiles...),
+			CompletionCriteria:     entry.CompletionCriteria,
 		})
 	}
 	if options.JSON {
@@ -200,7 +202,11 @@ func applicationAutoRunQueue(opts autoRunCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	task, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: opts.TaskID, PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt})
+	task, err := workspace.QueueAutoRun(app.AutoRunQueueInput{
+		TaskID: opts.TaskID, AgentName: opts.AgentName, AgentNameSet: opts.AgentNameSet,
+		PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt, PromptSet: opts.PromptSet,
+		CompletionCriteria: opts.CompletionCriteria, CompletionCriteriaSet: opts.CompletionCriteriaSet,
+	})
 	if err != nil {
 		return err
 	}

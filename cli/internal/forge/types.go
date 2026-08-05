@@ -72,8 +72,10 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 type AutoRun struct {
 	Generation             int      `json:"generation"`
 	State                  string   `json:"state"`
+	AgentName              string   `json:"agentName,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
+	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
 	// SuspendedAt is the wall-clock time the current generation was last
 	// suspended. The server driver uses it (not task.updatedAt) to decide when
 	// a suspended AutoRun should be re-queued.

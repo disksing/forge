@@ -198,7 +198,7 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work"}`
+	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"agentName":"codex-one","preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work","completionCriteria":"The work is verified"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
@@ -209,7 +209,7 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || strings.Join(resource.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || resource.AutoRun.Prompt != "Do the work" {
+	if resource.AutoRun == nil || resource.AutoRun.AgentName != "codex-one" || strings.Join(resource.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || resource.AutoRun.Prompt != "Do the work" || resource.AutoRun.CompletionCriteria != "The work is verified" {
 		t.Fatalf("unexpected typed AutoRun result: %#v", resource.AutoRun)
 	}
 	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
@@ -307,7 +307,7 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`name="autorun"`, `name="prompt"`, `name="agentProfiles"`, `preferredAgentProfiles: dialog.autorun`} {
+	for _, want := range []string{`name="autorun"`, `name="agentName"`, `name="prompt"`, `name="agentProfiles"`, `name="completionCriteria"`, `preferredAgentProfiles: dialog.autorun`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("create task dialog is missing %q", want)
 		}

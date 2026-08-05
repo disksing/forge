@@ -661,8 +661,13 @@ func TestAutoRunPreferredAgentProfiles(t *testing.T) {
 			t.Fatalf("requeue did not inherit Agent Profiles:\n%s", requeued)
 		}
 
-		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "Removed legacy task"); err == nil {
-			t.Fatal("expected removed --agent task option to be rejected")
+		createdWithAgent := run(t, "task", "create", "--project=project1", "--autorun", "--agent=local-agent", "--completion-criteria=All checks pass", "Configured task")
+		var configured Task
+		if err := json.Unmarshal([]byte(createdWithAgent), &configured); err != nil {
+			t.Fatal(err)
+		}
+		if configured.AutoRun == nil || configured.AutoRun.AgentName != "local-agent" || configured.AutoRun.CompletionCriteria != "All checks pass" {
+			t.Fatalf("new AutoRun parameters were not persisted: %+v", configured.AutoRun)
 		}
 		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--agent-profile=not valid", "Invalid"); err == nil || !strings.Contains(err.Error(), "invalid agent profile") {
 			t.Fatalf("expected invalid Profile to fail, got %v", err)

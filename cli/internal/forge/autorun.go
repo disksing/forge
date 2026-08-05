@@ -17,8 +17,13 @@ const (
 
 type autoRunCommandOptions struct {
 	TaskID                 string
+	AgentName              string
+	AgentNameSet           bool
 	PreferredAgentProfiles []string
 	Prompt                 string
+	PromptSet              bool
+	CompletionCriteria     string
+	CompletionCriteriaSet  bool
 	Summary                string
 	Reason                 string
 }
@@ -31,8 +36,10 @@ type runnableTask struct {
 	State                  string   `json:"state"`
 	Ready                  bool     `json:"ready"`
 	Reason                 string   `json:"reason"`
+	AgentName              string   `json:"agentName,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
+	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
 }
 
 func runTaskAutoRun(args []string) error {
@@ -64,7 +71,7 @@ func autoRunUsage(command string) string {
 	base := "usage: forge task autorun "
 	switch command {
 	case "queue":
-		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--prompt=<prompt>]"
+		return base + "queue [--project=<project>] [--task=<task>] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
 	case "start", "resume":
 		return base + command + " [--project=<project>] [--task=<task>]"
 	case "complete":
@@ -103,10 +110,17 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			project = value
 		case "task":
 			task = value
+		case "agent":
+			opts.AgentName = value
+			opts.AgentNameSet = true
 		case "agent-profile":
 			opts.PreferredAgentProfiles = append(opts.PreferredAgentProfiles, value)
 		case "prompt":
 			opts.Prompt = value
+			opts.PromptSet = true
+		case "completion-criteria":
+			opts.CompletionCriteria = value
+			opts.CompletionCriteriaSet = true
 		case "summary":
 			opts.Summary = value
 		case "reason":

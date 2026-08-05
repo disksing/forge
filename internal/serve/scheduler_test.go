@@ -157,6 +157,7 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 	task := runnableTaskCandidate{
 		State:             "running",
 		Prompt:            "保留用户 prompt",
+		CompletionCriteria: "验证 focused tests 全部通过",
 		SuspensionSummary: "等待 task197 合入并安装",
 	}
 
@@ -169,6 +170,7 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 		for _, want := range []string{
 			"恢复并继续当前 AutoRun generation",
 			"保留用户 prompt",
+			"验证 focused tests 全部通过",
 			"此 AutoRun 之前被挂起，原因是：等待 task197 合入并安装",
 			"这是一个 AutoRun 调度器回合",
 			"最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一",
@@ -201,6 +203,7 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 			for _, want := range []string{
 				"Recover and continue the current AutoRun generation",
 				"保留用户 prompt",
+				"验证 focused tests 全部通过",
 				"This AutoRun was previously suspended with reason: 等待 task197 合入并安装",
 				"This is an AutoRun scheduler turn",
 			} {
