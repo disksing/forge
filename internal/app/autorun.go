@@ -210,11 +210,13 @@ func normalizeAgentProfiles(values []string) ([]string, error) {
 func autoRunStart(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun != nil && task.AutoRun.State == autoRunStateRunning {
+			task.AutoRun.SuspendedAt = ""
 			return nil
 		}
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateQueued {
 			return errors.New("AutoRun is not queued")
 		}
+		task.AutoRun.SuspendedAt = ""
 		task.AutoRun.State = autoRunStateRunning
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
@@ -225,6 +227,7 @@ func autoRunRetry(opts autoRunCommandOptions) error {
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateRunning {
 			return errors.New("AutoRun is not running")
 		}
+		task.AutoRun.SuspendedAt = ""
 		generation := task.AutoRun.Generation
 		entries, err := readLogEntries(dir)
 		if err != nil {
@@ -280,12 +283,15 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 		switch action {
 		case "complete":
 			task.AutoRun.State = autoRunStateCompleted
+			task.AutoRun.SuspendedAt = ""
 			title = "Auto Run completed"
 		case "fail":
 			task.AutoRun.State = autoRunStateFailed
+			task.AutoRun.SuspendedAt = ""
 			title = "Auto Run failed"
 		case "pause":
 			task.AutoRun.State = autoRunStatePaused
+			task.AutoRun.SuspendedAt = ""
 			if details != "" {
 				task.AutoRun.SuspensionSummary = details
 			}

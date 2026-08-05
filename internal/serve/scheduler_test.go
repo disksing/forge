@@ -155,10 +155,10 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 
 func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 	task := runnableTaskCandidate{
-		State:             "running",
-		Prompt:            "保留用户 prompt",
+		State:              "running",
+		Prompt:             "保留用户 prompt",
 		CompletionCriteria: "验证 focused tests 全部通过",
-		SuspensionSummary: "等待 task197 合入并安装",
+		SuspensionSummary:  "等待 task197 合入并安装",
 	}
 
 	t.Run("simplified Chinese", func(t *testing.T) {
@@ -213,6 +213,60 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 			}
 		}
 	})
+}
+
+func TestAutoRunPromptDoesNotCarryTerminalGenerationSummary(t *testing.T) {
+	workspace := t.TempDir()
+	completed := app.Task{
+		ResourceMeta: app.ResourceMeta{ID: "project1.task1", Title: "Terminal generation"},
+		AutoRun: &app.AutoRun{
+			Generation: 4, State: "completed", Prompt: "old instructions",
+			SuspensionSummary: "old generation suspension",
+		},
+	}
+	candidate, expectedState, err := chatAutoRunCandidate(completed.ID, completed, app.AutoRunQueueInput{
+		Prompt: "fresh instructions", PromptSet: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expectedState != "completed" || candidate.Generation != 5 || candidate.SuspensionSummary != "" {
+		t.Fatalf("terminal generation carried stale suspension context: state=%q candidate=%+v", expectedState, candidate)
+	}
+	prompt := buildAutoRunPrompt(workspace, candidate)
+	if strings.Contains(prompt, "old generation suspension") || !strings.Contains(prompt, "fresh instructions") {
+		t.Fatalf("new generation prompt contains stale suspension context or lost instructions:\n%s", prompt)
+	}
+	failed := completed
+	failed.AutoRun = &app.AutoRun{
+		Generation: 4, State: "failed", Prompt: "failed generation instructions",
+		SuspensionSummary: "failed generation suspension",
+	}
+	failedCandidate, expectedState, err := chatAutoRunCandidate(failed.ID, failed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expectedState != "failed" || failedCandidate.Generation != 5 || failedCandidate.SuspensionSummary != "" {
+		t.Fatalf("failed generation carried stale suspension context: state=%q candidate=%+v", expectedState, failedCandidate)
+	}
+
+	suspended := app.Task{
+		ResourceMeta: app.ResourceMeta{ID: "project1.task2", Title: "Resumed generation"},
+		AutoRun: &app.AutoRun{
+			Generation: 2, State: "suspended", Prompt: "continue instructions",
+			SuspensionSummary: "current generation suspension",
+		},
+	}
+	resumedCandidate, expectedState, err := chatAutoRunCandidate(suspended.ID, suspended)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expectedState != "suspended" || resumedCandidate.SuspensionSummary != "current generation suspension" {
+		t.Fatalf("resumed generation lost its prompt recovery context: state=%q candidate=%+v", expectedState, resumedCandidate)
+	}
+	if prompt := buildAutoRunPrompt(workspace, resumedCandidate); !strings.Contains(prompt, "current generation suspension") {
+		t.Fatalf("resumed generation prompt omitted suspension context:\n%s", prompt)
+	}
 }
 
 func TestAutoRunLocalizedDefaultAndContinuePrompts(t *testing.T) {
