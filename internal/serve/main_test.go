@@ -483,15 +483,15 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 		`session.resourceId === resourceId`,
 		`function taskLocks(resourceId)`,
 		`sessionControls(session).some((control) => control.resourceId === resourceId)`,
-		`const hasTaskState = statuses.length > 0 || Boolean(taskState.lock);`,
-		`const taskStatusLayoutClass = hasTaskState`,
-		`const taskStatusMarkup = hasTaskState ?`,
+		`function operationalStatusPresentation(statuses, lock = null)`,
+		`function operationalStatusMarkup(presentation, options = {})`,
+		`const taskStatusMarkup = operationalStatusMarkup(taskState.statusPresentation);`,
 		`class="task-status-slot`,
 		`task-status-single`,
 		`task-status-dual`,
 		`${taskStatusMarkup}`,
-		`[taskState.autoRun, taskState.session].filter(Boolean)`,
-		`statuses.map((status) =>`,
+		`operationalStatusPresentation([autoRun, session], lock)`,
+		`presentation.statuses.map((status) =>`,
 		`task-lock-indicator`,
 		`button.setAttribute("aria-label"`,
 		`button.setAttribute("aria-describedby"`,
@@ -984,7 +984,12 @@ func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
 		`const status = isInternal`,
 		`sessionStatusPresentation(session)`,
 		`taskStatusState("session-external", "session-status-external", "message-square"`,
-		`class="session-status-icon task-status-indicator`,
+		`operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })`,
+		`const taskResource = sessionTaskResource(session);`,
+		`const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();`,
+		`isInternal && taskState.autoRun ? [taskState.autoRun, status] : [status]`,
+		`row.title = statusLabel;`,
+		`bindTaskStatusTooltip(row, statusLabel);`,
 		`row.setAttribute("aria-label"`,
 	} {
 		if !strings.Contains(app, want) {
@@ -1002,6 +1007,7 @@ func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
 	styles := string(stylesData)
 	for _, want := range []string{
 		`.session-row .session-status-icon`,
+		`.session-row.has-task-status-dual`,
 		`.session-row .session-status-external`,
 		`color: inherit;`,
 		`.task-status-indicator.task-status-session-running`,
@@ -1009,6 +1015,142 @@ func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("session status icon styling is missing %q", want)
 		}
+	}
+}
+
+func TestSessionListSharesTaskOperationalStatusAndTaskAssociation(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the Session operational status test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, marker := range []string{
+		`function sessionTaskResource(session)`,
+		`if (explicitResourceId) return taskResourceForAutoRun(explicitResourceId);`,
+		`if (controls.length !== 1) return null;`,
+		`resource.type === "task" && !resource.archived`,
+		`if (!session || session.source !== "internal") return null;`,
+		`function sessionOperationalLabel(session, taskResource, taskState, sessionStatus)`,
+	} {
+		if !strings.Contains(app, marker) {
+			t.Fatalf("Session operational status behavior is missing %q", marker)
+		}
+	}
+
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const signatureEnd = source.indexOf(")", start);
+  const open = source.indexOf("{", signatureEnd);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(message + ": expected " + expected + ", got " + actual);
+}
+const resources = new Map([
+  ["project1", { id: "project1", type: "project", archived: false }],
+  ["project1.task1", { id: "project1.task1", type: "task", archived: false, autoRun: { generation: 7, state: "queued" } }],
+  ["project1.task2", { id: "project1.task2", type: "task", archived: false, autoRun: { generation: 3, state: "failed" } }],
+  ["project1.archived", { id: "project1.archived", type: "task", archived: true, autoRun: { generation: 8, state: "completed" } }],
+]);
+const context = {
+  findResource: (id) => resources.get(id) || null,
+  hasRecentAgentOutput: () => false,
+  icon: (name) => "<svg data-icon=\"" + name + "\"></svg>",
+};
+vm.createContext(context);
+vm.runInContext([
+  "function taskStatusState(kind, className, iconName, label, dimension, session = null) { return { kind, className, iconName, label, dimension, recentOutput: Boolean(session && hasRecentAgentOutput(session)) }; }",
+  extract("operationalStatusPresentation"),
+  extract("operationalStatusMarkup"),
+  extract("sessionStatusPresentation"),
+  extract("deriveTaskAutoRunState"),
+  extract("sessionControls"),
+  extract("taskResourceForAutoRun"),
+  extract("sessionTaskResource"),
+  extract("sessionOperationalLabel"),
+].join("\n"), context);
+
+const scheduler = { schedulerTurn: true, autoRunGeneration: 7, agentRunStatus: "running" };
+const sessionStatus = context.sessionStatusPresentation({ agentRunStatus: "idle" });
+const running = context.deriveTaskAutoRunState({ generation: 7, state: "running" }, [scheduler]);
+const recovery = context.deriveTaskAutoRunState({ generation: 7, state: "running" }, []);
+const expectedAutoRun = {
+  running: ["auto-running", "workflow"],
+  recovery: ["auto-recovering", "rotate-ccw"],
+  queued: ["queued", "clock"],
+  suspended: ["suspended", "pause"],
+  paused: ["paused", "square"],
+  completed: ["completed", "check-circle-2"],
+  failed: ["failed", "triangle-alert"],
+};
+for (const [state, [kind, iconName]] of Object.entries(expectedAutoRun)) {
+  const sessions = state === "running" ? [scheduler] : [];
+  const autoRunState = state === "recovery" ? "running" : state;
+  const presentation = context.deriveTaskAutoRunState({ generation: 7, state: autoRunState }, sessions);
+  assertEqual(presentation.kind, kind, "AutoRun " + state + " kind");
+  assertEqual(presentation.iconName, iconName, "AutoRun " + state + " icon");
+}
+assertEqual(running.kind, "auto-running", "matching scheduler should make AutoRun running");
+assertEqual(recovery.kind, "auto-recovering", "missing scheduler should make AutoRun recovering");
+
+const dual = context.operationalStatusPresentation([running, sessionStatus]);
+const treeMarkup = context.operationalStatusMarkup(dual);
+const sessionMarkup = context.operationalStatusMarkup(dual, { slotClassName: "session-status-icon" });
+assertEqual(dual.layoutClassName, "has-task-status-dual", "AutoRun plus Session should use dual layout");
+assertEqual(dual.slotClassName, "task-status-dual", "AutoRun plus Session should use dual slot");
+assert(treeMarkup.includes("data-icon=\"workflow\"") && treeMarkup.includes("data-icon=\"message-square\""), "TreeView markup should contain both canonical icons");
+assert(sessionMarkup.includes("data-icon=\"workflow\"") && sessionMarkup.includes("data-icon=\"message-square\""), "Session markup should contain the same canonical icons");
+assert(sessionMarkup.indexOf("data-icon=\"workflow\"") < sessionMarkup.indexOf("data-icon=\"message-square\""), "AutoRun icon should precede Session icon");
+const single = context.operationalStatusPresentation([sessionStatus]);
+assertEqual(single.layoutClassName, "has-task-status", "single Session status should use single layout");
+assertEqual(single.slotClassName, "task-status-single", "single Session status should use single slot");
+
+assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.task1", controls: [{ resourceId: "project1.task2" }] }).id, "project1.task1", "explicit Task resource should have priority");
+assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }] }).id, "project1.task1", "one Task control should be a fallback association");
+assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1.task2" }] }), null, "multiple Task controls must not guess AutoRun");
+assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1" }] }), null, "multiple resources must not guess a Task AutoRun");
+assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1", controls: [{ resourceId: "project1.task1" }] }), null, "Project resource must not fall back to a Task control");
+assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.missing", controls: [{ resourceId: "project1.task1" }] }), null, "unknown resource must not fall back to a Task control");
+assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.archived" }), null, "archived Task must not provide AutoRun");
+assertEqual(context.sessionTaskResource({ source: "external", resourceId: "project1.task1", controls: [{ resourceId: "project1.task1" }] }), null, "external Session must not borrow Task AutoRun");
+
+const label = context.sessionOperationalLabel(
+  { source: "internal" },
+  resources.get("project1.task1"),
+  { autoRun: context.deriveTaskAutoRunState(resources.get("project1.task1").autoRun, []) },
+  sessionStatus,
+);
+assert(label.includes("AutoRun queued, generation 7"), "Session label should include AutoRun generation and state: " + label);
+assert(label.includes("Session waiting for input"), "Session label should include its own Session state: " + label);
+`
+
+	testFile := filepath.Join(t.TempDir(), "session-operational-status.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+		t.Fatalf("Session operational status behavior test failed: %v\n%s", err, output)
 	}
 }
 
