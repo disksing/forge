@@ -1,6 +1,8 @@
 package app_test
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -92,6 +94,62 @@ func TestWorkspaceAPIReturnsStructuredErrors(t *testing.T) {
 	}
 	if _, err := workspace.CreateTask(app.CreateTaskInput{Title: "missing project"}); err == nil || !app.IsKind(err, "task") {
 		t.Fatalf("expected typed task validation error, got %v", err)
+	}
+}
+
+func TestWorkspaceResourceMarkdownHashesTrackContentOnly(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Hash project", "hashes")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	findFile := func(detail app.ResourceDetailView, name string) app.ResourceFile {
+		t.Helper()
+		for _, file := range detail.Files {
+			if file.Name == name {
+				return file
+			}
+		}
+		t.Fatalf("resource detail is missing %s: %+v", name, detail.Files)
+		return app.ResourceFile{}
+	}
+
+	first, err := workspace.Resource(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectFile := findFile(first, "project.md")
+	if projectFile.ContentHash == "" {
+		t.Fatal("resource Markdown file is missing its content hash")
+	}
+	digest := sha256.Sum256([]byte(projectFile.Content))
+	if projectFile.ContentHash != hex.EncodeToString(digest[:]) {
+		t.Fatalf("resource content hash = %q, want SHA-256 %q", projectFile.ContentHash, hex.EncodeToString(digest[:]))
+	}
+
+	if _, err := workspace.AddLog(project.ID, "Refresh metadata", "The Markdown content is unchanged."); err != nil {
+		t.Fatal(err)
+	}
+	second, err := workspace.Resource(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findFile(second, "project.md").ContentHash; got != projectFile.ContentHash {
+		t.Fatalf("log-only resource refresh changed Markdown hash from %q to %q", projectFile.ContentHash, got)
+	}
+
+	changedContent := "# Hash project\n\nChanged content.\n"
+	if err := os.WriteFile(filepath.Join(workspace.Root(), filepath.FromSlash(projectFile.Path)), []byte(changedContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	third, err := workspace.Resource(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedFile := findFile(third, "project.md")
+	if changedFile.ContentHash == projectFile.ContentHash || changedFile.Content != changedContent {
+		t.Fatalf("Markdown content change was not reflected: before=%+v after=%+v", projectFile, changedFile)
 	}
 }
 

@@ -1,6 +1,8 @@
 package forge
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -68,9 +70,10 @@ type TaskTemplate struct {
 }
 
 type ResourceFile struct {
-	Name    string `json:"name"`
-	Path    string `json:"path,omitempty"`
-	Content string `json:"content"`
+	Name        string `json:"name"`
+	Path        string `json:"path,omitempty"`
+	Content     string `json:"content"`
+	ContentHash string `json:"contentHash"`
 }
 
 type FileTreeEntry struct {
@@ -374,12 +377,18 @@ func readResourceFiles(root, dir string, resource Resource) []ResourceFile {
 			continue
 		}
 		files = append(files, ResourceFile{
-			Name:    name,
-			Path:    relPath(root, filepath.Join(dir, name)),
-			Content: string(data),
+			Name:        name,
+			Path:        relPath(root, filepath.Join(dir, name)),
+			Content:     string(data),
+			ContentHash: markdownContentHash(data),
 		})
 	}
 	return files
+}
+
+func markdownContentHash(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func readFileTree(root, dir string) []FileTreeEntry {
