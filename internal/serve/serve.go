@@ -520,8 +520,10 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		Description            string   `json:"description"`
 		Slug                   string   `json:"slug"`
 		AutoRun                bool     `json:"autorun"`
+		AgentName              string   `json:"agentName"`
 		PreferredAgentProfiles []string `json:"preferredAgentProfiles"`
 		Prompt                 string   `json:"prompt"`
+		CompletionCriteria     string   `json:"completionCriteria"`
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
@@ -537,8 +539,8 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, errors.New("detail and taskMarkdown are mutually exclusive"), http.StatusBadRequest)
 		return
 	}
-	if !body.AutoRun && (len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "") {
-		writeError(w, errors.New("preferredAgentProfiles and prompt require autorun"), http.StatusBadRequest)
+	if !body.AutoRun && (strings.TrimSpace(body.AgentName) != "" || len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "" || strings.TrimSpace(body.CompletionCriteria) != "") {
+		writeError(w, errors.New("agentName, preferredAgentProfiles, prompt, and completionCriteria require autorun"), http.StatusBadRequest)
 		return
 	}
 	workspace, err := s.workspace(id)
@@ -553,7 +555,8 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 	}
 	input := app.CreateTaskInput{
 		ProjectID: body.Project, Title: title, Detail: body.Detail, Slug: body.Slug,
-		AutoRun: body.AutoRun, PreferredAgentProfiles: body.PreferredAgentProfiles, Prompt: body.Prompt,
+		AutoRun: body.AutoRun, AgentName: body.AgentName, PreferredAgentProfiles: body.PreferredAgentProfiles,
+		Prompt: body.Prompt, CompletionCriteria: body.CompletionCriteria,
 	}
 	if body.TaskMarkdown != nil {
 		input.CompleteMarkdown, input.CompleteMarkdownSet = *body.TaskMarkdown, true

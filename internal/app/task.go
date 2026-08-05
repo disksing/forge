@@ -241,7 +241,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string) error {
+func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -288,9 +288,9 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 		if err != nil {
 			return err
 		}
-		task.AutoRun = &AutoRun{PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), Generation: 1, State: autoRunStateQueued}
-	} else if len(preferredAgentProfiles) > 0 || strings.TrimSpace(prompt) != "" {
-		return errors.New("--agent-profile and --prompt require --autorun")
+		task.AutoRun = &AutoRun{AgentName: strings.TrimSpace(agentName), PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), CompletionCriteria: strings.TrimSpace(completionCriteria), Generation: 1, State: autoRunStateQueued}
+	} else if strings.TrimSpace(agentName) != "" || len(preferredAgentProfiles) > 0 || strings.TrimSpace(prompt) != "" || strings.TrimSpace(completionCriteria) != "" {
+		return errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --autorun")
 	}
 	markdown := taskMarkdown(title, detail, language)
 	if completeMarkdownSet {
@@ -350,8 +350,10 @@ func projectTaskList(options taskListOptions) error {
 		if entry.Task.AutoRun != nil {
 			item.Generation = entry.Task.AutoRun.Generation
 			item.State = entry.Task.AutoRun.State
+			item.AgentName = entry.Task.AutoRun.AgentName
 			item.Prompt = entry.Task.AutoRun.Prompt
 			item.PreferredAgentProfiles = append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...)
+			item.CompletionCriteria = entry.Task.AutoRun.CompletionCriteria
 		}
 		result = append(result, item)
 	}

@@ -250,8 +250,10 @@ type RunnableTask struct {
 	State                  string
 	Ready                  bool
 	Reason                 string
+	AgentName              string
 	Prompt                 string
 	PreferredAgentProfiles []string
+	CompletionCriteria     string
 	SuspendedAt            string
 	SuspensionSummary      string
 }
@@ -279,8 +281,10 @@ type CreateTaskInput struct {
 	CompleteMarkdownSet    bool
 	Slug                   string
 	AutoRun                bool
+	AgentName              string
 	PreferredAgentProfiles []string
 	Prompt                 string
+	CompletionCriteria     string
 }
 
 // ArchiveResult describes an archive operation without relying on printed
@@ -404,8 +408,10 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 		runnable := RunnableTask{
 			ID: entry.Task.ID, Path: relPath(w.root, entry.Path), Title: entry.Task.Title,
 			Ready: ready, Reason: reason, Generation: entry.Task.AutoRun.Generation,
-			State: entry.Task.AutoRun.State, Prompt: entry.Task.AutoRun.Prompt,
+			State: entry.Task.AutoRun.State, AgentName: entry.Task.AutoRun.AgentName,
+			Prompt:                 entry.Task.AutoRun.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...),
+			CompletionCriteria:     entry.Task.AutoRun.CompletionCriteria,
 			SuspendedAt:            entry.Task.AutoRun.SuspendedAt,
 			SuspensionSummary:      entry.Task.AutoRun.SuspensionSummary,
 		}
@@ -528,9 +534,13 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		if err != nil {
 			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
 		}
-		task.AutoRun = &AutoRun{Generation: 1, State: autoRunStateQueued, PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt)}
-	} else if len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" {
-		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: errors.New("--agent-profile and --prompt require --autorun")}
+		task.AutoRun = &AutoRun{
+			Generation: 1, State: autoRunStateQueued, AgentName: strings.TrimSpace(input.AgentName),
+			PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt),
+			CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
+		}
+	} else if strings.TrimSpace(input.AgentName) != "" || len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" || strings.TrimSpace(input.CompletionCriteria) != "" {
+		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --autorun")}
 	}
 	markdown := taskMarkdown(title, strings.TrimSpace(input.Detail), language)
 	if input.CompleteMarkdownSet {

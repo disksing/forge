@@ -147,8 +147,8 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 	return nil
 }
 
-func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string) error {
-	return applicationTaskCreate(appCreateTaskInput(parentID, title, detail, completeMarkdown, completeMarkdownSet, slug, autorun, preferredAgentProfiles, prompt))
+func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) error {
+	return applicationTaskCreate(appCreateTaskInput(parentID, title, detail, completeMarkdown, completeMarkdownSet, slug, autorun, agentName, preferredAgentProfiles, prompt, completionCriteria))
 }
 
 func projectTaskList(options taskListOptions) error {

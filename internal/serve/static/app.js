@@ -59,9 +59,26 @@ const state = {
     detail: "",
     slug: "",
     autorun: false,
+    agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
+    completionCriteria: "",
     submitting: false,
+  },
+  autoRunDialog: {
+    open: false,
+    mode: "",
+    resourceId: "",
+    title: "",
+    reuseRunId: "",
+    reuseCurrentSession: false,
+    agentName: "",
+    runInstructions: "",
+    completionCriteria: "",
+    submitting: false,
+    error: "",
+    unknown: false,
+    returnFocus: null,
   },
   uploadDialog: {
     open: false,
@@ -1068,7 +1085,9 @@ async function api(path, options = {}) {
       const body = await response.json();
       message = body.error || message;
     } catch (_) {}
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -1304,6 +1323,7 @@ function renderAll() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
+  renderAutoRunConfigDialog();
   // Background refreshes render the main workspace frequently. Keep an open
   // settings modal mounted so its scroll position and in-progress controls
   // are not reset; settings actions render it explicitly when needed.
@@ -1326,6 +1346,7 @@ function renderSelectionPanels() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
+  renderAutoRunConfigDialog();
 }
 
 function isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion = null) {
@@ -1429,6 +1450,7 @@ async function switchWorkspace(id) {
   resetWorkspaceAgentsDraft();
   state.workspaceAgentsSaving = false;
   closeCreateDialog();
+  if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
   resetAgentState();
   renderWorkspaceSelect();
   if (!await loadUIState(id, navigationVersion)) return;
@@ -1931,6 +1953,7 @@ async function selectResource(id, options = {}) {
     state.diffRequestVersion++;
   }
   if (selectionChanged) {
+    if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
     state.workspaceAgentsSaving = false;
     flushAgentDraft();
     discardAgentUploadDialog();
@@ -3558,6 +3581,7 @@ async function reloadAgentRunsForSelection() {
 }
 
 function resetAgentState() {
+  if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
   flushAgentDraft();
   discardAgentUploadDialog();
   closeAgentStream();
@@ -4112,8 +4136,9 @@ function autoRunComposerAction() {
   const autoRun = detail.autoRun || null;
   const stateName = autoRun?.state || "";
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
-  const idleRun = liveRuns.find((run) => run.status === "idle");
   const liveSession = liveRuns.length > 0;
+  const configurationRequired = !stateName || stateName === "completed" || stateName === "failed";
+  const directResume = stateName === "paused" || stateName === "suspended";
   const starting = state.agent.autoRunStarting;
   let label = "Start AutoRun";
   let iconName = "play";
@@ -4136,12 +4161,13 @@ function autoRunComposerAction() {
     label = `AutoRun ${stateName}`;
     disabledReason = `AutoRun cannot be started from the ${stateName} state.`;
   }
-  if (!disabledReason && liveRuns.length && !idleRun) {
-    disabledReason = liveRuns[0].status === "waiting_approval"
+  const busyRun = liveRuns.find((run) => run.status !== "idle");
+  if (!disabledReason && busyRun) {
+    disabledReason = busyRun.status === "waiting_approval"
       ? "Resolve the pending approval before starting AutoRun in this session."
       : "The current session is busy; wait until it is idle to start AutoRun.";
   }
-  if (!disabledReason && !liveRuns.length && !selectedAgentConfig()) {
+  if (!disabledReason && !configurationRequired && !directResume && !liveRuns.length && !selectedAgentConfig()) {
     disabledReason = "Select an agent below to start AutoRun without an active session.";
   }
   const disabled = starting || disabledReason;
@@ -4168,7 +4194,7 @@ function autoRunComposerKey() {
   const autoRun = detail.autoRun;
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
   const sessionKey = liveRuns.length
-    ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
+    ? (liveRuns.some((run) => run.status !== "idle") ? "busy" : "idle")
     : "no-session";
   return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
 }
@@ -4181,7 +4207,12 @@ function selectedResourceLockComposerKey() {
   return `${selected.type}:${selected.id}:${external}:${internal}`;
 }
 
-async function startChatAutoRun() {
+function autoRunNeedsConfiguration(detail) {
+  const stateName = String(detail?.autoRun?.state || "").trim();
+  return !stateName || stateName === "completed" || stateName === "failed";
+}
+
+async function startChatAutoRun(options = {}) {
   return mutateAgentSession(async () => {
     const selected = findResource(state.selectedId);
     const detail = selected ? state.details[selected.id] : null;
@@ -4189,21 +4220,36 @@ async function startChatAutoRun() {
     if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
       throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
-    const liveSession = state.agent.runs.some((run) => isLiveAgentRun(run));
-    let agentName = "";
-    if (!liveSession) {
-      const agent = selectedAgentConfig();
-      if (!agent) throw new Error("Select an agent to start AutoRun without an active session.");
-      agentName = agent.id;
+    const configuration = Boolean(options.configured);
+    if (!configuration && autoRunNeedsConfiguration(detail)) {
+      openAutoRunConfigDialog();
+      return null;
+    }
+    const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
+    const liveSession = liveRuns.length > 0;
+    const directResume = ["paused", "suspended"].includes(String(detail.autoRun?.state || ""));
+    let agentName = String(options.agentName || "").trim();
+    if (!liveSession && !agentName) {
+      agentName = directResume ? String(detail.autoRun?.agentName || "").trim() : "";
+      if (!agentName) {
+        const agent = selectedAgentConfig();
+        if (!agent) throw new Error("Select an agent to start AutoRun without an active session.");
+        agentName = agent.id;
+      }
     }
     state.agent.autoRunStarting = true;
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
     try {
+      const body = { resourceId: selected.id, agentName };
+      if (configuration) {
+        body.runInstructions = String(options.runInstructions || "");
+        body.completionCriteria = String(options.completionCriteria || "");
+      }
       const response = await api(`/api/workspaces/${state.activeWorkspaceId}/autorun/start`, {
         method: "POST",
-        body: JSON.stringify({ resourceId: selected.id, agentName }),
+        body: JSON.stringify(body),
       });
       if (response.run?.id) state.agent.activeRunId = response.run.id;
       await Promise.all([
@@ -4225,6 +4271,201 @@ async function startChatAutoRun() {
       refreshIcons();
     }
   });
+}
+
+function autoRunDialogInitialState() {
+  return {
+    open: false,
+    mode: "",
+    resourceId: "",
+    title: "",
+    reuseRunId: "",
+    reuseCurrentSession: false,
+    agentName: "",
+    runInstructions: "",
+    completionCriteria: "",
+    submitting: false,
+    error: "",
+    unknown: false,
+    returnFocus: null,
+  };
+}
+
+function autoRunIdleSessionForResource(resourceId) {
+  return state.agent.runs.find((run) =>
+    run.resourceId === resourceId && isLiveAgentRun(run) && run.status === "idle" &&
+    !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
+  ) || null;
+}
+
+function openAutoRunConfigDialog() {
+  const selected = findResource(state.selectedId);
+  const detail = selected ? state.details[selected.id] : null;
+  if (!selected || !detail || detail.type !== "task") {
+    toast("Select a task first.");
+    return;
+  }
+  if (selectedResourceHasExternalLock()) {
+    toast(EXTERNAL_RESOURCE_LOCK_MESSAGE);
+    return;
+  }
+  const busyRun = state.agent.runs.find((run) => run.resourceId === selected.id && isLiveAgentRun(run) && run.status !== "idle");
+  if (busyRun) {
+    toast(busyRun.status === "waiting_approval"
+      ? "Resolve the pending approval before starting AutoRun in this session."
+      : "The current session is busy; wait until it is idle to start AutoRun.");
+    return;
+  }
+  const reuseRun = autoRunIdleSessionForResource(selected.id);
+  const autoRun = detail.autoRun || null;
+  const mode = autoRun?.state === "completed" || autoRun?.state === "failed" ? "new" : "configure";
+  const selectedAgent = selectedAgentConfig();
+  state.modalEnter = "autorun";
+  state.autoRunDialog = {
+    open: true,
+    mode,
+    resourceId: selected.id,
+    title: detail.title || selected.title || selected.id,
+    reuseRunId: reuseRun?.id || "",
+    reuseCurrentSession: Boolean(reuseRun),
+    agentName: String(reuseRun?.agentHubAgentName || autoRun?.agentName || selectedAgent?.id || "").trim(),
+    runInstructions: String(autoRun?.prompt || ""),
+    completionCriteria: String(autoRun?.completionCriteria || ""),
+    submitting: false,
+    error: !reuseRun && !selectedAgentConfig() ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting AutoRun." : "",
+    unknown: false,
+    returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+  };
+  renderAutoRunConfigDialog();
+}
+
+function closeAutoRunConfigDialog() {
+  const dialog = state.autoRunDialog;
+  if (!dialog.open || dialog.submitting) return;
+  const returnFocus = dialog.returnFocus;
+  state.autoRunDialog = autoRunDialogInitialState();
+  renderAutoRunConfigDialog();
+  if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+}
+
+function renderAutoRunConfigDialog() {
+  const root = $("autoRunDialogRoot");
+  if (!root) return;
+  const dialog = state.autoRunDialog;
+  if (!dialog.open) {
+    root.innerHTML = "";
+    delete root.dataset.autoRunDialogKey;
+    return;
+  }
+  const title = dialog.mode === "new" ? "Start New AutoRun" : "Configure AutoRun";
+  const submitLabel = dialog.mode === "new" ? "Start New AutoRun" : "Start AutoRun";
+  const agents = enabledAgentConfigs();
+  const key = `${dialog.resourceId}:${dialog.mode}:${dialog.reuseRunId}:${dialog.agentName}:${dialog.submitting}:${dialog.error}:${dialog.unknown}`;
+  if (root.dataset.autoRunDialogKey === key && root.querySelector("#autoRunConfigForm")) return;
+  root.dataset.autoRunDialogKey = key;
+  const entering = state.modalEnter === "autorun";
+  if (entering) state.modalEnter = "";
+  const submitDisabled = dialog.submitting || dialog.unknown || (!dialog.reuseCurrentSession && !dialog.agentName) || (!dialog.reuseCurrentSession && agents.length === 0);
+  root.innerHTML = `
+    <div class="auto-run-dialog-layer" role="presentation">
+      <div class="auto-run-dialog-backdrop${entering ? " modal-enter" : ""}" data-auto-run-dialog-close="true"></div>
+      <section class="auto-run-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="autoRunDialogTitle" aria-describedby="autoRunDialogDescription">
+        <header class="auto-run-dialog-header">
+          <div>
+            <strong id="autoRunDialogTitle">${title}</strong>
+            <span>${escapeHTML(dialog.resourceId)} · ${escapeHTML(dialog.title)}</span>
+          </div>
+          <button class="icon-button" type="button" data-auto-run-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
+        </header>
+        <form id="autoRunConfigForm" class="details-form auto-run-dialog-form">
+          <p id="autoRunDialogDescription" class="auto-run-dialog-description">Choose how this generation should run. Paused and suspended generations resume directly without changing these parameters.</p>
+          <label>
+            <span>Agent</span>
+            ${dialog.reuseCurrentSession ? `
+              <input name="agentName" value="${escapeHTML(dialog.agentName)}" readonly aria-readonly="true" />
+              <small>Using the current idle AgentHub session.</small>
+            ` : `
+              <select name="agentName" required ${agents.length === 0 || dialog.submitting ? "disabled" : ""}>
+                <option value="">Select an Agent</option>
+                ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === dialog.agentName ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
+              </select>
+            `}
+          </label>
+          <label>
+            <span>Run instructions <small>(optional)</small></span>
+            <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this AutoRun generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
+          </label>
+          <label>
+            <span>Completion criteria <small>(optional, natural language)</small></span>
+            <textarea name="completionCriteria" rows="4" placeholder="What should be true before the agent marks this generation complete?"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.completionCriteria)}</textarea>
+          </label>
+          <p class="auto-run-dialog-protocol">The agent must finish with exactly one read-only protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
+          ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
+          ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
+          <div class="form-actions">
+            <button type="submit"${submitDisabled ? " disabled" : ""}${dialog.submitting ? " aria-busy=\"true\"" : ""}>${dialog.submitting ? "Starting…" : submitLabel}</button>
+            <button type="button" class="secondary" data-auto-run-dialog-close="true"${dialog.submitting ? " disabled" : ""}>Cancel</button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
+  bindAutoRunConfigDialogEvents();
+  refreshIcons();
+}
+
+function bindAutoRunConfigDialogEvents() {
+  const form = $("autoRunConfigForm");
+  if (!form) return;
+  form.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
+    if (target.name === "agentName" && !state.autoRunDialog.reuseCurrentSession) state.autoRunDialog.agentName = target.value;
+    if (target.name === "runInstructions") state.autoRunDialog.runInstructions = target.value;
+    if (target.name === "completionCriteria") state.autoRunDialog.completionCriteria = target.value;
+    state.autoRunDialog.error = "";
+  });
+  form.addEventListener("submit", submitAutoRunConfigDialog);
+  document.querySelectorAll("[data-auto-run-dialog-close]").forEach((node) => node.addEventListener("click", closeAutoRunConfigDialog));
+  if (!state.autoRunDialog.submitting) {
+    (form.elements.agentName || form.elements.runInstructions)?.focus({ preventScroll: true });
+  }
+}
+
+async function submitAutoRunConfigDialog(event) {
+  event.preventDefault();
+  const dialog = state.autoRunDialog;
+  if (!dialog.open || dialog.submitting || dialog.unknown) return;
+  const form = new FormData(event.currentTarget);
+  dialog.agentName = String(form.get("agentName") || dialog.agentName || "").trim();
+  dialog.runInstructions = String(form.get("runInstructions") || "");
+  dialog.completionCriteria = String(form.get("completionCriteria") || "");
+  if (!dialog.reuseCurrentSession && !dialog.agentName) {
+    dialog.error = "Select an Agent before starting AutoRun.";
+    renderAutoRunConfigDialog();
+    return;
+  }
+  dialog.submitting = true;
+  dialog.error = "";
+  renderAutoRunConfigDialog();
+  try {
+    await startChatAutoRun({
+      configured: true,
+      agentName: dialog.agentName,
+      runInstructions: dialog.runInstructions,
+      completionCriteria: dialog.completionCriteria,
+    });
+    const returnFocus = dialog.returnFocus;
+    state.autoRunDialog = autoRunDialogInitialState();
+    renderAutoRunConfigDialog();
+    if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
+  } catch (err) {
+    dialog.submitting = false;
+    const message = String(err?.message || err || "AutoRun could not be started.");
+    dialog.error = message;
+    dialog.unknown = !Number.isFinite(Number(err?.status)) || Number(err.status) >= 500 || message.includes("outcome may be unknown") || message.includes("was updated but the start message failed");
+    renderAutoRunConfigDialog();
+  }
 }
 
 function renderSettingsModal() {
@@ -4745,6 +4986,12 @@ function bindAgentEvents() {
   const autoRunButton = $("autoRunStartButton");
   if (autoRunButton) autoRunButton.onclick = () => {
     if (state.agent.autoRunStarting) return;
+    const selected = findResource(state.selectedId);
+    const detail = selected ? state.details[selected.id] : null;
+    if (autoRunNeedsConfiguration(detail)) {
+      openAutoRunConfigDialog();
+      return;
+    }
     startChatAutoRun().catch((err) => toast(err.message));
   };
   const uploadButton = $("agentUploadButton");
@@ -5377,8 +5624,10 @@ function openCreateDialog(type, projectId = "") {
     detail: "",
     slug: "",
     autorun: false,
+    agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
+    completionCriteria: "",
     submitting: false,
   };
   renderCreateDialog();
@@ -5396,8 +5645,10 @@ function closeCreateDialog() {
     detail: "",
     slug: "",
     autorun: false,
+    agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
+    completionCriteria: "",
     submitting: false,
   };
   renderCreateDialog();
@@ -5417,6 +5668,7 @@ function renderCreateDialog() {
   const descriptionPlaceholder = "Describe the project";
   const detailPlaceholder = "Task detail";
   const profiles = state.config?.agentProfiles || [];
+  const agents = enabledAgentConfigs();
   const templates = isTask ? (state.details[dialog.projectId]?.templates || []) : [];
   const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.autorun}:${dialog.submitting}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
@@ -5455,13 +5707,24 @@ function renderCreateDialog() {
             ${dialog.autorun ? `
               <div class="create-task-automation-fields">
                 <label>
-                  <span>Run prompt</span>
+                  <span>Agent <small>(optional)</small></span>
+                  <select name="agentName">
+                    <option value="">Workspace default</option>
+                    ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${dialog.agentName === agent.id ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
+                  </select>
+                </label>
+                <label>
+                  <span>Run instructions</span>
                   <textarea name="prompt" placeholder="Instructions for the automated run">${escapeHTML(dialog.prompt)}</textarea>
                 </label>
                 <label>
                   <span>Preferred Agent Profiles</span>
                   <input name="agentProfiles" value="${escapeHTML((dialog.preferredAgentProfiles || []).join(", "))}" placeholder="Workspace default, or kimi, codex" />
                   <small>${profiles.length ? `Available: ${profiles.map((profile) => escapeHTML(profile.key)).join(", ")}` : "No Profiles configured; the workspace default will be used."}</small>
+                </label>
+                <label>
+                  <span>Completion criteria</span>
+                  <textarea name="completionCriteria" placeholder="Natural-language completion criteria">${escapeHTML(dialog.completionCriteria)}</textarea>
                 </label>
               </div>
             ` : ""}
@@ -5502,6 +5765,8 @@ function bindCreateDialogEvents() {
     if (target.name === "detail") state.createDialog.detail = target.value;
     if (target.name === "slug") state.createDialog.slug = target.value;
     if (target.name === "prompt") state.createDialog.prompt = target.value;
+    if (target.name === "agentName") state.createDialog.agentName = target.value;
+    if (target.name === "completionCriteria") state.createDialog.completionCriteria = target.value;
     if (target.name === "agentProfiles") state.createDialog.preferredAgentProfiles = parseAgentProfiles(target.value);
     if (target.name === "autorun") {
       state.createDialog.autorun = target.checked;
@@ -5525,8 +5790,10 @@ function applyCreateDialogTemplate(name) {
     dialog.title = template.title || "";
     dialog.detail = template.detail || "";
     dialog.autorun = Boolean(template.autorun);
+    dialog.agentName = template.agentName || "";
     dialog.preferredAgentProfiles = template.preferredAgentProfiles || [];
     dialog.prompt = template.prompt || "";
+    dialog.completionCriteria = template.completionCriteria || "";
   }
   renderCreateDialog();
 }
@@ -5542,8 +5809,10 @@ async function submitCreateDialog(event) {
   dialog.detail = String(form.get("detail") || "");
   dialog.slug = String(form.get("slug") || "");
   dialog.autorun = form.get("autorun") === "on";
+  dialog.agentName = String(form.get("agentName") || "");
   dialog.preferredAgentProfiles = parseAgentProfiles(String(form.get("agentProfiles") || ""));
   dialog.prompt = String(form.get("prompt") || "");
+  dialog.completionCriteria = String(form.get("completionCriteria") || "");
   dialog.submitting = true;
   renderCreateDialog();
   try {
@@ -5566,8 +5835,10 @@ async function submitCreateDialog(event) {
           ...(dialog.templateName ? { taskMarkdown: dialog.detail } : { detail: dialog.detail }),
           slug: dialog.slug,
           autorun: dialog.autorun,
+          agentName: dialog.autorun ? dialog.agentName : "",
           preferredAgentProfiles: dialog.autorun ? dialog.preferredAgentProfiles : [],
           prompt: dialog.autorun ? dialog.prompt : "",
+          completionCriteria: dialog.autorun ? dialog.completionCriteria : "",
         }),
       });
       toast("Task created.");
@@ -6223,6 +6494,29 @@ $("mobileImmersiveButton").onclick = () => setMobileImmersive(!state.mobile.imme
 setMobileImmersive(loadMobileImmersive());
 
 document.addEventListener("keydown", (event) => {
+  if (state.autoRunDialog.open) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAutoRunConfigDialog();
+      return;
+    }
+    if (event.key === "Tab") {
+      const dialog = $("autoRunDialogRoot")?.querySelector('[role="dialog"]');
+      const focusable = dialog ? [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])")] : [];
+      if (focusable.length) {
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    }
+    return;
+  }
   if (event.key === "Escape" && state.uploadDialog.open) {
     closeAgentUploadDialog();
   } else if (event.key === "Escape" && state.mobile.sidebarOpen) {

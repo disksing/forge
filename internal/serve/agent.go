@@ -95,17 +95,23 @@ type agentUploadResponse struct {
 var agentIndexMu sync.Mutex
 
 type startAgentRequest struct {
-	AgentName            string `json:"agentName"`
-	AgentProfile         string `json:"agentProfile,omitempty"`
-	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
-	ResourceID           string `json:"resourceId"`
-	Title                string `json:"title"`
-	Prompt               string `json:"prompt"`
-	Cwd                  string `json:"cwd"`
-	SchedulerTurn        bool   `json:"schedulerTurn,omitempty"`
-	AutoRunGeneration    int    `json:"autoRunGeneration,omitempty"`
-	QueueAutoRun         bool   `json:"queueAutoRun,omitempty"`
-	ExpectedAutoRunState string `json:"expectedAutoRunState,omitempty"`
+	AgentName                    string `json:"agentName"`
+	AgentProfile                 string `json:"agentProfile,omitempty"`
+	AgentSelectionReason         string `json:"agentSelectionReason,omitempty"`
+	ResourceID                   string `json:"resourceId"`
+	Title                        string `json:"title"`
+	Prompt                       string `json:"prompt"`
+	Cwd                          string `json:"cwd"`
+	SchedulerTurn                bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration            int    `json:"autoRunGeneration,omitempty"`
+	QueueAutoRun                 bool   `json:"queueAutoRun,omitempty"`
+	ExpectedAutoRunState         string `json:"expectedAutoRunState,omitempty"`
+	AutoRunAgentName             string `json:"autoRunAgentName,omitempty"`
+	AutoRunAgentNameSet          bool   `json:"autoRunAgentNameSet,omitempty"`
+	AutoRunPrompt                string `json:"autoRunPrompt,omitempty"`
+	AutoRunPromptSet             bool   `json:"autoRunPromptSet,omitempty"`
+	AutoRunCompletionCriteria    string `json:"autoRunCompletionCriteria,omitempty"`
+	AutoRunCompletionCriteriaSet bool   `json:"autoRunCompletionCriteriaSet,omitempty"`
 }
 
 type agentInputRequest struct {
@@ -1066,26 +1072,29 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		rt.schedulerTurnFinishing = false
 		rt.mu.Unlock()
 	}()
-	var task struct {
-		AutoRun *struct {
-			State string `json:"state"`
-		} `json:"autoRun"`
-	}
+	var taskState string
+	var continuation runnableTaskCandidate
 	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err == nil {
 		resource, resourceErr := forgeWorkspace.ResourceValue(run.ResourceID)
 		err = resourceErr
 		if err == nil && resource.Task != nil && resource.Task.AutoRun != nil && resource.Task.AutoRun.State == "running" {
+			continuation = runnableTaskCandidate{
+				ID: run.ResourceID, Title: resource.Task.Title, Generation: resource.Task.AutoRun.Generation,
+				State: resource.Task.AutoRun.State, AgentName: resource.Task.AutoRun.AgentName,
+				Prompt:                 resource.Task.AutoRun.Prompt,
+				PreferredAgentProfiles: append([]string(nil), resource.Task.AutoRun.PreferredAgentProfiles...),
+				CompletionCriteria:     resource.Task.AutoRun.CompletionCriteria,
+				SuspensionSummary:      resource.Task.AutoRun.SuspensionSummary,
+			}
 			updated, retryErr := forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{TaskID: run.ResourceID, Reason: "agent did not set AutoRun state"})
 			err = retryErr
 			if err == nil && updated.AutoRun != nil {
-				task.AutoRun = &struct {
-					State string `json:"state"`
-				}{State: updated.AutoRun.State}
+				taskState = updated.AutoRun.State
 			}
-			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
+			if err == nil && taskState == "running" {
 				rt.markIdleUnlessStopped(m)
-				prompt := autoRunContinuePrompt(rt.workspace.Path)
+				prompt := autoRunContinuePrompt(rt.workspace.Path, continuation)
 				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
 					err = sendErr
 				}
@@ -1102,11 +1111,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		run = rt.run
 		rt.mu.Unlock()
 		_ = saveAgentRun(rt.workspace.Path, run)
-		state := ""
-		if task.AutoRun != nil {
-			state = task.AutoRun.State
-		}
-		switch state {
+		switch taskState {
 		case "completed", "failed":
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; session retained until manually stopped.")
 		default:

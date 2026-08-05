@@ -17,10 +17,15 @@ import (
 // chatAutoRunStartRequest is the single Chat entry point for manually starting
 // or resuming AutoRun on a task. AgentName is required when no reusable
 // session exists: a new session always runs the agent the user explicitly
-// selected in the composer.
+// selected in the composer. The pointer fields preserve the difference
+// between an omitted value (inherit the previous generation) and an explicit
+// empty value (clear it for a new generation).
 type chatAutoRunStartRequest struct {
-	ResourceID string `json:"resourceId"`
-	AgentName  string `json:"agentName,omitempty"`
+	ResourceID         string  `json:"resourceId"`
+	AgentName          string  `json:"agentName,omitempty"`
+	RunInstructions    *string `json:"runInstructions,omitempty"`
+	Prompt             *string `json:"prompt,omitempty"` // legacy alias
+	CompletionCriteria *string `json:"completionCriteria,omitempty"`
 }
 
 // chatAutoRunStartResponse reports what the unified start operation did.
@@ -34,6 +39,19 @@ type chatAutoRunStartResponse struct {
 	Run       *agentRun `json:"run,omitempty"`
 	AgentName string    `json:"agentName,omitempty"`
 	Reason    string    `json:"reason,omitempty"`
+}
+
+func chatAutoRunTextOption(primary, legacy *string, primaryName, legacyName string) (string, bool, error) {
+	if primary != nil && legacy != nil {
+		return "", false, fmt.Errorf("%s and %s cannot both be provided", primaryName, legacyName)
+	}
+	if primary != nil {
+		return strings.TrimSpace(*primary), true, nil
+	}
+	if legacy != nil {
+		return strings.TrimSpace(*legacy), true, nil
+	}
+	return "", false, nil
 }
 
 // startChatAutoRun coordinates the whole manual AutoRun start in one server
@@ -60,6 +78,21 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 	agentName := strings.TrimSpace(req.AgentName)
+	runInstructions, runInstructionsSet, err := chatAutoRunTextOption(req.RunInstructions, req.Prompt, "runInstructions", "prompt")
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	completionCriteria := ""
+	completionCriteriaSet := req.CompletionCriteria != nil
+	if completionCriteriaSet {
+		completionCriteria = strings.TrimSpace(*req.CompletionCriteria)
+	}
+	queueInput := app.AutoRunQueueInput{
+		TaskID: resourceID, AgentName: agentName, AgentNameSet: agentName != "",
+		Prompt: runInstructions, PromptSet: runInstructionsSet,
+		CompletionCriteria: completionCriteria, CompletionCriteriaSet: completionCriteriaSet,
+	}
 
 	s.autoRunDispatchMu.Lock()
 	defer s.autoRunDispatchMu.Unlock()
@@ -82,6 +115,10 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
+	autoRunState := ""
+	if resource.Task.AutoRun != nil {
+		autoRunState = resource.Task.AutoRun.State
+	}
 
 	// Re-validate everything at execution time; the button state the frontend
 	// rendered may be stale by the time the click arrives.
@@ -90,12 +127,37 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, reusableErr, http.StatusInternalServerError)
 		return
 	}
-	if reusable == nil && agentName == "" {
-		if busyLive {
-			writeError(w, errors.New("the task's session is busy; wait until it is idle to start AutoRun"), http.StatusConflict)
+	if busyLive {
+		writeError(w, errors.New("the task's session is busy; wait until it is idle to start AutoRun"), http.StatusConflict)
+		return
+	}
+	if reusable == nil && agentName == "" && (autoRunState == "suspended" || autoRunState == "paused") {
+		// Resume does not open the configuration dialog. If the original
+		// AgentHub session is gone, recover the generation's persisted agent or
+		// profile selection instead of requiring the current composer choice.
+		candidate, _, candidateErr := chatAutoRunCandidate(resourceID, *resource.Task, queueInput)
+		if candidateErr != nil {
+			writeError(w, candidateErr, http.StatusConflict)
 			return
 		}
+		cfg, configErr := s.loadConfig()
+		if configErr != nil {
+			writeError(w, configErr, http.StatusServiceUnavailable)
+			return
+		}
+		selection, selectionErr := resolveAutoRunAgent(cfg, candidate)
+		if selectionErr != nil {
+			writeError(w, selectionErr, http.StatusBadRequest)
+			return
+		}
+		agentName = selection.AgentName
+	}
+	if reusable == nil && agentName == "" {
 		writeError(w, errors.New("no active session can be reused; select an agent to start AutoRun"), http.StatusBadRequest)
+		return
+	}
+	if reusable != nil && agentName != "" && !strings.EqualFold(agentName, strings.TrimSpace(reusable.AgentHubAgentName)) {
+		writeError(w, errors.New("the selected agent does not match the idle session; close the session or select its agent"), http.StatusConflict)
 		return
 	}
 
@@ -103,13 +165,13 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 	// the AutoRun generation. This closes the race between the optimistic lock
 	// check above and an external session acquiring the task control.
 	if reusable == nil {
-		candidate, expectedState, candidateErr := chatAutoRunCandidate(resourceID, *resource.Task)
+		candidate, expectedState, candidateErr := chatAutoRunCandidate(resourceID, *resource.Task, queueInput)
 		if candidateErr != nil {
 			writeError(w, candidateErr, http.StatusConflict)
 			return
 		}
 		prompt := buildAutoRunPrompt(workspace.Path, candidate)
-		run, startErr := s.createChatAutoRunSession(r.Context(), workspace, candidate, agentName, prompt, true, expectedState)
+		run, startErr := s.createChatAutoRunSession(r.Context(), workspace, candidate, agentName, prompt, queueInput, true, expectedState)
 		if startErr != nil {
 			if isExternalResourceLockError(startErr) {
 				writeResourceOperationError(w, startErr, http.StatusConflict)
@@ -132,9 +194,13 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 	var task app.Task
 	switch state {
 	case "":
-		task, err = forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: resourceID})
+		queueInput.AgentName = strings.TrimSpace(reusable.AgentHubAgentName)
+		queueInput.AgentNameSet = queueInput.AgentName != ""
+		task, err = forgeWorkspace.QueueAutoRun(queueInput)
 	case "completed", "failed":
-		task, err = forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: resourceID})
+		queueInput.AgentName = strings.TrimSpace(reusable.AgentHubAgentName)
+		queueInput.AgentNameSet = queueInput.AgentName != ""
+		task, err = forgeWorkspace.QueueAutoRun(queueInput)
 	case "suspended", "paused":
 		task, err = forgeWorkspace.ResumeAutoRun(resourceID)
 	case "queued":
@@ -158,8 +224,10 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		Title:                  task.Title,
 		Generation:             task.AutoRun.Generation,
 		State:                  "queued",
+		AgentName:              task.AutoRun.AgentName,
 		Prompt:                 task.AutoRun.Prompt,
 		PreferredAgentProfiles: task.AutoRun.PreferredAgentProfiles,
+		CompletionCriteria:     task.AutoRun.CompletionCriteria,
 		SuspensionSummary:      task.AutoRun.SuspensionSummary,
 	}
 	prompt := buildAutoRunPrompt(workspace.Path, candidate)
@@ -197,20 +265,37 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 	writeError(w, errors.New("AutoRun session selection changed while starting"), http.StatusConflict)
 }
 
-func chatAutoRunCandidate(resourceID string, task app.Task) (runnableTaskCandidate, string, error) {
+func chatAutoRunCandidate(resourceID string, task app.Task, inputs ...app.AutoRunQueueInput) (runnableTaskCandidate, string, error) {
+	var input app.AutoRunQueueInput
+	if len(inputs) > 0 {
+		input = inputs[0]
+	}
 	candidate := runnableTaskCandidate{
 		ID: resourceID, Title: task.Title, Generation: 1, State: "queued",
+		AgentName: strings.TrimSpace(input.AgentName), Prompt: strings.TrimSpace(input.Prompt),
+		CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
 	}
 	if task.AutoRun == nil {
 		return candidate, "", nil
 	}
 	candidate.Generation = task.AutoRun.Generation
+	candidate.AgentName = task.AutoRun.AgentName
 	candidate.Prompt = task.AutoRun.Prompt
 	candidate.PreferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
+	candidate.CompletionCriteria = task.AutoRun.CompletionCriteria
 	candidate.SuspensionSummary = task.AutoRun.SuspensionSummary
 	switch task.AutoRun.State {
 	case "completed", "failed":
 		candidate.Generation++
+		if input.AgentNameSet {
+			candidate.AgentName = strings.TrimSpace(input.AgentName)
+		}
+		if input.PromptSet {
+			candidate.Prompt = strings.TrimSpace(input.Prompt)
+		}
+		if input.CompletionCriteriaSet {
+			candidate.CompletionCriteria = strings.TrimSpace(input.CompletionCriteria)
+		}
 	case "suspended", "paused":
 		// Resume the current generation after the new Forge session owns the
 		// task lock.
@@ -229,7 +314,7 @@ func chatAutoRunCandidate(resourceID string, task app.Task) (runnableTaskCandida
 // newly created Forge session has successfully locked the task. The expected
 // state check prevents a stale internal dispatch request from changing a
 // generation another actor already advanced.
-func (s *server) queueChatAutoRunForSession(workspace guiWorkspace, resourceID, expectedState string) (app.Task, error) {
+func (s *server) queueChatAutoRunForSession(workspace guiWorkspace, resourceID, expectedState string, inputs ...app.AutoRunQueueInput) (app.Task, error) {
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return app.Task{}, err
@@ -250,7 +335,12 @@ func (s *server) queueChatAutoRunForSession(workspace guiWorkspace, resourceID, 
 	}
 	switch state {
 	case "", "completed", "failed":
-		return forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: resourceID})
+		input := app.AutoRunQueueInput{TaskID: resourceID}
+		if len(inputs) > 0 {
+			input = inputs[0]
+			input.TaskID = resourceID
+		}
+		return forgeWorkspace.QueueAutoRun(input)
 	case "suspended", "paused":
 		return forgeWorkspace.ResumeAutoRun(resourceID)
 	default:
@@ -308,17 +398,23 @@ func (s *server) findReusableAutoRunSession(workspace guiWorkspace, taskID strin
 // createChatAutoRunSession starts a new agent run for the generation with the
 // agent the user explicitly selected, through the same internal endpoint the
 // background driver uses.
-func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate, agentName, prompt string, queueAutoRun bool, expectedState string) (*agentRun, error) {
+func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate, agentName, prompt string, queueInput app.AutoRunQueueInput, queueAutoRun bool, expectedState string) (*agentRun, error) {
 	req := startAgentRequest{
-		AgentName:            agentName,
-		AgentSelectionReason: "selected in chat for manual AutoRun start",
-		ResourceID:           task.ID,
-		Title:                task.Title,
-		Prompt:               prompt,
-		SchedulerTurn:        true,
-		AutoRunGeneration:    task.Generation,
-		QueueAutoRun:         queueAutoRun,
-		ExpectedAutoRunState: expectedState,
+		AgentName:                    agentName,
+		AgentSelectionReason:         "selected in chat for manual AutoRun start",
+		ResourceID:                   task.ID,
+		Title:                        task.Title,
+		Prompt:                       prompt,
+		SchedulerTurn:                true,
+		AutoRunGeneration:            task.Generation,
+		QueueAutoRun:                 queueAutoRun,
+		ExpectedAutoRunState:         expectedState,
+		AutoRunAgentName:             queueInput.AgentName,
+		AutoRunAgentNameSet:          queueInput.AgentNameSet,
+		AutoRunPrompt:                queueInput.Prompt,
+		AutoRunPromptSet:             queueInput.PromptSet,
+		AutoRunCompletionCriteria:    queueInput.CompletionCriteria,
+		AutoRunCompletionCriteriaSet: queueInput.CompletionCriteriaSet,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {

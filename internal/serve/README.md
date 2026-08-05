@@ -33,7 +33,7 @@ GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 �
 
 ## 会话与锁
 
-新 chat 和 AutoRun 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。
+新 chat 和 AutoRun 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。手动首次启动和新 generation 通过单个 `POST /api/workspaces/<id>/autorun/start` 收集并持久化 `agentName`、`runInstructions` 和 `completionCriteria`；暂停或挂起恢复不重新收集参数。Forge 在创建 Forge session 或推进 generation 前查询 AgentHub catalog，目标不可用时保持任务、session 和锁不变。
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
 

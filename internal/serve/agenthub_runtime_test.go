@@ -49,6 +49,20 @@ func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
 }
 
 func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/v1/agents" && r.Method == http.MethodGet {
+		f.mu.Lock()
+		rejected := f.rejectAgentName
+		f.mu.Unlock()
+		agents := []map[string]any{{"name": "fake-agent", "providerId": "fake", "available": rejected != "fake-agent"}}
+		if rejected != "" && rejected != "fake-agent" {
+			agents = append(agents, map[string]any{"name": rejected, "providerId": "fake", "available": false, "unavailableReason": "configured AgentHub agent is unavailable"})
+		}
+		writeRuntimeFakeJSON(w, map[string]any{
+			"providers": []any{map[string]any{"id": "fake", "name": "Fake", "type": "fake", "enabled": true}},
+			"agents":    agents, "probes": []any{},
+		})
+		return
+	}
 	if r.URL.Path == "/v1/sessions" {
 		if r.Method == http.MethodGet {
 			f.list(w, r)
@@ -269,7 +283,7 @@ func TestAgentHubRuntimeReportsUnavailableConfiguredProfile(t *testing.T) {
 	}
 }
 
-func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
+func TestUnavailableAgentDoesNotCreateRunOrForgeSession(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.rejectAgentName = "fake-agent"
 	hub := httptest.NewServer(fake)
@@ -277,62 +291,18 @@ func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
 	if recorder.Code != http.StatusBadGateway {
-		t.Fatalf("expected AgentHub create failure, got %d: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected unavailable AgentHub target, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("stuck run projection missing: runs=%#v err=%v", runs, err)
-	}
-	run := runs[0]
-	if run.Status != "recovering" || run.AgentHubSessionID != "" || run.ForgeSessionID == "" {
-		t.Fatalf("expected recovering run without AgentHub attachment: %#v", run)
-	}
-	if _, err := os.Stat(run.ForgeSessionContextPath); err != nil {
-		t.Fatalf("Forge session context missing before stop: %v", err)
-	}
-
-	stop := func() *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
-		rec := httptest.NewRecorder()
-		manager.stopRun(rec, req, workspace.ID, run.ID)
-		return rec
-	}
-	if rec := stop(); rec.Code != http.StatusOK {
-		t.Fatalf("stop of unattached run should succeed, got %d: %s", rec.Code, rec.Body.String())
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("unavailable target must not persist a run: runs=%#v err=%v", runs, err)
 	}
 	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
-		t.Fatalf("Forge session was not ended by stop: %#v", sessions)
-	}
-	if _, err := os.Stat(run.ForgeSessionContextPath); !os.IsNotExist(err) {
-		t.Fatalf("Forge session context was not removed: %v", err)
-	}
-	persisted, err := loadAgentRun(workspace.Path, run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if persisted.Status != "stopped" || persisted.ForgeSessionID != "" || persisted.ForgeSessionContextPath != "" {
-		t.Fatalf("stop did not persist a terminal projection: %#v", persisted)
-	}
-	if rt := manager.runtimeByID(run.ID); rt == nil || rt.snapshotRun().Status != "stopped" {
-		t.Fatalf("runtime projection was not deactivated: %#v", rt)
-	}
-
-	// Repeated stops are idempotent and must not repeat the cleanup.
-	if rec := stop(); rec.Code != http.StatusOK {
-		t.Fatalf("repeated stop should succeed, got %d: %s", rec.Code, rec.Body.String())
-	}
-	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
-		t.Fatalf("repeated stop recreated or retained a Forge session: %#v", sessions)
-	}
-	fake.mu.Lock()
-	actions := append([]string(nil), fake.actions...)
-	fake.mu.Unlock()
-	if len(actions) != 0 {
-		t.Fatalf("unattached stop must not touch AgentHub: %v", actions)
+		t.Fatalf("unavailable target must not create a Forge session: %#v", sessions)
 	}
 }
 
-func TestStopUnattachedAgentHubRunWithoutRuntime(t *testing.T) {
+func TestUnavailableAgentDoesNotCreateRunAfterManagerRestart(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.rejectAgentName = "fake-agent"
 	hub := httptest.NewServer(fake)
@@ -340,43 +310,20 @@ func TestStopUnattachedAgentHubRunWithoutRuntime(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
 	if recorder.Code != http.StatusBadGateway {
-		t.Fatalf("expected AgentHub create failure, got %d: %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected unavailable AgentHub target, got %d: %s", recorder.Code, recorder.Body.String())
 	}
 	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(runs) != 1 {
-		t.Fatalf("stuck run projection missing: runs=%#v err=%v", runs, err)
+	if err != nil || len(runs) != 0 {
+		t.Fatalf("unavailable target must not persist a run: runs=%#v err=%v", runs, err)
 	}
-	run := runs[0]
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("unavailable target must not create a Forge session: %#v", sessions)
+	}
 
-	// A GUI restart leaves the stuck run without a registered runtime; the
-	// escape hatch must still work from the persisted projection.
+	// A GUI restart still sees no run or lock to clean up.
 	restarted := newAgentManager(manager.server)
-	if restarted.runtimeByID(run.ID) != nil {
-		t.Fatal("fresh manager unexpectedly has a runtime for the stuck run")
-	}
-	req := httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	restarted.stopRun(rec, req, workspace.ID, run.ID)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("stop of persisted unattached run should succeed, got %d: %s", rec.Code, rec.Body.String())
-	}
-	persisted, err := loadAgentRun(workspace.Path, run.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if persisted.Status != "stopped" || persisted.ForgeSessionID != "" {
-		t.Fatalf("persisted stop did not reach a terminal projection: %#v", persisted)
-	}
-	if _, err := os.Stat(run.ForgeSessionContextPath); !os.IsNotExist(err) {
-		t.Fatalf("Forge session context was not removed: %v", err)
-	}
-
-	// Idempotency on the disk-only path as well.
-	req = httptest.NewRequest(http.MethodPost, "/stop", strings.NewReader(`{}`))
-	rec = httptest.NewRecorder()
-	restarted.stopRun(rec, req, workspace.ID, run.ID)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("repeated persisted stop should succeed, got %d: %s", rec.Code, rec.Body.String())
+	if restarted.runtimeByID("missing-run") != nil {
+		t.Fatal("fresh manager unexpectedly has a runtime for an unavailable target")
 	}
 }
 

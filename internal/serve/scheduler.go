@@ -25,8 +25,10 @@ type runnableTaskCandidate struct {
 	Title                  string   `json:"title"`
 	Generation             int      `json:"generation"`
 	State                  string   `json:"state"`
+	AgentName              string   `json:"agentName,omitempty"`
 	Prompt                 string   `json:"prompt"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
+	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
 	SuspendedAt            string   `json:"suspendedAt,omitempty"`
 	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
@@ -280,6 +282,11 @@ func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSe
 }
 
 func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+	if agentName := strings.TrimSpace(task.AgentName); agentName != "" {
+		return autoRunAgentSelection{
+			AgentName: agentName, Reason: "using the AgentHub agent selected for this AutoRun generation",
+		}, nil
+	}
 	if len(task.PreferredAgentProfiles) > 0 {
 		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
 		for _, raw := range task.PreferredAgentProfiles {

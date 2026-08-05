@@ -61,6 +61,18 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 		SourceExternalID: workspace.ID + "/run-b", Status: "starting",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_b", State: "stopped", UpdatedAt: "2026-08-01T00:00:11Z"})
+	// Give run-a a visible durable cursor so the test can wait for the
+	// completion worker's final save instead of observing its brief setup
+	// window under -race.
+	fake.mu.Lock()
+	fake.events["ses_a"] = []agentHubEvent{{
+		ID: 1, Time: "2026-08-01T00:00:10Z", Type: "session.state", SessionID: "ses_a",
+		Data: []byte(`{"state":"ready"}`),
+	}}
+	sessionA := fake.sessions["ses_a"]
+	sessionA.LastEventID = 1
+	fake.sessions["ses_a"] = sessionA
+	fake.mu.Unlock()
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
@@ -74,7 +86,10 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	runA := pollerRunState(manager.runtimeByID("run-a"))
 	waitForRuntimeTest(t, func() bool {
 		run := pollerRunState(manager.runtimeByID("run-a"))
-		return run.CompletionSessionID == "ses_a" && !run.CompletionPending
+		// CompletionSessionID is established before the completion worker marks
+		// the durable event cursor. Wait for that cursor too so TempDir cleanup
+		// cannot race the worker's final save under -race.
+		return run.CompletionSessionID == "ses_a" && run.CompletionCursor >= 1 && !run.CompletionPending
 	})
 	runA = pollerRunState(manager.runtimeByID("run-a"))
 	if runA.Status != "idle" || runA.UpdatedAt != "2026-08-01T00:00:10Z" || runA.LastOutputAt != "2026-08-01T00:00:10Z" {
