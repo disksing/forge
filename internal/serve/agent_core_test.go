@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
@@ -147,44 +149,54 @@ func TestListRunsSortsRFC3339TimestampsByInstant(t *testing.T) {
 
 func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 	workspace := t.TempDir()
-	temp := t.TempDir()
-	argsPath := filepath.Join(temp, "args.txt")
-	forgePath := filepath.Join(temp, "forge-fake")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$FORGE_FAKE_ARGS\"\nprintf 'session-created\\n'\n"
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_FAKE_ARGS", argsPath)
-	manager := newAgentManager(&server{forgePath: forgePath})
+	manager := newAgentManager(&server{})
 	id, err := manager.createForgeSession(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace},
 		agentRun{ID: "run-one", SourceExternalID: "workspace-one/run-one"},
 		config{AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-one"})
-	if err != nil || id != "session-created" {
+	if err != nil || id == "" {
 		t.Fatalf("create Forge session: id=%q err=%v", id, err)
 	}
-	expected := "session new --agenthub --endpoint http://127.0.0.1:4646 --source-instance-id forge-one --source-external-id workspace-one/run-one --starting-grace 30s\n"
-	if got := string(mustReadFile(t, argsPath)); got != expected {
-		t.Fatalf("unexpected session args: %q", got)
+	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := forgeWorkspace.Session(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session.Liveness.Type != "agenthub" || session.Liveness.Endpoint != defaultAgentHubEndpoint ||
+		session.Liveness.SourceInstanceID != "forge-one" || session.Liveness.SourceExternalID != "workspace-one/run-one" ||
+		session.Liveness.StartingGrace != "30s" {
+		t.Fatalf("unexpected session liveness: %#v", session.Liveness)
 	}
 }
 
 func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 	workspace := t.TempDir()
-	resourceDir := filepath.Join(workspace, "project1", "task1")
-	if err := os.MkdirAll(resourceDir, 0o755); err != nil {
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
 		t.Fatal(err)
 	}
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := "#!/bin/sh\nprintf '{\"path\":\"project1/task1\"}\\n'\n"
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	project, err := forgeWorkspace.CreateProject("Cwd project", "cwd")
+	if err != nil {
 		t.Fatal(err)
 	}
-	manager := newAgentManager(&server{forgePath: forgePath})
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Cwd task", Slug: "cwd"}); err != nil {
+		t.Fatal(err)
+	}
+	manager := newAgentManager(&server{})
 	got, err := manager.agentRunCwd(context.Background(), guiWorkspace{Path: workspace}, "project1.task1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want, _ := filepath.Abs(resourceDir)
+	detail, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := filepath.Abs(filepath.Join(workspace, filepath.FromSlash(detail.Path)))
 	if got != want {
 		t.Fatalf("expected resource cwd %s, got %s", want, got)
 	}
@@ -192,16 +204,18 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 
 func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 	workspace := t.TempDir()
-	resourceDir := filepath.Join(workspace, "project1", "task1")
-	if err := os.MkdirAll(resourceDir, 0o755); err != nil {
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
 		t.Fatal(err)
 	}
-	temp := t.TempDir()
-	forgePath := filepath.Join(temp, "forge-fake")
-	if err := os.WriteFile(forgePath, []byte("#!/bin/sh\nprintf '{\"path\":\"project1/task1\"}\\n'\n"), 0o755); err != nil {
+	project, err := forgeWorkspace.CreateProject("Context project", "context")
+	if err != nil {
 		t.Fatal(err)
 	}
-	server := &server{forgePath: forgePath, config: filepath.Join(temp, "gui.json")}
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Context task", Slug: "context"}); err != nil {
+		t.Fatal(err)
+	}
+	server := &server{config: filepath.Join(t.TempDir(), "gui.json")}
 	if err := server.saveConfig(config{
 		Version: agentHubConfigVersion, AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-test",
 		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "default-agent"}},
@@ -209,6 +223,7 @@ func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(server)
+	resourceDir := filepath.Join(workspace, "project1", "task1")
 	run := agentRun{
 		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
 		ForgeSessionID: "session-one", AgentHubSessionID: "ses_one", Cwd: resourceDir,
@@ -230,11 +245,10 @@ func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 
 func TestEndForgeSessionIgnoresAlreadyPrunedSession(t *testing.T) {
 	workspace := t.TempDir()
-	forgePath := filepath.Join(workspace, "forge-fake")
-	if err := os.WriteFile(forgePath, []byte("#!/bin/sh\necho 'forge: session not found' >&2\nexit 1\n"), 0o755); err != nil {
+	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	manager := newAgentManager(&server{forgePath: forgePath})
+	manager := newAgentManager(&server{})
 	if err := manager.endForgeSession(context.Background(), guiWorkspace{Path: workspace}, "session-pruned"); err != nil {
 		t.Fatalf("already-pruned session should be treated as ended: %v", err)
 	}

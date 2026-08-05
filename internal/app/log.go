@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"bufio"
@@ -82,14 +82,6 @@ func resourceLogAdd(kind string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationLogAdd(kind, opts.projectID, opts.task, opts.title, opts.details)
-}
-
-func legacyResourceLogAdd(kind string, args []string) error {
-	opts, err := parseLogAddArgs(kind, args)
-	if err != nil {
-		return err
-	}
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -118,14 +110,6 @@ func resourceLogList(kind string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationLogList(kind, opts.projectID, opts.task, opts.json)
-}
-
-func legacyResourceLogList(kind string, args []string) error {
-	opts, err := parseLogListArgs(kind, args)
-	if err != nil {
-		return err
-	}
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -145,13 +129,6 @@ func legacyResourceLogList(kind string, args []string) error {
 	sortLogEntries(entries)
 	if opts.json {
 		return printJSON(entries)
-	}
-	for _, entry := range entries {
-		fmt.Printf("%s\t%s", entry.Time, entry.Title)
-		if entry.Details != "" {
-			fmt.Printf("\t%s", entry.Details)
-		}
-		fmt.Println()
 	}
 	return nil
 }

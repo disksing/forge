@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 	"unicode"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 type agentRun struct {
@@ -113,10 +115,6 @@ type forgeSessionContext struct {
 	Cwd               string `json:"cwd"`
 	CreatedAt         string `json:"createdAt"`
 	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
-}
-
-type resourceDetailPath struct {
-	Path string `json:"path"`
 }
 
 type agentRuntime struct {
@@ -423,6 +421,7 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, run agentRun, cfg config) (string, error) {
+	_ = ctx
 	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return "", err
@@ -431,17 +430,19 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 	if sourceExternalID == "" {
 		sourceExternalID = workspace.ID + "/" + run.ID
 	}
-	out, err := m.server.runForge(ctx, workspace.Path,
-		"session", "new", "--agenthub",
-		"--endpoint", endpoint,
-		"--source-instance-id", cfg.AgentHubInstanceID,
-		"--source-external-id", sourceExternalID,
-		"--starting-grace", "30s",
-	)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return "", err
 	}
-	sessionID := strings.TrimSpace(string(out))
+	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
+		Type: "agenthub", Endpoint: endpoint, SourceApp: "forge",
+		SourceInstanceID: cfg.AgentHubInstanceID, SourceExternalID: sourceExternalID,
+		StartingGrace: "30s",
+	})
+	if err != nil {
+		return "", err
+	}
+	sessionID := strings.TrimSpace(session.ID)
 	if sessionID == "" {
 		return "", errors.New("forge session new returned an empty id")
 	}
@@ -449,53 +450,52 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 }
 
 func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace guiWorkspace, forgeSessionID, agentHubSessionID string) error {
+	_ = ctx
 	if strings.TrimSpace(forgeSessionID) == "" || strings.TrimSpace(agentHubSessionID) == "" {
 		return errors.New("Forge and AgentHub session ids are required")
 	}
-	_, err := m.server.runForge(ctx, workspace.Path, "session", "bind-agenthub",
-		"--id", forgeSessionID, "--agenthub-session-id", agentHubSessionID)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return err
+	}
+	_, err = forgeWorkspace.BindAgentHubSession(forgeSessionID, agentHubSessionID)
 	return err
 }
 
 func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorkspace, sessionID, resourceID string) error {
+	_ = ctx
 	if resourceID == "" {
 		return nil
 	}
-	args, err := forgeSessionLockArgs(sessionID, resourceID)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
 	}
-	if _, err := m.server.runForge(ctx, workspace.Path, args...); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (m *agentManager) startAutoRun(ctx context.Context, workspace guiWorkspace, run agentRun) error {
-	selector, err := forgeTaskSelectorArgs(run.ResourceID)
-	if err != nil {
-		return err
-	}
-	args := []string{"task", "autorun", "start"}
-	args = append(args, selector...)
-	_, err = m.server.runForge(ctx, workspace.Path, args...)
+	_, err = forgeWorkspace.LockSession(sessionID, resourceID)
 	return err
 }
 
-func forgeTaskSelectorArgs(resourceID string) ([]string, error) {
-	projectID, taskSuffix, ok := strings.Cut(strings.TrimSpace(resourceID), ".task")
-	if !ok || projectID == "" || taskSuffix == "" {
-		return nil, fmt.Errorf("AutoRun requires a task resource id: %s", resourceID)
+func (m *agentManager) startAutoRun(ctx context.Context, workspace guiWorkspace, run agentRun) error {
+	_ = ctx
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return err
 	}
-	return []string{"--project", projectID, "--task", "task" + taskSuffix}, nil
+	_, err = forgeWorkspace.StartAutoRun(run.ResourceID)
+	return err
 }
 
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
+	_ = ctx
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
 		return nil
 	}
-	_, err := m.server.runForge(ctx, workspace.Path, "session", "end", "--id", sessionID)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return err
+	}
+	_, err = forgeWorkspace.EndSession(sessionID)
 	if err != nil && strings.Contains(err.Error(), "session not found") {
 		return nil
 	}
@@ -563,14 +563,15 @@ func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, 
 }
 
 func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, resourceID string) (string, error) {
+	_ = ctx
 	resourceID = strings.TrimSpace(resourceID)
-	out, err := m.server.runForge(ctx, workspace.Path, "workspace", "resource", "--id", resourceID, "--json")
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return "", err
 	}
-	var detail resourceDetailPath
-	if err := json.Unmarshal(out, &detail); err != nil {
-		return "", fmt.Errorf("decode resource path: %w", err)
+	detail, err := forgeWorkspace.Resource(resourceID)
+	if err != nil {
+		return "", err
 	}
 	if strings.TrimSpace(detail.Path) == "" {
 		return "", fmt.Errorf("resource %s returned an empty path", resourceID)
@@ -599,24 +600,6 @@ func removeForgeSessionContextFile(contextPath, sessionID string) {
 		return
 	}
 	_ = os.Remove(contextPath)
-}
-
-func forgeSessionLockArgs(sessionID, resourceID string) ([]string, error) {
-	resourceID = strings.TrimSpace(resourceID)
-	args := []string{"session", "lock", "--id", sessionID}
-	if resourceID == "" {
-		return args, nil
-	}
-	if projectID, taskSuffix, ok := strings.Cut(resourceID, ".task"); ok {
-		if projectID == "" || taskSuffix == "" {
-			return nil, fmt.Errorf("invalid task resource id: %s", resourceID)
-		}
-		return append(args, "--project", projectID, "--task", taskSuffix), nil
-	}
-	if strings.Contains(resourceID, ".") {
-		return nil, fmt.Errorf("invalid project resource id: %s", resourceID)
-	}
-	return append(args, "--project", resourceID), nil
 }
 
 func rewriteAgentRuns(workspacePath string, runs []agentRun) error {
@@ -860,22 +843,17 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 			State string `json:"state"`
 		} `json:"autoRun"`
 	}
-	selector, err := forgeTaskSelectorArgs(run.ResourceID)
+	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err == nil {
-		args := []string{"task", "autorun", "retry"}
-		args = append(args, selector...)
-		showArgs := []string{"task", "show"}
-		showArgs = append(showArgs, selector...)
-		var out []byte
-		out, err = m.server.runForge(context.Background(), rt.workspace.Path, showArgs...)
-		if err == nil {
-			err = json.Unmarshal(out, &task)
-		}
-		if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
-			args = append(args, "--reason=agent did not set AutoRun state")
-			out, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
-			if err == nil {
-				_ = json.Unmarshal(out, &task)
+		resource, resourceErr := forgeWorkspace.ResourceValue(run.ResourceID)
+		err = resourceErr
+		if err == nil && resource.Task != nil && resource.Task.AutoRun != nil && resource.Task.AutoRun.State == "running" {
+			updated, retryErr := forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{TaskID: run.ResourceID, Reason: "agent did not set AutoRun state"})
+			err = retryErr
+			if err == nil && updated.AutoRun != nil {
+				task.AutoRun = &struct {
+					State string `json:"state"`
+				}{State: updated.AutoRun.State}
 			}
 			if err == nil && task.AutoRun != nil && task.AutoRun.State == "running" {
 				rt.markIdleUnlessStopped(m)
@@ -917,12 +895,9 @@ func (rt *agentRuntime) recordSchedulerFailure(m *agentManager, reason string) {
 	rt.mu.Lock()
 	run := rt.run
 	rt.mu.Unlock()
-	selector, err := forgeTaskSelectorArgs(run.ResourceID)
+	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err == nil {
-		args := []string{"task", "autorun", "retry"}
-		args = append(args, selector...)
-		args = append(args, "--reason="+strings.TrimSpace(reason))
-		_, err = m.server.runForge(context.Background(), rt.workspace.Path, args...)
+		_, err = forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{TaskID: run.ResourceID, Reason: strings.TrimSpace(reason)})
 	}
 	if err != nil {
 		rt.addForgeNotice(m, "error", "forge/autorun/retry", err.Error())

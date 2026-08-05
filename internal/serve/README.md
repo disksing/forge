@@ -24,9 +24,10 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。可用环境变量：
 
-- `FORGE_CLI`：Web 服务执行 workspace 操作时调用的 Forge CLI（默认使用当前运行的 forge 二进制自身）。
 - `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
 - `FORGE_GUI_CONFIG`：GUI 配置文件路径。
+
+Workspace 读写由可复用的 `internal/app` API 完成。服务为每个请求显式打开配置中的 Workspace root，API 返回类型化资源和结构化错误，不通过子进程、argv 或 stdout JSON 传递内部结果。升级时请删除旧的 `FORGE_CLI` 配置；服务不再读取它。
 
 GUI 只读取 schema version 3 配置。旧版本配置不会被降级展示、自动重写或通过设置页迁移；升级前请先完成一次性转换或备份。目标 Agent 即使暂时不可用也可以保存，实际运行时由 AgentHub 返回错误。
 

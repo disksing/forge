@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/disksing/forge/internal/app"
 	"github.com/disksing/forge/internal/buildinfo"
 )
 
@@ -88,23 +89,28 @@ func startTask(args []string) error {
 	if len(command) == 0 {
 		return errors.New("no agent command provided; use forge start [--project=<project>] [--task=<task>] -- <command> or set agentCommand in forge.json")
 	}
-	sessionID, err := createSession(root, SessionLiveness{Type: "pid", PID: os.Getpid()})
+	workspace, err := app.OpenWorkspace(root)
 	if err != nil {
 		return err
 	}
-	if _, err := lockSessionResource(root, sessionID, resourceID); err != nil {
-		_, _ = endSession(root, sessionID)
+	session, err := workspace.CreateSession(app.SessionLiveness{Type: "pid", PID: os.Getpid()})
+	if err != nil {
+		return err
+	}
+	sessionID := session.ID
+	if _, err := workspace.LockSession(sessionID, resourceID); err != nil {
+		_, _ = workspace.EndSession(sessionID)
 		return err
 	}
 	contextPath, err := writeStartSessionContext(taskPath, root, resourceID, sessionID)
 	if err != nil {
-		_, _ = endSession(root, sessionID)
+		_, _ = workspace.EndSession(sessionID)
 		return err
 	}
 	defer removeStartSessionContext(contextPath, sessionID)
 
 	runErr := runStartCommand(command, taskPath, sessionID)
-	_, endErr := endSession(root, sessionID)
+	_, endErr := workspace.EndSession(sessionID)
 	if runErr != nil {
 		return runErr
 	}

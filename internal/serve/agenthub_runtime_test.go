@@ -14,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 type runtimeFakeAgentHub struct {
@@ -255,7 +257,7 @@ func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
 	fake.rejectAgentName = "fake-agent"
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	recorder, _ := startRuntimeTestRun(t, manager, workspace, `{"agentProfile":"default"}`)
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("expected AgentHub create failure, got %d: %s", recorder.Code, recorder.Body.String())
@@ -281,10 +283,8 @@ func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
 	if rec := stop(); rec.Code != http.StatusOK {
 		t.Fatalf("stop of unattached run should succeed, got %d: %s", rec.Code, rec.Body.String())
 	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-	logData := string(mustReadFile(t, logPath))
-	if !strings.Contains(logData, "session end --id "+run.ForgeSessionID) {
-		t.Fatalf("Forge session was not ended by stop:\n%s", logData)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("Forge session was not ended by stop: %#v", sessions)
 	}
 	if _, err := os.Stat(run.ForgeSessionContextPath); !os.IsNotExist(err) {
 		t.Fatalf("Forge session context was not removed: %v", err)
@@ -304,9 +304,8 @@ func TestStopUnattachedAgentHubRunReleasesForgeSession(t *testing.T) {
 	if rec := stop(); rec.Code != http.StatusOK {
 		t.Fatalf("repeated stop should succeed, got %d: %s", rec.Code, rec.Body.String())
 	}
-	logData = string(mustReadFile(t, logPath))
-	if strings.Count(logData, "session end") != 1 {
-		t.Fatalf("repeated stop repeated the Forge session cleanup:\n%s", logData)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("repeated stop recreated or retained a Forge session: %#v", sessions)
 	}
 	fake.mu.Lock()
 	actions := append([]string(nil), fake.actions...)
@@ -479,6 +478,17 @@ func (f *runtimeFakeAgentHub) appendLocked(sessionID, eventType string, data any
 func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspace, string) {
 	t.Helper()
 	workspacePath := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspacePath, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := forgeWorkspace.CreateProject("Runtime test project", "runtime-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test", AutoRun: true}); err != nil {
+		t.Fatal(err)
+	}
 	workspace := guiWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
 	configPath := filepath.Join(t.TempDir(), "gui.json")
 	configData, _ := json.Marshal(agentHubGUIConfig{
@@ -489,37 +499,7 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := `#!/bin/sh
-printf '%s\n' "$*" >> "$FORGE_RUNTIME_LOG"
-if [ "$1" = "session" ] && [ "$2" = "new" ]; then
-  printf '%s\n' "session-test"
-  exit 0
-fi
-if [ "$1" = "session" ] && { [ "$2" = "lock" ] || [ "$2" = "end" ] || [ "$2" = "bind-agenthub" ]; }; then
-  printf '{}\n'
-  exit 0
-fi
-if [ "$1" = "task" ] && [ "$2" = "autorun" ]; then
-  printf '{}\n'
-  exit 0
-fi
-if [ "$1" = "task" ] && [ "$2" = "show" ]; then
-  printf '{"autoRun":{"state":"%s"}}\n' "${FORGE_RUNTIME_AUTORUN_STATE:-running}"
-  exit 0
-fi
-if [ "$1" = "workspace" ] && [ "$2" = "resource" ]; then
-  printf '{"path":"project1/task1"}\n'
-  exit 0
-fi
-echo "unexpected forge args: $*" >&2
-exit 1
-`
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("FORGE_RUNTIME_LOG", filepath.Join(filepath.Dir(configPath), "forge.log"))
-	server := &server{config: configPath, forgePath: forgePath, addr: "127.0.0.1:4936"}
+	server := &server{config: configPath, addr: "127.0.0.1:4936"}
 	manager := newAgentManager(server)
 	server.agents = manager
 	return manager, workspace, configPath
@@ -552,7 +532,7 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 	session := fake.sessions["ses_1"]
 	fake.mu.Unlock()
 	if session.Source == nil || session.Source.App != "forge" || session.Source.InstanceID != "forge-runtime-test" ||
-		session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
+		session.LaunchEnvironment["FORGE_SESSION_ID"] != detail.Run.ForgeSessionID {
 		t.Fatalf("source or launch environment missing: %#v", session)
 	}
 	localEventPath := filepath.Join(workspace.Path, ".forge", "gui-agent", "runs", detail.Run.ID+".jsonl")
@@ -701,7 +681,7 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if resumeDetail.Run.Status != "idle" || resumeDetail.Run.AgentHubStoppedObserved ||
-		resumeDetail.Run.ForgeSessionID != "session-test" {
+		resumeDetail.Run.ForgeSessionID == "" {
 		t.Fatalf("stopped resume did not rebuild a live projection: %#v", resumeDetail.Run)
 	}
 	fake.mu.Lock()
@@ -709,7 +689,7 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	steers := append([]bool(nil), fake.messageSteers...)
 	actions := strings.Join(fake.actions, ",")
 	fake.mu.Unlock()
-	if len(resumeEnvs) != 1 || resumeEnvs[0]["FORGE_SESSION_ID"] != "session-test" {
+	if len(resumeEnvs) != 1 || resumeEnvs[0]["FORGE_SESSION_ID"] != resumeDetail.Run.ForgeSessionID {
 		t.Fatalf("stopped resume did not pass the replacement Forge session overlay: %#v", resumeEnvs)
 	}
 	if len(steers) != 2 || steers[0] || !steers[1] {
@@ -728,7 +708,7 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		}
 	}
 
-	restartedServer := &server{config: configPath, forgePath: manager.server.forgePath, addr: manager.server.addr}
+	restartedServer := &server{config: configPath, addr: manager.server.addr}
 	restarted := newAgentManager(restartedServer)
 	restartedServer.agents = restarted
 	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
@@ -794,7 +774,7 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	fake.stopAtStopping = true
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", rec.Body.String())
@@ -806,9 +786,8 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	if stopRec.Code != http.StatusBadGateway {
 		t.Fatalf("stop without durable stopped should fail closed, got %d: %s", stopRec.Code, stopRec.Body.String())
 	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-	if logData := string(mustReadFile(t, logPath)); strings.Contains(logData, "session end") {
-		t.Fatalf("Forge session ended while AgentHub was only stopping:\n%s", logData)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+		t.Fatalf("Forge session ended while AgentHub was only stopping: %#v", sessions)
 	}
 	rt.mu.Lock()
 	if rt.run.ForgeSessionID == "" {
@@ -833,8 +812,8 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 		defer rt.mu.Unlock()
 		return rt.run.ForgeSessionID == ""
 	})
-	if logData := string(mustReadFile(t, logPath)); !strings.Contains(logData, "session end --id session-test") {
-		t.Fatalf("durable stopped did not release Forge session:\n%s", logData)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("durable stopped did not release Forge session: %#v", sessions)
 	}
 }
 
@@ -842,8 +821,7 @@ func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "running")
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", rec.Body.String())
@@ -858,14 +836,41 @@ func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
 	waitForRuntimeTest(t, func() bool {
-		data, err := os.ReadFile(logPath)
-		return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			return false
+		}
+		resource, err := forgeWorkspace.Resource("project1.task1")
+		if err != nil || resource.AutoRun == nil {
+			return false
+		}
+		for _, entry := range resource.Logs {
+			if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+				return true
+			}
+		}
+		return false
 	})
-	logData := string(mustReadFile(t, logPath))
-	if strings.Contains(logData, "stale turn summary") {
-		t.Fatalf("AutoRun retry reused the previous turn summary:\n%s", logData)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundReason := false
+	for _, entry := range resource.Logs {
+		if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+			foundReason = true
+		}
+		if strings.Contains(entry.Details, "stale turn summary") {
+			t.Fatalf("AutoRun retry reused the previous turn summary: %#v", entry)
+		}
+	}
+	if !foundReason {
+		t.Fatalf("AutoRun retry reason was not persisted: %#v", resource.Logs)
 	}
 }
 
@@ -875,14 +880,20 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			fake := newRuntimeFakeAgentHub()
 			hub := httptest.NewServer(fake)
 			defer hub.Close()
-			manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-			t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "waiting")
+			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("start failed: %s", rec.Body.String())
 			}
 			rt := manager.runtimeByID(detail.Run.ID)
 			sessionID := detail.Run.AgentHubSessionID
+			forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Reason: "wait for the next turn"}); err != nil {
+				t.Fatal(err)
+			}
 			fake.mu.Lock()
 			fake.appendLocked(sessionID, "turn.completed", map[string]any{"summary": "waiting"})
 			session := fake.sessions[sessionID]
@@ -898,7 +909,9 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 				return rt.run.Status == "idle" && !rt.run.SchedulerTurn
 			})
 
-			t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", terminalState)
+			if _, err := forgeWorkspace.ResumeAutoRun("project1.task1"); err != nil {
+				t.Fatal(err)
+			}
 			inputReq := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"resume generation","schedulerTurn":true,"autoRunGeneration":1}`))
 			inputRec := httptest.NewRecorder()
 			manager.sendAgentHubInput(inputRec, inputReq, rt, agentInputRequest{
@@ -906,6 +919,17 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			}, "resume generation")
 			if inputRec.Code != http.StatusOK {
 				t.Fatalf("resume failed: %d %s", inputRec.Code, inputRec.Body.String())
+			}
+			forgeWorkspace, err = app.OpenWorkspace(workspace.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if terminalState == "completed" {
+				if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
+					t.Fatal(err)
+				}
+			} else if _, err := forgeWorkspace.FailAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
+				t.Fatal(err)
 			}
 			fake.mu.Lock()
 			eventType := "turn.completed"
@@ -928,7 +952,7 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			rt.mu.Lock()
 			forgeSessionID := rt.run.ForgeSessionID
 			rt.mu.Unlock()
-			if forgeSessionID != "session-test" {
+			if forgeSessionID == "" {
 				t.Fatalf("terminal AutoRun changed Forge session id: %q", forgeSessionID)
 			}
 			fake.mu.Lock()
@@ -942,9 +966,8 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			if strings.Contains(actions, "stop") {
 				t.Fatalf("terminal AutoRun stopped AgentHub: %s", actions)
 			}
-			logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-			if logData := string(mustReadFile(t, logPath)); strings.Contains(logData, "session end") {
-				t.Fatalf("terminal AutoRun released the Forge session:\n%s", logData)
+			if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+				t.Fatalf("terminal AutoRun released the Forge session: %#v", sessions)
 			}
 		})
 	}
@@ -967,6 +990,7 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 		SchedulerTurn: true, AutoRunGeneration: 4, PendingInitialMessage: "recover after SIGKILL",
 		CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
 	}
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		t.Fatal(err)
 	}
@@ -1003,7 +1027,7 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 		session.Source.ExternalID != run.SourceExternalID {
 		t.Fatalf("recovery used the wrong source: %#v", session.Source)
 	}
-	if session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
+	if session.LaunchEnvironment["FORGE_SESSION_ID"] != run.ForgeSessionID {
 		t.Fatalf("recovery changed launchEnvironment: %#v", session.LaunchEnvironment)
 	}
 }
@@ -1034,6 +1058,9 @@ func seedStoppedResumeRun(t *testing.T, fake *runtimeFakeAgentHub, workspace gui
 	if run.SourceExternalID == "" {
 		run.SourceExternalID = workspace.ID + "/" + run.ID
 	}
+	if run.ForgeSessionID != "" {
+		run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
+	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		t.Fatal(err)
 	}
@@ -1056,29 +1083,28 @@ func resumeRunRequest(manager *agentManager, workspace guiWorkspace, runID strin
 	return recorder
 }
 
-func forgeRuntimeLog(t *testing.T, configPath string) string {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "forge.log"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
-}
-
 func TestAgentHubStoppedResumeReleasesStaleForgeSession(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := seedStoppedResumeRun(t, fake, workspace, agentRun{
 		ID: "run-stopped", ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_old", ForgeSessionID: "session-old",
 	})
-	run.ForgeSessionContextPath = filepath.Join(workspace.Path, "project1", "task1", ".forge", "codex-session.json")
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	run.ForgeSessionContextPath = filepath.Join(workspace.Path, filepath.FromSlash(resource.Path), ".forge", "codex-session.json")
 	if err := os.MkdirAll(filepath.Dir(run.ForgeSessionContextPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(run.ForgeSessionContextPath, []byte(`{"version":2,"forgeSessionId":"session-old"}`), 0o600); err != nil {
+	if err := os.WriteFile(run.ForgeSessionContextPath, []byte(`{"version":2,"forgeSessionId":"`+run.ForgeSessionID+`"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
@@ -1093,45 +1119,34 @@ func TestAgentHubStoppedResumeReleasesStaleForgeSession(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Run.Status != "idle" || detail.Run.AgentHubStoppedObserved || detail.Run.ForgeSessionID != "session-test" {
+	if detail.Run.Status != "idle" || detail.Run.AgentHubStoppedObserved || detail.Run.ForgeSessionID == "" || detail.Run.ForgeSessionID == run.ForgeSessionID {
 		t.Fatalf("stopped resume projection mismatch: %#v", detail.Run)
 	}
 	fake.mu.Lock()
 	session := fake.sessions["ses_old"]
 	resumeEnvs := append([]map[string]string(nil), fake.resumeEnvironments...)
 	fake.mu.Unlock()
-	if session.LaunchEnvironment["FORGE_SESSION_ID"] != "session-test" {
+	if session.LaunchEnvironment["FORGE_SESSION_ID"] != detail.Run.ForgeSessionID {
 		t.Fatalf("AgentHub session kept the stale launch environment: %#v", session.LaunchEnvironment)
 	}
-	if len(resumeEnvs) != 1 || resumeEnvs[0]["FORGE_SESSION_ID"] != "session-test" {
+	if len(resumeEnvs) != 1 || resumeEnvs[0]["FORGE_SESSION_ID"] != detail.Run.ForgeSessionID {
 		t.Fatalf("stopped resume did not pass the replacement Forge session overlay: %#v", resumeEnvs)
 	}
-	log := forgeRuntimeLog(t, configPath)
-	releaseIndex := strings.Index(log, "session end --id session-old")
-	createIndex := strings.Index(log, "session new")
-	if releaseIndex < 0 || createIndex < 0 || releaseIndex > createIndex {
-		t.Fatalf("stale Forge session must be released before the replacement is created:\n%s", log)
-	}
-	for _, want := range []string{
-		"session lock --id session-test --project project1 --task 1",
-		"session bind-agenthub --id session-test --agenthub-session-id ses_old",
-	} {
-		if !strings.Contains(log, want) {
-			t.Fatalf("replacement Forge session flow is missing %q:\n%s", want, log)
-		}
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 || sessions[0].ID != detail.Run.ForgeSessionID {
+		t.Fatalf("stale Forge session was not replaced exactly once: %#v", sessions)
 	}
 	contextData, err := os.ReadFile(run.ForgeSessionContextPath)
 	if err != nil {
 		t.Fatalf("replacement context missing: %v", err)
 	}
-	if !strings.Contains(string(contextData), `"forgeSessionId": "session-test"`) {
+	if !strings.Contains(string(contextData), `"forgeSessionId": "`+detail.Run.ForgeSessionID+`"`) {
 		t.Fatalf("context still references the stale Forge session: %s", contextData)
 	}
 	persisted, err := loadAgentRuns(workspace.Path)
 	if err != nil || len(persisted) != 1 {
 		t.Fatalf("reload run: runs=%#v err=%v", persisted, err)
 	}
-	if persisted[0].ForgeSessionID != "session-test" || persisted[0].AgentHubStoppedObserved || persisted[0].Status != "idle" {
+	if persisted[0].ForgeSessionID != detail.Run.ForgeSessionID || persisted[0].AgentHubStoppedObserved || persisted[0].Status != "idle" {
 		t.Fatalf("persisted run mismatch: %#v", persisted[0])
 	}
 }
@@ -1141,7 +1156,7 @@ func TestAgentHubStoppedResumeFailureCleansUpForgeSession(t *testing.T) {
 	fake.failNextResume = true
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := seedStoppedResumeRun(t, fake, workspace, agentRun{
 		ID: "run-stopped", AgentHubSessionID: "ses_old",
 	})
@@ -1150,11 +1165,8 @@ func TestAgentHubStoppedResumeFailureCleansUpForgeSession(t *testing.T) {
 	if recorder.Code != http.StatusBadGateway {
 		t.Fatalf("failed AgentHub resume must surface as 502, got %d %s", recorder.Code, recorder.Body.String())
 	}
-	log := forgeRuntimeLog(t, configPath)
-	createIndex := strings.Index(log, "session new")
-	cleanupIndex := strings.Index(log, "session end --id session-test")
-	if createIndex < 0 || cleanupIndex < 0 || cleanupIndex < createIndex {
-		t.Fatalf("failed resume must release the replacement Forge session:\n%s", log)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("failed resume must release the replacement Forge session: %#v", sessions)
 	}
 	if _, err := os.Stat(filepath.Join(workspace.Path, ".forge", "codex-session.json")); !os.IsNotExist(err) {
 		t.Fatalf("replacement context was not removed: %v", err)
@@ -1172,7 +1184,7 @@ func TestAgentHubLiveResumeDoesNotOverlayLaunchEnvironment(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"title":"Live resume","agentName":"fake-agent"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", recorder.Body.String())
@@ -1187,8 +1199,8 @@ func TestAgentHubLiveResumeDoesNotOverlayLaunchEnvironment(t *testing.T) {
 	if len(resumeEnvs) != 1 || len(resumeEnvs[0]) != 0 {
 		t.Fatalf("live resume must not pass a launchEnvironment overlay: %#v", resumeEnvs)
 	}
-	if log := forgeRuntimeLog(t, configPath); strings.Count(log, "session new") != 1 {
-		t.Fatalf("live resume must not create a replacement Forge session:\n%s", log)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+		t.Fatalf("live resume must not create a replacement Forge session: %#v", sessions)
 	}
 }
 

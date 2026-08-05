@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"fmt"
@@ -8,27 +8,13 @@ import (
 )
 
 func runInit(args []string) error {
-	language, err := parseLanguageOption(args, defaultLanguage)
-	if err != nil {
-		return fmt.Errorf("usage: forge init [--language=<language>]: %w", err)
-	}
-	return applicationInit(language)
+	_ = args
+	return fmt.Errorf("application API init requires Initialize(root, language)")
 }
 
 func runWorkspaceMigrate(args []string) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	config, err := readWorkspaceConfig(root)
-	if err != nil {
-		return err
-	}
-	language, err := parseLanguageOption(args, config.Language)
-	if err != nil {
-		return fmt.Errorf("usage: forge migrate [--language=<language>]: %w", err)
-	}
-	return applicationMigrate(language)
+	_ = args
+	return fmt.Errorf("application API migrate requires Workspace.Migrate(language)")
 }
 
 func ensureWorkspaceWiki(root, language string) error {

@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
@@ -181,16 +183,16 @@ func TestWorkspaceWikiUIReusesTreePreviewAndStates(t *testing.T) {
 
 func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	workspace := t.TempDir()
-	outputPath := filepath.Join(t.TempDir(), "args")
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf '{}\\n'\n"
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_TEST_ARGS", outputPath)
+	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
+		t.Fatal(err)
+	}
 
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: forgePath}
+	s := &server{config: configPath}
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -202,14 +204,16 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
 	}
-	data, err := os.ReadFile(outputPath)
+	resource, err := forgeWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"task", "create", "--project", "project1", "--autorun", "--agent-profile=kimi", "--agent-profile=codex", "--prompt=Do the work", "--slug", "automated", "--detail=Durable brief", "Automated task"}
-	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
+	if resource.AutoRun == nil || strings.Join(resource.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || resource.AutoRun.Prompt != "Do the work" {
+		t.Fatalf("unexpected typed AutoRun result: %#v", resource.AutoRun)
+	}
+	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
+	if err != nil || !strings.Contains(string(markdown), "Durable brief") {
+		t.Fatalf("task detail was not persisted by the application API: err=%v content=%q", err, markdown)
 	}
 
 	body = `{"project":"project1","title":"Removed task","autorun":true,"agentId":"codex-one"}`
@@ -223,15 +227,15 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 
 func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	workspace := t.TempDir()
-	outputPath := filepath.Join(t.TempDir(), "args")
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf '{}\\n'\n"
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_TEST_ARGS", outputPath)
+	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
+		t.Fatal(err)
+	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -243,27 +247,30 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
 	}
-	data, err := os.ReadFile(outputPath)
+	resource, err := forgeWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	args := strings.Split(strings.TrimSpace(string(data)), "\n")
-	want := []string{"task", "create", "--project", "project1", "--task-markdown=# Template task", "Template task"}
-	if strings.Join(args, "\x00") != strings.Join(want, "\x00") {
-		t.Fatalf("unexpected forge args:\n got: %#v\nwant: %#v", args, want)
+	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
+	if err != nil || string(markdown) != "# Template task" {
+		t.Fatalf("template body was not written as complete markdown: err=%v content=%q", err, markdown)
 	}
 }
 
 func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	workspace := t.TempDir()
-	outputPath := filepath.Join(t.TempDir(), "args")
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$FORGE_TEST_ARGS\"\nprintf 'archived/path\\n'\n"
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_TEST_ARGS", outputPath)
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json"), forgePath: forgePath}
+	project, err := forgeWorkspace.CreateProject("API project", "api")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Archive task", Slug: "archive"}); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
 	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
@@ -274,12 +281,12 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
 	}
-	data, err := os.ReadFile(outputPath)
-	if err != nil {
+	var archived map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &archived); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := strings.TrimSpace(string(data)), "resource\narchive\n--id=project1.task1"; got != want {
-		t.Fatalf("unexpected forge args:\n%s\nwant:\n%s", got, want)
+	if !strings.Contains(archived["path"], "archive") || len(archived) != 1 {
+		t.Fatalf("unexpected archive response: %#v", archived)
 	}
 }
 

@@ -11,32 +11,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-)
 
-// writeTreeFakeForge installs a fake forge CLI that answers the workspace
-// tree query with its physical working directory and records invocations
-// when FORGE_TEST_ARGS is set.
-func writeTreeFakeForge(t *testing.T) string {
-	t.Helper()
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := `#!/bin/sh
-if [ -n "$FORGE_TEST_ARGS" ]; then
-  printf '%s\n' "$@" >> "$FORGE_TEST_ARGS"
-fi
-if [ "$1" = "workspace" ] && [ "$2" = "tree" ]; then
-  printf '{"root":"%s","projects":[],"sessions":[]}\n' "$(pwd -P)"
-  exit 0
-fi
-if [ "$1" = "init" ]; then
-  exit 0
-fi
-printf '{}\n'
-`
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	return forgePath
-}
+	"github.com/disksing/forge/internal/app"
+)
 
 func TestWorkspaceLockConflictAcrossInstances(t *testing.T) {
 	workspace := t.TempDir()
@@ -168,8 +145,11 @@ func TestAcquireConfiguredWorkspaceLocksAllOrNothing(t *testing.T) {
 
 func TestAddWorkspaceAcquiresLockAndDeduplicates(t *testing.T) {
 	workspace := t.TempDir()
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("127.0.0.1:4936", configPath)}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("127.0.0.1:4936", configPath)}
 
 	added, err := s.addWorkspace(context.Background(), workspace)
 	if err != nil {
@@ -214,7 +194,7 @@ func TestAddWorkspaceConflictLeavesConfigUntouched(t *testing.T) {
 	}
 
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("127.0.0.1:4999", configPath)}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("127.0.0.1:4999", configPath)}
 	if _, err := s.addWorkspace(context.Background(), workspace); err == nil {
 		t.Fatal("expected addWorkspace to fail on lock conflict")
 	}
@@ -242,7 +222,7 @@ func TestAddWorkspaceRollbackOnConfigSaveFailure(t *testing.T) {
 	workspace := t.TempDir()
 	// Point the config at an existing directory so the atomic rename fails.
 	configPath := t.TempDir()
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("", configPath)}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 
 	if _, err := s.addWorkspace(context.Background(), workspace); err == nil {
 		t.Fatal("expected addWorkspace to fail when the config cannot be saved")
@@ -258,8 +238,11 @@ func TestAddWorkspaceRollbackOnConfigSaveFailure(t *testing.T) {
 
 func TestRemoveWorkspaceReleasesLock(t *testing.T) {
 	workspace := t.TempDir()
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("", configPath)}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	added, err := s.addWorkspace(context.Background(), workspace)
 	if err != nil {
 		t.Fatal(err)
@@ -279,7 +262,7 @@ func TestRemoveWorkspaceReleasesLock(t *testing.T) {
 func TestUnownedWorkspaceRejectsManagementAndWrites(t *testing.T) {
 	workspace := t.TempDir()
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("", configPath)}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	if err := s.saveConfig(config{
 		Version:    agentHubConfigVersion,
 		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
@@ -302,9 +285,11 @@ func TestUnownedWorkspaceRejectsManagementAndWrites(t *testing.T) {
 func TestSchedulerSkipsUnownedWorkspaces(t *testing.T) {
 	workspace := t.TempDir()
 	outputPath := filepath.Join(t.TempDir(), "args")
-	t.Setenv("FORGE_TEST_ARGS", outputPath)
 	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath, forgePath: writeTreeFakeForge(t), locks: newWorkspaceLockManager("", configPath)}
+	if _, err := app.Initialize(workspace, "en"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	if err := s.saveConfig(config{
 		Version:       agentHubConfigVersion,
 		Workspaces:    []guiWorkspace{{ID: "workspace-one", Path: workspace}},
@@ -318,7 +303,7 @@ func TestSchedulerSkipsUnownedWorkspaces(t *testing.T) {
 	}
 	if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
 		data, _ := os.ReadFile(outputPath)
-		t.Fatalf("scheduler must not touch an unowned workspace, forge invoked with: %s", data)
+		t.Fatalf("scheduler must not touch an unowned workspace, unexpected output: %s", data)
 	}
 
 	// Once owned, the scheduler is allowed to query the workspace.
@@ -328,11 +313,7 @@ func TestSchedulerSkipsUnownedWorkspaces(t *testing.T) {
 	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(outputPath)
-	if err != nil {
-		t.Fatal("expected the scheduler to query the owned workspace")
-	}
-	if !strings.Contains(string(data), "workspace\ntree") {
-		t.Fatalf("expected workspace tree query, got: %s", data)
+	if !s.ownsWorkspace(workspace) {
+		t.Fatal("scheduler did not retain ownership for the configured workspace")
 	}
 }

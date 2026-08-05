@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"errors"
@@ -100,11 +100,19 @@ const (
 )
 
 func workspaceTreeJSON() error {
-	return applicationWorkspaceTreeJSON()
+	tree, err := buildWorkspaceTree()
+	if err != nil {
+		return err
+	}
+	return printJSON(tree)
 }
 
 func workspaceResourceJSON(id string) error {
-	return applicationWorkspaceResourceJSON(id)
+	detail, err := buildResourceDetail(id)
+	if err != nil {
+		return err
+	}
+	return printJSON(detail)
 }
 
 func buildWorkspaceTree() (WorkspaceTree, error) {
@@ -112,6 +120,10 @@ func buildWorkspaceTree() (WorkspaceTree, error) {
 	if err != nil {
 		return WorkspaceTree{}, err
 	}
+	return buildWorkspaceTreeAt(root)
+}
+
+func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 	projectEntries, err := readProjectEntriesInDirs([]string{root})
 	if err != nil {
 		return WorkspaceTree{}, err
@@ -167,6 +179,10 @@ func buildResourceDetail(id string) (ResourceDetailView, error) {
 	if err != nil {
 		return ResourceDetailView{}, err
 	}
+	return buildResourceDetailAtRoot(root, id)
+}
+
+func buildResourceDetailAtRoot(root, id string) (ResourceDetailView, error) {
 	path, resource, err := loadResource(root, cleanID(id))
 	if err != nil {
 		return ResourceDetailView{}, err

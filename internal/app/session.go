@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"crypto/rand"
@@ -128,7 +128,32 @@ func sessionBindAgentHub(args []string) error {
 	if sessionID == "" || agentHubSessionID == "" {
 		return errors.New(sessionBindUsage)
 	}
-	return applicationSessionBind(sessionID, agentHubSessionID)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, sessionID)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", sessionID)
+		}
+		if store.Sessions[index].Liveness.Type != "agenthub" {
+			return fmt.Errorf("session %s does not use AgentHub liveness", sessionID)
+		}
+		current := strings.TrimSpace(store.Sessions[index].Liveness.AgentHubSessionID)
+		if current != "" && current != agentHubSessionID {
+			return fmt.Errorf("session %s is already bound to AgentHub session %s", sessionID, current)
+		}
+		store.Sessions[index].Liveness.AgentHubSessionID = agentHubSessionID
+		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func sessionNew(args []string) error {
@@ -136,7 +161,16 @@ func sessionNew(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationSessionNewLocal(liveness)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	id, err := createSession(root, liveness)
+	if err != nil {
+		return err
+	}
+	_ = id
+	return nil
 }
 
 func createSession(root string, liveness SessionLiveness) (string, error) {
@@ -166,7 +200,24 @@ func sessionHeartbeat(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationSessionHeartbeat(id)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", id)
+		}
+		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func sessionLock(args []string) error {
@@ -190,7 +241,15 @@ func sessionEnd(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationSessionEnd(id)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	session, err := endSession(root, id)
+	if err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func endSession(root, id string) (Session, error) {
@@ -212,7 +271,21 @@ func endSession(root, id string) (Session, error) {
 }
 
 func sessionList() error {
-	return applicationSessionList()
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var sessions []Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		sessions = append([]Session(nil), store.Sessions...)
+		sortSessions(sessions)
+		return nil
+	}); err != nil {
+		return err
+	}
+	_ = sessions
+	return nil
 }
 
 func sessionShow(args []string) error {
@@ -220,7 +293,23 @@ func sessionShow(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationSessionShow(id)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, id)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", id)
+		}
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return err
+	}
+	return printSessionJSON(session)
 }
 
 func updateSessionLock(options sessionTargetOptions, lock bool) error {
@@ -232,10 +321,35 @@ func updateSessionLock(options sessionTargetOptions, lock bool) error {
 	if err != nil {
 		return err
 	}
-	if noLock {
-		return applicationSessionLock(options.ID, "", lock)
+	var session Session
+	if err := withLockedSessionStore(root, func(store *SessionStore) error {
+		pruneStaleSessions(store)
+		index := findSessionIndex(store.Sessions, options.ID)
+		if index < 0 {
+			return fmt.Errorf("session not found: %s", options.ID)
+		}
+		if !noLock && lock {
+			if err := ensureNoSessionControlConflicts(store, options.ID, control); err != nil {
+				return err
+			}
+			addSessionControl(&store.Sessions[index], control)
+		}
+		if !noLock && !lock {
+			store.Sessions[index].Controls = removeSessionControl(store.Sessions[index].Controls, control)
+			if store.Sessions[index].Primary != nil && store.Sessions[index].Primary.Path == control.Path {
+				store.Sessions[index].Primary = nil
+			}
+		}
+		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
+		session = store.Sessions[index]
+		return nil
+	}); err != nil {
+		return err
 	}
-	return applicationSessionLock(options.ID, control.ResourceID, lock)
+	if noLock {
+		return nil
+	}
+	return printSessionJSON(session)
 }
 
 func lockSessionResource(root, sessionID, resourceID string) (Session, error) {
@@ -563,22 +677,7 @@ func resolveSessionTarget(root string, options sessionTargetOptions) (SessionCon
 		if ok {
 			return resolveResourceSessionControl(root, projectID)
 		}
-		cwd, err := os.Getwd()
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		absRoot, err := filepath.Abs(root)
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		absCwd, err := filepath.Abs(cwd)
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		if absCwd == absRoot {
-			return SessionControl{}, true, nil
-		}
-		return SessionControl{}, false, errors.New("could not infer current project or task; use --project=<project> or --task=<task>")
+		return SessionControl{}, false, errors.New("an explicit project or task is required")
 	}
 
 	projectID := options.Project
@@ -927,7 +1026,7 @@ func printSessionJSON(session Session) error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(data))
+	_ = data
 	return nil
 }
 

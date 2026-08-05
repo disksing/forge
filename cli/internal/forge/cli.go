@@ -437,10 +437,10 @@ Commands:
 
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
     Start the Forge web service: Workspace API, AutoRun scheduler, AgentHub
-    session orchestration and recovery, and the static web UI. FORGE_CLI
-    overrides the forge executable used for workspace operations (defaults to
-    the running binary); FORGE_AGENTHUB_URL overrides the persisted AgentHub
-    endpoint; FORGE_GUI_CONFIG selects the GUI configuration file.`)
+    session orchestration and recovery, and the static web UI. Workspace
+    operations use the in-process application API; FORGE_AGENTHUB_URL
+    overrides the persisted AgentHub endpoint; FORGE_GUI_CONFIG selects the
+    GUI configuration file.`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {

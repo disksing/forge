@@ -7,8 +7,11 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 func TestScheduleRunnableTasksScansPastActiveAndFailedCandidates(t *testing.T) {
@@ -286,34 +289,62 @@ func TestStartRunnableTaskFailsClosedWhenRunIndexCannotBeRead(t *testing.T) {
 
 func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTaskCandidate, handler http.HandlerFunc) *server {
 	t.Helper()
-	treeData, err := json.Marshal(workspaceTree{Projects: []resourceSnapshot{{ID: "project1"}}})
+	forgeWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	taskData, err := json.Marshal(runnableTaskResponse{Tasks: tasks})
+	project, err := forgeWorkspace.CreateProject("Scheduler test project", "scheduler")
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("FORGE_SCHEDULER_TEST_TREE", string(treeData))
-	t.Setenv("FORGE_SCHEDULER_TEST_TASKS", string(taskData))
-	forgePath := filepath.Join(t.TempDir(), "forge-fake")
-	script := `#!/bin/sh
-case "$1 $2" in
-  "workspace tree") printf '%s\n' "$FORGE_SCHEDULER_TEST_TREE" ;;
-  "task list") printf '%s\n' "$FORGE_SCHEDULER_TEST_TASKS" ;;
-  "task autorun") printf '{}\n' ;;
-  *) printf 'unexpected forge command: %s\n' "$*" >&2; exit 1 ;;
-esac
-`
-	if err := os.WriteFile(forgePath, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
+	maxTask := 1
+	for _, candidate := range tasks {
+		_, suffix, ok := strings.Cut(candidate.ID, ".task")
+		if !ok {
+			continue
+		}
+		if number, err := strconv.Atoi(suffix); err == nil && number > maxTask {
+			maxTask = number
+		}
+	}
+	byID := make(map[string]runnableTaskCandidate, len(tasks))
+	for _, candidate := range tasks {
+		byID[candidate.ID] = candidate
+	}
+	for number := 1; number <= maxTask; number++ {
+		id := project.ID + ".task" + strconv.Itoa(number)
+		candidate := byID[id]
+		title := candidate.Title
+		if title == "" {
+			title = "Scheduler task " + strconv.Itoa(number)
+		}
+		task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{
+			ProjectID: project.ID, Title: title, Slug: "task" + strconv.Itoa(number),
+			AutoRun: true, PreferredAgentProfiles: candidate.PreferredAgentProfiles,
+			Prompt: candidate.Prompt,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch candidate.State {
+		case "running":
+			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+				t.Fatal(err)
+			}
+		case "paused":
+			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "test"}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	httpServer := httptest.NewServer(handler)
 	t.Cleanup(httpServer.Close)
 	s := &server{
-		addr:      httpServer.URL,
-		config:    filepath.Join(t.TempDir(), "gui.json"),
-		forgePath: forgePath,
+		addr:   httpServer.URL,
+		config: filepath.Join(t.TempDir(), "gui.json"),
 	}
 	s.agents = newAgentManager(s)
 	if err := s.saveConfig(config{

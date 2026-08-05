@@ -21,7 +21,7 @@ Forge separates concerns deliberately:
 ```text
 forge CLI / forge start ──────┐
                               ├── AgentWorkspace files (source of truth)
-forge serve ── invokes CLI ───┤
+forge serve ── internal/app ──┤
   (Web UI)  ├── AgentHub client │
             └── Git diff viewer ┘
 
@@ -30,9 +30,9 @@ AgentHub ── provider processes and durable agent sessions
 shared checkout in repos/ ── git worktree ── task-owned branch in worktree/
 ```
 
-- The **CLI** owns deterministic workspace mutations and JSON views used by other tools.
+- The **CLI** owns flag parsing and compatibility output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
 - **`forge start`** launches a terminal agent inside one resource with a managed session and lock.
-- **`forge serve`** renders workspace state in the web UI, routes chat and AutoRun through AgentHub, and schedules workspace state transitions through the CLI.
+- **`forge serve`** renders workspace state in the web UI, routes chat and AutoRun through AgentHub, and calls `internal/app` with each Workspace root directly. It does not spawn `forge` for workspace operations.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
 
@@ -108,10 +108,11 @@ Forge retains workspace/task/session-lock/Profile control. `forge serve` is the 
 Useful overrides:
 
 ```text
-FORGE_CLI           forge executable used by forge serve for workspace operations (defaults to the running binary)
 FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file
 ```
+
+`forge serve` no longer reads the former `FORGE_CLI` override. Remove that setting when upgrading; Workspace operations use the in-process typed API and the configured Workspace path.
 
 Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot schedule, recover sessions, or write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before any scheduler or recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 

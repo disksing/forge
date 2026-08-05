@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"os"
 	"strings"
 	"testing"
 )
@@ -24,31 +23,5 @@ func TestMainRejectsUnknownFlagsAndPositionalArgs(t *testing.T) {
 	}
 	if err := Main([]string{"positional"}); err == nil || !strings.Contains(err.Error(), "unexpected positional argument") {
 		t.Fatalf("expected positional argument to fail, got %v", err)
-	}
-}
-
-func TestDefaultForgePathPrefersEnvOverride(t *testing.T) {
-	t.Setenv("FORGE_CLI", "/tmp/custom-forge")
-	path, err := defaultForgePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != "/tmp/custom-forge" {
-		t.Fatalf("expected FORGE_CLI override, got %q", path)
-	}
-}
-
-func TestDefaultForgePathFallsBackToCurrentExecutable(t *testing.T) {
-	t.Setenv("FORGE_CLI", "")
-	path, err := defaultForgePath()
-	if err != nil {
-		t.Fatal(err)
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if path != exe {
-		t.Fatalf("expected current executable %q, got %q", exe, path)
 	}
 }

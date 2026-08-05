@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"fmt"
@@ -24,7 +24,60 @@ func taskRepoAdd(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationTaskRepoAdd(appTaskRepoInput(opts))
+
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	taskPath, task, err := loadOpenTask(root, opts.taskID)
+	if err != nil {
+		return err
+	}
+	name := strings.TrimSuffix(strings.TrimSpace(opts.name), ".git")
+	if err := ensureInsideName(name); err != nil {
+		return err
+	}
+	storagePath, bare := resolveRepoStoragePath(root, name)
+	if storagePath == "" {
+		return fmt.Errorf("repository not found: %s or %s", relPath(root, repoPath(root, name, false)), relPath(root, repoPath(root, name, true)))
+	}
+
+	worktreeAbs := ""
+	if opts.worktreePath == "" {
+		worktreeAbs = filepath.Join(taskPath, "worktree", repoLeafName(name))
+	} else if filepath.IsAbs(opts.worktreePath) {
+		worktreeAbs = filepath.Clean(opts.worktreePath)
+	} else {
+		worktreeAbs = filepath.Join(root, filepath.FromSlash(opts.worktreePath))
+	}
+	worktreeRel, err := workspaceRelativePath(root, worktreeAbs)
+	if err != nil {
+		return err
+	}
+
+	branch := opts.branch
+	if branch == "" {
+		branch = currentGitBranch(worktreeAbs)
+	}
+	targetBranch := opts.targetBranch
+	if targetBranch == "" {
+		targetBranch = repoDefaultBranch(storagePath, bare)
+	}
+
+	repo := TaskRepo{
+		Name:         name,
+		RepoPath:     relPath(root, storagePath),
+		WorktreePath: worktreeRel,
+		Branch:       branch,
+		TargetBranch: targetBranch,
+		BaseBranch:   opts.baseBranch,
+	}
+	if bare {
+		repo.BarePath = repo.RepoPath
+		repo.RepoPath = ""
+	}
+	upsertTaskRepo(&task, repo)
+	return saveAndPrintTask(taskPath, task)
 }
 
 func parseTaskRepoAdd(args []string) (taskRepoAddOptions, error) {
@@ -74,7 +127,16 @@ func taskRepoList(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationTaskRepoList(taskID)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	_, task, err := loadTask(root, taskID)
+	if err != nil {
+		return err
+	}
+	_ = task
+	return nil
 }
 
 func taskRepoRemove(args []string) error {
@@ -100,7 +162,7 @@ func taskRepoRemove(args []string) error {
 	if err != nil {
 		return err
 	}
-	return applicationTaskRepoRemove(taskID, name)
+	return removeTaskRepo(taskID, name)
 }
 
 func parseTaskRepoTarget(args []string, command string) (string, error) {

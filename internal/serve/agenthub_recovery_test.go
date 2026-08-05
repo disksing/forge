@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
@@ -65,8 +64,7 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "running")
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
@@ -79,10 +77,21 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
 	waitForRuntimeTest(t, func() bool {
-		data, err := os.ReadFile(logPath)
-		return err == nil && strings.Contains(string(data), "--reason=agent did not set AutoRun state")
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			return false
+		}
+		resource, err := forgeWorkspace.Resource("project1.task1")
+		if err != nil || resource.AutoRun == nil {
+			return false
+		}
+		for _, entry := range resource.Logs {
+			if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+				return true
+			}
+		}
+		return false
 	})
 	rt := manager.runtimeByID("run-sched")
 	if rt == nil {
@@ -157,7 +166,7 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	})
 	hub := httptest.NewServer(blocking)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
 		SourceExternalID: workspace.ID + "/run-live", ForgeSessionID: "session-live",
@@ -184,8 +193,13 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	// Let the background recovery pass finish its Forge session bind and
 	// projection saves before the deferred cancel and TempDir cleanup race it.
 	waitForRuntimeTest(t, func() bool {
-		data, err := os.ReadFile(filepath.Join(filepath.Dir(configPath), "forge.log"))
-		return err == nil && strings.Contains(string(data), "session bind-agenthub --id session-live --agenthub-session-id ses_live")
+		sessions := testForgeSessions(t, workspace.Path)
+		for _, session := range sessions {
+			if session.Liveness.AgentHubSessionID == "ses_live" {
+				return true
+			}
+		}
+		return false
 	})
 	time.Sleep(100 * time.Millisecond)
 }

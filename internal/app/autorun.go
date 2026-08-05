@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"errors"
@@ -138,10 +138,6 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 }
 
 func autoRunQueue(opts autoRunCommandOptions) error {
-	return applicationAutoRunQueue(opts)
-}
-
-func legacyAutoRunQueue(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		generation := 1
 		prompt := opts.Prompt
@@ -206,10 +202,6 @@ func normalizeAgentProfiles(values []string) ([]string, error) {
 }
 
 func autoRunStart(opts autoRunCommandOptions) error {
-	return applicationAutoRunStart(opts)
-}
-
-func legacyAutoRunStart(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		if task.AutoRun != nil && task.AutoRun.State == autoRunStateRunning {
 			return nil
@@ -228,10 +220,6 @@ func legacyAutoRunStart(opts autoRunCommandOptions) error {
 }
 
 func autoRunRetry(opts autoRunCommandOptions) error {
-	return applicationAutoRunRetry(opts)
-}
-
-func legacyAutoRunRetry(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateRunning {
 			return errors.New("AutoRun is not running")
@@ -266,10 +254,6 @@ func legacyAutoRunRetry(opts autoRunCommandOptions) error {
 }
 
 func autoRunResume(opts autoRunCommandOptions) error {
-	return applicationAutoRunResume(opts)
-}
-
-func legacyAutoRunResume(opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		if task.AutoRun == nil || (task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateWaiting) {
 			return errors.New("AutoRun is not paused or waiting")
@@ -289,10 +273,6 @@ func legacyAutoRunResume(opts autoRunCommandOptions) error {
 }
 
 func autoRunAction(action string, opts autoRunCommandOptions) error {
-	return applicationAutoRunAction(action, opts)
-}
-
-func legacyAutoRunAction(action string, opts autoRunCommandOptions) error {
 	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")

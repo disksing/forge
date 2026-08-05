@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 type runnableTaskResponse struct {
@@ -87,29 +89,25 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 		if !s.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		out, err := s.runForge(ctx, workspace.Path, "workspace", "tree", "--json")
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))
 			continue
 		}
-		var tree workspaceTree
-		if err := json.Unmarshal(out, &tree); err != nil {
-			failures = append(failures, fmt.Errorf("decode workspace %s: %w", workspace.ID, err))
+		typedTree, err := forgeWorkspace.Tree()
+		if err != nil {
+			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))
 			continue
 		}
+		tree := workspaceTreeFromApp(typedTree)
 		started := false
 		for _, project := range tree.Projects {
-			out, err := s.runForge(ctx, workspace.Path, "task", "list", "--project="+project.ID, "--runnable", "--json")
+			ready, err := forgeWorkspace.Tasks(app.TaskListOptions{ProjectID: project.ID, Runnable: true})
 			if err != nil {
 				failures = append(failures, fmt.Errorf("list runnable tasks for %s: %w", project.ID, err))
 				continue
 			}
-			var ready runnableTaskResponse
-			if err := json.Unmarshal(out, &ready); err != nil {
-				failures = append(failures, fmt.Errorf("decode runnable tasks for %s: %w", project.ID, err))
-				continue
-			}
-			for _, task := range ready.Tasks {
+			for _, task := range runnableTaskCandidatesFromApp(ready.Runnable) {
 				result, err := s.startRunnableTask(ctx, workspace, task)
 				switch result {
 				case runnableTaskStarted:
@@ -139,13 +137,11 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskNotRunnable, nil
 	}
 	if task.State == "waiting" {
-		selector, err := forgeTaskSelectorArgs(task.ID)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			return runnableTaskDispatchFailed, err
 		}
-		args := []string{"task", "autorun", "resume"}
-		args = append(args, selector...)
-		if _, err := s.runForge(ctx, workspace.Path, args...); err != nil {
+		if _, err := forgeWorkspace.ResumeAutoRun(task.ID); err != nil {
 			return runnableTaskDispatchFailed, err
 		}
 	}

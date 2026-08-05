@@ -1,6 +1,7 @@
-package forge
+package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -43,19 +44,112 @@ type projectListEntry struct {
 }
 
 func projectCreate(description, slug string) error {
-	return applicationProjectCreate(description, slug)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return fmt.Errorf("description cannot be empty")
+	}
+	slug, err = normalizeResourceSlug(slug)
+	if err != nil {
+		return err
+	}
+	id, err := nextProjectID(root)
+	if err != nil {
+		return err
+	}
+	projectPath := filepath.Join(root, projectDirectoryName(id, slug))
+	project := newProject(id, titleFromDescription(description), description)
+	language, err := workspaceLanguage(root)
+	if err != nil {
+		return err
+	}
+	if err := createResourceFiles(projectPath, &project, language); err != nil {
+		return err
+	}
+	_ = project
+	return nil
 }
 
 func projectList(options taskListOptions) error {
-	return applicationProjectList(options.IncludeArchived)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	dirs := []string{root}
+	if options.IncludeArchived {
+		dirs = append(dirs, filepath.Join(root, archiveDir))
+	}
+	entries, err := readProjectEntriesInDirs(dirs)
+	if err != nil {
+		return err
+	}
+	_ = entries
+	return nil
 }
 
 func showResource(id string) error {
-	return applicationShowResource(cleanID(id))
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	resourcePath, err := findResourceDir(root, cleanID(id))
+	if err != nil {
+		return err
+	}
+	resource, err := readResourceAtDir(resourcePath)
+	if err != nil {
+		return err
+	}
+	_ = resource
+	return nil
 }
 
 func archiveResource(id string) error {
-	return applicationArchiveResource(cleanID(id))
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	id = cleanID(id)
+
+	src, task, err := loadOpenResource(root, id)
+	if err != nil {
+		return err
+	}
+	dst, err := resourceArchiveDestination(root, src, task)
+	if err != nil {
+		return err
+	}
+	if pathExists(dst) {
+		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
+	}
+	if isProject(task) {
+		if err := ensureProjectTasksArchived(src, task.(*Project)); err != nil {
+			return err
+		}
+	}
+	if typed, ok := task.(*Task); ok {
+		if err := ensureTaskRepoWorktreesMerged(root, *typed); err != nil {
+			return err
+		}
+	}
+	if err := releaseSessionsControllingPath(root, relPath(root, src)); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return err
+	}
+	if typed, ok := task.(*Task); ok {
+		if err := rewriteArchivedTaskReferences(root, dst, *typed, relPath(root, src), relPath(root, dst)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, newRel string) error {
@@ -149,11 +243,137 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 }
 
 func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string, afterValues []string) error {
-	return applicationTaskCreate(appCreateTaskInput(parentID, title, detail, completeMarkdown, completeMarkdownSet, slug, autorun, preferredAgentProfiles, prompt, afterValues))
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	parentID = cleanID(parentID)
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return fmt.Errorf("title cannot be empty")
+	}
+	detail = strings.TrimSpace(detail)
+	slug, err = normalizeResourceSlug(slug)
+	if err != nil {
+		return err
+	}
+
+	parentPath, err := findResourceDir(root, parentID)
+	if err != nil {
+		return err
+	}
+	if isArchivedPath(root, parentPath) {
+		return fmt.Errorf("cannot create task under archived project: %s", parentID)
+	}
+	var parent Project
+	if err := readProjectAtDir(parentPath, &parent); err != nil {
+		return err
+	}
+	id, err := nextProjectTaskID(parentPath, parentID)
+	if err != nil {
+		return err
+	}
+	taskPath := filepath.Join(parentPath, taskDirectoryName(id, slug))
+	if pathExists(taskPath) {
+		return fmt.Errorf("task directory already exists: %s", taskPath)
+	}
+	stagingPath := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
+	defer os.RemoveAll(stagingPath)
+	task := newTask(id, parentID, title, "")
+	language, err := workspaceLanguage(root)
+	if err != nil {
+		return err
+	}
+	if autorun {
+		preferredAgentProfiles, err = normalizeAgentProfiles(preferredAgentProfiles)
+		if err != nil {
+			return err
+		}
+		after, err := resolveAutoRunDependencies(root, &task, afterValues)
+		if err != nil {
+			return err
+		}
+		state := autoRunStateQueued
+		if len(after) > 0 {
+			state = autoRunStateWaiting
+		}
+		task.AutoRun = &AutoRun{PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), Generation: 1, State: state, After: after}
+	} else if len(afterValues) > 0 || len(preferredAgentProfiles) > 0 || strings.TrimSpace(prompt) != "" {
+		return errors.New("--agent-profile, --prompt, and --after require --autorun")
+	}
+	markdown := taskMarkdown(title, detail, language)
+	if completeMarkdownSet {
+		markdown = completeMarkdown
+	}
+	if err := createResourceFilesWithMarkdown(stagingPath, &task, markdown, language); err != nil {
+		return err
+	}
+	if task.AutoRun != nil {
+		if err := prependLogEntry(stagingPath, newAutoRunLogEntry("Auto Run queued", "", task.AutoRun.Generation)); err != nil {
+			return err
+		}
+		if task.AutoRun.State == autoRunStateWaiting {
+			if err := prependLogEntry(stagingPath, newAutoRunLogEntry("Auto Run waiting", "waiting for prerequisites", task.AutoRun.Generation)); err != nil {
+				return err
+			}
+		}
+	}
+	if err := os.Rename(stagingPath, taskPath); err != nil {
+		return err
+	}
+	_ = task
+	return nil
 }
 
 func projectTaskList(options taskListOptions) error {
-	return applicationTaskList(options)
+	root, err := findWorkspaceRoot()
+	if err != nil {
+		return err
+	}
+	parentID := cleanID(options.ProjectID)
+	parentPath, err := findResourceDir(root, parentID)
+	if err != nil {
+		return err
+	}
+	pattern := projectTaskName(parentID)
+	dirs := []string{parentPath}
+	if options.IncludeArchived {
+		dirs = append(dirs, filepath.Join(parentPath, archiveDir))
+	}
+	entries, err := readTaskEntriesInDirs(dirs, pattern)
+	if err != nil {
+		return err
+	}
+	if !options.Runnable {
+		return nil
+	}
+	result := make([]runnableTask, 0)
+	for _, entry := range entries {
+		if entry.Task.AutoRun == nil {
+			continue
+		}
+		ready, reason := autoRunReady(root, entry.Task)
+		if isArchivedPath(root, entry.Path) {
+			ready = false
+			reason = "archived"
+		}
+		if !ready && !options.IncludeBlocked {
+			continue
+		}
+		item := runnableTask{ID: entry.Task.ID, Path: relPath(root, entry.Path), Title: entry.Task.Title, Ready: ready, Reason: reason}
+		if entry.Task.AutoRun != nil {
+			item.Generation = entry.Task.AutoRun.Generation
+			item.State = entry.Task.AutoRun.State
+			item.Prompt = entry.Task.AutoRun.Prompt
+			item.PreferredAgentProfiles = append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...)
+			item.After = entry.Task.AutoRun.After
+		}
+		result = append(result, item)
+	}
+	if options.JSON {
+		return printJSON(map[string]any{"tasks": result})
+	}
+	return nil
 }
 
 func newProject(id, title, description string) Project {
@@ -486,68 +706,11 @@ func findResourceDir(root, id string) (string, error) {
 }
 
 func inferCurrentProjectID() (string, bool, error) {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return "", false, err
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", false, err
-	}
-	for {
-		if pathExists(filepath.Join(cwd, projectJSONFile)) || pathExists(filepath.Join(cwd, taskJSONFile)) {
-			resource, err := readResourceAtDir(cwd)
-			if err != nil {
-				return "", false, err
-			}
-			if resourceDirNameMatches(filepath.Base(cwd), resource) && !isArchivedPath(root, cwd) {
-				if project, ok := resource.(*Project); ok {
-					return project.ID, true, nil
-				}
-				if task, ok := resource.(*Task); ok && task.Parent != "" {
-					return task.Parent, true, nil
-				}
-			}
-		}
-		if cwd == root {
-			return "", false, nil
-		}
-		parent := filepath.Dir(cwd)
-		if parent == cwd {
-			return "", false, nil
-		}
-		cwd = parent
-	}
+	return "", false, errors.New("application API requires an explicit project or task")
 }
 
 func inferCurrentTaskID() (string, bool, error) {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return "", false, err
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", false, err
-	}
-	for {
-		if pathExists(filepath.Join(cwd, taskJSONFile)) {
-			var task Task
-			if err := readTaskAtDir(cwd, &task); err != nil {
-				return "", false, err
-			}
-			if resourceDirNameMatches(filepath.Base(cwd), &task) && !isArchivedPath(root, cwd) {
-				return task.ID, true, nil
-			}
-		}
-		if cwd == root {
-			return "", false, nil
-		}
-		parent := filepath.Dir(cwd)
-		if parent == cwd {
-			return "", false, nil
-		}
-		cwd = parent
-	}
+	return "", false, errors.New("application API requires an explicit task")
 }
 
 func isArchivedPath(root, path string) bool {

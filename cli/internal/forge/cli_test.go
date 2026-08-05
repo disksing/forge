@@ -60,7 +60,7 @@ func TestForgeStartAndServeSubcommands(t *testing.T) {
 	serveHelp := run(t, "serve", "--help")
 	for _, marker := range []string{
 		"usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]",
-		"FORGE_CLI",
+		"in-process application API",
 		"FORGE_AGENTHUB_URL",
 		"FORGE_GUI_CONFIG",
 	} {

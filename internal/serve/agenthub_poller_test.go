@@ -4,17 +4,20 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 // seedPollerRun registers an AgentHub session in the fake and persists the
 // matching local run projection for the poller to reconcile.
 func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspace, run agentRun, session agentHubSession) {
 	t.Helper()
+	if run.ForgeSessionID != "" {
+		run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
+	}
 	if session.Source == nil {
 		session.Source = &agentHubSource{
 			App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID,
@@ -25,6 +28,15 @@ func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspa
 	fake.mu.Unlock()
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		t.Fatal(err)
+	}
+	if run.SchedulerTurn {
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.StartAutoRun(run.ResourceID); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -82,7 +94,7 @@ func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 			fake := newRuntimeFakeAgentHub()
 			hub := httptest.NewServer(fake)
 			defer hub.Close()
-			manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 			seedPollerRun(t, fake, workspace, agentRun{
 				ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 				AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
@@ -94,11 +106,24 @@ func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 			if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
 			rt := manager.runtimeByID("run-sched")
 			waitForRuntimeTest(t, func() bool {
-				data, err := os.ReadFile(logPath)
-				if err != nil || !strings.Contains(string(data), "--reason=agent did not set AutoRun state") {
+				forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+				if err != nil {
+					return false
+				}
+				resource, err := forgeWorkspace.Resource("project1.task1")
+				if err != nil || resource.AutoRun == nil {
+					return false
+				}
+				hasRetry := false
+				for _, entry := range resource.Logs {
+					if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+						hasRetry = true
+						break
+					}
+				}
+				if !hasRetry {
 					return false
 				}
 				rt.mu.Lock()
@@ -114,10 +139,9 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	// A terminal AutoRun state keeps the turn finish deterministic: the turn is
 	// reclaimed without sending a continue prompt into the stopped session.
-	t.Setenv("FORGE_RUNTIME_AUTORUN_STATE", "completed")
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
@@ -125,6 +149,13 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 		AutoRunGeneration: 1,
 		CreatedAt:         "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z"})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: "completed before stop"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
@@ -141,10 +172,8 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 	if !run.AgentHubStoppedObserved {
 		t.Fatalf("stopped observation was not recorded: %#v", run)
 	}
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-	logData := string(mustReadFile(t, logPath))
-	if !strings.Contains(logData, "session end --id session-test") {
-		t.Fatalf("durable stopped did not release the Forge session:\n%s", logData)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("durable stopped did not release the Forge session: %#v", sessions)
 	}
 }
 
@@ -152,7 +181,7 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
@@ -171,10 +200,18 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 	// The turn is still running: no AutoRun retry may be issued. Give any stray
 	// goroutine a chance to run before checking the forge log.
 	time.Sleep(200 * time.Millisecond)
-	logPath := filepath.Join(filepath.Dir(configPath), "forge.log")
-	data, err := os.ReadFile(logPath)
-	if err == nil && strings.Contains(string(data), "--reason=") {
-		t.Fatalf("waiting_approval to busy must not finish the scheduler turn:\n%s", data)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range resource.Logs {
+		if entry.Title == "Auto Run retry" {
+			t.Fatalf("waiting_approval to busy must not finish the scheduler turn: %#v", entry)
+		}
 	}
 }
 

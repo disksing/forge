@@ -3,9 +3,6 @@ package serve
 import (
 	"context"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -33,25 +30,13 @@ func archivedTestRun(workspace guiWorkspace, id string) agentRun {
 	}
 }
 
-func forgeLogContains(t *testing.T, configPath, want string) bool {
-	t.Helper()
-	return strings.Contains(readFileOrEmpty(filepath.Join(filepath.Dir(configPath), "forge.log")), want)
-}
-
-func readFileOrEmpty(path string) string {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
 func TestAgentHubPollerReleasesForgeSessionForArchivedAfterStopped(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-archived")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -71,7 +56,7 @@ func TestAgentHubPollerReleasesForgeSessionForArchivedAfterStopped(t *testing.T)
 		updated := pollerRunState(rt)
 		return updated.Status == "stopped" && updated.AgentHubStoppedObserved && updated.ForgeSessionID == ""
 	})
-	if !forgeLogContains(t, configPath, "session end --id session-test") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
 		t.Fatalf("archived-after-stopped session did not release the Forge session")
 	}
 
@@ -80,9 +65,8 @@ func TestAgentHubPollerReleasesForgeSessionForArchivedAfterStopped(t *testing.T)
 		t.Fatal(err)
 	}
 	time.Sleep(100 * time.Millisecond)
-	data := readFileOrEmpty(filepath.Join(filepath.Dir(configPath), "forge.log"))
-	if count := strings.Count(data, "session end"); count != 1 {
-		t.Fatalf("repeated reconciliation repeated the Forge session release %d times:\n%s", count, data)
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("repeated reconciliation recreated or retained the Forge session: %#v", sessions)
 	}
 	// The proof must not be replayed once the stopped observation is recorded.
 	fake.mu.Lock()
@@ -97,8 +81,9 @@ func TestAgentHubPollerRetainsLockForArchivedWithCursorGap(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-gap")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -118,7 +103,7 @@ func TestAgentHubPollerRetainsLockForArchivedWithCursorGap(t *testing.T) {
 	if updated.Status != "recovering" || updated.ForgeSessionID == "" {
 		t.Fatalf("cursor gap must keep the run recovering with the lock retained: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("cursor gap released the Forge session")
 	}
 
@@ -141,8 +126,9 @@ func TestAgentHubPollerRetainsLockForArchivedWithoutStoppedHistory(t *testing.T)
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-nostop")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -159,7 +145,7 @@ func TestAgentHubPollerRetainsLockForArchivedWithoutStoppedHistory(t *testing.T)
 	if updated.Status != "recovering" || updated.ForgeSessionID == "" || updated.AgentHubStoppedObserved {
 		t.Fatalf("archived session without durable stopped must fail closed: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("archived session without stopped history released the Forge session")
 	}
 }
@@ -168,8 +154,9 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-flaky")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -189,7 +176,7 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 	if updated.Status != "recovering" || updated.ForgeSessionID == "" {
 		t.Fatalf("transient proof failure must fail closed: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("transient proof failure released the Forge session")
 	}
 
@@ -206,7 +193,7 @@ func TestAgentHubPollerRetriesArchivedProofAfterTransientFailure(t *testing.T) {
 		updated := pollerRunState(rt)
 		return updated.Status == "stopped" && updated.ForgeSessionID == ""
 	})
-	if !forgeLogContains(t, configPath, "session end --id session-test") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
 		t.Fatal("recovered proof did not release the Forge session")
 	}
 }
@@ -215,8 +202,9 @@ func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T)
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-conflict")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: "other-workspace/other-run"},
@@ -233,7 +221,7 @@ func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T)
 	if updated.Status != "recovering" || updated.ForgeSessionID == "" {
 		t.Fatalf("conflicting source must fail closed: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("conflicting source released the Forge session")
 	}
 	fake.mu.Lock()
@@ -247,8 +235,9 @@ func TestAgentHubPollerRejectsArchivedSessionWithConflictingSource(t *testing.T)
 func TestAgentHubPollerUnreachableRetainsAllLocks(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-offline")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -273,7 +262,7 @@ func TestAgentHubPollerUnreachableRetainsAllLocks(t *testing.T) {
 	if updated.Status != "running" || updated.ForgeSessionID == "" {
 		t.Fatalf("unreachable AgentHub must leave the run untouched: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("unreachable AgentHub released the Forge session")
 	}
 }
@@ -282,8 +271,9 @@ func TestAgentHubRecoveryReleasesArchivedAfterStoppedOnRestart(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-restart")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -303,7 +293,7 @@ func TestAgentHubRecoveryReleasesArchivedAfterStoppedOnRestart(t *testing.T) {
 		updated := pollerRunState(rt)
 		return updated.Status == "stopped" && updated.AgentHubStoppedObserved && updated.ForgeSessionID == ""
 	})
-	if !forgeLogContains(t, configPath, "session end --id session-test") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
 		t.Fatal("restart recovery did not release the archived-after-stopped Forge session")
 	}
 }
@@ -312,8 +302,9 @@ func TestAgentHubRecoveryRetainsArchivedWithoutProofOnRestart(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	run := archivedTestRun(workspace, "run-restart-gap")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	session := agentHubSession{
 		ID: run.AgentHubSessionID, State: "archived", UpdatedAt: "2026-08-01T00:00:10Z",
 		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
@@ -340,7 +331,7 @@ func TestAgentHubRecoveryRetainsArchivedWithoutProofOnRestart(t *testing.T) {
 	if updated.ForgeSessionID == "" || updated.AgentHubStoppedObserved {
 		t.Fatalf("unproven archived session must retain the lock after restart: %#v", updated)
 	}
-	if forgeLogContains(t, configPath, "session end") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) == 0 {
 		t.Fatal("unproven archived session released the Forge session after restart")
 	}
 }
@@ -349,10 +340,11 @@ func TestAgentHubRecoveryReleasesStoppedRunLockHeldAcrossRestart(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	// The service observed durable stopped and persisted it, but exited before
 	// releasing the Forge session. Recovery must finish the release.
 	run := archivedTestRun(workspace, "run-crash")
+	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)
 	run.Status = "stopped"
 	run.AgentHubStoppedObserved = true
 	now := "2026-08-01T00:00:10Z"
@@ -374,7 +366,7 @@ func TestAgentHubRecoveryReleasesStoppedRunLockHeldAcrossRestart(t *testing.T) {
 	waitForRuntimeTest(t, func() bool {
 		return pollerRunState(rt).ForgeSessionID == ""
 	})
-	if !forgeLogContains(t, configPath, "session end --id session-test") {
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
 		t.Fatal("restart recovery did not release the stopped Forge session")
 	}
 	fake.mu.Lock()

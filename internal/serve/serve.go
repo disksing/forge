@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/disksing/forge/internal/app"
 	"github.com/disksing/forge/internal/buildinfo"
 )
 
@@ -145,11 +146,10 @@ type guiSessionControl struct {
 }
 
 type server struct {
-	addr      string
-	config    string
-	forgePath string
-	agents    *agentManager
-	locks     *workspaceLockManager
+	addr   string
+	config string
+	agents *agentManager
+	locks  *workspaceLockManager
 }
 
 const (
@@ -162,6 +162,8 @@ const serveUsage = `usage: forge serve [--addr=<address>] [--workspace=<path>] [
 
 Start the Forge web service: Workspace API, AutoRun scheduler, AgentHub
 session orchestration and recovery, and the static web UI.
+The service uses the in-process application API rooted at each explicit
+Workspace path; it does not invoke the forge CLI as a child process.
 
 Options:
   --addr <address>       local address to listen on (default 127.0.0.1:4936)
@@ -176,8 +178,6 @@ Workspace ownership:
   lock automatically when the owning process exits.
 
 Environment overrides:
-  FORGE_CLI           forge executable used for workspace operations
-                      (defaults to the running forge binary)
   FORGE_AGENTHUB_URL  AgentHub endpoint override
   FORGE_GUI_CONFIG    GUI configuration file path
 `
@@ -220,15 +220,10 @@ func Main(args []string) error {
 		return err
 	}
 	defer configLock.Close()
-	forgePath, err := defaultForgePath()
-	if err != nil {
-		return err
-	}
 	s := &server{
-		addr:      addr,
-		config:    configPath,
-		forgePath: forgePath,
-		locks:     newWorkspaceLockManager(addr, configPath),
+		addr:   addr,
+		config: configPath,
+		locks:  newWorkspaceLockManager(addr, configPath),
 	}
 	defer s.locks.closeAll()
 	_, err = s.validatePersistedAgentHubConfig(context.Background())
@@ -266,20 +261,6 @@ func Main(args []string) error {
 
 	log.Printf("forge serve listening on http://%s", addr)
 	return http.ListenAndServe(addr, mux)
-}
-
-// defaultForgePath resolves the forge executable used for workspace
-// operations. FORGE_CLI overrides the default, which is the running forge
-// binary itself.
-func defaultForgePath() (string, error) {
-	if path := strings.TrimSpace(os.Getenv("FORGE_CLI")); path != "" {
-		return path, nil
-	}
-	exe, err := os.Executable()
-	if err != nil {
-		return "", fmt.Errorf("resolve forge executable: %w", err)
-	}
-	return exe, nil
 }
 
 func (s *server) internalEndpoint() string {
@@ -380,7 +361,7 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
-		writeRawJSON(w, detail)
+		writeJSON(w, detail)
 	case "files":
 		if len(parts) == 3 && parts[2] == "raw" {
 			if r.Method != http.MethodGet {
@@ -492,17 +473,22 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	args := []string{"project", "create"}
-	if strings.TrimSpace(body.Slug) != "" {
-		args = append(args, "--slug", body.Slug)
-	}
-	args = append(args, body.Description)
-	result, err := s.runForgeForWorkspace(r.Context(), id, args...)
+	workspace, err := s.workspace(id)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	writeRawJSON(w, result)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	result, err := forgeWorkspace.CreateProject(body.Description, body.Slug)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, result)
 }
 
 func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
@@ -531,36 +517,33 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, errors.New("detail and taskMarkdown are mutually exclusive"), http.StatusBadRequest)
 		return
 	}
-	args := []string{"task", "create", "--project", body.Project}
-	if body.AutoRun {
-		args = append(args, "--autorun")
-		for _, profile := range body.PreferredAgentProfiles {
-			if strings.TrimSpace(profile) != "" {
-				args = append(args, "--agent-profile="+strings.TrimSpace(profile))
-			}
-		}
-		if strings.TrimSpace(body.Prompt) != "" {
-			args = append(args, "--prompt="+strings.TrimSpace(body.Prompt))
-		}
-	} else if len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "" {
+	if !body.AutoRun && (len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "") {
 		writeError(w, errors.New("preferredAgentProfiles and prompt require autorun"), http.StatusBadRequest)
 		return
 	}
-	if strings.TrimSpace(body.Slug) != "" {
-		args = append(args, "--slug", body.Slug)
-	}
-	if body.TaskMarkdown != nil {
-		args = append(args, "--task-markdown="+*body.TaskMarkdown)
-	} else if strings.TrimSpace(body.Detail) != "" {
-		args = append(args, "--detail="+body.Detail)
-	}
-	args = append(args, title)
-	result, err := s.runForgeForWorkspace(r.Context(), id, args...)
+	workspace, err := s.workspace(id)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	writeRawJSON(w, result)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	input := app.CreateTaskInput{
+		ProjectID: body.Project, Title: title, Detail: body.Detail, Slug: body.Slug,
+		AutoRun: body.AutoRun, PreferredAgentProfiles: body.PreferredAgentProfiles, Prompt: body.Prompt,
+	}
+	if body.TaskMarkdown != nil {
+		input.CompleteMarkdown, input.CompleteMarkdownSet = *body.TaskMarkdown, true
+	}
+	result, err := forgeWorkspace.CreateTask(input)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, result)
 }
 
 func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id string) {
@@ -576,13 +559,24 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, errors.New("resourceId is required"), http.StatusBadRequest)
 		return
 	}
-	args := []string{"resource", "archive", "--id=" + resourceID}
-	result, err := s.runForgeForWorkspace(r.Context(), id, args...)
+	workspace, err := s.workspace(id)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	writeJSON(w, map[string]string{"path": strings.TrimSpace(string(result))})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	result, err := forgeWorkspace.ArchiveResource(resourceID)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	// Keep the existing HTTP response contract while the application layer
+	// returns the richer typed ArchiveResult to in-process callers.
+	writeJSON(w, map[string]string{"path": result.Path})
 }
 
 func (s *server) worktreeDiff(w http.ResponseWriter, r *http.Request, id string) {
@@ -925,7 +919,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		if !create {
 			return guiWorkspace{}, err
 		}
-		if _, initErr := s.runForge(ctx, canonical, "init"); initErr != nil {
+		if _, initErr := app.Initialize(canonical, ""); initErr != nil {
 			return guiWorkspace{}, initErr
 		}
 		tree, err = s.treeAt(ctx, canonical)
@@ -1006,14 +1000,19 @@ func (s *server) tree(ctx context.Context, id string) (workspaceTree, error) {
 }
 
 func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error) {
-	out, err := s.runForge(ctx, path, "workspace", "tree", "--json")
+	if err := s.requireWorkspaceOwnership(path); err != nil {
+		return workspaceTree{}, err
+	}
+	forgeWorkspace, err := app.OpenWorkspace(path)
 	if err != nil {
 		return workspaceTree{}, err
 	}
-	var tree workspaceTree
-	if err := json.Unmarshal(out, &tree); err != nil {
-		return workspaceTree{}, fmt.Errorf("decode forge workspace tree: %w", err)
+	_ = ctx
+	typedTree, err := forgeWorkspace.Tree()
+	if err != nil {
+		return workspaceTree{}, err
 	}
+	tree := workspaceTreeFromApp(typedTree)
 	if err := s.enrichTreeSessions(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
@@ -1049,8 +1048,17 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 	return nil
 }
 
-func (s *server) resource(ctx context.Context, id string, resourceID string) ([]byte, error) {
-	return s.runForgeForWorkspace(ctx, id, "workspace", "resource", "--id", resourceID, "--json")
+func (s *server) resource(ctx context.Context, id string, resourceID string) (app.ResourceDetailView, error) {
+	_ = ctx
+	workspace, err := s.workspace(id)
+	if err != nil {
+		return app.ResourceDetailView{}, err
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return app.ResourceDetailView{}, err
+	}
+	return forgeWorkspace.Resource(resourceID)
 }
 
 func (s *server) loadUIState(id string) (guiState, error) {
@@ -1096,32 +1104,6 @@ func (s *server) saveUIState(id string, state guiState) error {
 	}
 	data = append(data, '\n')
 	return os.WriteFile(path, data, 0o644)
-}
-
-func (s *server) runForgeForWorkspace(ctx context.Context, id string, args ...string) ([]byte, error) {
-	workspace, err := s.workspace(id)
-	if err != nil {
-		return nil, err
-	}
-	return s.runForge(ctx, workspace.Path, args...)
-}
-
-func (s *server) runForge(ctx context.Context, workspacePath string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	defer cancel()
-
-	cmdName, cmdArgs := s.forgeCommand(args...)
-	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-	cmd.Dir = workspacePath
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		detail := strings.TrimSpace(string(out))
-		if detail == "" {
-			detail = err.Error()
-		}
-		return nil, fmt.Errorf("forge %s: %s", strings.Join(args, " "), detail)
-	}
-	return out, nil
 }
 
 func (s *server) buildDiff(ctx context.Context, worktreePath string, base string) (string, error) {
@@ -1189,10 +1171,6 @@ func (s *server) runGit(ctx context.Context, worktreePath string, args ...string
 		return out, fmt.Errorf("git %s: %s", strings.Join(args, " "), detail)
 	}
 	return out, nil
-}
-
-func (s *server) forgeCommand(args ...string) (string, []string) {
-	return s.forgePath, args
 }
 
 func (s *server) workspace(id string) (guiWorkspace, error) {
