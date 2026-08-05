@@ -13,7 +13,11 @@
   --amber: #b45309;
   --red: #dc2626;
   --sidebar-width: 280px;
-  --details-width: 55%;
+  --chat-width: 420px;
+  --sidebar-min-width: 220px;
+  --details-min-width: 360px;
+  --chat-min-width: 320px;
+  --pane-handle-width: 8px;
   --sidebar-session-height: 210px;
 }
 
@@ -91,7 +95,8 @@ a[href],
 
 .app-shell {
   display: grid;
-  grid-template-columns: var(--sidebar-width) 8px minmax(0, 1fr);
+  grid-template-columns: minmax(var(--sidebar-min-width), min(var(--sidebar-width), calc(100vw - var(--pane-handle-width) - var(--details-min-width) - var(--pane-handle-width) - var(--chat-min-width)))
+    var(--pane-handle-width) minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
   height: 100dvh;
@@ -440,7 +445,8 @@ body.resizing-y {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(360px, var(--details-width)) 8px minmax(320px, 1fr);
+  grid-template-columns: minmax(var(--details-min-width), 1fr) var(--pane-handle-width)
+    minmax(var(--chat-min-width), min(var(--chat-width), calc(100% - var(--details-min-width) - var(--pane-handle-width))));
   overflow: hidden;
   background: #fff;
 }
@@ -3168,7 +3174,8 @@ i[data-lucide] {
 }
 
 .workspace-panel {
-  grid-template-columns: minmax(360px, var(--details-width)) 8px minmax(320px, 1fr);
+  grid-template-columns: minmax(var(--details-min-width), 1fr) var(--pane-handle-width)
+    minmax(var(--chat-min-width), min(var(--chat-width), calc(100% - var(--details-min-width) - var(--pane-handle-width))));
 }
 
 .details-panel {
