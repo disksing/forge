@@ -977,6 +977,22 @@ function selectedTaskHasExternalLock() {
   return taskLocks(selected.id).some((session) => session.source === "external");
 }
 
+function selectedTaskHasInternalLock() {
+  const selected = findResource(state.selectedId);
+  if (!selected || selected.type !== "task") return false;
+  const detail = state.details[selected.id];
+  if (detail && detail.type !== "task") return false;
+  return taskLocks(selected.id).some((session) => session.source === "internal");
+}
+
+function selectedTaskHasNewSessionLock() {
+  return selectedTaskHasExternalLock() || selectedTaskHasInternalLock();
+}
+
+function closeNewSessionChooserForTaskLock() {
+  if (selectedTaskHasNewSessionLock()) state.agent.agentChooserOpen = false;
+}
+
 function externalTaskLockNotice() {
   return `<div class="tty-external-lock-notice" role="alert">${icon("lock")}<span>${escapeHTML(EXTERNAL_TASK_LOCK_MESSAGE)}</span></div>`;
 }
@@ -2788,6 +2804,7 @@ function renderTTYComposer(options = {}) {
   if (!skipDraftSync) syncAgentDraftFromDOM();
   const composer = $("ttyComposer");
   if (!composer) return;
+  closeNewSessionChooserForTaskLock();
   const activeRun = currentAgentRun();
   if (!activeRun) {
     const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
@@ -2869,6 +2886,7 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
 
 function agentComposerActions(options = {}) {
   const externalTaskLocked = selectedTaskHasExternalLock();
+  const internalTaskLocked = selectedTaskHasInternalLock();
   const collapsible = Boolean(options.collapsible);
   const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalTaskLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   if (externalTaskLocked) {
@@ -2881,7 +2899,7 @@ function agentComposerActions(options = {}) {
   }
   const selectedAgent = selectedAgentConfig();
   const agents = enabledAgentConfigs();
-  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
+  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0 && !internalTaskLocked;
   const sessionStarting = Boolean(state.agent.newSessionStarting);
   const noAgentReason = "No enabled agents are available. Configure an AgentHub Agent in Settings.";
   const sessionButtonTitle = sessionStarting
@@ -2895,21 +2913,23 @@ function agentComposerActions(options = {}) {
     <div class="${actionsClass}">
       ${autoRunComposerAction()}
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
-      <div class="tty-new-session-control">
-        <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
-          ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
-        </button>
-        ${chooserOpen ? `
-          <div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent"${sessionStarting ? ` aria-busy="true"` : ""}>
-            ${agents.map((agent) => `
-              <button type="button" role="menuitem" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}" aria-label="${escapeHTML(`${agentDisplayName(agent)} — ${agentConfigSummary(agent)}`)}"${sessionStarting ? " disabled" : ""}>
-                <span>${escapeHTML(agentDisplayName(agent))}</span>
-                <small>${escapeHTML(agentConfigSummary(agent))}</small>
-              </button>
-            `).join("")}
-          </div>
-        ` : ""}
-      </div>
+      ${internalTaskLocked ? "" : `
+        <div class="tty-new-session-control">
+          <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
+            ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
+          </button>
+          ${chooserOpen ? `
+            <div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent"${sessionStarting ? ` aria-busy="true"` : ""}>
+              ${agents.map((agent) => `
+                <button type="button" role="menuitem" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}" aria-label="${escapeHTML(`${agentDisplayName(agent)} — ${agentConfigSummary(agent)}`)}"${sessionStarting ? " disabled" : ""}>
+                  <span>${escapeHTML(agentDisplayName(agent))}</span>
+                  <small>${escapeHTML(agentConfigSummary(agent))}</small>
+                </button>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+      `}
       ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
     </div>
   `;
@@ -2989,7 +3009,8 @@ function autoRunComposerKey() {
     ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
     : "no-session";
   const lockKey = selectedTaskHasExternalLock() ? "external-lock" : "unlocked";
-  return `${lockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+  const internalLockKey = selectedTaskHasInternalLock() ? "internal-lock" : "unlocked";
+  return `${lockKey}:${internalLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
 }
 
 async function startChatAutoRun() {
