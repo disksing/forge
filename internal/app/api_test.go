@@ -329,6 +329,64 @@ func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) 
 	}
 }
 
+func TestWorkspaceAPIQueueAutoRunGenerationParameters(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Parameter project", "parameters")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Parameter task", Slug: "parameters"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, err := workspace.QueueAutoRun(app.AutoRunQueueInput{
+		TaskID: task.ID, AgentName: "agent-one", AgentNameSet: true,
+		Prompt: "Inspect the change", PromptSet: true,
+		CompletionCriteria: "The focused tests pass.", CompletionCriteriaSet: true,
+	})
+	if err != nil || queued.AutoRun == nil {
+		t.Fatalf("queue with generation parameters failed: task=%+v err=%v", queued, err)
+	}
+	if queued.AutoRun.AgentName != "agent-one" || queued.AutoRun.Prompt != "Inspect the change" || queued.AutoRun.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("generation parameters were not persisted: %+v", queued.AutoRun)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID}); err != nil {
+		t.Fatal(err)
+	}
+	inherited, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
+	if err != nil || inherited.AutoRun == nil {
+		t.Fatalf("terminal queue failed: task=%+v err=%v", inherited, err)
+	}
+	if inherited.AutoRun.Generation != 2 || inherited.AutoRun.AgentName != "agent-one" || inherited.AutoRun.Prompt != "Inspect the change" || inherited.AutoRun.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("terminal generation did not inherit parameters: %+v", inherited.AutoRun)
+	}
+	cleared, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID})
+	if err != nil {
+		// The generation is queued after the previous assertion; move it through
+		// the state machine before testing explicit empty values.
+		if _, startErr := workspace.StartAutoRun(task.ID); startErr != nil {
+			t.Fatal(startErr)
+		}
+		cleared, err = workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID})
+	}
+	if err != nil || cleared.AutoRun == nil {
+		t.Fatalf("prepare explicit clear failed: task=%+v err=%v", cleared, err)
+	}
+	cleared, err = workspace.QueueAutoRun(app.AutoRunQueueInput{
+		TaskID: task.ID, AgentName: "agent-two", AgentNameSet: true,
+		Prompt: "", PromptSet: true, CompletionCriteria: "", CompletionCriteriaSet: true,
+	})
+	if err != nil || cleared.AutoRun == nil {
+		t.Fatalf("queue with explicit empty values failed: task=%+v err=%v", cleared, err)
+	}
+	if cleared.AutoRun.AgentName != "agent-two" || cleared.AutoRun.Prompt != "" || cleared.AutoRun.CompletionCriteria != "" {
+		t.Fatalf("explicit empty values were inherited unexpectedly: %+v", cleared.AutoRun)
+	}
+}
+
 func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("AutoRun wake project", "wake")

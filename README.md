@@ -172,13 +172,15 @@ Create an autonomous task:
 forge task create \
   --project=project1 \
   --autorun \
+  --agent=codex \
   --agent-profile=fast \
   --agent-profile=codex \
   --prompt="Read task.md, implement the change, and verify it." \
+  --completion-criteria="The implementation is verified and the task requirements are complete." \
   "Implement the change"
 ```
 
-Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current AutoRun driver. A configured but unavailable target is sent to AgentHub and reported as a runtime error.
+`--agent` records the concrete AgentHub agent for this generation; preferred profiles remain an optional portable fallback. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current AutoRun driver. Forge validates the selected AgentHub target before creating a session or changing AutoRun state, so an unavailable target has no partial side effects.
 
 A scheduler-started turn must finish with exactly one result action:
 
@@ -199,9 +201,9 @@ When the selected Project or Task is controlled by an active external Forge Sess
 
 When the selected Project or Task is controlled by an active internal Forge GUI Session, the composer hides New Session and closes any open Agent chooser, even when the currently viewed Agent Run is historical. The current Session's input, approval, Close Session, and idle Task AutoRun reuse actions remain available; the New Session action returns after the tree refresh observes that the internal lock has been released. AutoRun remains a Task-only action.
 
-The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed or failed generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. Queued and running generations render as disabled states so they cannot be started twice.
+The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed or failed generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. The first and next-generation actions open a configuration dialog that collects Agent, optional Run instructions, and optional natural-language Completion criteria. Paused and suspended generations resume directly without reopening the dialog. Queued and running generations render as disabled states so they cannot be started twice.
 
-The action calls one unified server operation (`POST /api/workspaces/<id>/autorun/start`) that queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard AutoRun start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the composer agent picker selects the agent for the new session, and the request fails without changing task state if none is selected. If the session turns busy at send time, the generation stays queued and the background driver delivers the start message once the session is idle. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
+The action calls one unified server operation (`POST /api/workspaces/<id>/autorun/start`) that accepts the three configuration values, queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard AutoRun start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the dialog selects the agent for the new session, and the request fails without changing task state if none is available. If the session is busy, the operation rejects before creating another session. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
 
 ## Task Templates
 
@@ -213,6 +215,7 @@ title: Daily inspection
 autorun: true
 agent-profiles: [fast, codex]
 prompt: Inspect the project and report findings.
+completion-criteria: The report is saved and verified.
 ---
 # Daily inspection
 
@@ -221,7 +224,7 @@ prompt: Inspect the project and report findings.
 Inspect the current project state and report anything that needs attention.
 ```
 
-Supported front matter fields are `title`, `autorun`, `agent-profiles`, and `prompt`. Agent Profiles and prompts apply only to AutoRun templates.
+Supported front matter fields are `title`, `autorun`, `agent`, `agent-profiles`, `prompt`, and `completion-criteria`. Agent, Agent Profiles, prompts, and completion criteria apply only to AutoRun templates.
 
 ## Workspace Layout
 
@@ -289,8 +292,8 @@ forge resource archive --id=<resource>
 
 forge task create [--project=<project>] [--slug <slug>]
                   [--detail <detail>|--task-markdown <markdown>]
-                  [--autorun] [--agent-profile=<profile>...]
-                  [--prompt=<prompt>] <title>
+                  [--autorun] [--agent=<agent>] [--agent-profile=<profile>...]
+                  [--prompt=<prompt>] [--completion-criteria=<text>] <title>
 forge task list [--project=<project>] [--all]
                 [--runnable [--json]]
 forge task show|archive ...

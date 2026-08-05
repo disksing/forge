@@ -64,8 +64,10 @@ type TaskTemplate struct {
 	Title                  string   `json:"title"`
 	Detail                 string   `json:"detail"`
 	AutoRun                bool     `json:"autorun,omitempty"`
+	AgentName              string   `json:"agentName,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
+	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
 	Content                string   `json:"content"`
 }
 
@@ -300,6 +302,8 @@ func parseTaskTemplate(name, content string) (TaskTemplate, error) {
 				return template, fmt.Errorf("task template %s has invalid autorun value", name)
 			}
 			template.AutoRun = value == "true"
+		case "agent", "agent-name":
+			template.AgentName = value
 		case "agent-profiles":
 			value = strings.TrimSpace(strings.Trim(value, "[]"))
 			profiles, err := normalizeAgentProfiles(strings.Split(value, ","))
@@ -309,6 +313,8 @@ func parseTaskTemplate(name, content string) (TaskTemplate, error) {
 			template.PreferredAgentProfiles = profiles
 		case "prompt":
 			template.Prompt = value
+		case "completion-criteria":
+			template.CompletionCriteria = value
 		default:
 			return template, fmt.Errorf("task template %s has unknown field %q", name, key)
 		}

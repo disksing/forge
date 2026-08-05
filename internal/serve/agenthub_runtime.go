@@ -48,6 +48,36 @@ func resolveAgentHubRunAgent(cfg config, req startAgentRequest) (string, error) 
 	return name, nil
 }
 
+// validateAgentHubRunAgent runs before Forge creates a session or changes the
+// task. AgentHub may reject an unavailable configured target during session
+// creation, but validating against the catalog first keeps a manual AutoRun
+// start atomic: an unavailable selection cannot leave a queued generation or
+// a Forge lock behind.
+func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", errors.New("no AgentHub agent is configured")
+	}
+	catalog, err := client.Agents(ctx)
+	if err != nil {
+		return "", fmt.Errorf("query AgentHub agents: %w", err)
+	}
+	for _, agent := range catalog.Agents {
+		if !strings.EqualFold(strings.TrimSpace(agent.Name), requested) {
+			continue
+		}
+		if !agent.Available {
+			reason := strings.TrimSpace(agent.UnavailableReason)
+			if reason == "" {
+				reason = "the AgentHub agent is unavailable"
+			}
+			return "", fmt.Errorf("AgentHub agent %q is unavailable: %s", agent.Name, reason)
+		}
+		return strings.TrimSpace(agent.Name), nil
+	}
+	return "", fmt.Errorf("AgentHub agent %q is unavailable or not present in the catalog", requested)
+}
+
 func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspaceID string) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
@@ -73,6 +103,11 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	agentName, err := resolveAgentHubRunAgent(cfg, req)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	agentName, err = validateAgentHubRunAgent(r.Context(), client, agentName)
+	if err != nil {
+		writeError(w, err, http.StatusBadGateway)
 		return
 	}
 	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
@@ -129,7 +164,12 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	if run.SchedulerTurn {
 		if req.QueueAutoRun {
-			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState)
+			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState, app.AutoRunQueueInput{
+				TaskID:    run.ResourceID,
+				AgentName: req.AutoRunAgentName, AgentNameSet: req.AutoRunAgentNameSet,
+				Prompt: req.AutoRunPrompt, PromptSet: req.AutoRunPromptSet,
+				CompletionCriteria: req.AutoRunCompletionCriteria, CompletionCriteriaSet: req.AutoRunCompletionCriteriaSet,
+			})
 			if queueErr != nil {
 				writeResourceOperationError(w, queueErr, http.StatusConflict)
 				return
@@ -383,17 +423,78 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 }
 
 func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	m.stopAgentHubRuntime(w, r, rt)
+}
+
+// stopAgentHubRuntime chooses the attached or unattached close path only after
+// holding both coordination locks. This prevents recovery/resume from
+// attaching a session between stopRun's classification and its cleanup.
+func (m *agentManager) stopAgentHubRuntime(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	// AutoRun dispatch and manual start/resume use this mutex as their decision
+	// boundary. Acquire it before turnActionMu so a suspended generation cannot
+	// be resumed between the pause CAS and the AgentHub stop.
+	m.server.autoRunDispatchMu.Lock()
+	defer m.server.autoRunDispatchMu.Unlock()
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
+	m.stopAgentHubRunLocked(w, r, rt)
+}
+
+func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
 	rt.mu.Lock()
+	run, client := rt.run, rt.agentHub
+	if strings.TrimSpace(run.AgentHubSessionID) == "" {
+		rt.mu.Unlock()
+		m.stopUnattachedAgentHubRunLocked(w, r, rt.workspace, run, rt)
+		return
+	}
+	if run.Status == "stopped" && run.AgentHubStoppedObserved {
+		rt.mu.Unlock()
+		paused, err := pauseAutoRunBeforeStopping(rt.workspace, run, autoRunStopSession)
+		if err != nil {
+			writeError(w, fmt.Errorf("pause AutoRun before closing session: %w", err), http.StatusConflict)
+			return
+		}
+		writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned})
+		return
+	}
+	if rt.agentHubStopRequested {
+		rt.mu.Unlock()
+		writeError(w, errors.New("AgentHub stop outcome is still being reconciled; the stop was not retried"), http.StatusConflict)
+		return
+	}
+	rt.mu.Unlock()
+	paused, err := pauseAutoRunBeforeStopping(rt.workspace, run, autoRunStopSession)
+	if err != nil {
+		writeError(w, fmt.Errorf("pause AutoRun before closing session: %w", err), http.StatusConflict)
+		return
+	}
+	rt.mu.Lock()
+	if strings.TrimSpace(rt.run.AgentHubSessionID) == "" {
+		run = rt.run
+		rt.mu.Unlock()
+		m.stopUnattachedAgentHubRunLocked(w, r, rt.workspace, run, rt)
+		return
+	}
+	// A poller may have observed a durable stopped edge while the AutoRun
+	// metadata was being checked. Do not send a second non-idempotent stop.
+	if rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved {
+		rt.mu.Unlock()
+		writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned})
+		return
+	}
 	rt.run.Status = "stopping"
 	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run, client := rt.run, rt.agentHub
+	run, client = rt.run, rt.agentHub
+	rt.agentHubStopRequested = true
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
 	session, err := client.Stop(r.Context(), run.AgentHubSessionID)
 	if err != nil {
 		rt.setRecoveryError(m, err)
+		if paused.Transitioned {
+			err = fmt.Errorf("AutoRun was paused, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
+		}
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
@@ -405,6 +506,9 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 		if !time.Now().Before(deadline) {
 			err := errors.New("AgentHub stop did not reach a durable stopped state within the confirmation window")
 			rt.setRecoveryError(m, err)
+			if paused.Transitioned {
+				err = fmt.Errorf("AutoRun was paused, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
+			}
 			writeError(w, err, http.StatusBadGateway)
 			return
 		}
@@ -427,7 +531,7 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 			}
 		}
 	}
-	writeJSON(w, map[string]string{"status": "stopped"})
+	writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned})
 }
 
 // stopUnattachedAgentHubRun is the escape hatch for runs that never attached
@@ -438,8 +542,41 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 // Stop is idempotent: a run that already reached a terminal status returns
 // success without repeating cleanup.
 func (m *agentManager) stopUnattachedAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun, rt *agentRuntime) {
+	if rt != nil {
+		m.stopAgentHubRuntime(w, r, rt)
+		return
+	}
+	m.server.autoRunDispatchMu.Lock()
+	defer m.server.autoRunDispatchMu.Unlock()
+	m.stopUnattachedAgentHubRunLocked(w, r, workspace, run, nil)
+}
+
+func (m *agentManager) stopUnattachedAgentHubRunLocked(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun, rt *agentRuntime) {
+	if rt != nil {
+		run = rt.snapshotRun()
+		if strings.TrimSpace(run.AgentHubSessionID) != "" {
+			m.stopAgentHubRunLocked(w, r, rt)
+			return
+		}
+	}
+	// Recovery can attach a session without taking turnActionMu. Check again
+	// immediately before the direct Forge cleanup so a newly attached session
+	// is stopped through AgentHub instead of being orphaned.
+	if rt != nil {
+		latest := rt.snapshotRun()
+		if strings.TrimSpace(latest.AgentHubSessionID) != "" {
+			m.stopAgentHubRunLocked(w, r, rt)
+			return
+		}
+		run = latest
+	}
+	paused, err := pauseAutoRunBeforeStopping(workspace, run, autoRunStopSession)
+	if err != nil {
+		writeError(w, fmt.Errorf("pause AutoRun before closing session: %w", err), http.StatusConflict)
+		return
+	}
 	if !isLiveAgentStatus(run.Status) {
-		writeJSON(w, map[string]string{"status": run.Status})
+		writeJSON(w, map[string]any{"status": run.Status, "autoRunPaused": paused.Transitioned})
 		return
 	}
 	if sessionID := strings.TrimSpace(run.ForgeSessionID); sessionID != "" {
@@ -465,7 +602,7 @@ func (m *agentManager) stopUnattachedAgentHubRun(w http.ResponseWriter, r *http.
 	if rt != nil {
 		rt.setRun(run)
 	}
-	writeJSON(w, map[string]string{"status": "stopped"})
+	writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned})
 }
 
 func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -507,7 +644,7 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 		return
 	}
 	if run.SchedulerTurn {
-		if err := pauseAutoRunForStoppedTurn(workspace, run); err != nil {
+		if _, err := pauseAutoRunBeforeStopping(workspace, run, autoRunStopTurn); err != nil {
 			writeError(w, fmt.Errorf("pause AutoRun before interrupt: %w", err), http.StatusConflict)
 			return
 		}
@@ -531,8 +668,6 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 	}
 	writeJSON(w, map[string]string{"status": "interrupted"})
 }
-
-const userStoppedActiveTurnReason = "user stopped the active turn"
 
 func isAgentHubTurnInterruptible(state string) bool {
 	switch strings.TrimSpace(state) {
@@ -578,46 +713,103 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 	return session, nil
 }
 
-// pauseAutoRunForStoppedTurn makes a SchedulerTurn terminal before the
-// interrupt is sent. The generation and running-state checks are repeated
-// while holding the AutoRun file lock by PauseAutoRun, so a natural finish or
-// another actor cannot turn this request into a retry/continue race.
-func pauseAutoRunForStoppedTurn(workspace guiWorkspace, run agentRun) error {
-	if !run.SchedulerTurn {
-		return nil
+const (
+	userStoppedActiveTurnReason    = "user stopped the active turn"
+	userClosedAutoRunSessionReason = "user closed the AutoRun session"
+)
+
+type autoRunStopAction string
+
+const (
+	autoRunStopTurn    autoRunStopAction = "turn"
+	autoRunStopSession autoRunStopAction = "session"
+)
+
+type autoRunPauseResult struct {
+	Transitioned bool
+}
+
+// pauseAutoRunBeforeStopping is the single generation/state boundary shared
+// by End Turn and Close Session. The initial read is only a classification;
+// PauseAutoRun repeats the generation and expected-state CAS while holding the
+// task AutoRun file lock. A concurrent actor that already moved the same
+// generation to a safe state is accepted, but a still-runnable CAS failure is
+// returned and the AgentHub action is not sent.
+func pauseAutoRunBeforeStopping(workspace guiWorkspace, run agentRun, action autoRunStopAction) (autoRunPauseResult, error) {
+	var result autoRunPauseResult
+	if !run.SchedulerTurn && run.AutoRunGeneration <= 0 {
+		return result, nil
 	}
 	if strings.TrimSpace(run.ResourceID) == "" || run.AutoRunGeneration <= 0 {
-		return errors.New("SchedulerTurn has no valid AutoRun resource or generation")
+		if !run.SchedulerTurn {
+			return result, nil
+		}
+		return result, errors.New("SchedulerTurn has no valid AutoRun resource or generation")
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
-		return err
+		return result, err
 	}
 	resource, err := forgeWorkspace.ResourceValue(run.ResourceID)
 	if err != nil {
-		return err
+		return result, err
 	}
 	if resource.Task == nil || resource.Task.AutoRun == nil {
-		return errors.New("SchedulerTurn has no matching AutoRun generation")
+		if !run.SchedulerTurn {
+			return result, nil
+		}
+		return result, errors.New("SchedulerTurn has no matching AutoRun generation")
 	}
 	autoRun := resource.Task.AutoRun
 	if autoRun.Generation != run.AutoRunGeneration {
-		return fmt.Errorf("AutoRun generation %d is no longer current", run.AutoRunGeneration)
+		// The Session belongs to an older generation. Closing it must not pause
+		// a newer generation that may already be runnable.
+		return result, nil
 	}
-	switch autoRun.State {
-	case "paused", "suspended":
-		return nil
-	case "running":
-		_, err = forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{
-			TaskID:             run.ResourceID,
-			Summary:            userStoppedActiveTurnReason,
-			ExpectedGeneration: run.AutoRunGeneration,
-			ExpectedState:      "running",
-		})
-		return err
-	default:
-		return fmt.Errorf("AutoRun generation %d is %s, not running", run.AutoRunGeneration, autoRun.State)
+	if autoRun.State == "paused" || autoRun.State == "completed" || autoRun.State == "failed" {
+		return result, nil
 	}
+	if autoRun.State == "suspended" && action == autoRunStopTurn {
+		// Preserve the End Turn behavior: a suspended generation is already
+		// outside an active turn. Close Session has different semantics and
+		// converts this runnable timed-wake state to paused below.
+		return result, nil
+	}
+	if autoRun.State == "queued" && action == autoRunStopTurn {
+		return result, fmt.Errorf("AutoRun generation %d is queued, not running", run.AutoRunGeneration)
+	}
+	if autoRun.State != "queued" && autoRun.State != "running" && autoRun.State != "suspended" {
+		return result, fmt.Errorf("AutoRun generation %d is %s, not safely stoppable", run.AutoRunGeneration, autoRun.State)
+	}
+	reason := userStoppedActiveTurnReason
+	if action == autoRunStopSession {
+		reason = userClosedAutoRunSessionReason
+	}
+	_, err = forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{
+		TaskID:             run.ResourceID,
+		Summary:            reason,
+		ExpectedGeneration: run.AutoRunGeneration,
+		ExpectedState:      autoRun.State,
+	})
+	if err == nil {
+		result.Transitioned = true
+		return result, nil
+	}
+	// Natural completion, another pause, or a generation advance may have won
+	// the race. Re-read the durable state before deciding whether Close/End
+	// Turn can proceed; never overwrite a still-runnable state after a failed
+	// CAS or uncertain local persistence result.
+	latest, readErr := forgeWorkspace.ResourceValue(run.ResourceID)
+	if readErr == nil && latest.Task != nil && latest.Task.AutoRun != nil {
+		latestAutoRun := latest.Task.AutoRun
+		if latestAutoRun.Generation != run.AutoRunGeneration || latestAutoRun.State == "paused" || latestAutoRun.State == "completed" || latestAutoRun.State == "failed" {
+			return result, nil
+		}
+	}
+	if readErr != nil {
+		return result, fmt.Errorf("pause AutoRun CAS failed (%v); could not re-read current state: %w", err, readErr)
+	}
+	return result, fmt.Errorf("pause AutoRun CAS failed: %w", err)
 }
 
 func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentApprovalRequest) {
@@ -674,6 +866,12 @@ func normalizeAgentHubApprovalReply(req agentApprovalRequest) (agentHubApprovalR
 }
 
 func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	rt.turnActionMu.Lock()
+	defer rt.turnActionMu.Unlock()
+	m.resumeAttachedAgentHubRunLocked(w, r, rt)
+}
+
+func (m *agentManager) resumeAttachedAgentHubRunLocked(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
@@ -682,7 +880,7 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 		return
 	}
 	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
-		m.resumeStoppedAgentHubRun(w, r, rt)
+		m.resumeStoppedAgentHubRunLocked(w, r, rt)
 		return
 	}
 	session, err := client.Resume(r.Context(), run.AgentHubSessionID, nil)
@@ -691,6 +889,9 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
+	rt.mu.Lock()
+	rt.agentHubStopRequested = false
+	rt.mu.Unlock()
 	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
@@ -701,6 +902,12 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 // provider process receives a valid FORGE_SESSION_ID. Any failure before the
 // AgentHub resume succeeds releases the replacement session and context.
 func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	rt.turnActionMu.Lock()
+	defer rt.turnActionMu.Unlock()
+	m.resumeStoppedAgentHubRunLocked(w, r, rt)
+}
+
+func (m *agentManager) resumeStoppedAgentHubRunLocked(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
 	workspace := rt.workspace
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
@@ -786,6 +993,9 @@ func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.R
 		return
 	}
 	cleanup = false
+	rt.mu.Lock()
+	rt.agentHubStopRequested = false
+	rt.mu.Unlock()
 	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
@@ -831,6 +1041,9 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
+	rt.mu.Lock()
+	rt.agentHubStopRequested = false
+	rt.mu.Unlock()
 	rt.applyAgentHubSessionState(m, session)
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }

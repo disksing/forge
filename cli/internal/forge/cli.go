@@ -11,7 +11,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -185,7 +185,7 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.PreferredAgentProfiles, options.Prompt)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -264,7 +264,7 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
   forge task list [--project=<project>] [--all] [--runnable [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -328,7 +328,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -485,8 +485,10 @@ type taskCreateOptions struct {
 	TaskMarkdownSet        bool
 	Slug                   string
 	AutoRun                bool
+	AgentName              string
 	PreferredAgentProfiles []string
 	Prompt                 string
+	CompletionCriteria     string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -575,6 +577,24 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			options.AutoRun = true
 			continue
 		}
+		if strings.HasPrefix(arg, "--agent=") {
+			options.AgentName = strings.TrimSpace(strings.TrimPrefix(arg, "--agent="))
+			if options.AgentName == "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			continue
+		}
+		if arg == "--agent" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.AgentName = strings.TrimSpace(args[i+1])
+			if options.AgentName == "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			i++
+			continue
+		}
 		if strings.HasPrefix(arg, "--agent-profile=") {
 			value := strings.TrimSpace(strings.TrimPrefix(arg, "--agent-profile="))
 			if value == "" {
@@ -585,6 +605,18 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 		}
 		if strings.HasPrefix(arg, "--prompt=") {
 			options.Prompt = strings.TrimSpace(strings.TrimPrefix(arg, "--prompt="))
+			continue
+		}
+		if strings.HasPrefix(arg, "--completion-criteria=") {
+			options.CompletionCriteria = strings.TrimSpace(strings.TrimPrefix(arg, "--completion-criteria="))
+			continue
+		}
+		if arg == "--completion-criteria" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.CompletionCriteria = strings.TrimSpace(args[i+1])
+			i++
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {

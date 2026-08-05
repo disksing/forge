@@ -13,8 +13,13 @@ import (
 // AutoRunQueueInput describes a new or next AutoRun generation.
 type AutoRunQueueInput struct {
 	TaskID                 string
+	AgentName              string
+	AgentNameSet           bool
 	PreferredAgentProfiles []string
 	Prompt                 string
+	PromptSet              bool
+	CompletionCriteria     string
+	CompletionCriteriaSet  bool
 }
 
 // AutoRunActionInput describes a scheduler action.
@@ -65,6 +70,8 @@ func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
 	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
 		generation := 1
 		prompt := strings.TrimSpace(input.Prompt)
+		agentName := strings.TrimSpace(input.AgentName)
+		completionCriteria := strings.TrimSpace(input.CompletionCriteria)
 		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
 		if err != nil {
 			return err
@@ -77,11 +84,20 @@ func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
 			if len(profiles) == 0 {
 				profiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
 			}
-			if prompt == "" {
+			if !input.AgentNameSet && agentName == "" {
+				agentName = task.AutoRun.AgentName
+			}
+			if !input.PromptSet && prompt == "" {
 				prompt = task.AutoRun.Prompt
 			}
+			if !input.CompletionCriteriaSet && completionCriteria == "" {
+				completionCriteria = task.AutoRun.CompletionCriteria
+			}
 		}
-		task.AutoRun = &AutoRun{Generation: generation, State: autoRunStateQueued, PreferredAgentProfiles: profiles, Prompt: prompt}
+		task.AutoRun = &AutoRun{
+			Generation: generation, State: autoRunStateQueued, AgentName: agentName,
+			PreferredAgentProfiles: profiles, Prompt: prompt, CompletionCriteria: completionCriteria,
+		}
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation))
 	})
 }

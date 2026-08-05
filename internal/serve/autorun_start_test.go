@@ -108,7 +108,7 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 	defer hub.Close()
 	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
 
-	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","runInstructions":"Inspect the selected files","completionCriteria":"The focused AutoRun test passes."}`, task.ID))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", rec.Code, rec.Body.String())
 	}
@@ -128,6 +128,9 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 	if response.Task.AutoRun == nil || response.Task.AutoRun.State != "running" || response.Task.AutoRun.Generation != 1 {
 		t.Fatalf("task did not reach running generation 1: %+v", response.Task.AutoRun)
 	}
+	if response.Task.AutoRun.AgentName != "fake-agent" || response.Task.AutoRun.Prompt != "Inspect the selected files" || response.Task.AutoRun.CompletionCriteria != "The focused AutoRun test passes." {
+		t.Fatalf("start parameters were not persisted: %+v", response.Task.AutoRun)
+	}
 
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -137,6 +140,9 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 	for _, events := range fake.events {
 		if !fakeSessionHasMessage(events, "This is an AutoRun scheduler turn") {
 			t.Fatalf("new session did not receive the standard AutoRun start message")
+		}
+		if !fakeSessionHasMessage(events, "The focused AutoRun test passes.") {
+			t.Fatalf("new session did not receive the completion criteria")
 		}
 	}
 }
@@ -159,6 +165,28 @@ func TestChatAutoRunStartRequiresAgentWithoutSession(t *testing.T) {
 	defer fake.mu.Unlock()
 	if len(fake.sessions) != 0 {
 		t.Fatalf("a rejected start must not create AgentHub sessions")
+	}
+}
+
+func TestChatAutoRunStartUnavailableAgentHasNoSideEffects(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.rejectAgentName = "fake-agent"
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","runInstructions":"Do not queue","completionCriteria":"Do not start"}`, task.ID))
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), "unavailable") {
+		t.Fatalf("expected unavailable AgentHub agent, got %d %s", rec.Code, rec.Body.String())
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun != nil {
+		t.Fatalf("unavailable agent must not create an AutoRun generation: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.sessions) != 0 {
+		t.Fatalf("unavailable agent must not create an AgentHub session: %d", len(fake.sessions))
 	}
 }
 
@@ -319,13 +347,16 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "done"}); err != nil {
 			t.Fatal(err)
 		}
-		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","runInstructions":"Start the next generation","completionCriteria":"The next generation is verified."}`, task.ID))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("restart after completion failed: %d %s", rec.Code, rec.Body.String())
 		}
 		response := decodeChatAutoRunResponse(t, rec)
 		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 2 || response.Task.AutoRun.State != "running" {
 			t.Fatalf("expected running generation 2, got %+v", response.Task.AutoRun)
+		}
+		if response.Task.AutoRun.Prompt != "Start the next generation" || response.Task.AutoRun.CompletionCriteria != "The next generation is verified." {
+			t.Fatalf("terminal generation lost submitted parameters: %+v", response.Task.AutoRun)
 		}
 	})
 
@@ -335,7 +366,11 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{
+			TaskID: task.ID, AgentName: "fake-agent", AgentNameSet: true,
+			Prompt: "Original resume instructions", PromptSet: true,
+			CompletionCriteria: "Original resume criteria", CompletionCriteriaSet: true,
+		}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
@@ -349,7 +384,7 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("session start failed: %s", recorder.Body.String())
 		}
-		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"runInstructions":"Ignored new instructions","completionCriteria":"Ignored new criteria"}`, task.ID))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("resume from suspended failed: %d %s", rec.Code, rec.Body.String())
 		}
@@ -357,9 +392,12 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 1 || response.Task.AutoRun.State != "running" {
 			t.Fatalf("suspended resume must keep generation 1, got %+v", response.Task.AutoRun)
 		}
+		if response.Task.AutoRun.Prompt != "Original resume instructions" || response.Task.AutoRun.CompletionCriteria != "Original resume criteria" {
+			t.Fatalf("suspended resume must preserve generation parameters: %+v", response.Task.AutoRun)
+		}
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
-		if !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "waiting for review") {
+		if !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "waiting for review") || !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "Original resume criteria") {
 			t.Fatalf("resumed start message must carry the suspension summary")
 		}
 	})
@@ -370,7 +408,11 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{
+			TaskID: task.ID, AgentName: "fake-agent", AgentNameSet: true,
+			Prompt: "Persisted paused instructions", PromptSet: true,
+			CompletionCriteria: "Persisted paused criteria", CompletionCriteriaSet: true,
+		}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
@@ -379,13 +421,16 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "manual"}); err != nil {
 			t.Fatal(err)
 		}
-		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("resume from paused failed: %d %s", rec.Code, rec.Body.String())
 		}
 		response := decodeChatAutoRunResponse(t, rec)
 		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 1 || response.Task.AutoRun.State != "running" {
 			t.Fatalf("paused resume must keep generation 1, got %+v", response.Task.AutoRun)
+		}
+		if response.Task.AutoRun.AgentName != "fake-agent" || response.Task.AutoRun.Prompt != "Persisted paused instructions" || response.Task.AutoRun.CompletionCriteria != "Persisted paused criteria" {
+			t.Fatalf("paused resume must preserve generation parameters: %+v", response.Task.AutoRun)
 		}
 	})
 }
@@ -476,7 +521,7 @@ func TestChatAutoRunStartBusyLiveSessionHasClearReason(t *testing.T) {
 	rt.run.Status = "waiting_approval"
 	rt.mu.Unlock()
 
-	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "session is busy") {
 		t.Fatalf("expected a clear busy-session rejection, got %d %s", rec.Code, rec.Body.String())
 	}
@@ -506,7 +551,15 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		`"The current session is busy; wait until it is idle to start AutoRun."`,
 		`"Resolve the pending approval before starting AutoRun in this session."`,
 		`/api/workspaces/${state.activeWorkspaceId}/autorun/start`,
-		`body: JSON.stringify({ resourceId: selected.id, agentName }),`,
+		`body.runInstructions = String(options.runInstructions || "");`,
+		`body.completionCriteria = String(options.completionCriteria || "");`,
+		`function openAutoRunConfigDialog() {`,
+		`name="runInstructions"`,
+		`name="completionCriteria"`,
+		`Start New AutoRun`,
+		`function submitAutoRunConfigDialog`,
+		`The agent must finish with exactly one read-only protocol action`,
+		`if (event.key === "Tab")`,
 		`if (state.agent.autoRunStarting) return;`,
 		`state.agent.autoRunStarting = true;`,
 		`function autoRunComposerKey() {`,

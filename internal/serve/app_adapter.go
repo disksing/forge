@@ -56,8 +56,9 @@ func runnableTaskCandidatesFromApp(tasks []app.RunnableTask) []runnableTaskCandi
 	for _, task := range tasks {
 		candidate := runnableTaskCandidate{
 			ID: task.ID, Path: task.Path, Title: task.Title, Generation: task.Generation,
-			State: task.State, Prompt: task.Prompt,
+			State: task.State, AgentName: task.AgentName, Prompt: task.Prompt,
 			PreferredAgentProfiles: append([]string(nil), task.PreferredAgentProfiles...),
+			CompletionCriteria:     task.CompletionCriteria,
 			SuspendedAt:            task.SuspendedAt,
 			SuspensionSummary:      task.SuspensionSummary,
 		}
