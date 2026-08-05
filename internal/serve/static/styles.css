@@ -2214,6 +2214,23 @@ body.resizing-y {
   flex: 1 0 140px;
 }
 
+.tty-autorun-action {
+  border-color: #7c3aed;
+  background: #7c3aed;
+}
+
+.tty-autorun-action:hover:not(:disabled) {
+  background: #6d28d9;
+  border-color: #6d28d9;
+}
+
+.tty-autorun-action:disabled {
+  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
 .tty-new-session-control {
   position: relative;
   flex: 1 0 270px;

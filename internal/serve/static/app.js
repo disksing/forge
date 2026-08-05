@@ -85,6 +85,7 @@ const state = {
     agentChooserOpen: false,
     historyOpen: false,
     autoRunExpanded: false,
+    autoRunStarting: false,
     sessionActionsOpen: false,
     eventsHasMore: false,
     historyBeforeId: 0,
@@ -2493,7 +2494,7 @@ function renderTTYComposer() {
   if (!activeRun) {
     state.agent.ttyDraft = "";
     state.agent.ttyMultiline = false;
-    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = agentComposerActions();
@@ -2502,7 +2503,7 @@ function renderTTYComposer() {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}`;
+    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -2548,7 +2549,7 @@ function renderTTYComposer() {
   // A stopped AgentHub session resumes with a freshly created Forge session,
   // so the button only needs the AgentHub attachment, not a live Forge session.
   const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}`;
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${autoRunComposerKey()}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   state.agent.ttyDraft = "";
@@ -2582,6 +2583,7 @@ function agentComposerActions(options = {}) {
   const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${!collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   return `
     <div class="${actionsClass}">
+      ${autoRunComposerAction()}
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
       <div class="tty-new-session-control">
         <button type="button" id="agentStartButton" class="tty-new-session-main" ${selectedAgent ? "" : "disabled"}>
@@ -2610,6 +2612,120 @@ function agentComposerActions(options = {}) {
 
 function agentDisplayName(agent) {
   return agent?.name || agent?.id || "Agent";
+}
+
+// autoRunComposerAction renders the stateful AutoRun primary action at the
+// bottom of a task chat composer. The server re-validates every condition at
+// execution time; the matrix below only decides which action is offered and
+// which disabled reason is shown.
+function autoRunComposerAction() {
+  const selected = findResource(state.selectedId);
+  const detail = selected ? state.details[selected.id] : null;
+  if (!detail || detail.type !== "task") return "";
+  const autoRun = detail.autoRun || null;
+  const stateName = autoRun?.state || "";
+  const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
+  const idleRun = liveRuns.find((run) => run.status === "idle");
+  const liveSession = liveRuns.length > 0;
+  const starting = state.agent.autoRunStarting;
+  let label = "Start AutoRun";
+  let iconName = "play";
+  let disabledReason = "";
+  if (stateName === "queued") {
+    label = "AutoRun Queued";
+    iconName = "clock";
+    disabledReason = `AutoRun generation ${autoRun.generation} is already queued.`;
+  } else if (stateName === "running") {
+    label = "AutoRun Running";
+    iconName = "activity";
+    disabledReason = `AutoRun generation ${autoRun.generation} is already running.`;
+  } else if (stateName === "suspended") {
+    label = "Resume Now";
+  } else if (stateName === "paused") {
+    label = "Resume AutoRun";
+  } else if (stateName === "completed" || stateName === "failed") {
+    label = "Start New AutoRun";
+  } else if (stateName) {
+    label = `AutoRun ${stateName}`;
+    disabledReason = `AutoRun cannot be started from the ${stateName} state.`;
+  }
+  if (!disabledReason && liveRuns.length && !idleRun) {
+    disabledReason = liveRuns[0].status === "waiting_approval"
+      ? "Resolve the pending approval before starting AutoRun in this session."
+      : "The current session is busy; wait until it is idle to start AutoRun.";
+  }
+  if (!disabledReason && !liveRuns.length && !selectedAgentConfig()) {
+    disabledReason = "Select an agent below to start AutoRun without an active session.";
+  }
+  const disabled = starting || disabledReason;
+  const title = starting
+    ? "Starting AutoRun..."
+    : disabledReason || (liveSession
+      ? `${label}: reuse the current idle session.`
+      : `${label}: start a new session with ${agentDisplayName(selectedAgentConfig())}.`);
+  return `
+    <button type="button" id="autoRunStartButton" class="tty-primary-action tty-autorun-action"
+      title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}>
+      ${icon(starting ? "loader-circle" : iconName)}<span>${escapeHTML(starting ? "Starting AutoRun..." : label)}</span>
+    </button>
+  `;
+}
+
+// autoRunComposerKey is the render-cache signature of the composer AutoRun
+// action, appended to every composer key so state transitions re-render it.
+function autoRunComposerKey() {
+  const selected = findResource(state.selectedId);
+  const detail = selected ? state.details[selected.id] : null;
+  if (!detail || detail.type !== "task") return "no-task";
+  const autoRun = detail.autoRun;
+  const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
+  const sessionKey = liveRuns.length
+    ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
+    : "no-session";
+  return `${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+}
+
+async function startChatAutoRun() {
+  return mutateAgentSession(async () => {
+    const selected = findResource(state.selectedId);
+    const detail = selected ? state.details[selected.id] : null;
+    if (!detail || detail.type !== "task") throw new Error("Select a task first.");
+    const liveSession = state.agent.runs.some((run) => isLiveAgentRun(run));
+    let agentName = "";
+    if (!liveSession) {
+      const agent = selectedAgentConfig();
+      if (!agent) throw new Error("Select an agent to start AutoRun without an active session.");
+      agentName = agent.id;
+    }
+    state.agent.autoRunStarting = true;
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
+    try {
+      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/autorun/start`, {
+        method: "POST",
+        body: JSON.stringify({ resourceId: selected.id, agentName }),
+      });
+      if (response.run?.id) state.agent.activeRunId = response.run.id;
+      await Promise.all([
+        loadAgentRuns(),
+        refreshTreeAfterAgentSessionMutation(),
+        fetchDetail(selected.id).then((fresh) => { state.details[selected.id] = fresh; }),
+      ]);
+      renderAll();
+      const agent = response.agentName ? ` with ${response.agentName}` : "";
+      if (response.action === "queued") {
+        toast(response.reason || `AutoRun generation ${response.task?.autoRun?.generation} is queued.`);
+      } else {
+        toast(`${response.reused ? "AutoRun resumed in the current session" : "AutoRun started"}${agent}.`);
+      }
+    } finally {
+      state.agent.autoRunStarting = false;
+      renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    }
+  });
 }
 
 function renderSettingsModal() {
@@ -3082,6 +3198,11 @@ function bindAgentEvents() {
   const resumeButton = $("agentResumeButton");
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
+  };
+  const autoRunButton = $("autoRunStartButton");
+  if (autoRunButton) autoRunButton.onclick = () => {
+    if (state.agent.autoRunStarting) return;
+    startChatAutoRun().catch((err) => toast(err.message));
   };
   const uploadButton = $("agentUploadButton");
   if (uploadButton) uploadButton.onclick = openAgentUploadDialog;

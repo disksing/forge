@@ -1,0 +1,531 @@
+package serve
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+
+	"github.com/disksing/forge/internal/app"
+)
+
+// newChatAutoRunTestServer builds a server whose internal endpoint is a real
+// mux backed by the same handlers, so the unified Chat start endpoint runs the
+// full session-creation and scheduler-turn paths against a fake AgentHub.
+func newChatAutoRunTestServer(t *testing.T, hubURL string) (*server, guiWorkspace, app.Task) {
+	t.Helper()
+	workspacePath := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspacePath, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := forgeWorkspace.CreateProject("Chat AutoRun test project", "chat-autorun")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{
+		ProjectID: project.ID, Title: "Chat AutoRun task", Slug: "chat-autorun",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := guiWorkspace{ID: "workspace-one", Name: "Test", Path: workspacePath}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configData, _ := json.Marshal(agentHubGUIConfig{
+		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-chat-test",
+		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
+	})
+	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: configPath}
+	s.agents = newAgentManager(s)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/workspaces/", s.handleWorkspace)
+	httpServer := httptest.NewServer(mux)
+	t.Cleanup(httpServer.Close)
+	s.addr = httpServer.URL
+	return s, workspace, task
+}
+
+func chatAutoRunStart(t *testing.T, s *server, workspaceID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspaceID+"/autorun/start", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	return rec
+}
+
+func decodeChatAutoRunResponse(t *testing.T, rec *httptest.ResponseRecorder) chatAutoRunStartResponse {
+	t.Helper()
+	var response chatAutoRunStartResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v (%s)", err, rec.Body.String())
+	}
+	return response
+}
+
+func reloadTestTask(t *testing.T, workspacePath, taskID string) app.Task {
+	t.Helper()
+	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.ResourceValue(taskID)
+	if err != nil || resource.Task == nil {
+		t.Fatalf("reload %s: %v", taskID, err)
+	}
+	return *resource.Task
+}
+
+func fakeEventText(event agentHubEvent) string {
+	var data map[string]any
+	if err := json.Unmarshal(event.Data, &data); err != nil {
+		return ""
+	}
+	text, _ := data["text"].(string)
+	return text
+}
+
+func fakeSessionHasMessage(events []agentHubEvent, marker string) bool {
+	for _, event := range events {
+		if event.Type == "message.user" && strings.Contains(fakeEventText(event), marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", rec.Code, rec.Body.String())
+	}
+	response := decodeChatAutoRunResponse(t, rec)
+	if response.Action != "started" || response.Reused || response.Run == nil {
+		t.Fatalf("unexpected response: %+v", response)
+	}
+	if response.AgentName != "fake-agent" || response.Run.AgentHubAgentName != "fake-agent" {
+		t.Fatalf("response did not surface the actual agent: %+v", response)
+	}
+	if response.Run.AgentSelectionReason == "" {
+		t.Fatalf("new session did not record the explicit selection reason: %+v", response.Run)
+	}
+	if !response.Run.SchedulerTurn || response.Run.AutoRunGeneration != 1 {
+		t.Fatalf("new session is not marked as the AutoRun scheduler turn: %+v", response.Run)
+	}
+	if response.Task.AutoRun == nil || response.Task.AutoRun.State != "running" || response.Task.AutoRun.Generation != 1 {
+		t.Fatalf("task did not reach running generation 1: %+v", response.Task.AutoRun)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.sessions) != 1 {
+		t.Fatalf("expected exactly one AgentHub session, got %d", len(fake.sessions))
+	}
+	for _, events := range fake.events {
+		if !fakeSessionHasMessage(events, "This is an AutoRun scheduler turn") {
+			t.Fatalf("new session did not receive the standard AutoRun start message")
+		}
+	}
+}
+
+func TestChatAutoRunStartRequiresAgentWithoutSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "select an agent") {
+		t.Fatalf("expected agent selection error, got %d %s", rec.Code, rec.Body.String())
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun != nil {
+		t.Fatalf("a rejected start must not queue a generation: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.sessions) != 0 {
+		t.Fatalf("a rejected start must not create AgentHub sessions")
+	}
+}
+
+func TestChatAutoRunStartReusesIdleSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	// Open a normal (non AutoRun) chat session on the task first.
+	manager := s.agents
+	recorder, detail := startRuntimeTestRun(t, manager, workspace,
+		fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","title":"Chat"}`, task.ID))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("session start failed: %s", recorder.Body.String())
+	}
+	rt := manager.runtimeByID(detail.Run.ID)
+	rt.mu.Lock()
+	if rt.run.Status != "idle" {
+		t.Fatalf("expected the fresh session to be idle, got %s", rt.run.Status)
+	}
+	rt.mu.Unlock()
+
+	// Reuse must not require an explicit agent: the session's agent is kept.
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reuse start failed: %d %s", rec.Code, rec.Body.String())
+	}
+	response := decodeChatAutoRunResponse(t, rec)
+	if response.Action != "started" || !response.Reused || response.Run == nil || response.Run.ID != detail.Run.ID {
+		t.Fatalf("expected idle session reuse, got %+v", response)
+	}
+	if response.AgentName != "fake-agent" {
+		t.Fatalf("reuse must surface the session's agent, got %q", response.AgentName)
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "running" || reloaded.AutoRun.Generation != 1 {
+		t.Fatalf("reused session did not start generation 1: %+v", reloaded.AutoRun)
+	}
+	rt.mu.Lock()
+	reused := rt.run
+	rt.mu.Unlock()
+	if !reused.SchedulerTurn || reused.AutoRunGeneration != 1 {
+		t.Fatalf("reused session was not marked as the scheduler turn: %+v", reused)
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.sessions) != 1 {
+		t.Fatalf("reuse must not create a second AgentHub session, got %d", len(fake.sessions))
+	}
+	if !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "This is an AutoRun scheduler turn") {
+		t.Fatalf("reused session did not receive the standard AutoRun start message")
+	}
+}
+
+func TestChatAutoRunStartBusySessionStaysQueued(t *testing.T) {
+	workspacePath := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspacePath, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := forgeWorkspace.CreateProject("Busy test project", "busy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Busy task", Slug: "busy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := guiWorkspace{ID: "workspace-one", Path: workspacePath}
+	// The internal endpoint reports the session busy at send time, simulating
+	// the race where a session turns busy after the click.
+	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/input") {
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "session is busy"})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer internal.Close()
+	s := &server{addr: internal.URL, config: filepath.Join(t.TempDir(), "gui.json")}
+	s.agents = newAgentManager(s)
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace}}); err != nil {
+		t.Fatal(err)
+	}
+	registerSchedulerRun(t, s, workspacePath, agentRun{
+		ID: "run-idle", WorkspaceID: workspace.ID, ResourceID: task.ID,
+		AgentHubAgentName: "agent-one", Status: "idle",
+	}, true)
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("busy race should be reported as queued, got %d %s", rec.Code, rec.Body.String())
+	}
+	response := decodeChatAutoRunResponse(t, rec)
+	if response.Action != "queued" || !response.Reused || !strings.Contains(response.Reason, "became busy") {
+		t.Fatalf("unexpected busy-race response: %+v", response)
+	}
+	reloaded := reloadTestTask(t, workspacePath, task.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "queued" || reloaded.AutoRun.Generation != 1 {
+		t.Fatalf("busy race must leave the generation queued, got %+v", reloaded.AutoRun)
+	}
+}
+
+func TestChatAutoRunStartStateMatrix(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+
+	newServerWithTask := func(t *testing.T) (*server, guiWorkspace, app.Task) {
+		t.Helper()
+		s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+		return s, workspace, task
+	}
+
+	t.Run("queued and running reject a repeated start", func(t *testing.T) {
+		s, workspace, task := newServerWithTask(t)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+			t.Fatal(err)
+		}
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "already queued") {
+			t.Fatalf("queued start should be rejected, got %d %s", rec.Code, rec.Body.String())
+		}
+		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		rec = chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "already running") {
+			t.Fatalf("running start should be rejected, got %d %s", rec.Code, rec.Body.String())
+		}
+		fake.mu.Lock()
+		sessions := len(fake.sessions)
+		fake.mu.Unlock()
+		if sessions != 0 {
+			t.Fatalf("rejected starts must not create sessions, got %d", sessions)
+		}
+	})
+
+	t.Run("terminal state starts the next generation", func(t *testing.T) {
+		s, workspace, task := newServerWithTask(t)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "done"}); err != nil {
+			t.Fatal(err)
+		}
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("restart after completion failed: %d %s", rec.Code, rec.Body.String())
+		}
+		response := decodeChatAutoRunResponse(t, rec)
+		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 2 || response.Task.AutoRun.State != "running" {
+			t.Fatalf("expected running generation 2, got %+v", response.Task.AutoRun)
+		}
+	})
+
+	t.Run("suspended resumes the same generation with its summary", func(t *testing.T) {
+		s, workspace, task := newServerWithTask(t)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for review"}); err != nil {
+			t.Fatal(err)
+		}
+		recorder, detail := startRuntimeTestRun(t, s.agents, workspace,
+			fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","title":"Chat"}`, task.ID))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("session start failed: %s", recorder.Body.String())
+		}
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("resume from suspended failed: %d %s", rec.Code, rec.Body.String())
+		}
+		response := decodeChatAutoRunResponse(t, rec)
+		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 1 || response.Task.AutoRun.State != "running" {
+			t.Fatalf("suspended resume must keep generation 1, got %+v", response.Task.AutoRun)
+		}
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		if !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "waiting for review") {
+			t.Fatalf("resumed start message must carry the suspension summary")
+		}
+	})
+
+	t.Run("paused resumes the same generation", func(t *testing.T) {
+		s, workspace, task := newServerWithTask(t)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "manual"}); err != nil {
+			t.Fatal(err)
+		}
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("resume from paused failed: %d %s", rec.Code, rec.Body.String())
+		}
+		response := decodeChatAutoRunResponse(t, rec)
+		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 1 || response.Task.AutoRun.State != "running" {
+			t.Fatalf("paused resume must keep generation 1, got %+v", response.Task.AutoRun)
+		}
+	})
+}
+
+func TestChatAutoRunStartConcurrentClicksStartOnce(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	const clicks = 4
+	codes := make([]int, clicks)
+	bodies := make([]string, clicks)
+	var wg sync.WaitGroup
+	for index := 0; index < clicks; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+			codes[index] = rec.Code
+			bodies[index] = rec.Body.String()
+		}(index)
+	}
+	wg.Wait()
+
+	started := 0
+	for index, code := range codes {
+		if code == http.StatusOK {
+			started++
+			continue
+		}
+		if code != http.StatusConflict {
+			t.Fatalf("concurrent click %d returned %d %s", index, code, bodies[index])
+		}
+	}
+	if started != 1 {
+		t.Fatalf("expected exactly one successful start out of %d clicks, got %d (%v)", clicks, started, codes)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.sessions) != 1 {
+		t.Fatalf("concurrent clicks created %d AgentHub sessions, want 1", len(fake.sessions))
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.Generation != 1 {
+		t.Fatalf("concurrent clicks produced generation %+v, want generation 1", reloaded.AutoRun)
+	}
+}
+
+func TestChatAutoRunStartRejectsNonTaskResources(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+	projectID, _, _ := strings.Cut(task.ID, ".task")
+
+	for _, body := range []string{
+		`{"resourceId":"project-missing.task1","agentName":"fake-agent"}`,
+		fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, projectID),
+		`{"agentName":"fake-agent"}`,
+		`{"resourceId":"", "agentName":"fake-agent"}`,
+	} {
+		rec := chatAutoRunStart(t, s, workspace.ID, body)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("request %s should be rejected with 400, got %d %s", body, rec.Code, rec.Body.String())
+		}
+	}
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","after":["x"]}`, task.ID))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown fields must be rejected, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestChatAutoRunStartBusyLiveSessionHasClearReason(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	// A session with a pending approval is live but never reusable.
+	recorder, detail := startRuntimeTestRun(t, s.agents, workspace,
+		fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","title":"Chat"}`, task.ID))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("session start failed: %s", recorder.Body.String())
+	}
+	rt := s.agents.runtimeByID(detail.Run.ID)
+	rt.mu.Lock()
+	rt.run.Status = "waiting_approval"
+	rt.mu.Unlock()
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "session is busy") {
+		t.Fatalf("expected a clear busy-session rejection, got %d %s", rec.Code, rec.Body.String())
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun != nil {
+		t.Fatalf("a busy-session rejection must not queue a generation: %+v", reloaded.AutoRun)
+	}
+}
+
+func TestChatAutoRunComposerUI(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`function autoRunComposerAction() {`,
+		`id="autoRunStartButton"`,
+		`label = "Start AutoRun";`,
+		`label = "Start New AutoRun";`,
+		`label = "Resume Now";`,
+		`label = "Resume AutoRun";`,
+		`label = "AutoRun Queued";`,
+		`label = "AutoRun Running";`,
+		"disabledReason = `AutoRun generation ${autoRun.generation} is already queued.`;",
+		`disabledReason = "Select an agent below to start AutoRun without an active session.";`,
+		`"The current session is busy; wait until it is idle to start AutoRun."`,
+		`"Resolve the pending approval before starting AutoRun in this session."`,
+		`/api/workspaces/${state.activeWorkspaceId}/autorun/start`,
+		`body: JSON.stringify({ resourceId: selected.id, agentName }),`,
+		`if (state.agent.autoRunStarting) return;`,
+		`state.agent.autoRunStarting = true;`,
+		`function autoRunComposerKey() {`,
+		"${autoRunComposerKey()}",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Chat AutoRun composer is missing %q", want)
+		}
+	}
+	// The AutoRun action must participate in every composer render-cache key.
+	keys := strings.Count(source, "${autoRunComposerKey()}`")
+	if keys != 3 {
+		t.Fatalf("expected autoRunComposerKey in all three composer keys, got %d", keys)
+	}
+	styles, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(styles), ".tty-autorun-action {") {
+		t.Fatal("Chat AutoRun action styling is missing")
+	}
+}

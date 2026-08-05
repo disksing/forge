@@ -20,6 +20,7 @@ import (
 	urlpath "path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -150,6 +151,10 @@ type server struct {
 	config string
 	agents *agentManager
 	locks  *workspaceLockManager
+	// autoRunDispatchMu serializes AutoRun dispatch decisions between the
+	// background driver and the unified Chat start endpoint, so concurrent
+	// scans and manual clicks never start the same generation twice.
+	autoRunDispatchMu sync.Mutex
 }
 
 const (
@@ -409,6 +414,16 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.worktreeDiff(w, r, id)
 	case "ui-state":
 		s.handleUIState(w, r, id)
+	case "autorun":
+		if len(parts) != 3 || parts[2] != "start" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.startChatAutoRun(w, r, id)
 	case "agent":
 		s.agents.handle(w, r, id, parts[2:])
 	case "projects":

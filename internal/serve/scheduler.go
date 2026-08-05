@@ -160,6 +160,10 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 }
 
 func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) (runnableTaskDispatchResult, error) {
+	// Serialize with the unified Chat start endpoint: a manual start and a
+	// background scan must never dispatch the same generation twice.
+	s.autoRunDispatchMu.Lock()
+	defer s.autoRunDispatchMu.Unlock()
 	switch task.State {
 	case "queued", "running":
 	default:
@@ -199,6 +203,11 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			return runnableTaskSkippedActive, nil
 		}
 		if err := s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
+			if errors.Is(err, errAutoRunSessionBusy) {
+				// Lost the race against a manual start or a user message; the
+				// generation stays queued for the next scan.
+				return runnableTaskSkippedActive, nil
+			}
 			return runnableTaskDispatchFailed, err
 		}
 		return runnableTaskStarted, nil
@@ -297,6 +306,11 @@ func (s *server) agentRunActive(runID string) bool {
 	return active
 }
 
+// errAutoRunSessionBusy marks the race where a session turned busy between
+// the reuse check and the scheduler-turn send. The caller keeps the
+// generation queued instead of retrying, so no duplicate message is sent.
+var errAutoRunSessionBusy = errors.New("session became busy")
+
 func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, generation int, prompt string) error {
 	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, AutoRunGeneration: generation})
 	if err != nil {
@@ -314,6 +328,9 @@ func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWor
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
+	if response.StatusCode == http.StatusConflict {
+		return errAutoRunSessionBusy
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("agent input returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}

@@ -191,6 +191,12 @@ forge task autorun fail --reason="Verification cannot pass"
 
 `suspend` records the natural-language `suspensionSummary` and a `suspendedAt` timestamp on the generation. The server wakes the task after 30 minutes by re-queueing it; every new suspend resets the timer, and the summary is preserved so the woken agent can re-check its condition. `pause` is for human intervention and is never auto-woken. If a running turn exits without reporting a result, the driver records a retry and continues within a shared three-attempt budget before pausing the task. A completed or failed task can be queued again as a new generation.
 
+### Manual AutoRun from Chat
+
+The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed or failed generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. Queued and running generations render as disabled states so they cannot be started twice.
+
+The action calls one unified server operation (`POST /api/workspaces/<id>/autorun/start`) that queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard AutoRun start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the composer agent picker selects the agent for the new session, and the request fails without changing task state if none is selected. If the session turns busy at send time, the generation stays queued and the background driver delivers the start message once the session is idle. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
+
 ## Task Templates
 
 Project-local templates live in `templates/*.md`. YAML front matter controls task creation and the remainder becomes the new task's complete `task.md`:
