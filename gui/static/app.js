@@ -987,39 +987,54 @@ function sessionResourceMenu(session, controls) {
   return menu;
 }
 
+// Replaces the details panel content while keeping the scroll position
+// stable. Auto-refresh re-renders the panel in place, so the previous
+// scroll offset is restored when the same resource is still selected;
+// switching to another resource resets the panel to the top. The panel
+// also sets `overflow-anchor: none` in CSS so the browser's scroll
+// anchoring cannot drift the restored offset after the DOM swap.
+function setDetailsHTML(panel, html) {
+  const resourceKey = state.selectedId || "";
+  const sameResource = panel.dataset.detailsResource === resourceKey;
+  const scrollTop = panel.scrollTop;
+  panel.innerHTML = html;
+  panel.dataset.detailsResource = resourceKey;
+  panel.scrollTop = sameResource ? scrollTop : 0;
+}
+
 function renderDetails() {
   const panel = $("detailsPanel");
   const workspaceEditorState = captureWorkspaceAgentsEditorState();
   const previewScrollState = captureFilePreviewScrollState();
   if (!state.tree) {
-    panel.innerHTML = emptyDetails();
+    setDetailsHTML(panel, emptyDetails());
     return;
   }
   if (state.selectedId === "workspace") {
-    panel.innerHTML = workspaceDetails();
+    setDetailsHTML(panel, workspaceDetails());
     restoreWorkspaceAgentsEditorState(workspaceEditorState);
     restoreFilePreviewScrollState(previewScrollState);
     return;
   }
   const selected = findResource(state.selectedId) || state.tree.projects[0];
   if (!selected) {
-    panel.innerHTML = workspaceDetails();
+    setDetailsHTML(panel, workspaceDetails());
     restoreWorkspaceAgentsEditorState(workspaceEditorState);
     restoreFilePreviewScrollState(previewScrollState);
     return;
   }
   const detail = state.details[selected.id];
   if (!detail) {
-    panel.innerHTML = `
+    setDetailsHTML(panel, `
       <div class="details-header">
         ${breadcrumb(selected, selected.title)}
         <div class="title-row"><h1>${escapeHTML(selected.title)}</h1></div>
       </div>
       <div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>
-    `;
+    `);
     return;
   }
-  panel.innerHTML = `
+  setDetailsHTML(panel, `
     <div class="details-header">
       ${breadcrumb(selected, detail.title)}
       <div class="title-row">
@@ -1036,7 +1051,7 @@ function renderDetails() {
     ${selected.type === "project" ? "" : worktreeSection(detail.repos)}
     ${fileModal()}
     ${diffModal()}
-  `;
+  `);
   restoreFilePreviewScrollState(previewScrollState);
   $("archiveButton")?.addEventListener("click", () => archiveResource(selected.id));
   $("newTaskButton")?.addEventListener("click", () => showTaskForm(selected.id));

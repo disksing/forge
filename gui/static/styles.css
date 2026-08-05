@@ -392,6 +392,9 @@ body.resizing-y {
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  /* Auto-refresh re-renders the panel in place; without this the browser's
+     scroll anchoring can drift the scroll position after each DOM swap. */
+  overflow-anchor: none;
 }
 
 .details-header {
