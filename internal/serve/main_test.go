@@ -2931,6 +2931,74 @@ func TestResourceRefBadgeShownInTreeAndDetails(t *testing.T) {
 	}
 }
 
+func TestTreeProjectMetadataUsesCompactInlineLayout(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(appData)
+	for _, want := range []string{
+		`<span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}${summaryMarkup}</span>`,
+		`const summaryMarkup = summary && !expanded ? projectTaskSummaryMarkup(summary) : "";`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("tree project metadata markup is missing %q", want)
+		}
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	extractRule := func(selector string) string {
+		start := strings.Index(styles, selector+" {")
+		if start < 0 {
+			t.Fatalf("styles are missing %q", selector)
+		}
+		end := strings.Index(styles[start:], "}")
+		if end < 0 {
+			t.Fatalf("styles rule %q is unterminated", selector)
+		}
+		return styles[start : start+end+1]
+	}
+
+	nameRule := extractRule(".tree-item .name")
+	for _, want := range []string{"display: flex;", "overflow: hidden;", "white-space: nowrap;"} {
+		if !strings.Contains(nameRule, want) {
+			t.Fatalf("tree name layout is missing %q: %s", want, nameRule)
+		}
+	}
+
+	nameTextRule := extractRule(".tree-item .name .name-text")
+	for _, want := range []string{"flex: 0 1 auto;", "min-width: 0;", "overflow: hidden;", "text-overflow: ellipsis;"} {
+		if !strings.Contains(nameTextRule, want) {
+			t.Fatalf("tree title truncation layout is missing %q: %s", want, nameTextRule)
+		}
+	}
+	if strings.Contains(nameTextRule, "flex: 1 1 auto;") {
+		t.Fatal("tree title must not grow and push the resource ref or project summary away")
+	}
+
+	resourceRule := extractRule(".tree-item .resource-ref")
+	if !strings.Contains(resourceRule, "flex-shrink: 0;") {
+		t.Fatalf("tree resource refs must remain identifiable while the title shrinks: %s", resourceRule)
+	}
+
+	summaryRule := extractRule(".project-task-summary")
+	for _, want := range []string{"flex: 0 1 auto;", "max-width: min(48%, 148px);", "overflow: hidden;"} {
+		if !strings.Contains(summaryRule, want) {
+			t.Fatalf("project summary compact layout is missing %q: %s", want, summaryRule)
+		}
+	}
+	if !strings.Contains(styles, "grid-template-columns: 16px 16px minmax(0, 1fr) auto;") {
+		t.Fatal("tree rows must keep the drag handle in a dedicated trailing column")
+	}
+	if !strings.Contains(styles, "@media (max-width: 420px)") || !strings.Contains(styles, ".tree-item .name {\n    gap: 4px;") {
+		t.Fatal("compact tree metadata must retain the narrow-layout spacing rule")
+	}
+}
+
 func TestResourceRefBadgeHelper(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
