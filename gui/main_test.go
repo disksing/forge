@@ -499,11 +499,11 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 	styles := string(stylesData)
 	for _, want := range []string{
-		`grid-template-columns: 16px 16px minmax(0, 1fr);`,
+		`grid-template-columns: 16px 16px minmax(0, 1fr) auto;`,
 		`.tree-item.has-task-status`,
-		`grid-template-columns: 16px 16px 16px minmax(0, 1fr);`,
+		`grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto;`,
 		`.tree-item.has-task-status-dual`,
-		`grid-template-columns: 16px 36px 16px minmax(0, 1fr);`,
+		`grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;`,
 		`.task-status-slot.task-status-single .task-lock-indicator`,
 		`.task-status-indicator.task-status-auto-running`,
 		`.task-status-indicator.task-status-session-running`,
@@ -2078,6 +2078,29 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `"projectOrder"`) || !strings.Contains(string(data), `"taskOrder"`) || !strings.Contains(string(data), `"sessionOrder"`) {
 		t.Fatalf("expected gui-state.json to persist custom order fields, got %s", data)
+	}
+}
+
+func TestListDragHandleStaysHiddenUntilHoverAndRightAligned(t *testing.T) {
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		// The handle occupies a dedicated trailing grid column so it stays on the same row.
+		`grid-template-columns: 16px 16px minmax(0, 1fr) auto;`,
+		`grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto;`,
+		`grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;`,
+		`grid-template-columns: 16px minmax(0, 1fr) auto auto;`,
+		// The hidden base rule must outrank `.session-row span { display: block; }`.
+		".tree-item .drag-handle,\n.session-row .drag-handle {\n  display: none;",
+		// Hover reveals the handle.
+		".tree-item:hover .drag-handle,\n.session-row:hover .drag-handle {\n  display: grid;",
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("drag handle styles are missing %q", want)
+		}
 	}
 }
 
