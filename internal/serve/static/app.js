@@ -92,6 +92,7 @@ const state = {
     historyOpen: false,
     autoRunExpanded: false,
     autoRunStarting: false,
+    newSessionStarting: false,
     sessionActionsOpen: false,
     eventsHasMore: false,
     historyBeforeId: 0,
@@ -127,6 +128,7 @@ const AGENT_DRAFT_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 const AGENT_AUTOFILL_OVERFLOW_PX = 160;
 const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
+const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
@@ -685,6 +687,43 @@ function resourceRefBadge(id) {
   return `<span class="resource-ref">${escapeHTML(ref)}</span>`;
 }
 
+function projectTaskSummary(project) {
+  const tasks = (Array.isArray(project?.children) ? project.children : [])
+    .filter((task) => task && task.archived !== true);
+  const runningTaskIds = new Set();
+  for (const task of tasks) {
+    if (task.autoRun?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+      runningTaskIds.add(task.id);
+    }
+  }
+  const taskCount = tasks.length;
+  const runningCount = runningTaskIds.size;
+  const taskLabel = `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`;
+  const runningLabel = `${runningCount} running`;
+  return {
+    taskCount,
+    runningCount,
+    taskLabel,
+    runningLabel,
+    text: `${taskLabel} · ${runningLabel}`,
+    ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}`,
+  };
+}
+
+function taskSessionCountsAsRunning(session) {
+  return session?.source === "internal" && TASK_RUNNING_SESSION_STATES.has(session.agentRunStatus);
+}
+
+function projectTaskSummaryMarkup(summary) {
+  if (!summary) return "";
+  return `
+    <span class="project-task-summary" aria-hidden="true">
+      <span class="project-task-summary-count">${escapeHTML(summary.taskLabel)}</span>
+      <span class="project-task-summary-separator" aria-hidden="true">·</span>
+      <span class="project-task-summary-running">${escapeHTML(summary.runningLabel)}</span>
+    </span>`;
+}
+
 function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
@@ -703,15 +742,20 @@ function treeButton(item, kind, projectId = "") {
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
+  const summary = kind === "project" ? projectTaskSummary(item) : null;
+  const summaryMarkup = summary && !expanded ? projectTaskSummaryMarkup(summary) : "";
+  const accessibleLabel = [title, summary?.ariaLabel, taskState.label].filter(Boolean).join(". ");
+  if (kind === "project" || taskState.label) {
+    button.setAttribute("aria-label", accessibleLabel);
+  }
   if (taskState.label) {
-    button.setAttribute("aria-label", `${title}. ${taskState.label}`);
     bindTaskStatusTooltip(button, taskState.label);
   }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
-    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>
+    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}${summaryMarkup}</span>
     <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
@@ -972,7 +1016,8 @@ function taskOperationalStateKey() {
   const parts = [];
   for (const project of state.tree.projects || []) {
     const projectState = taskOperationalState(project);
-    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}`);
+    const summary = projectTaskSummary(project);
+    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
       parts.push(`${task.id}:auto=${taskStatusKey(taskState.autoRun)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
@@ -2391,6 +2436,7 @@ function resetAgentState() {
   state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
   clearAgentDraftMemory();
+  state.agent.newSessionStarting = false;
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
   state.agent.renderDeferredForSelection = false;
@@ -2731,7 +2777,7 @@ function renderTTYComposer(options = {}) {
   if (!composer) return;
   const activeRun = currentAgentRun();
   if (!activeRun) {
-    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${autoRunComposerKey()}`;
+    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = agentComposerActions();
@@ -2741,7 +2787,7 @@ function renderTTYComposer(options = {}) {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -2784,7 +2830,7 @@ function renderTTYComposer(options = {}) {
   // A stopped AgentHub session resumes with a freshly created Forge session,
   // so the button only needs the AgentHub attachment, not a live Forge session.
   const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${autoRunComposerKey()}`;
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   composer.innerHTML = `
@@ -2811,7 +2857,15 @@ function agentComposerActions(options = {}) {
   const selectedAgent = selectedAgentConfig();
   const agents = enabledAgentConfigs();
   const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
-  const agentLabel = selectedAgent ? agentDisplayName(selectedAgent) : "No agent";
+  const sessionStarting = Boolean(state.agent.newSessionStarting);
+  const noAgentReason = "No enabled agents are available. Configure an AgentHub Agent in Settings.";
+  const sessionButtonTitle = sessionStarting
+    ? "Creating a new AgentHub session..."
+    : agents.length === 0
+      ? noAgentReason
+      : "Choose an Agent to start a new session.";
+  const sessionButtonDisabled = sessionStarting || agents.length === 0;
+  const sessionButtonDisabledAttribute = sessionButtonDisabled ? " disabled" : "";
   const collapsible = Boolean(options.collapsible);
   const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${!collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   return `
@@ -2819,18 +2873,13 @@ function agentComposerActions(options = {}) {
       ${autoRunComposerAction()}
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
       <div class="tty-new-session-control">
-        <button type="button" id="agentStartButton" class="tty-new-session-main" ${selectedAgent ? "" : "disabled"}>
-          <span class="tty-new-session-prompt">&gt;</span>
-          <span>New Session</span>
-        </button>
-        <button type="button" id="agentChooserButton" class="tty-new-session-agent" aria-expanded="${chooserOpen ? "true" : "false"}" ${selectedAgent ? "" : "disabled"}>
-          <span>with ${escapeHTML(agentLabel)}</span>
-          ${icon(chooserOpen ? "chevron-up" : "chevron-down")}
+        <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
+          ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
         </button>
         ${chooserOpen ? `
-          <div class="tty-agent-menu">
+          <div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent"${sessionStarting ? ` aria-busy="true"` : ""}>
             ${agents.map((agent) => `
-              <button type="button" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}">
+              <button type="button" role="menuitem" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}" aria-label="${escapeHTML(`${agentDisplayName(agent)} — ${agentConfigSummary(agent)}`)}"${sessionStarting ? " disabled" : ""}>
                 <span>${escapeHTML(agentDisplayName(agent))}</span>
                 <small>${escapeHTML(agentConfigSummary(agent))}</small>
               </button>
@@ -3401,27 +3450,24 @@ function bindAgentEvents() {
     event.stopPropagation();
   });
   const startButton = $("agentStartButton");
-  if (startButton) startButton.onclick = () => {
-    startAgentRun().catch((err) => toast(err.message));
-  };
-  const chooserButton = $("agentChooserButton");
-  if (chooserButton) chooserButton.onclick = (event) => {
+  if (startButton) startButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
+    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0) return;
     state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
+    if (state.agent.agentChooserOpen) focusAgentChoice();
   };
   document.querySelectorAll("[data-agent-choice]").forEach((button) => {
     button.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      state.agent.agentName = button.dataset.agentChoice;
-      state.agent.agentChooserOpen = false;
-      renderTTYComposer();
-      bindAgentEvents();
-      refreshIcons();
+      if (state.agent.newSessionStarting) return;
+      const agentName = button.dataset.agentChoice || "";
+      if (!agentName) return;
+      startAgentRun(agentName).catch((err) => toast(err.message));
     });
   });
   const stopButton = $("agentStopButton");
@@ -3505,37 +3551,59 @@ function bindAgentEvents() {
   });
 }
 
-async function startAgentRun() {
+function focusAgentChoice() {
+  const choices = Array.from(document.querySelectorAll("[data-agent-choice]"));
+  const choice = choices.find((button) => button.dataset.agentChoice === state.agent.agentName) || choices[0];
+  choice?.focus({ preventScroll: true });
+}
+
+async function startAgentRun(agentName = "") {
+  if (state.agent.newSessionStarting) return;
   return mutateAgentSession(async () => {
     if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
     const selected = findResource(state.selectedId);
-    const agent = selectedAgentConfig();
+    const requestedAgentName = String(agentName || "").trim();
+    const agent = requestedAgentName
+      ? enabledAgentConfigs().find((candidate) => candidate.id === requestedAgentName)
+      : selectedAgentConfig();
     if (!agent) throw new Error("Select an enabled agent first.");
-    const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
-      method: "POST",
-      body: JSON.stringify({
-        agentName: agent.id,
-        resourceId: selected?.id || "",
-        title: selected?.title || workspaceName(),
-        prompt: "",
-        cwd: agentDefaultCwd(),
-      }),
-    });
-    state.agent.draftPrompt = "";
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
-    state.agent.ttyDraftKey = "";
-    state.agent.ttyDraftWorkspaceId = "";
-    state.agent.ttyDraftResourceId = "";
-    state.agent.ttyDraftRunId = "";
-    state.agent.ttyDraftVersion++;
-    state.agent.optionsOpen = false;
-    state.agent.agentChooserOpen = false;
-    state.agent.historyOpen = false;
-    state.agent.activeRunId = response.run.id;
-    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-    renderAll();
-    toast("Agent session started.");
+    state.agent.agentName = agent.id;
+    state.agent.newSessionStarting = true;
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
+    try {
+      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs`, {
+        method: "POST",
+        body: JSON.stringify({
+          agentName: agent.id,
+          resourceId: selected?.id || "",
+          title: selected?.title || workspaceName(),
+          prompt: "",
+          cwd: agentDefaultCwd(),
+        }),
+      });
+      state.agent.draftPrompt = "";
+      state.agent.ttyDraft = "";
+      state.agent.ttyMultiline = false;
+      state.agent.ttyDraftKey = "";
+      state.agent.ttyDraftWorkspaceId = "";
+      state.agent.ttyDraftResourceId = "";
+      state.agent.ttyDraftRunId = "";
+      state.agent.ttyDraftVersion++;
+      state.agent.optionsOpen = false;
+      state.agent.agentChooserOpen = false;
+      state.agent.historyOpen = false;
+      state.agent.activeRunId = response.run.id;
+      await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+      renderAll();
+      toast("Agent session started.");
+    } finally {
+      state.agent.newSessionStarting = false;
+      renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    }
   });
 }
 
@@ -4846,7 +4914,12 @@ document.addEventListener("click", (event) => {
     openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource).catch((err) => toast(err.message));
     return;
   }
-  if ((state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen) && target && !target.closest(".agent-actions") && !target.closest(".agent-sessions") && !target.closest(".tty-composer")) {
+  const outsideAgentChooser = state.agent.agentChooserOpen && target && !target.closest(".tty-new-session-control");
+  const outsideAgentPanelMenu = (state.agent.optionsOpen || state.agent.historyOpen) && target
+    && !target.closest(".agent-actions")
+    && !target.closest(".agent-sessions")
+    && !target.closest(".tty-composer");
+  if (outsideAgentChooser || outsideAgentPanelMenu) {
     state.agent.optionsOpen = false;
     state.agent.agentChooserOpen = false;
     state.agent.historyOpen = false;

@@ -191,7 +191,9 @@ forge task autorun fail --reason="Verification cannot pass"
 
 `suspend` records the natural-language `suspensionSummary` and a `suspendedAt` timestamp on the generation. The server wakes the task after 30 minutes by re-queueing it; every new suspend resets the timer, and the summary is preserved so the woken agent can re-check its condition. `pause` is for human intervention and is never auto-woken. If a running turn exits without reporting a result, the driver records a retry and continues within a shared three-attempt budget before pausing the task. A completed or failed task can be queued again as a new generation.
 
-### Manual AutoRun from Chat
+### New Session and Manual AutoRun from Chat
+
+The chat composer has one **New Session** button. Clicking it opens the enabled AgentHub agents with their name and model summary; choosing an agent immediately creates a new session for the selected resource. The button is disabled with an explanation when no enabled agent exists, shows a creating state while the request is in flight, ignores duplicate clicks, and keeps the chooser open when creation fails so the user can retry. The chooser also supports Escape and clicking outside the control.
 
 The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed or failed generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. Queued and running generations render as disabled states so they cannot be started twice.
 

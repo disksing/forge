@@ -530,6 +530,138 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	}
 }
 
+func TestCollapsedProjectTaskSummaryCountsOpenUniqueRunningTasks(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for project task summary tests")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);`,
+		`function projectTaskSummary(project)`,
+		`function taskSessionCountsAsRunning(session)`,
+		`function projectTaskSummaryMarkup(summary)`,
+		`const summaryMarkup = summary && !expanded ? projectTaskSummaryMarkup(summary) : "";`,
+		`const accessibleLabel = [title, summary?.ariaLabel, taskState.label].filter(Boolean).join(". ");`,
+		`const summary = projectTaskSummary(project);`,
+		`:tasks=${summary.taskCount}:${summary.runningCount}`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("collapsed project task summary is missing %q", want)
+		}
+	}
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.project-task-summary`,
+		`.project-task-summary-separator`,
+		`max-width: min(48%, 148px);`,
+		`overflow: hidden;`,
+		`@media (max-width: 420px)`,
+		`.tree-item.active .project-task-summary`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("collapsed project task summary styles are missing %q", want)
+		}
+	}
+
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {
+  state: {
+    tree: {
+      sessions: [
+        { id: "starting", source: "internal", resourceId: "project1.task2", agentRunStatus: "starting" },
+        { id: "running", source: "internal", controls: [{ resourceId: "project1.task3" }], agentRunStatus: "running" },
+        { id: "approval", source: "internal", controls: [{ resourceId: "project1.task4" }], agentRunStatus: "waiting_approval" },
+        { id: "recovering", source: "internal", controls: [{ resourceId: "project1.task5" }], agentRunStatus: "recovering" },
+        { id: "duplicate-resource", source: "internal", resourceId: "project1.task6", agentRunStatus: "running" },
+        { id: "duplicate-lock", source: "internal", controls: [{ resourceId: "project1.task6" }], agentRunStatus: "waiting_approval" },
+        { id: "external-lock", source: "external", controls: [{ resourceId: "project1.task7" }], agentRunStatus: "running" },
+        { id: "idle", source: "internal", resourceId: "project1.task8", agentRunStatus: "idle" },
+        { id: "stopping", source: "internal", resourceId: "project1.task9", agentRunStatus: "stopping" },
+        { id: "queued", source: "internal", resourceId: "project1.task10", agentRunStatus: "queued" },
+      ],
+    },
+  },
+};
+vm.createContext(context);
+vm.runInContext([
+  "const TASK_RUNNING_SESSION_STATES = new Set([\"starting\", \"running\", \"waiting_approval\", \"recovering\"]);",
+  extract("sessionControls"),
+  extract("taskAgentSessions"),
+  extract("taskSessionCountsAsRunning"),
+  extract("escapeHTML"),
+  extract("projectTaskSummary"),
+  extract("projectTaskSummaryMarkup"),
+].join("\n"), context);
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+const project = {
+  id: "project1",
+  children: [
+    { id: "project1.task1", autoRun: { state: "running" } },
+    { id: "project1.task2" },
+    { id: "project1.task3" },
+    { id: "project1.task4" },
+    { id: "project1.task5" },
+    { id: "project1.task6" },
+    { id: "project1.task7" },
+    { id: "project1.task8" },
+    { id: "project1.task9" },
+    { id: "project1.task10" },
+    { id: "project1.task11" },
+    { id: "project1.task12", archived: true, autoRun: { state: "running" } },
+  ],
+};
+const summary = context.projectTaskSummary(project);
+assert(summary.taskCount === 11, "archived children must not contribute to the open task count");
+assert(summary.runningCount === 6, "running tasks must include AutoRun/internal active sessions once each");
+assert(summary.text === "11 tasks · 6 running", "summary text has the wrong pluralization or counts: " + summary.text);
+assert(summary.ariaLabel === "Open tasks: 11 tasks; 6 running", "summary aria label has the wrong counts: " + summary.ariaLabel);
+const markup = context.projectTaskSummaryMarkup(summary);
+assert(markup.includes('class="project-task-summary" aria-hidden="true"'), "summary markup should be hidden from screen readers");
+assert(markup.includes('class="project-task-summary-separator" aria-hidden="true">·</span>'), "summary separator should be decorative");
+context.state.tree.sessions.find((session) => session.id === "running").agentRunStatus = "idle";
+assert(context.projectTaskSummary(project).runningCount === 5, "session status changes must be reflected on the next summary calculation");
+assert(context.projectTaskSummary({ id: "empty", children: [] }).text === "0 tasks · 0 running", "empty projects should show zero counts");
+assert(context.projectTaskSummary({ id: "one", children: [{ id: "one.task1" }] }).text === "1 task · 0 running", "single-task projects should use the singular label");
+`
+
+	testFile := filepath.Join(t.TempDir(), "project-task-summary.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+		t.Fatalf("project task summary behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestTreeTaskStatusIncludesManuallyControlledSessions(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -682,7 +814,7 @@ func TestProjectSessionStartRejectsStaleBackgroundSnapshots(t *testing.T) {
 
 	autoRefreshSource := extract("async function autoRefresh()", "function renderAll()")
 	treeRefreshSource := extract("async function fetchCurrentTree()", "async function loadCanonicalAgentEvents()")
-	startRunSource := extract("async function startAgentRun()", "async function sendAgentInput(text)")
+	startRunSource := extract("async function startAgentRun(agentName = \"\")", "async function sendAgentInput(text)")
 	script := `
 const oldTree = { projects: [{ id: "project1", title: "Forge" }], sessions: [] };
 const newSession = { id: "session-new", resourceId: "project1" };
@@ -777,6 +909,9 @@ async function loadCanonicalAgentEvents() {}
 function connectAgentStream() {}
 function taskOperationalStateKey() { return ""; }
 function renderAll() { rendered++; }
+function renderTTYComposer() {}
+function bindAgentEvents() {}
+function refreshIcons() {}
 function findResource(id) { return id === "project1" ? { id, title: "Forge", path: "project1-forge" } : null; }
 function selectedAgentConfig() { return { id: "agent-one" }; }
 function workspaceName() { return "Workspace"; }
@@ -960,7 +1095,7 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 		`const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);`,
 		`const session = deriveTaskSessionState(sessions);`,
 		`const projectState = taskOperationalState(project);`,
-		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}`);",
+		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);",
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("project tree session and lock status is missing %q", want)
@@ -1562,40 +1697,216 @@ for (const [selection, want] of cases) {
 	}
 }
 
-func TestAgentChooserSelectionUpdatesImmediately(t *testing.T) {
+func TestNewSessionComposerUsesSingleAgentChooserFlow(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
-	start := strings.Index(source, `document.querySelectorAll("[data-agent-choice]").forEach((button) => {`)
-	if start < 0 {
-		t.Fatal("agent chooser click handler is missing")
+	composerStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
+	composerEnd := -1
+	if composerStart >= 0 {
+		composerEnd = strings.Index(source[composerStart:], `function agentDisplayName(agent) {`)
 	}
-	end := strings.Index(source[start:], `const stopButton = $("agentStopButton");`)
-	if end < 0 {
-		t.Fatal("agent chooser click handler boundary is missing")
+	if composerStart < 0 || composerEnd < 0 {
+		t.Fatal("New Session composer renderer is missing")
+	}
+	composer := source[composerStart : composerStart+composerEnd]
+	for _, want := range []string{
+		`id="agentStartButton" class="tty-new-session-button"`,
+		`aria-haspopup="menu"`,
+		`aria-controls="ttyAgentMenu"`,
+		`id="ttyAgentMenu" class="tty-agent-menu" role="menu"`,
+		`role="menuitem"`,
+		`agentConfigSummary(agent)`,
+		`Creating Session...`,
+		`No enabled agents are available. Configure an AgentHub Agent in Settings.`,
+	} {
+		if !strings.Contains(composer, want) {
+			t.Fatalf("New Session composer is missing %q", want)
+		}
+	}
+	for _, removed := range []string{
+		`id="agentChooserButton"`,
+		`class="tty-new-session-main"`,
+		`class="tty-new-session-agent"`,
+		`with ${escapeHTML(agentLabel)}`,
+	} {
+		if strings.Contains(composer, removed) {
+			t.Fatalf("split New Session control is still rendered: %q", removed)
+		}
+	}
+
+	start := strings.Index(source, `const startButton = $("agentStartButton");`)
+	end := -1
+	if start >= 0 {
+		end = strings.Index(source[start:], `const stopButton = $("agentStopButton");`)
+	}
+	if start < 0 || end < 0 {
+		t.Fatal("New Session event handler boundary is missing")
 	}
 	handler := source[start : start+end]
-	wants := []string{
-		`state.agent.agentName = button.dataset.agentChoice;`,
+	for _, want := range []string{
+		`state.agent.agentChooserOpen = !state.agent.agentChooserOpen;`,
+		`focusAgentChoice();`,
+		`const agentName = button.dataset.agentChoice || "";`,
+		`startAgentRun(agentName).catch((err) => toast(err.message));`,
+	} {
+		if !strings.Contains(handler, want) {
+			t.Fatalf("New Session event handler is missing %q", want)
+		}
+	}
+	if strings.Contains(handler, `startAgentRun().catch`) {
+		t.Fatal("clicking New Session must open the Agent chooser instead of starting immediately")
+	}
+	if strings.Contains(handler, `state.agent.agentName = button.dataset.agentChoice;`) {
+		t.Fatal("Agent selection must use the single Session creation flow")
+	}
+
+	startRun := strings.Index(source, `async function startAgentRun(agentName = "") {`)
+	endRun := -1
+	if startRun >= 0 {
+		endRun = strings.Index(source[startRun:], `async function sendAgentInput(text) {`)
+	}
+	if startRun < 0 || endRun < 0 {
+		t.Fatal("New Session start function is missing")
+	}
+	startRunSource := source[startRun : startRun+endRun]
+	for _, want := range []string{
+		`if (state.agent.newSessionStarting) return;`,
+		`state.agent.newSessionStarting = true;`,
 		`state.agent.agentChooserOpen = false;`,
-		`renderTTYComposer();`,
-		`bindAgentEvents();`,
-	}
-	previous := -1
-	for _, want := range wants {
-		index := strings.Index(handler, want)
-		if index < 0 {
-			t.Fatalf("agent chooser click handler is missing %q", want)
+		`state.agent.newSessionStarting = false;`,
+	} {
+		if !strings.Contains(startRunSource, want) {
+			t.Fatalf("New Session start flow is missing %q", want)
 		}
-		if index <= previous {
-			t.Fatalf("agent chooser click handler runs %q out of order", want)
-		}
-		previous = index
 	}
-	if strings.Contains(handler, `applySelectedAgentOptions`) {
-		t.Fatal("agent chooser click handler must not call the removed option synchronization helper")
+
+	styles, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styleSource := string(styles)
+	if !strings.Contains(styleSource, ".tty-new-session-button {") {
+		t.Fatal("single New Session button styling is missing")
+	}
+	for _, removed := range []string{".tty-new-session-main", ".tty-new-session-agent"} {
+		if strings.Contains(styleSource, removed) {
+			t.Fatalf("split New Session styling is still present: %q", removed)
+		}
+	}
+	if !strings.Contains(source, `const outsideAgentChooser = state.agent.agentChooserOpen && target && !target.closest(".tty-new-session-control");`) {
+		t.Fatal("clicking outside the Agent chooser must close it")
+	}
+	if !strings.Contains(source, `event.key === "Escape" && (state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen)`) {
+		t.Fatal("Escape must close the Agent chooser")
+	}
+}
+
+func TestNewSessionAgentSelectionStartsExactlyOnce(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the New Session interaction test")
+	}
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	start := strings.Index(source, `async function startAgentRun(agentName = "") {`)
+	end := -1
+	if start >= 0 {
+		end = strings.Index(source[start:], `async function sendAgentInput(text) {`)
+	}
+	if start < 0 || end < 0 {
+		t.Fatal("could not isolate the New Session start flow")
+	}
+	startRunSource := source[start : start+end]
+	script := `
+const state = {
+  activeWorkspaceId: "workspace-one",
+  selectedId: "project1",
+  agent: {
+    runs: [],
+    activeRunId: "",
+    agentName: "agent-one",
+    agentChooserOpen: true,
+    newSessionStarting: false,
+    draftPrompt: "draft",
+    ttyDraft: "draft",
+    ttyMultiline: true,
+    optionsOpen: false,
+    historyOpen: false,
+  },
+  config: {
+    agents: [
+      { id: "agent-one", available: true },
+      { id: "agent-two", available: true },
+    ],
+  },
+};
+let apiCalls = [];
+let resolveAPI;
+let apiMode = "success";
+async function api(path, options = {}) {
+  apiCalls.push(JSON.parse(options.body));
+  if (apiMode === "failure") throw new Error("AgentHub unavailable");
+  return await new Promise((resolve) => { resolveAPI = resolve; });
+}
+function enabledAgentConfigs() { return state.config.agents.filter((agent) => agent.available !== false); }
+function selectedAgentConfig() { return enabledAgentConfigs().find((agent) => agent.id === state.agent.agentName) || enabledAgentConfigs()[0] || null; }
+function findResource(id) { return id === "project1" ? { id, title: "Forge", path: "/tmp/project1" } : null; }
+function agentDefaultCwd() { return "/tmp/project1"; }
+function workspaceName() { return "Workspace"; }
+function mutateAgentSession(action) { return action(); }
+function renderTTYComposer() {}
+function bindAgentEvents() {}
+function refreshIcons() {}
+async function loadAgentRuns() {}
+async function refreshTreeAfterAgentSessionMutation() {}
+function renderAll() {}
+function toast() {}
+function assert(condition, message) { if (!condition) throw new Error(message); }
+` + startRunSource + `
+(async function run() {
+  const first = startAgentRun("agent-two");
+  await Promise.resolve();
+  assert(apiCalls.length === 1, "first Agent choice should issue one request");
+  assert(apiCalls[0].agentName === "agent-two", "request must use the clicked Agent");
+  assert(state.agent.newSessionStarting, "Session creation should expose a pending state");
+  const duplicate = startAgentRun("agent-one");
+  assert(await duplicate === undefined, "a second click must be ignored while creating");
+  assert(apiCalls.length === 1, "duplicate click must not issue another request");
+  resolveAPI({ run: { id: "run-two" } });
+  await first;
+  assert(state.agent.activeRunId === "run-two", "success should select the new Session");
+  assert(state.agent.agentName === "agent-two", "success should retain the chosen Agent");
+  assert(!state.agent.agentChooserOpen, "success should close the Agent chooser");
+  assert(!state.agent.newSessionStarting, "success should clear the pending state");
+
+  apiMode = "failure";
+  state.agent.agentChooserOpen = true;
+  state.agent.activeRunId = "run-existing";
+  let failed = false;
+  try {
+    await startAgentRun("agent-one");
+  } catch (error) {
+    failed = error.message === "AgentHub unavailable";
+  }
+  assert(failed, "the AgentHub error should reach the composer handler");
+  assert(state.agent.activeRunId === "run-existing", "failure must stay on the current Session");
+  assert(state.agent.agentChooserOpen, "failure should keep the chooser open for retry");
+  assert(!state.agent.newSessionStarting, "failure should clear the pending state");
+  assert(apiCalls.length === 2, "failure should still represent only one additional request");
+})().catch((error) => { console.error(error.stack || error); process.exitCode = 1; });
+`
+	testFile := filepath.Join(t.TempDir(), "new-session-agent-selection.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("New Session Agent selection behavior test failed: %v\n%s", err, output)
 	}
 }
 
@@ -2389,7 +2700,7 @@ func TestResourceRefBadgeShownInTreeAndDetails(t *testing.T) {
 	for _, want := range []string{
 		// Tree rows render the muted "#id" badge right after the resource name,
 		// inside the same grid cell so the drag handle stays on the same row.
-		`<span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>`,
+		`<span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}${summaryMarkup}</span>`,
 		// Details header shows the badge while loading and after loading.
 		`<div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>`,
 		`<h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>`,
