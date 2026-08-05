@@ -620,7 +620,7 @@ func TestAutoRunLifecycleAndSuspend(t *testing.T) {
 		// Resume keeps the same generation and preserves the summary for the
 		// woken agent.
 		resumed := run(t, "task", "autorun", "resume", "--project=project1", "--task=task1")
-		if !strings.Contains(resumed, `"state": "queued"`) || !strings.Contains(resumed, `"generation": 1`) {
+		if !strings.Contains(resumed, `"state": "queued"`) || !strings.Contains(resumed, `"generation": 1`) || !strings.Contains(resumed, `"suspensionSummary": "waiting for review"`) {
 			t.Fatalf("expected resume to requeue generation 1, got:\n%s", resumed)
 		}
 
@@ -630,6 +630,9 @@ func TestAutoRunLifecycleAndSuspend(t *testing.T) {
 		queued := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
 		if !strings.Contains(queued, `"generation": 2`) || !strings.Contains(queued, `"state": "queued"`) {
 			t.Fatalf("expected terminal AutoRun to queue generation 2, got:\n%s", queued)
+		}
+		if strings.Contains(queued, `"suspensionSummary"`) || strings.Contains(queued, `"suspendedAt"`) {
+			t.Fatalf("new AutoRun generation inherited old suspension metadata, got:\n%s", queued)
 		}
 		cancelled := run(t, "task", "autorun", "cancel", "--project=project1", "--task=task1", "--expected-generation=2", "--expected-state=queued", "--reason=user cancelled generation")
 		if !strings.Contains(cancelled, `"generation": 2`) || !strings.Contains(cancelled, `"state": "cancelled"`) {

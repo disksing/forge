@@ -22,6 +22,11 @@ const state = {
   modalEnter: "",
   sessionMenu: null,
   taskOperationalStateKey: "",
+  paneSizes: {
+    sidebarWidth: 280,
+    chatWidth: 420,
+    sidebarSessionHeight: 210,
+  },
   settings: {
     open: false,
     tab: "workspace",
@@ -3776,11 +3781,35 @@ function renderAgent() {
   `;
 }
 
+function autoRunStatusReason(run, logs = []) {
+  if (!run) return null;
+  if (run.state === "suspended") {
+    const summary = String(run.suspensionSummary || "").trim();
+    return summary ? { label: "Suspend reason", text: summary } : null;
+  }
+
+  const titlesByState = {
+    running: ["Auto Run retry"],
+    paused: ["Auto Run paused"],
+    failed: ["Auto Run failed"],
+  };
+  const titles = titlesByState[run.state];
+  if (!titles) return null;
+  const generation = Number(run.generation);
+  const entry = (logs || []).find((candidate) => candidate?.autoRun === true
+    && Number(candidate.autoRunGeneration) === generation
+    && titles.includes(candidate.title)
+    && String(candidate.details || "").trim());
+  if (!entry) return null;
+  const labelsByState = { running: "Retry reason", paused: "Pause reason", failed: "Failure reason" };
+  return { label: labelsByState[run.state], text: String(entry.details).trim() };
+}
+
 function autoRunStatus(detail) {
   const run = detail?.autoRun;
   if (!run) return "";
   const presentation = autoRunPresentation(run.state);
-  const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run cancelled", "Auto Run failed", "Auto Run retry"].includes(entry.title));
+  const reason = autoRunStatusReason(run, detail?.logs);
   const latestSuspension = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run suspended", "Auto Run wake condition migrated"].includes(entry.title));
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
@@ -3799,9 +3828,9 @@ function autoRunStatus(detail) {
       </div>
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-      ${run.suspensionSummary ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-      ${run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
-      ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
+      ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
+      ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
+      ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
       ${["queued", "running", "suspended", "paused"].includes(String(run.state || "").toLowerCase()) ? `<button type="button" id="autoRunCancelButton" class="tty-secondary-action autorun-cancel-action"${state.agent.autoRunCancelling ? " disabled aria-busy=\"true\"" : ""} title="Cancel this AutoRun generation and keep the Agent Session open." aria-label="Cancel AutoRun">${icon(state.agent.autoRunCancelling ? "loader-circle" : "ban")}<span>${state.agent.autoRunCancelling ? "Cancelling AutoRun…" : "Cancel AutoRun"}</span></button>` : ""}
     </section>
   `;
@@ -6335,45 +6364,56 @@ function optionalAssetLoaded(asset) {
 window.forgeAssetLoaded = optionalAssetLoaded;
 
 function initPaneResize() {
-  const saved = loadPaneSizes();
-  if (saved.sidebarWidth) {
-    setCSSPixels("--sidebar-width", saved.sidebarWidth);
-  }
-  if (saved.detailsWidth) {
-    setCSSPixels("--details-width", saved.detailsWidth);
-  }
-  if (saved.sidebarSessionHeight) {
-    setCSSPixels("--sidebar-session-height", saved.sidebarSessionHeight);
+  const raw = readStoredPaneSizes();
+  state.paneSizes = loadPaneSizes(raw, 0);
+  applyPaneSizes();
+  const legacyDetailsWidth = isFinitePaneSize(raw.detailsWidth) && !isFinitePaneSize(raw.chatWidth);
+  if (legacyDetailsWidth && !isMobilePaneLayout()) {
+    state.paneSizes = loadPaneSizes(raw, workspacePanelWidth());
+    applyPaneSizes();
+    saveAllPaneSizes();
   }
   $("sidebarResize")?.addEventListener("pointerdown", (event) => startSidebarResize(event));
-  $("detailsResize")?.addEventListener("pointerdown", (event) => startDetailsResize(event));
+  $("detailsResize")?.addEventListener("pointerdown", (event) => startChatResize(event));
   $("sessionResize")?.addEventListener("pointerdown", (event) => startSessionResize(event));
+  window.addEventListener("resize", syncPaneViewport);
 }
 
 function startSidebarResize(event) {
+  if (isMobilePaneLayout()) return;
   event.preventDefault();
   const startX = event.clientX;
-  const startWidth = $("app").querySelector(".sidebar").getBoundingClientRect().width;
+  const app = $("app");
+  const sidebar = app?.querySelector(".sidebar");
+  const chat = $("agentPanel");
+  if (!app || !sidebar || !chat) return;
+  const startWidth = sidebar.getBoundingClientRect().width;
+  const startChatWidth = chat.getBoundingClientRect().width;
+  const maxWidth = maxSidebarResizeWidth(app.getBoundingClientRect().width, startChatWidth);
   startDrag(event.currentTarget, (moveEvent) => {
-    // No upper bound: long task names must remain fully visible when widened.
-    const width = Math.max(220, startWidth + moveEvent.clientX - startX);
-    setCSSPixels("--sidebar-width", width);
-  }, saveCurrentPaneSizes);
+    const width = clamp(startWidth + moveEvent.clientX - startX, SIDEBAR_MIN_WIDTH, maxWidth);
+    setPaneSize("sidebarWidth", width);
+  }, () => savePaneSize("sidebarWidth"));
 }
 
-function startDetailsResize(event) {
+function startChatResize(event) {
+  if (isMobilePaneLayout()) return;
   event.preventDefault();
   const panel = document.querySelector(".workspace-panel");
+  const chat = $("agentPanel");
+  if (!panel || !chat) return;
   const startX = event.clientX;
-  const startWidth = $("detailsPanel").getBoundingClientRect().width;
+  const startWidth = chat.getBoundingClientRect().width;
+  const panelWidth = panel.getBoundingClientRect().width;
+  const maxWidth = Math.max(CHAT_MIN_WIDTH, panelWidth - DETAILS_MIN_WIDTH - PANE_HANDLE_WIDTH);
   startDrag(event.currentTarget, (moveEvent) => {
-    const panelWidth = panel.getBoundingClientRect().width;
-    const width = clamp(startWidth + moveEvent.clientX - startX, 360, Math.max(360, panelWidth - 328));
-    setCSSPixels("--details-width", width);
-  }, saveCurrentPaneSizes);
+    const width = clamp(startWidth - (moveEvent.clientX - startX), CHAT_MIN_WIDTH, maxWidth);
+    setPaneSize("chatWidth", width);
+  }, () => savePaneSize("chatWidth"));
 }
 
 function startSessionResize(event) {
+  if (isMobilePaneLayout()) return;
   event.preventDefault();
   const sidebar = document.querySelector(".sidebar");
   const sessionSection = document.querySelector(".session-section");
@@ -6384,8 +6424,8 @@ function startSessionResize(event) {
     const sidebarHeight = sidebar.getBoundingClientRect().height;
     const maxHeight = Math.max(120, sidebarHeight - 250);
     const height = clamp(startHeight - (moveEvent.clientY - startY), 84, maxHeight);
-    setCSSPixels("--sidebar-session-height", height);
-  }, saveCurrentPaneSizes, "y");
+    setPaneSize("sidebarSessionHeight", height);
+  }, () => savePaneSize("sidebarSessionHeight"), "y");
 }
 
 function startDrag(handle, onMove, onDone, direction = "x") {
@@ -6408,22 +6448,112 @@ function setCSSPixels(name, value) {
   document.documentElement.style.setProperty(name, `${Math.round(value)}px`);
 }
 
-function saveCurrentPaneSizes() {
-  const sidebar = document.querySelector(".sidebar")?.getBoundingClientRect().width;
-  const details = $("detailsPanel")?.getBoundingClientRect().width;
-  const sessionSection = document.querySelector(".session-section")?.getBoundingClientRect().height;
-  localStorage.setItem(PANE_SIZE_KEY, JSON.stringify({
-    sidebarWidth: Math.round(sidebar || 0),
-    detailsWidth: Math.round(details || 0),
-    sidebarSessionHeight: Math.round(sessionSection || 0),
-  }));
+const PANE_HANDLE_WIDTH = 8;
+const SIDEBAR_MIN_WIDTH = 220;
+const DETAILS_MIN_WIDTH = 360;
+const CHAT_MIN_WIDTH = 320;
+const PANE_MAX_SIZE = 10000;
+const PANE_DEFAULTS = Object.freeze({
+  sidebarWidth: 280,
+  chatWidth: 420,
+  sidebarSessionHeight: 210,
+});
+const PANE_CSS_VARIABLES = Object.freeze({
+  sidebarWidth: "--sidebar-width",
+  chatWidth: "--chat-width",
+  sidebarSessionHeight: "--sidebar-session-height",
+});
+
+function setPaneSize(name, value) {
+  if (!Object.hasOwn(PANE_CSS_VARIABLES, name) || !Number.isFinite(value)) return;
+  const minimum = name === "sidebarWidth" ? SIDEBAR_MIN_WIDTH : name === "chatWidth" ? CHAT_MIN_WIDTH : 84;
+  const next = Math.round(clamp(value, minimum, PANE_MAX_SIZE));
+  state.paneSizes[name] = next;
+  setCSSPixels(PANE_CSS_VARIABLES[name], next);
 }
 
-function loadPaneSizes() {
+function applyPaneSizes() {
+  for (const name of Object.keys(PANE_CSS_VARIABLES)) {
+    setPaneSize(name, state.paneSizes[name]);
+  }
+}
+
+function savePaneSize(name) {
+  if (!Object.hasOwn(PANE_CSS_VARIABLES, name)) return;
+  const saved = readStoredPaneSizes();
+  delete saved.detailsWidth;
+  for (const paneName of Object.keys(PANE_CSS_VARIABLES)) {
+    if (!isFinitePaneSize(saved[paneName])) {
+      saved[paneName] = state.paneSizes[paneName];
+    }
+  }
+  saved[name] = state.paneSizes[name];
+  localStorage.setItem(PANE_SIZE_KEY, JSON.stringify(saved));
+}
+
+function saveAllPaneSizes() {
+  localStorage.setItem(PANE_SIZE_KEY, JSON.stringify({ ...state.paneSizes }));
+}
+
+function isFinitePaneSize(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function readStoredPaneSizes() {
   try {
-    return JSON.parse(localStorage.getItem(PANE_SIZE_KEY) || "{}");
+    const saved = JSON.parse(localStorage.getItem(PANE_SIZE_KEY) || "{}");
+    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
   } catch (_) {
     return {};
+  }
+}
+
+function normalizePaneSizes(raw, availableWorkspaceWidth = 0) {
+  const source = raw && typeof raw === "object" ? raw : {};
+  const sizes = { ...PANE_DEFAULTS };
+  if (isFinitePaneSize(source.sidebarWidth)) {
+    sizes.sidebarWidth = clamp(source.sidebarWidth, SIDEBAR_MIN_WIDTH, PANE_MAX_SIZE);
+  }
+  if (isFinitePaneSize(source.chatWidth)) {
+    sizes.chatWidth = clamp(source.chatWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
+  } else if (isFinitePaneSize(source.detailsWidth) && availableWorkspaceWidth >= DETAILS_MIN_WIDTH + PANE_HANDLE_WIDTH + CHAT_MIN_WIDTH) {
+    const detailsWidth = clamp(source.detailsWidth, DETAILS_MIN_WIDTH, availableWorkspaceWidth - PANE_HANDLE_WIDTH - CHAT_MIN_WIDTH);
+    sizes.chatWidth = clamp(availableWorkspaceWidth - PANE_HANDLE_WIDTH - detailsWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
+  }
+  if (isFinitePaneSize(source.sidebarSessionHeight)) {
+    sizes.sidebarSessionHeight = clamp(source.sidebarSessionHeight, 84, PANE_MAX_SIZE);
+  }
+  return sizes;
+}
+
+function loadPaneSizes(raw = readStoredPaneSizes(), availableWorkspaceWidth = workspacePanelWidth()) {
+  return normalizePaneSizes(raw, availableWorkspaceWidth);
+}
+
+function workspacePanelWidth() {
+  return document.querySelector(".workspace-panel")?.getBoundingClientRect().width || 0;
+}
+
+function maxSidebarResizeWidth(appWidth, chatWidth) {
+  const availableWidth = Number.isFinite(appWidth) ? appWidth : 0;
+  const currentChatWidth = Number.isFinite(chatWidth) ? Math.max(CHAT_MIN_WIDTH, chatWidth) : CHAT_MIN_WIDTH;
+  return Math.max(
+    SIDEBAR_MIN_WIDTH,
+    availableWidth - PANE_HANDLE_WIDTH - DETAILS_MIN_WIDTH - PANE_HANDLE_WIDTH - currentChatWidth,
+  );
+}
+
+function isMobilePaneLayout() {
+  return typeof MOBILE_LAYOUT_QUERY !== "undefined" && MOBILE_LAYOUT_QUERY.matches;
+}
+
+function syncPaneViewport() {
+  if (isMobilePaneLayout()) return;
+  const raw = readStoredPaneSizes();
+  if (isFinitePaneSize(raw.detailsWidth) && !isFinitePaneSize(raw.chatWidth)) {
+    state.paneSizes = normalizePaneSizes(raw, workspacePanelWidth());
+    applyPaneSizes();
+    saveAllPaneSizes();
   }
 }
 
@@ -6464,6 +6594,7 @@ if (window.visualViewport) {
 }
 if (typeof MOBILE_LAYOUT_QUERY.addEventListener === "function") {
   MOBILE_LAYOUT_QUERY.addEventListener("change", syncAppViewport);
+  MOBILE_LAYOUT_QUERY.addEventListener("change", syncPaneViewport);
 }
 window.addEventListener("orientationchange", () => {
   resetAppViewportScroll();

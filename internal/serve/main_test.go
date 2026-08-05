@@ -1947,6 +1947,86 @@ func TestTTYRenderDefersWhileTextSelected(t *testing.T) {
 	}
 }
 
+func TestAutoRunStatusReasonRendering(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for AutoRun status rendering tests")
+	}
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	reasonStart := strings.Index(source, "function autoRunStatusReason(")
+	statusStart := strings.Index(source, "function autoRunStatus(detail)")
+	presentationStart := strings.Index(source, "function autoRunPresentation(state)")
+	if reasonStart < 0 || statusStart < 0 || presentationStart < 0 || reasonStart > statusStart || statusStart > presentationStart {
+		t.Fatal("could not isolate AutoRun status rendering functions")
+	}
+	reasonSource := source[reasonStart:statusStart]
+	statusSource := source[statusStart:presentationStart]
+	presentationEnd := strings.Index(source[presentationStart:], "function agentSelectOptions")
+	if presentationEnd < 0 {
+		t.Fatal("could not isolate AutoRun presentation function")
+	}
+	presentationSource := source[presentationStart : presentationStart+presentationEnd]
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+const state = { agent: { autoRunExpanded: false } };
+function escapeHTML(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
+function currentAgentRun() { return null; }
+function icon() { return ""; }
+` + reasonSource + statusSource + presentationSource + `
+
+const logs = [
+  { autoRun: true, autoRunGeneration: 7, title: "Auto Run failed", details: "failed now" },
+  { autoRun: true, autoRunGeneration: 7, title: "Auto Run paused", details: "paused now" },
+  { autoRun: true, autoRunGeneration: 7, title: "Auto Run retry", details: "retry now" },
+  { autoRun: true, autoRunGeneration: 7, title: "Auto Run suspended", details: "wait for review" },
+  { autoRun: true, autoRunGeneration: 6, title: "Auto Run failed", details: "old generation failure" },
+];
+function render(stateName, generation = 7, suspensionSummary = "wait for review") {
+  return autoRunStatus({
+    id: "project1.task1",
+    autoRun: { generation, state: stateName, suspensionSummary },
+    logs,
+  });
+}
+const suspended = render("suspended");
+assert(suspended.includes("Suspend reason: wait for review"), "suspended state should show its current summary");
+assert(!suspended.includes("paused now") && !suspended.includes("old generation failure"), "suspended state leaked an unrelated event");
+
+const queued = render("queued");
+assert(!queued.includes("wait for review") && !queued.includes("paused now") && !queued.includes("retry now"), "queued state leaked historical reasons");
+
+const running = render("running");
+assert(running.includes("Retry reason: retry now"), "running state should show the current-generation retry reason");
+assert(!running.includes("wait for review") && !running.includes("paused now"), "running state leaked a non-matching reason");
+
+const paused = render("paused");
+assert(paused.includes("Pause reason: paused now"), "paused state should show the current pause event");
+assert(!paused.includes("wait for review") && !paused.includes("retry now"), "paused state leaked a suspension or retry reason");
+
+const failed = render("failed");
+assert(failed.includes("Failure reason: failed now"), "failed state should show the current failure event");
+assert(!failed.includes("wait for review") && !failed.includes("paused now") && !failed.includes("retry now"), "failed state leaked a historical reason");
+
+const completed = render("completed");
+assert(!completed.includes("wait for review") && !completed.includes("failed now") && !completed.includes("paused now"), "completed state leaked a historical reason");
+
+const newGeneration = render("queued", 8, "new generation summary");
+assert(!newGeneration.includes("new generation summary") && !newGeneration.includes("wait for review"), "new generation displayed a prior status reason");
+`
+	if output, err := exec.Command(node, "-e", script, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+		t.Fatalf("AutoRun status rendering test failed: %v\n%s", err, output)
+	}
+}
+
 func TestTTYLogActiveSelectionDetection(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

@@ -107,11 +107,16 @@ func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
 func (w *Workspace) StartAutoRun(taskID string) (Task, error) {
 	return w.updateAutoRunTask(taskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun != nil && task.AutoRun.State == autoRunStateRunning {
+			task.AutoRun.SuspendedAt = ""
 			return nil
 		}
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateQueued {
 			return errors.New("AutoRun is not queued")
 		}
+		// SuspendedAt only describes the suspended state. Keep the historical
+		// summary for prompt recovery, but never carry a stale wake-up timestamp
+		// into a running generation.
+		task.AutoRun.SuspendedAt = ""
 		task.AutoRun.State = autoRunStateRunning
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
@@ -127,6 +132,7 @@ func (w *Workspace) ResumeAutoRun(taskID string) (Task, error) {
 			return errors.New("task has no AutoRun")
 		}
 		if task.AutoRun.State == autoRunStateQueued {
+			task.AutoRun.SuspendedAt = ""
 			return nil
 		}
 		if task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateSuspended {
@@ -149,6 +155,7 @@ func (w *Workspace) RetryAutoRun(input AutoRunActionInput) (Task, error) {
 		if err := validateAutoRunCAS(task.AutoRun, input); err != nil {
 			return err
 		}
+		task.AutoRun.SuspendedAt = ""
 		generation := task.AutoRun.Generation
 		entries, err := readLogEntries(dir)
 		if err != nil {
@@ -207,11 +214,9 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 			details = strings.TrimSpace(input.Reason)
 		}
 		task.AutoRun.State = state
-		if state == autoRunStatePaused {
-			// Pause is a manual control-plane state, not a suspension context.
-			// Keep the last real suspension fields available for a later resume.
-			task.AutoRun.SuspendedAt = ""
-		}
+		task.AutoRun.SuspendedAt = ""
+		// Pause is a manual control-plane state, not a suspension context.
+		// Keep the last real suspension fields available for a later resume.
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
 	})
 }
