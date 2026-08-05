@@ -260,8 +260,8 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
 		return
 	}
-	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 
@@ -668,8 +668,8 @@ func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspa
 		return
 	}
 	run := rt.snapshotRun()
-	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	var req agentInputRequest
@@ -727,8 +727,8 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if rt != nil {
 		run := rt.snapshotRun()
-		if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-			writeTaskOperationError(w, err, http.StatusBadRequest)
+		if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+			writeResourceOperationError(w, err, http.StatusBadRequest)
 			return
 		}
 		if strings.TrimSpace(run.AgentHubSessionID) != "" {
@@ -747,8 +747,8 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	m.resumeAgentHubRun(w, r, workspace, run)

@@ -837,7 +837,6 @@ body.resizing-y {
 
 .tty-primary-action,
 .agent-options-button,
-.agent-stop-button,
 .agent-history-button {
   min-height: 34px;
   display: inline-flex;
@@ -909,30 +908,6 @@ body.resizing-y {
 
 .agent-options-full {
   grid-column: 1 / -1;
-}
-
-.agent-stop-button {
-  border: 1px solid #e2e8f0;
-  background: #fff;
-  color: #334155;
-}
-
-.agent-stop-turn-button {
-  border-color: #fbbf24;
-  background: #fffbeb;
-  color: #92400e;
-}
-
-.agent-stop-turn-button:hover:not(:disabled) {
-  border-color: #f59e0b;
-  background: #fef3c7;
-  color: #78350f;
-}
-
-.agent-stop-turn-button:disabled,
-.agent-stop-button:disabled {
-  cursor: wait;
-  opacity: 0.7;
 }
 
 .agent-config-row {
@@ -1937,6 +1912,49 @@ body.resizing-y {
   color: #1d4ed8;
 }
 
+.tty-composer-action {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  flex: 0 0 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.tty-end-turn-button {
+  color: #a16207;
+}
+
+.tty-end-turn-button:hover:not(:disabled) {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.tty-close-session-button {
+  color: #b91c1c;
+}
+
+.tty-close-session-button:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.tty-composer-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.tty-composer-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
 .tty-actions-toggle {
   width: 30px;
   height: 30px;
@@ -1959,7 +1977,8 @@ body.resizing-y {
 
 .tty-send-button svg,
 .tty-upload-button svg,
-.tty-actions-toggle svg {
+.tty-actions-toggle svg,
+.tty-composer-action svg {
   width: 16px;
   height: 16px;
 }
@@ -2280,9 +2299,7 @@ body.resizing-y {
   font-weight: 700;
 }
 
-.tty-session-actions > .tty-primary-action,
-.tty-session-actions > .agent-stop-button,
-.tty-session-actions > .agent-stop-turn-button {
+.tty-session-actions > .tty-primary-action {
   flex: 1 0 140px;
 }
 
@@ -2310,9 +2327,7 @@ body.resizing-y {
 }
 
 .tty-new-session-button span,
-.tty-primary-action span,
-.agent-stop-button span,
-.agent-stop-turn-button span {
+.tty-primary-action span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

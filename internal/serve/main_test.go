@@ -487,7 +487,7 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 		`session.schedulerTurn && session.autoRunGeneration === autoRun.generation`,
 		`function taskAgentSessions(resourceId)`,
 		`session.resourceId === resourceId`,
-		`function taskLocks(resourceId)`,
+		`function resourceLocks(resourceId)`,
 		`sessionControls(session).some((control) => control.resourceId === resourceId)`,
 		`const hasTaskState = statuses.length > 0 || Boolean(taskState.lock);`,
 		`const taskStatusLayoutClass = hasTaskState`,
@@ -586,7 +586,8 @@ function extract(name) {
   const marker = "function " + name + "(";
   const start = source.indexOf(marker);
   if (start < 0) throw new Error("missing " + name);
-  const open = source.indexOf("{", start);
+  const signatureEnd = source.indexOf(") {", start);
+  const open = signatureEnd + 2;
   let depth = 0;
   for (let index = open; index < source.length; index++) {
     if (source[index] === "{") depth++;
@@ -692,7 +693,8 @@ function extract(name) {
   const marker = "function " + name + "(";
   const start = source.indexOf(marker);
   if (start < 0) throw new Error("missing " + name);
-  const open = source.indexOf("{", start);
+  const signatureEnd = source.indexOf(") {", start);
+  const open = signatureEnd + 2;
   let depth = 0;
   for (let index = open; index < source.length; index++) {
     if (source[index] === "{") depth++;
@@ -1249,7 +1251,7 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 		`const taskState = taskOperationalState(item);`,
 		`if (taskState.label)`,
 		`const sessions = taskAgentSessions(item.id);`,
-		`const locks = taskLocks(item.id);`,
+		`const locks = resourceLocks(item.id);`,
 		`const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);`,
 		`const session = deriveTaskSessionState(sessions);`,
 		`const projectState = taskOperationalState(project);`,
@@ -1898,7 +1900,7 @@ func TestNewSessionComposerUsesSingleAgentChooserFlow(t *testing.T) {
 	start := strings.Index(source, `const startButton = $("agentStartButton");`)
 	end := -1
 	if start >= 0 {
-		end = strings.Index(source[start:], `const stopButton = $("agentStopButton");`)
+		end = strings.Index(source[start:], `const closeSessionButton = $("agentCloseSessionButton");`)
 	}
 	if start < 0 || end < 0 {
 		t.Fatal("New Session event handler boundary is missing")
@@ -2088,7 +2090,7 @@ func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 	}
 }
 
-func TestStopTurnComposerSeparatesTurnAndSessionActions(t *testing.T) {
+func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -2097,31 +2099,49 @@ func TestStopTurnComposerSeparatesTurnAndSessionActions(t *testing.T) {
 	for _, want := range []string{
 		`function isAgentTurnInterruptible(run)`,
 		`["running", "waiting_approval"].includes(run?.status)`,
-		`includeStopTurn: stopTurnAvailable`,
-		`id="agentStopTurnButton"`,
-		`icon(turnStopping ? "loader-circle" : "pause")`,
-		`Stop only the current turn; keep the AgentHub Session open.`,
-		`Close the entire AgentHub Session.`,
+		`includeEndTurn: stopTurnAvailable`,
+		`function agentComposerToolbarActions(options = {})`,
+		`id="agentEndTurnButton"`,
+		`icon(endTurnPending ? "loader-circle" : "pause")`,
+		`End current turn; keep the Session open.`,
+		`id="agentCloseSessionButton"`,
+		`Close session; end the entire AgentHub Session.`,
 		`async function stopAgentTurn()`,
 		`/interrupt`,
 		`state.agent.turnStopping = true`,
-		`Turn stopped. The AgentHub Session remains open.`,
+		`Turn ended. The AgentHub Session remains open.`,
+		`state.agent.sessionStopping = true`,
+		`Closing session…`,
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("Stop Turn composer is missing %q", want)
+			t.Fatalf("End Turn/Close Session composer is missing %q", want)
 		}
 	}
-	stopStart := strings.Index(source, `async function stopAgentTurn() {`)
-	stopEnd := -1
-	if stopStart >= 0 {
-		stopEnd = strings.Index(source[stopStart:], `async function switchAgentRun(`)
+	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
+	actionsEnd := -1
+	if actionsStart >= 0 {
+		actionsEnd = strings.Index(source[actionsStart:], `function agentComposerToolbarActions(options = {}) {`)
 	}
-	if stopStart < 0 || stopEnd < 0 {
-		t.Fatal("Stop Turn handler boundary is missing")
+	if actionsStart < 0 || actionsEnd < 0 {
+		t.Fatal("Session actions composer boundary is missing")
 	}
-	stopSource := source[stopStart : stopStart+stopEnd]
-	if strings.Contains(stopSource, `/stop`) || strings.Contains(stopSource, `closeAgentRun`) {
-		t.Fatal("Stop Turn must not close the AgentHub Session")
+	actionsSource := source[actionsStart : actionsStart+actionsEnd]
+	for _, removed := range []string{`id="agentEndTurnButton"`, `id="agentCloseSessionButton"`, `Stop Turn`} {
+		if strings.Contains(actionsSource, removed) {
+			t.Fatalf("bottom Session actions still render the moved control %q", removed)
+		}
+	}
+	toolbarStart := strings.Index(source, `function agentComposerToolbarActions(options = {}) {`)
+	toolbarEnd := strings.Index(source[toolbarStart:], `function agentDisplayName(agent) {`)
+	if toolbarStart < 0 || toolbarEnd < 0 {
+		t.Fatal("composer toolbar boundary is missing")
+	}
+	toolbarSource := source[toolbarStart : toolbarStart+toolbarEnd]
+	if strings.Contains(toolbarSource, `<span>`) {
+		t.Fatal("End Turn and Close Session toolbar buttons must remain icon-only")
+	}
+	if strings.Index(toolbarSource, `id="agentEndTurnButton"`) > strings.Index(toolbarSource, `id="agentCloseSessionButton"`) {
+		t.Fatal("End Turn must precede Close Session in the composer toolbar")
 	}
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
@@ -2129,13 +2149,73 @@ func TestStopTurnComposerSeparatesTurnAndSessionActions(t *testing.T) {
 	}
 	styles := string(stylesData)
 	for _, want := range []string{
-		`.agent-stop-turn-button`,
-		`.agent-stop-turn-button:hover:not(:disabled)`,
-		`.tty-session-actions > .agent-stop-turn-button`,
+		`.tty-composer-action`,
+		`.tty-end-turn-button:hover:not(:disabled)`,
+		`.tty-close-session-button:hover:not(:disabled)`,
+		`.tty-composer-action:focus-visible`,
 	} {
 		if !strings.Contains(styles, want) {
-			t.Fatalf("Stop Turn composer styles are missing %q", want)
+			t.Fatalf("End Turn/Close Session composer styles are missing %q", want)
 		}
+	}
+}
+
+func TestComposerToolbarStateMatrix(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the composer toolbar state test")
+	}
+	script := `
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const signatureEnd = source.indexOf(") {", start);
+  const open = signatureEnd + 2;
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+function icon(name) { return '<svg data-icon="' + name + '"></svg>'; }
+function escapeHTML(value) { return String(value ?? ""); }
+function assert(condition, message) { if (!condition) throw new Error(message); }
+eval(extract("isAgentTurnInterruptible"));
+eval(extract("agentComposerToolbarActions"));
+for (const status of ["running", "waiting_approval"]) {
+  assert(isAgentTurnInterruptible({ status }), status + " must be interruptible");
+}
+for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) {
+  assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
+}
+const idle = agentComposerToolbarActions({ includeClose: true });
+assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
+assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
+assert(idle.includes('data-icon="square"'), "Close Session must use the square icon");
+assert(!idle.includes("<span>"), "toolbar controls must be icon-only");
+const running = agentComposerToolbarActions({ includeEndTurn: true, includeClose: true });
+assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
+assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
+assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
+const ending = agentComposerToolbarActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
+assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
+assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");
+assert(ending.includes('title="Ending turn…"'), "ending turn must expose pending feedback");
+assert(!ending.includes("<span>"), "pending toolbar controls must remain icon-only");
+const closing = agentComposerToolbarActions({ includeEndTurn: true, closingSession: true, includeClose: true });
+assert(closing.includes('title="Closing session…"'), "closing session must expose pending feedback");
+assert(closing.includes('id="agentCloseSessionButton"') && closing.includes('disabled aria-busy="true"'), "closing session must disable duplicate close");
+`
+	appPath := filepath.Join("static", "app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("composer toolbar state test failed: %v\n%s", err, output)
 	}
 }
 

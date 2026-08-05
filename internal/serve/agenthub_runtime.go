@@ -61,8 +61,8 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := m.server.requireTaskNotExternallyLocked(workspace, req.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, req.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
@@ -120,18 +120,18 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		}
 	}()
 	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
-		if externalErr := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); isExternalTaskLockError(externalErr) {
-			writeTaskOperationError(w, externalErr, http.StatusConflict)
+		if externalErr := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); isExternalResourceLockError(externalErr) {
+			writeResourceOperationError(w, externalErr, http.StatusConflict)
 			return
 		}
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	if run.SchedulerTurn {
 		if req.QueueAutoRun {
 			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState)
 			if queueErr != nil {
-				writeTaskOperationError(w, queueErr, http.StatusConflict)
+				writeResourceOperationError(w, queueErr, http.StatusConflict)
 				return
 			}
 			if task.AutoRun == nil {
@@ -142,7 +142,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 			rt.setRun(run)
 		}
 		if err := m.startAutoRun(r.Context(), workspace, run); err != nil {
-			writeTaskOperationError(w, err, http.StatusBadRequest)
+			writeResourceOperationError(w, err, http.StatusBadRequest)
 			return
 		}
 	}
@@ -476,8 +476,8 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
-	if err := m.server.requireTaskNotExternallyLocked(workspace, rt.snapshotRun().ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusConflict)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, rt.snapshotRun().ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusConflict)
 		return
 	}
 	rt.mu.Lock()
@@ -677,8 +677,8 @@ func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
-	if err := m.server.requireTaskNotExternallyLocked(rt.workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(rt.workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	if run.AgentHubStoppedObserved || strings.TrimSpace(run.ForgeSessionID) == "" {
@@ -714,8 +714,8 @@ func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.R
 		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
 		return
 	}
-	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	// Release the previous Forge session and context if the stopped run still
@@ -757,8 +757,8 @@ func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.R
 		_ = saveAgentRun(workspace.Path, run)
 	}()
 	if err := m.lockForgeSession(r.Context(), workspace, forgeSessionID, run.ResourceID); err != nil {
-		if externalErr := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); isExternalTaskLockError(externalErr) {
-			writeTaskOperationError(w, externalErr, http.StatusConflict)
+		if externalErr := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); isExternalResourceLockError(externalErr) {
+			writeResourceOperationError(w, externalErr, http.StatusConflict)
 			return
 		}
 		writeError(w, err, http.StatusBadRequest)
@@ -791,8 +791,8 @@ func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.R
 }
 
 func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request, workspace guiWorkspace, run agentRun) {
-	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeTaskOperationError(w, err, http.StatusBadRequest)
+	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
