@@ -2901,6 +2901,10 @@ i[data-lucide] {
   cursor: default;
 }
 
+.session-row.has-task-status-dual {
+  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+}
+
 .session-row:hover,
 .clickable-session:hover {
   background: rgba(226, 232, 240, 0.55);
@@ -2941,13 +2945,18 @@ i[data-lucide] {
 }
 
 .session-row .session-status-icon {
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   width: 16px;
   height: 16px;
   margin-top: 1px;
   overflow: visible;
   white-space: normal;
+}
+
+.session-row.has-task-status-dual .session-status-icon {
+  width: 34px;
 }
 
 .session-row .session-status-icon svg {
