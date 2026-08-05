@@ -2229,6 +2229,26 @@ body.resizing-y {
   background: #fff;
 }
 
+.tty-external-lock-notice {
+  flex: 1 0 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 2px;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.tty-external-lock-notice svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
 .tty-session-actions button {
   width: 100%;
   min-height: 32px;

@@ -37,6 +37,8 @@ GUI 只读取 schema version 3 配置。旧版本配置不会被降级展示、�
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
 
+当当前选中的 Task 存在 `source=external` 的有效 Session 锁时，composer 隐藏 New Session、Start/Resume AutoRun 和 Resume Session 入口，显示“此 Task 被外部 Session 锁定”的提示，并暂停输入与上传。外部锁释放后，下一次 tree 刷新恢复正常操作。服务端在创建/恢复 Session、发送输入和手动或调度 AutoRun 的执行路径再次读取同一锁投影；页面过期或直接调用 API 只返回 conflict，不创建 AgentHub session、不推进 AutoRun generation，也不发送消息。
+
 AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
 
 只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁；服务错过 stopped 边沿、只看到 archived 时，必须依据连续 durable event history 证明该 session 先经过 stopped 才可释放。AgentHub 不可达、状态未知、event cursor gap、重复或冲突 source、未证明先经过 stopped 的 archived 状态都保守持锁。

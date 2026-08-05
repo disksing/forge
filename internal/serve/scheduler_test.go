@@ -437,6 +437,19 @@ func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
 			return
 		}
 		started = append(started, req.ResourceID)
+		if req.QueueAutoRun {
+			forgeWorkspace, openErr := app.OpenWorkspace(workspace)
+			if openErr != nil {
+				t.Errorf("open workspace for queued scheduler request: %v", openErr)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			if _, resumeErr := forgeWorkspace.ResumeAutoRun(req.ResourceID); resumeErr != nil {
+				t.Errorf("resume queued scheduler request: %v", resumeErr)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+		}
 		w.WriteHeader(http.StatusOK)
 	})
 

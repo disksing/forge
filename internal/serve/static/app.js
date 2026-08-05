@@ -111,6 +111,7 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+const EXTERNAL_TASK_LOCK_MESSAGE = "This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
 // Auto-fill keeps paging older raw events after the initial tail page until
 // the log overflows its viewport (with slack), so a tool-heavy tail does not
 // leave the chat area mostly blank. The page cap bounds pathological cases
@@ -736,6 +737,18 @@ function taskAgentSessions(resourceId) {
 function taskLocks(resourceId) {
   if (!resourceId) return [];
   return (state.tree?.sessions || []).filter((session) => sessionControls(session).some((control) => control.resourceId === resourceId));
+}
+
+function selectedTaskHasExternalLock() {
+  const selected = findResource(state.selectedId);
+  if (!selected || selected.type !== "task") return false;
+  const detail = state.details[selected.id];
+  if (detail && detail.type !== "task") return false;
+  return taskLocks(selected.id).some((session) => session.source === "external");
+}
+
+function externalTaskLockNotice() {
+  return `<div class="tty-external-lock-notice" role="alert">${icon("lock")}<span>${escapeHTML(EXTERNAL_TASK_LOCK_MESSAGE)}</span></div>`;
 }
 
 function deriveTaskLockState(locks) {
@@ -2561,7 +2574,7 @@ function renderTTYComposer() {
         <span>&gt;</span>
         <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
-        <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>
+        ${selectedTaskHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
         <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
       </form>
       ${agentComposerActions({ includeClose: true, collapsible: true })}
@@ -2613,6 +2626,7 @@ function isAgentSessionReady(run) {
 }
 
 function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
+  if (selectedTaskHasExternalLock()) return EXTERNAL_TASK_LOCK_MESSAGE;
   if (!sessionReady) return "Agent session is starting.";
   if (run.status === "stopping") return "AgentHub is stopping the provider.";
   if (run.status === "recovering") return "AgentHub event recovery is in progress.";
@@ -2621,6 +2635,17 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
 }
 
 function agentComposerActions(options = {}) {
+  const externalTaskLocked = selectedTaskHasExternalLock();
+  const collapsible = Boolean(options.collapsible);
+  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalTaskLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
+  if (externalTaskLocked) {
+    return `
+      <div class="${actionsClass}">
+        ${externalTaskLockNotice()}
+        ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
+      </div>
+    `;
+  }
   const selectedAgent = selectedAgentConfig();
   const agents = enabledAgentConfigs();
   const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
@@ -2633,8 +2658,6 @@ function agentComposerActions(options = {}) {
       : "Choose an Agent to start a new session.";
   const sessionButtonDisabled = sessionStarting || agents.length === 0;
   const sessionButtonDisabledAttribute = sessionButtonDisabled ? " disabled" : "";
-  const collapsible = Boolean(options.collapsible);
-  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${!collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   return `
     <div class="${actionsClass}">
       ${autoRunComposerAction()}
@@ -2671,6 +2694,7 @@ function autoRunComposerAction() {
   const selected = findResource(state.selectedId);
   const detail = selected ? state.details[selected.id] : null;
   if (!detail || detail.type !== "task") return "";
+  if (selectedTaskHasExternalLock()) return "";
   const autoRun = detail.autoRun || null;
   const stateName = autoRun?.state || "";
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
@@ -2731,7 +2755,8 @@ function autoRunComposerKey() {
   const sessionKey = liveRuns.length
     ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
     : "no-session";
-  return `${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+  const lockKey = selectedTaskHasExternalLock() ? "external-lock" : "unlocked";
+  return `${lockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
 }
 
 async function startChatAutoRun() {
@@ -2739,6 +2764,9 @@ async function startChatAutoRun() {
     const selected = findResource(state.selectedId);
     const detail = selected ? state.details[selected.id] : null;
     if (!detail || detail.type !== "task") throw new Error("Select a task first.");
+    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
+      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    }
     const liveSession = state.agent.runs.some((run) => isLiveAgentRun(run));
     let agentName = "";
     if (!liveSession) {
@@ -3220,7 +3248,7 @@ function bindAgentEvents() {
   if (startButton) startButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0) return;
+    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0 || (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock())) return;
     state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
     renderTTYComposer();
     bindAgentEvents();
@@ -3329,6 +3357,9 @@ async function startAgentRun(agentName = "") {
   return mutateAgentSession(async () => {
     if (!state.activeWorkspaceId) throw new Error("Select a workspace first.");
     const selected = findResource(state.selectedId);
+    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
+      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    }
     const requestedAgentName = String(agentName || "").trim();
     const agent = requestedAgentName
       ? enabledAgentConfigs().find((candidate) => candidate.id === requestedAgentName)
@@ -3371,6 +3402,9 @@ async function startAgentRun(agentName = "") {
 
 async function sendAgentInput(text) {
   if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
+  if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
+    throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+  }
   await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
     body: JSON.stringify({ text }),
@@ -3641,6 +3675,9 @@ async function closeAgentRun(runId) {
 async function resumeAgentRun() {
   if (!state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
+    if (typeof selectedTaskHasExternalLock === "function" && selectedTaskHasExternalLock()) {
+      throw new Error("This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.");
+    }
     const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });
     state.agent.activeRunId = response.run.id;
     state.agent.ttyDraft = "";

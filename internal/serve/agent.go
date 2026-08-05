@@ -91,6 +91,8 @@ type startAgentRequest struct {
 	Cwd                  string `json:"cwd"`
 	SchedulerTurn        bool   `json:"schedulerTurn,omitempty"`
 	AutoRunGeneration    int    `json:"autoRunGeneration,omitempty"`
+	QueueAutoRun         bool   `json:"queueAutoRun,omitempty"`
+	ExpectedAutoRunState string `json:"expectedAutoRunState,omitempty"`
 }
 
 type agentInputRequest struct {
@@ -242,6 +244,10 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 	}
 	if run.WorkspaceID != workspaceID || !isAgentHubRun(run) {
 		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
+		return
+	}
+	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeTaskOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 
@@ -642,9 +648,14 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 }
 
 func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
+	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil || rt == nil {
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
+		return
+	}
+	run := rt.snapshotRun()
+	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeTaskOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	var req agentInputRequest
@@ -702,6 +713,10 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if rt != nil {
 		run := rt.snapshotRun()
+		if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
+			writeTaskOperationError(w, err, http.StatusBadRequest)
+			return
+		}
 		if strings.TrimSpace(run.AgentHubSessionID) != "" {
 			m.resumeAttachedAgentHubRun(w, r, rt)
 			return
@@ -716,6 +731,10 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" {
 		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
+		return
+	}
+	if err := m.server.requireTaskNotExternallyLocked(workspace, run.ResourceID); err != nil {
+		writeTaskOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	m.resumeAgentHubRun(w, r, workspace, run)

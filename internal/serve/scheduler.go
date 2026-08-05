@@ -124,18 +124,13 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 			}
 			for _, task := range runnableTaskCandidatesFromApp(ready.Runnable) {
 				if task.State == "suspended" {
-					// Timed wake-up: re-queue a suspended generation whose
-					// suspension limit elapsed. ResumeAutoRun is idempotent, so
-					// a concurrent manual resume or earlier scan never
-					// double-transitions or double-logs the generation.
+					// Timed wake-up: dispatch a suspended generation whose
+					// suspension limit elapsed. The state transition is deferred
+					// until a new session owns the task lock, so an external lock
+					// cannot race this scan into advancing AutoRun.
 					if !autoRunSuspendedDue(task.SuspendedAt) {
 						continue
 					}
-					if _, err := forgeWorkspace.ResumeAutoRun(task.ID); err != nil {
-						failures = append(failures, fmt.Errorf("wake suspended task %s: %w", task.ID, err))
-						continue
-					}
-					task.State = "queued"
 				}
 				result, err := s.startRunnableTask(ctx, workspace, task)
 				switch result {
@@ -165,10 +160,17 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	s.autoRunDispatchMu.Lock()
 	defer s.autoRunDispatchMu.Unlock()
 	switch task.State {
-	case "queued", "running":
+	case "queued", "running", "suspended":
 	default:
 		return runnableTaskNotRunnable, nil
 	}
+	if err := s.requireTaskNotExternallyLocked(workspace, task.ID); err != nil {
+		if isExternalTaskLockError(err) {
+			return runnableTaskNotRunnable, nil
+		}
+		return runnableTaskDispatchFailed, err
+	}
+	resumingSuspended := task.State == "suspended"
 	prompt := buildAutoRunPrompt(workspace.Path, task)
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {
@@ -202,6 +204,17 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		if run.Status != "idle" {
 			return runnableTaskSkippedActive, nil
 		}
+		if resumingSuspended {
+			forgeWorkspace, openErr := app.OpenWorkspace(workspace.Path)
+			if openErr != nil {
+				return runnableTaskDispatchFailed, fmt.Errorf("open workspace to resume task %s: %w", task.ID, openErr)
+			}
+			if _, resumeErr := forgeWorkspace.ResumeAutoRun(task.ID); resumeErr != nil {
+				return runnableTaskDispatchFailed, fmt.Errorf("resume suspended task %s: %w", task.ID, resumeErr)
+			}
+			task.State = "queued"
+			prompt = buildAutoRunPrompt(workspace.Path, task)
+		}
 		if err := s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
 			if errors.Is(err, errAutoRunSessionBusy) {
 				// Lost the race against a manual start or a user message; the
@@ -229,6 +242,13 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		Prompt:               prompt,
 		SchedulerTurn:        true,
 		AutoRunGeneration:    task.Generation,
+		QueueAutoRun:         resumingSuspended,
+		ExpectedAutoRunState: func() string {
+			if resumingSuspended {
+				return "suspended"
+			}
+			return ""
+		}(),
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -329,6 +349,9 @@ func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWor
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode == http.StatusConflict {
+		if strings.Contains(string(responseBody), externalTaskLockMessage) {
+			return &externalTaskLockError{}
+		}
 		return errAutoRunSessionBusy
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

@@ -78,6 +78,10 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, errors.New("AutoRun can only be started on a task"), http.StatusBadRequest)
 		return
 	}
+	if err := s.requireTaskNotExternallyLocked(workspace, resourceID); err != nil {
+		writeTaskOperationError(w, err, http.StatusBadRequest)
+		return
+	}
 
 	// Re-validate everything at execution time; the button state the frontend
 	// rendered may be stale by the time the click arrives.
@@ -92,6 +96,32 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 			return
 		}
 		writeError(w, errors.New("no active session can be reused; select an agent to start AutoRun"), http.StatusBadRequest)
+		return
+	}
+
+	// A new Chat AutoRun session must acquire the task lock before it changes
+	// the AutoRun generation. This closes the race between the optimistic lock
+	// check above and an external session acquiring the task control.
+	if reusable == nil {
+		candidate, expectedState, candidateErr := chatAutoRunCandidate(resourceID, *resource.Task)
+		if candidateErr != nil {
+			writeError(w, candidateErr, http.StatusConflict)
+			return
+		}
+		prompt := buildAutoRunPrompt(workspace.Path, candidate)
+		run, startErr := s.createChatAutoRunSession(r.Context(), workspace, candidate, agentName, prompt, true, expectedState)
+		if startErr != nil {
+			if isExternalTaskLockError(startErr) {
+				writeTaskOperationError(w, startErr, http.StatusConflict)
+				return
+			}
+			writeError(w, fmt.Errorf("AutoRun generation %d could not be started: %w", candidate.Generation, startErr), http.StatusBadGateway)
+			return
+		}
+		task := reloadAutoRunTask(forgeWorkspace, resourceID, *resource.Task)
+		writeJSON(w, chatAutoRunStartResponse{
+			Action: "started", Reused: false, Task: task, Run: run, AgentName: run.AgentHubAgentName,
+		})
 		return
 	}
 
@@ -138,6 +168,10 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		// The state and log are durably updated before the standard scheduler
 		// turn message is sent, so a lost message never loses the transition.
 		if err := s.startAutoRunInOpenSession(r.Context(), workspace, reusable.ID, candidate.Generation, prompt); err != nil {
+			if isExternalTaskLockError(err) {
+				writeTaskOperationError(w, err, http.StatusConflict)
+				return
+			}
 			if errors.Is(err, errAutoRunSessionBusy) {
 				writeJSON(w, chatAutoRunStartResponse{
 					Action: "queued", Reused: true, Task: task,
@@ -160,15 +194,68 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		return
 	}
 
-	run, err := s.createChatAutoRunSession(r.Context(), workspace, candidate, agentName, prompt)
-	if err != nil {
-		writeError(w, fmt.Errorf("AutoRun generation %d was queued but the session could not be started: %w", candidate.Generation, err), http.StatusBadGateway)
-		return
+	writeError(w, errors.New("AutoRun session selection changed while starting"), http.StatusConflict)
+}
+
+func chatAutoRunCandidate(resourceID string, task app.Task) (runnableTaskCandidate, string, error) {
+	candidate := runnableTaskCandidate{
+		ID: resourceID, Title: task.Title, Generation: 1, State: "queued",
 	}
-	task = reloadAutoRunTask(forgeWorkspace, resourceID, task)
-	writeJSON(w, chatAutoRunStartResponse{
-		Action: "started", Reused: false, Task: task, Run: run, AgentName: run.AgentHubAgentName,
-	})
+	if task.AutoRun == nil {
+		return candidate, "", nil
+	}
+	candidate.Generation = task.AutoRun.Generation
+	candidate.Prompt = task.AutoRun.Prompt
+	candidate.PreferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
+	candidate.SuspensionSummary = task.AutoRun.SuspensionSummary
+	switch task.AutoRun.State {
+	case "completed", "failed":
+		candidate.Generation++
+	case "suspended", "paused":
+		// Resume the current generation after the new Forge session owns the
+		// task lock.
+	case "", "queued", "running":
+		if task.AutoRun.State == "" {
+			return candidate, "", nil
+		}
+		return runnableTaskCandidate{}, "", fmt.Errorf("AutoRun is already %s", task.AutoRun.State)
+	default:
+		return runnableTaskCandidate{}, "", fmt.Errorf("AutoRun cannot be started from %s state", task.AutoRun.State)
+	}
+	return candidate, task.AutoRun.State, nil
+}
+
+// queueChatAutoRunForSession performs the state transition only after the
+// newly created Forge session has successfully locked the task. The expected
+// state check prevents a stale internal dispatch request from changing a
+// generation another actor already advanced.
+func (s *server) queueChatAutoRunForSession(workspace guiWorkspace, resourceID, expectedState string) (app.Task, error) {
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return app.Task{}, err
+	}
+	resource, err := forgeWorkspace.ResourceValue(resourceID)
+	if err != nil {
+		return app.Task{}, err
+	}
+	if resource.Task == nil {
+		return app.Task{}, errors.New("AutoRun can only be started on a task")
+	}
+	state := ""
+	if resource.Task.AutoRun != nil {
+		state = resource.Task.AutoRun.State
+	}
+	if state != expectedState {
+		return app.Task{}, fmt.Errorf("AutoRun state changed from %q to %q before the session was locked", expectedState, state)
+	}
+	switch state {
+	case "", "completed", "failed":
+		return forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: resourceID})
+	case "suspended", "paused":
+		return forgeWorkspace.ResumeAutoRun(resourceID)
+	default:
+		return app.Task{}, fmt.Errorf("AutoRun cannot be started from %s state", state)
+	}
 }
 
 // reloadAutoRunTask reports the post-dispatch AutoRun state (typically
@@ -221,7 +308,7 @@ func (s *server) findReusableAutoRunSession(workspace guiWorkspace, taskID strin
 // createChatAutoRunSession starts a new agent run for the generation with the
 // agent the user explicitly selected, through the same internal endpoint the
 // background driver uses.
-func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate, agentName, prompt string) (*agentRun, error) {
+func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate, agentName, prompt string, queueAutoRun bool, expectedState string) (*agentRun, error) {
 	req := startAgentRequest{
 		AgentName:            agentName,
 		AgentSelectionReason: "selected in chat for manual AutoRun start",
@@ -230,6 +317,8 @@ func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWork
 		Prompt:               prompt,
 		SchedulerTurn:        true,
 		AutoRunGeneration:    task.Generation,
+		QueueAutoRun:         queueAutoRun,
+		ExpectedAutoRunState: expectedState,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -248,6 +337,9 @@ func (s *server) createChatAutoRunSession(ctx context.Context, workspace guiWork
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if response.StatusCode == http.StatusConflict && strings.Contains(string(responseBody), externalTaskLockMessage) {
+			return nil, &externalTaskLockError{ResourceID: task.ID}
+		}
 		return nil, fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 	var detail agentRunDetail
