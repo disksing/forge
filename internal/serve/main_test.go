@@ -1444,7 +1444,7 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 		`function autoRunPresentation(state)`,
 		`queued: { label: "Queued", icon: "list-start" }`,
 		`running: { label: "Running", icon: "activity" }`,
-		`waiting: { label: "Waiting", icon: "clock-3" }`,
+		`suspended: { label: "Suspended", icon: "pause" }`,
 		`paused: { label: "Paused", icon: "pause" }`,
 		`completed: { label: "Completed", icon: "circle-check" }`,
 		`failed: { label: "Failed", icon: "circle-x" }`,
@@ -1466,7 +1466,7 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 	for _, want := range []string{
 		`.autorun-status-queued`,
 		`.autorun-status-running`,
-		`.autorun-status-waiting`,
+		`.autorun-status-suspended`,
 		`.autorun-status-paused`,
 		`.autorun-status-completed`,
 		`.autorun-status-failed`,

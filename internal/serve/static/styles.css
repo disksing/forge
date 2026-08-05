@@ -1067,7 +1067,7 @@ body.resizing-y {
   animation: autorun-running-icon 2.6s ease-in-out infinite;
 }
 
-.autorun-status-waiting {
+.autorun-status-suspended {
   --autorun-tone: var(--amber);
 }
 

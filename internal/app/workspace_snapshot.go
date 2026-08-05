@@ -38,29 +38,22 @@ type AutoRunTreeView struct {
 }
 
 type ResourceDetailView struct {
-	ID                  string                  `json:"id"`
-	Type                string                  `json:"type"`
-	Title               string                  `json:"title"`
-	Description         string                  `json:"description,omitempty"`
-	CreatedAt           string                  `json:"createdAt"`
-	UpdatedAt           string                  `json:"updatedAt"`
-	Path                string                  `json:"path"`
-	Archived            bool                    `json:"archived"`
-	Repos               []TaskRepo              `json:"repos,omitempty"`
-	AutoRun             *AutoRun                `json:"autoRun,omitempty"`
-	AutoRunDependencies []AutoRunDependencyView `json:"autoRunDependencies,omitempty"`
-	Logs                []LogEntry              `json:"logs,omitempty"`
-	Files               []ResourceFile          `json:"files,omitempty"`
-	Artifacts           []FileTreeEntry         `json:"artifacts"`
-	Worktrees           []FileTreeEntry         `json:"worktrees"`
-	Children            []ResourceTreeView      `json:"children,omitempty"`
-	Templates           []TaskTemplate          `json:"templates,omitempty"`
-}
-
-type AutoRunDependencyView struct {
-	TaskID     string `json:"taskId"`
-	Generation int    `json:"generation"`
-	State      string `json:"state"`
+	ID          string             `json:"id"`
+	Type        string             `json:"type"`
+	Title       string             `json:"title"`
+	Description string             `json:"description,omitempty"`
+	CreatedAt   string             `json:"createdAt"`
+	UpdatedAt   string             `json:"updatedAt"`
+	Path        string             `json:"path"`
+	Archived    bool               `json:"archived"`
+	Repos       []TaskRepo         `json:"repos,omitempty"`
+	AutoRun     *AutoRun           `json:"autoRun,omitempty"`
+	Logs        []LogEntry         `json:"logs,omitempty"`
+	Files       []ResourceFile     `json:"files,omitempty"`
+	Artifacts   []FileTreeEntry    `json:"artifacts"`
+	Worktrees   []FileTreeEntry    `json:"worktrees"`
+	Children    []ResourceTreeView `json:"children,omitempty"`
+	Templates   []TaskTemplate     `json:"templates,omitempty"`
 }
 
 type TaskTemplate struct {
@@ -240,11 +233,6 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
 		detail.AutoRun = typed.AutoRun
-		if typed.AutoRun != nil {
-			for _, dependency := range typed.AutoRun.After {
-				detail.AutoRunDependencies = append(detail.AutoRunDependencies, AutoRunDependencyView{TaskID: dependency.TaskID, Generation: dependency.Generation, State: autoRunDependencyState(root, dependency)})
-			}
-		}
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}
 	if isProject(entry.Resource) {

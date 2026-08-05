@@ -20,25 +20,21 @@ type runnableTaskResponse struct {
 }
 
 type runnableTaskCandidate struct {
-	ID                     string                   `json:"id"`
-	Path                   string                   `json:"path"`
-	Title                  string                   `json:"title"`
-	Generation             int                      `json:"generation"`
-	State                  string                   `json:"state"`
-	Prompt                 string                   `json:"prompt"`
-	PreferredAgentProfiles []string                 `json:"preferredAgentProfiles,omitempty"`
-	After                  []runnableTaskDependency `json:"after,omitempty"`
+	ID                     string   `json:"id"`
+	Path                   string   `json:"path"`
+	Title                  string   `json:"title"`
+	Generation             int      `json:"generation"`
+	State                  string   `json:"state"`
+	Prompt                 string   `json:"prompt"`
+	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
+	SuspendedAt            string   `json:"suspendedAt,omitempty"`
+	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
 type autoRunAgentSelection struct {
 	AgentName string
 	Profile   string
 	Reason    string
-}
-
-type runnableTaskDependency struct {
-	TaskID     string `json:"taskId"`
-	Generation int    `json:"generation"`
 }
 
 type runnableTaskDispatchResult string
@@ -49,6 +45,10 @@ const (
 	runnableTaskNotRunnable    runnableTaskDispatchResult = "not_runnable"
 	runnableTaskDispatchFailed runnableTaskDispatchResult = "failed"
 )
+
+// autoRunSuspensionLimit is the fixed wake-up threshold for suspended AutoRun
+// generations. Every new suspend resets the timer.
+const autoRunSuspensionLimit = 30 * time.Minute
 
 func (s *server) runTaskScheduler(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
@@ -63,6 +63,21 @@ func (s *server) runTaskScheduler(ctx context.Context) {
 			}
 		}
 	}
+}
+
+// autoRunSuspendedDue reports whether a suspended generation has waited past
+// the fixed suspension limit. An unparsable timestamp is treated as due so a
+// suspended task can never stall forever after a schema or clock problem; the
+// agent may suspend again to reset the timer.
+func autoRunSuspendedDue(suspendedAt string) bool {
+	if strings.TrimSpace(suspendedAt) == "" {
+		return true
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(suspendedAt))
+	if err != nil {
+		return true
+	}
+	return time.Since(t) >= autoRunSuspensionLimit
 }
 
 func (s *server) scheduleRunnableTasks(ctx context.Context) error {
@@ -108,6 +123,20 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 				continue
 			}
 			for _, task := range runnableTaskCandidatesFromApp(ready.Runnable) {
+				if task.State == "suspended" {
+					// Timed wake-up: re-queue a suspended generation whose
+					// suspension limit elapsed. ResumeAutoRun is idempotent, so
+					// a concurrent manual resume or earlier scan never
+					// double-transitions or double-logs the generation.
+					if !autoRunSuspendedDue(task.SuspendedAt) {
+						continue
+					}
+					if _, err := forgeWorkspace.ResumeAutoRun(task.ID); err != nil {
+						failures = append(failures, fmt.Errorf("wake suspended task %s: %w", task.ID, err))
+						continue
+					}
+					task.State = "queued"
+				}
 				result, err := s.startRunnableTask(ctx, workspace, task)
 				switch result {
 				case runnableTaskStarted:
@@ -132,18 +161,9 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 
 func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) (runnableTaskDispatchResult, error) {
 	switch task.State {
-	case "queued", "running", "waiting":
+	case "queued", "running":
 	default:
 		return runnableTaskNotRunnable, nil
-	}
-	if task.State == "waiting" {
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-		if err != nil {
-			return runnableTaskDispatchFailed, err
-		}
-		if _, err := forgeWorkspace.ResumeAutoRun(task.ID); err != nil {
-			return runnableTaskDispatchFailed, err
-		}
 	}
 	prompt := buildAutoRunPrompt(workspace.Path, task)
 	runs, err := loadAgentRuns(workspace.Path)

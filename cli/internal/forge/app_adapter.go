@@ -110,12 +110,11 @@ func applicationTaskCreate(input app.CreateTaskInput) error {
 	return printJSON(task)
 }
 
-func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string, afterValues []string) app.CreateTaskInput {
+func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, preferredAgentProfiles []string, prompt string) app.CreateTaskInput {
 	return app.CreateTaskInput{
 		ProjectID: parentID, Title: title, Detail: detail, CompleteMarkdown: completeMarkdown,
 		CompleteMarkdownSet: completeMarkdownSet, Slug: slug, AutoRun: autorun,
 		PreferredAgentProfiles: append([]string(nil), preferredAgentProfiles...), Prompt: prompt,
-		After: append([]string(nil), afterValues...),
 	}
 }
 
@@ -126,7 +125,7 @@ func applicationTaskList(options taskListOptions) error {
 	}
 	result, err := workspace.Tasks(app.TaskListOptions{
 		ProjectID: options.ProjectID, IncludeArchived: options.IncludeArchived,
-		Runnable: options.Runnable, IncludeBlocked: options.IncludeBlocked,
+		Runnable: options.Runnable,
 	})
 	if err != nil {
 		return err
@@ -139,15 +138,10 @@ func applicationTaskList(options taskListOptions) error {
 	}
 	runnable := make([]runnableTask, 0, len(result.Runnable))
 	for _, entry := range result.Runnable {
-		after := make([]AutoRunDependency, 0, len(entry.After))
-		for _, dependency := range entry.After {
-			after = append(after, AutoRunDependency(dependency))
-		}
 		runnable = append(runnable, runnableTask{
 			ID: entry.ID, Path: entry.Path, Title: entry.Title, Generation: entry.Generation,
 			State: entry.State, Ready: entry.Ready, Reason: entry.Reason, Prompt: entry.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.PreferredAgentProfiles...),
-			After:                  after,
 		})
 	}
 	if options.JSON {
@@ -206,7 +200,7 @@ func applicationAutoRunQueue(opts autoRunCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	task, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: opts.TaskID, PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt, After: opts.After})
+	task, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: opts.TaskID, PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt})
 	if err != nil {
 		return err
 	}
@@ -254,13 +248,13 @@ func applicationAutoRunAction(action string, opts autoRunCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	input := app.AutoRunActionInput{TaskID: opts.TaskID, Summary: opts.Summary, Reason: opts.Reason, After: opts.After}
+	input := app.AutoRunActionInput{TaskID: opts.TaskID, Summary: opts.Summary, Reason: opts.Reason}
 	var task app.Task
 	switch action {
 	case "complete":
 		task, err = workspace.CompleteAutoRun(input)
-	case "wait":
-		task, err = workspace.WaitAutoRun(input)
+	case "suspend":
+		task, err = workspace.SuspendAutoRun(input)
 	case "pause":
 		task, err = workspace.PauseAutoRun(input)
 	case "fail":

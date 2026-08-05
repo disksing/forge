@@ -882,7 +882,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		case "completed", "failed":
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; session retained until manually stopped.")
 		default:
-			// waiting and paused generations intentionally retain the same
+			// suspended and paused generations intentionally retain the same
 			// AgentHub + Forge session, so a later resume keeps the original
 			// launchEnvironment.FORGE_SESSION_ID valid.
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")

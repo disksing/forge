@@ -16,7 +16,7 @@ const (
 type autoRunPromptCatalog struct {
 	defaultTask  string
 	recovery     string
-	prerequisite string
+	suspended    string
 	scheduler    string
 	continueTask string
 }
@@ -24,17 +24,17 @@ type autoRunPromptCatalog struct {
 var englishAutoRunPrompts = autoRunPromptCatalog{
 	defaultTask:  "Read task.md and complete the task.",
 	recovery:     "Recover and continue the current AutoRun generation. Read task.md, work.md, and the relevant AutoRun entries in log.jsonl before continuing.",
-	prerequisite: "The following prerequisite task runs completed: %s. Read their task files and results before continuing.",
-	scheduler:    "This is an AutoRun scheduler turn. Before ending, call exactly one of forge task autorun complete, wait, pause, or fail as your last side-effecting command.",
-	continueTask: "Continue the current AutoRun. Before ending this scheduler turn, update the result with forge task autorun complete, wait, pause, or fail as your last side-effecting command.",
+	suspended:    "This AutoRun was previously suspended with reason: %s. Re-check whether the condition is satisfied; continue working when it is, or suspend again with an updated reason if it is not.",
+	scheduler:    "This is an AutoRun scheduler turn. Before ending, call exactly one of forge task autorun complete, suspend, pause, or fail as your last side-effecting command.",
+	continueTask: "Continue the current AutoRun. Before ending this scheduler turn, update the result with forge task autorun complete, suspend, pause, or fail as your last side-effecting command.",
 }
 
 var chineseAutoRunPrompts = autoRunPromptCatalog{
 	defaultTask:  "读取 task.md 并完成任务。",
 	recovery:     "恢复并继续当前 AutoRun generation。继续之前，先读取 task.md、work.md 以及 log.jsonl 中相关的 AutoRun 记录。",
-	prerequisite: "以下前置任务运行已完成：%s。继续之前，先读取这些任务的文件和结果。",
-	scheduler:    "这是一个 AutoRun 调度器回合。结束前，最后一个有副作用的命令必须且只能是 forge task autorun complete、wait、pause 或 fail 之一。",
-	continueTask: "继续当前 AutoRun。结束本调度器回合前，最后一个有副作用的命令必须使用 forge task autorun complete、wait、pause 或 fail 之一更新结果。",
+	suspended:    "此 AutoRun 之前被挂起，原因是：%s。请重新检查条件是否满足；满足则继续工作，不满足则使用更新后的原因再次挂起。",
+	scheduler:    "这是一个 AutoRun 调度器回合。结束前，最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一。",
+	continueTask: "继续当前 AutoRun。结束本调度器回合前，最后一个有副作用的命令必须使用 forge task autorun complete、suspend、pause 或 fail 之一更新结果。",
 }
 
 func autoRunPromptsForWorkspace(root string) autoRunPromptCatalog {
@@ -70,12 +70,8 @@ func buildAutoRunPrompt(workspacePath string, task runnableTaskCandidate) string
 	if task.State == "running" {
 		prompt = messages.recovery + "\n\n" + prompt
 	}
-	if len(task.After) > 0 {
-		completed := make([]string, 0, len(task.After))
-		for _, dep := range task.After {
-			completed = append(completed, fmt.Sprintf("%s@%d", dep.TaskID, dep.Generation))
-		}
-		prompt += "\n\n" + fmt.Sprintf(messages.prerequisite, strings.Join(completed, ", "))
+	if strings.TrimSpace(task.SuspensionSummary) != "" {
+		prompt += "\n\n" + fmt.Sprintf(messages.suspended, strings.TrimSpace(task.SuspensionSummary))
 	}
 	return prompt + "\n\n" + messages.scheduler
 }

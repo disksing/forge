@@ -5,41 +5,39 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	autoRunStateQueued    = "queued"
-	autoRunStateRunning   = "running"
-	autoRunStateWaiting   = "waiting"
-	autoRunStatePaused    = "paused"
-	autoRunStateCompleted = "completed"
-	autoRunStateFailed    = "failed"
+	autoRunStateQueued     = "queued"
+	autoRunStateRunning    = "running"
+	autoRunStateSuspended  = "suspended"
+	autoRunStatePaused     = "paused"
+	autoRunStateCompleted  = "completed"
+	autoRunStateFailed     = "failed"
+	autoRunSuspensionLimit = 30 * time.Minute
 )
 
 type autoRunCommandOptions struct {
 	TaskID                 string
 	PreferredAgentProfiles []string
 	Prompt                 string
-	After                  []string
 	Summary                string
 	Reason                 string
 }
 
 type runnableTask struct {
-	ID                     string              `json:"id"`
-	Path                   string              `json:"path"`
-	Title                  string              `json:"title"`
-	Generation             int                 `json:"generation"`
-	State                  string              `json:"state"`
-	Ready                  bool                `json:"ready"`
-	Reason                 string              `json:"reason"`
-	Prompt                 string              `json:"prompt,omitempty"`
-	PreferredAgentProfiles []string            `json:"preferredAgentProfiles,omitempty"`
-	After                  []AutoRunDependency `json:"after,omitempty"`
+	ID                     string   `json:"id"`
+	Path                   string   `json:"path"`
+	Title                  string   `json:"title"`
+	Generation             int      `json:"generation"`
+	State                  string   `json:"state"`
+	Ready                  bool     `json:"ready"`
+	Reason                 string   `json:"reason"`
+	Prompt                 string   `json:"prompt,omitempty"`
+	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 }
 
 func runTaskAutoRun(args []string) error {
@@ -60,7 +58,7 @@ func runTaskAutoRun(args []string) error {
 		return autoRunRetry(opts)
 	case "resume":
 		return autoRunResume(opts)
-	case "complete", "wait", "pause", "fail":
+	case "complete", "suspend", "pause", "fail":
 		return autoRunAction(command, opts)
 	default:
 		return fmt.Errorf("unknown task autorun subcommand %q", command)
@@ -71,19 +69,19 @@ func autoRunUsage(command string) string {
 	base := "usage: forge task autorun "
 	switch command {
 	case "queue":
-		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...]"
+		return base + "queue [--project=<project>] [--task=<task>] [--agent-profile=<profile>...] [--prompt=<prompt>]"
 	case "start", "resume":
 		return base + command + " [--project=<project>] [--task=<task>]"
 	case "complete":
 		return base + "complete [--project=<project>] [--task=<task>] [--summary=<text>]"
-	case "wait":
-		return base + "wait [--project=<project>] [--task=<task>] --after=<task@generation> [--after=<task@generation>...] [--summary=<text>]"
+	case "suspend":
+		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--reason=<text>]"
 	case "pause", "fail":
 		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>]"
 	case "retry":
 		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>]"
 	default:
-		return base + "<queue|start|retry|wait|pause|resume|complete|fail>"
+		return base + "<queue|start|retry|suspend|pause|resume|complete|fail>"
 	}
 }
 
@@ -114,8 +112,6 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			opts.PreferredAgentProfiles = append(opts.PreferredAgentProfiles, value)
 		case "prompt":
 			opts.Prompt = value
-		case "after":
-			opts.After = append(opts.After, value)
 		case "summary":
 			opts.Summary = value
 		case "reason":
@@ -138,7 +134,7 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 }
 
 func autoRunQueue(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
+	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
 		generation := 1
 		prompt := opts.Prompt
 		preferredAgentProfiles, err := normalizeAgentProfiles(opts.PreferredAgentProfiles)
@@ -157,24 +153,8 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 				prompt = task.AutoRun.Prompt
 			}
 		}
-		probe := *task
-		probe.AutoRun = &AutoRun{Generation: generation}
-		after, err := resolveAutoRunDependencies(root, &probe, opts.After)
-		if err != nil {
-			return err
-		}
-		state := autoRunStateQueued
-		if len(after) > 0 {
-			state = autoRunStateWaiting
-		}
-		task.AutoRun = &AutoRun{Generation: generation, State: state, PreferredAgentProfiles: preferredAgentProfiles, Prompt: prompt, After: after}
-		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation)); err != nil {
-			return err
-		}
-		if state == autoRunStateWaiting {
-			return prependLogEntry(dir, newAutoRunLogEntry("Auto Run waiting", "waiting for prerequisites", generation))
-		}
-		return nil
+		task.AutoRun = &AutoRun{Generation: generation, State: autoRunStateQueued, PreferredAgentProfiles: preferredAgentProfiles, Prompt: prompt}
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation))
 	})
 }
 
@@ -202,25 +182,20 @@ func normalizeAgentProfiles(values []string) ([]string, error) {
 }
 
 func autoRunStart(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
+	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun != nil && task.AutoRun.State == autoRunStateRunning {
 			return nil
 		}
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateQueued {
 			return errors.New("AutoRun is not queued")
 		}
-		ready, reason := autoRunReady(root, *task)
-		if !ready {
-			return fmt.Errorf("AutoRun is not ready: %s", reason)
-		}
 		task.AutoRun.State = autoRunStateRunning
-		task.AutoRun.After = nil
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
 }
 
 func autoRunRetry(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
+	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateRunning {
 			return errors.New("AutoRun is not running")
 		}
@@ -254,26 +229,20 @@ func autoRunRetry(opts autoRunCommandOptions) error {
 }
 
 func autoRunResume(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
-		if task.AutoRun == nil || (task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateWaiting) {
-			return errors.New("AutoRun is not paused or waiting")
-		}
-		details := "resumed"
-		if task.AutoRun.State == autoRunStateWaiting {
-			ready, reason := autoRunReady(root, *task)
-			if !ready {
-				return fmt.Errorf("AutoRun dependencies are not ready: %s", reason)
-			}
-			details = "prerequisites completed"
+	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
+		if task.AutoRun == nil || (task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateSuspended) {
+			return errors.New("AutoRun is not paused or suspended")
 		}
 		task.AutoRun.State = autoRunStateQueued
-		task.AutoRun.After = nil
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", details, task.AutoRun.Generation))
+		task.AutoRun.SuspendedAt = ""
+		// SuspensionSummary is intentionally preserved so a woken agent can
+		// re-check the recorded reason before continuing or suspending again.
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "resumed", task.AutoRun.Generation))
 	})
 }
 
 func autoRunAction(action string, opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(root, dir string, task *Task) error {
+	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
@@ -285,27 +254,18 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 		switch action {
 		case "complete":
 			task.AutoRun.State = autoRunStateCompleted
-			task.AutoRun.After = nil
 			title = "Auto Run completed"
 		case "fail":
 			task.AutoRun.State = autoRunStateFailed
-			task.AutoRun.After = nil
 			title = "Auto Run failed"
 		case "pause":
 			task.AutoRun.State = autoRunStatePaused
-			task.AutoRun.After = nil
 			title = "Auto Run paused"
-		case "wait":
-			if len(opts.After) == 0 {
-				return errors.New(autoRunUsage("wait"))
-			}
-			after, err := resolveAutoRunDependencies(root, task, opts.After)
-			if err != nil {
-				return err
-			}
-			task.AutoRun.State = autoRunStateWaiting
-			task.AutoRun.After = after
-			title = "Auto Run waiting"
+		case "suspend":
+			task.AutoRun.State = autoRunStateSuspended
+			task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
+			task.AutoRun.SuspensionSummary = details
+			title = "Auto Run suspended"
 		}
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
 	})
@@ -344,122 +304,4 @@ func updateAutoRun(taskID string, update func(root, dir string, task *Task) erro
 		return err
 	}
 	return printTaskJSON(task)
-}
-
-func resolveAutoRunDependencies(root string, current *Task, values []string) ([]AutoRunDependency, error) {
-	deps := make([]AutoRunDependency, 0, len(values))
-	seen := map[string]bool{}
-	currentGeneration := 1
-	if current.AutoRun != nil && current.AutoRun.Generation > 0 {
-		currentGeneration = current.AutoRun.Generation
-	}
-	for _, raw := range values {
-		raw = strings.TrimSpace(raw)
-		id, generationText, ok := strings.Cut(raw, "@")
-		if !ok {
-			return nil, fmt.Errorf("dependency must include generation: %s", raw)
-		}
-		if !strings.Contains(id, ".task") {
-			var err error
-			id, err = normalizeTaskArg(current.Parent, strings.TrimSpace(id))
-			if err != nil {
-				return nil, err
-			}
-		}
-		_, depTask, err := loadTask(root, id)
-		if err != nil {
-			return nil, err
-		}
-		if depTask.ID == current.ID {
-			return nil, errors.New("task cannot wait for itself")
-		}
-		generation, err := strconv.Atoi(strings.TrimSpace(generationText))
-		if err != nil || generation <= 0 {
-			return nil, fmt.Errorf("invalid dependency generation %q", raw)
-		}
-		if depTask.AutoRun == nil {
-			return nil, fmt.Errorf("dependency task has no AutoRun: %s", id)
-		}
-		if generation > depTask.AutoRun.Generation {
-			return nil, fmt.Errorf("dependency generation does not exist: %s", raw)
-		}
-		if autoRunDependencyReaches(root, depTask, generation, current.ID, currentGeneration, map[string]bool{}) {
-			return nil, fmt.Errorf("AutoRun dependency cycle: %s reaches %s", depTask.ID, current.ID)
-		}
-		key := fmt.Sprintf("%s@%d", id, generation)
-		if !seen[key] {
-			seen[key] = true
-			deps = append(deps, AutoRunDependency{TaskID: id, Generation: generation})
-		}
-	}
-	return deps, nil
-}
-
-func autoRunDependencyReaches(root string, task Task, generation int, target string, targetGeneration int, seen map[string]bool) bool {
-	if task.ID == target && generation == targetGeneration {
-		return true
-	}
-	key := fmt.Sprintf("%s@%d", task.ID, generation)
-	if seen[key] || task.AutoRun == nil || task.AutoRun.Generation != generation {
-		return false
-	}
-	seen[key] = true
-	for _, dep := range task.AutoRun.After {
-		_, next, err := loadTask(root, dep.TaskID)
-		if err == nil && autoRunDependencyReaches(root, next, dep.Generation, target, targetGeneration, seen) {
-			return true
-		}
-	}
-	return false
-}
-
-func autoRunReady(root string, task Task) (bool, string) {
-	if task.AutoRun == nil {
-		return false, "no_autorun"
-	}
-	switch task.AutoRun.State {
-	case autoRunStateRunning:
-		return true, "running"
-	case autoRunStateQueued:
-		return true, "queued"
-	case autoRunStateWaiting:
-		for _, dep := range task.AutoRun.After {
-			state := autoRunDependencyState(root, dep)
-			if state == autoRunStateFailed {
-				return false, "failed_prerequisite"
-			}
-			if state != autoRunStateCompleted {
-				return false, "waiting_prerequisite"
-			}
-		}
-		return true, "prerequisites_completed"
-	default:
-		return false, task.AutoRun.State
-	}
-}
-
-func autoRunDependencyState(root string, dep AutoRunDependency) string {
-	dir, task, err := loadTask(root, dep.TaskID)
-	if err != nil {
-		return "missing"
-	}
-	if task.AutoRun != nil && task.AutoRun.Generation == dep.Generation {
-		return task.AutoRun.State
-	}
-	entries, err := readLogEntries(dir)
-	if err != nil {
-		return "missing"
-	}
-	for _, entry := range entries {
-		if !entry.AutoRun || entry.AutoRunGeneration != dep.Generation {
-			continue
-		}
-		switch entry.Title {
-		case "Auto Run completed":
-			return autoRunStateCompleted
-		case "Auto Run failed":
-			return autoRunStateFailed
-		}
-	}
-	return "missing"
 }

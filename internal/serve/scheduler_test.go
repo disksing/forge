@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/disksing/forge/internal/app"
 )
@@ -154,12 +155,9 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 
 func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 	task := runnableTaskCandidate{
-		State:  "running",
-		Prompt: "保留用户 prompt",
-		After: []runnableTaskDependency{
-			{TaskID: "project1.task2", Generation: 3},
-			{TaskID: "project1.task4", Generation: 5},
-		},
+		State:             "running",
+		Prompt:            "保留用户 prompt",
+		SuspensionSummary: "等待 task197 合入并安装",
 	}
 
 	t.Run("simplified Chinese", func(t *testing.T) {
@@ -171,9 +169,9 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 		for _, want := range []string{
 			"恢复并继续当前 AutoRun generation",
 			"保留用户 prompt",
-			"以下前置任务运行已完成：project1.task2@3, project1.task4@5",
+			"此 AutoRun 之前被挂起，原因是：等待 task197 合入并安装",
 			"这是一个 AutoRun 调度器回合",
-			"最后一个有副作用的命令必须且只能是 forge task autorun complete、wait、pause 或 fail 之一",
+			"最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一",
 		} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("Chinese prompt does not contain %q:\n%s", want, got)
@@ -203,7 +201,7 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 			for _, want := range []string{
 				"Recover and continue the current AutoRun generation",
 				"保留用户 prompt",
-				"The following prerequisite task runs completed: project1.task2@3, project1.task4@5",
+				"This AutoRun was previously suspended with reason: 等待 task197 合入并安装",
 				"This is an AutoRun scheduler turn",
 			} {
 				if !strings.Contains(got, want) {
@@ -225,7 +223,7 @@ func TestAutoRunLocalizedDefaultAndContinuePrompts(t *testing.T) {
 	}
 	continuePrompt := autoRunContinuePrompt(workspace)
 	if !strings.Contains(continuePrompt, "继续当前 AutoRun") ||
-		!strings.Contains(continuePrompt, "forge task autorun complete、wait、pause 或 fail") {
+		!strings.Contains(continuePrompt, "forge task autorun complete、suspend、pause 或 fail") {
 		t.Fatalf("unexpected Chinese continuation prompt: %q", continuePrompt)
 	}
 }
@@ -338,6 +336,13 @@ func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTask
 			if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "test"}); err != nil {
 				t.Fatal(err)
 			}
+		case "suspended":
+			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: candidate.SuspensionSummary}); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	httpServer := httptest.NewServer(handler)
@@ -398,4 +403,121 @@ func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRu
 	if active {
 		s.agents.registerRuntime(&agentRuntime{run: run})
 	}
+}
+
+func TestAutoRunSuspendedDue(t *testing.T) {
+	recent := time.Now().Add(-10 * time.Minute).Format(time.RFC3339)
+	if autoRunSuspendedDue(recent) {
+		t.Fatalf("suspended 10 minutes ago should not be due, but driver woke it")
+	}
+	overdue := time.Now().Add(-31 * time.Minute).Format(time.RFC3339)
+	if !autoRunSuspendedDue(overdue) {
+		t.Fatalf("suspended 31 minutes ago should be due, but driver left it suspended")
+	}
+	if !autoRunSuspendedDue("") {
+		t.Fatalf("empty suspendedAt must be treated as due so tasks never stall")
+	}
+	if !autoRunSuspendedDue("not-a-time") {
+		t.Fatalf("unparsable suspendedAt must be treated as due so tasks never stall")
+	}
+}
+
+func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
+	workspace := t.TempDir()
+	overdue := time.Now().Add(-autoRunSuspensionLimit - time.Minute).Format(time.RFC3339)
+	var started []string
+	s := newSchedulerTestServer(t, workspace, []runnableTaskCandidate{
+		{ID: "project1.task1", Title: "Overdue suspended", Generation: 1, State: "suspended", SuspensionSummary: "waiting for merge"},
+		{ID: "project1.task2", Title: "Fresh suspended", Generation: 1, State: "suspended"},
+	}, func(w http.ResponseWriter, r *http.Request) {
+		var req startAgentRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Errorf("decode start request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		started = append(started, req.ResourceID)
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// Backdate the suspended generation past the wake-up threshold. The server
+	// restart scenario re-reads the persisted suspendedAt, so no runtime state
+	// needs to change here.
+	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.ResourceValue("project1.task1")
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("load task1: %v", err)
+	}
+	resource.Task.AutoRun.SuspendedAt = overdue
+	if err := rewriteTaskForTest(t, workspace, resource.Task); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+	want := []string{"project1.task1"}
+	if strings.Join(started, ",") != strings.Join(want, ",") {
+		t.Fatalf("driver did not wake exactly the overdue suspended task: got %v, want %v", started, want)
+	}
+
+	// The woken generation is now queued and carries the suspension summary so
+	// the agent can re-check its condition.
+	resource, err = forgeWorkspace.ResourceValue("project1.task1")
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("reload task1: %v", err)
+	}
+	if resource.Task.AutoRun.State != "queued" {
+		t.Fatalf("expected woken task to be queued, got %s", resource.Task.AutoRun.State)
+	}
+	if resource.Task.AutoRun.SuspensionSummary != "waiting for merge" {
+		t.Fatalf("expected suspension summary to be preserved for the agent, got %q", resource.Task.AutoRun.SuspensionSummary)
+	}
+}
+
+func TestScheduleRunnableTasksKeepsPausedAndFreshSuspended(t *testing.T) {
+	workspace := t.TempDir()
+	requests := 0
+	s := newSchedulerTestServer(t, workspace, []runnableTaskCandidate{
+		{ID: "project1.task1", Title: "Fresh suspended", Generation: 1, State: "suspended"},
+		{ID: "project1.task2", Title: "Paused", Generation: 1, State: "paused"},
+	}, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	})
+
+	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
+		t.Fatalf("schedule: %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("driver started %d tasks that must stay dormant", requests)
+	}
+}
+
+func rewriteTaskForTest(t *testing.T, workspace string, task *app.Task) error {
+	t.Helper()
+	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		return err
+	}
+	resource, err := forgeWorkspace.ResourceValue(task.ID)
+	if err != nil {
+		return err
+	}
+	// ResourceValue returns a copy; persist through the task directory file
+	// directly to simulate a pre-existing on-disk state.
+	dir := filepath.Join(workspace, filepath.FromSlash(resource.Path))
+	return os.WriteFile(filepath.Join(dir, "task.json"), mustMarshalTask(t, task), 0o644)
+}
+
+func mustMarshalTask(t *testing.T, task *app.Task) []byte {
+	t.Helper()
+	data, err := json.Marshal(task)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

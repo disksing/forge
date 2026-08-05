@@ -70,16 +70,17 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 }
 
 type AutoRun struct {
-	Generation             int                 `json:"generation"`
-	State                  string              `json:"state"`
-	PreferredAgentProfiles []string            `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string              `json:"prompt,omitempty"`
-	After                  []AutoRunDependency `json:"after,omitempty"`
-}
-
-type AutoRunDependency struct {
-	TaskID     string `json:"taskId"`
-	Generation int    `json:"generation"`
+	Generation             int      `json:"generation"`
+	State                  string   `json:"state"`
+	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
+	Prompt                 string   `json:"prompt,omitempty"`
+	// SuspendedAt is the wall-clock time the current generation was last
+	// suspended. The server driver uses it (not task.updatedAt) to decide when
+	// a suspended AutoRun should be re-queued.
+	SuspendedAt string `json:"suspendedAt,omitempty"`
+	// SuspensionSummary is a natural-language reason recorded by the agent when
+	// it suspends itself. It is not structured waiting data.
+	SuspensionSummary string `json:"suspensionSummary,omitempty"`
 }
 
 type TaskRepo struct {

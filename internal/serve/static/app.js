@@ -621,8 +621,8 @@ function deriveTaskAutoRunState(autoRun, sessions) {
   if (autoRunState === "paused") {
     return taskStatusState("paused", "task-status-attention", "square", "AutoRun paused", "auto-run");
   }
-  if (autoRunState === "waiting") {
-    return taskStatusState("waiting", "task-status-attention", "git-branch", "AutoRun waiting for dependencies", "auto-run");
+  if (autoRunState === "suspended") {
+    return taskStatusState("suspended", "task-status-attention", "pause", "AutoRun suspended, waiting for timed wake-up", "auto-run");
   }
   if (autoRunState === "queued") {
     return taskStatusState("queued", "task-status-queued", "clock", "AutoRun queued", "auto-run");
@@ -2316,9 +2316,6 @@ function autoRunStatus(detail) {
   if (!run) return "";
   const presentation = autoRunPresentation(run.state);
   const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run failed", "Auto Run retry"].includes(entry.title));
-  const dependencyItems = detail.autoRunDependencies || (run.after || []);
-  const dependencies = dependencyItems.map((dep) => `${dep.taskId}@${dep.generation}${dep.state ? ` (${dep.state})` : ""}`).join(", ");
-  const blocked = dependencyItems.some((dep) => dep.state === "failed");
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
@@ -2336,7 +2333,7 @@ function autoRunStatus(detail) {
       </div>
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-      ${dependencies ? `<p>${blocked ? "Blocked by" : "Waiting for"} ${escapeHTML(dependencies)}</p>` : ""}
+      ${run.suspensionSummary ? `<p>Suspend reason: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
       ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
     </section>
   `;
@@ -2346,7 +2343,7 @@ function autoRunPresentation(state) {
   const presentations = {
     queued: { label: "Queued", icon: "list-start" },
     running: { label: "Running", icon: "activity" },
-    waiting: { label: "Waiting", icon: "clock-3" },
+    suspended: { label: "Suspended", icon: "pause" },
     paused: { label: "Paused", icon: "pause" },
     completed: { label: "Completed", icon: "circle-check" },
     failed: { label: "Failed", icon: "circle-x" },

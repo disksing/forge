@@ -49,17 +49,9 @@ func validateResource(resource Resource) error {
 				return fmt.Errorf("AutoRun generation must be positive")
 			}
 			switch typed.AutoRun.State {
-			case autoRunStateQueued, autoRunStateRunning, autoRunStateWaiting, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed:
+			case autoRunStateQueued, autoRunStateRunning, autoRunStateSuspended, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed:
 			default:
 				return fmt.Errorf("invalid AutoRun state %q", typed.AutoRun.State)
-			}
-			if typed.AutoRun.State != autoRunStateWaiting && len(typed.AutoRun.After) > 0 {
-				return fmt.Errorf("AutoRun after is only valid in waiting state")
-			}
-			for _, dependency := range typed.AutoRun.After {
-				if strings.TrimSpace(dependency.TaskID) == "" || dependency.Generation <= 0 {
-					return fmt.Errorf("invalid AutoRun dependency")
-				}
 			}
 		}
 	default:

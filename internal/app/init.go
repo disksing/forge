@@ -160,8 +160,8 @@ This directory is an AgentWorkspace managed by forge.
 - Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
-- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun wait`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command.
-- To delegate AutoRun work, create a child with ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. Use the returned generation when suspending the current AutoRun with ` + "`forge task autorun wait --after=<task@generation> --summary=<text>`" + `.
+- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun suspend`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command.
+- To delegate AutoRun work, create a child with ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record the natural-language reason with ` + "`forge task autorun suspend --summary=<text>`" + `; the system wakes it automatically later.
 - Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
@@ -182,8 +182,8 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
-forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
+forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>
+forge task list [--project=<project>] [--all] [--runnable [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
 forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
@@ -191,7 +191,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task autorun queue|start|wait|pause|resume|complete|fail ...
+forge task autorun queue|start|suspend|pause|resume|complete|fail ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

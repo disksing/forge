@@ -11,7 +11,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
 - **Interactive and autonomous agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
-- **Dependency-aware AutoRun.** Tasks can be queued with preferred Agent Profiles and prerequisite task generations. The GUI scheduler resumes ready work, records retries, and exposes queued, running, waiting, paused, completed, and failed states.
+- **Simplified AutoRun.** Tasks can be queued with preferred Agent Profiles and run as a self-contained state machine. The GUI driver starts queued work, wakes suspended work after a fixed delay, records retries, and exposes queued, running, suspended, paused, completed, and failed states.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
 
 ## Design
@@ -164,7 +164,7 @@ The first resource locked by a session is its primary resource; later controls a
 
 ## AutoRun
 
-AutoRun adds a generation-numbered state machine to a task. The GUI scheduler finds runnable tasks, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`.
+AutoRun adds a generation-numbered state machine to a task. `forge serve` runs a minimal driver: it starts queued work, re-queues suspended work whose suspension limit (30 minutes) elapsed, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`.
 
 Create an autonomous task:
 
@@ -178,29 +178,18 @@ forge task create \
   "Implement the change"
 ```
 
-Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the scheduler falls back to the `default` system Profile. A configured but unavailable target is sent to AgentHub and reported as a runtime error.
-
-Tasks can wait for exact generations of other tasks:
-
-```bash
-forge task create \
-  --project=project1 \
-  --autorun \
-  --after=project1.task1@1 \
-  --prompt="Integrate the completed prerequisite." \
-  "Integration"
-```
+Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. A configured but unavailable target is sent to AgentHub and reported as a runtime error.
 
 A scheduler-started turn must finish with exactly one result action:
 
 ```bash
 forge task autorun complete --summary="Implemented and verified"
-forge task autorun wait --after=project1.task3@1 --summary="Waiting for dependency"
+forge task autorun suspend --summary="Waiting for the upstream merge; re-check the installed version when woken"
 forge task autorun pause --reason="User decision required"
 forge task autorun fail --reason="Verification cannot pass"
 ```
 
-If a running turn exits without reporting a result, the scheduler records a retry and continues within a shared three-attempt budget before pausing the task. A completed or failed task can be queued again as a new generation.
+`suspend` records the natural-language `suspensionSummary` and a `suspendedAt` timestamp on the generation. The server wakes the task after 30 minutes by re-queueing it; every new suspend resets the timer, and the summary is preserved so the woken agent can re-check its condition. `pause` is for human intervention and is never auto-woken. If a running turn exits without reporting a result, the driver records a retry and continues within a shared three-attempt budget before pausing the task. A completed or failed task can be queued again as a new generation.
 
 ## Task Templates
 
@@ -289,14 +278,13 @@ forge resource archive --id=<resource>
 forge task create [--project=<project>] [--slug <slug>]
                   [--detail <detail>|--task-markdown <markdown>]
                   [--autorun] [--agent-profile=<profile>...]
-                  [--prompt=<prompt>]
-                  [--after=<task@generation>...] <title>
+                  [--prompt=<prompt>] <title>
 forge task list [--project=<project>] [--all]
-                [--runnable [--include-blocked] [--json]]
+                [--runnable [--json]]
 forge task show|archive ...
 forge task log add|list ...
 forge task repo add|list|remove ...
-forge task autorun queue|start|retry|wait|pause|resume|complete|fail ...
+forge task autorun queue|start|retry|suspend|pause|resume|complete|fail ...
 
 forge session new|heartbeat|lock|unlock|end|list|show ...
 

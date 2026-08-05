@@ -252,7 +252,8 @@ type RunnableTask struct {
 	Reason                 string
 	Prompt                 string
 	PreferredAgentProfiles []string
-	After                  []AutoRunDependency
+	SuspendedAt            string
+	SuspensionSummary      string
 }
 
 // TaskListOptions controls project task listing.
@@ -260,7 +261,6 @@ type TaskListOptions struct {
 	ProjectID       string
 	IncludeArchived bool
 	Runnable        bool
-	IncludeBlocked  bool
 }
 
 // TaskListResult preserves both the ordinary typed task list and the runnable
@@ -281,7 +281,6 @@ type CreateTaskInput struct {
 	AutoRun                bool
 	PreferredAgentProfiles []string
 	Prompt                 string
-	After                  []string
 }
 
 // ArchiveResult describes an archive operation without relying on printed
@@ -395,11 +394,11 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 		if entry.Task.AutoRun == nil {
 			continue
 		}
-		ready, reason := autoRunReady(w.root, entry.Task)
+		ready, reason := autoRunReady(entry.Task)
 		if isArchivedPath(w.root, entry.Path) {
 			ready, reason = false, "archived"
 		}
-		if !ready && !options.IncludeBlocked {
+		if !ready {
 			continue
 		}
 		runnable := RunnableTask{
@@ -407,7 +406,8 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 			Ready: ready, Reason: reason, Generation: entry.Task.AutoRun.Generation,
 			State: entry.Task.AutoRun.State, Prompt: entry.Task.AutoRun.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.Task.AutoRun.PreferredAgentProfiles...),
-			After:                  append([]AutoRunDependency(nil), entry.Task.AutoRun.After...),
+			SuspendedAt:            entry.Task.AutoRun.SuspendedAt,
+			SuspensionSummary:      entry.Task.AutoRun.SuspensionSummary,
 		}
 		result.Runnable = append(result.Runnable, runnable)
 	}
@@ -528,17 +528,9 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		if err != nil {
 			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
 		}
-		after, err := resolveAutoRunDependencies(w.root, &task, input.After)
-		if err != nil {
-			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
-		}
-		state := autoRunStateQueued
-		if len(after) > 0 {
-			state = autoRunStateWaiting
-		}
-		task.AutoRun = &AutoRun{Generation: 1, State: state, PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt), After: after}
-	} else if len(input.After) > 0 || len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" {
-		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: errors.New("--agent-profile, --prompt, and --after require --autorun")}
+		task.AutoRun = &AutoRun{Generation: 1, State: autoRunStateQueued, PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt)}
+	} else if len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" {
+		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: errors.New("--agent-profile and --prompt require --autorun")}
 	}
 	markdown := taskMarkdown(title, strings.TrimSpace(input.Detail), language)
 	if input.CompleteMarkdownSet {
@@ -550,11 +542,6 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if task.AutoRun != nil {
 		if err := prependLogEntry(staging, newAutoRunLogEntry("Auto Run queued", "", task.AutoRun.Generation)); err != nil {
 			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
-		}
-		if task.AutoRun.State == autoRunStateWaiting {
-			if err := prependLogEntry(staging, newAutoRunLogEntry("Auto Run waiting", "waiting for prerequisites", task.AutoRun.Generation)); err != nil {
-				return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
-			}
 		}
 	}
 	if err := os.Rename(staging, path); err != nil {

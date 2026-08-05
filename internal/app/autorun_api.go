@@ -15,7 +15,6 @@ type AutoRunQueueInput struct {
 	TaskID                 string
 	PreferredAgentProfiles []string
 	Prompt                 string
-	After                  []string
 }
 
 // AutoRunActionInput describes a scheduler action.
@@ -23,7 +22,6 @@ type AutoRunActionInput struct {
 	TaskID  string
 	Summary string
 	Reason  string
-	After   []string
 }
 
 func (w *Workspace) updateAutoRunTask(taskID string, update func(root, dir string, task *Task) error) (Task, error) {
@@ -62,7 +60,7 @@ func (w *Workspace) updateAutoRunTask(taskID string, update func(root, dir strin
 
 // QueueAutoRun queues a new generation or requeues a terminal generation.
 func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
-	return w.updateAutoRunTask(input.TaskID, func(root, dir string, task *Task) error {
+	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
 		generation := 1
 		prompt := strings.TrimSpace(input.Prompt)
 		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
@@ -81,24 +79,8 @@ func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
 				prompt = task.AutoRun.Prompt
 			}
 		}
-		probe := *task
-		probe.AutoRun = &AutoRun{Generation: generation}
-		after, err := resolveAutoRunDependencies(root, &probe, input.After)
-		if err != nil {
-			return err
-		}
-		state := autoRunStateQueued
-		if len(after) > 0 {
-			state = autoRunStateWaiting
-		}
-		task.AutoRun = &AutoRun{Generation: generation, State: state, PreferredAgentProfiles: profiles, Prompt: prompt, After: after}
-		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation)); err != nil {
-			return err
-		}
-		if state == autoRunStateWaiting {
-			return prependLogEntry(dir, newAutoRunLogEntry("Auto Run waiting", "waiting for prerequisites", generation))
-		}
-		return nil
+		task.AutoRun = &AutoRun{Generation: generation, State: autoRunStateQueued, PreferredAgentProfiles: profiles, Prompt: prompt}
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation))
 	})
 }
 
@@ -111,33 +93,31 @@ func (w *Workspace) StartAutoRun(taskID string) (Task, error) {
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateQueued {
 			return errors.New("AutoRun is not queued")
 		}
-		ready, reason := autoRunReady(w.root, *task)
-		if !ready {
-			return fmt.Errorf("AutoRun is not ready: %s", reason)
-		}
 		task.AutoRun.State = autoRunStateRunning
-		task.AutoRun.After = nil
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
 }
 
-// ResumeAutoRun transitions a paused or waiting generation back to queued.
+// ResumeAutoRun transitions a paused or suspended generation back to queued.
+// It is idempotent for an already queued generation so concurrent manual
+// resume, timed wake-up, and scheduler scans never double-transition or
+// double-log the same generation.
 func (w *Workspace) ResumeAutoRun(taskID string) (Task, error) {
-	return w.updateAutoRunTask(taskID, func(root, dir string, task *Task) error {
-		if task.AutoRun == nil || (task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateWaiting) {
-			return errors.New("AutoRun is not paused or waiting")
+	return w.updateAutoRunTask(taskID, func(_ string, dir string, task *Task) error {
+		if task.AutoRun == nil {
+			return errors.New("task has no AutoRun")
 		}
-		details := "resumed"
-		if task.AutoRun.State == autoRunStateWaiting {
-			ready, reason := autoRunReady(root, *task)
-			if !ready {
-				return fmt.Errorf("AutoRun dependencies are not ready: %s", reason)
-			}
-			details = "prerequisites completed"
+		if task.AutoRun.State == autoRunStateQueued {
+			return nil
+		}
+		if task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateSuspended {
+			return errors.New("AutoRun is not paused or suspended")
 		}
 		task.AutoRun.State = autoRunStateQueued
-		task.AutoRun.After = nil
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", details, task.AutoRun.Generation))
+		task.AutoRun.SuspendedAt = ""
+		// SuspensionSummary is intentionally preserved so a woken agent can
+		// re-check the recorded reason before continuing or suspending again.
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "resumed", task.AutoRun.Generation))
 	})
 }
 
@@ -195,7 +175,6 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 			return errors.New("task has no AutoRun")
 		}
 		task.AutoRun.State = state
-		task.AutoRun.After = nil
 		details := strings.TrimSpace(input.Summary)
 		if details == "" {
 			details = strings.TrimSpace(input.Reason)
@@ -204,21 +183,41 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 	})
 }
 
-// WaitAutoRun puts a generation back into dependency waiting state.
-func (w *Workspace) WaitAutoRun(input AutoRunActionInput) (Task, error) {
-	return w.updateAutoRunTask(input.TaskID, func(root, dir string, task *Task) error {
+// SuspendAutoRun puts the current generation into the suspended state with a
+// natural-language summary. The server driver wakes it after
+// autoRunSuspensionLimit, and every new suspend resets the timer.
+func (w *Workspace) SuspendAutoRun(input AutoRunActionInput) (Task, error) {
+	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
-		if len(input.After) == 0 {
-			return errors.New("at least one AutoRun dependency is required")
+		details := strings.TrimSpace(input.Summary)
+		if details == "" {
+			details = strings.TrimSpace(input.Reason)
 		}
-		after, err := resolveAutoRunDependencies(root, task, input.After)
-		if err != nil {
-			return err
-		}
-		task.AutoRun.State = autoRunStateWaiting
-		task.AutoRun.After = after
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run waiting", strings.TrimSpace(input.Summary), task.AutoRun.Generation))
+		task.AutoRun.State = autoRunStateSuspended
+		task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
+		task.AutoRun.SuspensionSummary = details
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run suspended", details, task.AutoRun.Generation))
 	})
+}
+
+// autoRunReady reports whether the AutoRun state should be surfaced to the
+// server driver: queued and running always are, suspended tasks are re-queued
+// by the driver once their suspension limit elapses, and paused or terminal
+// generations are never automatically started.
+func autoRunReady(task Task) (bool, string) {
+	if task.AutoRun == nil {
+		return false, "no_autorun"
+	}
+	switch task.AutoRun.State {
+	case autoRunStateQueued:
+		return true, "queued"
+	case autoRunStateRunning:
+		return true, "running"
+	case autoRunStateSuspended:
+		return true, "suspended"
+	default:
+		return false, task.AutoRun.State
+	}
 }

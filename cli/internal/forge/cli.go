@@ -11,8 +11,8 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>"
-	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]"
+	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>"
+	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
 )
@@ -185,7 +185,7 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.PreferredAgentProfiles, options.Prompt, options.After)
+		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.PreferredAgentProfiles, options.Prompt)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -264,8 +264,8 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
-  forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>
+  forge task list [--project=<project>] [--all] [--runnable [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
   forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
@@ -273,7 +273,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task autorun queue|start|wait|pause|resume|complete|fail ...
+  forge task autorun queue|start|suspend|pause|resume|complete|fail ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
@@ -328,7 +328,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] [--after=<task@generation>...] <title>
+  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent-profile=<profile>...] [--prompt=<prompt>] <title>
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -338,7 +338,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task list [--project=<project>] [--all] [--runnable [--include-blocked] [--json]]
+  forge task list [--project=<project>] [--all] [--runnable [--json]]
     List open tasks in a project. Use --all to include archived tasks.
     <project> may be a full id such as project22 or just a number such as 22.
     When omitted, Forge uses the project containing the current working
@@ -487,7 +487,6 @@ type taskCreateOptions struct {
 	AutoRun                bool
 	PreferredAgentProfiles []string
 	Prompt                 string
-	After                  []string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -586,14 +585,6 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 		}
 		if strings.HasPrefix(arg, "--prompt=") {
 			options.Prompt = strings.TrimSpace(strings.TrimPrefix(arg, "--prompt="))
-			continue
-		}
-		if strings.HasPrefix(arg, "--after=") {
-			value := strings.TrimSpace(strings.TrimPrefix(arg, "--after="))
-			if value == "" {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			options.After = append(options.After, value)
 			continue
 		}
 		if strings.HasPrefix(arg, "--") {
@@ -704,12 +695,12 @@ func isASCIIInteger(value string) bool {
 }
 
 func resolveTaskListArgs(args []string) (taskListOptions, error) {
-	projectID, includeArchived, runnable, includeBlocked, jsonOutput, err := parseTaskListArgs(args)
+	projectID, includeArchived, runnable, jsonOutput, err := parseTaskListArgs(args)
 	if err != nil {
 		return taskListOptions{}, err
 	}
 	if projectID != "" {
-		return taskListOptions{ProjectID: projectID, IncludeArchived: includeArchived, Runnable: runnable, IncludeBlocked: includeBlocked, JSON: jsonOutput}, nil
+		return taskListOptions{ProjectID: projectID, IncludeArchived: includeArchived, Runnable: runnable, JSON: jsonOutput}, nil
 	}
 	inferred, ok, err := inferCurrentProjectID()
 	if err != nil {
@@ -718,7 +709,7 @@ func resolveTaskListArgs(args []string) (taskListOptions, error) {
 	if !ok {
 		return taskListOptions{}, errors.New("could not infer current project; use forge task list --project=<project>")
 	}
-	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived, Runnable: runnable, IncludeBlocked: includeBlocked, JSON: jsonOutput}, nil
+	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived, Runnable: runnable, JSON: jsonOutput}, nil
 }
 
 func resolveTaskArg(args []string, command string) (string, error) {
@@ -827,58 +818,55 @@ func normalizeTaskArg(projectID, task string) (string, error) {
 	return "", fmt.Errorf("invalid task %q: use taskM or M", task)
 }
 
-func parseTaskListArgs(args []string) (string, bool, bool, bool, bool, error) {
+func parseTaskListArgs(args []string) (string, bool, bool, bool, error) {
 	var projectID string
 	includeArchived := false
 	runnable := false
-	includeBlocked := false
 	jsonOutput := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--all":
 			if includeArchived {
-				return "", false, false, false, false, errors.New(taskListUsage)
+				return "", false, false, false, errors.New(taskListUsage)
 			}
 			includeArchived = true
 		case arg == "--runnable":
 			runnable = true
-		case arg == "--include-blocked":
-			includeBlocked = true
 		case arg == "--json":
 			jsonOutput = true
 		case strings.HasPrefix(arg, "--project="):
 			value := strings.TrimPrefix(arg, "--project=")
 			if value == "" {
-				return "", false, false, false, false, errors.New("project cannot be empty")
+				return "", false, false, false, errors.New("project cannot be empty")
 			}
 			if projectID != "" {
-				return "", false, false, false, false, errors.New(taskListUsage)
+				return "", false, false, false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(value)
 			if err != nil {
-				return "", false, false, false, false, err
+				return "", false, false, false, err
 			}
 			projectID = normalized
 		case arg == "--project":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return "", false, false, false, false, errors.New(taskListUsage)
+				return "", false, false, false, errors.New(taskListUsage)
 			}
 			if projectID != "" {
-				return "", false, false, false, false, errors.New(taskListUsage)
+				return "", false, false, false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(args[i+1])
 			if err != nil {
-				return "", false, false, false, false, err
+				return "", false, false, false, err
 			}
 			projectID = normalized
 			i++
 		default:
-			return "", false, false, false, false, errors.New(taskListUsage)
+			return "", false, false, false, errors.New(taskListUsage)
 		}
 	}
-	if (includeBlocked || jsonOutput) && !runnable {
-		return "", false, false, false, false, errors.New(taskListUsage)
+	if jsonOutput && !runnable {
+		return "", false, false, false, errors.New(taskListUsage)
 	}
-	return projectID, includeArchived, runnable, includeBlocked, jsonOutput, nil
+	return projectID, includeArchived, runnable, jsonOutput, nil
 }

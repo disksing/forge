@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -267,5 +268,144 @@ func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) 
 	}
 	if completed != workers {
 		t.Fatalf("AutoRun lock lost log updates: got %d completion entries, want %d", completed, workers)
+	}
+}
+
+func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("AutoRun wake project", "wake")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Wake task", Slug: "wake", AutoRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for upstream"}); err != nil {
+		t.Fatal(err)
+	}
+	const workers = 12
+	errorsCh := make(chan error, workers)
+	var group sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			// Manual resume, timed wake-up, and scheduler scans race here; only
+			// one may transition and log the generation.
+			if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+				errorsCh <- err
+			}
+		}()
+	}
+	group.Wait()
+	close(errorsCh)
+	for err := range errorsCh {
+		t.Errorf("concurrent resume: %v", err)
+	}
+	resource, err := workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if resource.Task.AutoRun.State != "queued" {
+		t.Fatalf("expected queued after concurrent resume, got %s", resource.Task.AutoRun.State)
+	}
+	entries, err := workspace.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resumes := 0
+	for _, entry := range entries {
+		if entry.AutoRun && entry.AutoRunGeneration == resource.Task.AutoRun.Generation && entry.Title == "Auto Run queued" && entry.Details == "resumed" {
+			resumes++
+		}
+	}
+	if resumes != 1 {
+		t.Fatalf("concurrent resume double-transitioned: got %d resume log entries, want 1", resumes)
+	}
+}
+
+func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Migration project", "migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy waiting", Slug: "legacy-waiting", AutoRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("load task: %v", err)
+	}
+	// Rewrite task.json with the pre-simplification waiting + after shape.
+	taskPath := filepath.Join(root, filepath.FromSlash(resource.Path))
+	legacy := struct {
+		SchemaVersion int    `json:"schemaVersion"`
+		ID            string `json:"id"`
+		Type          string `json:"type"`
+		Title         string `json:"title"`
+		CreatedAt     string `json:"createdAt"`
+		UpdatedAt     string `json:"updatedAt"`
+		Parent        string `json:"parent"`
+		Description   string `json:"description,omitempty"`
+		Repos         []any  `json:"repos,omitempty"`
+		AutoRun       struct {
+			Generation int    `json:"generation"`
+			State      string `json:"state"`
+			Prompt     string `json:"prompt,omitempty"`
+			After      []struct {
+				TaskID     string `json:"taskId"`
+				Generation int    `json:"generation"`
+			} `json:"after,omitempty"`
+		} `json:"autoRun,omitempty"`
+	}{
+		SchemaVersion: 1, ID: resource.Task.ID, Type: "task", Title: resource.Task.Title,
+		CreatedAt: resource.Task.CreatedAt, UpdatedAt: resource.Task.UpdatedAt, Parent: resource.Task.Parent,
+	}
+	legacy.AutoRun.Generation = 1
+	legacy.AutoRun.State = "waiting"
+	legacy.AutoRun.Prompt = "integrate the prerequisite"
+	legacy.AutoRun.After = []struct {
+		TaskID     string `json:"taskId"`
+		Generation int    `json:"generation"`
+	}{{TaskID: "project1.task7", Generation: 2}, {TaskID: "project1.task9", Generation: 1}}
+	data, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(taskPath, "task.json"), data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	resource, err = workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("reload migrated task: %v", err)
+	}
+	autoRun := resource.Task.AutoRun
+	if autoRun.State != "suspended" {
+		t.Fatalf("expected waiting to migrate to suspended, got %s", autoRun.State)
+	}
+	if autoRun.SuspendedAt == "" {
+		t.Fatalf("migrated task must have a suspendedAt timestamp")
+	}
+	if !strings.Contains(autoRun.SuspensionSummary, "project1.task7@2") || !strings.Contains(autoRun.SuspensionSummary, "project1.task9@1") {
+		t.Fatalf("migrated summary must flatten dependencies, got %q", autoRun.SuspensionSummary)
+	}
+	// Migration is idempotent: reading again keeps the same state.
+	resource, err = workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("reload migrated task again: %v", err)
+	}
+	if resource.Task.AutoRun.State != "suspended" || resource.Task.AutoRun.SuspendedAt != autoRun.SuspendedAt {
+		t.Fatalf("migration is not idempotent: %+v", resource.Task.AutoRun)
 	}
 }

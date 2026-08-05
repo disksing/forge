@@ -568,7 +568,7 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
-func TestAutoRunLifecycleAndDependencies(t *testing.T) {
+func TestAutoRunLifecycleAndSuspend(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
@@ -576,9 +576,9 @@ func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 		if !strings.Contains(childJSON, `"autoRun"`) || !strings.Contains(childJSON, `"state": "queued"`) {
 			t.Fatalf("expected AutoRun metadata, got:\n%s", childJSON)
 		}
-		parentJSON := run(t, "task", "create", "--project=project1", "--autorun", "--after=project1.task1@1", "Parent")
-		if !strings.Contains(parentJSON, `"state": "waiting"`) || !strings.Contains(parentJSON, `"generation": 1`) {
-			t.Fatalf("expected waiting parent metadata, got:\n%s", parentJSON)
+		secondJSON := run(t, "task", "create", "--project=project1", "--autorun", "--prompt=Review", "Second")
+		if !strings.Contains(secondJSON, `"state": "queued"`) || !strings.Contains(secondJSON, `"generation": 1`) {
+			t.Fatalf("expected queued second task metadata, got:\n%s", secondJSON)
 		}
 		detailJSON := run(t, "workspace", "resource", "--id=project1.task1", "--json")
 		var detail ResourceDetailView
@@ -604,30 +604,29 @@ func TestAutoRunLifecycleAndDependencies(t *testing.T) {
 		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
 			t.Fatal(err)
 		}
-		if len(ready.Tasks) != 1 || ready.Tasks[0].ID != "project1.task1" || !ready.Tasks[0].Ready {
-			t.Fatalf("expected only child runnable, got: %+v", ready.Tasks)
+		if len(ready.Tasks) != 2 || ready.Tasks[0].ID != "project1.task1" || !ready.Tasks[0].Ready {
+			t.Fatalf("expected both queued tasks runnable, got: %+v", ready.Tasks)
+		}
+
+		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
+		suspended := run(t, "task", "autorun", "suspend", "--project=project1", "--task=task1", "--summary=waiting for review")
+		if !strings.Contains(suspended, `"state": "suspended"`) || !strings.Contains(suspended, `"suspendedAt"`) || !strings.Contains(suspended, `"suspensionSummary": "waiting for review"`) {
+			t.Fatalf("expected suspended metadata, got:\n%s", suspended)
+		}
+
+		// Resume keeps the same generation and preserves the summary for the
+		// woken agent.
+		resumed := run(t, "task", "autorun", "resume", "--project=project1", "--task=task1")
+		if !strings.Contains(resumed, `"state": "queued"`) || !strings.Contains(resumed, `"generation": 1`) {
+			t.Fatalf("expected resume to requeue generation 1, got:\n%s", resumed)
 		}
 
 		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
 		run(t, "task", "autorun", "complete", "--project=project1", "--task=task1", "--summary=done")
 
-		listed = run(t, "task", "list", "--project=project1", "--runnable", "--json")
-		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
-			t.Fatal(err)
-		}
-		if len(ready.Tasks) != 1 || ready.Tasks[0].ID != "project1.task2" || ready.Tasks[0].Reason != "prerequisites_completed" {
-			t.Fatalf("expected parent runnable after child completion, got: %+v", ready.Tasks)
-		}
 		queued := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
 		if !strings.Contains(queued, `"generation": 2`) || !strings.Contains(queued, `"state": "queued"`) {
 			t.Fatalf("expected terminal AutoRun to queue generation 2, got:\n%s", queued)
-		}
-		listed = run(t, "task", "list", "--project=project1", "--runnable", "--json")
-		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
-			t.Fatal(err)
-		}
-		if len(ready.Tasks) != 2 {
-			t.Fatalf("expected old generation completion to remain in logs, got: %+v", ready.Tasks)
 		}
 		logs := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
 		if !strings.Contains(logs, `"autoRun": true`) || !strings.Contains(logs, `"autoRunGeneration": 1`) {
@@ -696,16 +695,19 @@ func TestAutoRunRetryBudgetPauses(t *testing.T) {
 	})
 }
 
-func TestAutoRunRejectsDependencyCycle(t *testing.T) {
+func TestAutoRunRejectsDependencyFlags(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
 		run(t, "task", "create", "--project=project1", "--autorun", "First")
-		run(t, "task", "create", "--project=project1", "--autorun", "--after=project1.task1@1", "Second")
-		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
-		out, err := runErr(t, "task", "autorun", "wait", "--project=project1", "--task=task1", "--after=project1.task2@1")
-		if err == nil || !strings.Contains(err.Error(), "dependency cycle") {
-			t.Fatalf("expected dependency cycle error, got %v\nstdout:\n%s", err, out)
+		if _, err := runErr(t, "task", "create", "--project=project1", "--autorun", "--after=project1.task1@1", "Second"); err == nil || !strings.Contains(err.Error(), "task create") {
+			t.Fatalf("expected --after to be rejected on task create, got %v", err)
+		}
+		if _, err := runErr(t, "task", "autorun", "wait", "--project=project1", "--task=task1"); err == nil || !strings.Contains(err.Error(), "unknown task autorun subcommand") {
+			t.Fatalf("expected removed autorun wait subcommand to be rejected, got %v", err)
+		}
+		if _, err := runErr(t, "task", "autorun", "suspend", "--project=project1", "--task=task1", "--after=project1.task2@1"); err == nil || !strings.Contains(err.Error(), "usage: forge task autorun") {
+			t.Fatalf("expected removed --after flag on suspend to be rejected, got %v", err)
 		}
 	})
 }
@@ -2469,7 +2471,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
 			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
 		}
-		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun wait") {
+		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun suspend") {
 			t.Fatalf("expected workspace AGENTS.md to teach AutoRun delegation, got:\n%s", first)
 		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {

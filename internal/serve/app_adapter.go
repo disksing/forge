@@ -58,9 +58,8 @@ func runnableTaskCandidatesFromApp(tasks []app.RunnableTask) []runnableTaskCandi
 			ID: task.ID, Path: task.Path, Title: task.Title, Generation: task.Generation,
 			State: task.State, Prompt: task.Prompt,
 			PreferredAgentProfiles: append([]string(nil), task.PreferredAgentProfiles...),
-		}
-		for _, dependency := range task.After {
-			candidate.After = append(candidate.After, runnableTaskDependency{TaskID: dependency.TaskID, Generation: dependency.Generation})
+			SuspendedAt:            task.SuspendedAt,
+			SuspensionSummary:      task.SuspensionSummary,
 		}
 		result = append(result, candidate)
 	}
