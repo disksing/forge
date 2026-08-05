@@ -171,6 +171,44 @@ func TestExternalTaskLockBlocksAgentInputAndResume(t *testing.T) {
 	}
 }
 
+func TestExternalTaskLockBlocksAgentInterrupt(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	const taskID = "project1.task1"
+	createExternalTaskLockForTest(t, workspace.Path, taskID)
+	client, err := newAgentHubClient(hub.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := agentRun{
+		ID: "guarded-run", WorkspaceID: workspace.ID, ResourceID: taskID,
+		AgentHubSessionID: "agenthub-session", ForgeSessionID: "forge-session", Status: "running",
+		SourceExternalID: workspace.ID + "/guarded-run",
+	}
+	fake.mu.Lock()
+	fake.sessions[run.AgentHubSessionID] = agentHubSession{
+		ID: run.AgentHubSessionID, State: "busy", Source: &agentHubSource{
+			App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID,
+		},
+	}
+	fake.mu.Unlock()
+	manager.registerRuntime(newAgentHubRuntime(manager, workspace, run, client))
+
+	response := httptest.NewRecorder()
+	manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", run.ID, "interrupt"})
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), externalTaskLockMessage) {
+		t.Fatalf("expected interrupt lock conflict, got %d %s", response.Code, response.Body.String())
+	}
+	fake.mu.Lock()
+	actions := strings.Join(fake.actions, ",")
+	fake.mu.Unlock()
+	if strings.Contains(actions, "interrupt") {
+		t.Fatalf("blocked interrupt reached AgentHub: %q", actions)
+	}
+}
+
 func TestExternalTaskLockComposerProtection(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {

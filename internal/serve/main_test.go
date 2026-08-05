@@ -1935,6 +1935,57 @@ func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 	}
 }
 
+func TestStopTurnComposerSeparatesTurnAndSessionActions(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`function isAgentTurnInterruptible(run)`,
+		`["running", "waiting_approval"].includes(run?.status)`,
+		`includeStopTurn: stopTurnAvailable`,
+		`id="agentStopTurnButton"`,
+		`icon(turnStopping ? "loader-circle" : "pause")`,
+		`Stop only the current turn; keep the AgentHub Session open.`,
+		`Close the entire AgentHub Session.`,
+		`async function stopAgentTurn()`,
+		`/interrupt`,
+		`state.agent.turnStopping = true`,
+		`Turn stopped. The AgentHub Session remains open.`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Stop Turn composer is missing %q", want)
+		}
+	}
+	stopStart := strings.Index(source, `async function stopAgentTurn() {`)
+	stopEnd := -1
+	if stopStart >= 0 {
+		stopEnd = strings.Index(source[stopStart:], `async function switchAgentRun(`)
+	}
+	if stopStart < 0 || stopEnd < 0 {
+		t.Fatal("Stop Turn handler boundary is missing")
+	}
+	stopSource := source[stopStart : stopStart+stopEnd]
+	if strings.Contains(stopSource, `/stop`) || strings.Contains(stopSource, `closeAgentRun`) {
+		t.Fatal("Stop Turn must not close the AgentHub Session")
+	}
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.agent-stop-turn-button`,
+		`.agent-stop-turn-button:hover:not(:disabled)`,
+		`.tty-session-actions > .agent-stop-turn-button`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("Stop Turn composer styles are missing %q", want)
+		}
+	}
+}
+
 func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
