@@ -120,6 +120,17 @@ func TestExternalTaskLockStopsSchedulerDispatchWithoutStateChange(t *testing.T) 
 	if requests != 0 {
 		t.Fatalf("scheduler dispatched %d requests while an external lock was held", requests)
 	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.ResourceValue("project1.task1")
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("reload locked scheduler task: %v", err)
+	}
+	if resource.Task.AutoRun.State != "queued" || resource.Task.AutoRun.Generation != 1 {
+		t.Fatalf("external lock changed scheduler AutoRun state: %#v", resource.Task.AutoRun)
+	}
 }
 
 func TestExternalTaskLockBlocksAgentInputAndResume(t *testing.T) {
