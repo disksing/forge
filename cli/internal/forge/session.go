@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -917,10 +916,6 @@ func sessionPathWithin(path, parent string) bool {
 	return path == parent || parent == "" || strings.HasPrefix(path, parent+"/")
 }
 
-func sessionActive(session Session) bool {
-	return sessionActiveWithProjection(&session)
-}
-
 func sessionActiveWithProjection(session *Session) bool {
 	if session == nil {
 		return false
@@ -939,220 +934,14 @@ func sessionActiveWithProjection(session *Session) bool {
 		}
 		return time.Since(updatedAt) <= timeout
 	case "agenthub":
-		return sessionAgentHubActive(session)
-	default:
-		return false
-	}
-}
-
-type sessionAgentHubSession struct {
-	ID     string `json:"id"`
-	State  string `json:"state"`
-	Source *struct {
-		App        string `json:"app"`
-		InstanceID string `json:"instanceId"`
-		ExternalID string `json:"externalId"`
-	} `json:"source"`
-}
-
-func sessionAgentHubWithinStartingGrace(session *Session, now time.Time) bool {
-	if session == nil || strings.TrimSpace(session.Liveness.StartingGrace) == "" {
-		return false
-	}
-	grace, err := time.ParseDuration(session.Liveness.StartingGrace)
-	if err != nil || grace <= 0 {
-		return false
-	}
-	startedAt, err := time.Parse(time.RFC3339, session.StartedAt)
-	if err != nil {
-		return false
-	}
-	return !startedAt.After(now) && now.Sub(startedAt) <= grace
-}
-
-func sessionAgentHubActive(session *Session) bool {
-	liveness := &session.Liveness
-	now := time.Now()
-	liveness.LastCheckedAt = now.Format(time.RFC3339)
-	unknown := func(format string, args ...any) bool {
-		liveness.LastKnownState = "unknown"
-		liveness.LivenessDiagnostic = fmt.Sprintf(format, args...)
-		return true
-	}
-	if strings.TrimSpace(session.ID) == "" || strings.TrimSpace(liveness.Endpoint) == "" ||
-		strings.TrimSpace(liveness.SourceApp) == "" || strings.TrimSpace(liveness.SourceInstanceID) == "" ||
-		strings.TrimSpace(liveness.SourceExternalID) == "" {
-		return unknown("AgentHub liveness metadata is incomplete; lock retained")
-	}
-	client := &http.Client{Timeout: time.Second}
-	var status struct {
-		APIVersion   string   `json:"apiVersion"`
-		Capabilities []string `json:"capabilities"`
-	}
-	if err := sessionAgentHubGetJSON(client, strings.TrimRight(liveness.Endpoint, "/")+"/v1/status", &status); err != nil {
-		return unknown("AgentHub status is unreachable: %v; lock retained", err)
-	}
-	if status.APIVersion != "1" {
-		return unknown("AgentHub apiVersion %q is unsupported; lock retained", status.APIVersion)
-	}
-	capabilities := make(map[string]bool, len(status.Capabilities))
-	for _, capability := range status.Capabilities {
-		capabilities[capability] = true
-	}
-	for _, required := range []string{"session.source", "session.strict-stopped", "events.lossless-replay"} {
-		if !capabilities[required] {
-			return unknown("AgentHub capability %s is missing; lock retained", required)
-		}
-	}
-
-	unboundAgentHubSession := strings.TrimSpace(liveness.AgentHubSessionID) == ""
-	target, err := sessionAgentHubResolveSession(client, liveness)
-	if err != nil {
-		if unboundAgentHubSession && sessionAgentHubWithinStartingGrace(session, now) {
-			liveness.LastKnownState = "starting"
-			liveness.LivenessDiagnostic = "AgentHub session has not appeared by source within starting grace; lock retained"
-			return true
-		}
-		return unknown("%v; lock retained", err)
-	}
-	replacementStarting := unboundAgentHubSession && target.State == "stopped" &&
-		sessionAgentHubWithinStartingGrace(session, now)
-	if liveness.AgentHubSessionID == "" && !replacementStarting {
-		liveness.AgentHubSessionID = target.ID
-	}
-	liveness.LastKnownState = target.State
-	liveness.LivenessDiagnostic = ""
-	switch target.State {
-	case "stopped":
-		// A stopped session can still be the predecessor of a replacement
-		// session during Resume. Until the replacement is bound to its
-		// AgentHub session, source matching necessarily finds that predecessor.
-		// Keep the newly-created Forge session through its starting grace so
-		// the caller can acquire the resource lock and issue the resume action.
-		if replacementStarting {
-			liveness.LastKnownState = "starting"
-			liveness.LivenessDiagnostic = "AgentHub predecessor is stopped while a replacement session is starting; lock retained"
-			return true
-		}
-		return false
-	case "archived":
-		stopped, err := sessionAgentHubArchivedAfterStopped(client, liveness.Endpoint, target.ID)
-		if err != nil {
-			return unknown("cannot prove archived AgentHub session passed through stopped: %v; lock retained", err)
-		}
-		if !stopped {
-			return unknown("archived AgentHub session has no continuous durable stopped history; lock retained")
-		}
-		liveness.LastKnownState = "archived-after-stopped"
-		return false
-	case "starting", "ready", "busy", "waiting_approval", "stopping":
+		// AgentHub-managed sessions are never probed by the plain CLI: no
+		// network request happens on any code path here. The session stays
+		// active until forge serve reconciles a durable AgentHub terminal
+		// state or the user explicitly runs `forge session end`.
 		return true
 	default:
-		return unknown("AgentHub session state %q is unknown; lock retained", target.State)
+		return false
 	}
-}
-
-func sessionAgentHubResolveSession(client *http.Client, liveness *SessionLiveness) (sessionAgentHubSession, error) {
-	var target sessionAgentHubSession
-	if id := strings.TrimSpace(liveness.AgentHubSessionID); id != "" {
-		endpoint := strings.TrimRight(liveness.Endpoint, "/") + "/v1/sessions/" + url.PathEscape(id)
-		var response struct {
-			Session sessionAgentHubSession `json:"session"`
-		}
-		if err := sessionAgentHubGetJSON(client, endpoint, &response); err != nil {
-			return target, fmt.Errorf("query AgentHub session %s: %w", id, err)
-		}
-		target = response.Session
-	} else {
-		query := make(url.Values)
-		query.Set("includeArchived", "true")
-		query.Set("sourceApp", liveness.SourceApp)
-		query.Set("sourceInstanceId", liveness.SourceInstanceID)
-		query.Set("sourceExternalId", liveness.SourceExternalID)
-		endpoint := strings.TrimRight(liveness.Endpoint, "/") + "/v1/sessions?" + query.Encode()
-		var response struct {
-			Sessions []sessionAgentHubSession `json:"sessions"`
-		}
-		if err := sessionAgentHubGetJSON(client, endpoint, &response); err != nil {
-			return target, fmt.Errorf("query AgentHub source: %w", err)
-		}
-		if len(response.Sessions) != 1 {
-			return target, fmt.Errorf("AgentHub source resolved to %d sessions", len(response.Sessions))
-		}
-		target = response.Sessions[0]
-	}
-	if target.Source == nil || target.Source.App != liveness.SourceApp ||
-		target.Source.InstanceID != liveness.SourceInstanceID || target.Source.ExternalID != liveness.SourceExternalID {
-		return sessionAgentHubSession{}, errors.New("AgentHub session source does not match persisted Forge source")
-	}
-	return target, nil
-}
-
-func sessionAgentHubArchivedAfterStopped(client *http.Client, endpoint, sessionID string) (bool, error) {
-	cursor := int64(0)
-	sawStopped := false
-	for {
-		var page struct {
-			Events []struct {
-				ID   int64           `json:"id"`
-				Type string          `json:"type"`
-				Data json.RawMessage `json:"data"`
-			} `json:"events"`
-			LatestCursor int64 `json:"latestCursor"`
-		}
-		requestURL := fmt.Sprintf("%s/v1/sessions/%s/events?after=%d&limit=500", strings.TrimRight(endpoint, "/"), url.PathEscape(sessionID), cursor)
-		if err := sessionAgentHubGetJSON(client, requestURL, &page); err != nil {
-			return false, err
-		}
-		progressed := false
-		for _, event := range page.Events {
-			if event.ID <= cursor {
-				continue
-			}
-			if event.ID != cursor+1 {
-				return false, fmt.Errorf("cursor gap: expected %d, got %d", cursor+1, event.ID)
-			}
-			cursor = event.ID
-			progressed = true
-			if event.Type == "session.state" {
-				var data struct {
-					State string `json:"state"`
-				}
-				if err := json.Unmarshal(event.Data, &data); err != nil {
-					return false, fmt.Errorf("decode session.state %d: %w", event.ID, err)
-				}
-				if data.State == "stopped" {
-					sawStopped = true
-				}
-			}
-		}
-		if cursor >= page.LatestCursor {
-			return sawStopped, nil
-		}
-		if !progressed {
-			return false, fmt.Errorf("event replay stopped at %d before %d", cursor, page.LatestCursor)
-		}
-	}
-}
-
-func sessionAgentHubGetJSON(client *http.Client, endpoint string, output any) error {
-	request, err := http.NewRequest(http.MethodGet, endpoint, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Accept", "application/json")
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("returned HTTP %d", response.StatusCode)
-	}
-	if err := json.NewDecoder(response.Body).Decode(output); err != nil {
-		return fmt.Errorf("decode response: %w", err)
-	}
-	return nil
 }
 
 func sessionPIDActive(pid int) bool {
@@ -1181,6 +970,10 @@ func withLockedSessionStore(root string, update func(*SessionStore) error) error
 	if err != nil {
 		return err
 	}
+	original, marshalErr := json.Marshal(store)
+	if marshalErr != nil {
+		return marshalErr
+	}
 	prunedArchived := len(pruneArchivedResourceSessions(root, &store)) > 0
 	if err := update(&store); err != nil {
 		if prunedArchived {
@@ -1189,6 +982,14 @@ func withLockedSessionStore(root string, update func(*SessionStore) error) error
 			}
 		}
 		return err
+	}
+	// Read-only commands (list/show/tree) must not rewrite unchanged state.
+	updated, marshalErr := json.Marshal(store)
+	if marshalErr != nil {
+		return marshalErr
+	}
+	if string(updated) == string(original) {
+		return nil
 	}
 	return writeSessionStore(root, store)
 }

@@ -36,7 +36,9 @@ GUI 只读取 schema version 3 配置。旧版本配置不会被降级展示、�
 
 AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
 
-只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁。AgentHub 不可达、状态未知、event cursor gap、重复 source 或未证明先经过 stopped 的 archived 状态都保守持锁。
+只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁；服务错过 stopped 边沿、只看到 archived 时，必须依据连续 durable event history 证明该 session 先经过 stopped 才可释放。AgentHub 不可达、状态未知、event cursor gap、重复或冲突 source、未证明先经过 stopped 的 archived 状态都保守持锁。
+
+`forge serve` 是 AgentHub session 对账和 Forge 锁释放的唯一 owner。普通 Forge CLI（`forge session list/show`、`forge workspace tree`、`forge start`、session create/lock/unlock/heartbeat/end、资源归档等）不会访问 AgentHub；AgentHub 管理的 Forge session 在普通 CLI 看来始终活动，直到服务安全对账或用户显式执行 `forge session end --id=<id>`。服务停止期间这些锁会保守保留。
 
 旧 run 索引和本地 JSONL event 可以由用户自行备份，但当前 Forge 不再读取、展示、迁移或写入这些文件，也不会列出或控制未绑定 AgentHub 的 direct run。
 

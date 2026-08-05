@@ -11,9 +11,12 @@ import (
 
 // This file reconciles local run projections with AgentHub session state by
 // polling one session list per interval instead of replaying event history.
-// The poller never reads events: run status follows session state, turn
-// terminal edges drive AutoRun recovery, and durable stopped sessions drive
-// Forge session release. Only changed projections are persisted.
+// Run status follows session state and turn terminal edges drive AutoRun
+// recovery. Forge session release is owned here and nowhere else: durable
+// stopped sessions release directly, while archived sessions require the
+// archived-after-stopped proof in agenthub_reconcile.go, which is the only
+// code path that reads event history. Only changed projections are
+// persisted.
 
 const agentHubPollInterval = 2 * time.Second
 
@@ -95,7 +98,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			if !isAgentHubRun(run) {
 				continue
 			}
-			m.reconcileAgentHubRun(workspace, run, byExternalID, byID, client)
+			m.reconcileAgentHubRun(ctx, workspace, run, byExternalID, byID, client)
 		}
 	}
 	if len(failures) > 0 {
@@ -106,10 +109,12 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 
 // reconcileAgentHubRun projects one AgentHub session onto a local run. Runs
 // are matched by source external id, falling back to the bound AgentHub
-// session id. Sessions absent from the non-archived list were archived or
-// deleted upstream: live runs conservatively move to recovering while stopped
-// runs keep their terminal state.
-func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+// session id. Sessions absent from the non-archived list are re-checked once
+// on demand by their bound id: an archived session drives the
+// archived-after-stopped reconciliation, while a session that is truly gone
+// conservatively moves live runs to recovering and keeps terminal runs
+// untouched.
+func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	session, found := byExternalID[strings.TrimSpace(run.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(run.AgentHubSessionID)]
@@ -118,6 +123,21 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 	if rt == nil {
 		rt = newAgentHubRuntime(m, workspace, run, client)
 		m.registerRuntime(rt)
+	}
+	if !found {
+		// The live list excludes archived sessions. Re-check the bound session
+		// on demand before failing closed: a session that stopped and was
+		// archived between polls is the missed stopped edge this
+		// reconciliation owns.
+		if id := strings.TrimSpace(run.AgentHubSessionID); id != "" {
+			if fetched, err := client.GetSession(ctx, id); err == nil {
+				if agentHubSourceConflicts(run, fetched) {
+					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted Forge run source; Forge session lock retained", id))
+					return
+				}
+				session, found = fetched, true
+			}
+		}
 	}
 	if !found {
 		rt.mu.Lock()
@@ -130,6 +150,17 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 		} else {
 			rt.mu.Unlock()
 		}
+		// A durable stopped edge observed locally permits the release even
+		// after the session disappeared upstream; the call is a no-op for
+		// every other run.
+		go rt.releaseForgeSessionAfterStopped(m)
+		return
+	}
+	if session.State == "archived" {
+		rt.mu.Lock()
+		previousStatus := rt.run.Status
+		rt.mu.Unlock()
+		rt.reconcileArchivedAgentHubSession(m, client, session, previousStatus)
 		return
 	}
 
@@ -145,11 +176,6 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 		stoppedObserved = false
 	}
 	newStatus := forgeStatusForAgentHubState(session.State)
-	if session.State == "archived" && !stoppedObserved {
-		// An archived session that never reached durable stopped keeps the
-		// strict recovering semantics.
-		newStatus = "recovering"
-	}
 	updated := current
 	updated.Status = newStatus
 	updated.AgentHubStoppedObserved = stoppedObserved
@@ -185,7 +211,9 @@ func (m *agentManager) reconcileAgentHubRun(workspace guiWorkspace, run agentRun
 	if turnFinished && updated.SchedulerTurn {
 		go rt.finishSchedulerTurn(m)
 	}
-	if session.State == "stopped" && !current.AgentHubStoppedObserved {
+	if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+		// Idempotent: releases the Forge session on the stopped edge and
+		// retries a release that failed on an earlier poll.
 		go rt.releaseForgeSessionAfterStopped(m)
 	}
 }

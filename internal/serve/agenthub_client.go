@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -241,6 +242,23 @@ func (c *agentHubClient) GetSession(ctx context.Context, sessionID string) (agen
 	}
 	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID), nil, &response)
 	return response.Session, err
+}
+
+// SessionEvents returns one page of a session's durable event history along
+// with the latest cursor. It is only used to prove that an archived session
+// passed through a durable stopped state before its Forge lock is released.
+func (c *agentHubClient) SessionEvents(ctx context.Context, sessionID string, after int64, limit int) ([]agentHubEvent, int64, error) {
+	query := make(url.Values)
+	query.Set("after", strconv.FormatInt(after, 10))
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	var response struct {
+		Events       []agentHubEvent `json:"events"`
+		LatestCursor int64           `json:"latestCursor"`
+	}
+	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID)+"/events?"+query.Encode(), nil, &response)
+	return response.Events, response.LatestCursor, err
 }
 
 func (c *agentHubClient) ListSessions(ctx context.Context, filter agentHubSessionFilter) ([]agentHubSession, error) {

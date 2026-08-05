@@ -388,8 +388,9 @@ Commands:
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
     Create a session and print its unique id. Heartbeat liveness is the
     default and can use --timeout. PID liveness stays active while the process
-    exists. AgentHub liveness keeps locks through unknown/unreachable states
-    and releases them only after durable stopped.
+    exists. AgentHub sessions are managed by forge serve: plain CLI commands
+    never contact AgentHub and keep the session active until forge serve
+    reconciles a durable terminal state or forge session end releases it.
 
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
     Persist the final AgentHub session id after source-based creation or
@@ -408,6 +409,8 @@ Commands:
 
   forge session end --id=<id>
     End a session immediately and remove it from the active session list.
+    This is the manual escape hatch that releases AgentHub-managed sessions
+    and their locks when forge serve is not running.
 
   forge session list
     List active sessions after automatically pruning stale sessions.

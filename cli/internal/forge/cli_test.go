@@ -3,7 +3,6 @@ package forge
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode"
@@ -1080,151 +1080,186 @@ func TestSessionNewSupportsPIDLiveness(t *testing.T) {
 	})
 }
 
-func TestAgentHubSessionLivenessReleasesOnlyAfterDurableStopped(t *testing.T) {
+func TestAgentHubSessionsAreNeverProbedByCLI(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "AgentHub lock")
-		state := "ready"
+		var requests int64
+		var requestPaths []string
+		var mu sync.Mutex
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/v1/status":
-				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
-			case "/v1/sessions/ses_lock":
-				fmt.Fprintf(w, `{"session":{"id":"ses_lock","state":%q,"source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`, state)
-			default:
-				http.NotFound(w, r)
-			}
+			mu.Lock()
+			requests++
+			requestPaths = append(requestPaths, r.URL.Path)
+			mu.Unlock()
+			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
+		// A deliberately blocked endpoint: any request hangs until the test
+		// finishes, so a probing CLI would deadlock here.
+		release := make(chan struct{})
+		var blockedRequests int64
+		blocking := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			blockedRequests++
+			<-release
+		}))
+		defer func() {
+			close(release)
+			blocking.Close()
+		}()
 
-		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
-		run(t, "session", "bind-agenthub", "--id", id, "--agenthub-session-id", "ses_lock")
-		run(t, "session", "lock", "--id", id, "--project", "project1")
-		for _, activeState := range []string{"ready", "busy", "stopping"} {
-			state = activeState
-			listed := run(t, "session", "list")
-			if !strings.Contains(listed, id) {
-				t.Fatalf("state %s released the lock early: %s", activeState, listed)
-			}
+		newAgentHubSession := func() string {
+			return strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+				"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
 		}
-		state = "stopped"
-		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
-			t.Fatalf("durable stopped session was not pruned: %s", listed)
+		first := newAgentHubSession()
+		second := newAgentHubSession()
+		// Unreachable and deliberately blocked endpoints must not slow down or
+		// release sessions either.
+		unreachable := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/gone"))
+		blocked := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", blocking.URL,
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/blocked"))
+		run(t, "session", "bind-agenthub", "--id", first, "--agenthub-session-id", "ses_lock")
+		run(t, "session", "lock", "--id", first, "--project", "project1")
+
+		start := time.Now()
+		run(t, "session", "list")
+		run(t, "session", "show", "--id", first)
+		run(t, "session", "show", "--id", second)
+		run(t, "session", "heartbeat", "--id", second)
+		run(t, "workspace", "tree", "--json")
+		run(t, "session", "unlock", "--id", first, "--project", "project1")
+		run(t, "session", "lock", "--id", first, "--project", "project1")
+		if elapsed := time.Since(start); elapsed > 10*time.Second {
+			t.Fatalf("session commands blocked on AgentHub for %s", elapsed)
+		}
+
+		mu.Lock()
+		defer mu.Unlock()
+		if requests != 0 {
+			t.Fatalf("CLI made %d AgentHub requests (%v); plain CLI must never probe AgentHub", requests, requestPaths)
+		}
+		if blockedRequests != 0 {
+			t.Fatalf("CLI probed the blocked AgentHub endpoint %d times", blockedRequests)
+		}
+		for _, id := range []string{first, second, unreachable, blocked} {
+			if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
+				t.Fatalf("AgentHub session %s was pruned by the CLI: %s", id, listed)
+			}
 		}
 	})
 }
 
-func TestAgentHubSessionLivenessRetainsReplacementDuringStartingGrace(t *testing.T) {
+func TestAgentHubSessionsSurviveLocalStalePruning(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "project", "create", "AgentHub replacement")
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/v1/status":
-				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
-			case "/v1/sessions":
-				_, _ = w.Write([]byte(`{"sessions":[{"id":"ses_previous","state":"stopped","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}]}`))
-			case "/v1/sessions/ses_previous":
-				_, _ = w.Write([]byte(`{"session":{"id":"ses_previous","state":"stopped","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		defer server.Close()
-
-		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
-			"--starting-grace", "30s"))
-		locked := run(t, "session", "lock", "--id", id, "--project", "project1")
-		if !strings.Contains(locked, `"id": "`+id+`"`) {
-			t.Fatalf("replacement session was pruned before it could be locked: %s", locked)
-		}
-		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
-			t.Fatalf("replacement session was not retained during starting grace: %s", listed)
-		}
-
+		run(t, "project", "create", "Mixed store")
+		managed := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
+			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
+		run(t, "session", "lock", "--id", managed, "--project", "project1")
 		store, err := readSessionStore(root)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(store.Sessions) != 1 {
-			t.Fatalf("expected one replacement session, got %#v", store.Sessions)
-		}
-		store.Sessions[0].StartedAt = time.Now().Add(-time.Minute).Format(time.RFC3339)
+		store.Sessions = append(store.Sessions, Session{
+			ID:        "dead-pid",
+			Liveness:  SessionLiveness{Type: "pid", PID: 99999999},
+			StartedAt: "2026-01-01T00:00:00Z",
+			UpdatedAt: time.Now().Format(time.RFC3339),
+		}, Session{
+			ID:        "stale-heartbeat",
+			Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1s"},
+			StartedAt: "2026-01-01T00:00:00Z",
+			UpdatedAt: "2026-01-01T00:00:00Z",
+		})
 		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
 			t.Fatal(err)
 		}
-		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
-			t.Fatalf("stopped predecessor should prune an expired replacement session: %s", listed)
+
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, "dead-pid") || strings.Contains(listed, "stale-heartbeat") {
+			t.Fatalf("local stale sessions were not pruned: %s", listed)
+		}
+		if !strings.Contains(listed, managed) {
+			t.Fatalf("AgentHub session must survive local stale pruning: %s", listed)
+		}
+		if !strings.Contains(listed, "project1:project1") {
+			t.Fatalf("AgentHub session lock must be retained: %s", listed)
 		}
 	})
 }
 
-func TestAgentHubSessionLivenessRetainsLockWhenUnreachableOrUnknown(t *testing.T) {
+func TestSessionEndOnlyEndsTargetSession(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "project", "create", "AgentHub lock")
+		run(t, "project", "create", "AgentHub end")
+		run(t, "project", "create", "AgentHub other")
+		var requests int64
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/v1/status":
-				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
-			case "/v1/sessions/ses_lock":
-				_, _ = w.Write([]byte(`{"session":{"id":"ses_lock","state":"mystery","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
-			default:
-				http.NotFound(w, r)
-			}
+			requests++
+			w.WriteHeader(http.StatusInternalServerError)
 		}))
-		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+		defer server.Close()
+		newAgentHubSession := func(externalID string) string {
+			return strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
+				"--source-instance-id", "forge-test", "--source-external-id", externalID))
+		}
+		target := newAgentHubSession("workspace/target")
+		other := newAgentHubSession("workspace/other")
+		run(t, "session", "lock", "--id", target, "--project", "project1")
+		run(t, "session", "lock", "--id", other, "--project", "project2")
+
+		ended := run(t, "session", "end", "--id", target)
+		if !strings.Contains(ended, `"id": "`+target+`"`) {
+			t.Fatalf("expected end to print the removed session, got: %s", ended)
+		}
+		listed := run(t, "session", "list")
+		if strings.Contains(listed, target) {
+			t.Fatalf("ended session is still listed: %s", listed)
+		}
+		if !strings.Contains(listed, other) || !strings.Contains(listed, "project2:project2") {
+			t.Fatalf("session end pruned another AgentHub session: %s", listed)
+		}
+		if requests != 0 {
+			t.Fatalf("session end probed AgentHub %d times", requests)
+		}
+	})
+}
+
+func TestReadOnlySessionCommandsDoNotRewriteStore(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "AgentHub projection")
+		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
 			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
 			"--agenthub-session-id", "ses_lock"))
 		run(t, "session", "lock", "--id", id, "--project", "project1")
-		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
-			t.Fatalf("unknown state released the lock: %s", listed)
+		// Seed legacy diagnostic projection fields left behind by older Forge
+		// versions; read-only commands must preserve them verbatim.
+		store, err := readSessionStore(root)
+		if err != nil {
+			t.Fatal(err)
 		}
-		server.Close()
-		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
-			t.Fatalf("unreachable AgentHub released the lock: %s", listed)
+		store.Sessions[0].Liveness.LastKnownState = "unknown"
+		store.Sessions[0].Liveness.LastCheckedAt = "2026-01-01T00:00:00Z"
+		store.Sessions[0].Liveness.LivenessDiagnostic = "legacy diagnostic"
+		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
+			t.Fatal(err)
+		}
+		before := readFile(t, filepath.Join(root, sessionStateFile))
+
+		run(t, "session", "list")
+		run(t, "session", "show", "--id", id)
+		run(t, "workspace", "tree", "--json")
+
+		after := readFile(t, filepath.Join(root, sessionStateFile))
+		if before != after {
+			t.Fatalf("read-only commands rewrote the session store:\nbefore:\n%s\nafter:\n%s", before, after)
 		}
 		shown := run(t, "session", "show", "--id", id)
-		if !strings.Contains(shown, `"lastKnownState": "unknown"`) || !strings.Contains(shown, "lock retained") {
-			t.Fatalf("missing fail-closed diagnostic: %s", shown)
-		}
-	})
-}
-
-func TestArchivedAgentHubSessionRequiresContinuousStoppedHistory(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "AgentHub lock")
-		gapped := true
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/v1/status":
-				_, _ = w.Write([]byte(`{"apiVersion":"1","capabilities":["session.source","session.strict-stopped","events.lossless-replay"]}`))
-			case "/v1/sessions/ses_archive":
-				_, _ = w.Write([]byte(`{"session":{"id":"ses_archive","state":"archived","source":{"app":"forge","instanceId":"forge-test","externalId":"workspace/run"}}}`))
-			case "/v1/sessions/ses_archive/events":
-				if gapped {
-					_, _ = w.Write([]byte(`{"events":[{"id":1,"type":"session.created","data":{}},{"id":3,"type":"session.state","data":{"state":"stopped"}}],"latestCursor":3}`))
-				} else {
-					_, _ = w.Write([]byte(`{"events":[{"id":1,"type":"session.created","data":{}},{"id":2,"type":"session.state","data":{"state":"stopped"}},{"id":3,"type":"session.archived","data":{}}],"latestCursor":3}`))
-				}
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		defer server.Close()
-		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
-			"--agenthub-session-id", "ses_archive"))
-		run(t, "session", "lock", "--id", id, "--project", "project1")
-		if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
-			t.Fatalf("cursor gap released archived lock: %s", listed)
-		}
-		gapped = false
-		if listed := run(t, "session", "list"); strings.Contains(listed, id) {
-			t.Fatalf("continuous stopped history did not release archived lock: %s", listed)
+		if !strings.Contains(shown, `"lastKnownState": "unknown"`) {
+			t.Fatalf("legacy projection fields must remain readable: %s", shown)
 		}
 	})
 }

@@ -388,7 +388,14 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 		}
 		session, err := client.GetSession(r.Context(), run.AgentHubSessionID)
 		if err == nil {
-			rt.applyAgentHubSessionState(m, session)
+			if session.State == "archived" {
+				// The session stopped and was archived during the confirmation
+				// window. Apply the same archived-after-stopped proof instead
+				// of waiting for the timeout to fail closed.
+				rt.reconcileArchivedAgentHubSession(m, client, session, "stopping")
+			} else {
+				rt.applyAgentHubSessionState(m, session)
+			}
 		}
 	}
 	writeJSON(w, map[string]string{"status": "stopped"})
@@ -771,6 +778,13 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 		}
 	}
 	rt.applyAgentHubSessionState(m, session)
+	if session.State == "archived" {
+		// The service missed the stopped edge while it was down. Release the
+		// Forge session only when the archived session provably passed
+		// through durable stopped; anything else keeps failing closed. Runs
+		// asynchronously so a long event replay never blocks startup.
+		go rt.reconcileArchivedAgentHubSession(m, client, session, previousStatus)
+	}
 	// A scheduler turn that ended while the GUI was down looks exactly like the
 	// poller edge: busy/waiting_approval persisted locally, ready/stopped now.
 	turnFinished := (previousStatus == "running" || previousStatus == "waiting_approval") &&

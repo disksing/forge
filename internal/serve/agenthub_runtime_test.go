@@ -24,6 +24,7 @@ type runtimeFakeAgentHub struct {
 	abortNextCreate    bool
 	duplicateSource    bool
 	gapAfter           int64
+	failEvents         bool
 	stopAtStopping     bool
 	failNextResume     bool
 	rejectAgentName    string
@@ -380,7 +381,13 @@ func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
 		writeRuntimeFakeJSON(w, map[string]any{"sessions": sessions})
 		return
 	}
+	// Mirror real AgentHub semantics: archived sessions are hidden from the
+	// default list and only returned when includeArchived is requested.
+	includeArchived := r.URL.Query().Get("includeArchived") == "true" || r.URL.Query().Get("archived") == "true"
 	for _, session := range f.sessions {
+		if session.State == "archived" && !includeArchived {
+			continue
+		}
 		if sourceMatchesQuery(session.Source, r.URL.Query()) {
 			sessions = append(sessions, session)
 		}
@@ -405,6 +412,14 @@ func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request
 		limit = 200
 	}
 	f.mu.Lock()
+	if f.failEvents {
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusInternalServerError)
+		writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+			"code": "events_unavailable", "message": "synthetic events failure",
+		}})
+		return
+	}
 	all := append([]agentHubEvent(nil), f.events[id]...)
 	gapAfter := f.gapAfter
 	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") || r.URL.Query().Get("stream") == "true" {

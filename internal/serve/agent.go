@@ -127,6 +127,7 @@ type agentRuntime struct {
 	agentHub               *agentHubClient
 	agentHubState          string
 	schedulerTurnFinishing bool
+	archivedProofFailed    bool
 }
 
 type agentManager struct {
