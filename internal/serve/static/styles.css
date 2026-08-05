@@ -312,13 +312,46 @@ body.resizing-y {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  overflow: hidden;
   white-space: nowrap;
 }
 
 .tree-item .name .name-text {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.project-task-summary {
+  min-width: 0;
+  max-width: min(48%, 148px);
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+.project-task-summary-count,
+.project-task-summary-running {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-task-summary-separator {
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+
+.tree-item.active .project-task-summary {
+  color: #60a5fa;
 }
 
 .resource-ref {
@@ -5063,5 +5096,17 @@ i[data-lucide] {
   .diff-modal.modal-enter,
   .settings-modal.modal-enter {
     animation: none;
+  }
+}
+
+@media (max-width: 420px) {
+  .project-task-summary {
+    max-width: 42%;
+    gap: 3px;
+    font-size: 10px;
+  }
+
+  .tree-item .name {
+    gap: 4px;
   }
 }

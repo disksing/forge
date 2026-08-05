@@ -118,6 +118,7 @@ const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const AGENT_AUTOFILL_OVERFLOW_PX = 160;
 const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
+const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
@@ -456,6 +457,43 @@ function resourceRefBadge(id) {
   return `<span class="resource-ref">${escapeHTML(ref)}</span>`;
 }
 
+function projectTaskSummary(project) {
+  const tasks = (Array.isArray(project?.children) ? project.children : [])
+    .filter((task) => task && task.archived !== true);
+  const runningTaskIds = new Set();
+  for (const task of tasks) {
+    if (task.autoRun?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+      runningTaskIds.add(task.id);
+    }
+  }
+  const taskCount = tasks.length;
+  const runningCount = runningTaskIds.size;
+  const taskLabel = `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`;
+  const runningLabel = `${runningCount} running`;
+  return {
+    taskCount,
+    runningCount,
+    taskLabel,
+    runningLabel,
+    text: `${taskLabel} · ${runningLabel}`,
+    ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}`,
+  };
+}
+
+function taskSessionCountsAsRunning(session) {
+  return session?.source === "internal" && TASK_RUNNING_SESSION_STATES.has(session.agentRunStatus);
+}
+
+function projectTaskSummaryMarkup(summary) {
+  if (!summary) return "";
+  return `
+    <span class="project-task-summary" aria-hidden="true">
+      <span class="project-task-summary-count">${escapeHTML(summary.taskLabel)}</span>
+      <span class="project-task-summary-separator" aria-hidden="true">·</span>
+      <span class="project-task-summary-running">${escapeHTML(summary.runningLabel)}</span>
+    </span>`;
+}
+
 function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
@@ -474,15 +512,20 @@ function treeButton(item, kind, projectId = "") {
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
+  const summary = kind === "project" ? projectTaskSummary(item) : null;
+  const summaryMarkup = summary && !expanded ? projectTaskSummaryMarkup(summary) : "";
+  const accessibleLabel = [title, summary?.ariaLabel, taskState.label].filter(Boolean).join(". ");
+  if (kind === "project" || taskState.label) {
+    button.setAttribute("aria-label", accessibleLabel);
+  }
   if (taskState.label) {
-    button.setAttribute("aria-label", `${title}. ${taskState.label}`);
     bindTaskStatusTooltip(button, taskState.label);
   }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
-    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>
+    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}${summaryMarkup}</span>
     <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
@@ -743,7 +786,8 @@ function taskOperationalStateKey() {
   const parts = [];
   for (const project of state.tree.projects || []) {
     const projectState = taskOperationalState(project);
-    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}`);
+    const summary = projectTaskSummary(project);
+    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
       parts.push(`${task.id}:auto=${taskStatusKey(taskState.autoRun)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
