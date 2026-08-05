@@ -507,6 +507,9 @@ func TestTaskLifecycle(t *testing.T) {
 		if detail.Files[0].Name != "task.md" || detail.Files[0].Path != "project1/task1/task.md" {
 			t.Fatalf("expected task file path in detail, got: %+v", detail.Files[0])
 		}
+		if detail.Files[0].ContentHash == "" {
+			t.Fatal("expected task Markdown detail to include a content hash")
+		}
 		if len(detail.Logs) != 1 || detail.Logs[0].Title != "Task created" {
 			t.Fatalf("expected structured task creation log, got: %+v", detail.Logs)
 		}

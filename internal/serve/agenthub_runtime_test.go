@@ -28,6 +28,7 @@ type runtimeFakeAgentHub struct {
 	gapAfter           int64
 	failEvents         bool
 	stopAtStopping     bool
+	failNextInterrupt  bool
 	failNextResume     bool
 	rejectAgentName    string
 	messageSteers      []bool
@@ -144,6 +145,15 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				}})
 				return
 			}
+		}
+		if action == "interrupt" && f.failNextInterrupt {
+			f.failNextInterrupt = false
+			f.mu.Unlock()
+			w.WriteHeader(http.StatusBadGateway)
+			writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+				"code": "interrupt_unknown", "message": "synthetic interrupt failure",
+			}})
+			return
 		}
 		f.actions = append(f.actions, action)
 		session := f.sessions[id]
@@ -821,6 +831,269 @@ func TestAgentHubStopRetainsForgeLockUntilDurableStopped(t *testing.T) {
 	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
 		t.Fatalf("durable stopped did not release Forge session: %#v", sessions)
 	}
+}
+
+func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	runID := detail.Run.ID
+	request := httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`))
+	response := httptest.NewRecorder()
+	manager.handle(response, request, workspace.ID, []string{"runs", runID, "interrupt"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("interrupt failed: %d %s", response.Code, response.Body.String())
+	}
+	rt := manager.runtimeByID(runID)
+	waitForRuntimeTest(t, func() bool {
+		run := pollerRunState(rt)
+		return run.Status == "idle" && !run.SchedulerTurn
+	})
+	run := pollerRunState(rt)
+	if run.ForgeSessionID == "" || run.AgentHubStoppedObserved {
+		t.Fatalf("Stop Turn must retain the live Forge session: %#v", run)
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != userStoppedActiveTurnReason {
+		t.Fatalf("Stop Turn did not pause the active AutoRun generation: %#v", resource.AutoRun)
+	}
+	if !hasAutoRunLog(resource.Logs, "Auto Run paused", userStoppedActiveTurnReason) {
+		t.Fatalf("Stop Turn pause was not recorded: %#v", resource.Logs)
+	}
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 || len(sessions[0].Controls) != 1 {
+		t.Fatalf("Stop Turn released the Forge Session or task lock: %#v", sessions)
+	}
+	fake.mu.Lock()
+	actions := strings.Join(fake.actions, ",")
+	events := append([]agentHubEvent(nil), fake.events[detail.Run.AgentHubSessionID]...)
+	fake.mu.Unlock()
+	if strings.Contains(actions, "stop") || strings.Count(actions, "interrupt") != 1 {
+		t.Fatalf("Stop Turn used the wrong AgentHub action or retried: %q", actions)
+	}
+	messageCount := 0
+	for _, event := range events {
+		if event.Type == "message.user" {
+			messageCount++
+		}
+	}
+	if messageCount != 1 {
+		t.Fatalf("paused AutoRun was immediately continued: %d user messages in %#v", messageCount, events)
+	}
+}
+
+func TestAgentHubInterruptAllowsWaitingApproval(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	rt := manager.runtimeByID(detail.Run.ID)
+	fake.mu.Lock()
+	session := fake.sessions[detail.Run.AgentHubSessionID]
+	session.State = "waiting_approval"
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+	rt.applyAgentHubSessionState(manager, session)
+	response := httptest.NewRecorder()
+	manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("waiting approval interrupt failed: %d %s", response.Code, response.Body.String())
+	}
+	if run := pollerRunState(rt); run.Status != "idle" || run.ForgeSessionID == "" {
+		t.Fatalf("waiting approval interrupt did not preserve the Session: %#v", run)
+	}
+	fake.mu.Lock()
+	actions := strings.Join(fake.actions, ",")
+	fake.mu.Unlock()
+	if strings.Count(actions, "interrupt") != 1 || strings.Contains(actions, "stop") {
+		t.Fatalf("waiting approval used an unexpected action sequence: %q", actions)
+	}
+}
+
+func TestAgentHubInterruptDoesNotChangeAutoRunForChatTurn(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.StartAutoRun("project1.task1"); err != nil {
+		t.Fatal(err)
+	}
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"ordinary turn"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	response := httptest.NewRecorder()
+	manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+	if response.Code != http.StatusOK {
+		t.Fatalf("ordinary interrupt failed: %d %s", response.Code, response.Body.String())
+	}
+	run := pollerRunState(manager.runtimeByID(detail.Run.ID))
+	if run.SchedulerTurn || run.ForgeSessionID == "" {
+		t.Fatalf("ordinary Chat Stop Turn changed scheduler/session state: %#v", run)
+	}
+	resource, err := forgeWorkspace.Resource("project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resource.AutoRun == nil || resource.AutoRun.State != "running" {
+		t.Fatalf("ordinary Chat Stop Turn changed AutoRun state: %#v", resource.AutoRun)
+	}
+	if hasAutoRunLog(resource.Logs, "Auto Run paused", userStoppedActiveTurnReason) {
+		t.Fatal("ordinary Chat Stop Turn recorded an AutoRun pause")
+	}
+}
+
+func TestAgentHubInterruptRejectsStaleStateAndDuplicateClicks(t *testing.T) {
+	t.Run("idle state", func(t *testing.T) {
+		fake := newRuntimeFakeAgentHub()
+		hub := httptest.NewServer(fake)
+		defer hub.Close()
+		manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+		recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1"}`)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+		}
+		response := httptest.NewRecorder()
+		manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+		if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "not interruptible") {
+			t.Fatalf("idle interrupt should be a conflict, got %d %s", response.Code, response.Body.String())
+		}
+		fake.mu.Lock()
+		actions := strings.Join(fake.actions, ",")
+		fake.mu.Unlock()
+		if strings.Contains(actions, "interrupt") {
+			t.Fatalf("stale idle interrupt reached AgentHub: %q", actions)
+		}
+	})
+
+	t.Run("duplicate clicks", func(t *testing.T) {
+		fake := newRuntimeFakeAgentHub()
+		hub := httptest.NewServer(fake)
+		defer hub.Close()
+		manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+		recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+		}
+		codes := make(chan int, 2)
+		var wg sync.WaitGroup
+		for index := 0; index < 2; index++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				response := httptest.NewRecorder()
+				manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+				codes <- response.Code
+			}()
+		}
+		wg.Wait()
+		close(codes)
+		successes, conflicts := 0, 0
+		for code := range codes {
+			switch code {
+			case http.StatusOK:
+				successes++
+			case http.StatusConflict:
+				conflicts++
+			default:
+				t.Fatalf("duplicate interrupt returned unexpected status %d", code)
+			}
+		}
+		if successes != 1 || conflicts != 1 {
+			t.Fatalf("duplicate interrupt results = success %d, conflict %d", successes, conflicts)
+		}
+		fake.mu.Lock()
+		actions := strings.Join(fake.actions, ",")
+		fake.mu.Unlock()
+		if strings.Count(actions, "interrupt") != 1 {
+			t.Fatalf("duplicate clicks repeated AgentHub interrupt: %q", actions)
+		}
+	})
+}
+
+func TestAgentHubInterruptFailureRetainsSessionWithoutRetry(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.failNextInterrupt = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	response := httptest.NewRecorder()
+	manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+	if response.Code != http.StatusBadGateway {
+		t.Fatalf("ambiguous interrupt should fail with bad gateway, got %d %s", response.Code, response.Body.String())
+	}
+	run := pollerRunState(manager.runtimeByID(detail.Run.ID))
+	if run.Status != "recovering" || run.ForgeSessionID == "" {
+		t.Fatalf("ambiguous interrupt did not retain a recovering Session: %#v", run)
+	}
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+		t.Fatalf("ambiguous interrupt released the Forge Session: %#v", sessions)
+	}
+	fake.mu.Lock()
+	actions := strings.Join(fake.actions, ",")
+	fake.mu.Unlock()
+	if strings.Contains(actions, "interrupt") || strings.Contains(actions, "stop") {
+		t.Fatalf("ambiguous interrupt was retried or closed: %q", actions)
+	}
+}
+
+func TestAgentHubInterruptRejectsMismatchedSource(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"work"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	fake.mu.Lock()
+	session := fake.sessions[detail.Run.AgentHubSessionID]
+	session.Source = &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: "another-run"}
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+	response := httptest.NewRecorder()
+	manager.handle(response, httptest.NewRequest(http.MethodPost, "/interrupt", strings.NewReader(`{}`)), workspace.ID, []string{"runs", detail.Run.ID, "interrupt"})
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "does not belong") {
+		t.Fatalf("mismatched source should be rejected, got %d %s", response.Code, response.Body.String())
+	}
+	fake.mu.Lock()
+	actions := strings.Join(fake.actions, ",")
+	fake.mu.Unlock()
+	if strings.Contains(actions, "interrupt") {
+		t.Fatalf("mismatched source reached AgentHub: %q", actions)
+	}
+}
+
+func hasAutoRunLog(logs []app.LogEntry, title, details string) bool {
+	for _, entry := range logs {
+		if entry.Title == title && entry.Details == details {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {

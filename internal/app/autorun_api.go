@@ -19,9 +19,11 @@ type AutoRunQueueInput struct {
 
 // AutoRunActionInput describes a scheduler action.
 type AutoRunActionInput struct {
-	TaskID  string
-	Summary string
-	Reason  string
+	TaskID             string
+	Summary            string
+	Reason             string
+	ExpectedGeneration int
+	ExpectedState      string
 }
 
 func (w *Workspace) updateAutoRunTask(taskID string, update func(root, dir string, task *Task) error) (Task, error) {
@@ -174,10 +176,19 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
-		task.AutoRun.State = state
+		if input.ExpectedGeneration > 0 && task.AutoRun.Generation != input.ExpectedGeneration {
+			return fmt.Errorf("AutoRun generation changed from %d to %d", input.ExpectedGeneration, task.AutoRun.Generation)
+		}
+		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
+			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		}
 		details := strings.TrimSpace(input.Summary)
 		if details == "" {
 			details = strings.TrimSpace(input.Reason)
+		}
+		task.AutoRun.State = state
+		if state == autoRunStatePaused && details != "" {
+			task.AutoRun.SuspensionSummary = details
 		}
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
 	})

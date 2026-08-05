@@ -73,6 +73,11 @@ const state = {
   autoRefreshInFlight: false,
   autoRefreshVersion: 0,
   treeRequestVersion: 0,
+  navigationVersion: 0,
+  detailRequestVersion: 0,
+  workspaceAgentsRequestVersion: 0,
+  previewRequestVersion: 0,
+  diffRequestVersion: 0,
   agentSessionMutationCount: 0,
   iconRefreshScheduled: false,
   mobile: {
@@ -109,6 +114,8 @@ const state = {
     historyBeforeId: 0,
     loadingOlder: false,
     sendingInput: false,
+    turnStopping: false,
+    turnStoppingRunId: "",
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
     renderDeferredForSelection: false,
@@ -1093,9 +1100,19 @@ async function load() {
 
 async function loadTree(options = {}) {
   if (!state.activeWorkspaceId) return;
-  state.tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const treeRequestVersion = ++state.treeRequestVersion;
+  state.detailRequestVersion++;
+  state.workspaceAgentsRequestVersion++;
+  state.previewRequestVersion++;
+  state.diffRequestVersion++;
+  const tree = await api(`/api/workspaces/${workspaceId}/tree`);
+  if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
+  state.tree = tree;
   state.details = {};
   state.workspaceAgents = null;
+  state.workspaceAgentsSaving = false;
   state.preview = null;
   state.diff = null;
   ensureValidSelection();
@@ -1105,7 +1122,9 @@ async function loadTree(options = {}) {
   } else if (state.selectedId) {
     await loadDetail(state.selectedId);
   }
+  if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
   await loadAgentRuns();
+  if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
   if (!state.notifications.ready) establishNotificationBaseline();
   renderAll();
   if (options.updateURL !== false) {
@@ -1115,49 +1134,75 @@ async function loadTree(options = {}) {
 
 async function loadDetail(id, options = {}) {
   if (!id || id === "workspace" || (state.details[id] && !options.force)) return;
-  state.details[id] = await fetchDetail(id);
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const detailRequestVersion = ++state.detailRequestVersion;
+  const detail = await fetchDetail(id, workspaceId);
+  if (
+    !isCurrentWorkspaceView(workspaceId, navigationVersion) ||
+    state.selectedId !== id ||
+    detailRequestVersion !== state.detailRequestVersion
+  ) {
+    return null;
+  }
+  state.details[id] = detail;
+  return detail;
 }
 
-function fetchDetail(id) {
-  return api(`/api/workspaces/${state.activeWorkspaceId}/resources/${encodeURIComponent(id)}`);
+function fetchDetail(id, workspaceId = state.activeWorkspaceId) {
+  return api(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(id)}`);
 }
 
 async function loadWorkspaceAgents(options = {}) {
   if (!state.activeWorkspaceId || (state.workspaceAgents && !options.force)) return;
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const requestVersion = ++state.workspaceAgentsRequestVersion;
   try {
-    state.workspaceAgents = await api(`/api/workspaces/${state.activeWorkspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`);
+    const agents = await api(`/api/workspaces/${workspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`);
+    if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || requestVersion !== state.workspaceAgentsRequestVersion) return null;
+    state.workspaceAgents = agents;
   } catch (err) {
+    if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || requestVersion !== state.workspaceAgentsRequestVersion) return null;
     state.workspaceAgents = {
       path: "AGENTS.md",
       name: "AGENTS.md",
       error: err.message,
     };
   }
+  return state.workspaceAgents;
 }
 
-async function loadUIState() {
-  const uiState = await api(`/api/workspaces/${state.activeWorkspaceId}/ui-state`);
+async function loadUIState(workspaceId = state.activeWorkspaceId, navigationVersion = state.navigationVersion) {
+  const uiState = await api(`/api/workspaces/${workspaceId}/ui-state`);
+  if (!isCurrentWorkspaceView(workspaceId, navigationVersion)) return false;
   state.expandedProjects = new Set(uiState.expandedProjects || []);
   state.lastResourceId = uiState.lastResourceId || "";
   state.projectOrder = Array.isArray(uiState.projectOrder) ? uiState.projectOrder : [];
   state.taskOrder = uiState.taskOrder && typeof uiState.taskOrder === "object" ? uiState.taskOrder : {};
   state.sessionOrder = Array.isArray(uiState.sessionOrder) ? uiState.sessionOrder : [];
+  return true;
 }
 
 async function saveUIState() {
   if (!state.activeWorkspaceId) return;
-  await api(`/api/workspaces/${state.activeWorkspaceId}/ui-state`, {
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const selectedId = state.selectedId;
+  await api(`/api/workspaces/${workspaceId}/ui-state`, {
     method: "PUT",
     body: JSON.stringify({
       version: 1,
       expandedProjects: [...state.expandedProjects],
-      lastResourceId: state.selectedId,
+      lastResourceId: selectedId,
       projectOrder: state.projectOrder,
       taskOrder: state.taskOrder,
       sessionOrder: state.sessionOrder,
     }),
   });
-  state.lastResourceId = state.selectedId;
+  if (isCurrentWorkspaceView(workspaceId, navigationVersion)) {
+    state.lastResourceId = selectedId;
+  }
 }
 
 function startAutoRefresh() {
@@ -1172,10 +1217,13 @@ function startAutoRefresh() {
 async function autoRefresh() {
   if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || state.listDrag) return;
   const refreshVersion = state.autoRefreshVersion;
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  let selectedId = state.selectedId;
   state.autoRefreshInFlight = true;
   try {
-    const tree = await fetchCurrentTree();
-    if (!tree || refreshVersion !== state.autoRefreshVersion) return;
+    const tree = await fetchCurrentTree(workspaceId);
+    if (!tree || !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
     let changed = !sameJSON(state.tree, tree);
     if (changed) {
       state.tree = tree;
@@ -1183,10 +1231,12 @@ async function autoRefresh() {
     if (typeof observeCompletionProjections === "function") observeCompletionProjections(tree.sessions || []);
     if (changed && state.preview?.section === "Wiki" && !state.preview.loading) {
       await refreshFilePreview("Wiki", state.preview.path);
+      if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
     }
     if (ensureValidSelection()) {
       syncURL({ replace: true });
       changed = true;
+      selectedId = state.selectedId;
     }
     const expandedCount = state.expandedProjects.size;
     ensureSelectedProjectExpanded(false);
@@ -1194,19 +1244,25 @@ async function autoRefresh() {
     if (state.selectedId === "workspace") {
       const previousAgents = state.workspaceAgents;
       await loadWorkspaceAgents({ force: true });
+      if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
       if (!sameJSON(previousAgents, state.workspaceAgents)) {
         changed = true;
       }
-    } else if (state.selectedId) {
-      const detail = await fetchDetail(state.selectedId);
-      if (refreshVersion !== state.autoRefreshVersion) return;
-      if (!sameJSON(state.details[state.selectedId], detail)) {
-        state.details[state.selectedId] = detail;
+    } else if (selectedId) {
+      const detailRequestVersion = ++state.detailRequestVersion;
+      const detail = await fetchDetail(selectedId, workspaceId);
+      if (
+        !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) ||
+        state.selectedId !== selectedId ||
+        detailRequestVersion !== state.detailRequestVersion
+      ) return;
+      if (!sameJSON(state.details[selectedId], detail)) {
+        state.details[selectedId] = detail;
         changed = true;
       }
     }
     const runs = await fetchAgentRuns();
-    if (refreshVersion !== state.autoRefreshVersion) return;
+    if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
     const runsChanged = !sameJSON(state.agent.runs, runs);
     if (runsChanged) {
       state.agent.runs = runs;
@@ -1215,7 +1271,7 @@ async function autoRefresh() {
     if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
     if (reconcileActiveAgentRun(runs)) {
       await loadCanonicalAgentEvents();
-      if (refreshVersion !== state.autoRefreshVersion) return;
+      if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
       connectAgentStream();
       changed = true;
     }
@@ -1235,6 +1291,7 @@ function renderAll() {
   renderSessions();
   renderDetails();
   bindWorkspaceAgentsEvents();
+  bindTemplateEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -1256,6 +1313,7 @@ function renderSelectionPanels() {
   renderSessions();
   renderDetails();
   bindWorkspaceAgentsEvents();
+  bindTemplateEvents();
   bindArtifactBrowserEvents();
   bindFileModalEvents();
   bindDiffEvents();
@@ -1266,6 +1324,16 @@ function renderSelectionPanels() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
+}
+
+function isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion = null) {
+  return workspaceId === state.activeWorkspaceId &&
+    navigationVersion === state.navigationVersion &&
+    (treeRequestVersion == null || treeRequestVersion === state.treeRequestVersion);
+}
+
+function isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) {
+  return isCurrentWorkspaceView(workspaceId, navigationVersion) && refreshVersion === state.autoRefreshVersion;
 }
 
 const WORKSPACE_AVATAR_PALETTE = [
@@ -1342,6 +1410,14 @@ async function switchWorkspace(id) {
   }
   setMobileSidebar(false);
   flushAgentDraft();
+  state.navigationVersion++;
+  state.autoRefreshVersion++;
+  state.treeRequestVersion++;
+  state.detailRequestVersion++;
+  state.workspaceAgentsRequestVersion++;
+  state.previewRequestVersion++;
+  state.diffRequestVersion++;
+  const navigationVersion = state.navigationVersion;
   // Record the page open in the workspace being left so it can be restored later.
   await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
@@ -1349,10 +1425,11 @@ async function switchWorkspace(id) {
   initializeNotificationState(id);
   state.sessionMenu = null;
   resetWorkspaceAgentsDraft();
+  state.workspaceAgentsSaving = false;
   closeCreateDialog();
   resetAgentState();
   renderWorkspaceSelect();
-  await loadUIState();
+  if (!await loadUIState(id, navigationVersion)) return;
   state.selectedId = state.lastResourceId || "workspace";
   await loadTree();
 }
@@ -1677,6 +1754,22 @@ function selectedTaskHasExternalLock() {
   return taskLocks(selected.id).some((session) => session.source === "external");
 }
 
+function selectedTaskHasInternalLock() {
+  const selected = findResource(state.selectedId);
+  if (!selected || selected.type !== "task") return false;
+  const detail = state.details[selected.id];
+  if (detail && detail.type !== "task") return false;
+  return taskLocks(selected.id).some((session) => session.source === "internal");
+}
+
+function selectedTaskHasNewSessionLock() {
+  return selectedTaskHasExternalLock() || selectedTaskHasInternalLock();
+}
+
+function closeNewSessionChooserForTaskLock() {
+  if (selectedTaskHasNewSessionLock()) state.agent.agentChooserOpen = false;
+}
+
 function externalTaskLockNotice() {
   return `<div class="tty-external-lock-notice" role="alert">${icon("lock")}<span>${escapeHTML(EXTERNAL_TASK_LOCK_MESSAGE)}</span></div>`;
 }
@@ -1794,7 +1887,18 @@ function hideTaskStatusTooltip() {
 async function selectResource(id, options = {}) {
   const selectionChanged = state.selectedId !== id;
   if (options.clearUnread !== false) clearUnreadForResource(id);
+  const forceDetail = selectionChanged || Boolean(options.forceDetail);
+  if (forceDetail) {
+    state.navigationVersion++;
+    state.autoRefreshVersion++;
+    state.treeRequestVersion++;
+    state.detailRequestVersion++;
+    state.workspaceAgentsRequestVersion++;
+    state.previewRequestVersion++;
+    state.diffRequestVersion++;
+  }
   if (selectionChanged) {
+    state.workspaceAgentsSaving = false;
     flushAgentDraft();
     discardAgentUploadDialog();
     state.preview = null;
@@ -1815,9 +1919,10 @@ async function selectResource(id, options = {}) {
   saveUIState().catch((err) => console.warn("failed to save UI state", err));
   renderSelectionPanels();
   await Promise.all([
-    id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: Boolean(options.forceDetail) }),
+    id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: forceDetail }),
     selectionChanged ? loadAgentRuns() : Promise.resolve(),
   ]);
+  if (!isCurrentWorkspaceView(state.activeWorkspaceId, state.navigationVersion)) return;
   renderSelectionPanels();
 }
 
@@ -1989,54 +2094,154 @@ function sessionResourceMenu(session, controls) {
   return menu;
 }
 
-// Replaces the details panel content while keeping the scroll position
-// stable. Auto-refresh re-renders the panel in place, so the previous
-// scroll offset is restored when the same resource is still selected;
-// switching to another resource resets the panel to the top. The panel
-// also sets `overflow-anchor: none` in CSS so the browser's scroll
-// anchoring cannot drift the restored offset after the DOM swap.
+// Replaces the details shell while keeping its scroll position stable. The
+// shell changes only when the selected resource/view changes; its child
+// regions are updated independently so an unchanged Markdown region keeps
+// the same DOM nodes, selection, scroll offset, and open details elements.
 function setDetailsHTML(panel, html) {
   const resourceKey = state.selectedId || "";
   const sameResource = panel.dataset.detailsResource === resourceKey;
   const scrollTop = panel.scrollTop;
   panel.innerHTML = html;
   panel.dataset.detailsResource = resourceKey;
+  panel.dataset.detailsShellKey = "";
   panel.scrollTop = sameResource ? scrollTop : 0;
 }
 
-function renderDetails() {
-  const panel = $("detailsPanel");
-  const workspaceEditorState = captureWorkspaceAgentsEditorState();
-  const previewScrollState = captureFilePreviewScrollState();
-  if (!state.tree) {
-    setDetailsHTML(panel, emptyDetails());
-    return;
-  }
-  if (state.selectedId === "workspace") {
-    setDetailsHTML(panel, workspaceDetails());
-    restoreWorkspaceAgentsEditorState(workspaceEditorState);
-    restoreFilePreviewScrollState(previewScrollState);
-    return;
-  }
-  const selected = findResource(state.selectedId) || state.tree.projects[0];
-  if (!selected) {
-    setDetailsHTML(panel, workspaceDetails());
-    restoreWorkspaceAgentsEditorState(workspaceEditorState);
-    restoreFilePreviewScrollState(previewScrollState);
-    return;
-  }
-  const detail = state.details[selected.id];
-  if (!detail) {
-    setDetailsHTML(panel, `
-      <div class="details-header">
-        ${breadcrumb(selected, selected.title)}
-        <div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>
-      </div>
-      <div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>
-    `);
-    return;
-  }
-  setDetailsHTML(panel, `
+function detailsPanelShell(kind) {
+  const regions = kind === "workspace"
+    ? ["header", "workspace-agents", "wiki", "file-modal", "diff-modal"]
+    : ["header", "documents", "logs", "templates", "artifacts", "worktrees", "file-modal", "diff-modal"];
+  return regions.map((name) => `<div data-detail-region="${name}"></div>`).join("");
+}
+
+function ensureDetailsShell(panel, key, kind) {
+  if (panel.dataset.detailsShellKey === key) return false;
+  setDetailsHTML(panel, detailsPanelShell(kind));
+  panel.dataset.detailsShellKey = key;
+  return true;
+}
+
+function updateDetailRegion(panel, name, key, html) {
+  const region = panel.querySelector(`[data-detail-region="${name}"]`);
+  if (!region) return false;
+  const normalizedKey = String(key ?? "");
+  if (region.dataset.renderKey === normalizedKey) return false;
+  region.innerHTML = (typeof html === "function" ? html() : html) || "";
+  region.dataset.renderKey = normalizedKey;
+  return true;
+}
+
+function markdownRendererKey() {
+  return typeof window !== "undefined" && window.marked && window.DOMPurify ? "sanitized-markdown-v1" : "fallback-markdown-v1";
+}
+
+function resourceDocumentsRenderKey(item) {
+  const files = visibleResourceFiles(item).map((file) => {
+    const content = String(file.content ?? "");
+    const contentHash = String(file.contentHash || "");
+    const name = String(file.name || "");
+    return {
+      name,
+      path: String(file.path || resourceFilePath(item.path, name)),
+      contentHash,
+      contentFallback: contentHash ? "" : content,
+      mode: isMarkdownFile(name) ? "markdown-preview" : "plain-text",
+      expanded: isMarkdownFile(name) ? !isLongMarkdownContent(content) || state.expandedMarkdownFiles.has(markdownFileKey(name)) : false,
+    };
+  });
+  return JSON.stringify({
+    workspaceId: state.activeWorkspaceId,
+    resourceId: item.id,
+    resourceType: item.type,
+    renderer: markdownRendererKey(),
+    files,
+  });
+}
+
+function syncDetailsDocumentsRenderKey(region = null) {
+  const detail = state.details?.[state.selectedId];
+  const target = region || document.querySelector('[data-detail-region="documents"]');
+  if (!detail || !target) return;
+  target.dataset.renderKey = resourceDocumentsRenderKey(detail);
+}
+
+function artifactRenderKey(section, entries, extra = {}) {
+  const prefix = `${section}:`;
+  return JSON.stringify({
+    section,
+    entries: entries || [],
+    expanded: [...state.expandedPaths].filter((key) => key.startsWith(prefix)).sort(),
+    ...extra,
+  });
+}
+
+function detailLogsRenderKey(item) {
+  return JSON.stringify(item.logs || []);
+}
+
+function workspaceAgentsRenderKey(agents) {
+  const content = String(agents?.content || "");
+  return JSON.stringify({
+    workspaceId: state.activeWorkspaceId,
+    loaded: Boolean(agents),
+    path: agents?.path || "AGENTS.md",
+    contentHash: state.workspaceAgentsDirty ? "dirty" : agents?.contentHash || "",
+    content: state.workspaceAgentsDirty ? state.workspaceAgentsDraft : workspaceAgentsUserContent(content),
+    mode: state.workspaceAgentsDirty ? "edit-draft" : "edit-clean",
+    error: state.workspaceAgentsDirty ? "" : agents?.error || "",
+  });
+}
+
+function syncWorkspaceAgentsRenderKey() {
+  const region = document.querySelector('[data-detail-region="workspace-agents"]');
+  if (region) region.dataset.renderKey = workspaceAgentsRenderKey(state.workspaceAgents);
+}
+
+function fileModalRenderKey(preview) {
+  if (!preview) return "closed";
+  const content = String(preview.content || "");
+  return JSON.stringify({
+    section: preview.section || "",
+    path: preview.path || "",
+    name: preview.name || "",
+    contentHash: preview.contentHash || "",
+    contentFallback: preview.contentHash ? "" : content,
+    loading: Boolean(preview.loading),
+    error: preview.error || "",
+    binary: Boolean(preview.binary),
+    image: Boolean(preview.image),
+    truncated: Boolean(preview.truncated),
+    mode: isMarkdownFile(preview.path || preview.name) ? "markdown-preview" : "plain-preview",
+    renderer: markdownRendererKey(),
+  });
+}
+
+function diffModalRenderKey(diff) {
+  if (!diff) return "closed";
+  return JSON.stringify({
+    path: diff.path || "",
+    branch: diff.branch || "",
+    base: diff.base || "",
+    diff: diff.diff || "",
+    loading: Boolean(diff.loading),
+    error: diff.error || "",
+  });
+}
+
+function workspaceDetailsHeader() {
+  return `
+    <div class="details-header">
+      <nav class="breadcrumb" aria-label="Location">
+        <button type="button" class="breadcrumb-link current" data-breadcrumb-resource="workspace">${escapeHTML(workspaceName())}</button>
+      </nav>
+      <div class="title-row"><h1>${escapeHTML(workspaceName())}</h1></div>
+    </div>
+  `;
+}
+
+function resourceDetailsHeader(selected, detail) {
+  return `
     <div class="details-header">
       ${breadcrumb(selected, detail.title)}
       <div class="title-row">
@@ -2047,17 +2252,104 @@ function renderDetails() {
         </div>
       </div>
     </div>
-    ${fileSection(detail)}
-    ${selected.type === "project" ? templateSection(detail) : ""}
-    ${artifactSection("Artifacts", detail.artifacts)}
-    ${selected.type === "project" ? "" : worktreeSection(detail.repos)}
-    ${fileModal()}
-    ${diffModal()}
-  `);
+  `;
+}
+
+function loadingDetails(selected) {
+  return `
+    <div class="details-header">
+      ${breadcrumb(selected, selected.title)}
+      <div class="title-row"><h1>${escapeHTML(selected.title)}${resourceRefBadge(selected.id)}</h1></div>
+    </div>
+    <div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>
+  `;
+}
+
+function bindDetailHeaderEvents(selected) {
+  const archiveButton = $("archiveButton");
+  if (archiveButton && archiveButton.dataset.detailBound !== "true") {
+    archiveButton.dataset.detailBound = "true";
+    archiveButton.addEventListener("click", () => archiveResource(selected.id));
+  }
+  const newTaskButton = $("newTaskButton");
+  if (newTaskButton && newTaskButton.dataset.detailBound !== "true") {
+    newTaskButton.dataset.detailBound = "true";
+    newTaskButton.addEventListener("click", () => showTaskForm(selected.id));
+  }
+}
+
+function updateWorkspaceAgentsSavingControls() {
+  const form = $("workspaceAgentsForm");
+  if (!form) return;
+  const textarea = $("workspaceAgentsContent");
+  const button = form.querySelector('button[type="submit"]');
+  if (textarea) textarea.disabled = state.workspaceAgentsSaving;
+  if (button) {
+    button.disabled = state.workspaceAgentsSaving;
+    const label = button.querySelector("span");
+    if (label) label.textContent = state.workspaceAgentsSaving ? "Saving" : "Save";
+  }
+}
+
+function renderDetails() {
+  const panel = $("detailsPanel");
+  const previewScrollState = captureFilePreviewScrollState();
+  if (!state.tree) {
+    setDetailsHTML(panel, emptyDetails());
+    return;
+  }
+  if (state.selectedId === "workspace") {
+    ensureDetailsShell(panel, `workspace:${state.activeWorkspaceId}`, "workspace");
+    updateDetailRegion(panel, "header", JSON.stringify({ workspaceId: state.activeWorkspaceId, name: workspaceName() }), () => workspaceDetailsHeader());
+    updateDetailRegion(panel, "workspace-agents", workspaceAgentsRenderKey(state.workspaceAgents), () => workspaceAgentsSection());
+    updateDetailRegion(panel, "wiki", artifactRenderKey("Wiki", state.tree.wiki?.entries, {
+      exists: Boolean(state.tree.wiki?.exists),
+      error: state.tree.wiki?.error || "",
+    }), () => workspaceWikiSection());
+    updateWorkspaceAgentsSavingControls();
+    updateDetailRegion(panel, "file-modal", fileModalRenderKey(state.preview), () => fileModal());
+    updateDetailRegion(panel, "diff-modal", diffModalRenderKey(state.diff), () => diffModal());
+    restoreFilePreviewScrollState(previewScrollState);
+    return;
+  }
+  const selected = findResource(state.selectedId) || state.tree.projects[0];
+  if (!selected) {
+    ensureDetailsShell(panel, `workspace:${state.activeWorkspaceId}`, "workspace");
+    updateDetailRegion(panel, "header", JSON.stringify({ workspaceId: state.activeWorkspaceId, name: workspaceName() }), () => workspaceDetailsHeader());
+    updateDetailRegion(panel, "workspace-agents", workspaceAgentsRenderKey(state.workspaceAgents), () => workspaceAgentsSection());
+    updateDetailRegion(panel, "wiki", artifactRenderKey("Wiki", state.tree.wiki?.entries, {
+      exists: Boolean(state.tree.wiki?.exists),
+      error: state.tree.wiki?.error || "",
+    }), () => workspaceWikiSection());
+    updateWorkspaceAgentsSavingControls();
+    updateDetailRegion(panel, "file-modal", fileModalRenderKey(state.preview), () => fileModal());
+    updateDetailRegion(panel, "diff-modal", diffModalRenderKey(state.diff), () => diffModal());
+    restoreFilePreviewScrollState(previewScrollState);
+    return;
+  }
+  const detail = state.details[selected.id];
+  if (!detail) {
+    setDetailsHTML(panel, loadingDetails(selected));
+    return;
+  }
+  ensureDetailsShell(panel, `resource:${state.activeWorkspaceId}:${selected.id}:${selected.type}`, "resource");
+  updateDetailRegion(panel, "header", JSON.stringify({
+    workspaceId: state.activeWorkspaceId,
+    id: selected.id,
+    type: selected.type,
+    title: detail.title,
+    path: detail.path,
+    archived: detail.archived,
+  }), () => resourceDetailsHeader(selected, detail));
+  updateDetailRegion(panel, "documents", resourceDocumentsRenderKey(detail), () => fileSection(detail));
+  updateDetailRegion(panel, "logs", detailLogsRenderKey(detail), () => logSection(detail));
+  updateDetailRegion(panel, "templates", JSON.stringify(detail.templates || []), () => selected.type === "project" ? templateSection(detail) : "");
+  updateDetailRegion(panel, "artifacts", artifactRenderKey("Artifacts", detail.artifacts), () => artifactSection("Artifacts", detail.artifacts));
+  updateDetailRegion(panel, "worktrees", JSON.stringify(detail.repos || []), () => selected.type === "project" ? "" : worktreeSection(detail.repos));
+  updateDetailRegion(panel, "file-modal", fileModalRenderKey(state.preview), () => fileModal());
+  updateDetailRegion(panel, "diff-modal", diffModalRenderKey(state.diff), () => diffModal());
   restoreFilePreviewScrollState(previewScrollState);
-  $("archiveButton")?.addEventListener("click", () => archiveResource(selected.id));
-  $("newTaskButton")?.addEventListener("click", () => showTaskForm(selected.id));
-  bindTemplateEvents();
+  bindDetailHeaderEvents(selected);
 }
 
 function templateSection(item) {
@@ -2080,6 +2372,8 @@ function templateSection(item) {
 
 function bindTemplateEvents() {
   document.querySelectorAll("[data-template-preview]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
     button.addEventListener("click", () => previewFile("Templates", button.dataset.templatePreview).catch((err) => toast(err.message)));
   });
 }
@@ -2272,25 +2566,15 @@ function relativeTime(value) {
 
 function fileSection(item) {
   const files = visibleResourceFiles(item);
-  let insertedLog = false;
-  const sections = files.map((file) => {
+  return files.map((file) => {
     const path = file.path || resourceFilePath(item.path, file.name);
-    const section = `
+    return `
       <div class="content-section">
         <h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span>${openFileAction(file.name, path)}</h3>
         ${renderFileContent(file.name, file.content)}
       </div>
     `;
-    if (file.name === "work.md") {
-      insertedLog = true;
-      return section + logSection(item);
-    }
-    return section;
-  });
-  if (!insertedLog) {
-    sections.push(logSection(item));
-  }
-  return sections.join("");
+  }).join("");
 }
 
 function visibleResourceFiles(item) {
@@ -2370,6 +2654,7 @@ function expandMarkdownPreview(button) {
   preview.classList.remove("collapsed");
   preview.classList.add("expanded");
   button.remove();
+  syncDetailsDocumentsRenderKey(preview.closest('[data-detail-region="documents"]'));
 }
 
 function stripForgeManagedBlocks(content) {
@@ -2406,6 +2691,7 @@ function workspaceAgentsEditorContent(content) {
 function syncWorkspaceAgentsDraftFromInput(value) {
   state.workspaceAgentsDraft = value;
   state.workspaceAgentsDirty = value !== workspaceAgentsUserContent(state.workspaceAgents?.content || "");
+  syncWorkspaceAgentsRenderKey();
 }
 
 function resetWorkspaceAgentsDraft() {
@@ -2698,6 +2984,8 @@ function restoreFilePreviewScrollState(snapshot) {
 
 function bindArtifactBrowserEvents() {
   document.querySelectorAll("[data-file-action]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
     button.addEventListener("click", (event) => {
       if (event.target.closest("[data-artifact-download]")) return;
       const section = button.dataset.section;
@@ -2719,22 +3007,34 @@ function bindArtifactBrowserEvents() {
 
 function bindFileModalEvents() {
   document.querySelectorAll("[data-modal-close]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
     button.addEventListener("click", closePreview);
   });
 }
 
 function bindWorkspaceAgentsEvents() {
-  $("workspaceAgentsContent")?.addEventListener("input", (event) => {
-    syncWorkspaceAgentsDraftFromInput(event.target.value);
-  });
-  $("workspaceAgentsForm")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    saveWorkspaceAgents().catch((err) => toast(err.message));
-  });
+  const input = $("workspaceAgentsContent");
+  if (input && input.dataset.eventsBound !== "true") {
+    input.dataset.eventsBound = "true";
+    input.addEventListener("input", (event) => {
+      syncWorkspaceAgentsDraftFromInput(event.target.value);
+    });
+  }
+  const form = $("workspaceAgentsForm");
+  if (form && form.dataset.eventsBound !== "true") {
+    form.dataset.eventsBound = "true";
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      saveWorkspaceAgents().catch((err) => toast(err.message));
+    });
+  }
 }
 
 function bindDiffEvents() {
   document.querySelectorAll("[data-diff-path]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
     button.addEventListener("click", () => {
       openDiff({
         path: button.dataset.diffPath,
@@ -2748,16 +3048,20 @@ function bindDiffEvents() {
 
 function bindDiffModalEvents() {
   document.querySelectorAll("[data-diff-close]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
     button.addEventListener("click", closeDiff);
   });
 }
 
 async function previewFile(section, path) {
   state.modalEnter = "preview";
+  const requestVersion = ++state.previewRequestVersion;
+  const workspaceId = state.activeWorkspaceId;
   state.preview = { section, path, loading: true };
   renderAll();
   try {
-    await refreshFilePreview(section, path, { rethrow: true });
+    await refreshFilePreview(section, path, { rethrow: true, requestVersion, workspaceId });
   } catch (err) {
     throw err;
   } finally {
@@ -2766,46 +3070,83 @@ async function previewFile(section, path) {
 }
 
 async function refreshFilePreview(section, path, options = {}) {
+  const workspaceId = options.workspaceId || state.activeWorkspaceId;
+  const requestVersion = options.requestVersion || ++state.previewRequestVersion;
   try {
-    const preview = await api(filePreviewURL(section, path));
+    const preview = await api(filePreviewURL(section, path, workspaceId));
+    if (
+      workspaceId !== state.activeWorkspaceId ||
+      requestVersion !== state.previewRequestVersion ||
+      state.preview?.section !== section ||
+      state.preview?.path !== path
+    ) return null;
     state.preview = { section, ...preview };
+    return state.preview;
   } catch (err) {
-    state.preview = { section, path, error: err.message };
-    if (options.rethrow) throw err;
+    const current =
+      workspaceId === state.activeWorkspaceId &&
+      requestVersion === state.previewRequestVersion &&
+      state.preview?.section === section &&
+      state.preview?.path === path;
+    if (current) {
+      state.preview = { section, path, error: err.message };
+    }
+    if (options.rethrow && current) throw err;
+    return null;
   }
 }
 
 async function saveWorkspaceAgents() {
   if (!state.activeWorkspaceId || state.workspaceAgentsSaving) return;
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
   const content = $("workspaceAgentsContent")?.value || "";
   state.workspaceAgentsSaving = true;
   renderAll();
   try {
-    state.workspaceAgents = await api(`/api/workspaces/${state.activeWorkspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`, {
+    const saved = await api(`/api/workspaces/${workspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`, {
       method: "PUT",
       body: JSON.stringify({ content }),
     });
+    if (!isCurrentWorkspaceView(workspaceId, navigationVersion)) return;
+    state.workspaceAgents = saved;
     state.workspaceAgentsDraft = workspaceAgentsUserContent(state.workspaceAgents.content || "");
     state.workspaceAgentsDirty = false;
     toast("Workspace AGENTS.md saved.");
   } finally {
-    state.workspaceAgentsSaving = false;
-    renderAll();
+    if (isCurrentWorkspaceView(workspaceId, navigationVersion)) {
+      state.workspaceAgentsSaving = false;
+      renderAll();
+    }
   }
 }
 
 async function openDiff(repo) {
   state.modalEnter = "diff";
+  const requestVersion = ++state.diffRequestVersion;
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
   state.diff = { ...repo, loading: true };
   renderAll();
   try {
     const params = new URLSearchParams({ path: repo.path || "" });
     if (repo.base) params.set("base", repo.base);
-    const diff = await api(`/api/workspaces/${state.activeWorkspaceId}/diff?${params.toString()}`);
+    const diff = await api(`/api/workspaces/${workspaceId}/diff?${params.toString()}`);
+    if (
+      !isCurrentWorkspaceView(workspaceId, navigationVersion) ||
+      requestVersion !== state.diffRequestVersion ||
+      state.diff?.path !== repo.path
+    ) return;
     state.diff = { ...repo, ...diff };
   } catch (err) {
-    state.diff = { ...repo, error: err.message };
-    throw err;
+    const current =
+      isCurrentWorkspaceView(workspaceId, navigationVersion) &&
+      requestVersion === state.diffRequestVersion &&
+      state.diff?.path === repo.path;
+    if (current) {
+      state.diff = { ...repo, error: err.message };
+    }
+    if (current) throw err;
   } finally {
     renderAll();
   }
@@ -2836,18 +3177,20 @@ function resourceFilePath(resourcePath = "", name = "") {
 }
 
 function closePreview() {
+  state.previewRequestVersion++;
   state.preview = null;
   renderAll();
 }
 
 function closeDiff() {
+  state.diffRequestVersion++;
   state.diff = null;
   renderAll();
 }
 
-function filePreviewURL(section, path) {
+function filePreviewURL(section, path, workspaceId = state.activeWorkspaceId) {
   const base = section === "Wiki" ? "wiki/files" : "files";
-  return `/api/workspaces/${state.activeWorkspaceId}/${base}?path=${encodeURIComponent(path)}`;
+  return `/api/workspaces/${workspaceId}/${base}?path=${encodeURIComponent(path)}`;
 }
 
 function rawFileURL(path, section = "") {
@@ -2951,15 +3294,16 @@ function preferredAgentRunID(runs) {
   return runs[0]?.id || "";
 }
 
-async function fetchCurrentTree() {
+async function fetchCurrentTree(workspaceId = state.activeWorkspaceId) {
   const requestVersion = ++state.treeRequestVersion;
-  const tree = await api(`/api/workspaces/${state.activeWorkspaceId}/tree`);
-  return requestVersion === state.treeRequestVersion ? tree : null;
+  const navigationVersion = state.navigationVersion;
+  const tree = await api(`/api/workspaces/${workspaceId}/tree`);
+  return isCurrentWorkspaceView(workspaceId, navigationVersion, requestVersion) ? tree : null;
 }
 
 async function refreshTreeAfterAgentSessionMutation() {
   if (!state.activeWorkspaceId || !state.tree) return;
-  const tree = await fetchCurrentTree();
+  const tree = await fetchCurrentTree(state.activeWorkspaceId);
   if (tree) state.tree = tree;
 }
 
@@ -3133,6 +3477,8 @@ function fetchAgentRuns() {
 async function reloadAgentRunsForSelection() {
   flushAgentDraft();
   closeAgentStream();
+  state.agent.turnStopping = false;
+  state.agent.turnStoppingRunId = "";
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.notices = [];
@@ -3157,6 +3503,8 @@ function resetAgentState() {
   state.agent.historyOpen = false;
   clearAgentDraftMemory();
   state.agent.newSessionStarting = false;
+  state.agent.turnStopping = false;
+  state.agent.turnStoppingRunId = "";
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
   state.agent.renderDeferredForSelection = false;
@@ -3498,6 +3846,7 @@ function renderTTYComposer(options = {}) {
   if (!skipDraftSync) syncAgentDraftFromDOM();
   const composer = $("ttyComposer");
   if (!composer) return;
+  closeNewSessionChooserForTaskLock();
   const activeRun = currentAgentRun();
   if (!activeRun) {
     const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
@@ -3510,7 +3859,9 @@ function renderTTYComposer(options = {}) {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const stopTurnPending = isAgentTurnStopping(activeRun);
+    const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "stopping-turn" : "idle"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -3525,7 +3876,7 @@ function renderTTYComposer(options = {}) {
         ${selectedTaskHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
         <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
       </form>
-      ${agentComposerActions({ includeClose: true, collapsible: true })}
+      ${agentComposerActions({ includeClose: true, includeStopTurn: stopTurnAvailable, turnStopping: stopTurnPending, collapsible: true })}
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       updateAgentDraft(event.target.value);
@@ -3570,6 +3921,7 @@ function isAgentSessionReady(run) {
 
 function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
   if (selectedTaskHasExternalLock()) return EXTERNAL_TASK_LOCK_MESSAGE;
+  if (isAgentTurnStopping(run)) return "Stopping the current turn.";
   if (!sessionReady) return "Agent session is starting.";
   if (run.status === "stopping") return "AgentHub is stopping the provider.";
   if (run.status === "recovering") return "AgentHub event recovery is in progress.";
@@ -3579,19 +3931,20 @@ function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run
 
 function agentComposerActions(options = {}) {
   const externalTaskLocked = selectedTaskHasExternalLock();
+  const internalTaskLocked = selectedTaskHasInternalLock();
   const collapsible = Boolean(options.collapsible);
   const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalTaskLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   if (externalTaskLocked) {
     return `
       <div class="${actionsClass}">
         ${externalTaskLockNotice()}
-        ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
+        ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button"${options.turnStopping ? " disabled" : ""} title="${options.turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}">${icon("square")}<span>Close Session</span></button>` : ""}
       </div>
     `;
   }
   const selectedAgent = selectedAgentConfig();
   const agents = enabledAgentConfigs();
-  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0;
+  const chooserOpen = state.agent.agentChooserOpen && agents.length > 0 && !internalTaskLocked;
   const sessionStarting = Boolean(state.agent.newSessionStarting);
   const noAgentReason = "No enabled agents are available. Configure an AgentHub Agent in Settings.";
   const sessionButtonTitle = sessionStarting
@@ -3601,26 +3954,35 @@ function agentComposerActions(options = {}) {
       : "Choose an Agent to start a new session.";
   const sessionButtonDisabled = sessionStarting || agents.length === 0;
   const sessionButtonDisabledAttribute = sessionButtonDisabled ? " disabled" : "";
+  const turnStopping = Boolean(options.includeStopTurn && options.turnStopping);
+  const stopTurnMarkup = options.includeStopTurn ? `
+    <button type="button" id="agentStopTurnButton" class="secondary-button agent-stop-turn-button"${turnStopping ? " disabled" : ""} title="${turnStopping ? "Stopping the current turn; the Session will remain open." : "Stop only the current turn; keep the AgentHub Session open."}" aria-label="${turnStopping ? "Stopping the current turn; the Session will remain open." : "Stop only the current turn; keep the AgentHub Session open."}">
+      ${icon(turnStopping ? "loader-circle" : "pause")}<span>${turnStopping ? "Stopping Turn..." : "Stop Turn"}</span>
+    </button>` : "";
+  const closeSessionMarkup = options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button"${turnStopping ? " disabled" : ""} title="${turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}" aria-label="${turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}">${icon("square")}<span>Close Session</span></button>` : "";
   return `
     <div class="${actionsClass}">
       ${autoRunComposerAction()}
       ${options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : ""}
-      <div class="tty-new-session-control">
-        <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
-          ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
-        </button>
-        ${chooserOpen ? `
-          <div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent"${sessionStarting ? ` aria-busy="true"` : ""}>
-            ${agents.map((agent) => `
-              <button type="button" role="menuitem" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}" aria-label="${escapeHTML(`${agentDisplayName(agent)} — ${agentConfigSummary(agent)}`)}"${sessionStarting ? " disabled" : ""}>
-                <span>${escapeHTML(agentDisplayName(agent))}</span>
-                <small>${escapeHTML(agentConfigSummary(agent))}</small>
-              </button>
-            `).join("")}
-          </div>
-        ` : ""}
-      </div>
-      ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
+      ${internalTaskLocked ? "" : `
+        <div class="tty-new-session-control">
+          <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
+            ${icon(sessionStarting ? "loader-circle" : "plus")}<span>${sessionStarting ? "Creating Session..." : "New Session"}</span>
+          </button>
+          ${chooserOpen ? `
+            <div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent"${sessionStarting ? ` aria-busy="true"` : ""}>
+              ${agents.map((agent) => `
+                <button type="button" role="menuitem" class="${agent.id === selectedAgent?.id ? "active" : ""}" data-agent-choice="${escapeHTML(agent.id)}" aria-label="${escapeHTML(`${agentDisplayName(agent)} — ${agentConfigSummary(agent)}`)}"${sessionStarting ? " disabled" : ""}>
+                  <span>${escapeHTML(agentDisplayName(agent))}</span>
+                  <small>${escapeHTML(agentConfigSummary(agent))}</small>
+                </button>
+              `).join("")}
+            </div>
+          ` : ""}
+        </div>
+      `}
+      ${stopTurnMarkup}
+      ${closeSessionMarkup}
     </div>
   `;
 }
@@ -3699,7 +4061,8 @@ function autoRunComposerKey() {
     ? (liveRuns.some((run) => run.status === "idle") ? "idle" : "busy")
     : "no-session";
   const lockKey = selectedTaskHasExternalLock() ? "external-lock" : "unlocked";
-  return `${lockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+  const internalLockKey = selectedTaskHasInternalLock() ? "internal-lock" : "unlocked";
+  return `${lockKey}:${internalLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
 }
 
 async function startChatAutoRun() {
@@ -4251,6 +4614,10 @@ function bindAgentEvents() {
   if (stopButton) stopButton.onclick = () => {
     stopAgentRun().catch((err) => toast(err.message));
   };
+  const stopTurnButton = $("agentStopTurnButton");
+  if (stopTurnButton) stopTurnButton.onclick = () => {
+    stopAgentTurn().catch((err) => toast(err.message));
+  };
   const resumeButton = $("agentResumeButton");
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
@@ -4636,6 +5003,42 @@ async function stopAgentRun() {
   });
 }
 
+async function stopAgentTurn() {
+  if (!state.agent.activeRunId || state.agent.turnStopping) return;
+  const run = currentAgentRun();
+  if (!isAgentTurnInterruptible(run)) return;
+  return mutateAgentSession(async () => {
+    const runId = state.agent.activeRunId;
+    state.agent.turnStopping = true;
+    state.agent.turnStoppingRunId = runId;
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
+    try {
+      await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/interrupt`, { method: "POST" });
+      await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+      renderAll();
+      toast("Turn stopped. The AgentHub Session remains open.");
+    } catch (err) {
+      // A stale status or ambiguous AgentHub response must converge to the
+      // server projection before the button becomes available again.
+      try {
+        await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+        renderAll();
+      } catch (_) {
+        // Preserve the original interrupt error for the user.
+      }
+      throw err;
+    } finally {
+      state.agent.turnStopping = false;
+      state.agent.turnStoppingRunId = "";
+      renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    }
+  });
+}
+
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
@@ -4692,6 +5095,14 @@ function currentAgentRun() {
 
 function isLiveAgentRun(run) {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status);
+}
+
+function isAgentTurnInterruptible(run) {
+  return ["running", "waiting_approval"].includes(run?.status);
+}
+
+function isAgentTurnStopping(run) {
+  return Boolean(state.agent.turnStopping && state.agent.turnStoppingRunId === run?.id);
 }
 
 async function submitTTYInput(event) {
@@ -5402,6 +5813,7 @@ function optionalAssetLoaded(asset) {
   refreshIcons();
   if (asset === "markdown" && window.marked && window.DOMPurify) {
     renderDetails();
+    bindTemplateEvents();
     bindArtifactBrowserEvents();
     bindFileModalEvents();
     bindDiffEvents();
@@ -5742,6 +6154,15 @@ window.addEventListener("popstate", async () => {
   const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
   const previousSelectedId = state.selectedId;
   flushAgentDraft();
+  state.navigationVersion++;
+  state.autoRefreshVersion++;
+  state.treeRequestVersion++;
+  state.detailRequestVersion++;
+  state.workspaceAgentsRequestVersion++;
+  state.previewRequestVersion++;
+  state.diffRequestVersion++;
+  state.workspaceAgentsSaving = false;
+  const navigationVersion = state.navigationVersion;
   state.activeWorkspaceId = route.workspaceId;
   state.selectedId = route.resourceId || "workspace";
   state.preview = null;
@@ -5749,6 +6170,7 @@ window.addEventListener("popstate", async () => {
   state.sessionMenu = null;
   if (workspaceChanged) {
     resetWorkspaceAgentsDraft();
+    state.workspaceAgentsSaving = false;
     closeCreateDialog();
     initializeNotificationState(state.activeWorkspaceId);
   }
@@ -5757,7 +6179,7 @@ window.addEventListener("popstate", async () => {
   }
   renderWorkspaceSelect();
   if (workspaceChanged) {
-    await loadUIState();
+    if (!await loadUIState(route.workspaceId, navigationVersion)) return;
     if (!route.resourceId && state.lastResourceId) {
       state.selectedId = state.lastResourceId;
     }
@@ -5770,6 +6192,7 @@ window.addEventListener("popstate", async () => {
       ensureSelectedProjectExpanded(false);
       await loadDetail(state.selectedId);
     }
+    if (!isCurrentWorkspaceView(route.workspaceId, navigationVersion)) return;
     if (previousSelectedId !== state.selectedId) {
       await reloadAgentRunsForSelection();
     }

@@ -78,8 +78,9 @@ type AutoRun struct {
 	// suspended. The server driver uses it (not task.updatedAt) to decide when
 	// a suspended AutoRun should be re-queued.
 	SuspendedAt string `json:"suspendedAt,omitempty"`
-	// SuspensionSummary is a natural-language reason recorded by the agent when
-	// it suspends itself. It is not structured waiting data.
+	// SuspensionSummary is a natural-language reason recorded when the current
+	// AutoRun generation is suspended or paused. It is not structured waiting
+	// data.
 	SuspensionSummary string `json:"suspensionSummary,omitempty"`
 }
 

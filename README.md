@@ -94,7 +94,7 @@ The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** start, stop, resume, or revisit agent sessions; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
+- **Chat:** start, stop, resume, or revisit agent sessions; stop only the current turn with Stop Turn while keeping the Session open; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
 - **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
@@ -196,6 +196,8 @@ forge task autorun fail --reason="Verification cannot pass"
 The chat composer has one **New Session** button. Clicking it opens the enabled AgentHub agents with their name and model summary; choosing an agent immediately creates a new session for the selected resource. The button is disabled with an explanation when no enabled agent exists, shows a creating state while the request is in flight, ignores duplicate clicks, and keeps the chooser open when creation fails so the user can retry. The chooser also supports Escape and clicking outside the control.
 
 When the selected Task is controlled by an active external Forge Session, the composer shows a clear lock notice and hides New Session, AutoRun start/resume, and Resume Session controls; input and uploads are paused until a refresh observes that the lock has been released. The server repeats this check at execution time, including direct API and scheduler paths, and returns a conflict before creating an AgentHub session, advancing AutoRun, or sending a message.
+
+When the selected Task is controlled by an active internal Forge GUI Session, the composer hides New Session and closes any open Agent chooser, even when the currently viewed Agent Run is historical. The current Session's input, approval, Close Session, and idle AutoRun reuse actions remain available; the New Session action returns after the tree refresh observes that the internal lock has been released.
 
 The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed or failed generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. Queued and running generations render as disabled states so they cannot be started twice.
 

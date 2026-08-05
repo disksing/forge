@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -95,14 +96,15 @@ type autoRunSnapshot struct {
 }
 
 type filePreview struct {
-	Path      string `json:"path"`
-	Name      string `json:"name"`
-	Size      int64  `json:"size"`
-	Truncated bool   `json:"truncated"`
-	Binary    bool   `json:"binary"`
-	Image     bool   `json:"image"`
-	MimeType  string `json:"mimeType,omitempty"`
-	Content   string `json:"content,omitempty"`
+	Path        string `json:"path"`
+	Name        string `json:"name"`
+	Size        int64  `json:"size"`
+	Truncated   bool   `json:"truncated"`
+	Binary      bool   `json:"binary"`
+	Image       bool   `json:"image"`
+	MimeType    string `json:"mimeType,omitempty"`
+	Content     string `json:"content,omitempty"`
+	ContentHash string `json:"contentHash,omitempty"`
 }
 
 type diffResponse struct {
@@ -721,18 +723,24 @@ func previewPath(w http.ResponseWriter, relPath, abs string) {
 	mimeType := fileMimeType(relPath, data)
 	image := isPreviewableImage(relPath)
 	preview := filePreview{
-		Path:      filepath.ToSlash(filepath.Clean(relPath)),
-		Name:      info.Name(),
-		Size:      info.Size(),
-		Truncated: truncated,
-		Binary:    binary,
-		Image:     image,
-		MimeType:  mimeType,
+		Path:        filepath.ToSlash(filepath.Clean(relPath)),
+		Name:        info.Name(),
+		Size:        info.Size(),
+		Truncated:   truncated,
+		Binary:      binary,
+		Image:       image,
+		MimeType:    mimeType,
+		ContentHash: previewContentHash(data),
 	}
 	if !binary && !image {
 		preview.Content = string(data)
 	}
 	writeJSON(w, preview)
+}
+
+func previewContentHash(data []byte) string {
+	digest := sha256.Sum256(data)
+	return hex.EncodeToString(digest[:])
 }
 
 func (s *server) saveWorkspaceAgentsFile(w http.ResponseWriter, r *http.Request, id string) {

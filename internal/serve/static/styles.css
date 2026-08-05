@@ -917,6 +917,24 @@ body.resizing-y {
   color: #334155;
 }
 
+.agent-stop-turn-button {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.agent-stop-turn-button:hover:not(:disabled) {
+  border-color: #f59e0b;
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.agent-stop-turn-button:disabled,
+.agent-stop-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
 .agent-config-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2263,7 +2281,8 @@ body.resizing-y {
 }
 
 .tty-session-actions > .tty-primary-action,
-.tty-session-actions > .agent-stop-button {
+.tty-session-actions > .agent-stop-button,
+.tty-session-actions > .agent-stop-turn-button {
   flex: 1 0 140px;
 }
 
@@ -2292,7 +2311,8 @@ body.resizing-y {
 
 .tty-new-session-button span,
 .tty-primary-action span,
-.agent-stop-button span {
+.agent-stop-button span,
+.agent-stop-turn-button span {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;

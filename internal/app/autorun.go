@@ -260,6 +260,9 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 			title = "Auto Run failed"
 		case "pause":
 			task.AutoRun.State = autoRunStatePaused
+			if details != "" {
+				task.AutoRun.SuspensionSummary = details
+			}
 			title = "Auto Run paused"
 		case "suspend":
 			task.AutoRun.State = autoRunStateSuspended

@@ -119,7 +119,8 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
 		t.Fatal(err)
 	}
-	if preview.Path != "guides/notes.md" || preview.Binary || !strings.Contains(preview.Content, "Safe content") {
+	expectedDigest := sha256.Sum256([]byte("# Notes\n\nSafe content.\n"))
+	if preview.Path != "guides/notes.md" || preview.Binary || !strings.Contains(preview.Content, "Safe content") || preview.ContentHash != hex.EncodeToString(expectedDigest[:]) {
 		t.Fatalf("unexpected Wiki preview: %+v", preview)
 	}
 
@@ -818,7 +819,7 @@ func TestProjectSessionStartRejectsStaleBackgroundSnapshots(t *testing.T) {
 	}
 
 	autoRefreshSource := extract("async function autoRefresh()", "function renderAll()")
-	treeRefreshSource := extract("async function fetchCurrentTree()", "async function loadCanonicalAgentEvents()")
+	treeRefreshSource := extract("async function fetchCurrentTree", "async function loadCanonicalAgentEvents()")
 	startRunSource := extract("async function startAgentRun(agentName = \"\")", "async function sendAgentInput(text)")
 	script := `
 const oldTree = { projects: [{ id: "project1", title: "Forge" }], sessions: [] };
@@ -836,6 +837,8 @@ const state = {
   autoRefreshInFlight: false,
   autoRefreshVersion: 0,
   treeRequestVersion: 0,
+  navigationVersion: 0,
+  detailRequestVersion: 0,
   agentSessionMutationCount: 0,
   agent: {
     runs: [],
@@ -867,6 +870,8 @@ function resetState(nextScenario) {
   state.autoRefreshInFlight = false;
   state.autoRefreshVersion = 0;
   state.treeRequestVersion = 0;
+  state.navigationVersion = 0;
+  state.detailRequestVersion = 0;
   state.agentSessionMutationCount = 0;
   state.agent.runs = [];
   state.agent.activeRunId = "";
@@ -898,6 +903,12 @@ async function api(path, options = {}) {
   throw new Error("unexpected API request " + path);
 }
 function sameJSON(left, right) { return JSON.stringify(left) === JSON.stringify(right); }
+function isCurrentWorkspaceView(workspaceId, navigationVersion, requestVersion = null) {
+  return scenario === "runs" || requestVersion == null || requestVersion === state.treeRequestVersion;
+}
+function isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) {
+  return refreshVersion === state.autoRefreshVersion;
+}
 async function refreshFilePreview() {}
 function ensureValidSelection() { return false; }
 function syncURL() {}
@@ -963,6 +974,148 @@ function toast() {}
 	}
 	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
 		t.Fatalf("project session refresh behavior test failed: %v\n%s", err, output)
+	}
+}
+
+func TestDetailMarkdownIncrementalRefreshBehavior(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the Detail Markdown refresh behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	extract := func(startMarker, endMarker string) string {
+		t.Helper()
+		start := strings.Index(app, startMarker)
+		if start < 0 {
+			t.Fatalf("could not find %q", startMarker)
+		}
+		end := strings.Index(app[start:], endMarker)
+		if end < 0 {
+			t.Fatalf("could not find %q after %q", endMarker, startMarker)
+		}
+		return app[start : start+end]
+	}
+
+	regionSource := extract("function updateDetailRegion", "function markdownRendererKey")
+	documentKeySource := extract("function markdownRendererKey", "function detailLogsRenderKey")
+	viewGuardSource := extract("function isCurrentWorkspaceView", "const WORKSPACE_AVATAR_PALETTE")
+	detailSource := extract("async function loadDetail", "async function loadWorkspaceAgents")
+	previewSource := extract("async function previewFile", "async function saveWorkspaceAgents")
+	script := `
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+
+const state = {
+  activeWorkspaceId: "workspace-a",
+  selectedId: "project1",
+  expandedMarkdownFiles: new Set(),
+  details: {},
+  navigationVersion: 1,
+  detailRequestVersion: 0,
+  previewRequestVersion: 0,
+  preview: null,
+  modalEnter: "",
+};
+const window = { marked: {}, DOMPurify: {} };
+function visibleResourceFiles(item) { return (item.files || []).filter((file) => file.name !== "AGENTS.md"); }
+function resourceFilePath(resourcePath, name) { return [resourcePath, name].filter(Boolean).join("/"); }
+function isMarkdownFile(path) { return /\.(md|markdown|mdown|mkdn)$/i.test(path); }
+function isLongMarkdownContent(content) { return String(content || "").length > 2200; }
+function markdownFileKey(name) { return state.activeWorkspaceId + ":" + state.selectedId + ":" + name; }
+function renderAll() {}
+function filePreviewURL(section, path, workspaceId) { return workspaceId + "/" + section + "/" + path; }
+` + regionSource + documentKeySource + viewGuardSource + detailSource + previewSource + `
+
+const region = { dataset: { renderKey: "same-hash" }, innerHTML: "existing markdown" };
+const panel = { querySelector() { return region; } };
+const originalRegion = region;
+assert(!updateDetailRegion(panel, "documents", "same-hash", () => { throw new Error("same key must not render"); }), "unchanged document key should skip rendering");
+assert(panel.querySelector() === originalRegion && region.innerHTML === "existing markdown", "unchanged document key replaced the DOM region");
+assert(updateDetailRegion(panel, "documents", "changed-hash", () => "new markdown"), "changed document key should render");
+assert(panel.querySelector() === originalRegion && region.innerHTML === "new markdown", "changed document key did not update the existing region");
+
+const baseDetail = {
+  id: "project1",
+  type: "project",
+  path: "project1",
+  files: [{ name: "project.md", path: "project1/project.md", content: "x".repeat(2301), contentHash: "hash-a" }],
+};
+const baseKey = resourceDocumentsRenderKey(baseDetail);
+assert(baseKey === resourceDocumentsRenderKey({ ...baseDetail, logs: [{ title: "new log" }] }), "dynamic log changes must not change the Markdown render key");
+assert(baseKey !== resourceDocumentsRenderKey({ ...baseDetail, files: [{ ...baseDetail.files[0], content: "# Changed", contentHash: "hash-b" }] }), "a changed backend content hash must change the Markdown render key");
+assert(baseKey !== resourceDocumentsRenderKey({ ...baseDetail, id: "project1.task1" }), "the same Markdown text on another resource must not reuse the render key");
+state.expandedMarkdownFiles.add(markdownFileKey("project.md"));
+assert(baseKey !== resourceDocumentsRenderKey(baseDetail), "a Markdown display mode change must change the render key");
+state.expandedMarkdownFiles.clear();
+
+let requests = [];
+function api(path) {
+  return new Promise((resolve) => requests.push({ path, resolve }));
+}
+async function testDetailRace() {
+  state.details = {};
+  state.selectedId = "project1";
+  state.navigationVersion = 10;
+  state.detailRequestVersion = 0;
+  const oldRequest = loadDetail("project1", { force: true });
+  state.selectedId = "project1.task1";
+  state.navigationVersion = 11;
+  const currentRequest = loadDetail("project1.task1", { force: true });
+  requests[0].resolve({ id: "project1", files: [] });
+  await oldRequest;
+  assert(!state.details.project1, "a stale resource response updated the detail cache");
+  requests[1].resolve({ id: "project1.task1", files: [] });
+  await currentRequest;
+  assert(state.details["project1.task1"]?.id === "project1.task1", "the current resource response was discarded");
+
+  requests = [];
+  state.selectedId = "project1.task1";
+  state.navigationVersion = 12;
+  state.detailRequestVersion = 0;
+  const firstSameResource = loadDetail("project1.task1", { force: true });
+  const secondSameResource = loadDetail("project1.task1", { force: true });
+  requests[1].resolve({ id: "project1.task1", marker: "new" });
+  await secondSameResource;
+  requests[0].resolve({ id: "project1.task1", marker: "old" });
+  await firstSameResource;
+  assert(state.details["project1.task1"]?.marker === "new", "an older same-resource response overwrote the latest detail");
+}
+
+async function testPreviewRace() {
+  requests = [];
+  state.preview = null;
+  state.previewRequestVersion = 0;
+  const oldPreview = previewFile("Wiki", "old.md");
+  await Promise.resolve();
+  const currentPreview = previewFile("Wiki", "new.md");
+  await Promise.resolve();
+  requests[0].resolve({ path: "old.md", content: "old", contentHash: "old-hash" });
+  await oldPreview;
+  assert(state.preview.path === "new.md", "a stale file preview response replaced the current tab");
+  requests[1].resolve({ path: "new.md", content: "new", contentHash: "new-hash" });
+  await currentPreview;
+  assert(state.preview.path === "new.md" && state.preview.content === "new", "the current file preview did not win the race");
+}
+Promise.resolve().then(async () => {
+  await testDetailRace();
+  await testPreviewRace();
+}).catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`
+
+	testFile := filepath.Join(t.TempDir(), "detail-markdown-refresh.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile).CombinedOutput(); err != nil {
+		t.Fatalf("Detail Markdown refresh behavior test failed: %v\n%s", err, output)
 	}
 }
 
@@ -1346,8 +1499,8 @@ func TestPageDetailsOmitSummaryStats(t *testing.T) {
 		`<h1>${escapeHTML(detail.title)}${resourceRefBadge(selected.id)}</h1>`,
 		`id="newTaskButton"`,
 		`<button class="danger" id="archiveButton"`,
-		`${fileSection(detail)}`,
-		`${artifactSection("Artifacts", detail.artifacts)}`,
+		`() => fileSection(detail)`,
+		`() => artifactSection("Artifacts", detail.artifacts)`,
 		`selected.type === "project" ? "" : worktreeSection(detail.repos)`,
 	} {
 		if !strings.Contains(app, want) {
@@ -1931,6 +2084,57 @@ func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("AutoRun live intervention UI is missing %q", want)
+		}
+	}
+}
+
+func TestStopTurnComposerSeparatesTurnAndSessionActions(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`function isAgentTurnInterruptible(run)`,
+		`["running", "waiting_approval"].includes(run?.status)`,
+		`includeStopTurn: stopTurnAvailable`,
+		`id="agentStopTurnButton"`,
+		`icon(turnStopping ? "loader-circle" : "pause")`,
+		`Stop only the current turn; keep the AgentHub Session open.`,
+		`Close the entire AgentHub Session.`,
+		`async function stopAgentTurn()`,
+		`/interrupt`,
+		`state.agent.turnStopping = true`,
+		`Turn stopped. The AgentHub Session remains open.`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Stop Turn composer is missing %q", want)
+		}
+	}
+	stopStart := strings.Index(source, `async function stopAgentTurn() {`)
+	stopEnd := -1
+	if stopStart >= 0 {
+		stopEnd = strings.Index(source[stopStart:], `async function switchAgentRun(`)
+	}
+	if stopStart < 0 || stopEnd < 0 {
+		t.Fatal("Stop Turn handler boundary is missing")
+	}
+	stopSource := source[stopStart : stopStart+stopEnd]
+	if strings.Contains(stopSource, `/stop`) || strings.Contains(stopSource, `closeAgentRun`) {
+		t.Fatal("Stop Turn must not close the AgentHub Session")
+	}
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	for _, want := range []string{
+		`.agent-stop-turn-button`,
+		`.agent-stop-turn-button:hover:not(:disabled)`,
+		`.tty-session-actions > .agent-stop-turn-button`,
+	} {
+		if !strings.Contains(styles, want) {
+			t.Fatalf("Stop Turn composer styles are missing %q", want)
 		}
 	}
 }
@@ -2672,16 +2876,16 @@ func TestWorkspaceRestoresLastSelectedResource(t *testing.T) {
 
 	for _, want := range []string{
 		`state.lastResourceId = uiState.lastResourceId || "";`,
-		`lastResourceId: state.selectedId,`,
+		`lastResourceId: selectedId,`,
 		`await loadUIState();
     if (!route.resourceId && state.lastResourceId) {
       state.selectedId = state.lastResourceId;
     }
     await loadTree({ replaceURL: true });`,
-		`await loadUIState();
+		`if (!await loadUIState(id, navigationVersion)) return;
   state.selectedId = state.lastResourceId || "workspace";
   await loadTree();`,
-		`await loadUIState();
+		`if (!await loadUIState(route.workspaceId, navigationVersion)) return;
     if (!route.resourceId && state.lastResourceId) {
       state.selectedId = state.lastResourceId;
     }
