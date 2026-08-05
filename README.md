@@ -84,7 +84,7 @@ Open the GUI for that workspace:
 forge serve --workspace "$PWD"
 ```
 
-Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and the system or custom Agent Profiles in Settings. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
+Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and the system or custom Agent Profiles in Settings. The reserved `scheduler` system Profile is available for future scheduling work but does not start a Scheduler Agent or change current AutoRun routing. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
 
 The GUI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
 
@@ -95,7 +95,7 @@ The main UI is split into navigation, resource details, and agent chat:
 - **Navigation:** switch workspaces, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** start, stop, resume, or revisit agent sessions; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
-- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles to catalog agents.
+- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
@@ -178,7 +178,7 @@ forge task create \
   "Implement the change"
 ```
 
-Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. A configured but unavailable target is sent to AgentHub and reported as a runtime error.
+Preferred profiles are ordered and portable. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current AutoRun driver. A configured but unavailable target is sent to AgentHub and reported as a runtime error.
 
 A scheduler-started turn must finish with exactly one result action:
 

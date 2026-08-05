@@ -1209,12 +1209,18 @@ func (s *server) loadConfig() (config, error) {
 	data, err := os.ReadFile(s.config)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return config{
+			cfg = config{
 				Version:          agentHubConfigVersion,
 				Workspaces:       []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
 				AgentProfiles:    []agentProfileRoute{},
-			}, nil
+			}
+			normalized, normalizeErr := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
+			if normalizeErr != nil {
+				return config{}, normalizeErr
+			}
+			cfg.AgentProfiles = normalized
+			return cfg, nil
 		}
 		return config{}, err
 	}
@@ -1231,6 +1237,16 @@ func (s *server) loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	normalizedProfiles, err := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
+	if err != nil {
+		return config{}, err
+	}
+	if !agentProfileRoutesEqual(cfg.AgentProfiles, normalizedProfiles) {
+		cfg.AgentProfiles = normalizedProfiles
+		if err := s.saveConfig(cfg); err != nil {
+			return config{}, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -1238,8 +1254,12 @@ func (s *server) saveConfig(cfg config) error {
 	if cfg.Version < agentHubConfigVersion {
 		return fmt.Errorf("unsupported Forge GUI configuration version %d", cfg.Version)
 	}
-	routes := make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles))
-	for _, route := range cfg.AgentProfiles {
+	normalizedProfiles, err := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
+	if err != nil {
+		return err
+	}
+	routes := make([]agentHubProfileRoute, 0, len(normalizedProfiles))
+	for _, route := range normalizedProfiles {
 		routes = append(routes, agentHubProfileRoute{
 			Key: route.Key, Description: route.Description, AgentName: route.AgentName,
 		})

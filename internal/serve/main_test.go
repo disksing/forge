@@ -325,6 +325,11 @@ func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 		`/api/settings/agenthub`,
 		`agentName: profile.agentName`,
 		`SYSTEM_AGENT_PROFILE_KEYS`,
+		`"scheduler"`,
+		`does not start a Scheduler Agent`,
+		`settings-profile-system-label`,
+		`data-profile-field="agentName"`,
+		`System profiles cannot be deleted.`,
 		`preferredAgentProfiles`,
 		`Actual Agent:`,
 	} {
@@ -1427,6 +1432,191 @@ func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
 	restoreFocus := strings.Index(source[removeListener:], `$("ttyInput")?.focus({ preventScroll: true });`)
 	if removeListener < 0 || renderComposer < 0 || restoreFocus < 0 || renderComposer >= restoreFocus {
 		t.Fatal("TTY composer should restore focus only after replacing the sending input")
+	}
+}
+
+func TestTTYComposerDraftPersistence(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";`,
+		`function agentDraftKeyForRun(run, workspaceId = state.activeWorkspaceId)`,
+		`function pruneAgentDraftStorage(`,
+		`function restoreAgentDraftForRun(run, workspaceId = state.activeWorkspaceId)`,
+		`data-agent-draft-key=`,
+		`updateAgentDraft(event.target.value);`,
+		`window.addEventListener("pagehide", flushAgentDraftOnPageLeave);`,
+		`window.addEventListener("beforeunload", flushAgentDraftOnPageLeave);`,
+		`if (result?.status === "accepted")`,
+		`clearAgentDraftAfterAccepted({`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("TTY composer draft persistence is missing %q", want)
+		}
+	}
+
+	submitStart := strings.Index(source, "async function submitTTYInput(event)")
+	if submitStart < 0 {
+		t.Fatal("could not isolate TTY submit handler")
+	}
+	submitEnd := strings.Index(source[submitStart:], "function resizeTTYInput(input)")
+	if submitEnd < 0 {
+		t.Fatal("could not isolate TTY submit handler boundary")
+	}
+	submit := source[submitStart : submitStart+submitEnd]
+	if strings.Contains(submit, `state.agent.ttyDraft = ""`) || strings.Contains(submit, `state.agent.ttyMultiline = false`) {
+		t.Fatal("TTY submit must only clear a draft after an accepted response and matching version")
+	}
+
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for TTY draft persistence tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+const start = source.indexOf("const AGENT_DRAFT_STORAGE_PREFIX");
+const end = source.indexOf("async function api(path, options = {})", start);
+if (start < 0 || end < 0) throw new Error("could not isolate draft helpers");
+
+const data = new Map();
+let storageBroken = false;
+const storage = {
+  get length() { return data.size; },
+  key(index) { return Array.from(data.keys())[index] ?? null; },
+  getItem(key) { if (storageBroken) throw new Error("storage unavailable"); return data.get(key) ?? null; },
+  setItem(key, value) { if (storageBroken) throw new Error("quota exceeded"); data.set(key, String(value)); },
+  removeItem(key) { if (storageBroken) throw new Error("storage unavailable"); data.delete(key); },
+};
+const runA = { id: "run-a", agentHubSessionId: "hub-a", resourceId: "project1.task1", status: "stopped" };
+const runB = { id: "run-b", agentHubSessionId: "hub-b", resourceId: "project1.task1", status: "idle" };
+const state = {
+  activeWorkspaceId: "workspace-a",
+  selectedId: "project1.task1",
+  agent: {
+    runs: [runA, runB],
+    activeRunId: "run-a",
+    ttyDraft: "",
+    ttyMultiline: false,
+    ttyDraftKey: "",
+    ttyDraftWorkspaceId: "",
+    ttyDraftResourceId: "",
+    ttyDraftRunId: "",
+    ttyDraftVersion: 0,
+    sendingInput: false,
+  },
+};
+function currentAgentRun() {
+  return state.agent.runs.find((run) => run.id === state.agent.activeRunId) || null;
+}
+let ttyInput = null;
+function $(id) { return id === "ttyInput" ? ttyInput : null; }
+function assert(condition, message) { if (!condition) throw new Error(message); }
+const context = { state, window: { localStorage: storage }, $, currentAgentRun, console };
+vm.createContext(context);
+vm.runInContext(source.slice(start, end), context);
+
+const keyA = context.agentDraftKeyForRun(runA);
+const keyB = context.agentDraftKeyForRun(runB);
+const keyOtherWorkspace = context.agentDraftKeyForRun(runA, "workspace-b");
+assert(keyA.startsWith("forge.gui.agentDraft.v1.session."), "draft keys need a stable versioned session prefix");
+assert(keyA !== keyB, "different sessions in one task must use different keys");
+assert(keyA !== keyOtherWorkspace, "different workspaces must use different keys");
+
+context.restoreAgentDraftForRun(runA);
+context.updateAgentDraft("line one\n/tmp/uploaded-path.txt");
+assert(state.agent.ttyMultiline, "multiline drafts must restore multiline mode");
+const storedA = JSON.parse(data.get(keyA));
+assert(storedA.text === "line one\n/tmp/uploaded-path.txt", "input and uploaded path must be persisted as text");
+assert(storedA.version === 1 && storedA.workspaceId === "workspace-a" && storedA.runId === "run-a", "draft metadata is incomplete");
+
+state.agent.activeRunId = "run-b";
+context.restoreAgentDraftForRun(runB);
+assert(state.agent.ttyDraft === "", "a different session must not inherit the previous draft");
+context.updateAgentDraft("session B");
+state.agent.activeRunId = "run-a";
+context.restoreAgentDraftForRun(runA);
+assert(state.agent.ttyDraft === "line one\n/tmp/uploaded-path.txt", "returning to a session must restore its draft");
+assert(context.agentDraftKeyForRun({ ...runA, status: "idle" }) === keyA, "stopped/resumed sessions must keep the same draft key");
+
+const staleVersion = state.agent.ttyDraftVersion;
+context.updateAgentDraft("next message");
+assert(!context.clearAgentDraftAfterAccepted({ workspaceId: "workspace-a", runId: "run-a", key: keyA, text: "next message", version: staleVersion }), "a newer draft version must survive an old send completion");
+assert(state.agent.ttyDraft === "next message", "stale send completion changed the current draft");
+const acceptedVersion = state.agent.ttyDraftVersion;
+assert(context.clearAgentDraftAfterAccepted({ workspaceId: "workspace-a", runId: "run-a", key: keyA, text: "next message", version: acceptedVersion }), "matching accepted send should clear the draft");
+assert(state.agent.ttyDraft === "" && !data.has(keyA), "accepted send must clear memory and storage");
+
+data.set(keyA, "not-json");
+assert(context.readAgentDraft(keyA) === "" && !data.has(keyA), "corrupt storage must be ignored and removed");
+storageBroken = true;
+state.agent.activeRunId = "run-a";
+context.restoreAgentDraftForRun(runA);
+context.updateAgentDraft("memory fallback");
+assert(state.agent.ttyDraft === "memory fallback", "storage failures must keep the in-memory draft usable");
+storageBroken = false;
+context.updateAgentDraft("");
+assert(state.agent.ttyDraft === "", "empty drafts must clear in-memory state");
+
+(async () => {
+const submitStart = source.indexOf("async function submitTTYInput(event)");
+const submitEnd = source.indexOf("function resizeTTYInput(input)", submitStart);
+if (submitStart < 0 || submitEnd < 0) throw new Error("could not isolate submit handler");
+context.document = {
+  activeElement: null,
+  addEventListener() {},
+  removeEventListener() {},
+};
+context.renderTTYComposer = () => {};
+context.refreshIcons = () => {};
+context.toast = () => {};
+context.__sendAgentInput = async () => ({ status: "accepted" });
+vm.runInContext("async function sendAgentInput(text) { return globalThis.__sendAgentInput(text); }\n" + source.slice(submitStart, submitEnd), context);
+
+state.agent.activeRunId = "run-a";
+context.restoreAgentDraftForRun(runA);
+ttyInput = { value: "failed message", dataset: { agentDraftKey: state.agent.ttyDraftKey }, focus() {} };
+context.document.activeElement = ttyInput;
+context.__sendAgentInput = async () => ({ status: "rejected" });
+await context.submitTTYInput({ preventDefault() {} });
+assert(state.agent.ttyDraft === "failed message" && data.has(keyA), "failed sends must retain the draft");
+
+context.__sendAgentInput = async () => { throw new Error("network"); };
+await context.submitTTYInput({ preventDefault() {} });
+assert(state.agent.ttyDraft === "failed message" && data.has(keyA), "network errors must retain the draft");
+
+context.__sendAgentInput = async () => ({ status: "accepted" });
+ttyInput.value = "accepted message";
+await context.submitTTYInput({ preventDefault() {} });
+assert(state.agent.ttyDraft === "" && !data.has(keyA), "only an explicitly accepted send may clear the draft");
+
+context.restoreAgentDraftForRun(runA);
+ttyInput.value = "sent message";
+let resolveSend;
+context.__sendAgentInput = () => new Promise((resolve) => { resolveSend = resolve; });
+const pendingSend = context.submitTTYInput({ preventDefault() {} });
+await Promise.resolve();
+assert(resolveSend, "send request did not start");
+context.updateAgentDraft("typed while sending");
+ttyInput.value = "typed while sending";
+resolveSend({ status: "accepted" });
+await pendingSend;
+assert(state.agent.ttyDraft === "typed while sending" && data.has(keyA), "a stale accepted callback must not clear newer input");
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+`
+	testFile := filepath.Join(t.TempDir(), "tty-drafts.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+		t.Fatalf("TTY draft persistence test failed: %v\n%s", err, output)
 	}
 }
 

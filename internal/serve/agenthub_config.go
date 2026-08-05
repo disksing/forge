@@ -16,14 +16,16 @@ const (
 )
 
 type systemAgentProfileDefinition struct {
-	Key         string
-	Description string
+	Key                  string
+	Description          string
+	InheritDefaultTarget bool
 }
 
 var systemAgentProfileDefinitions = []systemAgentProfileDefinition{
 	{Key: "default", Description: "Balanced, recommended agent"},
 	{Key: "fast", Description: "Faster responses for simple tasks"},
 	{Key: "reasoning", Description: "More thorough reasoning for complex tasks"},
+	{Key: "scheduler", Description: "Task scheduling and coordination", InheritDefaultTarget: true},
 }
 
 type agentHubGUIConfig struct {
@@ -99,12 +101,17 @@ func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agent
 	if len(available) > 0 {
 		fallback = available[0].Name
 	}
+	defaultTarget := strings.TrimSpace(systemTargets["default"])
 	normalized := make([]agentHubProfileRoute, 0, len(routes)+len(systemAgentProfileDefinitions))
 	seen := make(map[string]bool, len(routes)+len(systemAgentProfileDefinitions))
 	for _, definition := range systemAgentProfileDefinitions {
 		agentName := strings.TrimSpace(systemTargets[definition.Key])
 		if agentName == "" {
-			agentName = fallback
+			if definition.InheritDefaultTarget && defaultTarget != "" {
+				agentName = defaultTarget
+			} else {
+				agentName = fallback
+			}
 		}
 		canonicalName, err := canonicalAgentHubAgentName(agentName, catalog.Agents)
 		if err != nil {
@@ -144,6 +151,38 @@ func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agent
 		})
 	}
 	return normalized, nil
+}
+
+func normalizeConfigAgentProfileRoutes(routes []agentProfileRoute) ([]agentProfileRoute, error) {
+	hubRoutes := make([]agentHubProfileRoute, 0, len(routes))
+	for _, route := range routes {
+		hubRoutes = append(hubRoutes, agentHubProfileRoute{
+			Key: route.Key, Description: route.Description, AgentName: route.AgentName,
+		})
+	}
+	normalized, err := normalizeAgentHubProfileRoutes(hubRoutes, agentHubCatalog{})
+	if err != nil {
+		return nil, err
+	}
+	configRoutes := make([]agentProfileRoute, 0, len(normalized))
+	for _, route := range normalized {
+		configRoutes = append(configRoutes, agentProfileRoute{
+			Key: route.Key, Description: route.Description, AgentName: route.AgentName,
+		})
+	}
+	return configRoutes, nil
+}
+
+func agentProfileRoutesEqual(a, b []agentProfileRoute) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for index := range a {
+		if a[index] != b[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func isSystemAgentProfileKey(key string) bool {
