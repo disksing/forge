@@ -675,6 +675,10 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 	}
 	var failures []string
 	for _, workspace := range cfg.Workspaces {
+		// Recovery and reconciliation only run for owned Workspaces.
+		if !m.server.ownsWorkspace(workspace.Path) {
+			continue
+		}
 		runs, loadErr := loadAgentRuns(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))

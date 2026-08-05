@@ -149,6 +149,7 @@ type server struct {
 	config    string
 	forgePath string
 	agents    *agentManager
+	locks     *workspaceLockManager
 }
 
 const (
@@ -166,6 +167,13 @@ Options:
   --addr <address>       local address to listen on (default 127.0.0.1:4936)
   --workspace <path>     AgentWorkspace path to add before starting
   --version              print build-time branch and sha
+
+Workspace ownership:
+  Each managed Workspace is exclusively owned by one forge serve process via
+  an OS advisory lock at <workspace>/.forge/serve.lock. A second instance
+  using a different FORGE_GUI_CONFIG cannot manage the same Workspace; it
+  fails at startup before scheduling or recovery begins. The OS releases the
+  lock automatically when the owning process exits.
 
 Environment overrides:
   FORGE_CLI           forge executable used for workspace operations
@@ -220,7 +228,9 @@ func Main(args []string) error {
 		addr:      addr,
 		config:    configPath,
 		forgePath: forgePath,
+		locks:     newWorkspaceLockManager(addr, configPath),
 	}
+	defer s.locks.closeAll()
 	_, err = s.validatePersistedAgentHubConfig(context.Background())
 	if err != nil {
 		return fmt.Errorf("validate AgentHub configuration: %w", err)
@@ -232,6 +242,11 @@ func Main(args []string) error {
 		}
 	} else {
 		s.addCurrentDirectoryIfEmpty(context.Background())
+	}
+	// Every configured Workspace must be owned before the AutoRun scheduler,
+	// AgentHub recovery, or any writable HTTP endpoint may touch it.
+	if err := s.acquireConfiguredWorkspaceLocks(); err != nil {
+		return err
 	}
 	s.agents.startAgentRecovery(context.Background())
 	go s.runTaskScheduler(context.Background())
@@ -305,6 +320,11 @@ func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
 		}
 		workspace, err := s.addWorkspaceWithOptions(r.Context(), body.Path, body.Create)
 		if err != nil {
+			var conflict *workspaceLockConflictError
+			if errors.As(err, &conflict) {
+				writeError(w, err, http.StatusConflict)
+				return
+			}
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}
@@ -858,14 +878,16 @@ func (s *server) addCurrentDirectoryIfEmpty(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	_, _ = s.addWorkspace(ctx, cwd)
+	if _, err := s.addWorkspace(ctx, cwd); err != nil {
+		log.Printf("add current directory as workspace: %v", err)
+	}
 }
 
 func (s *server) addWorkspace(ctx context.Context, path string) (guiWorkspace, error) {
 	return s.addWorkspaceWithOptions(ctx, path, false)
 }
 
-func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool) (guiWorkspace, error) {
+func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool) (workspace guiWorkspace, err error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return guiWorkspace{}, errors.New("workspace path is required")
@@ -879,20 +901,39 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 			return guiWorkspace{}, err
 		}
 	}
-	tree, err := s.treeAt(ctx, abs)
+	canonical, err := canonicalWorkspacePath(abs)
+	if err != nil {
+		return guiWorkspace{}, err
+	}
+	// Ownership comes first: the lock is acquired before the Workspace is
+	// inspected or persisted, and rolled back if any later step fails, so a
+	// failed add never leaves a half-written config or a stray lock.
+	locked := false
+	if s.locks != nil && !s.locks.owns(canonical) {
+		if _, err := s.locks.acquire(canonical); err != nil {
+			return guiWorkspace{}, err
+		}
+		locked = true
+	}
+	defer func() {
+		if err != nil && locked {
+			s.locks.release(canonical)
+		}
+	}()
+	tree, err := s.treeAt(ctx, canonical)
 	if err != nil {
 		if !create {
 			return guiWorkspace{}, err
 		}
-		if _, initErr := s.runForge(ctx, abs, "init"); initErr != nil {
+		if _, initErr := s.runForge(ctx, canonical, "init"); initErr != nil {
 			return guiWorkspace{}, initErr
 		}
-		tree, err = s.treeAt(ctx, abs)
+		tree, err = s.treeAt(ctx, canonical)
 		if err != nil {
 			return guiWorkspace{}, err
 		}
 	}
-	workspace := guiWorkspace{
+	workspace = guiWorkspace{
 		ID:   workspaceID(tree.Root),
 		Name: workspaceName(tree.Root),
 		Path: tree.Root,
@@ -926,9 +967,11 @@ func (s *server) removeWorkspace(id string) error {
 	}
 	next := cfg.Workspaces[:0]
 	removed := false
+	var removedPath string
 	for _, workspace := range cfg.Workspaces {
 		if workspace.ID == id {
 			removed = true
+			removedPath = workspace.Path
 			continue
 		}
 		next = append(next, workspace)
@@ -943,7 +986,15 @@ func (s *server) removeWorkspace(id string) error {
 			cfg.ActiveID = cfg.Workspaces[0].ID
 		}
 	}
-	return s.saveConfig(cfg)
+	if err := s.saveConfig(cfg); err != nil {
+		return err
+	}
+	// The Workspace is no longer managed once it leaves the persisted config;
+	// release the serve lock so another instance can take ownership.
+	if s.locks != nil {
+		s.locks.release(removedPath)
+	}
+	return nil
 }
 
 func (s *server) tree(ctx context.Context, id string) (workspaceTree, error) {
@@ -1151,6 +1202,9 @@ func (s *server) workspace(id string) (guiWorkspace, error) {
 	}
 	for _, workspace := range cfg.Workspaces {
 		if workspace.ID == id {
+			if err := s.requireWorkspaceOwnership(workspace.Path); err != nil {
+				return guiWorkspace{}, err
+			}
 			return workspace, nil
 		}
 	}

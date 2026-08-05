@@ -82,6 +82,11 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	}
 	var failures []error
 	for _, workspace := range cfg.Workspaces {
+		// Only dispatch into Workspaces this serve instance owns; a workspace
+		// removed concurrently loses its lock and must stop being scheduled.
+		if !s.ownsWorkspace(workspace.Path) {
+			continue
+		}
 		out, err := s.runForge(ctx, workspace.Path, "workspace", "tree", "--json")
 		if err != nil {
 			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))

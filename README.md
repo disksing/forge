@@ -113,7 +113,7 @@ FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file
 ```
 
-Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
+Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot schedule, recover sessions, or write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before any scheduler or recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -338,7 +338,7 @@ go run ./cli/cmd/forge help
 go run ./cli/cmd/forge serve --workspace /path/to/AgentWorkspace
 ```
 
-When testing a second GUI instance, isolate all mutable state:
+When testing a second GUI instance, isolate all mutable state. Each Workspace can only be managed by one `forge serve` process at a time, so a test instance must point at its own isolated Workspace; pointing it at a real Workspace now fails fast with a lock-conflict error instead of corrupting shared state, but tests must still use isolated Workspaces to avoid real business writes:
 
 ```bash
 FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \

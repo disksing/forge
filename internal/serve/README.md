@@ -52,9 +52,20 @@ scripts/update-agenthub-event-timeline /path/to/agenthub
 
 Forge recovery 和 AutoRun 诊断使用独立 `forge.notice` SSE event，不伪装成 canonical event，也不进入共享 timeline projector。
 
+## Workspace 独占所有权
+
+每个被管理的 Workspace 同时只能由一个 `forge serve` 进程管理。服务在启动 AutoRun scheduler、AgentHub recovery/poller 和 HTTP 写入能力之前，对配置中的每个 Workspace 获取 `<workspace>/.forge/serve.lock` 的 OS advisory 独占锁（flock），并在整个生命周期内保持文件描述符打开。锁冲突时启动整体失败并释放本轮已取得的锁（全有或全无），错误中包含规范 Workspace 路径和 owner 诊断（PID、监听地址、配置路径）。
+
+- 不同 `FORGE_GUI_CONFIG` 不能绕过限制：配置文件锁防止同一配置被两个实例使用，Workspace 锁提供跨配置的资源所有权。
+- Workspace 路径在锁定前转为绝对规范路径并解析符号链接，相对路径、`..` 和 symlink 别名指向同一 Workspace 时同样冲突。
+- 通过 HTTP API 动态添加 Workspace 时先取锁再持久化配置；保存失败会回滚锁；动态移除会释放锁。重复添加同一 Workspace 不会重复取锁或丢失现有锁。
+- 进程正常退出或崩溃后由 OS 自动释放锁，后续实例可直接接管；不会通过删除 lock 文件伪造解锁。
+- 未持有锁的实例不会调度、恢复或控制该 Workspace 的 Session，所有管理和写入入口都会验证所有权。
+- 普通 `forge project/task/session/workspace/start` CLI 不获取 `serve.lock`，仍按现有 Forge session/resource lock 规则工作。
+
 ## 隔离验证
 
-不要用开发构建连接真实 workspace 或修改真实 GUI 配置。测试第二个 GUI 时必须隔离配置、端口和 workspace，并使用 fake AgentHub 或专用测试 AgentHub：
+不要用开发构建连接真实 workspace 或修改真实 GUI 配置。测试第二个 GUI 时必须隔离配置、端口和 workspace，并使用 fake AgentHub 或专用测试 AgentHub。第二个实例即使误指向真实 Workspace，也会在启动调度前因 `serve.lock` 冲突明确失败，但测试仍必须使用隔离 Workspace，避免产生真实业务写入：
 
 ```sh
 FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
