@@ -91,6 +91,10 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	if runB.Status != "stopped" || !runB.AgentHubStoppedObserved {
 		t.Fatalf("run-b projection not reconciled: %#v", runB)
 	}
+	if response := closeRuntimeTestRun(t, manager, workspace, "run-a"); response.Code != http.StatusOK {
+		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
+	}
+	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
 func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {

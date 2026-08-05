@@ -43,7 +43,7 @@ Chat composer 底部只有一个 New Session 按钮。点击后展开当前启�
 
 AutoRun 进入 `completed` 或 `failed` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
 
-当前 turn 处于 AgentHub `busy` 或 `waiting_approval` 时，Chat composer 在输入框工具栏提供 End Turn 和 Close Session 两个独立图标操作。End Turn 只调用 AgentHub interrupt，保留 AgentHub session、Forge session 和 Task 锁；服务端会在发送非幂等 interrupt 前重新读取并校验 source、session ID 和当前状态，状态冲突不执行操作。AutoRun/SchedulerTurn 会先以 `user stopped the active turn` 将同一 generation 原子地置为 paused，普通 Chat turn 不修改 AutoRun；interrupt 结果不明确时保守保留 session 并等待对账。Close Session 继续使用 stop 生命周期，只有 durable stopped 后才释放锁。
+当前 turn 处于 AgentHub `busy` 或 `waiting_approval` 时，Chat composer 在输入框工具栏提供 End Turn 和 Close Session 两个独立图标操作。End Turn 只调用 AgentHub interrupt，保留 AgentHub session、Forge session 和 Task 锁；服务端会在发送非幂等 interrupt 前重新读取并校验 source、session ID 和当前状态，状态冲突不执行操作。AutoRun/SchedulerTurn 会先以 `user stopped the active turn` 将同一 generation 原子地置为 paused，普通 Chat turn 不修改 AutoRun；interrupt 结果不明确时保守保留 session 并等待对账。Close Session 对当前关联且仍可运行的 AutoRun generation 先用 `user closed the AutoRun session` 做同一 generation/state 校验并持久化为 paused，再调用 AgentHub stop；暂停失败不会发送 stop，stop 结果不明确时保持 paused 且不重试。已暂停、终态或历史 generation 不会误暂停，普通 Chat Session 行为不变；只有 durable stopped 后才释放锁。
 
 只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁；服务错过 stopped 边沿、只看到 archived 时，必须依据连续 durable event history 证明该 session 先经过 stopped 才可释放。AgentHub 不可达、状态未知、event cursor gap、重复或冲突 source、未证明先经过 stopped 的 archived 状态都保守持锁。
 

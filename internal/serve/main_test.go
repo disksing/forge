@@ -2327,7 +2327,10 @@ function extract(name) {
 function icon(name) { return '<svg data-icon="' + name + '"></svg>'; }
 function escapeHTML(value) { return String(value ?? ""); }
 function assert(condition, message) { if (!condition) throw new Error(message); }
+const resources = new Map();
+function findResource(id) { return resources.get(id) || null; }
 eval(extract("isAgentTurnInterruptible"));
+eval(extract("isAutoRunSessionCloseTarget"));
 eval(extract("agentComposerToolbarActions"));
 for (const status of ["running", "waiting_approval"]) {
   assert(isAgentTurnInterruptible({ status }), status + " must be interruptible");
@@ -2335,6 +2338,12 @@ for (const status of ["running", "waiting_approval"]) {
 for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) {
   assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
 }
+resources.set("project1.task1", { autoRun: { generation: 7, state: "running" } });
+assert(isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "current running AutoRun must be a close pause target");
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 6, schedulerTurn: true }), "historical AutoRun must not be a close pause target");
+resources.get("project1.task1").autoRun.state = "completed";
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "terminal AutoRun must not be a close pause target");
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close pause target");
 const idle = agentComposerToolbarActions({ includeClose: true });
 assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
 assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
@@ -2344,6 +2353,9 @@ const running = agentComposerToolbarActions({ includeEndTurn: true, includeClose
 assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
 assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
 assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
+const autoRunClose = agentComposerToolbarActions({ includeClose: true, pauseAutoRunOnClose: true });
+assert(autoRunClose.includes('title="Pause AutoRun and close the session."'), "AutoRun Close Session tooltip must explain the pause");
+assert(autoRunClose.includes('aria-label="Pause AutoRun and close the session."'), "AutoRun Close Session aria-label must explain the pause");
 const ending = agentComposerToolbarActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
 assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
 assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");

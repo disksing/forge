@@ -62,6 +62,10 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	if stoppedRun.Status != "stopped" || !stoppedRun.AgentHubStoppedObserved {
 		t.Fatalf("stopped run projection mismatch: %#v", stoppedRun)
 	}
+	if response := closeRuntimeTestRun(t, manager, workspace, "run-live"); response.Code != http.StatusOK {
+		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
+	}
+	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
 func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {

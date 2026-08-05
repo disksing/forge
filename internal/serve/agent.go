@@ -140,6 +140,7 @@ type agentRuntime struct {
 	run                    agentRun
 	agentHub               *agentHubClient
 	agentHubState          string
+	agentHubStopRequested  bool
 	schedulerTurnFinishing bool
 	archivedProofFailed    bool
 }
@@ -699,15 +700,7 @@ func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspace
 		return
 	}
 	if rt != nil {
-		rt.mu.Lock()
-		sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
-		run := rt.run
-		rt.mu.Unlock()
-		if sessionID != "" {
-			m.stopAgentHubRun(w, r, rt)
-			return
-		}
-		m.stopUnattachedAgentHubRun(w, r, workspace, run, rt)
+		m.stopAgentHubRuntime(w, r, rt)
 		return
 	}
 	run, err := loadAgentRun(workspace.Path, runID)

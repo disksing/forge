@@ -3935,14 +3935,16 @@ function renderTTYComposer(options = {}) {
     const stopTurnPending = isAgentTurnStopping(activeRun);
     const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
     const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
+    const closePausesAutoRun = isAutoRunSessionCloseTarget(activeRun);
     const sessionActionsMarkup = agentComposerActions({ collapsible: true });
     const toolbarActionsMarkup = agentComposerToolbarActions({
       includeEndTurn: stopTurnAvailable,
       endingTurn: stopTurnPending,
       includeClose: true,
       closingSession: sessionStopping,
+      pauseAutoRunOnClose: closePausesAutoRun,
     });
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closePausesAutoRun ? "pause-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4068,6 +4070,7 @@ function agentComposerToolbarActions(options = {}) {
   const endingTurn = Boolean(options.endingTurn);
   const includeClose = Boolean(options.includeClose);
   const closingSession = Boolean(options.closingSession);
+  const pauseAutoRunOnClose = Boolean(options.pauseAutoRunOnClose);
   const endTurnPending = endingTurn || closingSession;
   const endTurnLabel = endingTurn
     ? "Ending turn…"
@@ -4079,7 +4082,9 @@ function agentComposerToolbarActions(options = {}) {
     ? "Closing session…"
     : endingTurn
       ? "Ending turn…"
-      : "Close session; end the entire AgentHub Session.";
+      : pauseAutoRunOnClose
+        ? "Pause AutoRun and close the session."
+        : "Close session; end the entire AgentHub Session.";
   const endTurnMarkup = includeEndTurn ? `
     <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button"${endTurnPending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(endTurnLabel)}" aria-label="${escapeHTML(endTurnLabel)}">
       ${icon(endTurnPending ? "loader-circle" : "pause")}
@@ -5120,10 +5125,10 @@ async function stopAgentRun() {
     bindAgentEvents();
     refreshIcons();
     try {
-      await closeAgentRun(runId);
+      const result = await closeAgentRun(runId);
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast("Agent session closed.");
+      toast(result?.autoRunPaused ? "AutoRun paused and Agent session closed." : "Agent session closed.");
     } catch (err) {
       // A failed or ambiguous close must re-read the run and tree before the
       // control becomes available again; never clear a draft as a side effect.
@@ -5199,7 +5204,7 @@ async function switchAgentRun(runId) {
 
 async function closeAgentRun(runId) {
   if (!runId) return;
-  await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stop`, { method: "POST" });
+  return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stop`, { method: "POST" });
 }
 
 async function resumeAgentRun() {
@@ -5240,6 +5245,18 @@ function isLiveAgentRun(run) {
 
 function isAgentTurnInterruptible(run) {
   return ["running", "waiting_approval"].includes(run?.status);
+}
+
+function isAutoRunSessionCloseTarget(run) {
+  const resourceID = String(run?.resourceId || "").trim();
+  const generation = Number(run?.autoRunGeneration) || 0;
+  if (!resourceID || generation <= 0) return false;
+  const resource = findResource(resourceID);
+  const autoRun = resource?.autoRun;
+  if (!autoRun) return Boolean(run?.schedulerTurn);
+  if ((Number(autoRun.generation) || 0) !== generation) return false;
+  const stateName = String(autoRun.state || "").trim().toLowerCase();
+  return !["paused", "completed", "failed"].includes(stateName);
 }
 
 function isAgentTurnStopping(run) {
