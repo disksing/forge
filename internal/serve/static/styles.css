@@ -2235,12 +2235,9 @@ body.resizing-y {
   position: relative;
   flex: 1 0 270px;
   min-width: 270px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(116px, auto);
 }
 
-.tty-new-session-main span,
-.tty-new-session-agent span,
+.tty-new-session-button span,
 .tty-primary-action span,
 .agent-stop-button span {
   min-width: 0;
@@ -2249,53 +2246,31 @@ body.resizing-y {
   white-space: nowrap;
 }
 
-.tty-new-session-main,
-.tty-new-session-agent {
+.tty-new-session-button {
+  width: 100%;
   border: 1px solid #2563eb;
+  border-radius: 6px;
   background: #2563eb;
   color: #fff;
-}
-
-.tty-new-session-main {
-  border-radius: 6px 0 0 6px;
   padding: 0 11px;
 }
 
-.tty-new-session-agent {
-  min-width: 0;
-  border-left-color: rgba(255, 255, 255, 0.34);
-  border-radius: 0 6px 6px 0;
-  padding: 0 9px;
-}
-
-.tty-new-session-main:hover,
-.tty-new-session-agent:hover,
-.tty-new-session-agent[aria-expanded="true"] {
+.tty-new-session-button:hover:not(:disabled),
+.tty-new-session-button[aria-expanded="true"] {
   background: #1d4ed8;
   border-color: #1d4ed8;
 }
 
-.tty-new-session-main:disabled,
-.tty-new-session-agent:disabled,
-.tty-new-session-main:disabled:hover,
-.tty-new-session-agent:disabled:hover {
+.tty-new-session-button:disabled,
+.tty-new-session-button:disabled:hover {
   border-color: #cbd5e1;
   background: #e2e8f0;
   color: #64748b;
   cursor: not-allowed;
 }
 
-.tty-new-session-agent span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tty-new-session-prompt {
-  color: #bfdbfe;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-weight: 700;
+.tty-new-session-button svg {
+  flex: 0 0 auto;
 }
 
 .tty-agent-menu {
@@ -2304,7 +2279,8 @@ body.resizing-y {
   right: 0;
   bottom: calc(100% + 6px);
   left: 0;
-  overflow: hidden;
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
   border: 1px solid #cbd5e1;
   border-radius: 7px;
   background: #fff;
