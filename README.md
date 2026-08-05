@@ -19,11 +19,11 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 Forge separates concerns deliberately:
 
 ```text
-Forge CLI / forge-start ───────┐
+forge CLI / forge start ──────┐
                               ├── AgentWorkspace files (source of truth)
-Forge GUI ── invokes CLI ─────┤
-          ├── AgentHub client │
-          └── Git diff viewer ┘
+forge serve ── invokes CLI ───┤
+  (Web UI)  ├── AgentHub client │
+            └── Git diff viewer ┘
 
 AgentHub ── provider processes and durable agent sessions
 
@@ -31,8 +31,8 @@ shared checkout in repos/ ── git worktree ── task-owned branch in worktr
 ```
 
 - The **CLI** owns deterministic workspace mutations and JSON views used by other tools.
-- **`forge-start`** launches a terminal agent inside one resource with a managed session and lock.
-- The **GUI** renders workspace state, routes chat and AutoRun through AgentHub, and schedules workspace state transitions through the CLI.
+- **`forge start`** launches a terminal agent inside one resource with a managed session and lock.
+- **`forge serve`** renders workspace state in the web UI, routes chat and AutoRun through AgentHub, and schedules workspace state transitions through the CLI.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
 
@@ -46,7 +46,7 @@ The workspace root itself is not lockable. Project and task resources are indepe
 
 ## Build
 
-Clone the repository and build all three binaries with branch and commit metadata embedded:
+Clone the repository and build the `forge` binary with branch and commit metadata embedded:
 
 ```bash
 git clone https://github.com/disksing/forge.git
@@ -58,11 +58,9 @@ This creates:
 
 ```text
 bin/forge
-bin/forge-start
-bin/forge-gui
 ```
 
-Pass another output directory to `scripts/build` if needed. Add that directory to `PATH`, or invoke the binaries by their absolute paths.
+The single binary provides the workspace CLI, the agent launcher (`forge start`), and the web service (`forge serve`). Pass another output directory to `scripts/build` if needed. Add that directory to `PATH`, or invoke the binary by its absolute path.
 
 ## Quick Start
 
@@ -83,7 +81,7 @@ forge task create --project=project1 --slug first-change \
 Open the GUI for that workspace:
 
 ```bash
-FORGE_CLI="$(command -v forge)" forge-gui --workspace "$PWD"
+forge serve --workspace "$PWD"
 ```
 
 Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and the system or custom Agent Profiles in Settings. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
@@ -110,12 +108,12 @@ Forge retains workspace/task/session-lock/Profile control. A resource lock is re
 Useful overrides:
 
 ```text
-FORGE_CLI           forge executable used by the GUI
+FORGE_CLI           forge executable used by forge serve for workspace operations (defaults to the running binary)
 FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file
 ```
 
-Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [gui/README.md](gui/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
+Each running GUI instance exclusively locks its configuration file. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -144,10 +142,10 @@ Use an absolute destination with `git worktree add`, especially when combining i
 
 ## Interactive Agent Launches
 
-`forge-start` runs a command in the selected project or task directory. It creates a PID-liveness session, locks that resource, injects `FORGE_SESSION_ID`, writes launch context under `.forge/`, and releases the session when the command exits.
+`forge start` runs a command in the selected project or task directory. It creates a PID-liveness session, locks that resource, injects `FORGE_SESSION_ID`, writes launch context under `.forge/`, and releases the session when the command exits.
 
 ```bash
-forge-start --project=project1 --task=task1 -- codex
+forge start --project=project1 --task=task1 -- codex
 ```
 
 Selectors may be omitted when the current directory already identifies the task or project. A default command can be stored in `forge.json` as either a string or argument array:
@@ -160,7 +158,7 @@ Selectors may be omitted when the current directory already identifies the task 
 }
 ```
 
-Agents launched by `forge-start` or Forge GUI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
+Agents launched by `forge start` or the Forge web UI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
 The first resource locked by a session is its primary resource; later controls are temporary. Archiving the primary resource ends the session, while archiving a temporarily controlled resource removes only the archived controls and preserves the primary session.
 
 ## AutoRun
@@ -304,7 +302,8 @@ forge session new|heartbeat|lock|unlock|end|list|show ...
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ```
 
 `forge init` and `forge migrate` accept `--language=en` or `--language=zh-CN`.
@@ -334,23 +333,23 @@ Useful focused commands:
 
 ```bash
 go test ./cli/internal/forge
-go test ./gui/...
+go test ./internal/serve/...
 go run ./cli/cmd/forge help
-go run ./gui --workspace /path/to/AgentWorkspace
+go run ./cli/cmd/forge serve --workspace /path/to/AgentWorkspace
 ```
 
 When testing a second GUI instance, isolate all mutable state:
 
 ```bash
 FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
-  go run ./gui \
+  go run ./cli/cmd/forge serve \
   --addr 127.0.0.1:4999 \
   --workspace /tmp/forge-workspace-test
 ```
 
 ## Companion Tools
 
-- [Forge GUI AgentHub guide](gui/README.md): the execution boundary, current settings, environment variables, and isolated testing.
+- [Forge serve AgentHub guide](internal/serve/README.md): the execution boundary, current settings, environment variables, and isolated testing.
 - [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
 
 ## License

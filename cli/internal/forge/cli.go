@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/disksing/forge/internal/buildinfo"
+	"github.com/disksing/forge/internal/serve"
 )
 
 const (
@@ -50,6 +51,10 @@ func Run(args []string) error {
 		return runWorkspace(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
+	case "start":
+		return runStart(args[1:])
+	case "serve":
+		return serve.Main(args[1:])
 	case "help", "-h", "--help":
 		printUsage()
 		return nil
@@ -239,8 +244,8 @@ How Forge works:
   writes with sessions that lock the project or task they update; stale locks
   are pruned from session liveness. Agents may read other projects and tasks
   freely for context, but should only update resources they have locked. Agent
-  execution is provided by the separate forge-start binary. The workspace root
-  does not require a lock.
+  execution (forge start) and the web service (forge serve) are subcommands of
+  the same forge binary. The workspace root does not require a lock.
 
 Usage:
   forge --version
@@ -282,7 +287,8 @@ Usage:
   forge workspace tree --json
   forge workspace resource --id=<resource> --json
 
-  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
+  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+  forge serve [--addr=<address>] [--workspace=<path>] [--version]
 
 Commands:
   forge --version
@@ -417,14 +423,21 @@ Commands:
     Print detail JSON for one project or task, including common Markdown files,
     artifacts, worktrees, and task repository metadata.
 
-  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
+  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
     Run an agent command in the selected project or task directory. When
     selectors are omitted, Forge uses the current task, otherwise the current
     project. With only --task, Forge uses the current project. Explicit command
     arguments after -- override the workspace forge.json agentCommand default.
-    forge-start creates a PID-liveness session, locks the selected resource,
+    forge start creates a PID-liveness session, locks the selected resource,
     injects FORGE_SESSION_ID into the agent environment, and ends the session
-    when the command exits.`)
+    when the command exits.
+
+  forge serve [--addr=<address>] [--workspace=<path>] [--version]
+    Start the Forge web service: Workspace API, AutoRun scheduler, AgentHub
+    session orchestration and recovery, and the static web UI. FORGE_CLI
+    overrides the forge executable used for workspace operations (defaults to
+    the running binary); FORGE_AGENTHUB_URL overrides the persisted AgentHub
+    endpoint; FORGE_GUI_CONFIG selects the GUI configuration file.`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {

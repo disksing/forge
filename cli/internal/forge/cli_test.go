@@ -46,9 +46,41 @@ func TestSortSessionsUsesStartedAtInstantNewestFirst(t *testing.T) {
 	}
 }
 
-func TestForgeCLIHasNoStartSubcommand(t *testing.T) {
-	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
-		t.Fatalf("expected forge start to be removed, got %v", err)
+func TestForgeStartAndServeSubcommands(t *testing.T) {
+	if _, err := runErr(t, "start", "--bogus"); err == nil || !strings.Contains(err.Error(), "usage: forge start") {
+		t.Fatalf("expected forge start usage error for unknown flag, got %v", err)
+	}
+	help := run(t, "start", "--help")
+	if !strings.Contains(help, "usage: forge start [--project=<project>] [--task=<task>] [-- <agent command...>]") {
+		t.Fatalf("expected forge start help usage, got:\n%s", help)
+	}
+	if !strings.Contains(help, "PID-liveness session") {
+		t.Fatalf("expected forge start help to describe session behavior, got:\n%s", help)
+	}
+	serveHelp := run(t, "serve", "--help")
+	for _, marker := range []string{
+		"usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"FORGE_CLI",
+		"FORGE_AGENTHUB_URL",
+		"FORGE_GUI_CONFIG",
+	} {
+		if !strings.Contains(serveHelp, marker) {
+			t.Fatalf("expected forge serve help to contain %q, got:\n%s", marker, serveHelp)
+		}
+	}
+	if _, err := runErr(t, "serve", "--bogus"); err == nil {
+		t.Fatal("expected forge serve to reject unknown flags")
+	}
+	if _, err := runErr(t, "serve", "extra"); err == nil || !strings.Contains(err.Error(), "unexpected positional argument") {
+		t.Fatalf("expected forge serve to reject positional arguments, got %v", err)
+	}
+	version := run(t, "serve", "--version")
+	if !strings.HasPrefix(version, "forge branch=") {
+		t.Fatalf("expected forge serve --version to print forge build info, got %q", version)
+	}
+	startVersion := run(t, "start", "--version")
+	if !strings.HasPrefix(startVersion, "forge branch=") {
+		t.Fatalf("expected forge start --version to print forge build info, got %q", startVersion)
 	}
 }
 
@@ -687,14 +719,14 @@ func TestForgeStartDoesNotScheduleAutoRun(t *testing.T) {
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 		t.Setenv("FORGE_START_RECORD_MODE", "1")
-		runStart(t, "--project=project1", "--task=task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$")
+		startRun(t, "--project=project1", "--task=task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$")
 		got := readFile(t, output)
 		if strings.Contains(got, "non_interactive") || strings.Contains(got, `"autoRunGeneration"`) {
-			t.Fatalf("forge-start should not inject AutoRun context, got:\n%s", got)
+			t.Fatalf("forge start should not inject AutoRun context, got:\n%s", got)
 		}
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
 		if !strings.Contains(shown, `"state": "queued"`) {
-			t.Fatalf("forge-start should leave AutoRun queued, got:\n%s", shown)
+			t.Fatalf("forge start should leave AutoRun queued, got:\n%s", shown)
 		}
 	})
 }
@@ -706,15 +738,15 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"All workspace data lives on the filesystem",
 		"Agents coordinate\n  writes with sessions that lock the project or task they update",
 		"Agents may read other projects and tasks\n  freely for context",
-		"Agent\n  execution is provided by the separate forge-start binary",
-		"The workspace root\n  does not require a lock.",
+		"Agent\n  execution (forge start) and the web service (forge serve) are subcommands of\n  the same forge binary.",
+		"The workspace root does not require a lock.",
 		"Usage:",
 		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
-		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
+		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]\n  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
 		"  forge init [--language=<language>]",
 		"  forge migrate [--language=<language>]",
@@ -722,7 +754,8 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
-		"  forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]",
+		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
+		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0
 	for _, marker := range expected {
@@ -862,11 +895,11 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 		output := filepath.Join(root, "start.out")
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
-		runStart(t, "--project", "project1", "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "slugged")
+		startRun(t, "--project", "project1", "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "slugged")
 		got := readFile(t, output)
 		want := realPath(t, taskPath) + "\nslugged\n"
 		if got != want {
-			t.Fatalf("expected forge-start to run in slugged task dir, got:\n%s", got)
+			t.Fatalf("expected forge start to run in slugged task dir, got:\n%s", got)
 		}
 
 		archivedTask := run(t, "task", "archive", "--project=project1", "--task=task1")
@@ -1389,7 +1422,7 @@ func TestStartRunsExplicitCommandInTaskDirectory(t *testing.T) {
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 
-		runStart(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit", "args")
+		startRun(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit", "args")
 
 		got := readFile(t, output)
 		want := realPath(t, filepath.Join(root, "project1")) + "\nexplicit\nargs\n"
@@ -1409,11 +1442,11 @@ func TestStartRegistersLocksAndReleasesSession(t *testing.T) {
 		t.Setenv("FORGE_START_RECORD_SESSION", "1")
 		t.Setenv("FORGE_SESSION_ID", "old-session")
 
-		runStart(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "session")
+		startRun(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "session")
 
 		got := readFile(t, output)
 		if !strings.Contains(got, "session=") || strings.Contains(got, "session=old-session") {
-			t.Fatalf("expected forge-start helper to receive a new FORGE_SESSION_ID, got:\n%s", got)
+			t.Fatalf("expected forge start helper to receive a new FORGE_SESSION_ID, got:\n%s", got)
 		}
 		var sessionID string
 		for _, line := range strings.Split(got, "\n") {
@@ -1425,10 +1458,10 @@ func TestStartRegistersLocksAndReleasesSession(t *testing.T) {
 			t.Fatalf("expected generated session id in helper output, got:\n%s", got)
 		}
 		if !strings.Contains(got, "session-liveness=pid:") {
-			t.Fatalf("expected forge-start session to use PID liveness while running, got:\n%s", got)
+			t.Fatalf("expected forge start session to use PID liveness while running, got:\n%s", got)
 		}
 		if !strings.Contains(got, "session-controls=project1:project1\n") {
-			t.Fatalf("expected forge-start session to lock selected project while running, got:\n%s", got)
+			t.Fatalf("expected forge start session to lock selected project while running, got:\n%s", got)
 		}
 
 		store, err := readSessionStore(root)
@@ -1436,7 +1469,7 @@ func TestStartRegistersLocksAndReleasesSession(t *testing.T) {
 			t.Fatal(err)
 		}
 		if findSessionIndex(store.Sessions, sessionID) >= 0 {
-			t.Fatalf("expected forge-start session to be released after command exits, got: %#v", store.Sessions)
+			t.Fatalf("expected forge start session to be released after command exits, got: %#v", store.Sessions)
 		}
 	})
 }
@@ -1466,7 +1499,7 @@ func TestStartInjectsCodexShellEnvironmentPolicy(t *testing.T) {
 		}
 		t.Setenv("FORGE_START_OUTPUT", output)
 
-		runStart(t, "--project", "project1", "--", codexPath, "--dangerously-bypass-approvals-and-sandbox")
+		startRun(t, "--project", "project1", "--", codexPath, "--dangerously-bypass-approvals-and-sandbox")
 
 		got := readFile(t, output)
 		var sessionID string
@@ -1500,7 +1533,7 @@ func TestStartResolvesNestedTaskID(t *testing.T) {
 		t.Setenv("FORGE_START_HELPER", "1")
 		t.Setenv("FORGE_START_OUTPUT", output)
 
-		runStart(t, "--project", "project1", "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
+		startRun(t, "--project", "project1", "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "nested")
 
 		got := readFile(t, output)
 		want := realPath(t, filepath.Join(root, "project1", "task1")) + "\nnested\n"
@@ -1522,14 +1555,14 @@ func TestStartInfersCurrentProjectTaskAndTaskSelector(t *testing.T) {
 		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
 			t.Fatal(err)
 		}
-		runStart(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "project-infer")
+		startRun(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "project-infer")
 		if got, want := readFile(t, projectOutput), realPath(t, filepath.Join(root, "project1"))+"\nproject-infer\n"; got != want {
-			t.Fatalf("expected forge-start to infer current project, got:\n%s", got)
+			t.Fatalf("expected forge start to infer current project, got:\n%s", got)
 		}
 
 		taskSelectorOutput := filepath.Join(root, "task-selector.out")
 		t.Setenv("FORGE_START_OUTPUT", taskSelectorOutput)
-		runStart(t, "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "task-selector")
+		startRun(t, "--task", "task1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "task-selector")
 		if got, want := readFile(t, taskSelectorOutput), realPath(t, filepath.Join(root, "project1", "task1"))+"\ntask-selector\n"; got != want {
 			t.Fatalf("expected --task to infer current project, got:\n%s", got)
 		}
@@ -1539,9 +1572,9 @@ func TestStartInfersCurrentProjectTaskAndTaskSelector(t *testing.T) {
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
 			t.Fatal(err)
 		}
-		runStart(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "task-infer")
+		startRun(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "task-infer")
 		if got, want := readFile(t, taskOutput), realPath(t, filepath.Join(root, "project1", "task1"))+"\ntask-infer\n"; got != want {
-			t.Fatalf("expected forge-start to infer current task, got:\n%s", got)
+			t.Fatalf("expected forge start to infer current task, got:\n%s", got)
 		}
 	})
 }
@@ -1551,19 +1584,19 @@ func TestStartRequiresSelectorOutsideProjectOrTask(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Parent project")
 
-		out, err := runStartErr(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "root")
+		out, err := startErr(t, "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "root")
 		if err == nil {
-			t.Fatalf("expected forge-start without selector at workspace root to fail, got stdout:\n%s", out)
+			t.Fatalf("expected forge start without selector at workspace root to fail, got stdout:\n%s", out)
 		}
 		if !strings.Contains(err.Error(), "could not infer current project or task") || !strings.Contains(err.Error(), "--project=<project>") {
 			t.Fatalf("expected clear selector inference error, got: %v\nstdout:\n%s", err, out)
 		}
 
-		out, err = runStartErr(t, "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "legacy")
+		out, err = startErr(t, "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "legacy")
 		if err == nil {
 			t.Fatalf("expected legacy positional start to fail, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "usage: forge-start [--project=<project>] [--task=<task>]") {
+		if !strings.Contains(err.Error(), "usage: forge start [--project=<project>] [--task=<task>]") {
 			t.Fatalf("expected selector usage for legacy positional start, got: %v\nstdout:\n%s", err, out)
 		}
 	})
@@ -1578,7 +1611,7 @@ func TestStartUsesConfiguredDefaultAgentCommand(t *testing.T) {
 		t.Setenv("FORGE_START_OUTPUT", output)
 		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":[`+strconv.Quote(os.Args[0])+`,"-test.run=^TestForgeStartHelper$","--","configured"]}`+"\n")
 
-		runStart(t, "--project", "project1")
+		startRun(t, "--project", "project1")
 
 		got := readFile(t, output)
 		want := realPath(t, filepath.Join(root, "project1")) + "\nconfigured\n"
@@ -1597,7 +1630,7 @@ func TestStartExplicitCommandOverridesConfiguredDefault(t *testing.T) {
 		t.Setenv("FORGE_START_OUTPUT", output)
 		writeFile(t, filepath.Join(root, configFile), `{"version":1,"agentCommand":["missing-default-command"]}`+"\n")
 
-		runStart(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit")
+		startRun(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "explicit")
 
 		got := readFile(t, output)
 		want := realPath(t, filepath.Join(root, "project1")) + "\nexplicit\n"
@@ -1612,9 +1645,9 @@ func TestStartMissingCommandError(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "No command")
 
-		out, err := runStartErr(t, "--project", "project1")
+		out, err := startErr(t, "--project", "project1")
 		if err == nil {
-			t.Fatalf("expected forge-start to fail without command, got stdout:\n%s", out)
+			t.Fatalf("expected forge start to fail without command, got stdout:\n%s", out)
 		}
 		if !strings.Contains(err.Error(), "no agent command provided") || !strings.Contains(err.Error(), "agentCommand") {
 			t.Fatalf("expected clear missing command error, got: %v\nstdout:\n%s", err, out)
@@ -1632,7 +1665,7 @@ func TestStartPropagatesChildExitStatus(t *testing.T) {
 		t.Setenv("FORGE_START_RECORD_SESSION", "1")
 		t.Setenv("FORGE_START_EXIT", "7")
 
-		out, err := runStartErr(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "exit")
+		out, err := startErr(t, "--project", "project1", "--", os.Args[0], "-test.run=^TestForgeStartHelper$", "--", "exit")
 		if err == nil {
 			t.Fatalf("expected child exit to fail, got stdout:\n%s", out)
 		}
@@ -1655,7 +1688,7 @@ func TestStartPropagatesChildExitStatus(t *testing.T) {
 			t.Fatal(err)
 		}
 		if findSessionIndex(store.Sessions, sessionID) >= 0 {
-			t.Fatalf("expected forge-start session to be released after child exit, got: %#v", store.Sessions)
+			t.Fatalf("expected forge start session to be released after child exit, got: %#v", store.Sessions)
 		}
 	})
 }
@@ -2643,17 +2676,17 @@ func runErr(t *testing.T, args ...string) (string, error) {
 	return captureRun(t, Run, args...)
 }
 
-func runStart(t *testing.T, args ...string) string {
+func startRun(t *testing.T, args ...string) string {
 	t.Helper()
-	out, err := runStartErr(t, args...)
+	out, err := startErr(t, args...)
 	if err != nil {
-		t.Fatalf("RunStart(%q) failed: %v\nstdout:\n%s", args, err, out)
+		t.Fatalf("forge start(%q) failed: %v\nstdout:\n%s", args, err, out)
 	}
 	return out
 }
 
-func runStartErr(t *testing.T, args ...string) (string, error) {
-	return captureRun(t, RunStart, args...)
+func startErr(t *testing.T, args ...string) (string, error) {
+	return runErr(t, append([]string{"start"}, args...)...)
 }
 
 func captureRun(t *testing.T, fn func([]string) error, args ...string) (string, error) {

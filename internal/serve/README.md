@@ -24,7 +24,7 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。可用环境变量：
 
-- `FORGE_CLI`：GUI 调用的 Forge CLI。
+- `FORGE_CLI`：Web 服务执行 workspace 操作时调用的 Forge CLI（默认使用当前运行的 forge 二进制自身）。
 - `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
 - `FORGE_GUI_CONFIG`：GUI 配置文件路径。
 
@@ -59,7 +59,7 @@ Forge recovery 和 AutoRun 诊断使用独立 `forge.notice` SSE event，不伪�
 ```sh
 FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
-  forge-gui --addr 127.0.0.1:14936 \
+  forge serve --addr 127.0.0.1:14936 \
   --workspace /tmp/forge-workspace-test
 ```
 
@@ -68,8 +68,8 @@ FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
 ```sh
 go test ./...
 go vet ./...
-node --check gui/static/app.js
-node --check gui/static/vendor/agenthub-event-timeline/event-timeline.iife.js
+node --check internal/serve/static/app.js
+node --check internal/serve/static/vendor/agenthub-event-timeline/event-timeline.iife.js
 git diff --check
 ```
 

@@ -201,7 +201,7 @@ This directory is an AgentWorkspace managed by forge.
 - When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
 - Agents coordinate writes with sessions that lock the project or task they are updating; stale locks are pruned from session liveness.
 - Agents may read other projects and tasks freely for context, but should only update the resource they have locked and any task worktrees owned by that resource.
-- When started through ` + "`forge-start`" + ` or Forge GUI, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
+- When started through ` + "`forge start`" + ` or the Forge web service, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
 - When started directly without ` + "`FORGE_SESSION_ID`" + ` in the environment or injected session context, agents should detect their own PID, run ` + "`forge session new --pid <pid>`" + `, export ` + "`FORGE_SESSION_ID`" + `, lock the current project/task resource once, and end that session when the agent exits.
 - Agents should only use extra lock/unlock pairs for temporary access to other project/task resources outside their starting resource.
 - The workspace root does not require a lock.
@@ -271,7 +271,8 @@ forge session show --id=<id>
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ` + "```" + `
 
 Notes:
@@ -291,5 +292,5 @@ Notes:
 - ` + "`forge session new`" + ` creates a session and prints a unique id. Use heartbeat liveness by default or explicitly with ` + "`--heartbeat [--timeout <duration>]`" + `; use ` + "`--pid <pid>`" + ` for process liveness. Forge GUI uses AgentHub liveness with a persisted endpoint and complete source, then ` + "`forge session bind-agenthub`" + ` records the final AgentHub session id. AgentHub unreachable, unknown, or replay-gap states retain locks; only durable ` + "`stopped`" + ` permits stale cleanup. ` + "`forge session heartbeat --id=<id>`" + ` refreshes a heartbeat session timestamp. ` + "`forge session lock/unlock --id=<id>`" + ` records or releases project/task control, inferring the current task or project when selectors are omitted; workspace root does not need a lock. ` + "`forge session end --id=<id>`" + ` removes an active session immediately and releases all of its locks. ` + "`forge session list`" + ` lists active sessions after pruning stale sessions, and ` + "`forge session show --id=<id>`" + ` prints one session as JSON.
 - ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
-- ` + "`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` is a plain Session launcher. It creates a session, locks the selected resource, runs the agent, and ends the session; it does not schedule or update AutoRun.
+- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` is a plain Session launcher. It creates a session, locks the selected resource, runs the agent, and ends the session; it does not schedule or update AutoRun.
 `

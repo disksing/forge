@@ -1,4 +1,4 @@
-package main
+package serve
 
 import (
 	"context"
@@ -19,7 +19,6 @@ import (
 	"os/exec"
 	urlpath "path"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -148,7 +147,6 @@ type guiSessionControl struct {
 type server struct {
 	addr      string
 	config    string
-	repoRoot  string
 	forgePath string
 	agents    *agentManager
 }
@@ -159,49 +157,78 @@ const (
 	workspaceWikiDir = "wiki"
 )
 
-func main() {
+const serveUsage = `usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]
+
+Start the Forge web service: Workspace API, AutoRun scheduler, AgentHub
+session orchestration and recovery, and the static web UI.
+
+Options:
+  --addr <address>       local address to listen on (default 127.0.0.1:4936)
+  --workspace <path>     AgentWorkspace path to add before starting
+  --version              print build-time branch and sha
+
+Environment overrides:
+  FORGE_CLI           forge executable used for workspace operations
+                      (defaults to the running forge binary)
+  FORGE_AGENTHUB_URL  AgentHub endpoint override
+  FORGE_GUI_CONFIG    GUI configuration file path
+`
+
+// Main runs the forge serve subcommand.
+func Main(args []string) error {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			fmt.Print(serveUsage)
+			return nil
+		}
+	}
+	flags := flag.NewFlagSet("forge serve", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
 	var addr string
 	var initialWorkspace string
 	var showVersion bool
-	flag.StringVar(&addr, "addr", "127.0.0.1:4936", "local address to listen on")
-	flag.StringVar(&initialWorkspace, "workspace", "", "AgentWorkspace path to add before starting")
-	flag.BoolVar(&showVersion, "version", false, "print build-time branch and sha")
-	flag.Parse()
+	flags.StringVar(&addr, "addr", "127.0.0.1:4936", "local address to listen on")
+	flags.StringVar(&initialWorkspace, "workspace", "", "AgentWorkspace path to add before starting")
+	flags.BoolVar(&showVersion, "version", false, "print build-time branch and sha")
+	if err := flags.Parse(args); err != nil {
+		fmt.Fprint(os.Stderr, serveUsage)
+		return err
+	}
+	if flags.NArg() != 0 {
+		fmt.Fprint(os.Stderr, serveUsage)
+		return fmt.Errorf("unexpected positional argument %q", flags.Arg(0))
+	}
 	if showVersion {
-		fmt.Print(buildinfo.Text("forge-gui"))
-		return
+		fmt.Print(buildinfo.Text("forge"))
+		return nil
 	}
 
 	configPath, err := defaultConfigPath()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	configLock, err := acquireGUIConfigLock(configPath, addr)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer configLock.Close()
-	repoRoot, err := findRepoRoot()
+	forgePath, err := defaultForgePath()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	s := &server{
 		addr:      addr,
 		config:    configPath,
-		repoRoot:  repoRoot,
-		forgePath: strings.TrimSpace(os.Getenv("FORGE_CLI")),
-	}
-	if err := s.prepareForgeCLI(); err != nil {
-		log.Fatal(err)
+		forgePath: forgePath,
 	}
 	_, err = s.validatePersistedAgentHubConfig(context.Background())
 	if err != nil {
-		log.Fatalf("validate AgentHub configuration: %v", err)
+		return fmt.Errorf("validate AgentHub configuration: %w", err)
 	}
 	s.agents = newAgentManager(s)
 	if initialWorkspace != "" {
 		if _, err := s.addWorkspace(context.Background(), initialWorkspace); err != nil {
-			log.Fatalf("add initial workspace: %v", err)
+			return fmt.Errorf("add initial workspace: %w", err)
 		}
 	} else {
 		s.addCurrentDirectoryIfEmpty(context.Background())
@@ -211,7 +238,7 @@ func main() {
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -222,8 +249,22 @@ func main() {
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/", s.handleSettings)
 
-	log.Printf("forge gui listening on http://%s", addr)
-	log.Fatal(http.ListenAndServe(addr, mux))
+	log.Printf("forge serve listening on http://%s", addr)
+	return http.ListenAndServe(addr, mux)
+}
+
+// defaultForgePath resolves the forge executable used for workspace
+// operations. FORGE_CLI overrides the default, which is the running forge
+// binary itself.
+func defaultForgePath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv("FORGE_CLI")); path != "" {
+		return path, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", fmt.Errorf("resolve forge executable: %w", err)
+	}
+	return exe, nil
 }
 
 func (s *server) internalEndpoint() string {
@@ -1103,59 +1144,6 @@ func (s *server) forgeCommand(args ...string) (string, []string) {
 	return s.forgePath, args
 }
 
-func (s *server) prepareForgeCLI() error {
-	if s.forgePath != "" {
-		return nil
-	}
-	sourceForge := filepath.Join(s.repoRoot, "cli", "cmd", "forge")
-	if isDir(sourceForge) {
-		cacheDir, err := os.UserCacheDir()
-		if err != nil {
-			return err
-		}
-		outDir := filepath.Join(cacheDir, "forge", "gui")
-		if err := os.MkdirAll(outDir, 0o755); err != nil {
-			return err
-		}
-		sum := sha1.Sum([]byte(s.repoRoot))
-		out := filepath.Join(outDir, "forge-cli-"+hex.EncodeToString(sum[:6]))
-		buildArgs := []string{"build", "-ldflags", buildinfo.LDFlagsFor(sourceBuildInfo(s.repoRoot)), "-o", out, "./cli/cmd/forge"}
-		cmd := exec.Command("go", buildArgs...)
-		cmd.Dir = s.repoRoot
-		if buildOut, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("build forge cli for gui: %s", strings.TrimSpace(string(buildOut)))
-		}
-		s.forgePath = out
-		return nil
-	}
-	path, err := exec.LookPath("forge")
-	if err != nil {
-		return errors.New("forge CLI not found; set FORGE_CLI or run GUI from the forge source tree")
-	}
-	s.forgePath = path
-	return nil
-}
-
-func sourceBuildInfo(repoRoot string) buildinfo.Info {
-	info := buildinfo.Current()
-	if branch := gitOutput(repoRoot, "rev-parse", "--abbrev-ref", "HEAD"); branch != "" && branch != "HEAD" {
-		info.Branch = branch
-	}
-	if sha := gitOutput(repoRoot, "rev-parse", "HEAD"); sha != "" {
-		info.SHA = sha
-	}
-	return info
-}
-
-func gitOutput(repoRoot string, args ...string) string {
-	cmdArgs := append([]string{"-C", repoRoot}, args...)
-	out, err := exec.Command("git", cmdArgs...).Output()
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(out))
-}
-
 func (s *server) workspace(id string) (guiWorkspace, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
@@ -1232,14 +1220,6 @@ func defaultConfigPath() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, "forge", "gui.json"), nil
-}
-
-func findRepoRoot() (string, error) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", errors.New("cannot locate gui source")
-	}
-	return filepath.Dir(filepath.Dir(file)), nil
 }
 
 func workspaceID(path string) string {
@@ -1397,11 +1377,6 @@ func writeError(w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-}
-
-func isDir(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && info.IsDir()
 }
 
 func serveStatic(root fs.FS, w http.ResponseWriter, r *http.Request) {

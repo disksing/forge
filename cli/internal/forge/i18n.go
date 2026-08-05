@@ -297,7 +297,7 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 当用户要求分析代码、项目或工作记录并更新 Wiki 时，请维护相关页面、交叉链接和 ` + "`wiki/index.md`" + ` 摘要。
 - Agent 通过 session 协调写入；session 会锁定其更新的项目或任务，过期锁根据 session 存活状态清理。
 - Agent 可自由读取其他项目和任务作为上下文，但只应更新已锁定的资源及该资源拥有的任务 worktree。
-- 通过 ` + "`forge-start`" + ` 或 Forge GUI 启动时，Forge 会创建 session、锁定所选资源、通过环境变量或显式 Forge session 上下文注入 ` + "`FORGE_SESSION_ID`" + `，并在 agent 退出后释放 session；agent 应复用该 ID，不应自行锁定/解锁起始资源。
+- 通过 ` + "`forge start`" + ` 或 Forge Web 服务启动时，Forge 会创建 session、锁定所选资源、通过环境变量或显式 Forge session 上下文注入 ` + "`FORGE_SESSION_ID`" + `，并在 agent 退出后释放 session；agent 应复用该 ID，不应自行锁定/解锁起始资源。
 - 直接启动且环境变量或注入上下文中没有 ` + "`FORGE_SESSION_ID`" + ` 时，agent 应检测自身 PID，运行 ` + "`forge session new --pid <pid>`" + `，导出 ` + "`FORGE_SESSION_ID`" + `，锁定当前项目/任务资源，并在退出时结束该 session。
 - 只有临时访问起始资源之外的其他项目/任务资源时，才使用额外的 lock/unlock。
 - workspace 根目录无需加锁。
@@ -367,7 +367,8 @@ forge session show --id=<id>
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
+forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ` + "```" + `
 
 说明：
@@ -387,5 +388,5 @@ forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]
 - ` + "`forge session new`" + ` 创建 session 并打印唯一 ID。默认使用 heartbeat 存活方式；也可显式指定 ` + "`--heartbeat [--timeout <duration>]`" + `，或用 ` + "`--pid <pid>`" + ` 绑定进程。Forge GUI 使用持久化 endpoint 与完整 source 的 AgentHub 存活方式，并用 ` + "`forge session bind-agenthub`" + ` 保存最终 AgentHub session ID。AgentHub 不可达、状态未知或事件游标有 gap 时均保守持锁，只有 durable ` + "`stopped`" + ` 才允许 stale cleanup。` + "`heartbeat`" + ` 刷新时间戳；` + "`lock/unlock`" + ` 记录或释放项目/任务控制权；` + "`end`" + ` 立即结束 session 并释放其锁；` + "`list/show`" + ` 用于查看 session。
 - ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
-- ` + "`forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` 是普通 session 启动器：创建 session、锁定资源、运行 agent 并结束 session；它不负责调度或更新 AutoRun。
+- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` 是普通 session 启动器：创建 session、锁定资源、运行 agent 并结束 session；它不负责调度或更新 AutoRun。
 `

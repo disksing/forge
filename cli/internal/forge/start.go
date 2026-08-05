@@ -12,7 +12,33 @@ import (
 	"github.com/disksing/forge/internal/buildinfo"
 )
 
-const startUsage = "usage: forge-start [--project=<project>] [--task=<task>] [-- <agent command...>]"
+const startUsage = "usage: forge start [--project=<project>] [--task=<task>] [-- <agent command...>]"
+
+const startHelp = startUsage + `
+
+Run an agent command in the selected project or task directory. When
+selectors are omitted, Forge uses the current task, otherwise the current
+project. With only --task, Forge uses the current project. Explicit command
+arguments after -- override the workspace forge.json agentCommand default.
+forge start creates a PID-liveness session, locks the selected resource,
+injects FORGE_SESSION_ID into the agent environment, and ends the session
+when the command exits.
+`
+
+// runStart runs the forge start subcommand.
+func runStart(args []string) error {
+	if len(args) == 1 {
+		switch args[0] {
+		case "--help", "-h":
+			fmt.Print(startHelp)
+			return nil
+		case "--version":
+			fmt.Print(buildinfo.Text("forge"))
+			return nil
+		}
+	}
+	return startTask(args)
+}
 
 type exitCodeError struct {
 	code int
@@ -60,7 +86,7 @@ func startTask(args []string) error {
 		command = []string(config.AgentCommand)
 	}
 	if len(command) == 0 {
-		return errors.New("no agent command provided; use forge-start [--project=<project>] [--task=<task>] -- <command> or set agentCommand in forge.json")
+		return errors.New("no agent command provided; use forge start [--project=<project>] [--task=<task>] -- <command> or set agentCommand in forge.json")
 	}
 	sessionID, err := createSession(root, SessionLiveness{Type: "pid", PID: os.Getpid()})
 	if err != nil {
@@ -104,15 +130,6 @@ func runStartCommand(command []string, taskPath, sessionID string) error {
 		return err
 	}
 	return nil
-}
-
-// RunStart runs the standalone forge-start executor.
-func RunStart(args []string) error {
-	if len(args) == 1 && args[0] == "--version" {
-		fmt.Print(buildinfo.Text("forge-start"))
-		return nil
-	}
-	return startTask(args)
 }
 
 type startSessionContext struct {
@@ -242,7 +259,7 @@ func resolveStartResourceID(options startOptions) (string, error) {
 		if ok {
 			return projectID, nil
 		}
-		return "", errors.New("could not infer current project or task; use forge-start --project=<project> [--task=<task>]")
+		return "", errors.New("could not infer current project or task; use forge start --project=<project> [--task=<task>]")
 	}
 
 	projectID, err := normalizeProjectArg(options.Project)

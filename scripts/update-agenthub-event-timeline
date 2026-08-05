@@ -25,8 +25,8 @@ if [ "$actual_sha" != "$expected_sha" ]; then
 fi
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-vendor="$root/gui/static/vendor/agenthub-event-timeline"
-fixtures="$root/gui/testdata/agenthub-event-timeline"
+vendor="$root/internal/serve/static/vendor/agenthub-event-timeline"
+fixtures="$root/internal/serve/testdata/agenthub-event-timeline"
 mkdir -p "$vendor" "$fixtures"
 cp "$package/dist/event-timeline.iife.js" "$vendor/event-timeline.iife.js"
 cp "$package/dist/manifest.json" "$vendor/upstream-manifest.json"
