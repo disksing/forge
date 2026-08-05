@@ -121,6 +121,7 @@ type forgeSessionContext struct {
 
 type agentRuntime struct {
 	mu                     sync.Mutex
+	turnActionMu           sync.Mutex
 	workspace              guiWorkspace
 	manager                *agentManager
 	run                    agentRun
@@ -842,6 +843,8 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 }
 
 func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
+	rt.turnActionMu.Lock()
+	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
 	if !rt.run.SchedulerTurn || rt.schedulerTurnFinishing {
 		// Duplicate triggers from the session poller and startup recovery are

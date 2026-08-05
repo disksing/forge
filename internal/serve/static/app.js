@@ -103,6 +103,8 @@ const state = {
     historyBeforeId: 0,
     loadingOlder: false,
     sendingInput: false,
+    turnStopping: false,
+    turnStoppingRunId: "",
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
     renderDeferredForSelection: false,
@@ -2768,6 +2770,8 @@ function fetchAgentRuns() {
 async function reloadAgentRunsForSelection() {
   flushAgentDraft();
   closeAgentStream();
+  state.agent.turnStopping = false;
+  state.agent.turnStoppingRunId = "";
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.notices = [];
@@ -2792,6 +2796,8 @@ function resetAgentState() {
   state.agent.historyOpen = false;
   clearAgentDraftMemory();
   state.agent.newSessionStarting = false;
+  state.agent.turnStopping = false;
+  state.agent.turnStoppingRunId = "";
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
   state.agent.renderDeferredForSelection = false;
@@ -3143,7 +3149,9 @@ function renderTTYComposer(options = {}) {
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const key = `live:${activeRun.id}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const stopTurnPending = isAgentTurnStopping(activeRun);
+    const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "stopping-turn" : "idle"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${state.agent.sessionActionsOpen ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -3158,7 +3166,7 @@ function renderTTYComposer(options = {}) {
         ${selectedTaskHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
         <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
       </form>
-      ${agentComposerActions({ includeClose: true, collapsible: true })}
+      ${agentComposerActions({ includeClose: true, includeStopTurn: stopTurnAvailable, turnStopping: stopTurnPending, collapsible: true })}
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
       updateAgentDraft(event.target.value);
@@ -3203,6 +3211,7 @@ function isAgentSessionReady(run) {
 
 function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run)) {
   if (selectedTaskHasExternalLock()) return EXTERNAL_TASK_LOCK_MESSAGE;
+  if (isAgentTurnStopping(run)) return "Stopping the current turn.";
   if (!sessionReady) return "Agent session is starting.";
   if (run.status === "stopping") return "AgentHub is stopping the provider.";
   if (run.status === "recovering") return "AgentHub event recovery is in progress.";
@@ -3219,7 +3228,7 @@ function agentComposerActions(options = {}) {
     return `
       <div class="${actionsClass}">
         ${externalTaskLockNotice()}
-        ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
+        ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button"${options.turnStopping ? " disabled" : ""} title="${options.turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}">${icon("square")}<span>Close Session</span></button>` : ""}
       </div>
     `;
   }
@@ -3235,6 +3244,12 @@ function agentComposerActions(options = {}) {
       : "Choose an Agent to start a new session.";
   const sessionButtonDisabled = sessionStarting || agents.length === 0;
   const sessionButtonDisabledAttribute = sessionButtonDisabled ? " disabled" : "";
+  const turnStopping = Boolean(options.includeStopTurn && options.turnStopping);
+  const stopTurnMarkup = options.includeStopTurn ? `
+    <button type="button" id="agentStopTurnButton" class="secondary-button agent-stop-turn-button"${turnStopping ? " disabled" : ""} title="${turnStopping ? "Stopping the current turn; the Session will remain open." : "Stop only the current turn; keep the AgentHub Session open."}" aria-label="${turnStopping ? "Stopping the current turn; the Session will remain open." : "Stop only the current turn; keep the AgentHub Session open."}">
+      ${icon(turnStopping ? "loader-circle" : "pause")}<span>${turnStopping ? "Stopping Turn..." : "Stop Turn"}</span>
+    </button>` : "";
+  const closeSessionMarkup = options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button"${turnStopping ? " disabled" : ""} title="${turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}" aria-label="${turnStopping ? "Wait for the current turn to stop." : "Close the entire AgentHub Session."}">${icon("square")}<span>Close Session</span></button>` : "";
   return `
     <div class="${actionsClass}">
       ${autoRunComposerAction()}
@@ -3256,7 +3271,8 @@ function agentComposerActions(options = {}) {
           ` : ""}
         </div>
       `}
-      ${options.includeClose ? `<button type="button" id="agentStopButton" class="secondary-button agent-stop-button">${icon("square")}<span>Close Session</span></button>` : ""}
+      ${stopTurnMarkup}
+      ${closeSessionMarkup}
     </div>
   `;
 }
@@ -3849,6 +3865,10 @@ function bindAgentEvents() {
   if (stopButton) stopButton.onclick = () => {
     stopAgentRun().catch((err) => toast(err.message));
   };
+  const stopTurnButton = $("agentStopTurnButton");
+  if (stopTurnButton) stopTurnButton.onclick = () => {
+    stopAgentTurn().catch((err) => toast(err.message));
+  };
   const resumeButton = $("agentResumeButton");
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
@@ -4234,6 +4254,42 @@ async function stopAgentRun() {
   });
 }
 
+async function stopAgentTurn() {
+  if (!state.agent.activeRunId || state.agent.turnStopping) return;
+  const run = currentAgentRun();
+  if (!isAgentTurnInterruptible(run)) return;
+  return mutateAgentSession(async () => {
+    const runId = state.agent.activeRunId;
+    state.agent.turnStopping = true;
+    state.agent.turnStoppingRunId = runId;
+    renderTTYComposer();
+    bindAgentEvents();
+    refreshIcons();
+    try {
+      await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/interrupt`, { method: "POST" });
+      await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+      renderAll();
+      toast("Turn stopped. The AgentHub Session remains open.");
+    } catch (err) {
+      // A stale status or ambiguous AgentHub response must converge to the
+      // server projection before the button becomes available again.
+      try {
+        await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+        renderAll();
+      } catch (_) {
+        // Preserve the original interrupt error for the user.
+      }
+      throw err;
+    } finally {
+      state.agent.turnStopping = false;
+      state.agent.turnStoppingRunId = "";
+      renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    }
+  });
+}
+
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
@@ -4290,6 +4346,14 @@ function currentAgentRun() {
 
 function isLiveAgentRun(run) {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status);
+}
+
+function isAgentTurnInterruptible(run) {
+  return ["running", "waiting_approval"].includes(run?.status);
+}
+
+function isAgentTurnStopping(run) {
+  return Boolean(state.agent.turnStopping && state.agent.turnStoppingRunId === run?.id);
 }
 
 async function submitTTYInput(event) {
