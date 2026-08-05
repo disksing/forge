@@ -34,6 +34,7 @@ type runtimeFakeAgentHub struct {
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
+	eventsAttempts     int
 	eventsCalls        int
 	streamCalls        int
 }
@@ -411,6 +412,7 @@ func (f *runtimeFakeAgentHub) serveEvents(w http.ResponseWriter, r *http.Request
 		limit = 200
 	}
 	f.mu.Lock()
+	f.eventsAttempts++
 	if f.failEvents {
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusInternalServerError)
@@ -708,6 +710,10 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 		}
 	}
 
+	fake.mu.Lock()
+	eventsCallsBeforeRestart := fake.eventsCalls
+	streamCallsBeforeRestart := fake.streamCalls
+	fake.mu.Unlock()
 	restartedServer := &server{config: configPath, addr: manager.server.addr}
 	restarted := newAgentManager(restartedServer)
 	restartedServer.agents = restarted
@@ -729,8 +735,8 @@ func TestAgentHubRuntimeControlsAndRestartRecovery(t *testing.T) {
 	eventsCalls := fake.eventsCalls
 	streamCalls := fake.streamCalls
 	fake.mu.Unlock()
-	if eventsCalls != 0 || streamCalls != 0 {
-		t.Fatalf("restart must not read event history or open streams: events=%d streams=%d", eventsCalls, streamCalls)
+	if eventsCalls != eventsCallsBeforeRestart || streamCalls != streamCallsBeforeRestart {
+		t.Fatalf("restart must not read event history or open streams: before=%d/%d after=%d/%d", eventsCallsBeforeRestart, streamCallsBeforeRestart, eventsCalls, streamCalls)
 	}
 }
 

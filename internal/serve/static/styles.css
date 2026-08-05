@@ -2854,7 +2854,7 @@ i[data-lucide] {
   width: 100%;
   min-height: 44px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto auto;
   align-items: start;
   gap: 8px;
   padding: 8px 8px 8px 20px;
@@ -2882,6 +2882,18 @@ i[data-lucide] {
 
 .session-row.current-session strong {
   color: #1d4ed8;
+}
+
+.session-row.session-unread {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
+.session-row.session-unread:not(.current-session) {
+  background: #fffbeb;
+}
+
+.session-row.session-unread:not(.current-session):hover {
+  background: #fef3c7;
 }
 
 .clickable-session {
@@ -2955,6 +2967,28 @@ i[data-lucide] {
   color: #64748b;
   font-size: 10px;
   font-weight: 700;
+}
+
+.session-row .session-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 20px;
+  margin-top: 0;
+  padding: 0 6px;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: #fef3c7;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 800;
+  animation: session-unread-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes session-unread-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  50% { box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.16); }
 }
 
 .session-badge.internal {
@@ -4469,6 +4503,52 @@ i[data-lucide] {
   gap: 12px;
 }
 
+.settings-notification-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 12px;
+}
+
+.settings-notification-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.settings-notification-copy strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.settings-notification-copy small,
+.settings-notification-help,
+.settings-notification-status {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-notification-option input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.settings-notification-status,
+.settings-notification-help {
+  display: block;
+}
+
+.settings-notification-help {
+  margin-top: -4px;
+}
+
 .settings-section-heading h3 {
   margin: 0;
   font-weight: 700;
@@ -5115,6 +5195,10 @@ i[data-lucide] {
   .file-modal.modal-enter,
   .diff-modal.modal-enter,
   .settings-modal.modal-enter {
+    animation: none;
+  }
+
+  .session-row .session-unread-badge {
     animation: none;
   }
 }

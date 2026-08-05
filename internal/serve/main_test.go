@@ -2600,7 +2600,7 @@ func TestListDragHandleStaysHiddenUntilHoverAndRightAligned(t *testing.T) {
 		`grid-template-columns: 16px 16px minmax(0, 1fr) auto;`,
 		`grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto;`,
 		`grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;`,
-		`grid-template-columns: 16px minmax(0, 1fr) auto auto;`,
+		`grid-template-columns: 16px minmax(0, 1fr) auto auto auto;`,
 		// The hidden base rule must outrank `.session-row span { display: block; }`.
 		".tree-item .drag-handle,\n.session-row .drag-handle {\n  display: none;",
 		// Hover reveals the handle.

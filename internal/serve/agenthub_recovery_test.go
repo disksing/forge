@@ -44,6 +44,10 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	if live == nil {
 		t.Fatal("live run was not recovered")
 	}
+	waitForRuntimeTest(t, func() bool {
+		run := pollerRunState(live)
+		return run.CompletionSessionID == "ses_live" && !run.CompletionPending
+	})
 	live.mu.Lock()
 	liveRun, liveState := live.run, live.agentHubState
 	live.mu.Unlock()

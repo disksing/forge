@@ -170,6 +170,8 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	if previousState == "" {
 		previousState = agentHubStateForForgeStatus(current.Status)
 	}
+	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
+		(session.State == "ready" || session.State == "stopped")
 	stoppedObserved := current.AgentHubStoppedObserved || session.State == "stopped"
 	if session.State == "ready" || session.State == "starting" {
 		// A resumed session proves the stopped observation is stale.
@@ -180,6 +182,19 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	updated.Status = newStatus
 	updated.AgentHubStoppedObserved = stoppedObserved
 	if strings.TrimSpace(session.ID) != "" {
+		if updated.CompletionSessionID != session.ID && !turnFinished {
+			// A new AgentHub session starts a new cursor. Baseline it unless
+			// this response is the active -> ready/stopped edge whose terminal
+			// history must be inspected from the beginning.
+			updated.CompletionSessionID = session.ID
+			updated.CompletionCursor = session.LastEventID
+			updated.CompletionEventID = 0
+			updated.CompletionMarker = ""
+			updated.CompletionState = ""
+			updated.CompletionTurnID = ""
+			updated.CompletionAt = ""
+			updated.CompletionPending = false
+		}
 		updated.AgentHubSessionID = session.ID
 	}
 	// LastOutputAt degenerates to the AgentHub session update time: without a
@@ -204,14 +219,25 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	}
 
 	// A scheduler turn ends when the session leaves busy/waiting_approval for
-	// ready or stopped. finishSchedulerTurn is idempotent against duplicate
-	// triggers from the event pipeline and later polls.
-	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
-		(session.State == "ready" || session.State == "stopped")
-	if turnFinished && updated.SchedulerTurn {
-		go rt.finishSchedulerTurn(m)
+	// ready or stopped. The completion observer runs before the scheduler
+	// decision so an intermediate AutoRun turn cannot be mistaken for its final
+	// outcome by a consumer of the run projection.
+	if turnFinished {
+		go func() {
+			rt.handleTurnFinished(m, session)
+			if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+				rt.releaseForgeSessionAfterStopped(m)
+			}
+		}()
 	}
-	if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+	if !turnFinished && (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
+		go func() {
+			rt.recordTurnCompletion(session)
+			if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+				rt.releaseForgeSessionAfterStopped(m)
+			}
+		}()
+	} else if !turnFinished && session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 		// Idempotent: releases the Forge session on the stopped edge and
 		// retries a release that failed on an earlier poll.
 		go rt.releaseForgeSessionAfterStopped(m)
@@ -240,9 +266,31 @@ func agentHubStateForForgeStatus(status string) string {
 }
 
 // applyAgentHubSessionState projects an AgentHub action or session response
-// onto the local run without reading any event history.
+// onto the local run. A busy/waiting_approval -> ready/stopped edge is the
+// only status signal that schedules durable canonical terminal inspection.
 func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agentHubSession) {
 	rt.mu.Lock()
+	previousState := rt.agentHubState
+	if previousState == "" {
+		previousState = agentHubStateForForgeStatus(rt.run.Status)
+	}
+	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
+		(session.State == "ready" || session.State == "stopped")
+	if strings.TrimSpace(session.ID) != "" {
+		if rt.run.CompletionSessionID != session.ID && !turnFinished {
+			// A new AgentHub session has a new event cursor. Establish its
+			// baseline without carrying historical completion state across it.
+			rt.run.CompletionSessionID = session.ID
+			rt.run.CompletionCursor = session.LastEventID
+			rt.run.CompletionEventID = 0
+			rt.run.CompletionMarker = ""
+			rt.run.CompletionState = ""
+			rt.run.CompletionTurnID = ""
+			rt.run.CompletionAt = ""
+			rt.run.CompletionPending = false
+		}
+		rt.run.AgentHubSessionID = session.ID
+	}
 	rt.agentHubState = session.State
 	rt.run.Status = forgeStatusForAgentHubState(session.State)
 	if session.State == "stopped" {
@@ -263,7 +311,21 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
-	if run.Status == "stopped" && run.AgentHubStoppedObserved {
+	if turnFinished {
+		go func() {
+			rt.handleTurnFinished(m, session)
+			if session.State == "stopped" {
+				rt.releaseForgeSessionAfterStopped(m)
+			}
+		}()
+	} else if (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
+		go func() {
+			rt.recordTurnCompletion(session)
+			if session.State == "stopped" {
+				rt.releaseForgeSessionAfterStopped(m)
+			}
+		}()
+	} else if run.Status == "stopped" && run.AgentHubStoppedObserved {
 		go rt.releaseForgeSessionAfterStopped(m)
 	}
 }

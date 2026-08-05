@@ -31,17 +31,18 @@ func (e *permanentArchivedProofError) Unwrap() error { return e.err }
 // passed through a durable stopped state. Any cursor gap, undecodable event,
 // or replay that cannot reach the latest cursor is a permanent failure:
 // archived history is immutable, so retrying cannot change the outcome.
-func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClient, sessionID string) (bool, error) {
+func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClient, sessionID string) (bool, []agentHubEvent, int64, error) {
 	cursor := int64(0)
 	sawStopped := false
+	history := make([]agentHubEvent, 0)
 	for {
 		events, latestCursor, err := client.SessionEvents(ctx, sessionID, cursor, 500)
 		if err != nil {
 			var apiErr *agentHubAPIError
 			if errors.As(err, &apiErr) && apiErr.StatusCode >= 400 && apiErr.StatusCode < 500 {
-				return false, &permanentArchivedProofError{err}
+				return false, nil, cursor, &permanentArchivedProofError{err}
 			}
-			return false, err
+			return false, nil, cursor, err
 		}
 		progressed := false
 		for _, event := range events {
@@ -49,12 +50,13 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 				continue
 			}
 			if event.ID != cursor+1 {
-				return false, &permanentArchivedProofError{
+				return false, nil, cursor, &permanentArchivedProofError{
 					fmt.Errorf("cursor gap: expected event %d, got %d", cursor+1, event.ID),
 				}
 			}
 			cursor = event.ID
 			progressed = true
+			history = append(history, event)
 			if event.Type != "session.state" {
 				continue
 			}
@@ -62,7 +64,7 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 				State string `json:"state"`
 			}
 			if err := json.Unmarshal(event.Data, &data); err != nil {
-				return false, &permanentArchivedProofError{
+				return false, nil, cursor, &permanentArchivedProofError{
 					fmt.Errorf("decode session.state event %d: %w", event.ID, err),
 				}
 			}
@@ -71,10 +73,10 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 			}
 		}
 		if cursor >= latestCursor {
-			return sawStopped, nil
+			return sawStopped, history, cursor, nil
 		}
 		if !progressed {
-			return false, &permanentArchivedProofError{
+			return false, nil, cursor, &permanentArchivedProofError{
 				fmt.Errorf("event replay stalled at cursor %d before latest cursor %d", cursor, latestCursor),
 			}
 		}
@@ -110,8 +112,9 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 
 	if run.AgentHubStoppedObserved {
 		// The durable stopped edge was observed before the archive, so the
-		// lock may be released without reading event history. This covers a
-		// service restart between the stopped observation and the release.
+		// lock may be released without proving the stopped transition again.
+		// Completion history still needs to be reconciled because a transient
+		// event read may have happened after the stopped projection was saved.
 		rt.mu.Lock()
 		if rt.run.Status != "stopped" {
 			rt.run.Status = "stopped"
@@ -122,6 +125,9 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		} else {
 			rt.mu.Unlock()
 		}
+		if run.CompletionPending {
+			rt.recordTurnCompletion(session)
+		}
 		rt.releaseForgeSessionAfterStopped(m)
 		return
 	}
@@ -131,7 +137,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		// failure must not be retried on every poll or recovery pass.
 		return
 	}
-	proven, err := proveAgentHubArchivedAfterStopped(context.Background(), client, session.ID)
+	proven, history, latestCursor, err := proveAgentHubArchivedAfterStopped(context.Background(), client, session.ID)
 	if err != nil {
 		var permanent *permanentArchivedProofError
 		if errors.As(err, &permanent) {
@@ -158,6 +164,11 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	updated := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, updated)
+	// The archived projection is the recovery equivalent of the observed
+	// ready/stopped edge. Inspect the durable terminal event before finishing
+	// an AutoRun turn or releasing the Forge session.
+	rt.prepareTurnCompletion(session)
+	rt.recordTurnCompletionHistory(session, history, latestCursor)
 	// The archived session provably stopped, which ends a scheduler turn the
 	// same way a directly observed stopped edge does.
 	if updated.SchedulerTurn && (previousStatus == "running" || previousStatus == "waiting_approval") {

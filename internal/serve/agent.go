@@ -43,6 +43,19 @@ type agentRun struct {
 	LastOutputAt            string `json:"lastOutputAt,omitempty"`
 	SchedulerTurn           bool   `json:"schedulerTurn,omitempty"`
 	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
+	// CompletionCursor is the last durable AgentHub event cursor inspected for
+	// a completed turn. CompletionMarker is only advanced from canonical
+	// turn.* terminal events, so status projections cannot manufacture a
+	// completion. Both fields live in the local run projection and are
+	// rebuilt/reconciled from AgentHub's durable event log.
+	CompletionCursor    int64  `json:"completionCursor,omitempty"`
+	CompletionSessionID string `json:"completionSessionId,omitempty"`
+	CompletionEventID   int64  `json:"completionEventId,omitempty"`
+	CompletionMarker    string `json:"completionMarker,omitempty"`
+	CompletionState     string `json:"completionState,omitempty"`
+	CompletionTurnID    string `json:"completionTurnId,omitempty"`
+	CompletionAt        string `json:"completionAt,omitempty"`
+	CompletionPending   bool   `json:"completionPending,omitempty"`
 }
 
 // agentRunDetail carries run metadata only. Event history is served by the
@@ -824,6 +837,206 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 		return nil
 	}
 	return errors.New("agent run is not attached to AgentHub")
+}
+
+// handleTurnFinished records the durable terminal event before allowing an
+// AutoRun scheduler turn to decide whether it should continue. This ordering
+// makes a completion observed by the poller, recovery, or an action response
+// use one idempotent path.
+func (rt *agentRuntime) handleTurnFinished(m *agentManager, session agentHubSession) {
+	rt.prepareTurnCompletion(session)
+	rt.markTurnCompletionPending()
+	rt.recordTurnCompletion(session)
+	if rt.isSchedulerTurn() {
+		rt.finishSchedulerTurn(m)
+	}
+}
+
+func (rt *agentRuntime) markTurnCompletionPending() {
+	rt.mu.Lock()
+	rt.run.CompletionPending = true
+	run := rt.run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
+	sessionID := strings.TrimSpace(session.ID)
+	if sessionID == "" {
+		return
+	}
+	rt.mu.Lock()
+	if rt.run.CompletionSessionID != sessionID {
+		// This path is entered only after an active -> ready/stopped edge, so
+		// inspect the new session from its beginning instead of baselining away
+		// the just-finished turn.
+		rt.run.CompletionSessionID = sessionID
+		rt.run.CompletionCursor = 0
+		rt.run.CompletionEventID = 0
+		rt.run.CompletionMarker = ""
+		rt.run.CompletionState = ""
+		rt.run.CompletionTurnID = ""
+		rt.run.CompletionAt = ""
+		rt.run.CompletionPending = false
+		rt.run.AgentHubSessionID = sessionID
+	}
+	run := rt.run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
+	sessionID := strings.TrimSpace(session.ID)
+	if sessionID == "" {
+		return
+	}
+	rt.mu.Lock()
+	client := rt.agentHub
+	run := rt.run
+	rt.mu.Unlock()
+	if client == nil || strings.TrimSpace(run.AgentHubSessionID) != sessionID {
+		return
+	}
+
+	// A resumed run may be attached to a fresh AgentHub session whose event
+	// cursor starts at one again. The first observation is a baseline, never a
+	// historical notification.
+	if run.CompletionSessionID != sessionID {
+		run.CompletionSessionID = sessionID
+		run.CompletionCursor = session.LastEventID
+		run.CompletionEventID = 0
+		run.CompletionMarker = ""
+		run.CompletionState = ""
+		run.CompletionTurnID = ""
+		run.CompletionAt = ""
+		run.CompletionPending = false
+		rt.setRun(run)
+		_ = saveAgentRun(rt.workspace.Path, run)
+		return
+	}
+	if session.LastEventID <= run.CompletionCursor {
+		// The session projection already covers the durable event cursor. This
+		// keeps terminal/stopped recovery lightweight while still retrying a
+		// completion whose cursor advanced before a prior history read failed.
+		if run.CompletionPending {
+			run.CompletionPending = false
+			rt.setRun(run)
+			_ = saveAgentRun(rt.workspace.Path, run)
+		}
+		return
+	}
+
+	cursor := run.CompletionCursor
+	history := make([]agentHubEvent, 0)
+	latestCursor := cursor
+	for {
+		events, durableCursor, err := client.SessionEvents(context.Background(), sessionID, cursor, 500)
+		if err != nil {
+			// The next poll/reconcile retries from the same durable cursor. A
+			// transient history failure must not invent a completion or advance
+			// the marker past an unexamined event.
+			return
+		}
+		if durableCursor > latestCursor {
+			latestCursor = durableCursor
+		}
+		previousCursor := cursor
+		for _, event := range events {
+			if event.ID <= cursor {
+				continue
+			}
+			if event.ID != cursor+1 {
+				// Do not advance over a cursor gap. AgentHub promises lossless
+				// replay; retaining the old cursor lets a later reconcile retry
+				// instead of manufacturing a marker from incomplete history.
+				return
+			}
+			cursor = event.ID
+			history = append(history, event)
+		}
+		if cursor == previousCursor && cursor < durableCursor {
+			// A lossless replay must make progress. Keep the durable cursor
+			// unchanged when an upstream response violates that contract so a
+			// later poll can retry instead of skipping an unexamined event.
+			return
+		}
+		if len(events) < 500 || cursor >= durableCursor {
+			break
+		}
+	}
+	if latestCursor < cursor {
+		latestCursor = cursor
+	}
+	// The history is applied from the current runtime snapshot so a duplicate
+	// poll/reconcile cannot overwrite a newer marker discovered concurrently.
+	rt.recordTurnCompletionHistory(session, history, latestCursor)
+}
+
+func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, history []agentHubEvent, latestCursor int64) {
+	sessionID := strings.TrimSpace(session.ID)
+	if sessionID == "" {
+		return
+	}
+	rt.mu.Lock()
+	run := rt.run
+	if strings.TrimSpace(run.AgentHubSessionID) != sessionID {
+		rt.mu.Unlock()
+		return
+	}
+	if run.CompletionSessionID != sessionID {
+		run.CompletionSessionID = sessionID
+		run.CompletionCursor = 0
+		run.CompletionEventID = 0
+		run.CompletionMarker = ""
+		run.CompletionState = ""
+		run.CompletionTurnID = ""
+		run.CompletionAt = ""
+	}
+	cursor := run.CompletionCursor
+	latestTerminal := agentHubEvent{}
+	for _, event := range history {
+		if event.ID <= cursor {
+			continue
+		}
+		cursor = event.ID
+		if isAgentHubTurnTerminal(event.Type) && event.ID > latestTerminal.ID {
+			latestTerminal = event
+		}
+	}
+	if latestCursor > cursor {
+		cursor = latestCursor
+	}
+	run.CompletionCursor = cursor
+	if latestTerminal.ID > run.CompletionEventID {
+		run.CompletionEventID = latestTerminal.ID
+		run.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
+		run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
+		run.CompletionTurnID = latestTerminal.TurnID
+		run.CompletionAt = latestTerminal.Time
+	}
+	run.CompletionPending = false
+	rt.run = run
+	rt.mu.Unlock()
+	_ = saveAgentRun(rt.workspace.Path, run)
+}
+
+func (rt *agentRuntime) completionHistoryPending(session agentHubSession) bool {
+	sessionID := strings.TrimSpace(session.ID)
+	if sessionID == "" || session.LastEventID <= 0 {
+		return false
+	}
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	return rt.run.CompletionPending && rt.run.CompletionSessionID == sessionID && session.LastEventID > rt.run.CompletionCursor
+}
+
+func isAgentHubTurnTerminal(eventType string) bool {
+	switch eventType {
+	case "turn.completed", "turn.failed", "turn.cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 func (rt *agentRuntime) updateStatus(m *agentManager, status string) {

@@ -245,8 +245,8 @@ func (c *agentHubClient) GetSession(ctx context.Context, sessionID string) (agen
 }
 
 // SessionEvents returns one page of a session's durable event history along
-// with the latest cursor. It is only used to prove that an archived session
-// passed through a durable stopped state before its Forge lock is released.
+// with the latest cursor. It is used both to record canonical turn terminals
+// and to prove that an archived session passed through a durable stopped state.
 func (c *agentHubClient) SessionEvents(ctx context.Context, sessionID string, after int64, limit int) ([]agentHubEvent, int64, error) {
 	query := make(url.Values)
 	query.Set("after", strconv.FormatInt(after, 10))

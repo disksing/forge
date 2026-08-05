@@ -177,6 +177,8 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	if run.AgentHubAgentName == "" {
 		run.AgentHubAgentName = agentName
 	}
+	run.CompletionSessionID = session.ID
+	run.CompletionCursor = session.LastEventID
 	rt.setRun(run)
 	cleanup = false
 	if err := m.bindForgeSessionAgentHub(r.Context(), workspace, forgeSessionID, session.ID); err != nil {
@@ -753,8 +755,10 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 }
 
 // recoverAgentHubRun rebuilds the lightweight runtime projection for one run
-// from session state only: no event history is loaded and no event stream is
-// opened. candidates carries the sessions matching the run's source tuple;
+// without eagerly loading event history or opening an event stream. A persisted
+// active -> ready/stopped edge, or a pending completion inspection, may replay
+// the bounded durable history needed for the completion marker. candidates
+// carries the sessions matching the run's source tuple;
 // when nil, the candidates are queried on demand (scheduler dispatch path).
 // Only live runs with a valid Forge session may recreate a missing AgentHub
 // session from the source tuple.
@@ -801,7 +805,10 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 	}
 	run.PendingInitialMessage = ""
 	rt := newAgentHubRuntime(m, workspace, run, client)
-	rt.agentHubState = session.State
+	// Let applyAgentHubSessionState compare the recovered state with the
+	// persisted projection. This preserves a busy -> ready/stopped edge across
+	// a Forge restart instead of treating recovery as a fresh idle baseline.
+	rt.agentHubState = agentHubStateForForgeStatus(previousStatus)
 	m.registerRuntime(rt)
 	if strings.TrimSpace(run.ForgeSessionID) == "" && session.State != "stopped" && session.State != "archived" {
 		err := errors.New("active AgentHub session has no matching Forge session; refusing to create a replacement because launchEnvironment would retain the old FORGE_SESSION_ID")
@@ -821,13 +828,6 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 		// through durable stopped; anything else keeps failing closed. Runs
 		// asynchronously so a long event replay never blocks startup.
 		go rt.reconcileArchivedAgentHubSession(m, client, session, previousStatus)
-	}
-	// A scheduler turn that ended while the GUI was down looks exactly like the
-	// poller edge: busy/waiting_approval persisted locally, ready/stopped now.
-	turnFinished := (previousStatus == "running" || previousStatus == "waiting_approval") &&
-		(session.State == "ready" || session.State == "stopped")
-	if turnFinished && run.SchedulerTurn {
-		go rt.finishSchedulerTurn(m)
 	}
 	return nil
 }

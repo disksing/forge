@@ -38,6 +38,17 @@ const state = {
       agentName: "",
     },
   },
+  notifications: {
+    ready: false,
+    workspaceId: "",
+    store: null,
+    settings: null,
+    channel: null,
+    tabId: "tab-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2),
+    audioContext: null,
+    soundError: "",
+    permissionError: "",
+  },
   createDialog: {
     open: false,
     type: "",
@@ -120,6 +131,12 @@ const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const EXTERNAL_TASK_LOCK_MESSAGE = "This task is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
 const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
 const AGENT_DRAFT_STORAGE_VERSION = 1;
+const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
+const NOTIFICATION_SETTINGS_KEY = `${NOTIFICATION_STORAGE_PREFIX}.settings`;
+const NOTIFICATION_STORE_VERSION = 1;
+const NOTIFICATION_MAX_SEEN = 2000;
+const NOTIFICATION_MAX_UNREAD = 200;
+const NOTIFICATION_MAX_EFFECTS = 2000;
 const AGENT_DRAFT_MAX_ORPHAN_COUNT = 50;
 const AGENT_DRAFT_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 // Auto-fill keeps paging older raw events after the initial tail page until
@@ -133,6 +150,684 @@ const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_app
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning", "scheduler"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
+
+function notificationStorage() {
+  try {
+    return window.localStorage;
+  } catch (_) {
+    return null;
+  }
+}
+
+function notificationStateKey(workspaceId = state.notifications.workspaceId) {
+  const workspace = String(workspaceId || "").trim();
+  return workspace ? `${NOTIFICATION_STORAGE_PREFIX}.state.${encodeURIComponent(workspace)}` : "";
+}
+
+function notificationDefaultStore() {
+  return { version: NOTIFICATION_STORE_VERSION, seen: [], pending: [], unread: [], effects: [] };
+}
+
+function notificationRecord(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const marker = String(raw.marker || "").trim();
+  const sessionId = String(raw.sessionId || "").trim();
+  if (!marker || !sessionId) return null;
+  return {
+    workspaceId: String(raw.workspaceId || "").trim(),
+    sessionId,
+    runId: String(raw.runId || "").trim(),
+    resourceId: String(raw.resourceId || "").trim(),
+    marker,
+    completionState: String(raw.completionState || "completed").trim(),
+    autoRun: Boolean(raw.autoRun),
+    autoRunState: String(raw.autoRunState || "").trim(),
+    title: String(raw.title || "").trim(),
+    resourceType: String(raw.resourceType || "").trim(),
+    resourceTitle: String(raw.resourceTitle || "").trim(),
+    at: Number(raw.at) || Date.now(),
+  };
+}
+
+function normalizeNotificationStore(raw) {
+  if (!raw || raw.version !== NOTIFICATION_STORE_VERSION) return notificationDefaultStore();
+  const seen = Array.isArray(raw.seen)
+    ? raw.seen.map((item) => ({ marker: String(item?.marker || "").trim(), at: Number(item?.at) || Date.now() })).filter((item) => item.marker)
+    : [];
+  const pending = Array.isArray(raw.pending) ? raw.pending.map(notificationRecord).filter(Boolean) : [];
+  const unread = Array.isArray(raw.unread) ? raw.unread.map(notificationRecord).filter(Boolean) : [];
+  const effects = Array.isArray(raw.effects)
+    ? raw.effects.map((item) => ({ key: String(item?.key || "").trim(), at: Number(item?.at) || Date.now() })).filter((item) => item.key)
+    : [];
+  return {
+    version: NOTIFICATION_STORE_VERSION,
+    seen: seen.slice(-NOTIFICATION_MAX_SEEN),
+    pending: pending.slice(-NOTIFICATION_MAX_UNREAD),
+    unread: unread.slice(-NOTIFICATION_MAX_UNREAD),
+    effects: effects.slice(-NOTIFICATION_MAX_EFFECTS),
+  };
+}
+
+function readNotificationStore(workspaceId = state.notifications.workspaceId) {
+  const storage = notificationStorage();
+  const key = notificationStateKey(workspaceId);
+  if (!storage || !key) return notificationDefaultStore();
+  try {
+    const raw = storage.getItem(key);
+    if (!raw) return notificationDefaultStore();
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.version !== NOTIFICATION_STORE_VERSION) {
+      storage.removeItem(key);
+      return notificationDefaultStore();
+    }
+    return normalizeNotificationStore(parsed);
+  } catch (_) {
+    try {
+      storage.removeItem(key);
+    } catch (_) {}
+    return notificationDefaultStore();
+  }
+}
+
+function writeNotificationStore() {
+  const storage = notificationStorage();
+  const key = notificationStateKey();
+  if (!storage || !key || !state.notifications.store) return;
+  state.notifications.store = normalizeNotificationStore(state.notifications.store);
+  try {
+    storage.setItem(key, JSON.stringify(state.notifications.store));
+  } catch (_) {
+    // Browser storage is optional. The in-memory store continues to protect
+    // the current page from duplicate effects when persistence is unavailable.
+  }
+}
+
+function readNotificationSettings() {
+  const defaults = { browser: false, sound: false };
+  const storage = notificationStorage();
+  if (!storage) return defaults;
+  try {
+    const parsed = JSON.parse(storage.getItem(NOTIFICATION_SETTINGS_KEY) || "null");
+    if (!parsed || parsed.version !== NOTIFICATION_STORE_VERSION) return defaults;
+    return { browser: Boolean(parsed.browser), sound: Boolean(parsed.sound) };
+  } catch (_) {
+    try {
+      storage.removeItem(NOTIFICATION_SETTINGS_KEY);
+    } catch (_) {}
+    return defaults;
+  }
+}
+
+function writeNotificationSettings() {
+  const storage = notificationStorage();
+  if (!storage || !state.notifications.settings) return;
+  try {
+    storage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify({
+      version: NOTIFICATION_STORE_VERSION,
+      browser: Boolean(state.notifications.settings.browser),
+      sound: Boolean(state.notifications.settings.sound),
+    }));
+  } catch (_) {}
+}
+
+function notificationPermission() {
+  if (typeof window.Notification === "undefined") return "unsupported";
+  const permission = String(window.Notification.permission || "default");
+  return ["granted", "default", "denied"].includes(permission) ? permission : "default";
+}
+
+function notificationPermissionLabel(permission) {
+  switch (permission) {
+    case "granted": return "granted";
+    case "denied": return "denied — restore permission in Chrome site settings";
+    case "unsupported": return "unsupported in this browser";
+    default: return "not requested";
+  }
+}
+
+function initializeNotificationState(workspaceId) {
+  const nextWorkspace = String(workspaceId || "").trim();
+  if (!nextWorkspace) return;
+  closeNotificationChannel();
+  state.notifications.workspaceId = nextWorkspace;
+  state.notifications.store = readNotificationStore(nextWorkspace);
+  state.notifications.settings = readNotificationSettings();
+  if (notificationPermission() !== "granted") {
+    state.notifications.settings.browser = false;
+    writeNotificationSettings();
+  }
+  state.notifications.ready = false;
+  state.notifications.permissionError = "";
+  openNotificationChannel(nextWorkspace);
+}
+
+function openNotificationChannel(workspaceId) {
+  const Channel = window.BroadcastChannel || globalThis.BroadcastChannel;
+  if (typeof Channel !== "function") return;
+  try {
+    const channel = new Channel(`${NOTIFICATION_STORAGE_PREFIX}.${encodeURIComponent(workspaceId)}`);
+    channel.onmessage = (event) => handleNotificationBroadcast(event.data);
+    state.notifications.channel = channel;
+  } catch (_) {
+    state.notifications.channel = null;
+  }
+}
+
+function closeNotificationChannel() {
+  try {
+    state.notifications.channel?.close();
+  } catch (_) {}
+  state.notifications.channel = null;
+}
+
+function broadcastNotification(message) {
+  try {
+    state.notifications.channel?.postMessage({ ...message, workspaceId: state.notifications.workspaceId, sourceTabId: state.notifications.tabId });
+  } catch (_) {}
+}
+
+function handleNotificationBroadcast(message) {
+  if (!message || message.workspaceId !== state.notifications.workspaceId || message.sourceTabId === state.notifications.tabId) return;
+  const store = state.notifications.store || notificationDefaultStore();
+  if (message.type === "effect" && message.effectKey) {
+    if (!store.effects.some((item) => item.key === message.effectKey)) {
+      store.effects.push({ key: message.effectKey, at: Number(message.at) || Date.now() });
+      state.notifications.store = store;
+      writeNotificationStore();
+    }
+    return;
+  }
+  if (message.type === "record" && message.record) {
+    const record = notificationRecord(message.record);
+    if (!record) return;
+    if (!store.seen.some((item) => item.marker === record.marker)) store.seen.push({ marker: record.marker, at: record.at });
+    if (notificationRecordIsCurrentAndVisible(record)) {
+      store.unread = store.unread.filter((item) => item.marker !== record.marker);
+      store.pending = store.pending.filter((item) => item.marker !== record.marker);
+      state.notifications.store = store;
+      writeNotificationStore();
+      broadcastNotification({ type: "clear-resource", resourceId: record.resourceId });
+      if (state.tree) renderSessions();
+      return;
+    }
+    if (!store.unread.some((item) => item.marker === record.marker)) store.unread.push(record);
+    state.notifications.store = store;
+    writeNotificationStore();
+    if (state.tree) {
+      renderSessions();
+      refreshIcons();
+    }
+    return;
+  }
+  if (message.type === "clear-marker" && message.marker) {
+    store.unread = store.unread.filter((item) => item.marker !== message.marker);
+    store.pending = store.pending.filter((item) => item.marker !== message.marker);
+    state.notifications.store = store;
+    writeNotificationStore();
+    if (state.tree) renderSessions();
+    return;
+  }
+  if (message.type === "clear-resource" && message.resourceId) {
+    const resourceId = String(message.resourceId);
+    store.unread = store.unread.filter((item) => item.resourceId !== resourceId);
+    store.pending = store.pending.filter((item) => item.resourceId !== resourceId);
+    state.notifications.store = store;
+    writeNotificationStore();
+    if (state.tree) renderSessions();
+  }
+}
+
+function notificationStore() {
+  if (!state.notifications.store) state.notifications.store = notificationDefaultStore();
+  return state.notifications.store;
+}
+
+function notificationMarkerFor(item) {
+  const explicit = String(item?.completionMarker || item?.agentRunCompletionMarker || "").trim();
+  if (explicit) return explicit;
+  const sessionID = String(item?.agentHubSessionId || item?.completionSessionId || "").trim();
+  const eventID = Number(item?.completionEventId) || 0;
+  return sessionID && eventID > 0 ? `${sessionID}:${eventID}` : "";
+}
+
+function notificationSessionIDFor(item) {
+  return String(item?.forgeSessionId || item?.sessionId || item?.agentHubSessionId || item?.id || "").trim();
+}
+
+function notificationResourceIDFor(item) {
+  if (item?.resourceId) return String(item.resourceId).trim();
+  if (Array.isArray(item?.controls) && item.controls.length === 1) return String(item.controls[0]?.resourceId || "").trim();
+  return "";
+}
+
+function notificationEventState(event) {
+  switch (event?.type) {
+    case "turn.failed": return "failed";
+    case "turn.cancelled": return "cancelled";
+    case "turn.completed": return "completed";
+    default: return "";
+  }
+}
+
+function notificationAutoRunContext(item, resourceId) {
+  const generation = Number(item?.autoRunGeneration) || 0;
+  const isAutoRun = Boolean(item?.schedulerTurn) || generation > 0;
+  if (!isAutoRun) return { isAutoRun: false, state: "", final: false, suppressed: false };
+  const resource = findResource(resourceId);
+  const autoRun = resource?.autoRun;
+  const stateName = String(autoRun?.state || "").trim().toLowerCase();
+  const final = ["completed", "failed", "paused"].includes(stateName);
+  const suppressed = stateName === "suspended" || stateName === "queued" || stateName === "running" || !final;
+  return { isAutoRun: true, state: stateName, final, suppressed };
+}
+
+function notificationRecordFor(item, marker, completionState = "") {
+  const resourceId = notificationResourceIDFor(item);
+  const resource = findResource(resourceId);
+  const autoRun = notificationAutoRunContext(item, resourceId);
+  return notificationRecord({
+    workspaceId: state.notifications.workspaceId,
+    sessionId: notificationSessionIDFor(item),
+    runId: String(item?.runId || item?.agentRunId || item?.id || "").trim(),
+    resourceId,
+    marker,
+    completionState: completionState || item?.completionState || "completed",
+    autoRun: autoRun.isAutoRun,
+    autoRunState: autoRun.state,
+    title: resource?.title || item?.title || item?.agentRunTitle || item?.id || "Session",
+    resourceType: resource?.type || "",
+    resourceTitle: resource?.title || "",
+    at: Date.now(),
+  });
+}
+
+function notificationRecordIsCurrentAndVisible(record) {
+  if (!record?.resourceId || state.selectedId !== record.resourceId) return false;
+  return notificationPageIsVisibleAndFocused();
+}
+
+function notificationPageIsVisibleAndFocused() {
+  const visible = document.visibilityState ? document.visibilityState === "visible" : !document.hidden;
+  const focused = typeof document.hasFocus !== "function" || document.hasFocus();
+  return visible && !document.hidden && focused;
+}
+
+function notificationEffectKey(record, kind) {
+  return `${record.marker}:${kind}`;
+}
+
+function mergeNotificationEffectsFromStorage() {
+  const persisted = readNotificationStore();
+  const store = notificationStore();
+  const effects = new Map();
+  for (const effect of [...persisted.effects, ...store.effects]) {
+    if (effect?.key) effects.set(effect.key, effect);
+  }
+  store.effects = [...effects.values()].slice(-NOTIFICATION_MAX_EFFECTS);
+  state.notifications.store = store;
+}
+
+function claimNotificationEffect(record, kind) {
+  const key = notificationEffectKey(record, kind);
+  const store = notificationStore();
+  if (store.effects.some((item) => item.key === key)) return false;
+  store.effects.push({ key, at: Date.now() });
+  state.notifications.store = store;
+  writeNotificationStore();
+  broadcastNotification({ type: "effect", effectKey: key, at: Date.now() });
+  return true;
+}
+
+function withNotificationEffectClaim(record, kind, action) {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : null;
+  const run = () => {
+    mergeNotificationEffectsFromStorage();
+    if (claimNotificationEffect(record, kind)) action();
+  };
+  if (!locks || typeof locks.request !== "function") {
+    run();
+    return;
+  }
+  try {
+    Promise.resolve(locks.request(`forge.gui.notification.${state.notifications.workspaceId}.${notificationEffectKey(record, kind)}`, { ifAvailable: true }, (lock) => {
+      if (!lock) return;
+      run();
+    })).catch((err) => {
+      console.warn("notification effect lock unavailable", err);
+      run();
+    });
+  } catch (err) {
+    console.warn("notification effect lock unavailable", err);
+    run();
+  }
+}
+
+function notificationDisplayTitle(record) {
+  const kind = record.resourceType === "project" ? "Project" : record.resourceType === "task" ? "Task" : "Session";
+  return `${kind}: ${record.title || record.resourceId || record.sessionId}`;
+}
+
+function notificationDisplayBody(record) {
+  if (record.autoRun) {
+    const stateName = record.autoRunState || "finished";
+    return `AutoRun ${stateName}.`;
+  }
+  if (record.completionState === "failed") return "Turn failed.";
+  if (record.completionState === "cancelled") return "Turn cancelled.";
+  return "Turn completed.";
+}
+
+function playCompletionSound() {
+  if (!state.notifications.settings?.sound) return;
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (typeof AudioContext !== "function") {
+    state.notifications.soundError = "Audio is unavailable in this browser.";
+    if (state.settings.open && state.settings.tab === "notifications") renderSettingsModal();
+    return;
+  }
+  try {
+    const audio = state.notifications.audioContext || new AudioContext();
+    state.notifications.audioContext = audio;
+    const start = () => {
+      const oscillator = audio.createOscillator();
+      const gain = audio.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(880, audio.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(660, audio.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.0001, audio.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, audio.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + 0.16);
+      oscillator.connect(gain);
+      gain.connect(audio.destination);
+      oscillator.start();
+      oscillator.stop(audio.currentTime + 0.18);
+    };
+    if (audio.state === "suspended") {
+      audio.resume().then(start).catch((err) => {
+        state.notifications.soundError = "Chrome blocked completion sound until audio is enabled by the page.";
+        console.warn("completion sound unavailable", err);
+        if (state.settings.open && state.settings.tab === "notifications") renderSettingsModal();
+      });
+    } else {
+      start();
+    }
+  } catch (err) {
+    state.notifications.soundError = "Completion sound is unavailable right now.";
+    console.warn("completion sound unavailable", err);
+    if (state.settings.open && state.settings.tab === "notifications") renderSettingsModal();
+  }
+}
+
+function sendBrowserNotification(record, alreadyClaimed = false) {
+  if (!state.notifications.settings?.browser || notificationPermission() !== "granted") return;
+  if (!alreadyClaimed && !claimNotificationEffect(record, "browser")) return;
+  try {
+    const notification = new window.Notification(notificationDisplayTitle(record), {
+      body: notificationDisplayBody(record),
+      tag: `forge-${record.marker}`,
+      icon: "/favicon.svg",
+    });
+    notification.onclick = () => {
+      try { window.focus(); } catch (_) {}
+      navigateToNotification(record).catch((err) => console.warn("notification navigation failed", err));
+    };
+  } catch (err) {
+    console.warn("browser notification unavailable", err);
+  }
+}
+
+function deliverCompletionEffects(record) {
+  if (state.notifications.settings?.browser && notificationPermission() === "granted") {
+    withNotificationEffectClaim(record, "browser", () => sendBrowserNotification(record, true));
+  }
+  if (state.notifications.settings?.sound) {
+    withNotificationEffectClaim(record, "sound", playCompletionSound);
+  }
+}
+
+function observeCompletion(item, completionState = "") {
+  const marker = notificationMarkerFor(item);
+  const sessionId = notificationSessionIDFor(item);
+  if (!marker || !sessionId || !state.notifications.workspaceId) return false;
+  const record = notificationRecordFor(item, marker, completionState);
+  if (!record.sessionId) return false;
+  const store = notificationStore();
+  const seen = store.seen.some((entry) => entry.marker === marker);
+  const pendingIndex = store.pending.findIndex((entry) => entry.marker === marker);
+  const autoRun = notificationAutoRunContext(item, record.resourceId);
+  if (!state.notifications.ready) {
+    if (!seen) store.seen.push({ marker, at: Date.now() });
+    store.pending = store.pending.filter((entry) => entry.marker !== marker);
+    state.notifications.store = store;
+    writeNotificationStore();
+    return false;
+  }
+  if (seen && pendingIndex < 0) return false;
+  if (autoRun.isAutoRun && autoRun.state === "suspended") {
+    if (!seen) store.seen.push({ marker, at: Date.now() });
+    store.pending = store.pending.filter((entry) => entry.marker !== marker);
+    state.notifications.store = store;
+    writeNotificationStore();
+    return false;
+  }
+  if (autoRun.isAutoRun && autoRun.suppressed && !autoRun.final) {
+    if (!seen) store.seen.push({ marker, at: Date.now() });
+    if (pendingIndex < 0) store.pending.push(record);
+    state.notifications.store = store;
+    writeNotificationStore();
+    return false;
+  }
+  if (!seen) store.seen.push({ marker, at: Date.now() });
+  store.pending = store.pending.filter((entry) => entry.marker !== marker);
+  if (notificationRecordIsCurrentAndVisible(record)) {
+    state.notifications.store = store;
+    writeNotificationStore();
+    return false;
+  }
+  store.unread = store.unread.filter((entry) => entry.marker !== marker);
+  store.unread.push(record);
+  state.notifications.store = store;
+  writeNotificationStore();
+  broadcastNotification({ type: "record", record });
+  deliverCompletionEffects(record);
+  if (state.tree) {
+    renderSessions();
+    refreshIcons();
+  }
+  return true;
+}
+
+function observeCompletionProjections(items) {
+  for (const item of items || []) {
+    if (notificationMarkerFor(item)) observeCompletion(item, item.completionState || item.agentRunCompletionState || "");
+  }
+}
+
+function observeCompletionEvent(event, run) {
+  const completionState = notificationEventState(event);
+  if (!completionState || !event?.sessionId || !Number(event.id)) return;
+  const marker = `${event.sessionId}:${event.id}`;
+  const item = {
+    ...(run || {}),
+    completionMarker: marker,
+    completionState,
+    agentHubSessionId: run?.agentHubSessionId || event.sessionId,
+  };
+  observeCompletion(item, completionState);
+}
+
+function establishNotificationBaseline() {
+  if (state.notifications.ready) return;
+  observeCompletionProjections(state.tree?.sessions || []);
+  observeCompletionProjections(state.agent.runs || []);
+  state.notifications.ready = true;
+  writeNotificationStore();
+}
+
+function hasUnreadNotificationForSession(sessionId) {
+  const normalized = String(sessionId || "").trim();
+  return Boolean(normalized && notificationStore().unread.some((record) => record.sessionId === normalized));
+}
+
+function clearUnreadForMarker(marker) {
+  const value = String(marker || "").trim();
+  if (!value) return;
+  const store = notificationStore();
+  const changed = store.unread.some((record) => record.marker === value) || store.pending.some((record) => record.marker === value);
+  if (!changed) return;
+  store.unread = store.unread.filter((record) => record.marker !== value);
+  store.pending = store.pending.filter((record) => record.marker !== value);
+  state.notifications.store = store;
+  writeNotificationStore();
+  broadcastNotification({ type: "clear-marker", marker: value });
+  if (state.tree) renderSessions();
+}
+
+function clearUnreadForResource(resourceId) {
+  const value = String(resourceId || "").trim();
+  if (!value) return;
+  const store = notificationStore();
+  const changed = store.unread.some((record) => record.resourceId === value) || store.pending.some((record) => record.resourceId === value);
+  if (!changed) return;
+  store.unread = store.unread.filter((record) => record.resourceId !== value);
+  store.pending = store.pending.filter((record) => record.resourceId !== value);
+  state.notifications.store = store;
+  writeNotificationStore();
+  broadcastNotification({ type: "clear-resource", resourceId: value });
+  if (state.tree) renderSessions();
+}
+
+function notificationSettingsChanged() {
+  writeNotificationSettings();
+  if (state.settings.open && state.settings.tab === "notifications") renderSettingsModal();
+}
+
+async function requestBrowserNotifications() {
+  const permission = notificationPermission();
+  if (permission === "unsupported") {
+    state.notifications.settings.browser = false;
+    state.notifications.permissionError = "Browser notifications are not supported here.";
+    notificationSettingsChanged();
+    return permission;
+  }
+  if (permission === "denied") {
+    state.notifications.settings.browser = false;
+    state.notifications.permissionError = "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically.";
+    notificationSettingsChanged();
+    return permission;
+  }
+  let nextPermission = permission;
+  if (permission === "default") {
+    try {
+      nextPermission = await window.Notification.requestPermission();
+    } catch (err) {
+      state.notifications.permissionError = "Chrome could not request notification permission.";
+      console.warn("notification permission request failed", err);
+    }
+  }
+  if (nextPermission === "granted") {
+    state.notifications.settings.browser = true;
+    state.notifications.permissionError = "";
+  } else {
+    state.notifications.settings.browser = false;
+    state.notifications.permissionError = nextPermission === "denied"
+      ? "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically."
+      : "Notification permission is still pending.";
+  }
+  notificationSettingsChanged();
+  return nextPermission;
+}
+
+function setBrowserNotificationsEnabled(enabled) {
+  state.notifications.settings = state.notifications.settings || readNotificationSettings();
+  if (!enabled) {
+    state.notifications.settings.browser = false;
+    state.notifications.permissionError = "";
+    notificationSettingsChanged();
+    return;
+  }
+  requestBrowserNotifications().catch((err) => {
+    state.notifications.settings.browser = false;
+    state.notifications.permissionError = "Chrome could not request notification permission.";
+    console.warn("notification permission request failed", err);
+    notificationSettingsChanged();
+  });
+}
+
+function initializeCompletionAudio() {
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (typeof AudioContext !== "function") {
+    state.notifications.soundError = "Audio is unavailable in this browser.";
+    notificationSettingsChanged();
+    return Promise.resolve(false);
+  }
+  try {
+    state.notifications.audioContext = state.notifications.audioContext || new AudioContext();
+    const resume = state.notifications.audioContext.resume?.();
+    return Promise.resolve(resume).then(() => {
+      state.notifications.soundError = "";
+      notificationSettingsChanged();
+      return true;
+    }).catch((err) => {
+      state.notifications.soundError = "Chrome may block sound until the page receives an audio gesture.";
+      console.warn("completion audio initialization failed", err);
+      notificationSettingsChanged();
+      return false;
+    });
+  } catch (err) {
+    state.notifications.soundError = "Completion sound is unavailable right now.";
+    console.warn("completion audio initialization failed", err);
+    notificationSettingsChanged();
+    return Promise.resolve(false);
+  }
+}
+
+function setCompletionSoundEnabled(enabled) {
+  state.notifications.settings = state.notifications.settings || readNotificationSettings();
+  state.notifications.settings.sound = Boolean(enabled);
+  state.notifications.soundError = "";
+  notificationSettingsChanged();
+  if (enabled) initializeCompletionAudio();
+}
+
+async function navigateToNotification(record) {
+  if (!record?.resourceId) return;
+  try {
+    await selectResource(record.resourceId, { clearUnread: false, forceDetail: true });
+    if (record.runId) {
+      const run = state.agent.runs.find((item) => item.id === record.runId);
+      if (run) {
+        state.agent.activeRunId = run.id;
+        await loadCanonicalAgentEvents();
+        renderAgent();
+        renderTTY();
+        bindAgentEvents();
+        refreshIcons();
+      }
+    }
+  } finally {
+    clearUnreadForMarker(record.marker);
+  }
+}
+
+function installNotificationCrossTabListeners() {
+  window.addEventListener("storage", (event) => {
+    if (event.key === notificationStateKey() && event.newValue) {
+      state.notifications.store = readNotificationStore();
+      if (state.tree) renderSessions();
+    }
+    if (event.key === NOTIFICATION_SETTINGS_KEY) {
+      state.notifications.settings = readNotificationSettings();
+      if (notificationPermission() !== "granted") state.notifications.settings.browser = false;
+      if (state.settings.open && state.settings.tab === "notifications") renderSettingsModal();
+    }
+  });
+  document.addEventListener("visibilitychange", () => {
+    flushAgentDraftOnPageLeave();
+    if (notificationPageIsVisibleAndFocused()) clearUnreadForResource(state.selectedId);
+  });
+  window.addEventListener("focus", () => clearUnreadForResource(state.selectedId));
+}
 
 function agentDraftStorage() {
   try {
@@ -379,6 +1074,7 @@ async function load() {
   state.selectedId = route.resourceId || "workspace";
   renderWorkspaceSelect();
   if (state.activeWorkspaceId) {
+    initializeNotificationState(state.activeWorkspaceId);
     await loadUIState();
     if (!route.resourceId && state.lastResourceId) {
       state.selectedId = state.lastResourceId;
@@ -410,6 +1106,7 @@ async function loadTree(options = {}) {
     await loadDetail(state.selectedId);
   }
   await loadAgentRuns();
+  if (!state.notifications.ready) establishNotificationBaseline();
   renderAll();
   if (options.updateURL !== false) {
     syncURL({ replace: Boolean(options.replaceURL) });
@@ -473,7 +1170,7 @@ function startAutoRefresh() {
 }
 
 async function autoRefresh() {
-  if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || state.listDrag || document.hidden) return;
+  if (!state.activeWorkspaceId || state.autoRefreshInFlight || state.agentSessionMutationCount > 0 || state.listDrag) return;
   const refreshVersion = state.autoRefreshVersion;
   state.autoRefreshInFlight = true;
   try {
@@ -483,6 +1180,7 @@ async function autoRefresh() {
     if (changed) {
       state.tree = tree;
     }
+    if (typeof observeCompletionProjections === "function") observeCompletionProjections(tree.sessions || []);
     if (changed && state.preview?.section === "Wiki" && !state.preview.loading) {
       await refreshFilePreview("Wiki", state.preview.path);
     }
@@ -514,6 +1212,7 @@ async function autoRefresh() {
       state.agent.runs = runs;
       changed = true;
     }
+    if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
     if (reconcileActiveAgentRun(runs)) {
       await loadCanonicalAgentEvents();
       if (refreshVersion !== state.autoRefreshVersion) return;
@@ -647,6 +1346,7 @@ async function switchWorkspace(id) {
   await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
   state.selectedId = "workspace";
+  initializeNotificationState(id);
   state.sessionMenu = null;
   resetWorkspaceAgentsDraft();
   closeCreateDialog();
@@ -1093,6 +1793,7 @@ function hideTaskStatusTooltip() {
 
 async function selectResource(id, options = {}) {
   const selectionChanged = state.selectedId !== id;
+  if (options.clearUnread !== false) clearUnreadForResource(id);
   if (selectionChanged) {
     flushAgentDraft();
     discardAgentUploadDialog();
@@ -1193,8 +1894,9 @@ function renderSessions() {
     const selectedId = state.selectedId;
     const isCurrent = Boolean(selectedId) && selectedId !== "workspace" &&
       (resourceId === selectedId || controls.some((control) => control.resourceId === selectedId));
+    const unread = hasUnreadNotificationForSession(session.id);
     const row = document.createElement(clickable ? "button" : "div");
-    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""}`;
+    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""} ${unread ? "session-unread" : ""}`;
     if (clickable) row.type = "button";
     const agent = isInternal
       ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName)
@@ -1209,9 +1911,9 @@ function renderSessions() {
       metaParts.push(resourceId);
     }
     if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
-    row.title = status.label;
+    row.title = unread ? `${status.label}. Unread turn completion.` : status.label;
     if (clickable) {
-      row.setAttribute("aria-label", `${title}. ${status.label}. ${providerLabel}`);
+      row.setAttribute("aria-label", `${title}. ${status.label}. ${providerLabel}${unread ? ". Unread turn completion." : ""}`);
     }
     row.innerHTML = `
       <span class="session-status-icon task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}" aria-hidden="true">${icon(status.iconName, "session-status-glyph")}</span>
@@ -1220,6 +1922,7 @@ function renderSessions() {
         <span>${escapeHTML(metaParts.join(" · "))}</span>
       </div>
       <span class="session-badge ${isInternal ? "internal" : "external"}">${escapeHTML(label)}</span>
+      ${unread ? `<span class="session-unread-badge" aria-label="Unread turn completion">New</span>` : ""}
       <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
     `;
     if (clickable) {
@@ -1254,6 +1957,7 @@ function handleSessionClick(session) {
   if (controls.length === 0) return;
   if (controls.length === 1) {
     state.sessionMenu = null;
+    clearUnreadForResource(controls[0].resourceId);
     selectResource(controls[0].resourceId).catch((err) => toast(err.message));
     return;
   }
@@ -1278,6 +1982,7 @@ function sessionResourceMenu(session, controls) {
   menu.querySelectorAll("[data-session-resource]").forEach((button) => {
     button.addEventListener("click", () => {
       state.sessionMenu = null;
+      clearUnreadForResource(button.dataset.sessionResource);
       selectResource(button.dataset.sessionResource).catch((err) => toast(err.message));
     });
   });
@@ -2196,6 +2901,7 @@ async function loadAgentRuns() {
     return;
   }
   state.agent.runs = await fetchAgentRuns();
+  observeCompletionProjections(state.agent.runs);
   reconcileActiveAgentRun(state.agent.runs);
   if (state.agent.activeRunId) {
     await loadCanonicalAgentEvents();
@@ -2211,6 +2917,7 @@ async function refreshAgentRunMetadata() {
   if (!state.activeWorkspaceId) return;
   const runs = await fetchAgentRuns();
   state.agent.runs = runs;
+  observeCompletionProjections(runs);
   if (reconcileActiveAgentRun(runs)) {
     await loadCanonicalAgentEvents();
     connectAgentStream();
@@ -2533,6 +3240,9 @@ function appendCanonicalAgentEvent(event) {
   }
   if (isKnownCanonicalAgentEvent(event)) return;
   state.agent.events.push(event);
+  if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
+    observeCompletionEvent(event, currentAgentRun());
+  }
   if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
     refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
@@ -3063,6 +3773,7 @@ function renderSettingsModal() {
         ${settingsTabButton("workspace", "hard-drive", "Workspace")}
         ${settingsTabButton("agenthub", "network", "AgentHub")}
         ${settingsTabButton("profiles", "route", "Profiles")}
+        ${settingsTabButton("notifications", "bell", "Notifications")}
       </aside>
       <div class="settings-content">
         <button type="button" class="settings-close" data-settings-close title="Close">${icon("x")}</button>
@@ -3089,7 +3800,39 @@ function settingsTabButton(id, iconName, label) {
 function settingsActivePanel(data) {
   if (state.settings.tab === "agenthub") return settingsAgentHubPanel(data);
   if (state.settings.tab === "profiles") return settingsProfilesPanel(data);
+  if (state.settings.tab === "notifications") return settingsNotificationsPanel();
   return settingsWorkspacePanel(data);
+}
+
+function settingsNotificationsPanel() {
+  const preferences = state.notifications.settings || readNotificationSettings();
+  state.notifications.settings = preferences;
+  const permission = notificationPermission();
+  const browserDisabled = permission === "unsupported" || permission === "denied";
+  return `
+    <div class="settings-panel settings-notifications-panel" data-settings-section="notifications">
+      <div class="settings-panel-header">
+        <h2>Notifications</h2>
+        <p>These preferences belong to this browser and device. They are stored locally and are not sent to Forge Server.</p>
+      </div>
+      <section class="settings-agent-section">
+        <label class="settings-notification-option">
+          <span class="settings-notification-copy"><strong>Browser notifications</strong><small>Show a Chrome notification when a turn completes outside the visible, focused resource.</small></span>
+          <input id="settingsBrowserNotifications" type="checkbox" ${preferences.browser ? "checked" : ""} ${browserDisabled ? "disabled" : ""} />
+        </label>
+        <div class="settings-notification-status">Chrome permission: <strong>${escapeHTML(notificationPermissionLabel(permission))}</strong></div>
+        ${permission === "denied" ? `<small class="settings-notification-help">Restore permission in Chrome site settings. Forge will not repeatedly request a denied permission.</small>` : ""}
+        ${state.notifications.permissionError ? `<small class="settings-notification-help">${escapeHTML(state.notifications.permissionError)}</small>` : ""}
+      </section>
+      <section class="settings-agent-section">
+        <label class="settings-notification-option">
+          <span class="settings-notification-copy"><strong>Completion sound</strong><small>Play one short local sound for each new notification. This setting is independent from browser notifications.</small></span>
+          <input id="settingsCompletionSound" type="checkbox" ${preferences.sound ? "checked" : ""} />
+        </label>
+        ${state.notifications.soundError ? `<small class="settings-notification-help">${escapeHTML(state.notifications.soundError)}</small>` : `<small class="settings-notification-help">Chrome may require the enable action to happen from a user gesture.</small>`}
+      </section>
+    </div>
+  `;
 }
 
 function settingsAgentHubPanel(data) {
@@ -3276,6 +4019,12 @@ function bindSettingsEvents() {
   });
   $("settingsSaveButton")?.addEventListener("click", () => {
     saveAgentSettings().catch((err) => toast(err.message));
+  });
+  $("settingsBrowserNotifications")?.addEventListener("change", (event) => {
+    setBrowserNotificationsEnabled(event.target.checked);
+  });
+  $("settingsCompletionSound")?.addEventListener("change", (event) => {
+    setCompletionSoundEnabled(event.target.checked);
   });
   $("settingsAddProfileButton")?.addEventListener("click", addSettingsProfile);
   document.querySelectorAll("[data-remove-profile]").forEach((button) => {
@@ -4973,6 +5722,7 @@ document.addEventListener("click", (event) => {
 });
 
 initPaneResize();
+installNotificationCrossTabListeners();
 
 function flushAgentDraftOnPageLeave() {
   flushAgentDraft();
@@ -5000,6 +5750,7 @@ window.addEventListener("popstate", async () => {
   if (workspaceChanged) {
     resetWorkspaceAgentsDraft();
     closeCreateDialog();
+    initializeNotificationState(state.activeWorkspaceId);
   }
   if (workspaceChanged) {
     resetAgentState();

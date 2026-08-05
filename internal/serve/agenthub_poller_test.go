@@ -72,6 +72,11 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 		t.Fatalf("one poll must issue exactly one session list, got %d", listCalls)
 	}
 	runA := pollerRunState(manager.runtimeByID("run-a"))
+	waitForRuntimeTest(t, func() bool {
+		run := pollerRunState(manager.runtimeByID("run-a"))
+		return run.CompletionSessionID == "ses_a" && !run.CompletionPending
+	})
+	runA = pollerRunState(manager.runtimeByID("run-a"))
 	if runA.Status != "idle" || runA.UpdatedAt != "2026-08-01T00:00:10Z" || runA.LastOutputAt != "2026-08-01T00:00:10Z" {
 		t.Fatalf("run-a projection not reconciled: %#v", runA)
 	}
@@ -299,7 +304,8 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-idle", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_idle",
 		SourceExternalID: workspace.ID + "/run-idle", Status: "idle",
-		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
+		CompletionSessionID: "ses_idle",
+		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
 		LastOutputAt: "2026-08-01T00:00:10Z",
 	}, agentHubSession{ID: "ses_idle", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 	indexPath := agentIndexPath(workspace.Path)
