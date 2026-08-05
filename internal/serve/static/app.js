@@ -3766,11 +3766,35 @@ function renderAgent() {
   `;
 }
 
+function autoRunStatusReason(run, logs = []) {
+  if (!run) return null;
+  if (run.state === "suspended") {
+    const summary = String(run.suspensionSummary || "").trim();
+    return summary ? { label: "Suspend reason", text: summary } : null;
+  }
+
+  const titlesByState = {
+    running: ["Auto Run retry"],
+    paused: ["Auto Run paused"],
+    failed: ["Auto Run failed"],
+  };
+  const titles = titlesByState[run.state];
+  if (!titles) return null;
+  const generation = Number(run.generation);
+  const entry = (logs || []).find((candidate) => candidate?.autoRun === true
+    && Number(candidate.autoRunGeneration) === generation
+    && titles.includes(candidate.title)
+    && String(candidate.details || "").trim());
+  if (!entry) return null;
+  const labelsByState = { running: "Retry reason", paused: "Pause reason", failed: "Failure reason" };
+  return { label: labelsByState[run.state], text: String(entry.details).trim() };
+}
+
 function autoRunStatus(detail) {
   const run = detail?.autoRun;
   if (!run) return "";
   const presentation = autoRunPresentation(run.state);
-  const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run failed", "Auto Run retry"].includes(entry.title));
+  const reason = autoRunStatusReason(run, detail?.logs);
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
@@ -3788,8 +3812,7 @@ function autoRunStatus(detail) {
       </div>
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-      ${run.suspensionSummary ? `<p>Suspend reason: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-      ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
+      ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
     </section>
   `;
 }

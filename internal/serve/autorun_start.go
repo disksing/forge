@@ -287,6 +287,11 @@ func chatAutoRunCandidate(resourceID string, task app.Task, inputs ...app.AutoRu
 	switch task.AutoRun.State {
 	case "completed", "failed":
 		candidate.Generation++
+		// A terminal generation starts with a fresh status history. The
+		// previous suspension summary may remain persisted on the old task
+		// projection, but it must not be injected into the next generation's
+		// prompt.
+		candidate.SuspensionSummary = ""
 		if input.AgentNameSet {
 			candidate.AgentName = strings.TrimSpace(input.AgentName)
 		}

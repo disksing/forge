@@ -387,6 +387,103 @@ func TestWorkspaceAPIQueueAutoRunGenerationParameters(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAPIAutoRunStateTransitionsNormalizeSuspensionMetadata(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("AutoRun state project", "autorun-state")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "State task", Slug: "state", AutoRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	suspended, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for review"})
+	if err != nil || suspended.AutoRun == nil {
+		t.Fatalf("suspend failed: task=%+v err=%v", suspended, err)
+	}
+	if suspended.AutoRun.State != "suspended" || suspended.AutoRun.SuspendedAt == "" || suspended.AutoRun.SuspensionSummary != "waiting for review" {
+		t.Fatalf("unexpected suspended metadata: %+v", suspended.AutoRun)
+	}
+
+	resumed, err := workspace.ResumeAutoRun(task.ID)
+	if err != nil || resumed.AutoRun == nil {
+		t.Fatalf("resume failed: task=%+v err=%v", resumed, err)
+	}
+	if resumed.AutoRun.State != "queued" || resumed.AutoRun.SuspendedAt != "" || resumed.AutoRun.SuspensionSummary != "waiting for review" {
+		t.Fatalf("resume must clear only suspended metadata, got: %+v", resumed.AutoRun)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	completed, err := workspace.CompleteAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running", Summary: "done",
+	})
+	if err != nil || completed.AutoRun == nil {
+		t.Fatalf("complete failed: task=%+v err=%v", completed, err)
+	}
+	if completed.AutoRun.State != "completed" || completed.AutoRun.SuspendedAt != "" || completed.AutoRun.SuspensionSummary != "waiting for review" {
+		t.Fatalf("completion must not resurrect or erase prompt context: %+v", completed.AutoRun)
+	}
+
+	generationTwo, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
+	if err != nil || generationTwo.AutoRun == nil {
+		t.Fatalf("queue generation 2 failed: task=%+v err=%v", generationTwo, err)
+	}
+	if generationTwo.AutoRun.Generation != 2 || generationTwo.AutoRun.State != "queued" || generationTwo.AutoRun.SuspensionSummary != "" || generationTwo.AutoRun.SuspendedAt != "" {
+		t.Fatalf("new generation inherited stale status metadata: %+v", generationTwo.AutoRun)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	suspendedAgain, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for dependency"})
+	if err != nil || suspendedAgain.AutoRun == nil || suspendedAgain.AutoRun.SuspendedAt == "" {
+		t.Fatalf("second suspend failed: task=%+v err=%v", suspendedAgain, err)
+	}
+	completedFromSuspended, err := workspace.CompleteAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 2, ExpectedState: "suspended",
+	})
+	if err != nil || completedFromSuspended.AutoRun == nil {
+		t.Fatalf("completion from suspended state failed: task=%+v err=%v", completedFromSuspended, err)
+	}
+	if completedFromSuspended.AutoRun.State != "completed" || completedFromSuspended.AutoRun.SuspendedAt != "" {
+		t.Fatalf("terminal transition left suspendedAt behind: %+v", completedFromSuspended.AutoRun)
+	}
+
+	generationThree, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
+	if err != nil || generationThree.AutoRun == nil {
+		t.Fatalf("queue generation 3 failed: task=%+v err=%v", generationThree, err)
+	}
+	if generationThree.AutoRun.Generation != 3 || generationThree.AutoRun.SuspensionSummary != "" || generationThree.AutoRun.SuspendedAt != "" {
+		t.Fatalf("generation 3 inherited generation 2 status metadata: %+v", generationThree.AutoRun)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := workspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "manual review"})
+	if err != nil || paused.AutoRun == nil {
+		t.Fatalf("pause failed: task=%+v err=%v", paused, err)
+	}
+	if paused.AutoRun.State != "paused" || paused.AutoRun.SuspendedAt != "" || paused.AutoRun.SuspensionSummary != "manual review" {
+		t.Fatalf("pause metadata is incorrect: %+v", paused.AutoRun)
+	}
+	if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	failed, err := workspace.FailAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "provider failed"})
+	if err != nil || failed.AutoRun == nil {
+		t.Fatalf("fail failed: task=%+v err=%v", failed, err)
+	}
+	if failed.AutoRun.State != "failed" || failed.AutoRun.SuspendedAt != "" {
+		t.Fatalf("failure left suspended metadata behind: %+v", failed.AutoRun)
+	}
+}
+
 func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("AutoRun wake project", "wake")
