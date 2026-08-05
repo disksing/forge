@@ -80,6 +80,12 @@ const state = {
     draftPrompt: "",
     ttyDraft: "",
     ttyMultiline: false,
+    ttyDraftKey: "",
+    ttyDraftWorkspaceId: "",
+    ttyDraftResourceId: "",
+    ttyDraftRunId: "",
+    ttyDraftVersion: 0,
+    skipTTYDraftSync: false,
     agentName: "",
     optionsOpen: false,
     agentChooserOpen: false,
@@ -111,6 +117,10 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
+const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
+const AGENT_DRAFT_STORAGE_VERSION = 1;
+const AGENT_DRAFT_MAX_ORPHAN_COUNT = 50;
+const AGENT_DRAFT_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
 // Auto-fill keeps paging older raw events after the initial tail page until
 // the log overflows its viewport (with slack), so a tool-heavy tail does not
 // leave the chat area mostly blank. The page cap bounds pathological cases
@@ -118,9 +128,229 @@ const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const AGENT_AUTOFILL_OVERFLOW_PX = 160;
 const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
+const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning", "scheduler"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
+
+function agentDraftStorage() {
+  try {
+    return window.localStorage;
+  } catch (_) {
+    return null;
+  }
+}
+
+function agentDraftStoragePart(value) {
+  return encodeURIComponent(String(value || "").trim());
+}
+
+function agentDraftSessionIdentity(run) {
+  return String(run?.agentHubSessionId || run?.sourceExternalId || run?.id || "").trim();
+}
+
+function agentDraftResourceScope(resourceId) {
+  return String(resourceId || "").trim() || "workspace";
+}
+
+function agentDraftKeyForRun(run, workspaceId = state.activeWorkspaceId) {
+  const workspace = String(workspaceId || "").trim();
+  const session = agentDraftSessionIdentity(run);
+  if (!workspace || !session) return "";
+  return `${AGENT_DRAFT_STORAGE_PREFIX}.session.${agentDraftStoragePart(workspace)}.${agentDraftStoragePart(session)}`;
+}
+
+function agentDraftRecord(raw) {
+  try {
+    const record = JSON.parse(raw);
+    if (!record || record.version !== AGENT_DRAFT_STORAGE_VERSION || typeof record.text !== "string") return null;
+    return record;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readAgentDraftRecord(key) {
+  const storage = agentDraftStorage();
+  if (!storage || !key) return null;
+  let raw = "";
+  try {
+    raw = storage.getItem(key) || "";
+  } catch (_) {
+    return null;
+  }
+  if (!raw) return null;
+  const record = agentDraftRecord(raw);
+  if (record) return record;
+  try {
+    storage.removeItem(key);
+  } catch (_) {}
+  return null;
+}
+
+function readAgentDraft(key) {
+  const record = readAgentDraftRecord(key);
+  if (!record) return "";
+  if (!record.text) {
+    removeAgentDraft(key);
+    return "";
+  }
+  return record.text;
+}
+
+function removeAgentDraft(key) {
+  const storage = agentDraftStorage();
+  if (!storage || !key) return;
+  try {
+    storage.removeItem(key);
+  } catch (_) {}
+}
+
+function agentDraftProtectedKeys(workspaceId, resourceId) {
+  const protectedKeys = new Set();
+  if (state.agent.ttyDraftWorkspaceId === workspaceId && state.agent.ttyDraftResourceId === resourceId && state.agent.ttyDraftKey) {
+    protectedKeys.add(state.agent.ttyDraftKey);
+  }
+  for (const run of state.agent.runs || []) {
+    if (agentDraftResourceScope(run.resourceId) !== resourceId) continue;
+    const key = agentDraftKeyForRun(run, workspaceId);
+    if (key) protectedKeys.add(key);
+  }
+  return protectedKeys;
+}
+
+function pruneAgentDraftStorage(workspaceId = state.activeWorkspaceId, resourceId = state.agent.ttyDraftResourceId) {
+  const storage = agentDraftStorage();
+  const workspace = String(workspaceId || "").trim();
+  const resource = agentDraftResourceScope(resourceId);
+  if (!storage || !workspace || !resource) return;
+  const prefix = `${AGENT_DRAFT_STORAGE_PREFIX}.session.${agentDraftStoragePart(workspace)}.`;
+  const protectedKeys = agentDraftProtectedKeys(workspace, resource);
+  const candidates = [];
+  const now = Date.now();
+  try {
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
+      if (!key || !key.startsWith(prefix)) continue;
+      const record = readAgentDraftRecord(key);
+      if (!record || agentDraftResourceScope(record.resourceId) !== resource || protectedKeys.has(key)) continue;
+      if (!record.text) {
+        storage.removeItem(key);
+        continue;
+      }
+      const updatedAt = Number(record.updatedAt) || 0;
+      if (updatedAt > 0 && now - updatedAt > AGENT_DRAFT_MAX_AGE_MS) {
+        storage.removeItem(key);
+        continue;
+      }
+      candidates.push({ key, updatedAt });
+    }
+    candidates.sort((left, right) => left.updatedAt - right.updatedAt);
+    while (candidates.length > AGENT_DRAFT_MAX_ORPHAN_COUNT) {
+      removeAgentDraft(candidates.shift().key);
+    }
+  } catch (_) {
+    // localStorage is optional; pruning must never affect the composer.
+  }
+}
+
+function writeAgentDraft(key, text, context = {}) {
+  if (!key) return;
+  if (!text) {
+    removeAgentDraft(key);
+    return;
+  }
+  const storage = agentDraftStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(key, JSON.stringify({
+      version: AGENT_DRAFT_STORAGE_VERSION,
+      text,
+      updatedAt: Date.now(),
+      workspaceId: context.workspaceId || "",
+      resourceId: context.resourceId || "",
+      runId: context.runId || "",
+      sessionId: context.sessionId || "",
+    }));
+  } catch (_) {
+    // Quota/security errors fall back to the in-memory draft.
+  }
+}
+
+function persistAgentDraft() {
+  const key = state.agent.ttyDraftKey;
+  if (!key) return;
+  writeAgentDraft(key, state.agent.ttyDraft, {
+    workspaceId: state.agent.ttyDraftWorkspaceId,
+    resourceId: state.agent.ttyDraftResourceId,
+    runId: state.agent.ttyDraftRunId,
+    sessionId: agentDraftSessionIdentity(currentAgentRun()),
+  });
+  pruneAgentDraftStorage(state.agent.ttyDraftWorkspaceId, state.agent.ttyDraftResourceId);
+}
+
+function updateAgentDraft(text, persist = true) {
+  const next = String(text ?? "");
+  if (state.agent.ttyDraft !== next) {
+    state.agent.ttyDraft = next;
+    state.agent.ttyDraftVersion++;
+  }
+  state.agent.ttyMultiline = next.includes("\n");
+  if (persist) persistAgentDraft();
+}
+
+function clearAgentDraftMemory() {
+  state.agent.ttyDraft = "";
+  state.agent.ttyMultiline = false;
+  state.agent.ttyDraftKey = "";
+  state.agent.ttyDraftWorkspaceId = "";
+  state.agent.ttyDraftResourceId = "";
+  state.agent.ttyDraftRunId = "";
+  state.agent.ttyDraftVersion++;
+}
+
+function restoreAgentDraftForRun(run, workspaceId = state.activeWorkspaceId) {
+  const key = agentDraftKeyForRun(run, workspaceId);
+  if (!key) {
+    clearAgentDraftMemory();
+    return;
+  }
+  if (state.agent.ttyDraftKey === key) return;
+  state.agent.ttyDraftKey = key;
+  state.agent.ttyDraftWorkspaceId = String(workspaceId || "").trim();
+  state.agent.ttyDraftResourceId = agentDraftResourceScope(run.resourceId);
+  state.agent.ttyDraftRunId = String(run.id || "");
+  state.agent.ttyDraft = readAgentDraft(key);
+  state.agent.ttyMultiline = state.agent.ttyDraft.includes("\n");
+  state.agent.ttyDraftVersion++;
+  pruneAgentDraftStorage(state.agent.ttyDraftWorkspaceId, state.agent.ttyDraftResourceId);
+}
+
+function syncAgentDraftFromDOM() {
+  const input = $("ttyInput");
+  if (!input || !state.agent.ttyDraftKey || input.dataset.agentDraftKey !== state.agent.ttyDraftKey) return;
+  updateAgentDraft(input.value);
+}
+
+function flushAgentDraft() {
+  syncAgentDraftFromDOM();
+  persistAgentDraft();
+}
+
+function clearAgentDraftAfterAccepted({ workspaceId, runId, key, text, version }) {
+  if (
+    state.activeWorkspaceId !== workspaceId ||
+    state.agent.activeRunId !== runId ||
+    state.agent.ttyDraftKey !== key ||
+    state.agent.ttyDraft !== text ||
+    state.agent.ttyDraftVersion !== version
+  ) {
+    return false;
+  }
+  removeAgentDraft(key);
+  updateAgentDraft("", false);
+  return true;
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -411,6 +641,7 @@ async function switchWorkspace(id) {
     return;
   }
   setMobileSidebar(false);
+  flushAgentDraft();
   // Record the page open in the workspace being left so it can be restored later.
   await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
@@ -456,6 +687,43 @@ function resourceRefBadge(id) {
   return `<span class="resource-ref">${escapeHTML(ref)}</span>`;
 }
 
+function projectTaskSummary(project) {
+  const tasks = (Array.isArray(project?.children) ? project.children : [])
+    .filter((task) => task && task.archived !== true);
+  const runningTaskIds = new Set();
+  for (const task of tasks) {
+    if (task.autoRun?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+      runningTaskIds.add(task.id);
+    }
+  }
+  const taskCount = tasks.length;
+  const runningCount = runningTaskIds.size;
+  const taskLabel = `${taskCount} ${taskCount === 1 ? "task" : "tasks"}`;
+  const runningLabel = `${runningCount} running`;
+  return {
+    taskCount,
+    runningCount,
+    taskLabel,
+    runningLabel,
+    text: `${taskLabel} · ${runningLabel}`,
+    ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}`,
+  };
+}
+
+function taskSessionCountsAsRunning(session) {
+  return session?.source === "internal" && TASK_RUNNING_SESSION_STATES.has(session.agentRunStatus);
+}
+
+function projectTaskSummaryMarkup(summary) {
+  if (!summary) return "";
+  return `
+    <span class="project-task-summary" aria-hidden="true">
+      <span class="project-task-summary-count">${escapeHTML(summary.taskLabel)}</span>
+      <span class="project-task-summary-separator" aria-hidden="true">·</span>
+      <span class="project-task-summary-running">${escapeHTML(summary.runningLabel)}</span>
+    </span>`;
+}
+
 function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
@@ -474,15 +742,20 @@ function treeButton(item, kind, projectId = "") {
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
+  const summary = kind === "project" ? projectTaskSummary(item) : null;
+  const summaryMarkup = summary && !expanded ? projectTaskSummaryMarkup(summary) : "";
+  const accessibleLabel = [title, summary?.ariaLabel, taskState.label].filter(Boolean).join(". ");
+  if (kind === "project" || taskState.label) {
+    button.setAttribute("aria-label", accessibleLabel);
+  }
   if (taskState.label) {
-    button.setAttribute("aria-label", `${title}. ${taskState.label}`);
     bindTaskStatusTooltip(button, taskState.label);
   }
   button.innerHTML = `
     <span class="chevron" ${kind === "project" && children.length ? `data-project-toggle="${escapeHTML(item.id)}"` : ""}>${kind === "project" && children.length ? icon(expanded ? "chevron-down" : "chevron-right") : ""}</span>
     ${taskStatusMarkup}
     ${icon(kind === "project" ? "folder" : "file-text", "tree-icon")}
-    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}</span>
+    <span class="name"><span class="name-text">${escapeHTML(title)}</span>${resourceRefBadge(item.id)}${summaryMarkup}</span>
     <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
   `;
   button.onclick = (event) => {
@@ -743,7 +1016,8 @@ function taskOperationalStateKey() {
   const parts = [];
   for (const project of state.tree.projects || []) {
     const projectState = taskOperationalState(project);
-    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}`);
+    const summary = projectTaskSummary(project);
+    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
       parts.push(`${task.id}:auto=${taskStatusKey(taskState.autoRun)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
@@ -807,6 +1081,7 @@ function hideTaskStatusTooltip() {
 async function selectResource(id, options = {}) {
   const selectionChanged = state.selectedId !== id;
   if (selectionChanged) {
+    flushAgentDraft();
     discardAgentUploadDialog();
     state.preview = null;
     state.diff = null;
@@ -816,8 +1091,7 @@ async function selectResource(id, options = {}) {
     state.agent.events = [];
     state.agent.notices = [];
     state.agent.historyBeforeId = 0;
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
+    clearAgentDraftMemory();
   }
   state.selectedId = id;
   state.sessionMenu = null;
@@ -1932,14 +2206,20 @@ async function refreshAgentRunMetadata() {
 
 function reconcileActiveAgentRun(runs) {
   const nextRunId = preferredAgentRunID(runs);
-  if (state.agent.activeRunId === nextRunId) return false;
+  if (state.agent.activeRunId === nextRunId) {
+    const activeRun = runs.find((run) => run.id === nextRunId);
+    if (activeRun) restoreAgentDraftForRun(activeRun);
+    return false;
+  }
+  flushAgentDraft();
   state.agent.activeRunId = nextRunId;
   state.agent.events = [];
   state.agent.notices = [];
   state.agent.eventsHasMore = false;
   state.agent.historyBeforeId = 0;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
+  clearAgentDraftMemory();
+  const activeRun = runs.find((run) => run.id === nextRunId);
+  if (activeRun) restoreAgentDraftForRun(activeRun);
   state.agent.approvalDrafts.clear();
   return true;
 }
@@ -2131,17 +2411,18 @@ function fetchAgentRuns() {
 }
 
 async function reloadAgentRunsForSelection() {
+  flushAgentDraft();
   closeAgentStream();
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.notices = [];
   state.agent.historyBeforeId = 0;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
+  clearAgentDraftMemory();
   await loadAgentRuns();
 }
 
 function resetAgentState() {
+  flushAgentDraft();
   discardAgentUploadDialog();
   closeAgentStream();
   state.agent.runs = [];
@@ -2154,9 +2435,8 @@ function resetAgentState() {
   state.agent.optionsOpen = false;
   state.agent.agentChooserOpen = false;
   state.agent.historyOpen = false;
+  clearAgentDraftMemory();
   state.agent.newSessionStarting = false;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
   state.agent.renderDeferredForSelection = false;
@@ -2489,19 +2769,21 @@ function isTTYNearBottom(log) {
   return distanceFromBottom <= 32;
 }
 
-function renderTTYComposer() {
+function renderTTYComposer(options = {}) {
+  const skipDraftSync = options.skipDraftSync || state.agent.skipTTYDraftSync;
+  state.agent.skipTTYDraftSync = false;
+  if (!skipDraftSync) syncAgentDraftFromDOM();
   const composer = $("ttyComposer");
   if (!composer) return;
   const activeRun = currentAgentRun();
   if (!activeRun) {
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
     const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = agentComposerActions();
     return;
   }
+  restoreAgentDraftForRun(activeRun);
   if (isLiveAgentRun(activeRun)) {
     const sessionReady = isAgentSessionReady(activeRun);
     const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
@@ -2515,7 +2797,7 @@ function renderTTYComposer() {
     composer.innerHTML = `
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
-        <textarea id="ttyInput" rows="1" autocomplete="off" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
+        <textarea id="ttyInput" rows="1" autocomplete="off" data-agent-draft-key="${escapeHTML(state.agent.ttyDraftKey)}" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
         <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
         <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>
         <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>
@@ -2523,10 +2805,7 @@ function renderTTYComposer() {
       ${agentComposerActions({ includeClose: true, collapsible: true })}
     `;
     $("ttyInput")?.addEventListener("input", (event) => {
-      state.agent.ttyDraft = event.target.value;
-      if (event.target.value.includes("\n")) {
-        state.agent.ttyMultiline = true;
-      }
+      updateAgentDraft(event.target.value);
       resizeTTYInput(event.target);
     });
     $("ttyInput")?.addEventListener("keydown", (event) => {
@@ -2554,8 +2833,6 @@ function renderTTYComposer() {
   const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${autoRunComposerKey()}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
-  state.agent.ttyDraft = "";
-  state.agent.ttyMultiline = false;
   composer.innerHTML = `
     ${agentComposerActions({ includeResume: canResume })}
   `;
@@ -3309,6 +3586,11 @@ async function startAgentRun(agentName = "") {
       state.agent.draftPrompt = "";
       state.agent.ttyDraft = "";
       state.agent.ttyMultiline = false;
+      state.agent.ttyDraftKey = "";
+      state.agent.ttyDraftWorkspaceId = "";
+      state.agent.ttyDraftResourceId = "";
+      state.agent.ttyDraftRunId = "";
+      state.agent.ttyDraftVersion++;
       state.agent.optionsOpen = false;
       state.agent.agentChooserOpen = false;
       state.agent.historyOpen = false;
@@ -3327,7 +3609,7 @@ async function startAgentRun(agentName = "") {
 
 async function sendAgentInput(text) {
   if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
-  await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
+  return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
     body: JSON.stringify({ text }),
   });
@@ -3340,7 +3622,7 @@ function openAgentUploadDialog() {
     return;
   }
   const input = $("ttyInput");
-  if (input) state.agent.ttyDraft = input.value;
+  if (input) updateAgentDraft(input.value);
   state.modalEnter = "upload";
   state.uploadDialog = {
     open: true,
@@ -3358,8 +3640,7 @@ function closeAgentUploadDialog() {
     .filter((item) => item.status === "success" && item.path)
     .map((item) => item.path);
   if (paths.length > 0 && state.uploadDialog.runId === state.agent.activeRunId) {
-    state.agent.ttyDraft = appendUploadedPaths(state.agent.ttyDraft, paths);
-    state.agent.ttyMultiline = state.agent.ttyDraft.includes("\n");
+    updateAgentDraft(appendUploadedPaths(state.agent.ttyDraft, paths));
   }
   discardAgentUploadDialog();
   const composer = $("ttyComposer");
@@ -3575,13 +3856,13 @@ async function stopAgentRun() {
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
+    flushAgentDraft();
     const previousRun = currentAgentRun();
     if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
       await closeAgentRun(previousRun.id);
     }
     state.agent.activeRunId = runId;
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
+    clearAgentDraftMemory();
     state.agent.historyOpen = false;
     state.agent.approvalDrafts.clear();
     await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
@@ -3597,10 +3878,10 @@ async function closeAgentRun(runId) {
 async function resumeAgentRun() {
   if (!state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
+    flushAgentDraft();
     const response = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/resume`, { method: "POST" });
     state.agent.activeRunId = response.run.id;
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
+    restoreAgentDraftForRun(response.run);
     state.agent.historyOpen = false;
     await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
     renderAll();
@@ -3633,6 +3914,14 @@ async function submitTTYInput(event) {
   const input = $("ttyInput");
   const rawText = input?.value || "";
   if (!rawText.trim()) return;
+  const sendingRun = currentAgentRun();
+  if (!sendingRun) return;
+  restoreAgentDraftForRun(sendingRun);
+  updateAgentDraft(rawText);
+  const sendWorkspaceId = state.activeWorkspaceId;
+  const sendRunId = state.agent.activeRunId;
+  const sendDraftKey = state.agent.ttyDraftKey;
+  const sendDraftVersion = state.agent.ttyDraftVersion;
   let restoreInputFocus = document.activeElement === input;
   const cancelInputFocusRestore = () => {
     restoreInputFocus = false;
@@ -3640,19 +3929,26 @@ async function submitTTYInput(event) {
   if (restoreInputFocus) {
     document.addEventListener("focusin", cancelInputFocusRestore, true);
   }
-  state.agent.ttyDraft = rawText;
   state.agent.sendingInput = true;
   renderTTYComposer();
   refreshIcons();
   try {
-    await sendAgentInput(rawText);
-    state.agent.ttyDraft = "";
-    state.agent.ttyMultiline = false;
+    const result = await sendAgentInput(rawText);
+    if (result?.status === "accepted") {
+      clearAgentDraftAfterAccepted({
+        workspaceId: sendWorkspaceId,
+        runId: sendRunId,
+        key: sendDraftKey,
+        text: rawText,
+        version: sendDraftVersion,
+      });
+    }
   } catch (err) {
     toast(err.message);
   } finally {
     document.removeEventListener("focusin", cancelInputFocusRestore, true);
     state.agent.sendingInput = false;
+    state.agent.skipTTYDraftSync = true;
     renderTTYComposer();
     if (restoreInputFocus) {
       $("ttyInput")?.focus({ preventScroll: true });
@@ -4124,6 +4420,7 @@ async function submitSettingsWorkspace() {
     method: "POST",
     body: JSON.stringify({ path, create: created }),
   });
+  flushAgentDraft();
   state.settings.workspacePath = "";
   state.settings.createWorkspace = false;
   state.config = await api("/api/workspaces");
@@ -4139,6 +4436,7 @@ async function submitSettingsWorkspace() {
 
 async function removeSettingsWorkspace(id) {
   if (!id) return;
+  flushAgentDraft();
   await api(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
   state.config = await api("/api/workspaces");
   if (state.activeWorkspaceId === id) {
@@ -4639,6 +4937,16 @@ document.addEventListener("click", (event) => {
 
 initPaneResize();
 
+function flushAgentDraftOnPageLeave() {
+  flushAgentDraft();
+}
+
+window.addEventListener("pagehide", flushAgentDraftOnPageLeave);
+window.addEventListener("beforeunload", flushAgentDraftOnPageLeave);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden || document.visibilityState === "hidden") flushAgentDraftOnPageLeave();
+});
+
 window.addEventListener("popstate", async () => {
   const route = parseRoute();
   if (!workspaceExists(route.workspaceId)) {
@@ -4646,6 +4954,7 @@ window.addEventListener("popstate", async () => {
   }
   const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
   const previousSelectedId = state.selectedId;
+  flushAgentDraft();
   state.activeWorkspaceId = route.workspaceId;
   state.selectedId = route.resourceId || "workspace";
   state.preview = null;
