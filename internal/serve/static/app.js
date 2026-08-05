@@ -1505,18 +1505,8 @@ function projectTaskSummaryMarkup(summary) {
 function treeButton(item, kind, projectId = "") {
   const button = document.createElement("button");
   const taskState = taskOperationalState(item);
-  const statuses = [taskState.autoRun, taskState.session].filter(Boolean);
-  const hasTaskState = statuses.length > 0 || Boolean(taskState.lock);
-  const statusClassName = statuses.map((status) => status.className).filter(Boolean).join(" ");
-  const taskStatusLayoutClass = hasTaskState
-    ? (statuses.length > 1 ? "has-task-status-dual" : "has-task-status")
-    : "";
-  const taskStatusMarkup = hasTaskState ? `
-    <span class="task-status-slot ${taskState.lock && statuses.length === 0 ? "task-status-lock-only" : ""} ${statuses.length === 1 ? "task-status-single" : ""} ${statuses.length > 1 ? "task-status-dual" : ""}" aria-hidden="true">
-      ${statuses.map((status) => `<span class="task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}">${icon(status.iconName, "task-status-icon")}</span>`).join("")}
-      ${taskState.lock ? `<span class="task-lock-indicator ${taskState.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
-    </span>` : "";
-  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${taskStatusLayoutClass} ${statusClassName} ${state.selectedId === item.id ? "active" : ""}`;
+  const taskStatusMarkup = operationalStatusMarkup(taskState.statusPresentation);
+  button.className = `tree-item ${kind === "task" ? "task-item" : ""} ${taskState.statusPresentation.layoutClassName} ${taskState.statusPresentation.className} ${state.selectedId === item.id ? "active" : ""}`;
   const children = item.children || [];
   const expanded = kind === "project" && isProjectExpanded(item.id);
   const title = item.title || item.id;
@@ -1639,7 +1629,14 @@ function commitListDrag(drag, target, after) {
 }
 
 function noTaskOperationalState() {
-  return { autoRun: null, session: null, className: "", label: "", lock: null };
+  return {
+    autoRun: null,
+    session: null,
+    className: "",
+    label: "",
+    lock: null,
+    statusPresentation: operationalStatusPresentation([], null),
+  };
 }
 
 function taskOperationalState(item) {
@@ -1648,14 +1645,46 @@ function taskOperationalState(item) {
   const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);
   const session = deriveTaskSessionState(sessions);
   const lock = deriveTaskLockState(locks);
-  const statuses = [autoRun, session].filter(Boolean);
+  const statusPresentation = operationalStatusPresentation([autoRun, session], lock);
   return {
     autoRun,
     session,
-    className: statuses.map((status) => status.className).filter(Boolean).join(" "),
+    className: statusPresentation.className,
     lock,
+    statusPresentation,
     label: taskOperationalLabel(item.autoRun, sessions, lock, { autoRun, session }),
   };
+}
+
+// operationalStatusPresentation is shared by the tree and Session list. The
+// status objects themselves come from the existing AutoRun and Session
+// presentation helpers, so both views keep the same icon, tone, animation,
+// ordering, and single/dual layout semantics.
+function operationalStatusPresentation(statuses, lock = null) {
+  const visibleStatuses = (statuses || []).filter(Boolean);
+  const hasTaskState = visibleStatuses.length > 0 || Boolean(lock);
+  return {
+    statuses: visibleStatuses,
+    lock,
+    hasTaskState,
+    className: visibleStatuses.map((status) => status.className).filter(Boolean).join(" "),
+    layoutClassName: !hasTaskState ? "" : visibleStatuses.length > 1 ? "has-task-status-dual" : "has-task-status",
+    slotClassName: [
+      visibleStatuses.length === 0 && lock ? "task-status-lock-only" : "",
+      visibleStatuses.length === 1 ? "task-status-single" : "",
+      visibleStatuses.length > 1 ? "task-status-dual" : "",
+    ].filter(Boolean).join(" "),
+  };
+}
+
+function operationalStatusMarkup(presentation, options = {}) {
+  if (!presentation?.hasTaskState) return "";
+  const slotClassName = options.slotClassName ? ` ${options.slotClassName}` : "";
+  return `
+    <span class="task-status-slot ${presentation.slotClassName}${slotClassName}" aria-hidden="true">
+      ${presentation.statuses.map((status) => `<span class="task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}">${icon(status.iconName, "task-status-icon")}</span>`).join("")}
+      ${presentation.lock ? `<span class="task-lock-indicator ${presentation.lock.className}">${icon("lock", "task-lock-icon")}</span>` : ""}
+    </span>`;
 }
 
 function deriveTaskAutoRunState(autoRun, sessions) {
@@ -1997,13 +2026,19 @@ function renderSessions() {
     const status = isInternal
       ? sessionStatusPresentation(session)
       : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
+    const taskResource = sessionTaskResource(session);
+    const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
+    const statusPresentation = operationalStatusPresentation(
+      isInternal && taskState.autoRun ? [taskState.autoRun, status] : [status],
+    );
+    const statusLabel = sessionOperationalLabel(session, taskResource, taskState, status);
     const clickable = controls.length > 0 || resourceId;
     const selectedId = state.selectedId;
     const isCurrent = Boolean(selectedId) && selectedId !== "workspace" &&
       (resourceId === selectedId || controls.some((control) => control.resourceId === selectedId));
     const unread = hasUnreadNotificationForSession(session.id);
     const row = document.createElement(clickable ? "button" : "div");
-    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${status.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""} ${unread ? "session-unread" : ""}`;
+    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${statusPresentation.layoutClassName} ${statusPresentation.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""} ${unread ? "session-unread" : ""}`;
     if (clickable) row.type = "button";
     const agent = isInternal
       ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName)
@@ -2018,12 +2053,12 @@ function renderSessions() {
       metaParts.push(resourceId);
     }
     if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
-    row.title = unread ? `${status.label}. Unread turn completion.` : status.label;
-    if (clickable) {
-      row.setAttribute("aria-label", `${title}. ${status.label}. ${providerLabel}${unread ? ". Unread turn completion." : ""}`);
-    }
+    const accessibleStatusLabel = unread ? `${statusLabel}. Unread turn completion.` : statusLabel;
+    row.title = accessibleStatusLabel;
+    bindTaskStatusTooltip(row, accessibleStatusLabel);
+    row.setAttribute("aria-label", `${title}. ${accessibleStatusLabel}. ${providerLabel}`);
     row.innerHTML = `
-      <span class="session-status-icon task-status-indicator ${status.className} ${status.recentOutput ? "task-status-fresh" : ""}" aria-hidden="true">${icon(status.iconName, "session-status-glyph")}</span>
+      ${operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })}
       <div>
         <strong>${escapeHTML(title)}</strong>
         <span>${escapeHTML(metaParts.join(" · "))}</span>
@@ -2057,6 +2092,35 @@ function sessionControls(session) {
     return [{ resourceId: session.resourceId, path: "" }];
   }
   return controls;
+}
+
+function sessionTaskResource(session) {
+  if (!session || session.source !== "internal") return null;
+  const explicitResourceId = String(session.resourceId || "").trim();
+  if (explicitResourceId) return taskResourceForAutoRun(explicitResourceId);
+  const controls = sessionControls(session);
+  if (controls.length !== 1) return null;
+  return taskResourceForAutoRun(controls[0].resourceId);
+}
+
+function taskResourceForAutoRun(resourceId) {
+  const resource = findResource(resourceId);
+  return resource && resource.type === "task" && !resource.archived ? resource : null;
+}
+
+function sessionOperationalLabel(session, taskResource, taskState, sessionStatus) {
+  const parts = [];
+  if (taskResource?.autoRun && taskState?.autoRun) {
+    const rawState = taskResource.autoRun.state || "unknown";
+    const stateLabel = taskState.autoRun.kind === "auto-recovering"
+      ? `${taskState.autoRun.label} (${rawState})`
+      : `AutoRun ${rawState}`;
+    const generation = Number.isFinite(taskResource.autoRun.generation) ? taskResource.autoRun.generation : "unknown";
+    parts.push(`${stateLabel}, generation ${generation}`);
+  }
+  if (sessionStatus) parts.push(sessionStatus.label);
+  if (parts.length > 0) return parts.join(" · ");
+  return session?.source === "external" ? "External session active" : "Session active";
 }
 
 function handleSessionClick(session) {
