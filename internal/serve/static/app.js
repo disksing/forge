@@ -125,6 +125,7 @@ const state = {
     historyOpen: false,
     autoRunExpanded: false,
     autoRunStarting: false,
+    autoRunCancelling: false,
     newSessionStarting: false,
     sessionActionsOpen: false,
     eventsHasMore: false,
@@ -442,9 +443,9 @@ function notificationAutoRunContext(item, resourceId) {
   const resource = findResource(resourceId);
   const autoRun = resource?.autoRun;
   const stateName = String(autoRun?.state || "").trim().toLowerCase();
-  const final = ["completed", "failed", "paused"].includes(stateName);
+  const final = ["completed", "failed", "paused", "cancelled"].includes(stateName);
   const suppressed = stateName === "suspended" || stateName === "queued" || stateName === "running" || !final;
-  return { isAutoRun: true, state: stateName, final, suppressed };
+  return { isAutoRun: true, state: stateName, final, suppressed, cancelled: stateName === "cancelled" };
 }
 
 function notificationRecordFor(item, marker, completionState = "") {
@@ -632,6 +633,17 @@ function observeCompletion(item, completionState = "") {
   if (autoRun.isAutoRun && autoRun.state === "suspended") {
     if (!seen) store.seen.push({ marker, at: Date.now() });
     store.pending = store.pending.filter((entry) => entry.marker !== marker);
+    state.notifications.store = store;
+    writeNotificationStore();
+    return false;
+  }
+  if (autoRun.isAutoRun && autoRun.cancelled) {
+    // Cancelling an AutoRun generation is a control-plane action, not a
+    // completed/failed turn. Mark any projection as handled without adding
+    // unread state or triggering browser/sound effects.
+    if (!seen) store.seen.push({ marker, at: Date.now() });
+    store.pending = store.pending.filter((entry) => entry.marker !== marker);
+    store.unread = store.unread.filter((entry) => entry.marker !== marker);
     state.notifications.store = store;
     writeNotificationStore();
     return false;
@@ -1735,6 +1747,9 @@ function deriveTaskAutoRunState(autoRun, sessions) {
   }
   if (autoRunState === "completed") {
     return taskStatusState("completed", "task-status-completed", "check-circle-2", "AutoRun completed", "auto-run");
+  }
+  if (autoRunState === "cancelled") {
+    return taskStatusState("cancelled", "task-status-cancelled", "ban", "AutoRun cancelled", "auto-run");
   }
   return taskStatusState("unknown", "task-status-neutral", "circle-help", `AutoRun ${autoRunState || "unknown"}`, "auto-run");
 }
@@ -3765,7 +3780,8 @@ function autoRunStatus(detail) {
   const run = detail?.autoRun;
   if (!run) return "";
   const presentation = autoRunPresentation(run.state);
-  const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run failed", "Auto Run retry"].includes(entry.title));
+  const latest = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run paused", "Auto Run cancelled", "Auto Run failed", "Auto Run retry"].includes(entry.title));
+  const latestSuspension = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run suspended", "Auto Run wake condition migrated"].includes(entry.title));
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
@@ -3783,8 +3799,10 @@ function autoRunStatus(detail) {
       </div>
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-      ${run.suspensionSummary ? `<p>Suspend reason: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
+      ${run.suspensionSummary ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
+      ${run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
       ${latest?.details ? `<p>${escapeHTML(latest.details)}</p>` : ""}
+      ${["queued", "running", "suspended", "paused"].includes(String(run.state || "").toLowerCase()) ? `<button type="button" id="autoRunCancelButton" class="tty-secondary-action autorun-cancel-action"${state.agent.autoRunCancelling ? " disabled aria-busy=\"true\"" : ""} title="Cancel this AutoRun generation and keep the Agent Session open." aria-label="Cancel AutoRun">${icon(state.agent.autoRunCancelling ? "loader-circle" : "ban")}<span>${state.agent.autoRunCancelling ? "Cancelling AutoRun…" : "Cancel AutoRun"}</span></button>` : ""}
     </section>
   `;
 }
@@ -3797,6 +3815,7 @@ function autoRunPresentation(state) {
     paused: { label: "Paused", icon: "pause" },
     completed: { label: "Completed", icon: "circle-check" },
     failed: { label: "Failed", icon: "circle-x" },
+    cancelled: { label: "Cancelled", icon: "ban" },
   };
   const key = Object.hasOwn(presentations, state) ? state : "unknown";
   return { key, ...(presentations[key] || { label: state || "Unknown", icon: "circle-help" }) };
@@ -3959,16 +3978,16 @@ function renderTTYComposer(options = {}) {
     const stopTurnPending = isAgentTurnStopping(activeRun);
     const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
     const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
-    const closePausesAutoRun = isAutoRunSessionCloseTarget(activeRun);
+    const closeCancelsAutoRun = isAutoRunSessionCloseTarget(activeRun);
     const sessionActionsMarkup = agentComposerActions({ collapsible: true });
     const toolbarActionsMarkup = agentComposerToolbarActions({
       includeEndTurn: stopTurnAvailable,
       endingTurn: stopTurnPending,
       includeClose: true,
       closingSession: sessionStopping,
-      pauseAutoRunOnClose: closePausesAutoRun,
+      cancelAutoRunOnClose: closeCancelsAutoRun,
     });
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closePausesAutoRun ? "pause-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4094,7 +4113,7 @@ function agentComposerToolbarActions(options = {}) {
   const endingTurn = Boolean(options.endingTurn);
   const includeClose = Boolean(options.includeClose);
   const closingSession = Boolean(options.closingSession);
-  const pauseAutoRunOnClose = Boolean(options.pauseAutoRunOnClose);
+  const cancelAutoRunOnClose = Boolean(options.cancelAutoRunOnClose);
   const endTurnPending = endingTurn || closingSession;
   const endTurnLabel = endingTurn
     ? "Ending turn…"
@@ -4106,8 +4125,8 @@ function agentComposerToolbarActions(options = {}) {
     ? "Closing session…"
     : endingTurn
       ? "Ending turn…"
-      : pauseAutoRunOnClose
-        ? "Pause AutoRun and close the session."
+      : cancelAutoRunOnClose
+        ? "Cancel AutoRun and close the session."
         : "Close session; end the entire AgentHub Session.";
   const endTurnMarkup = includeEndTurn ? `
     <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button"${endTurnPending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(endTurnLabel)}" aria-label="${escapeHTML(endTurnLabel)}">
@@ -4137,7 +4156,7 @@ function autoRunComposerAction() {
   const stateName = autoRun?.state || "";
   const liveRuns = state.agent.runs.filter((run) => isLiveAgentRun(run));
   const liveSession = liveRuns.length > 0;
-  const configurationRequired = !stateName || stateName === "completed" || stateName === "failed";
+  const configurationRequired = !stateName || stateName === "completed" || stateName === "failed" || stateName === "cancelled";
   const directResume = stateName === "paused" || stateName === "suspended";
   const starting = state.agent.autoRunStarting;
   let label = "Start AutoRun";
@@ -4155,7 +4174,7 @@ function autoRunComposerAction() {
     label = "Resume Now";
   } else if (stateName === "paused") {
     label = "Resume AutoRun";
-  } else if (stateName === "completed" || stateName === "failed") {
+  } else if (stateName === "completed" || stateName === "failed" || stateName === "cancelled") {
     label = "Start New AutoRun";
   } else if (stateName) {
     label = `AutoRun ${stateName}`;
@@ -4196,7 +4215,7 @@ function autoRunComposerKey() {
   const sessionKey = liveRuns.length
     ? (liveRuns.some((run) => run.status !== "idle") ? "busy" : "idle")
     : "no-session";
-  return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}`;
+  return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}:${state.agent.autoRunCancelling ? "cancelling" : "idle"}`;
 }
 
 function selectedResourceLockComposerKey() {
@@ -4209,7 +4228,7 @@ function selectedResourceLockComposerKey() {
 
 function autoRunNeedsConfiguration(detail) {
   const stateName = String(detail?.autoRun?.state || "").trim();
-  return !stateName || stateName === "completed" || stateName === "failed";
+  return !stateName || stateName === "completed" || stateName === "failed" || stateName === "cancelled";
 }
 
 async function startChatAutoRun(options = {}) {
@@ -4318,7 +4337,7 @@ function openAutoRunConfigDialog() {
   }
   const reuseRun = autoRunIdleSessionForResource(selected.id);
   const autoRun = detail.autoRun || null;
-  const mode = autoRun?.state === "completed" || autoRun?.state === "failed" ? "new" : "configure";
+  const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state) ? "new" : "configure";
   const selectedAgent = selectedAgentConfig();
   state.modalEnter = "autorun";
   state.autoRunDialog = {
@@ -4399,7 +4418,7 @@ function renderAutoRunConfigDialog() {
             <span>Completion criteria <small>(optional, natural language)</small></span>
             <textarea name="completionCriteria" rows="4" placeholder="What should be true before the agent marks this generation complete?"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.completionCriteria)}</textarea>
           </label>
-          <p class="auto-run-dialog-protocol">The agent must finish with exactly one read-only protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
+          <p class="auto-run-dialog-protocol">The agent must finish with exactly one final side-effecting protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
           ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
           ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
           <div class="form-actions">
@@ -4971,6 +4990,8 @@ function bindAgentEvents() {
   if (closeSessionButton) closeSessionButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
+    const run = currentAgentRun();
+    if (isAutoRunSessionCloseTarget(run) && !window.confirm("Close this AutoRun session? This will cancel the current AutoRun generation and close the Agent Session.")) return;
     stopAgentRun().catch((err) => toast(err.message));
   };
   const endTurnButton = $("agentEndTurnButton");
@@ -4993,6 +5014,12 @@ function bindAgentEvents() {
       return;
     }
     startChatAutoRun().catch((err) => toast(err.message));
+  };
+  const autoRunCancelButton = $("autoRunCancelButton");
+  if (autoRunCancelButton) autoRunCancelButton.onclick = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    cancelSelectedAutoRun().catch((err) => toast(err.message));
   };
   const uploadButton = $("agentUploadButton");
   if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
@@ -5375,7 +5402,7 @@ async function stopAgentRun() {
       const result = await closeAgentRun(runId);
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast(result?.autoRunPaused ? "AutoRun paused and Agent session closed." : "Agent session closed.");
+      toast(result?.autoRunCancelled ? "AutoRun cancelled and Agent session closed." : result?.autoRunPaused ? "AutoRun paused and Agent session closed." : "Agent session closed.");
     } catch (err) {
       // A failed or ambiguous close must re-read the run and tree before the
       // control becomes available again; never clear a draft as a side effect.
@@ -5390,6 +5417,53 @@ async function stopAgentRun() {
       state.agent.sessionStopping = false;
       state.agent.sessionStoppingRunId = "";
       renderTTYComposer();
+      bindAgentEvents();
+      refreshIcons();
+    }
+  });
+}
+
+async function cancelSelectedAutoRun() {
+  if (state.agent.autoRunCancelling) return;
+  const selected = findResource(state.selectedId);
+  const detail = selected ? state.details[selected.id] : null;
+  const autoRun = detail?.autoRun;
+  if (!detail || detail.type !== "task" || !autoRun || !["queued", "running", "suspended", "paused"].includes(String(autoRun.state || "").toLowerCase())) return;
+  if (!window.confirm("Cancel this AutoRun generation? The generation will end and the Agent Session will remain open.")) return;
+  return mutateAgentSession(async () => {
+    state.agent.autoRunCancelling = true;
+    renderAgent();
+    bindAgentEvents();
+    refreshIcons();
+    try {
+      const active = currentAgentRun();
+      await api(`/api/workspaces/${state.activeWorkspaceId}/autorun/cancel`, {
+        method: "POST",
+        body: JSON.stringify({
+          resourceId: detail.id,
+          runId: active?.schedulerTurn && active.resourceId === detail.id ? active.id : "",
+          expectedGeneration: Number(autoRun.generation) || 0,
+          expectedState: autoRun.state,
+          reason: "AutoRun cancelled by user",
+        }),
+      });
+      await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+      renderAll();
+      toast("AutoRun cancelled. The Agent Session remains open.");
+    } catch (err) {
+      // Cancellation is durable before interruption. Re-read projections even
+      // when the interrupt response is ambiguous, so the UI exposes the
+      // cancelled state instead of inviting a retry.
+      try {
+        await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+        renderAll();
+      } catch (_) {
+        // Preserve the original cancellation error for the user.
+      }
+      throw err;
+    } finally {
+      state.agent.autoRunCancelling = false;
+      renderAgent();
       bindAgentEvents();
       refreshIcons();
     }
@@ -5503,7 +5577,7 @@ function isAutoRunSessionCloseTarget(run) {
   if (!autoRun) return Boolean(run?.schedulerTurn);
   if ((Number(autoRun.generation) || 0) !== generation) return false;
   const stateName = String(autoRun.state || "").trim().toLowerCase();
-  return !["paused", "completed", "failed"].includes(stateName);
+  return !["completed", "failed", "cancelled"].includes(stateName);
 }
 
 function isAgentTurnStopping(run) {

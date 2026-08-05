@@ -16,18 +16,27 @@ import (
 const logJSONLFile = "log.jsonl"
 
 type LogEntry struct {
-	ID                string `json:"id"`
-	Time              string `json:"time"`
-	Title             string `json:"title"`
-	Details           string `json:"details,omitempty"`
-	AutoRun           bool   `json:"autoRun,omitempty"`
-	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
+	ID                           string `json:"id"`
+	Time                         string `json:"time"`
+	Title                        string `json:"title"`
+	Details                      string `json:"details,omitempty"`
+	AutoRun                      bool   `json:"autoRun,omitempty"`
+	AutoRunGeneration            int    `json:"autoRunGeneration,omitempty"`
+	AutoRunWakeCondition         string `json:"autoRunWakeCondition,omitempty"`
+	AutoRunWakeConditionFallback bool   `json:"autoRunWakeConditionFallback,omitempty"`
 }
 
 func newAutoRunLogEntry(title, details string, generation int) LogEntry {
 	entry := newLogEntry(title, details)
 	entry.AutoRun = true
 	entry.AutoRunGeneration = generation
+	return entry
+}
+
+func newAutoRunSuspensionLogEntry(title, details, wakeCondition string, fallback bool, generation int) LogEntry {
+	entry := newAutoRunLogEntry(title, details, generation)
+	entry.AutoRunWakeCondition = strings.TrimSpace(wakeCondition)
+	entry.AutoRunWakeConditionFallback = fallback
 	return entry
 }
 

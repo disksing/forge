@@ -160,8 +160,8 @@ This directory is an AgentWorkspace managed by forge.
 - Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
-- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun suspend`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command.
-- To delegate AutoRun work, create a child with ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record the natural-language reason with ` + "`forge task autorun suspend --summary=<text>`" + `; the system wakes it automatically later.
+- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of ` + "`forge task autorun complete`" + `, ` + "`forge task autorun suspend`" + `, ` + "`forge task autorun pause`" + `, or ` + "`forge task autorun fail`" + ` as the turn's last side-effecting command. ` + "`cancel`" + ` is a control-plane action for ending a generation and is not a scheduler-turn result.
+- To delegate AutoRun work, create a child with ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record a natural-language context with ` + "`--summary=<text>`" + ` and a separate wake condition with ` + "`--wake-condition=<text>`" + `; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
 - Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
@@ -191,7 +191,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task autorun queue|start|suspend|pause|resume|complete|fail ...
+forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

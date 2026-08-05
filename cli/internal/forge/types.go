@@ -76,6 +76,7 @@ type AutoRun struct {
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
 	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
+	WakeCondition          string   `json:"wakeCondition,omitempty"`
 	// SuspendedAt is the wall-clock time the current generation was last
 	// suspended. The server driver uses it (not task.updatedAt) to decide when
 	// a suspended AutoRun should be re-queued.

@@ -444,6 +444,153 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Cancellation project", "cancellation")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{
+		ProjectID: project.ID, Title: "Cancellation task", Slug: "cancellation", AutoRun: true,
+		AgentName: "agent-one", PreferredAgentProfiles: []string{"codex"}, Prompt: "Inspect the change",
+		CompletionCriteria: "The focused tests pass.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	suspended, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, Summary: "waiting for the upstream merge", WakeCondition: "the merge is in origin/master",
+		ExpectedGeneration: 1, ExpectedState: "running",
+	})
+	if err != nil || suspended.AutoRun == nil || suspended.AutoRun.WakeCondition != "the merge is in origin/master" {
+		t.Fatalf("suspend did not persist separate wake condition: task=%+v err=%v", suspended, err)
+	}
+	if _, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "queued"}); err == nil {
+		t.Fatal("expected stale-state cancellation CAS to fail")
+	}
+	cancelled, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "suspended"})
+	if err != nil || cancelled.AutoRun == nil || cancelled.AutoRun.State != "cancelled" {
+		t.Fatalf("cancel did not persist terminal state: task=%+v err=%v", cancelled, err)
+	}
+	if cancelled.AutoRun.WakeCondition != "the merge is in origin/master" || cancelled.AutoRun.SuspendedAt != "" {
+		t.Fatalf("cancellation changed retained suspension metadata unexpectedly: %+v", cancelled.AutoRun)
+	}
+	logs, err := workspace.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelLogs := 0
+	for _, entry := range logs {
+		if entry.Title == "Auto Run cancelled" {
+			cancelLogs++
+			if entry.Details != "user cancelled this generation" || entry.Time == "" {
+				t.Fatalf("cancellation log did not retain reason/time: %+v", entry)
+			}
+		}
+	}
+	if cancelLogs != 1 {
+		t.Fatalf("expected one cancellation log, got %d: %+v", cancelLogs, logs)
+	}
+	if _, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
+		t.Fatalf("cancel should be idempotent: %v", err)
+	}
+	logs, err = workspace.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelLogs = 0
+	for _, entry := range logs {
+		if entry.Title == "Auto Run cancelled" {
+			cancelLogs++
+		}
+	}
+	if cancelLogs != 1 {
+		t.Fatalf("idempotent cancellation appended a log: %+v", logs)
+	}
+	if _, err := workspace.ResumeAutoRun(task.ID); err == nil {
+		t.Fatal("cancelled generation must not be resumable")
+	}
+	next, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
+	if err != nil || next.AutoRun == nil {
+		t.Fatalf("cancelled generation could not start a new generation: task=%+v err=%v", next, err)
+	}
+	if next.AutoRun.Generation != 2 || next.AutoRun.State != "queued" || next.AutoRun.AgentName != "agent-one" || next.AutoRun.Prompt != "Inspect the change" || next.AutoRun.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("new generation did not inherit editable configuration: %+v", next.AutoRun)
+	}
+	if next.AutoRun.SuspensionSummary != "" || next.AutoRun.WakeCondition != "" || next.AutoRun.SuspendedAt != "" {
+		t.Fatalf("new generation retained cancelled suspension metadata: %+v", next.AutoRun)
+	}
+}
+
+func TestWorkspaceAPIMigratesSuspendedWakeConditionIdempotently(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Wake migration project", "wake-migration")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy suspended", Slug: "legacy-suspended", AutoRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil {
+		t.Fatalf("load task: %v", err)
+	}
+	taskPath := filepath.Join(root, filepath.FromSlash(resource.Path), "task.json")
+	data, err := os.ReadFile(taskPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatal(err)
+	}
+	metadata["autoRun"] = map[string]any{"generation": 1, "state": "suspended"}
+	data, err = json.MarshalIndent(metadata, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(taskPath, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := workspace.ResourceValue(task.ID)
+	if err != nil || migrated.Task == nil || migrated.Task.AutoRun == nil {
+		t.Fatalf("read suspended migration: %v", err)
+	}
+	autoRun := migrated.Task.AutoRun
+	if autoRun.State != "suspended" || autoRun.SuspendedAt == "" || autoRun.SuspensionSummary != "Re-check whether the blocking condition has changed" || autoRun.WakeCondition != autoRun.SuspensionSummary {
+		t.Fatalf("suspended wake migration did not fill safe fallback: %+v", autoRun)
+	}
+	logs, err := workspace.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrationLogs := 0
+	for _, entry := range logs {
+		if entry.Title == "Auto Run wake condition migrated" && entry.AutoRunWakeConditionFallback {
+			migrationLogs++
+		}
+	}
+	if migrationLogs != 1 {
+		t.Fatalf("wake migration did not record one compatibility fallback: %+v", logs)
+	}
+	stableAt := autoRun.SuspendedAt
+	second, err := workspace.ResourceValue(task.ID)
+	if err != nil || second.Task == nil || second.Task.AutoRun == nil {
+		t.Fatalf("second migration read: %v", err)
+	}
+	if second.Task.AutoRun.SuspendedAt != stableAt || second.Task.AutoRun.WakeCondition != autoRun.WakeCondition {
+		t.Fatalf("suspended wake migration is not idempotent: first=%+v second=%+v", autoRun, second.Task.AutoRun)
+	}
+}
+
 func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := app.Initialize(root, "en")

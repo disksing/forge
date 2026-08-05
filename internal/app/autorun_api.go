@@ -26,6 +26,7 @@ type AutoRunQueueInput struct {
 type AutoRunActionInput struct {
 	TaskID             string
 	Summary            string
+	WakeCondition      string
 	Reason             string
 	ExpectedGeneration int
 	ExpectedState      string
@@ -77,7 +78,7 @@ func (w *Workspace) QueueAutoRun(input AutoRunQueueInput) (Task, error) {
 			return err
 		}
 		if task.AutoRun != nil {
-			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed {
+			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed && task.AutoRun.State != autoRunStateCancelled {
 				return fmt.Errorf("cannot queue AutoRun in %s state", task.AutoRun.State)
 			}
 			generation = task.AutoRun.Generation + 1
@@ -145,6 +146,9 @@ func (w *Workspace) RetryAutoRun(input AutoRunActionInput) (Task, error) {
 		if task.AutoRun == nil || task.AutoRun.State != autoRunStateRunning {
 			return errors.New("AutoRun is not running")
 		}
+		if err := validateAutoRunCAS(task.AutoRun, input); err != nil {
+			return err
+		}
 		generation := task.AutoRun.Generation
 		entries, err := readLogEntries(dir)
 		if err != nil {
@@ -192,19 +196,21 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
-		if input.ExpectedGeneration > 0 && task.AutoRun.Generation != input.ExpectedGeneration {
-			return fmt.Errorf("AutoRun generation changed from %d to %d", input.ExpectedGeneration, task.AutoRun.Generation)
+		if err := validateAutoRunCAS(task.AutoRun, input); err != nil {
+			return err
 		}
-		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
-			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		if task.AutoRun.State != state && isAutoRunTerminalState(task.AutoRun.State) {
+			return fmt.Errorf("cannot transition AutoRun from terminal state %s to %s", task.AutoRun.State, state)
 		}
 		details := strings.TrimSpace(input.Summary)
 		if details == "" {
 			details = strings.TrimSpace(input.Reason)
 		}
 		task.AutoRun.State = state
-		if state == autoRunStatePaused && details != "" {
-			task.AutoRun.SuspensionSummary = details
+		if state == autoRunStatePaused {
+			// Pause is a manual control-plane state, not a suspension context.
+			// Keep the last real suspension fields available for a later resume.
+			task.AutoRun.SuspendedAt = ""
 		}
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
 	})
@@ -218,15 +224,92 @@ func (w *Workspace) SuspendAutoRun(input AutoRunActionInput) (Task, error) {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
+		if err := validateAutoRunCAS(task.AutoRun, input); err != nil {
+			return err
+		}
+		if isAutoRunTerminalState(task.AutoRun.State) {
+			return fmt.Errorf("cannot suspend AutoRun in %s state", task.AutoRun.State)
+		}
 		details := strings.TrimSpace(input.Summary)
 		if details == "" {
 			details = strings.TrimSpace(input.Reason)
 		}
+		if details == "" {
+			details = autoRunSuspensionFallback
+		}
+		wakeCondition := strings.TrimSpace(input.WakeCondition)
+		wakeConditionFallback := wakeCondition == ""
+		if wakeConditionFallback {
+			wakeCondition = details
+		}
+		if wakeCondition == "" {
+			wakeCondition = autoRunSuspensionFallback
+		}
 		task.AutoRun.State = autoRunStateSuspended
 		task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
 		task.AutoRun.SuspensionSummary = details
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run suspended", details, task.AutoRun.Generation))
+		task.AutoRun.WakeCondition = wakeCondition
+		return prependLogEntry(dir, newAutoRunSuspensionLogEntry("Auto Run suspended", details, wakeCondition, wakeConditionFallback, task.AutoRun.Generation))
 	})
+}
+
+// CancelAutoRun durably ends the current generation. It intentionally does
+// not know how to interrupt AgentHub; the serve control plane persists this
+// state first and then performs the best-effort non-idempotent interrupt.
+func (w *Workspace) CancelAutoRun(input AutoRunActionInput) (Task, error) {
+	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
+		if task.AutoRun == nil {
+			return errors.New("task has no AutoRun")
+		}
+		if input.ExpectedGeneration > 0 && task.AutoRun.Generation != input.ExpectedGeneration {
+			return fmt.Errorf("AutoRun generation changed from %d to %d", input.ExpectedGeneration, task.AutoRun.Generation)
+		}
+		// A duplicate cancel may carry the first request's stale expected state.
+		// Once this generation is durably cancelled, returning the current
+		// terminal record is safe and avoids a second cancellation log.
+		if task.AutoRun.State == autoRunStateCancelled {
+			return nil
+		}
+		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
+			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		}
+		switch task.AutoRun.State {
+		case autoRunStateCompleted, autoRunStateFailed:
+			return fmt.Errorf("cannot cancel AutoRun in %s state", task.AutoRun.State)
+		case autoRunStateQueued, autoRunStateRunning, autoRunStateSuspended, autoRunStatePaused:
+		default:
+			return fmt.Errorf("cannot cancel AutoRun in %s state", task.AutoRun.State)
+		}
+		details := strings.TrimSpace(input.Reason)
+		if details == "" {
+			details = strings.TrimSpace(input.Summary)
+		}
+		if details == "" {
+			details = "AutoRun cancelled by user"
+		}
+		task.AutoRun.State = autoRunStateCancelled
+		task.AutoRun.SuspendedAt = ""
+		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run cancelled", details, task.AutoRun.Generation))
+	})
+}
+
+func validateAutoRunCAS(autoRun *AutoRun, input AutoRunActionInput) error {
+	if input.ExpectedGeneration > 0 && autoRun.Generation != input.ExpectedGeneration {
+		return fmt.Errorf("AutoRun generation changed from %d to %d", input.ExpectedGeneration, autoRun.Generation)
+	}
+	if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && autoRun.State != expectedState {
+		return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, autoRun.State)
+	}
+	return nil
+}
+
+func isAutoRunTerminalState(state string) bool {
+	switch state {
+	case autoRunStateCompleted, autoRunStateFailed, autoRunStateCancelled:
+		return true
+	default:
+		return false
+	}
 }
 
 // autoRunReady reports whether the AutoRun state should be surfaced to the

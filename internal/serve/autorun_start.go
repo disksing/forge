@@ -197,7 +197,7 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		queueInput.AgentName = strings.TrimSpace(reusable.AgentHubAgentName)
 		queueInput.AgentNameSet = queueInput.AgentName != ""
 		task, err = forgeWorkspace.QueueAutoRun(queueInput)
-	case "completed", "failed":
+	case "completed", "failed", "cancelled":
 		queueInput.AgentName = strings.TrimSpace(reusable.AgentHubAgentName)
 		queueInput.AgentNameSet = queueInput.AgentName != ""
 		task, err = forgeWorkspace.QueueAutoRun(queueInput)
@@ -228,6 +228,7 @@ func (s *server) startChatAutoRun(w http.ResponseWriter, r *http.Request, worksp
 		Prompt:                 task.AutoRun.Prompt,
 		PreferredAgentProfiles: task.AutoRun.PreferredAgentProfiles,
 		CompletionCriteria:     task.AutoRun.CompletionCriteria,
+		WakeCondition:          task.AutoRun.WakeCondition,
 		SuspensionSummary:      task.AutoRun.SuspensionSummary,
 	}
 	prompt := buildAutoRunPrompt(workspace.Path, candidate)
@@ -279,13 +280,15 @@ func chatAutoRunCandidate(resourceID string, task app.Task, inputs ...app.AutoRu
 		return candidate, "", nil
 	}
 	candidate.Generation = task.AutoRun.Generation
+	candidate.State = task.AutoRun.State
 	candidate.AgentName = task.AutoRun.AgentName
 	candidate.Prompt = task.AutoRun.Prompt
 	candidate.PreferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
 	candidate.CompletionCriteria = task.AutoRun.CompletionCriteria
+	candidate.WakeCondition = task.AutoRun.WakeCondition
 	candidate.SuspensionSummary = task.AutoRun.SuspensionSummary
 	switch task.AutoRun.State {
-	case "completed", "failed":
+	case "completed", "failed", "cancelled":
 		candidate.Generation++
 		if input.AgentNameSet {
 			candidate.AgentName = strings.TrimSpace(input.AgentName)
@@ -334,7 +337,7 @@ func (s *server) queueChatAutoRunForSession(workspace guiWorkspace, resourceID, 
 		return app.Task{}, fmt.Errorf("AutoRun state changed from %q to %q before the session was locked", expectedState, state)
 	}
 	switch state {
-	case "", "completed", "failed":
+	case "", "completed", "failed", "cancelled":
 		input := app.AutoRunQueueInput{TaskID: resourceID}
 		if len(inputs) > 0 {
 			input = inputs[0]

@@ -280,7 +280,7 @@ func readResourceAtDir(dir string) (Resource, error) {
 		return nil, fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, meta.Type)
 	}
 	if task, ok := resource.(*Task); ok {
-		if err := migrateLegacyAutoRunWaiting(dir, task); err != nil {
+		if err := migrateAutoRunMetadata(dir, task); err != nil {
 			return nil, err
 		}
 	}
@@ -890,8 +890,8 @@ You are working inside a %s.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of `+"`forge task autorun complete`"+`, `+"`forge task autorun suspend`"+`, `+"`forge task autorun pause`"+`, or `+"`forge task autorun fail`"+` as the turn's last side-effecting command.
-- To delegate AutoRun work, create a child with `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record the natural-language reason with `+"`forge task autorun suspend --summary=<text>`"+`; the system wakes it automatically later.
+- When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of `+"`forge task autorun complete`"+`, `+"`forge task autorun suspend`"+`, `+"`forge task autorun pause`"+`, or `+"`forge task autorun fail`"+` as the turn's last side-effecting command. `+"`cancel`"+` is a control-plane action for ending a generation and is not a scheduler-turn result.
+- To delegate AutoRun work, create a child with `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record a natural-language context with `+"`--summary=<text>`"+` and a separate wake condition with `+"`--wake-condition=<text>`"+`; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
 - If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 - When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
 - You may read other task directories for reference.

@@ -144,6 +144,9 @@ func applicationTaskList(options taskListOptions) error {
 			State: entry.State, Ready: entry.Ready, Reason: entry.Reason, AgentName: entry.AgentName, Prompt: entry.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.PreferredAgentProfiles...),
 			CompletionCriteria:     entry.CompletionCriteria,
+			WakeCondition:          entry.WakeCondition,
+			SuspendedAt:            entry.SuspendedAt,
+			SuspensionSummary:      entry.SuspensionSummary,
 		})
 	}
 	if options.JSON {
@@ -230,7 +233,10 @@ func applicationAutoRunRetry(opts autoRunCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	task, err := workspace.RetryAutoRun(app.AutoRunActionInput{TaskID: opts.TaskID, Reason: opts.Reason})
+	task, err := workspace.RetryAutoRun(app.AutoRunActionInput{
+		TaskID: opts.TaskID, Reason: opts.Reason,
+		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
+	})
 	if err != nil {
 		return err
 	}
@@ -254,7 +260,10 @@ func applicationAutoRunAction(action string, opts autoRunCommandOptions) error {
 	if err != nil {
 		return err
 	}
-	input := app.AutoRunActionInput{TaskID: opts.TaskID, Summary: opts.Summary, Reason: opts.Reason}
+	input := app.AutoRunActionInput{
+		TaskID: opts.TaskID, Summary: opts.Summary, WakeCondition: opts.WakeCondition, Reason: opts.Reason,
+		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
+	}
 	var task app.Task
 	switch action {
 	case "complete":
@@ -265,6 +274,8 @@ func applicationAutoRunAction(action string, opts autoRunCommandOptions) error {
 		task, err = workspace.PauseAutoRun(input)
 	case "fail":
 		task, err = workspace.FailAutoRun(input)
+	case "cancel":
+		task, err = workspace.CancelAutoRun(input)
 	default:
 		return fmt.Errorf("unknown AutoRun action %q", action)
 	}

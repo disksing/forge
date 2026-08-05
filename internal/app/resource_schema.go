@@ -49,7 +49,7 @@ func validateResource(resource Resource) error {
 				return fmt.Errorf("AutoRun generation must be positive")
 			}
 			switch typed.AutoRun.State {
-			case autoRunStateQueued, autoRunStateRunning, autoRunStateSuspended, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed:
+			case autoRunStateQueued, autoRunStateRunning, autoRunStateSuspended, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed, autoRunStateCancelled:
 			default:
 				return fmt.Errorf("invalid AutoRun state %q", typed.AutoRun.State)
 			}

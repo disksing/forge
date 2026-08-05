@@ -256,6 +256,7 @@ type RunnableTask struct {
 	CompletionCriteria     string
 	SuspendedAt            string
 	SuspensionSummary      string
+	WakeCondition          string
 }
 
 // TaskListOptions controls project task listing.
@@ -414,6 +415,7 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 			CompletionCriteria:     entry.Task.AutoRun.CompletionCriteria,
 			SuspendedAt:            entry.Task.AutoRun.SuspendedAt,
 			SuspensionSummary:      entry.Task.AutoRun.SuspensionSummary,
+			WakeCondition:          entry.Task.AutoRun.WakeCondition,
 		}
 		result.Runnable = append(result.Runnable, runnable)
 	}

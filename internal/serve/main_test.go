@@ -1396,6 +1396,7 @@ const expectedAutoRun = {
   paused: ["paused", "square"],
   completed: ["completed", "check-circle-2"],
   failed: ["failed", "triangle-alert"],
+  cancelled: ["cancelled", "ban"],
 };
 for (const [state, [kind, iconName]] of Object.entries(expectedAutoRun)) {
   const sessions = state === "running" ? [scheduler] : [];
@@ -2339,11 +2340,11 @@ for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) 
   assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
 }
 resources.set("project1.task1", { autoRun: { generation: 7, state: "running" } });
-assert(isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "current running AutoRun must be a close pause target");
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 6, schedulerTurn: true }), "historical AutoRun must not be a close pause target");
+assert(isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "current running AutoRun must be a close cancellation target");
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 6, schedulerTurn: true }), "historical AutoRun must not be a close cancellation target");
 resources.get("project1.task1").autoRun.state = "completed";
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "terminal AutoRun must not be a close pause target");
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close pause target");
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "terminal AutoRun must not be a close cancellation target");
+assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close cancellation target");
 const idle = agentComposerToolbarActions({ includeClose: true });
 assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
 assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
@@ -2353,9 +2354,9 @@ const running = agentComposerToolbarActions({ includeEndTurn: true, includeClose
 assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
 assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
 assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
-const autoRunClose = agentComposerToolbarActions({ includeClose: true, pauseAutoRunOnClose: true });
-assert(autoRunClose.includes('title="Pause AutoRun and close the session."'), "AutoRun Close Session tooltip must explain the pause");
-assert(autoRunClose.includes('aria-label="Pause AutoRun and close the session."'), "AutoRun Close Session aria-label must explain the pause");
+const autoRunClose = agentComposerToolbarActions({ includeClose: true, cancelAutoRunOnClose: true });
+assert(autoRunClose.includes('title="Cancel AutoRun and close the session."'), "AutoRun Close Session tooltip must explain the cancellation");
+assert(autoRunClose.includes('aria-label="Cancel AutoRun and close the session."'), "AutoRun Close Session aria-label must explain the cancellation");
 const ending = agentComposerToolbarActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
 assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
 assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");
@@ -2385,6 +2386,8 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 		`paused: { label: "Paused", icon: "pause" }`,
 		`completed: { label: "Completed", icon: "circle-check" }`,
 		`failed: { label: "Failed", icon: "circle-x" }`,
+		`cancelled: { label: "Cancelled", icon: "ban" }`,
+		`const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state) ? "new" : "configure";`,
 		`class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status"`,
 		`aria-label="AutoRun: ${escapeHTML(presentation.label)}"`,
 		`class="autorun-title-icon" aria-hidden="true"`,
@@ -2407,6 +2410,7 @@ func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
 		`.autorun-status-paused`,
 		`.autorun-status-completed`,
 		`.autorun-status-failed`,
+		`.autorun-status-cancelled`,
 		`animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;`,
 		`@media (prefers-reduced-motion: reduce)`,
 		`.autorun-status-running .autorun-state-icon`,

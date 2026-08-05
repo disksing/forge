@@ -991,6 +991,33 @@ body.resizing-y {
   cursor: not-allowed;
 }
 
+.tty-secondary-action {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.tty-secondary-action:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.tty-secondary-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .agent-options-button,
 .agent-history-button {
   border: 1px solid #cbd5e1;
@@ -1231,6 +1258,10 @@ body.resizing-y {
 
 .autorun-status-failed {
   --autorun-tone: var(--red);
+}
+
+.autorun-status-cancelled {
+  --autorun-tone: var(--muted);
 }
 
 @keyframes autorun-running-border {
@@ -2888,6 +2919,11 @@ i[data-lucide] {
 .task-status-indicator.task-status-completed {
   color: #65a30d;
   opacity: 0.72;
+}
+
+.task-status-indicator.task-status-cancelled {
+  color: #64748b;
+  opacity: 0.82;
 }
 
 .task-status-indicator.task-status-neutral {

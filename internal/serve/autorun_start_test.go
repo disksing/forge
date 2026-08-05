@@ -62,6 +62,14 @@ func chatAutoRunStart(t *testing.T, s *server, workspaceID, body string) *httpte
 	return rec
 }
 
+func chatAutoRunCancel(t *testing.T, s *server, workspaceID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspaceID+"/autorun/cancel", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	return rec
+}
+
 func decodeChatAutoRunResponse(t *testing.T, rec *httptest.ResponseRecorder) chatAutoRunStartResponse {
 	t.Helper()
 	var response chatAutoRunStartResponse
@@ -144,6 +152,83 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 		if !fakeSessionHasMessage(events, "The focused AutoRun test passes.") {
 			t.Fatalf("new session did not receive the completion criteria")
 		}
+	}
+}
+
+func TestChatAutoRunCancelDurablyStopsTurnAndRetainsSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	start := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","runInstructions":"Cancel me safely"}`, task.ID))
+	if start.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", start.Code, start.Body.String())
+	}
+	started := decodeChatAutoRunResponse(t, start)
+	if started.Run == nil || !started.Run.SchedulerTurn {
+		t.Fatalf("start did not create a scheduler run: %+v", started)
+	}
+	stale := chatAutoRunCancel(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"runId":%q,"expectedGeneration":99,"expectedState":"running"}`, task.ID, started.Run.ID))
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale cancellation should fail CAS, got %d %s", stale.Code, stale.Body.String())
+	}
+	if taskState := reloadTestTask(t, workspace.Path, task.ID); taskState.AutoRun == nil || taskState.AutoRun.State != "running" {
+		t.Fatalf("stale cancellation changed AutoRun state: %+v", taskState.AutoRun)
+	}
+
+	cancel := chatAutoRunCancel(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"runId":%q,"expectedGeneration":1,"expectedState":"running","reason":"cancel from UI"}`, task.ID, started.Run.ID))
+	if cancel.Code != http.StatusOK {
+		t.Fatalf("cancel failed: %d %s", cancel.Code, cancel.Body.String())
+	}
+	var response autoRunCancelResponse
+	if err := json.Unmarshal(cancel.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode cancel response: %v (%s)", err, cancel.Body.String())
+	}
+	if response.Task.AutoRun == nil || response.Task.AutoRun.State != "cancelled" || !response.Interrupted || !response.SessionRetained {
+		t.Fatalf("unexpected cancellation response: %+v", response)
+	}
+	waitForRuntimeTest(t, func() bool {
+		run := s.agents.runtimeByID(started.Run.ID)
+		if run == nil {
+			return false
+		}
+		projected := pollerRunState(run)
+		return !projected.SchedulerTurn && projected.Status == "idle"
+	})
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+		t.Fatalf("explicit cancellation released the Agent Session: %#v", sessions)
+	}
+	reloaded := reloadTestTask(t, workspace.Path, task.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "cancelled" {
+		t.Fatalf("cancelled state was not durable: %+v", reloaded.AutoRun)
+	}
+	logs, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := logs.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hasAutoRunLog(entries, "Auto Run cancelled", "cancel from UI") {
+		t.Fatalf("cancel reason was not logged: %#v", entries)
+	}
+	fake.mu.Lock()
+	actions := append([]string(nil), fake.actions...)
+	events := append([]agentHubEvent(nil), fake.events[started.Run.AgentHubSessionID]...)
+	fake.mu.Unlock()
+	if strings.Count(strings.Join(actions, ","), "interrupt") != 1 {
+		t.Fatalf("cancellation did not issue exactly one interrupt: %v", actions)
+	}
+	userMessages := 0
+	for _, event := range events {
+		if event.Type == "message.user" {
+			userMessages++
+		}
+	}
+	if userMessages != 1 {
+		t.Fatalf("cancelled scheduler turn was continued: %d user messages", userMessages)
 	}
 }
 
@@ -360,6 +445,38 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		}
 	})
 
+	t.Run("cancelled state starts a clean next generation", func(t *testing.T) {
+		s, workspace, task := newServerWithTask(t)
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{
+			TaskID: task.ID, AgentName: "fake-agent", AgentNameSet: true,
+			Prompt: "Persisted cancelled instructions", PromptSet: true,
+			CompletionCriteria: "Persisted cancelled criteria", CompletionCriteriaSet: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := forgeWorkspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "cancelled before restart"}); err != nil {
+			t.Fatal(err)
+		}
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","runInstructions":"Fresh generation instructions","completionCriteria":"Fresh generation criteria"}`, task.ID))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("restart after cancellation failed: %d %s", rec.Code, rec.Body.String())
+		}
+		response := decodeChatAutoRunResponse(t, rec)
+		if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 2 || response.Task.AutoRun.State != "running" {
+			t.Fatalf("expected running generation 2 after cancellation, got %+v", response.Task.AutoRun)
+		}
+		if response.Task.AutoRun.Prompt != "Fresh generation instructions" || response.Task.AutoRun.CompletionCriteria != "Fresh generation criteria" || response.Task.AutoRun.SuspensionSummary != "" || response.Task.AutoRun.WakeCondition != "" {
+			t.Fatalf("cancelled restart retained old generation data: %+v", response.Task.AutoRun)
+		}
+	})
+
 	t.Run("suspended resumes the same generation with its summary", func(t *testing.T) {
 		s, workspace, task := newServerWithTask(t)
 		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -558,7 +675,7 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		`name="completionCriteria"`,
 		`Start New AutoRun`,
 		`function submitAutoRunConfigDialog`,
-		`The agent must finish with exactly one read-only protocol action`,
+		`The agent must finish with exactly one final side-effecting protocol action`,
 		`if (event.key === "Tab")`,
 		`if (state.agent.autoRunStarting) return;`,
 		`state.agent.autoRunStarting = true;`,

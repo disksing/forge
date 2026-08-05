@@ -76,13 +76,14 @@ type AutoRun struct {
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	Prompt                 string   `json:"prompt,omitempty"`
 	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
+	WakeCondition          string   `json:"wakeCondition,omitempty"`
 	// SuspendedAt is the wall-clock time the current generation was last
 	// suspended. The server driver uses it (not task.updatedAt) to decide when
 	// a suspended AutoRun should be re-queued.
 	SuspendedAt string `json:"suspendedAt,omitempty"`
-	// SuspensionSummary is a natural-language reason recorded when the current
-	// AutoRun generation is suspended or paused. It is not structured waiting
-	// data.
+	// SuspensionSummary is the natural-language context recorded for the
+	// current suspended generation. It is intentionally separate from the
+	// condition that a future Scheduler Agent should evaluate.
 	SuspensionSummary string `json:"suspensionSummary,omitempty"`
 }
 

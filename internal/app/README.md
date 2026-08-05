@@ -19,7 +19,7 @@ project, err := workspace.CreateProject("Example", "example")
 - `Tree`、`Resource`、`Projects`、`Tasks`：读取 Workspace 和 AutoRun 视图；
 - `CreateProject`、`CreateTask`、`ArchiveResource`：资源生命周期；
 - `CreateSession`、`BindAgentHubSession`、`Heartbeat`、`LockSession`、`UnlockSession`、`EndSession`：session 与资源控制；
-- `QueueAutoRun`、`StartAutoRun`、`RetryAutoRun`、`ResumeAutoRun`、`CompleteAutoRun`、`WaitAutoRun`、`PauseAutoRun`、`FailAutoRun`：AutoRun 状态机；
+- `QueueAutoRun`、`StartAutoRun`、`RetryAutoRun`、`SuspendAutoRun`、`ResumeAutoRun`、`CompleteAutoRun`、`PauseAutoRun`、`FailAutoRun`、`CancelAutoRun`：AutoRun 状态机及其 CAS 控制面；
 - `AddLog`、`Logs`、`Repositories`、`CloneRepository` 及 task repository 方法：历史和仓库数据。
 
 跨进程写入使用 Workspace mutation lock；session store 和每个 task 的 AutoRun 更新另外使用既有文件锁。CLI 只负责参数解析与兼容输出，服务直接使用这些类型化方法。

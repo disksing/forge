@@ -799,19 +799,20 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	return response
 }
 
-func decodeAgentHubStopResponse(t *testing.T, response *httptest.ResponseRecorder) (string, bool) {
+func decodeAgentHubStopResponse(t *testing.T, response *httptest.ResponseRecorder) (string, bool, bool) {
 	t.Helper()
 	var payload struct {
-		Status        string `json:"status"`
-		AutoRunPaused bool   `json:"autoRunPaused"`
+		Status           string `json:"status"`
+		AutoRunPaused    bool   `json:"autoRunPaused"`
+		AutoRunCancelled bool   `json:"autoRunCancelled"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode stop response: %v; body=%s", err, response.Body.String())
 	}
-	return payload.Status, payload.AutoRunPaused
+	return payload.Status, payload.AutoRunPaused, payload.AutoRunCancelled
 }
 
-func TestAgentHubClosePausesRunningAutoRunBeforeStop(t *testing.T) {
+func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -838,12 +839,12 @@ func TestAgentHubClosePausesRunningAutoRunBeforeStop(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	status, autoRunPaused := decodeAgentHubStopResponse(t, response)
-	if status != "stopped" || !autoRunPaused {
-		t.Fatalf("close response = status %q autoRunPaused=%v; body=%s", status, autoRunPaused, response.Body.String())
+	status, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
+	if status != "stopped" || autoRunPaused || !autoRunCancelled {
+		t.Fatalf("close response = status %q autoRunPaused=%v autoRunCancelled=%v; body=%s", status, autoRunPaused, autoRunCancelled, response.Body.String())
 	}
-	if state := <-observedState; state != "paused" {
-		t.Fatalf("AgentHub Stop observed AutoRun state %q; want paused", state)
+	if state := <-observedState; state != "cancelled" {
+		t.Fatalf("AgentHub Stop observed AutoRun state %q; want cancelled", state)
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
@@ -853,11 +854,11 @@ func TestAgentHubClosePausesRunningAutoRunBeforeStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != userClosedAutoRunSessionReason {
-		t.Fatalf("close did not persist the AutoRun pause: %#v", resource.AutoRun)
+	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" {
+		t.Fatalf("close did not persist the AutoRun cancellation: %#v", resource.AutoRun)
 	}
-	if !hasAutoRunLog(resource.Logs, "Auto Run paused", userClosedAutoRunSessionReason) {
-		t.Fatalf("close pause was not recorded: %#v", resource.Logs)
+	if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+		t.Fatalf("close cancellation was not recorded: %#v", resource.Logs)
 	}
 	fake.mu.Lock()
 	actions := append([]string(nil), fake.actions...)
@@ -868,7 +869,7 @@ func TestAgentHubClosePausesRunningAutoRunBeforeStop(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubCloseConvertsSuspendedAutoRunToPaused(t *testing.T) {
+func TestAgentHubCloseCancelsSuspendedAutoRun(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -899,16 +900,19 @@ func TestAgentHubCloseConvertsSuspendedAutoRunToPaused(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	_, autoRunPaused := decodeAgentHubStopResponse(t, response)
-	if !autoRunPaused {
-		t.Fatal("closing a suspended AutoRun session must report the pause transition")
+	_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
+	if autoRunPaused || !autoRunCancelled {
+		t.Fatal("closing a suspended AutoRun session must report the cancellation transition")
 	}
 	resource, err := forgeWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != userClosedAutoRunSessionReason {
-		t.Fatalf("suspended AutoRun was not converted to a close pause: %#v", resource.AutoRun)
+	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" || resource.AutoRun.SuspensionSummary != "waiting for an external event" {
+		t.Fatalf("suspended AutoRun was not cancelled: %#v", resource.AutoRun)
+	}
+	if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+		t.Fatalf("suspended AutoRun cancellation was not logged: %#v", resource.Logs)
 	}
 	ready, err := forgeWorkspace.Tasks(app.TaskListOptions{ProjectID: "project1", Runnable: true})
 	if err != nil {
@@ -933,9 +937,9 @@ func TestAgentHubCloseLeavesOrdinaryChatAutoRunUnchanged(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	_, autoRunPaused := decodeAgentHubStopResponse(t, response)
-	if autoRunPaused {
-		t.Fatal("ordinary Chat Session close must not report an AutoRun pause")
+	_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
+	if autoRunPaused || autoRunCancelled {
+		t.Fatal("ordinary Chat Session close must not report an AutoRun transition")
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
@@ -948,20 +952,21 @@ func TestAgentHubCloseLeavesOrdinaryChatAutoRunUnchanged(t *testing.T) {
 	if resource.AutoRun == nil || resource.AutoRun.State != "queued" {
 		t.Fatalf("ordinary Chat Session changed the task AutoRun state: %#v", resource.AutoRun)
 	}
-	if hasAutoRunLog(resource.Logs, "Auto Run paused", userClosedAutoRunSessionReason) {
-		t.Fatal("ordinary Chat Session close recorded an AutoRun pause")
+	if hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+		t.Fatal("ordinary Chat Session close recorded an AutoRun cancellation")
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
 func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 	tests := []struct {
-		name  string
-		setup func(*app.Workspace) error
-		state string
-		gen   int
+		name      string
+		setup     func(*app.Workspace) error
+		state     string
+		gen       int
+		cancelled bool
 	}{
-		{name: "paused", state: "paused", gen: 1, setup: func(workspace *app.Workspace) error {
+		{name: "paused", state: "cancelled", gen: 1, cancelled: true, setup: func(workspace *app.Workspace) error {
 			_, err := workspace.PauseAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: "already paused"})
 			return err
 		}},
@@ -1002,9 +1007,9 @@ func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 			}
-			_, autoRunPaused := decodeAgentHubStopResponse(t, response)
-			if autoRunPaused {
-				t.Fatal("closing a terminal or historical AutoRun must not pause the current generation")
+			_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
+			if autoRunPaused || autoRunCancelled != test.cancelled {
+				t.Fatalf("unexpected close transition: paused=%v cancelled=%v want cancelled=%v", autoRunPaused, autoRunCancelled, test.cancelled)
 			}
 			resource, err := forgeWorkspace.Resource("project1.task1")
 			if err != nil {
@@ -1013,8 +1018,12 @@ func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 			if resource.AutoRun == nil || resource.AutoRun.State != test.state || resource.AutoRun.Generation != test.gen {
 				t.Fatalf("close changed the current AutoRun generation: %#v", resource.AutoRun)
 			}
-			if hasAutoRunLog(resource.Logs, "Auto Run paused", userClosedAutoRunSessionReason) {
-				t.Fatal("close recorded a pause for a terminal or historical generation")
+			if test.cancelled {
+				if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+					t.Fatal("close did not record cancellation for the paused generation")
+				}
+			} else if hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+				t.Fatal("close recorded a cancellation for a terminal or historical generation")
 			}
 			waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 		})
@@ -1046,17 +1055,17 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "pause AutoRun before closing session") {
-		t.Fatalf("pause failure should block close, got %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "cancel AutoRun before closing session") {
+		t.Fatalf("cancel failure should block close, got %d %s", response.Code, response.Body.String())
 	}
 	fake.mu.Lock()
 	actions := append([]string(nil), fake.actions...)
 	fake.mu.Unlock()
 	if strings.Contains(strings.Join(actions, ","), "stop") {
-		t.Fatalf("AgentHub Stop was sent after AutoRun pause failure: %v", actions)
+		t.Fatalf("AgentHub Stop was sent after AutoRun cancellation failure: %v", actions)
 	}
 	if run := pollerRunState(manager.runtimeByID(detail.Run.ID)); run.Status == "stopping" || run.Status == "stopped" {
-		t.Fatalf("pause failure changed the run to a stopping/terminal state: %#v", run)
+		t.Fatalf("cancel failure changed the run to a stopping/terminal state: %#v", run)
 	}
 	if err := os.Remove(lockPath); err != nil {
 		t.Fatal(err)
@@ -1072,7 +1081,7 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubCloseAmbiguousStopPausesOnceAndDoesNotRetry(t *testing.T) {
+func TestAgentHubCloseAmbiguousStopCancelsOnceAndDoesNotRetry(t *testing.T) {
 	oldTimeout, oldInterval := agentHubStopConfirmTimeout, agentHubStopConfirmInterval
 	agentHubStopConfirmTimeout, agentHubStopConfirmInterval = 300*time.Millisecond, 50*time.Millisecond
 	defer func() {
@@ -1088,8 +1097,8 @@ func TestAgentHubCloseAmbiguousStopPausesOnceAndDoesNotRetry(t *testing.T) {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
 	response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "AutoRun was paused") {
-		t.Fatalf("ambiguous close should retain recovery state, got %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "AutoRun was cancelled") {
+		t.Fatalf("ambiguous close should retain cancelled recovery state, got %d %s", response.Code, response.Body.String())
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
@@ -1099,8 +1108,8 @@ func TestAgentHubCloseAmbiguousStopPausesOnceAndDoesNotRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "paused" {
-		t.Fatalf("ambiguous close did not durably pause AutoRun: %#v", resource.AutoRun)
+	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" {
+		t.Fatalf("ambiguous close did not durably cancel AutoRun: %#v", resource.AutoRun)
 	}
 	retry := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
 	if retry.Code != http.StatusConflict || !strings.Contains(retry.Body.String(), "was not retried") {
@@ -1199,7 +1208,7 @@ func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != userStoppedActiveTurnReason {
+	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != "" {
 		t.Fatalf("Stop Turn did not pause the active AutoRun generation: %#v", resource.AutoRun)
 	}
 	if !hasAutoRunLog(resource.Logs, "Auto Run paused", userStoppedActiveTurnReason) {

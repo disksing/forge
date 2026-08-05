@@ -155,10 +155,11 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 
 func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 	task := runnableTaskCandidate{
-		State:             "running",
-		Prompt:            "保留用户 prompt",
+		State:              "running",
+		Prompt:             "保留用户 prompt",
 		CompletionCriteria: "验证 focused tests 全部通过",
-		SuspensionSummary: "等待 task197 合入并安装",
+		SuspensionSummary:  "等待 task197 合入并安装",
+		WakeCondition:      "task197 已合入并安装",
 	}
 
 	t.Run("simplified Chinese", func(t *testing.T) {
@@ -171,7 +172,9 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 			"恢复并继续当前 AutoRun generation",
 			"保留用户 prompt",
 			"验证 focused tests 全部通过",
-			"此 AutoRun 之前被挂起，原因是：等待 task197 合入并安装",
+			"此 AutoRun 之前被挂起。请先检查唤醒条件",
+			"挂起上下文：\n等待 task197 合入并安装",
+			"唤醒条件：\ntask197 已合入并安装",
 			"这是一个 AutoRun 调度器回合",
 			"最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一",
 		} {
@@ -204,7 +207,9 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 				"Recover and continue the current AutoRun generation",
 				"保留用户 prompt",
 				"验证 focused tests 全部通过",
-				"This AutoRun was previously suspended with reason: 等待 task197 合入并安装",
+				"This AutoRun was previously suspended. Check the wake condition first.",
+				"Suspension context:\n等待 task197 合入并安装",
+				"Wake condition:\ntask197 已合入并安装",
 				"This is an AutoRun scheduler turn",
 			} {
 				if !strings.Contains(got, want) {

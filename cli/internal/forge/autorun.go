@@ -3,16 +3,19 @@ package forge
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 const (
-	autoRunStateQueued    = "queued"
-	autoRunStateRunning   = "running"
-	autoRunStateSuspended = "suspended"
-	autoRunStatePaused    = "paused"
-	autoRunStateCompleted = "completed"
-	autoRunStateFailed    = "failed"
+	autoRunStateQueued        = "queued"
+	autoRunStateRunning       = "running"
+	autoRunStateSuspended     = "suspended"
+	autoRunStatePaused        = "paused"
+	autoRunStateCompleted     = "completed"
+	autoRunStateFailed        = "failed"
+	autoRunStateCancelled     = "cancelled"
+	autoRunSuspensionFallback = "Re-check whether the blocking condition has changed"
 )
 
 type autoRunCommandOptions struct {
@@ -25,7 +28,10 @@ type autoRunCommandOptions struct {
 	CompletionCriteria     string
 	CompletionCriteriaSet  bool
 	Summary                string
+	WakeCondition          string
 	Reason                 string
+	ExpectedGeneration     int
+	ExpectedState          string
 }
 
 type runnableTask struct {
@@ -40,6 +46,9 @@ type runnableTask struct {
 	Prompt                 string   `json:"prompt,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
+	WakeCondition          string   `json:"wakeCondition,omitempty"`
+	SuspendedAt            string   `json:"suspendedAt,omitempty"`
+	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
 func runTaskAutoRun(args []string) error {
@@ -60,7 +69,7 @@ func runTaskAutoRun(args []string) error {
 		return autoRunRetry(opts)
 	case "resume":
 		return autoRunResume(opts)
-	case "complete", "suspend", "pause", "fail":
+	case "complete", "suspend", "pause", "fail", "cancel":
 		return autoRunAction(command, opts)
 	default:
 		return fmt.Errorf("unknown task autorun subcommand %q", command)
@@ -77,13 +86,15 @@ func autoRunUsage(command string) string {
 	case "complete":
 		return base + "complete [--project=<project>] [--task=<task>] [--summary=<text>]"
 	case "suspend":
-		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--reason=<text>]"
+		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--wake-condition=<text>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
+	case "cancel":
+		return base + "cancel [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	case "pause", "fail":
-		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>]"
+		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	case "retry":
-		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>]"
+		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	default:
-		return base + "<queue|start|retry|suspend|pause|resume|complete|fail>"
+		return base + "<queue|start|retry|suspend|pause|resume|complete|fail|cancel>"
 	}
 }
 
@@ -123,8 +134,18 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			opts.CompletionCriteriaSet = true
 		case "summary":
 			opts.Summary = value
+		case "wake-condition":
+			opts.WakeCondition = value
 		case "reason":
 			opts.Reason = value
+		case "expected-generation":
+			generation, parseErr := strconv.Atoi(value)
+			if parseErr != nil || generation <= 0 {
+				return opts, fmt.Errorf("expected generation must be a positive integer")
+			}
+			opts.ExpectedGeneration = generation
+		case "expected-state":
+			opts.ExpectedState = value
 		default:
 			return opts, errors.New(usage)
 		}

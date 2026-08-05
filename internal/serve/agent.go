@@ -1055,6 +1055,11 @@ func (rt *agentRuntime) isSchedulerTurn() bool {
 }
 
 func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
+	// Serialize the durable AutoRun decision with explicit cancel, Close
+	// Session, timed wake, and manual start. The lock order matches the action
+	// endpoints: dispatch boundary first, then the runtime turn mutex.
+	m.server.autoRunDispatchMu.Lock()
+	defer m.server.autoRunDispatchMu.Unlock()
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
@@ -1078,27 +1083,41 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 	if err == nil {
 		resource, resourceErr := forgeWorkspace.ResourceValue(run.ResourceID)
 		err = resourceErr
-		if err == nil && resource.Task != nil && resource.Task.AutoRun != nil && resource.Task.AutoRun.State == "running" {
-			continuation = runnableTaskCandidate{
-				ID: run.ResourceID, Title: resource.Task.Title, Generation: resource.Task.AutoRun.Generation,
-				State: resource.Task.AutoRun.State, AgentName: resource.Task.AutoRun.AgentName,
-				Prompt:                 resource.Task.AutoRun.Prompt,
-				PreferredAgentProfiles: append([]string(nil), resource.Task.AutoRun.PreferredAgentProfiles...),
-				CompletionCriteria:     resource.Task.AutoRun.CompletionCriteria,
-				SuspensionSummary:      resource.Task.AutoRun.SuspensionSummary,
-			}
-			updated, retryErr := forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{TaskID: run.ResourceID, Reason: "agent did not set AutoRun state"})
-			err = retryErr
-			if err == nil && updated.AutoRun != nil {
-				taskState = updated.AutoRun.State
-			}
-			if err == nil && taskState == "running" {
-				rt.markIdleUnlessStopped(m)
-				prompt := autoRunContinuePrompt(rt.workspace.Path, continuation)
-				if sendErr := rt.sendInput(m, prompt); sendErr != nil {
-					err = sendErr
+		if err == nil && resource.Task != nil && resource.Task.AutoRun != nil {
+			current := resource.Task.AutoRun
+			if current.Generation != run.AutoRunGeneration {
+				// A newer generation owns the task now. Never retry or continue it
+				// from an older SchedulerTurn.
+				taskState = "generation_changed"
+			} else {
+				taskState = current.State
+				if current.State == "running" {
+					continuation = runnableTaskCandidate{
+						ID: run.ResourceID, Title: resource.Task.Title, Generation: current.Generation,
+						State: current.State, AgentName: current.AgentName,
+						Prompt:                 current.Prompt,
+						PreferredAgentProfiles: append([]string(nil), current.PreferredAgentProfiles...),
+						CompletionCriteria:     current.CompletionCriteria,
+						WakeCondition:          current.WakeCondition,
+						SuspensionSummary:      current.SuspensionSummary,
+					}
+					updated, retryErr := forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{
+						TaskID: run.ResourceID, Reason: "agent did not set AutoRun state",
+						ExpectedGeneration: run.AutoRunGeneration, ExpectedState: "running",
+					})
+					err = retryErr
+					if err == nil && updated.AutoRun != nil {
+						taskState = updated.AutoRun.State
+					}
+					if err == nil && taskState == "running" {
+						rt.markIdleUnlessStopped(m)
+						prompt := autoRunContinuePrompt(rt.workspace.Path, continuation)
+						if sendErr := rt.sendInput(m, prompt); sendErr != nil {
+							err = sendErr
+						}
+						return
+					}
 				}
-				return
 			}
 		}
 	}
@@ -1114,6 +1133,9 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		switch taskState {
 		case "completed", "failed":
 			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; session retained until manually stopped.")
+		case "cancelled":
+			// User cancellation is intentionally quiet; the durable task state
+			// and the session projection are enough for the UI to converge.
 		default:
 			// suspended and paused generations intentionally retain the same
 			// AgentHub + Forge session, so a later resume keeps the original
@@ -1130,7 +1152,18 @@ func (rt *agentRuntime) recordSchedulerFailure(m *agentManager, reason string) {
 	rt.mu.Unlock()
 	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
 	if err == nil {
-		_, err = forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{TaskID: run.ResourceID, Reason: strings.TrimSpace(reason)})
+		resource, readErr := forgeWorkspace.ResourceValue(run.ResourceID)
+		err = readErr
+		if err == nil && resource.Task != nil && resource.Task.AutoRun != nil && resource.Task.AutoRun.Generation == run.AutoRunGeneration && resource.Task.AutoRun.State == "running" {
+			_, err = forgeWorkspace.RetryAutoRun(app.AutoRunActionInput{
+				TaskID: run.ResourceID, Reason: strings.TrimSpace(reason),
+				ExpectedGeneration: run.AutoRunGeneration, ExpectedState: "running",
+			})
+		} else if err == nil {
+			// Cancellation, a terminal result, or a newer generation owns the
+			// task now. Do not append a retry or surface a misleading failure.
+			return
+		}
 	}
 	if err != nil {
 		rt.addForgeNotice(m, "error", "forge/autorun/retry", err.Error())

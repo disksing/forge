@@ -273,7 +273,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task autorun queue|start|suspend|pause|resume|complete|fail ...
+  forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

@@ -29,6 +29,7 @@ type runnableTaskCandidate struct {
 	Prompt                 string   `json:"prompt"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
+	WakeCondition          string   `json:"wakeCondition,omitempty"`
 	SuspendedAt            string   `json:"suspendedAt,omitempty"`
 	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }

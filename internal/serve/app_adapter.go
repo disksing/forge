@@ -59,6 +59,7 @@ func runnableTaskCandidatesFromApp(tasks []app.RunnableTask) []runnableTaskCandi
 			State: task.State, AgentName: task.AgentName, Prompt: task.Prompt,
 			PreferredAgentProfiles: append([]string(nil), task.PreferredAgentProfiles...),
 			CompletionCriteria:     task.CompletionCriteria,
+			WakeCondition:          task.WakeCondition,
 			SuspendedAt:            task.SuspendedAt,
 			SuspensionSummary:      task.SuspensionSummary,
 		}

@@ -420,7 +420,7 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	case "ui-state":
 		s.handleUIState(w, r, id)
 	case "autorun":
-		if len(parts) != 3 || parts[2] != "start" {
+		if len(parts) != 3 || (parts[2] != "start" && parts[2] != "cancel") {
 			http.NotFound(w, r)
 			return
 		}
@@ -428,7 +428,11 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		s.startChatAutoRun(w, r, id)
+		if parts[2] == "start" {
+			s.startChatAutoRun(w, r, id)
+		} else {
+			s.cancelChatAutoRun(w, r, id)
+		}
 	case "agent":
 		s.agents.handle(w, r, id, parts[2:])
 	case "projects":

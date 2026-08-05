@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // legacyAutoRunDependency mirrors the pre-simplification AutoRun after list
@@ -75,6 +76,67 @@ func migrateLegacyAutoRunWaiting(dir string, task *Task) error {
 	task.AutoRun.SuspensionSummary = summary
 	if err := writeResourceMetadata(dir, task); err != nil {
 		return fmt.Errorf("migrate AutoRun waiting state for %s: %w", task.ID, err)
+	}
+	return nil
+}
+
+// migrateAutoRunMetadata repairs suspended records created before
+// wakeCondition existed. The write is explicit and idempotent so both CLI and
+// application API reads converge old task.json files to the same safe shape.
+func migrateAutoRunMetadata(dir string, task *Task) error {
+	if err := migrateLegacyAutoRunWaiting(dir, task); err != nil {
+		return err
+	}
+	if task.AutoRun == nil || task.AutoRun.State != autoRunStateSuspended {
+		return nil
+	}
+	changed := false
+	wakeConditionMissing := strings.TrimSpace(task.AutoRun.WakeCondition) == ""
+	if strings.TrimSpace(task.AutoRun.SuspendedAt) == "" {
+		task.AutoRun.SuspendedAt = task.UpdatedAt
+		if strings.TrimSpace(task.AutoRun.SuspendedAt) == "" {
+			task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
+		}
+		changed = true
+	}
+	if strings.TrimSpace(task.AutoRun.SuspensionSummary) == "" {
+		if strings.TrimSpace(task.AutoRun.WakeCondition) != "" {
+			task.AutoRun.SuspensionSummary = strings.TrimSpace(task.AutoRun.WakeCondition)
+		} else {
+			task.AutoRun.SuspensionSummary = autoRunSuspensionFallback
+		}
+		changed = true
+	}
+	if strings.TrimSpace(task.AutoRun.WakeCondition) == "" {
+		task.AutoRun.WakeCondition = strings.TrimSpace(task.AutoRun.SuspensionSummary)
+		if task.AutoRun.WakeCondition == "" {
+			task.AutoRun.WakeCondition = autoRunSuspensionFallback
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
+	}
+	if err := writeResourceMetadata(dir, task); err != nil {
+		return fmt.Errorf("migrate AutoRun wake condition for %s: %w", task.ID, err)
+	}
+	if wakeConditionMissing {
+		entries, err := readLogEntries(dir)
+		if err != nil {
+			return err
+		}
+		markerFound := false
+		for _, entry := range entries {
+			if entry.AutoRun && entry.AutoRunGeneration == task.AutoRun.Generation && entry.Title == "Auto Run wake condition migrated" {
+				markerFound = true
+				break
+			}
+		}
+		if !markerFound {
+			if err := prependLogEntry(dir, newAutoRunSuspensionLogEntry("Auto Run wake condition migrated", "compatibility fallback: suspension summary copied into wake condition", task.AutoRun.WakeCondition, true, task.AutoRun.Generation)); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

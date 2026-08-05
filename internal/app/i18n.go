@@ -262,8 +262,8 @@ func taskAgentsPromptZH(resource Resource) string {
 - %s
 - %s
 - Forge session 所有权：如果环境变量或注入的 Forge session 上下文中存在 `+"`FORGE_SESSION_ID`"+`，请复用它；外层启动器已注册 session 并锁定此目录对应的资源，因此不要创建新 session，不要锁定/解锁当前资源，也不要自行结束外层 session。
-- GUI 调度器启动 AutoRun 回合后，最后一个有副作用的命令必须且只能是 `+"`forge task autorun complete`"+`、`+"`forge task autorun suspend`"+`、`+"`forge task autorun pause`"+` 或 `+"`forge task autorun fail`"+` 之一。
-- 如需委派 AutoRun 工作，使用 `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+` 创建子任务；使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 AutoRun 时，使用 `+"`forge task autorun suspend --summary=<text>`"+` 记录自然语言原因，系统稍后会自动唤醒。
+- GUI 调度器启动 AutoRun 回合后，最后一个有副作用的命令必须且只能是 `+"`forge task autorun complete`"+`、`+"`forge task autorun suspend`"+`、`+"`forge task autorun pause`"+` 或 `+"`forge task autorun fail`"+` 之一。`+"`cancel`"+` 是结束 generation 的控制面操作，不是调度器回合结果。
+- 如需委派 AutoRun 工作，使用 `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+` 创建子任务；使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 AutoRun 时，使用 `+"`--summary=<text>`"+` 记录自然语言上下文，并使用 `+"`--wake-condition=<text>`"+` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
 - 如果环境变量和注入的 session 上下文都没有 `+"`FORGE_SESSION_ID`"+`，请检测当前 agent PID，运行 `+"`forge session new --pid <pid>`"+`，导出返回的 ID 为 `+"`FORGE_SESSION_ID`"+`，并在更新项目/任务数据前只锁定一次当前目录对应的资源。
 - 访问此锁定资源之外的项目/任务目录时，使用带明确 `+"`--project`"+`/`+"`--task`"+` 选择器的 `+"`forge session lock --id=$FORGE_SESSION_ID`"+` 获取临时锁，完成后用 `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` 释放。
 - 可读取其他任务目录作为参考。
@@ -322,8 +322,8 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 可能改变范围、验收标准或稳定约束的问题应保存在相应 brief 中。短期执行问题放在 ` + "`work.md`" + `；形成长期答案后，将其提升到 brief 并删除临时说明。
 - 使用 ` + "`forge task log add <title> --details <details>`" + ` 或 ` + "`forge project log add <title> --details <details>`" + ` 记录重要执行事件。
 - 创建、列出和归档任务时优先使用 Forge 命令。
-- GUI 调度器启动 AutoRun 回合后，最后一个有副作用的命令必须且只能是 ` + "`forge task autorun complete`" + `、` + "`forge task autorun suspend`" + `、` + "`forge task autorun pause`" + ` 或 ` + "`forge task autorun fail`" + ` 之一。
-- 委派 AutoRun 工作时，使用 ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + ` 创建子任务。使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 AutoRun 时，使用 ` + "`forge task autorun suspend --summary=<text>`" + ` 记录自然语言原因，系统稍后会自动唤醒。
+- GUI 调度器启动 AutoRun 回合后，最后一个有副作用的命令必须且只能是 ` + "`forge task autorun complete`" + `、` + "`forge task autorun suspend`" + `、` + "`forge task autorun pause`" + ` 或 ` + "`forge task autorun fail`" + ` 之一。` + "`cancel`" + ` 是结束 generation 的控制面操作，不是调度器回合结果。
+- 委派 AutoRun 工作时，使用 ` + "`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + ` 创建子任务。使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 AutoRun 时，使用 ` + "`--summary=<text>`" + ` 记录自然语言上下文，并使用 ` + "`--wake-condition=<text>`" + ` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
 - 项目和任务的 ` + "`AGENTS.md`" + ` 是简短的启动卡片。全局操作规则放在这里，背景放在 ` + "`project.md`" + `/` + "`task.md`" + `，任务恢复状态放在任务 ` + "`work.md`" + `，时间线历史放在 ` + "`log.jsonl`" + `。
 
 ## forge CLI
@@ -353,7 +353,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task autorun queue|start|suspend|pause|resume|complete|fail ...
+forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

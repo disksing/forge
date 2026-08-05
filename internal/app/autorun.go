@@ -5,19 +5,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
 
 const (
-	autoRunStateQueued     = "queued"
-	autoRunStateRunning    = "running"
-	autoRunStateSuspended  = "suspended"
-	autoRunStatePaused     = "paused"
-	autoRunStateCompleted  = "completed"
-	autoRunStateFailed     = "failed"
-	autoRunSuspensionLimit = 30 * time.Minute
+	autoRunStateQueued        = "queued"
+	autoRunStateRunning       = "running"
+	autoRunStateSuspended     = "suspended"
+	autoRunStatePaused        = "paused"
+	autoRunStateCompleted     = "completed"
+	autoRunStateFailed        = "failed"
+	autoRunStateCancelled     = "cancelled"
+	autoRunSuspensionLimit    = 30 * time.Minute
+	autoRunSuspensionFallback = "Re-check whether the blocking condition has changed"
 )
 
 type autoRunCommandOptions struct {
@@ -30,7 +33,10 @@ type autoRunCommandOptions struct {
 	CompletionCriteria     string
 	CompletionCriteriaSet  bool
 	Summary                string
+	WakeCondition          string
 	Reason                 string
+	ExpectedGeneration     int
+	ExpectedState          string
 }
 
 type runnableTask struct {
@@ -45,6 +51,9 @@ type runnableTask struct {
 	Prompt                 string   `json:"prompt,omitempty"`
 	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
 	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
+	WakeCondition          string   `json:"wakeCondition,omitempty"`
+	SuspendedAt            string   `json:"suspendedAt,omitempty"`
+	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
 func runTaskAutoRun(args []string) error {
@@ -65,7 +74,7 @@ func runTaskAutoRun(args []string) error {
 		return autoRunRetry(opts)
 	case "resume":
 		return autoRunResume(opts)
-	case "complete", "suspend", "pause", "fail":
+	case "complete", "suspend", "pause", "fail", "cancel":
 		return autoRunAction(command, opts)
 	default:
 		return fmt.Errorf("unknown task autorun subcommand %q", command)
@@ -82,13 +91,15 @@ func autoRunUsage(command string) string {
 	case "complete":
 		return base + "complete [--project=<project>] [--task=<task>] [--summary=<text>]"
 	case "suspend":
-		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--reason=<text>]"
+		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--wake-condition=<text>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
+	case "cancel":
+		return base + "cancel [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	case "pause", "fail":
-		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>]"
+		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	case "retry":
-		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>]"
+		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
 	default:
-		return base + "<queue|start|retry|suspend|pause|resume|complete|fail>"
+		return base + "<queue|start|retry|suspend|pause|resume|complete|fail|cancel>"
 	}
 }
 
@@ -130,6 +141,16 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 			opts.Summary = value
 		case "reason":
 			opts.Reason = value
+		case "wake-condition":
+			opts.WakeCondition = value
+		case "expected-generation":
+			generation, parseErr := strconv.Atoi(value)
+			if parseErr != nil || generation <= 0 {
+				return opts, fmt.Errorf("expected generation must be a positive integer")
+			}
+			opts.ExpectedGeneration = generation
+		case "expected-state":
+			opts.ExpectedState = value
 		default:
 			return opts, errors.New(usage)
 		}
@@ -158,7 +179,7 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 			return err
 		}
 		if task.AutoRun != nil {
-			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed {
+			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed && task.AutoRun.State != autoRunStateCancelled {
 				return fmt.Errorf("cannot queue AutoRun in %s state", task.AutoRun.State)
 			}
 			generation = task.AutoRun.Generation + 1
@@ -272,6 +293,18 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
+		if opts.ExpectedGeneration > 0 && task.AutoRun.Generation != opts.ExpectedGeneration {
+			return fmt.Errorf("AutoRun generation changed from %d to %d", opts.ExpectedGeneration, task.AutoRun.Generation)
+		}
+		if action == "cancel" && task.AutoRun.State == autoRunStateCancelled {
+			return nil
+		}
+		if expectedState := strings.TrimSpace(opts.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
+			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		}
+		if action == "cancel" && (task.AutoRun.State == autoRunStateCompleted || task.AutoRun.State == autoRunStateFailed) {
+			return fmt.Errorf("cannot cancel AutoRun in %s state", task.AutoRun.State)
+		}
 		details := strings.TrimSpace(opts.Summary)
 		if details == "" {
 			details = strings.TrimSpace(opts.Reason)
@@ -286,15 +319,29 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 			title = "Auto Run failed"
 		case "pause":
 			task.AutoRun.State = autoRunStatePaused
-			if details != "" {
-				task.AutoRun.SuspensionSummary = details
-			}
+			task.AutoRun.SuspendedAt = ""
 			title = "Auto Run paused"
 		case "suspend":
 			task.AutoRun.State = autoRunStateSuspended
 			task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
+			if details == "" {
+				details = autoRunSuspensionFallback
+			}
 			task.AutoRun.SuspensionSummary = details
+			task.AutoRun.WakeCondition = strings.TrimSpace(opts.WakeCondition)
+			fallback := task.AutoRun.WakeCondition == ""
+			if fallback {
+				task.AutoRun.WakeCondition = details
+			}
 			title = "Auto Run suspended"
+			return prependLogEntry(dir, newAutoRunSuspensionLogEntry(title, details, task.AutoRun.WakeCondition, fallback, task.AutoRun.Generation))
+		case "cancel":
+			task.AutoRun.State = autoRunStateCancelled
+			task.AutoRun.SuspendedAt = ""
+			if details == "" {
+				details = "AutoRun cancelled by user"
+			}
+			title = "Auto Run cancelled"
 		}
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
 	})

@@ -612,8 +612,8 @@ func TestAutoRunLifecycleAndSuspend(t *testing.T) {
 		}
 
 		run(t, "task", "autorun", "start", "--project=project1", "--task=task1")
-		suspended := run(t, "task", "autorun", "suspend", "--project=project1", "--task=task1", "--summary=waiting for review")
-		if !strings.Contains(suspended, `"state": "suspended"`) || !strings.Contains(suspended, `"suspendedAt"`) || !strings.Contains(suspended, `"suspensionSummary": "waiting for review"`) {
+		suspended := run(t, "task", "autorun", "suspend", "--project=project1", "--task=task1", "--summary=waiting for review", "--wake-condition=the review is approved")
+		if !strings.Contains(suspended, `"state": "suspended"`) || !strings.Contains(suspended, `"suspendedAt"`) || !strings.Contains(suspended, `"suspensionSummary": "waiting for review"`) || !strings.Contains(suspended, `"wakeCondition": "the review is approved"`) {
 			t.Fatalf("expected suspended metadata, got:\n%s", suspended)
 		}
 
@@ -630,6 +630,14 @@ func TestAutoRunLifecycleAndSuspend(t *testing.T) {
 		queued := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
 		if !strings.Contains(queued, `"generation": 2`) || !strings.Contains(queued, `"state": "queued"`) {
 			t.Fatalf("expected terminal AutoRun to queue generation 2, got:\n%s", queued)
+		}
+		cancelled := run(t, "task", "autorun", "cancel", "--project=project1", "--task=task1", "--expected-generation=2", "--expected-state=queued", "--reason=user cancelled generation")
+		if !strings.Contains(cancelled, `"generation": 2`) || !strings.Contains(cancelled, `"state": "cancelled"`) {
+			t.Fatalf("expected AutoRun cancellation, got:\n%s", cancelled)
+		}
+		next := run(t, "task", "autorun", "queue", "--project=project1", "--task=task1")
+		if !strings.Contains(next, `"generation": 3`) || !strings.Contains(next, `"state": "queued"`) || strings.Contains(next, `"wakeCondition"`) || strings.Contains(next, `"suspensionSummary"`) {
+			t.Fatalf("new generation retained cancelled suspension metadata, got:\n%s", next)
 		}
 		logs := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
 		if !strings.Contains(logs, `"autoRun": true`) || !strings.Contains(logs, `"autoRunGeneration": 1`) {
