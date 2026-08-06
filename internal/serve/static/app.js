@@ -4712,6 +4712,8 @@ function renderAutoRunConfigDialog() {
             </label>
           `}
           <p class="auto-run-dialog-protocol">The agent must finish with exactly one final side-effecting protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
+          <p class="auto-run-dialog-protocol">Final action: <code>complete</code> only after requirements and verification; <code>suspend</code> only when no in-scope work remains and only repeated polling of one specific, observable external condition could make progress. It is not for phase completion, saving progress, or yielding early. Record progress and blocking context in <code>summary</code>, the separate verifiable signal in <code>wakeCondition</code>, use <code>pause</code> for a user decision or manual handling, and use <code>fail</code> only when no feasible safe path remains.</p>
+          <p class="auto-run-dialog-protocol">Suspended work currently uses a fixed 30-minute server fallback; natural-language wake conditions are stored, not parsed.</p>
           ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
           ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
           <div class="form-actions">

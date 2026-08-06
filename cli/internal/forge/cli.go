@@ -385,6 +385,14 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
+  forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+    Run or report an AutoRun generation. suspend is only for a task that
+    cannot progress and has no meaningful remaining work except polling one
+    specific observable external condition; --summary records progress and
+    blocking context, while --wake-condition records the verifiable signal.
+    Use complete after requirements and verification, pause for user or
+    manual handling, and fail only when no feasible safe path remains.
+
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
     Create a session and print its unique id. Heartbeat liveness is the
     default and can use --timeout. PID liveness stays active while the process

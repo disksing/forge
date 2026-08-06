@@ -202,11 +202,16 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 			"恢复并继续当前 AutoRun generation",
 			"保留用户 prompt",
 			"验证 focused tests 全部通过",
-			"此 AutoRun 之前被挂起。请先检查唤醒条件",
+			"此 AutoRun generation 之前被挂起。请先检查唤醒条件",
 			"挂起上下文：\n等待 task197 合入并安装",
 			"唤醒条件：\ntask197 已合入并安装",
 			"这是一个 AutoRun 调度器回合",
 			"最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一",
+			"只有在任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件时，才可以使用 suspend",
+			"只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做，就必须在当前回合继续",
+			"--summary=<上下文>",
+			"--wake-condition=<条件>",
+			"只有 task.md 要求和适当验证完成后才使用 complete",
 		} {
 			if !strings.Contains(got, want) {
 				t.Fatalf("Chinese prompt does not contain %q:\n%s", want, got)
@@ -237,10 +242,15 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 				"Recover and continue the current AutoRun generation",
 				"保留用户 prompt",
 				"验证 focused tests 全部通过",
-				"This AutoRun was previously suspended. Check the wake condition first.",
+				"This AutoRun generation was previously suspended. Check the wake condition first.",
 				"Suspension context:\n等待 task197 合入并安装",
 				"Wake condition:\ntask197 已合入并安装",
 				"This is an AutoRun scheduler turn",
+				"Use suspend only when the task cannot make meaningful progress and the only remaining action would be repeated polling of a specific, observable external condition",
+				"If any in-scope implementation, testing, investigation, review, documentation, repair, or verification remains, continue this turn.",
+				"In --summary=<context>, record completed work, current status, and blocking context",
+				"--wake-condition=<condition>",
+				"Use complete only after task requirements and appropriate verification are done",
 			} {
 				if !strings.Contains(got, want) {
 					t.Fatalf("prompt for language %q does not contain %q:\n%s", language, want, got)
@@ -317,6 +327,63 @@ func TestAutoRunLocalizedDefaultAndContinuePrompts(t *testing.T) {
 	if !strings.Contains(continuePrompt, "继续当前 AutoRun") ||
 		!strings.Contains(continuePrompt, "forge task autorun complete、suspend、pause 或 fail") {
 		t.Fatalf("unexpected Chinese continuation prompt: %q", continuePrompt)
+	}
+}
+
+func TestAutoRunContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
+	cases := []struct {
+		name      string
+		language  string
+		strict    string
+		suspended string
+		summary   string
+		wake      string
+	}{
+		{
+			name:      "English",
+			language:  "en",
+			strict:    "Use suspend only when the task cannot make meaningful progress",
+			suspended: "This AutoRun generation was previously suspended. Check the wake condition first.",
+			summary:   "waiting for external review",
+			wake:      "the review is approved",
+		},
+		{
+			name:      "Simplified Chinese",
+			language:  "zh-CN",
+			strict:    "只有在任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件时，才可以使用 suspend",
+			suspended: "此 AutoRun generation 之前被挂起。请先检查唤醒条件",
+			summary:   "等待外部评审",
+			wake:      "评审已通过",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			workspace := t.TempDir()
+			if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{"language":"`+tc.language+`"}`), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			candidate := runnableTaskCandidate{
+				State:              "suspended",
+				Prompt:             "Continue the task",
+				CompletionCriteria: "The work is verified",
+				SuspensionSummary:  tc.summary,
+				WakeCondition:      tc.wake,
+			}
+			for name, prompt := range map[string]string{
+				"retry":          autoRunContinuePrompt(workspace),
+				"suspended wake": autoRunContinuePrompt(workspace, candidate),
+			} {
+				if !strings.Contains(prompt, tc.strict) {
+					t.Fatalf("%s prompt is missing strict suspend guidance %q:\n%s", name, tc.strict, prompt)
+				}
+			}
+			wakePrompt := autoRunContinuePrompt(workspace, candidate)
+			for _, want := range []string{tc.suspended, tc.summary, tc.wake} {
+				if !strings.Contains(wakePrompt, want) {
+					t.Fatalf("suspended wake prompt is missing %q:\n%s", want, wakePrompt)
+				}
+			}
+		})
 	}
 }
 

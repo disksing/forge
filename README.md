@@ -184,6 +184,12 @@ forge task create \
 
 A scheduler-started turn must finish with exactly one result action:
 
+`complete` means the task brief, completion criteria, and appropriate verification are done. `suspend` is allowed only when the task cannot make meaningful progress and the only remaining meaningful action would be repeated polling of one specific, observable external condition. If any in-scope implementation, testing, investigation, review, documentation, repair, or verification remains, the agent must continue the current turn. `suspend` is not a phase-completion marker, checkpoint or save-progress step, way to shorten a turn, or way to yield early. `pause` is for a user decision, authorization, or other manual handling and is not an automatically polled wait; `fail` means no feasible safe completion path remains under the current constraints.
+
+Before suspending, the agent must exhaust work that does not depend on the external condition. A valid suspension can wait for a specified change such as an upstream commit appearing in `origin/master`, a named PR review or CI state, a service health check, a specified time, or the result of an already-issued asynchronous operation. It is invalid to suspend after only a milestone, while coding/tests/investigation/review/docs/fixes/verification remain, to save context or prepare the next turn, because the next step is uncertain, or because a child task exists while independent work remains.
+
+When suspending, record completed work, current status, and blocking context in `suspensionSummary`, and record the separate, specific, observable, verifiable external signal in `wakeCondition`. Forge stores natural-language conditions without parsing them. The current server uses a fixed 30-minute fallback re-check; a future Scheduler may observe the condition and wake the task proactively.
+
 ```bash
 forge task autorun complete --summary="Implemented and verified"
 forge task autorun suspend \

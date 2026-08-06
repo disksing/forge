@@ -177,7 +177,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") {
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "AutoRun suspend 仅适用于任务无法继续推进") || !strings.Contains(got, "--summary=<text>") || !strings.Contains(got, "--wake-condition=<text>") {
 			t.Fatalf("expected Chinese workspace prompt, got:\n%s", got)
 		}
 
@@ -188,7 +188,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
 		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") {
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
 		var projectLogs []LogEntry
@@ -210,7 +210,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
 			t.Fatalf("expected Chinese work template, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") {
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
 		var taskLogs []LogEntry
@@ -437,7 +437,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") {
 			t.Fatalf("expected subtask AGENTS.md to include direct-start session ownership guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "forge task autorun complete") || !strings.Contains(subtaskAgents, "forge task create --autorun") {
+		if !strings.Contains(subtaskAgents, "forge task autorun complete") || !strings.Contains(subtaskAgents, "forge task create --autorun") || !strings.Contains(subtaskAgents, "AutoRun suspend is allowed only when the task cannot make meaningful progress") || !strings.Contains(subtaskAgents, "--summary=<text>") || !strings.Contains(subtaskAgents, "--wake-condition=<text>") || !strings.Contains(subtaskAgents, "do not use suspend for a finished phase") {
 			t.Fatalf("expected subtask AGENTS.md to teach AutoRun protocol, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
@@ -785,6 +785,15 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 			t.Fatalf("expected help marker %q after offset %d, got:\n%s", marker, offset, help)
 		}
 		offset += index + len(marker)
+	}
+	for _, marker := range []string{
+		"  forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...",
+		"Run or report an AutoRun generation. suspend is only for a task",
+		"--summary records progress and",
+	} {
+		if !strings.Contains(help, marker) {
+			t.Fatalf("expected AutoRun help marker %q, got:\n%s", marker, help)
+		}
 	}
 }
 
@@ -2490,7 +2499,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
 			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
 		}
-		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun suspend") {
+		if !strings.Contains(first, "forge task create --autorun") || !strings.Contains(first, "forge task autorun suspend") || !strings.Contains(first, "AutoRun suspend is allowed only when the task cannot make meaningful progress") || !strings.Contains(first, "pause for a user decision, authorization, or manual handling") || !strings.Contains(first, "fail only when no feasible safe path remains") {
 			t.Fatalf("expected workspace AGENTS.md to teach AutoRun delegation, got:\n%s", first)
 		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {

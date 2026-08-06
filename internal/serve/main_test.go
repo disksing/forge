@@ -314,6 +314,53 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
+func TestAutoRunDialogExplainsResultProtocol(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`Final action: <code>complete</code> only after requirements and verification`,
+		`<code>suspend</code> only when no in-scope work remains`,
+		`repeated polling of one specific, observable external condition`,
+		`not for phase completion, saving progress, or yielding early`,
+		`<code>summary</code>`,
+		`<code>wakeCondition</code>`,
+		`<code>pause</code> for a user decision or manual handling`,
+		`<code>fail</code> only when no feasible safe path remains`,
+		`fixed 30-minute server fallback`,
+		`natural-language wake conditions are stored, not parsed`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("AutoRun dialog is missing protocol guidance %q", want)
+		}
+	}
+}
+
+func TestREADMEDocumentsAutoRunSuspendProtocol(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readme := string(data)
+	for _, want := range []string{
+		"`complete` means the task brief, completion criteria, and appropriate verification are done.",
+		"`suspend` is allowed only when the task cannot make meaningful progress",
+		"only remaining meaningful action would be repeated polling of one specific, observable external condition",
+		"It is invalid to suspend after only a milestone",
+		"`pause` is for a user decision, authorization, or other manual handling",
+		"suspensionSummary",
+		"wakeCondition",
+		"fixed 30-minute fallback re-check",
+		"future Scheduler may observe the condition and wake the task proactively",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README is missing AutoRun protocol guidance %q", want)
+		}
+	}
+}
+
 func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
