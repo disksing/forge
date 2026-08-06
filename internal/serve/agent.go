@@ -43,6 +43,8 @@ type agentRun struct {
 	LastOutputAt            string `json:"lastOutputAt,omitempty"`
 	SchedulerTurn           bool   `json:"schedulerTurn,omitempty"`
 	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
+	SchedulerTurnID         string `json:"schedulerTurnId,omitempty"`
+	SchedulerTurnSequence   int    `json:"schedulerTurnSequence,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
@@ -77,9 +79,16 @@ type forgeNotice struct {
 }
 
 type forgeNoticeData struct {
-	Level  string `json:"level"`
-	Method string `json:"method"`
-	Text   string `json:"text"`
+	Level                 string `json:"level"`
+	Method                string `json:"method"`
+	Text                  string `json:"text"`
+	Kind                  string `json:"kind,omitempty"`
+	Lifecycle             string `json:"lifecycle,omitempty"`
+	RunID                 string `json:"runId,omitempty"`
+	ResourceID            string `json:"resourceId,omitempty"`
+	AutoRunGeneration     int    `json:"autoRunGeneration,omitempty"`
+	SchedulerTurnID       string `json:"schedulerTurnId,omitempty"`
+	SchedulerTurnSequence int    `json:"schedulerTurnSequence,omitempty"`
 }
 
 type agentStreamMessage struct {
@@ -1127,7 +1136,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		}
 	}
 	if err != nil {
-		rt.addForgeNotice(m, "error", "forge/autorun/finish", err.Error())
+		rt.addAutoRunFinishNotice(m, "error", autoRunFinishNoticeErrorLifecycle, err.Error())
 		rt.updateStatus(m, "failed")
 	} else {
 		rt.mu.Lock()
@@ -1137,15 +1146,21 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 		_ = saveAgentRun(rt.workspace.Path, run)
 		switch taskState {
 		case "completed", "failed":
-			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun reached a terminal state; session retained until manually stopped.")
+			rt.addAutoRunFinishNotice(m, "info", autoRunFinishNoticeTerminalLifecycle, "AutoRun reached a terminal state; session retained until manually stopped.")
 		case "cancelled":
 			// User cancellation is intentionally quiet; the durable task state
 			// and the session projection are enough for the UI to converge.
-		default:
+		case "generation_changed":
+			// A newer generation owns the task. Do not publish a waiting notice
+			// from the obsolete SchedulerTurn.
+		case "suspended", "paused":
 			// suspended and paused generations intentionally retain the same
 			// AgentHub + Forge session, so a later resume keeps the original
 			// launchEnvironment.FORGE_SESSION_ID valid.
-			rt.addForgeNotice(m, "info", "forge/autorun/finish", "AutoRun scheduler turn finished; session retained for resume.")
+			rt.addAutoRunFinishNotice(m, "info", autoRunFinishNoticeWaitingLifecycle, "AutoRun scheduler turn finished; session retained for resume.")
+		default:
+			// queued, running, or a missing/unknown AutoRun projection is not a
+			// durable waiting-for-resume state. Do not publish a stale prompt.
 		}
 		rt.markIdleUnlessStopped(m)
 	}
@@ -1375,6 +1390,29 @@ func newRunID() string {
 		return fmt.Sprintf("run-%d", time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
+}
+
+func newSchedulerTurnID() string {
+	return "turn-" + strings.TrimPrefix(newRunID(), "run-")
+}
+
+// beginSchedulerTurn marks a false-to-true SchedulerTurn transition. The
+// sequence is kept in the local run projection so a late notice from an older
+// turn can be rejected even when the same run and AutoRun generation are
+// suspended and resumed repeatedly.
+func beginSchedulerTurn(run *agentRun) {
+	if run == nil {
+		return
+	}
+	if run.SchedulerTurn && strings.TrimSpace(run.SchedulerTurnID) != "" && run.SchedulerTurnSequence > 0 {
+		return
+	}
+	run.SchedulerTurn = true
+	run.SchedulerTurnSequence++
+	if run.SchedulerTurnSequence <= 0 {
+		run.SchedulerTurnSequence = 1
+	}
+	run.SchedulerTurnID = newSchedulerTurnID()
 }
 
 func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {

@@ -132,6 +132,9 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		AutoRunGeneration:     req.AutoRunGeneration,
 		PendingInitialMessage: strings.TrimSpace(req.Prompt),
 	}
+	if run.SchedulerTurn {
+		beginSchedulerTurn(&run)
+	}
 	if run.Title == "" {
 		run.Title = agentName + " run"
 	}
@@ -390,6 +393,40 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 	m.publishNotice(runID, notice)
 }
 
+const (
+	autoRunFinishNoticeKind              = "autorun-finish"
+	autoRunFinishNoticeWaitingLifecycle  = "until-resume"
+	autoRunFinishNoticeTerminalLifecycle = "terminal"
+	autoRunFinishNoticeErrorLifecycle    = "error"
+)
+
+// addAutoRunFinishNotice adds an explicitly scoped Forge notice. Only the
+// waiting lifecycle is temporary: terminal and error notices remain visible
+// when a later AutoRun state projection is loaded.
+func (rt *agentRuntime) addAutoRunFinishNotice(m *agentManager, level, lifecycle, text string) {
+	rt.mu.Lock()
+	run := rt.run
+	rt.mu.Unlock()
+	notice := forgeNotice{
+		Source: "forge",
+		Type:   "forge.notice",
+		Time:   time.Now().Format(time.RFC3339),
+		Data: forgeNoticeData{
+			Level:                 level,
+			Method:                "forge/autorun/finish",
+			Text:                  text,
+			Kind:                  autoRunFinishNoticeKind,
+			Lifecycle:             lifecycle,
+			RunID:                 run.ID,
+			ResourceID:            run.ResourceID,
+			AutoRunGeneration:     run.AutoRunGeneration,
+			SchedulerTurnID:       run.SchedulerTurnID,
+			SchedulerTurnSequence: run.SchedulerTurnSequence,
+		},
+	}
+	m.publishNotice(run.ID, notice)
+}
+
 type agentInputConflictError struct {
 	err error
 }
@@ -452,7 +489,7 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 			writeError(w, errors.New("session is busy"), http.StatusConflict)
 			return
 		}
-		run.SchedulerTurn = true
+		beginSchedulerTurn(&run)
 		run.AutoRunGeneration = req.AutoRunGeneration
 		if err := m.startAutoRun(r.Context(), rt.workspace, run); err != nil {
 			writeError(w, err, http.StatusBadRequest)
@@ -602,7 +639,7 @@ func (m *agentManager) resumeSuspendedAutoRunForInput(ctx context.Context, rt *a
 	}
 
 	updated := run
-	updated.SchedulerTurn = true
+	beginSchedulerTurn(&updated)
 	updated.AutoRunGeneration = expectedGeneration
 	if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
 		_, rollbackErr := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{

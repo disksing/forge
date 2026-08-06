@@ -94,6 +94,7 @@ const state = {
   autoRefreshTimer: null,
   autoRefreshInFlight: false,
   autoRefreshVersion: 0,
+  agentRunProjectionVersion: 0,
   treeRequestVersion: 0,
   navigationVersion: 0,
   detailRequestVersion: 0,
@@ -143,6 +144,7 @@ const state = {
     sessionStoppingRunId: "",
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
+    autoRunFinishNoticeWatermarks: new Map(),
     renderDeferredForSelection: false,
   },
   tty: [
@@ -161,6 +163,9 @@ const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
 const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
+const AUTORUN_FINISH_NOTICE_KIND = "autorun-finish";
+const AUTORUN_FINISH_NOTICE_WAITING_LIFECYCLE = "until-resume";
+const AUTORUN_RESUMABLE_STATES = new Set(["suspended", "paused"]);
 const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
 const AGENT_DRAFT_STORAGE_VERSION = 1;
 const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
@@ -1299,20 +1304,26 @@ async function autoRefresh() {
         changed = true;
       }
     }
+    state.agentRunProjectionVersion = (Number(state.agentRunProjectionVersion) || 0) + 1;
+    const agentRunProjectionVersion = state.agentRunProjectionVersion;
     const runs = await fetchAgentRuns();
-    if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
+    if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) ||
+        agentRunProjectionVersion !== state.agentRunProjectionVersion) return;
     const runsChanged = !sameJSON(state.agent.runs, runs);
     if (runsChanged) {
       state.agent.runs = runs;
       changed = true;
     }
     if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
+    if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
     if (reconcileActiveAgentRun(runs)) {
-      await loadCanonicalAgentEvents();
-      if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
+      await loadCanonicalAgentEvents({ projectionVersion: agentRunProjectionVersion });
+      if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) ||
+          agentRunProjectionVersion !== state.agentRunProjectionVersion) return;
       connectAgentStream();
       changed = true;
     }
+    if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
     if (taskOperationalStateKey() !== state.taskOperationalStateKey) {
       changed = true;
     }
@@ -3349,33 +3360,140 @@ function repoSection(item) {
   `;
 }
 
+function isAutoRunWaitingFinishNotice(notice) {
+  const data = notice?.data;
+  return data?.method === "forge/autorun/finish" &&
+    data?.kind === AUTORUN_FINISH_NOTICE_KIND &&
+    data?.lifecycle === AUTORUN_FINISH_NOTICE_WAITING_LIFECYCLE &&
+    data?.level !== "error" &&
+    String(data.runId || "").trim() !== "" &&
+    String(data.resourceId || "").trim() !== "" &&
+    Number(data.autoRunGeneration) > 0;
+}
+
+function autoRunWaitingNoticeKey(notice) {
+  const data = notice?.data || {};
+  return `${String(data.runId || "").trim()}:${String(data.resourceId || "").trim()}:${Number(data.autoRunGeneration) || 0}`;
+}
+
+function autoRunWaitingNoticeSequence(notice) {
+  return Number(notice?.data?.schedulerTurnSequence) || 0;
+}
+
+function autoRunProjectionForRun(run) {
+  const resourceId = String(run?.resourceId || "").trim();
+  if (!resourceId) return null;
+  const candidates = [
+    state.details?.[resourceId],
+    findResource(resourceId),
+  ].map((resource) => resource?.autoRun).filter(Boolean).map((autoRun) => ({
+    generation: Number(autoRun.generation) || 0,
+    state: String(autoRun.state || "").trim().toLowerCase(),
+  }));
+  if (!candidates.length) return null;
+  const statePriority = (stateName) => AUTORUN_RESUMABLE_STATES.has(stateName) ? 0 : 1;
+  candidates.sort((left, right) => right.generation - left.generation || statePriority(right.state) - statePriority(left.state));
+  return candidates[0];
+}
+
+function currentAutoRunWaitingNotice(notice, runs = state.agent.runs) {
+  if (!isAutoRunWaitingFinishNotice(notice)) return true;
+  const data = notice.data;
+  if (!state.agent.activeRunId || String(data.runId).trim() !== state.agent.activeRunId) return false;
+  const run = (runs || []).find((candidate) => candidate.id === state.agent.activeRunId);
+  if (!run || String(run.resourceId || "").trim() !== String(data.resourceId).trim() ||
+      Number(run.autoRunGeneration) !== Number(data.autoRunGeneration)) return false;
+
+  const noticeSequence = autoRunWaitingNoticeSequence(notice);
+  const runSequence = Number(run.schedulerTurnSequence) || 0;
+  if (runSequence > noticeSequence && runSequence > 0) return false;
+  if (runSequence === noticeSequence && run.schedulerTurnId && data.schedulerTurnId &&
+      run.schedulerTurnId !== data.schedulerTurnId) return false;
+  if (run.schedulerTurn && (runSequence === 0 || runSequence >= noticeSequence)) return false;
+
+  const projection = autoRunProjectionForRun(run);
+  if (!projection) return true;
+  if (projection.generation !== Number(data.autoRunGeneration)) return false;
+  return AUTORUN_RESUMABLE_STATES.has(projection.state);
+}
+
+function reconcileAgentNotices(runs = state.agent.runs) {
+  const before = state.agent.notices.length;
+  state.agent.notices = state.agent.notices.filter((notice) => currentAutoRunWaitingNotice(notice, runs));
+  return state.agent.notices.length !== before;
+}
+
+function recordAutoRunWaitingNoticeWatermark(notice) {
+  if (!isAutoRunWaitingFinishNotice(notice)) return;
+  if (!(state.agent.autoRunFinishNoticeWatermarks instanceof Map)) state.agent.autoRunFinishNoticeWatermarks = new Map();
+  const key = autoRunWaitingNoticeKey(notice);
+  const sequence = autoRunWaitingNoticeSequence(notice);
+  const previous = state.agent.autoRunFinishNoticeWatermarks.get(key) || 0;
+  if (sequence > previous) state.agent.autoRunFinishNoticeWatermarks.set(key, sequence);
+}
+
+function isStaleAutoRunWaitingNotice(notice) {
+  if (!isAutoRunWaitingFinishNotice(notice)) return false;
+  if (!(state.agent.autoRunFinishNoticeWatermarks instanceof Map)) state.agent.autoRunFinishNoticeWatermarks = new Map();
+  const sequence = autoRunWaitingNoticeSequence(notice);
+  const previous = state.agent.autoRunFinishNoticeWatermarks.get(autoRunWaitingNoticeKey(notice)) || 0;
+  return previous > 0 && sequence <= previous;
+}
+
 async function loadAgentRuns() {
   if (!state.activeWorkspaceId) {
     resetAgentState();
     return;
   }
-  state.agent.runs = await fetchAgentRuns();
+  state.agentRunProjectionVersion = (Number(state.agentRunProjectionVersion) || 0) + 1;
+  const projectionVersion = state.agentRunProjectionVersion;
+  const runs = await fetchAgentRuns();
+  if (projectionVersion !== state.agentRunProjectionVersion || !state.activeWorkspaceId) return false;
+  state.agent.runs = runs;
   observeCompletionProjections(state.agent.runs);
   reconcileActiveAgentRun(state.agent.runs);
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   if (state.agent.activeRunId) {
-    await loadCanonicalAgentEvents();
+    await loadCanonicalAgentEvents({ projectionVersion });
   } else {
     state.agent.events = [];
     state.agent.notices = [];
     state.agent.historyBeforeId = 0;
   }
+  if (projectionVersion !== state.agentRunProjectionVersion) return false;
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   connectAgentStream();
+  return true;
 }
 
-async function refreshAgentRunMetadata() {
+async function refreshAgentRunMetadata(options = {}) {
   if (!state.activeWorkspaceId) return;
+  state.agentRunProjectionVersion = (Number(state.agentRunProjectionVersion) || 0) + 1;
+  const projectionVersion = state.agentRunProjectionVersion;
+  const workspaceId = state.activeWorkspaceId;
   const runs = await fetchAgentRuns();
+  if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
   state.agent.runs = runs;
   observeCompletionProjections(runs);
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
   if (reconcileActiveAgentRun(runs)) {
-    await loadCanonicalAgentEvents();
+    await loadCanonicalAgentEvents({ projectionVersion });
+    if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
     connectAgentStream();
   }
+  if (options.refreshAutoRunProjection && state.agent.activeRunId) {
+    const activeRun = currentAgentRun();
+    const resourceId = String(activeRun?.resourceId || "").trim();
+    const [tree, detail] = await Promise.all([
+      fetchCurrentTree(workspaceId),
+      resourceId ? fetchDetail(resourceId, workspaceId) : Promise.resolve(null),
+    ]);
+    if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
+    if (tree) state.tree = tree;
+    if (detail && state.activeWorkspaceId === workspaceId) state.details[resourceId] = detail;
+  }
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
+  return true;
 }
 
 function reconcileActiveAgentRun(runs) {
@@ -3429,7 +3547,10 @@ async function refreshAgentInputProjection(workspaceId, resourceId) {
       })
       : Promise.resolve(),
   ]);
-  if (state.activeWorkspaceId === workspaceId) renderAll();
+  if (state.activeWorkspaceId === workspaceId) {
+    if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
+    renderAll();
+  }
 }
 
 async function mutateAgentSession(action) {
@@ -3444,6 +3565,7 @@ async function mutateAgentSession(action) {
 }
 
 async function loadCanonicalAgentEvents() {
+  const options = arguments[0] || {};
   if (!state.activeWorkspaceId || !state.agent.activeRunId) {
     state.agent.events = [];
     state.agent.notices = [];
@@ -3451,20 +3573,33 @@ async function loadCanonicalAgentEvents() {
     state.agent.historyBeforeId = 0;
     return;
   }
-  const detail = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}`);
+  const workspaceId = state.activeWorkspaceId;
+  const runId = state.agent.activeRunId;
+  const projectionVersion = options.projectionVersion ?? state.agentRunProjectionVersion;
+  const detail = await api(`/api/workspaces/${workspaceId}/agent/runs/${runId}`);
+  if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId || state.agent.activeRunId !== runId) return false;
   // Event history comes from the AgentHub proxy; the detail response only
   // carries run metadata. Open with exactly one durable tail page; older
   // pages load only when the user clicks "Load older messages".
-  const body = await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/events?latest=true&limit=${AGENT_OLDER_RAW_PAGE_LIMIT}`);
+  const body = await api(`/api/workspaces/${workspaceId}/agent/runs/${runId}/events?latest=true&limit=${AGENT_OLDER_RAW_PAGE_LIMIT}`);
+  if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId || state.agent.activeRunId !== runId) return false;
   const events = body.events || [];
   state.agent.historyBeforeId = oldestRawAgentEventID(events);
   state.agent.events = mergeCanonicalAgentEvents(events);
   state.agent.eventsHasMore = Boolean(body.page?.hasMoreBefore);
   const index = state.agent.runs.findIndex((run) => run.id === detail.run.id);
-  if (index >= 0) {
+  const current = index >= 0 ? state.agent.runs[index] : null;
+  const currentSequence = Number(current?.schedulerTurnSequence) || 0;
+  const detailSequence = Number(detail.run.schedulerTurnSequence) || 0;
+  const currentTime = current ? Date.parse(current.updatedAt || "") : 0;
+  const detailTime = Date.parse(detail.run.updatedAt || "");
+  if (index >= 0 && detailSequence >= currentSequence &&
+      (!current || !Number.isFinite(currentTime) || !Number.isFinite(detailTime) || detailTime >= currentTime)) {
     state.agent.runs[index] = detail.run;
   }
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   scheduleAgentLogAutoFill();
+  return true;
 }
 
 // scheduleAgentLogAutoFill defers the viewport check until after the caller's
@@ -3620,6 +3755,7 @@ function resetAgentState() {
   discardAgentUploadDialog();
   closeAgentStream();
   state.agent.runs = [];
+  state.agentRunProjectionVersion = (Number(state.agentRunProjectionVersion) || 0) + 1;
   state.agent.activeRunId = "";
   state.agent.events = [];
   state.agent.notices = [];
@@ -3637,6 +3773,7 @@ function resetAgentState() {
   state.agent.sessionStoppingRunId = "";
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
+  if (state.agent.autoRunFinishNoticeWatermarks instanceof Map) state.agent.autoRunFinishNoticeWatermarks.clear();
   state.agent.renderDeferredForSelection = false;
   clearAgentRenderTimer();
 }
@@ -3653,6 +3790,7 @@ function connectAgentStream() {
   const query = after > 0 ? `?after=${encodeURIComponent(after)}` : "";
   const stream = new EventSource(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${runId}/stream${query}`);
   stream.onmessage = (event) => {
+    if (state.agent.stream !== stream || state.agent.activeRunId !== runId) return;
     try {
       appendCanonicalAgentEvent(JSON.parse(event.data));
     } catch (err) {
@@ -3660,6 +3798,7 @@ function connectAgentStream() {
     }
   };
   stream.addEventListener("forge.notice", (event) => {
+    if (state.agent.stream !== stream || state.agent.activeRunId !== runId) return;
     try {
       appendForgeNotice(JSON.parse(event.data));
     } catch (err) {
@@ -3722,7 +3861,9 @@ function appendCanonicalAgentEvent(event) {
     observeCompletionEvent(event, currentAgentRun());
   }
   if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
-    refreshAgentRunMetadata().then(renderAll).catch((err) => console.warn("agent refresh failed", err));
+    refreshAgentRunMetadata({
+      refreshAutoRunProjection: ["turn.completed", "turn.failed", "turn.cancelled", "session.state"].includes(event.type),
+    }).then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
     scheduleAgentRender();
   }
@@ -3730,9 +3871,27 @@ function appendCanonicalAgentEvent(event) {
 
 function appendForgeNotice(notice) {
   if (notice?.source !== "forge" || notice?.type !== "forge.notice") return;
+  const scopedRunID = String(notice?.data?.runId || "").trim();
+  if (scopedRunID && scopedRunID !== state.agent.activeRunId) return;
+  if (isStaleAutoRunWaitingNotice(notice)) return;
+  if (isAutoRunWaitingFinishNotice(notice)) {
+    recordAutoRunWaitingNoticeWatermark(notice);
+    const key = autoRunWaitingNoticeKey(notice);
+    state.agent.notices = state.agent.notices.filter((existing) =>
+      !isAutoRunWaitingFinishNotice(existing) || autoRunWaitingNoticeKey(existing) !== key
+    );
+  }
   state.agent.notices.push(notice);
   if (state.agent.notices.length > 20) state.agent.notices.shift();
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   scheduleAgentRender();
+  if (isAutoRunWaitingFinishNotice(notice) && typeof refreshAgentRunMetadata === "function") {
+    refreshAgentRunMetadata({ refreshAutoRunProjection: true })
+      .then(() => {
+        if (state.activeWorkspaceId && state.agent.activeRunId === scopedRunID) renderAll();
+      })
+      .catch((err) => console.warn("AutoRun notice projection refresh failed", err));
+  }
 }
 
 function isKnownCanonicalAgentEvent(event) {
@@ -3775,6 +3934,7 @@ function projectAgentTimeline() {
 }
 
 function renderAgent() {
+  if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   const controls = $("agentControls");
   const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
