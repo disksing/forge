@@ -15,6 +15,21 @@ import (
 
 const logJSONLFile = "log.jsonl"
 
+const (
+	// DefaultResourceLogPageLimit is the number of newest entries returned for
+	// a GUI resource detail's first page.
+	DefaultResourceLogPageLimit = 10
+	// OlderResourceLogPageLimit is the number of older entries requested by a
+	// GUI Load More action.
+	OlderResourceLogPageLimit = 20
+	// MaxResourceLogPageLimit bounds paged resource detail requests.
+	MaxResourceLogPageLimit = 100
+)
+
+// ErrInvalidLogCursor identifies a cursor that cannot be resolved to a
+// stable log entry in the selected resource.
+var ErrInvalidLogCursor = errors.New("invalid log cursor")
+
 type LogEntry struct {
 	ID                           string `json:"id"`
 	Time                         string `json:"time"`
@@ -24,6 +39,15 @@ type LogEntry struct {
 	AutoRunGeneration            int    `json:"autoRunGeneration,omitempty"`
 	AutoRunWakeCondition         string `json:"autoRunWakeCondition,omitempty"`
 	AutoRunWakeConditionFallback bool   `json:"autoRunWakeConditionFallback,omitempty"`
+}
+
+// LogPage is the bounded, newest-first result used by GUI resource detail
+// requests. Entries are kept in the log file's stable prepend order; the
+// cursor is the ID of the last returned entry.
+type LogPage struct {
+	Entries    []LogEntry `json:"entries"`
+	HasMore    bool       `json:"hasMore"`
+	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
 func newAutoRunLogEntry(title, details string, generation int) LogEntry {
@@ -417,6 +441,79 @@ func readLogEntries(dir string) ([]LogEntry, error) {
 		return nil, err
 	}
 	return entries, nil
+}
+
+// readLogPage reads only through the requested page (plus one entry to
+// determine HasMore). Log entries are prepended, so a cursor remains stable
+// when new entries are inserted at the head between requests.
+func readLogPage(dir, cursor string, limit int) (LogPage, error) {
+	page := LogPage{Entries: make([]LogEntry, 0)}
+	if limit <= 0 || limit > MaxResourceLogPageLimit {
+		return page, fmt.Errorf("log page limit must be between 1 and %d", MaxResourceLogPageLimit)
+	}
+	trimmedCursor := strings.TrimSpace(cursor)
+	if cursor != "" && cursor != trimmedCursor {
+		return page, fmt.Errorf("%w %q", ErrInvalidLogCursor, cursor)
+	}
+	cursor = trimmedCursor
+	if strings.ContainsAny(cursor, "\r\n") || len(cursor) > 256 {
+		return page, fmt.Errorf("%w %q", ErrInvalidLogCursor, cursor)
+	}
+	path := filepath.Join(dir, logJSONLFile)
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if cursor != "" {
+				return page, fmt.Errorf("%w %q", ErrInvalidLogCursor, cursor)
+			}
+			return page, nil
+		}
+		return page, err
+	}
+	defer file.Close()
+
+	afterCursor := cursor == ""
+	seenIDs := make(map[string]struct{}, limit+1)
+	scanner := bufio.NewScanner(file)
+	for line := 1; scanner.Scan(); line++ {
+		text := strings.TrimSpace(scanner.Text())
+		if text == "" {
+			continue
+		}
+		var entry LogEntry
+		if err := json.Unmarshal([]byte(text), &entry); err != nil {
+			return LogPage{}, fmt.Errorf("%s:%d: %w", path, line, err)
+		}
+		if strings.TrimSpace(entry.ID) == "" {
+			return LogPage{}, fmt.Errorf("%s:%d: log entry id cannot be empty", path, line)
+		}
+		if _, exists := seenIDs[entry.ID]; exists {
+			return LogPage{}, fmt.Errorf("%s:%d: duplicate log entry id %q", path, line, entry.ID)
+		}
+		seenIDs[entry.ID] = struct{}{}
+		if !afterCursor {
+			if entry.ID == cursor {
+				afterCursor = true
+			}
+			continue
+		}
+		if len(page.Entries) < limit {
+			page.Entries = append(page.Entries, entry)
+			continue
+		}
+		page.HasMore = true
+		break
+	}
+	if err := scanner.Err(); err != nil {
+		return LogPage{}, err
+	}
+	if !afterCursor {
+		return LogPage{}, fmt.Errorf("%w %q", ErrInvalidLogCursor, cursor)
+	}
+	if page.HasMore && len(page.Entries) > 0 {
+		page.NextCursor = page.Entries[len(page.Entries)-1].ID
+	}
+	return page, nil
 }
 
 func sortLogEntries(entries []LogEntry) {

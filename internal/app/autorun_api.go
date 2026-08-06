@@ -130,6 +130,7 @@ func (w *Workspace) StartAutoRun(taskID string) (Task, error) {
 		// into a running generation.
 		task.AutoRun.SuspendedAt = ""
 		task.AutoRun.State = autoRunStateRunning
+		task.AutoRun.StatusReason = ""
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
 }
@@ -180,6 +181,7 @@ func (w *Workspace) ResumeAutoRunWithAgent(input AutoRunResumeInput) (Task, erro
 		}
 		task.AutoRun.State = autoRunStateQueued
 		task.AutoRun.SuspendedAt = ""
+		task.AutoRun.StatusReason = ""
 		// SuspensionSummary is intentionally preserved so a woken agent can
 		// re-check the recorded reason before continuing or suspending again.
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "resumed", task.AutoRun.Generation))
@@ -210,6 +212,7 @@ func (w *Workspace) ResumeAndStartAutoRun(input AutoRunActionInput) (Task, error
 		generation := task.AutoRun.Generation
 		task.AutoRun.State = autoRunStateRunning
 		task.AutoRun.SuspendedAt = ""
+		task.AutoRun.StatusReason = ""
 		return prependLogEntries(dir,
 			newAutoRunLogEntry("Auto Run started", "", generation),
 			newAutoRunLogEntry("Auto Run queued", "resumed", generation),
@@ -244,11 +247,14 @@ func (w *Workspace) RetryAutoRun(input AutoRunActionInput) (Task, error) {
 				retries++
 			}
 		}
-		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run retry", strings.TrimSpace(input.Reason), generation)); err != nil {
+		details := strings.TrimSpace(input.Reason)
+		task.AutoRun.StatusReason = details
+		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run retry", details, generation)); err != nil {
 			return err
 		}
 		if retries+1 >= 3 {
 			task.AutoRun.State = autoRunStatePaused
+			task.AutoRun.StatusReason = "retry limit reached"
 			return prependLogEntry(dir, newAutoRunLogEntry("Auto Run paused", "retry limit reached", generation))
 		}
 		return nil
@@ -286,6 +292,11 @@ func (w *Workspace) finishAutoRun(input AutoRunActionInput, state, title string)
 		}
 		task.AutoRun.State = state
 		task.AutoRun.SuspendedAt = ""
+		if state == autoRunStateCompleted {
+			task.AutoRun.StatusReason = ""
+		} else {
+			task.AutoRun.StatusReason = details
+		}
 		// Pause is a manual control-plane state, not a suspension context.
 		// Keep the last real suspension fields available for a later resume.
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
@@ -325,6 +336,8 @@ func (w *Workspace) SuspendAutoRun(input AutoRunActionInput) (Task, error) {
 		task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
 		task.AutoRun.SuspensionSummary = details
 		task.AutoRun.WakeCondition = wakeCondition
+		task.AutoRun.StatusReason = details
+		task.AutoRun.WakeConditionFallback = wakeConditionFallback
 		return prependLogEntry(dir, newAutoRunSuspensionLogEntry("Auto Run suspended", details, wakeCondition, wakeConditionFallback, task.AutoRun.Generation))
 	})
 }
@@ -365,6 +378,7 @@ func (w *Workspace) CancelAutoRun(input AutoRunActionInput) (Task, error) {
 		}
 		task.AutoRun.State = autoRunStateCancelled
 		task.AutoRun.SuspendedAt = ""
+		task.AutoRun.StatusReason = details
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run cancelled", details, task.AutoRun.Generation))
 	})
 }

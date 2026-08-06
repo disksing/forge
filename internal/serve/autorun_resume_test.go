@@ -32,6 +32,7 @@ function extract(name, isAsync = false) {
 function assert(condition, message) { if (!condition) throw new Error(message); }
 class HTMLElement {}
 const document = { activeElement: null, contains: () => false };
+const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const task = {
   id: "project1.task1", type: "task", title: "Current Task",
   autoRun: {
@@ -71,6 +72,7 @@ function refreshIcons() {}
 async function loadAgentRuns() {}
 async function refreshTreeAfterAgentSessionMutation() {}
 async function fetchDetail() { return task; }
+function applyResourceDetail(detail) { state.details[detail.id] = detail; return detail; }
 function renderAll() {}
 function toast() {}
 async function api(path, options = {}) {

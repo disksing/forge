@@ -38,11 +38,11 @@ func migrateLegacyAutoRunWaiting(dir string, task *Task) error {
 	generation := task.AutoRun.Generation
 	suspendedAt := task.UpdatedAt
 	summary := ""
-	entries, err := readLogEntries(dir)
+	page, err := readLogPage(dir, "", DefaultResourceLogPageLimit)
 	if err == nil {
 		// prependLogEntry writes newest first; the first matching entry is the
 		// most recent "Auto Run waiting" for this generation.
-		for _, entry := range entries {
+		for _, entry := range page.Entries {
 			if !entry.AutoRun || entry.AutoRunGeneration != generation || entry.Title != "Auto Run waiting" {
 				continue
 			}
@@ -74,6 +74,8 @@ func migrateLegacyAutoRunWaiting(dir string, task *Task) error {
 	task.AutoRun.State = autoRunStateSuspended
 	task.AutoRun.SuspendedAt = suspendedAt
 	task.AutoRun.SuspensionSummary = summary
+	task.AutoRun.StatusReason = summary
+	task.AutoRun.WakeConditionFallback = true
 	if err := writeResourceMetadata(dir, task); err != nil {
 		return fmt.Errorf("migrate AutoRun waiting state for %s: %w", task.ID, err)
 	}
@@ -108,12 +110,17 @@ func migrateAutoRunMetadata(dir string, task *Task) error {
 		}
 		changed = true
 	}
+	if strings.TrimSpace(task.AutoRun.StatusReason) == "" && strings.TrimSpace(task.AutoRun.SuspensionSummary) != "" {
+		task.AutoRun.StatusReason = strings.TrimSpace(task.AutoRun.SuspensionSummary)
+		changed = true
+	}
 	if strings.TrimSpace(task.AutoRun.WakeCondition) == "" {
 		task.AutoRun.WakeCondition = strings.TrimSpace(task.AutoRun.SuspensionSummary)
 		if task.AutoRun.WakeCondition == "" {
 			task.AutoRun.WakeCondition = autoRunSuspensionFallback
 		}
 		changed = true
+		task.AutoRun.WakeConditionFallback = true
 	}
 	if !changed {
 		return nil
@@ -122,15 +129,14 @@ func migrateAutoRunMetadata(dir string, task *Task) error {
 		return fmt.Errorf("migrate AutoRun wake condition for %s: %w", task.ID, err)
 	}
 	if wakeConditionMissing {
-		entries, err := readLogEntries(dir)
-		if err != nil {
-			return err
-		}
+		page, err := readLogPage(dir, "", DefaultResourceLogPageLimit)
 		markerFound := false
-		for _, entry := range entries {
-			if entry.AutoRun && entry.AutoRunGeneration == task.AutoRun.Generation && entry.Title == "Auto Run wake condition migrated" {
-				markerFound = true
-				break
+		if err == nil {
+			for _, entry := range page.Entries {
+				if entry.AutoRun && entry.AutoRunGeneration == task.AutoRun.Generation && entry.Title == "Auto Run wake condition migrated" {
+					markerFound = true
+					break
+				}
 			}
 		}
 		if !markerFound {

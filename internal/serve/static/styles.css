@@ -3623,6 +3623,27 @@ i[data-lucide] {
   gap: 2px;
 }
 
+.log-load-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.log-load-more {
+  min-width: 148px;
+  justify-content: center;
+}
+
+.log-load-more .spin {
+  animation: task-status-spin 1s linear infinite;
+}
+
+.log-load-error {
+  margin: 10px 0 0;
+  color: #b91c1c;
+  font-size: 12px;
+}
+
 .log-entry {
   position: relative;
   padding-left: 18px;

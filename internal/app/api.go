@@ -324,6 +324,29 @@ func (w *Workspace) Resource(id string) (ResourceDetailView, error) {
 	return detail, nil
 }
 
+// ResourcePage returns resource metadata and one bounded log page for GUI
+// detail views. Resource and Logs intentionally retain their historical
+// full-history behavior for in-process and CLI-compatible callers.
+func (w *Workspace) ResourcePage(id, cursor string, limit int) (ResourceDetailView, error) {
+	if err := w.require(); err != nil {
+		return ResourceDetailView{}, err
+	}
+	path, resource, err := loadResource(w.root, cleanID(id))
+	if err != nil {
+		return ResourceDetailView{}, &APIError{Operation: "read resource", Kind: "resource", Workspace: w.root, ResourceID: id, Err: err}
+	}
+	page, err := readLogPage(path, cursor, limit)
+	if err != nil {
+		return ResourceDetailView{}, &APIError{Operation: "read paged resource detail", Kind: "log", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
+	}
+	detail, err := buildResourceDetailAtWithLogs(w.root, resourceEntry{Resource: resource, Path: path}, page.Entries)
+	if err != nil {
+		return ResourceDetailView{}, &APIError{Operation: "read paged resource detail", Kind: "resource", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
+	}
+	detail.LogPage = &page
+	return detail, nil
+}
+
 // ResourceValue returns the stored Project or Task value and its path.
 func (w *Workspace) ResourceValue(id string) (ResourceResult, error) {
 	if err := w.require(); err != nil {

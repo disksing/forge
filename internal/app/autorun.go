@@ -239,6 +239,7 @@ func autoRunStart(opts autoRunCommandOptions) error {
 		}
 		task.AutoRun.SuspendedAt = ""
 		task.AutoRun.State = autoRunStateRunning
+		task.AutoRun.StatusReason = ""
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
 	})
 }
@@ -267,11 +268,13 @@ func autoRunRetry(opts autoRunCommandOptions) error {
 			}
 		}
 		details := strings.TrimSpace(opts.Reason)
+		task.AutoRun.StatusReason = details
 		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run retry", details, generation)); err != nil {
 			return err
 		}
 		if retries+1 >= 3 {
 			task.AutoRun.State = autoRunStatePaused
+			task.AutoRun.StatusReason = "retry limit reached"
 			return prependLogEntry(dir, newAutoRunLogEntry("Auto Run paused", "retry limit reached", generation))
 		}
 		return nil
@@ -285,6 +288,7 @@ func autoRunResume(opts autoRunCommandOptions) error {
 		}
 		task.AutoRun.State = autoRunStateQueued
 		task.AutoRun.SuspendedAt = ""
+		task.AutoRun.StatusReason = ""
 		// SuspensionSummary is intentionally preserved so a woken agent can
 		// re-check the recorded reason before continuing or suspending again.
 		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "resumed", task.AutoRun.Generation))
@@ -317,14 +321,17 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 		case "complete":
 			task.AutoRun.State = autoRunStateCompleted
 			task.AutoRun.SuspendedAt = ""
+			task.AutoRun.StatusReason = ""
 			title = "Auto Run completed"
 		case "fail":
 			task.AutoRun.State = autoRunStateFailed
 			task.AutoRun.SuspendedAt = ""
+			task.AutoRun.StatusReason = details
 			title = "Auto Run failed"
 		case "pause":
 			task.AutoRun.State = autoRunStatePaused
 			task.AutoRun.SuspendedAt = ""
+			task.AutoRun.StatusReason = details
 			title = "Auto Run paused"
 		case "suspend":
 			task.AutoRun.State = autoRunStateSuspended
@@ -338,6 +345,8 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 			if fallback {
 				task.AutoRun.WakeCondition = details
 			}
+			task.AutoRun.StatusReason = details
+			task.AutoRun.WakeConditionFallback = fallback
 			title = "Auto Run suspended"
 			return prependLogEntry(dir, newAutoRunSuspensionLogEntry(title, details, task.AutoRun.WakeCondition, fallback, task.AutoRun.Generation))
 		case "cancel":
@@ -346,6 +355,7 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 			if details == "" {
 				details = "AutoRun cancelled by user"
 			}
+			task.AutoRun.StatusReason = details
 			title = "Auto Run cancelled"
 		}
 		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))

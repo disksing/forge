@@ -51,6 +51,7 @@ type ResourceDetailView struct {
 	Repos       []TaskRepo         `json:"repos,omitempty"`
 	AutoRun     *AutoRun           `json:"autoRun,omitempty"`
 	Logs        []LogEntry         `json:"logs,omitempty"`
+	LogPage     *LogPage           `json:"logPage,omitempty"`
 	Files       []ResourceFile     `json:"files,omitempty"`
 	Artifacts   []FileTreeEntry    `json:"artifacts"`
 	Worktrees   []FileTreeEntry    `json:"worktrees"`
@@ -211,12 +212,16 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 }
 
 func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView, error) {
-	meta := entry.Resource.resourceMeta()
 	logs, err := readLogEntries(entry.Path)
 	if err != nil {
 		return ResourceDetailView{}, err
 	}
 	sortLogEntries(logs)
+	return buildResourceDetailAtWithLogs(root, entry, logs)
+}
+
+func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogEntry) (ResourceDetailView, error) {
+	meta := entry.Resource.resourceMeta()
 	detail := ResourceDetailView{
 		ID:        meta.ID,
 		Type:      meta.Type,

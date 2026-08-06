@@ -85,6 +85,14 @@ type AutoRun struct {
 	// current suspended generation. It is intentionally separate from the
 	// condition that a future Scheduler Agent should evaluate.
 	SuspensionSummary string `json:"suspensionSummary,omitempty"`
+	// StatusReason is the current generation's state reason. Keeping this
+	// projection in task metadata lets resource detail pages render the
+	// current AutoRun status without loading an arbitrary historical log page.
+	StatusReason string `json:"statusReason,omitempty"`
+	// WakeConditionFallback records that WakeCondition was filled from the
+	// suspension summary for compatibility. The corresponding log entry is
+	// historical and may not be present in a paged resource detail response.
+	WakeConditionFallback bool `json:"wakeConditionFallback,omitempty"`
 }
 
 type TaskRepo struct {

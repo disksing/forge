@@ -1114,6 +1114,7 @@ func TestProjectSessionStartRejectsStaleBackgroundSnapshots(t *testing.T) {
 const oldTree = { projects: [{ id: "project1", title: "Forge" }], sessions: [] };
 const newSession = { id: "session-new", resourceId: "project1" };
 const newTree = { projects: oldTree.projects, sessions: [newSession] };
+const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const state = {
   activeWorkspaceId: "workspace-one",
   selectedId: "project1",
@@ -1141,6 +1142,13 @@ const state = {
   },
 };
 const document = { hidden: false };
+function resourceDetailSnapshot(resourceId) {
+  return JSON.parse(JSON.stringify(state.details[resourceId] || null));
+}
+function applyResourceDetail(detail) {
+  state.details[detail.id] = detail;
+  return detail;
+}
 let scenario = "";
 let resolveOldTree;
 let oldTreeResponse;
@@ -1298,7 +1306,15 @@ func TestDetailMarkdownIncrementalRefreshBehavior(t *testing.T) {
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+function resourceDetailSnapshot(resourceId) {
+  return JSON.parse(JSON.stringify(state.details[resourceId] || null));
+}
+function applyResourceDetail(detail) {
+  state.details[detail.id] = detail;
+  return detail;
+}
 
+const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const state = {
   activeWorkspaceId: "workspace-a",
   selectedId: "project1",
@@ -1318,6 +1334,7 @@ function isLongMarkdownContent(content) { return String(content || "").length > 
 function markdownFileKey(name) { return state.activeWorkspaceId + ":" + state.selectedId + ":" + name; }
 function renderAll() {}
 function filePreviewURL(section, path, workspaceId) { return workspaceId + "/" + section + "/" + path; }
+function compareLogTimeDesc(a, b) { return String(b?.time || "").localeCompare(String(a?.time || "")); }
 ` + regionSource + documentKeySource + viewGuardSource + detailSource + previewSource + `
 
 const region = { dataset: { renderKey: "same-hash" }, innerHTML: "existing markdown" };

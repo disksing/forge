@@ -2,6 +2,7 @@ const state = {
   config: null,
   tree: null,
   details: {},
+  resourceLogPages: {},
   workspaceAgents: null,
   workspaceAgentsDraft: "",
   workspaceAgentsDirty: false,
@@ -158,6 +159,8 @@ const state = {
 
 const $ = (id) => document.getElementById(id);
 const AUTO_REFRESH_INTERVAL_MS = 5000;
+const RESOURCE_LOG_INITIAL_LIMIT = 10;
+const RESOURCE_LOG_MORE_LIMIT = 20;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 60 * 1000;
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
@@ -1140,6 +1143,7 @@ async function load() {
   } else {
     state.tree = null;
     state.details = {};
+    state.resourceLogPages = {};
     state.workspaceAgents = null;
     state.preview = null;
     state.diff = null;
@@ -1161,6 +1165,7 @@ async function loadTree(options = {}) {
   if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
   state.tree = tree;
   state.details = {};
+  state.resourceLogPages = {};
   state.workspaceAgents = null;
   state.workspaceAgentsSaving = false;
   state.preview = null;
@@ -1184,10 +1189,14 @@ async function loadTree(options = {}) {
 
 async function loadDetail(id, options = {}) {
   if (!id || id === "workspace" || (state.details[id] && !options.force)) return;
+  if (options.force) {
+    resetResourceLogState(id);
+    delete state.details[id];
+  }
   const workspaceId = state.activeWorkspaceId;
   const navigationVersion = state.navigationVersion;
   const detailRequestVersion = ++state.detailRequestVersion;
-  const detail = await fetchDetail(id, workspaceId);
+  const detail = await fetchDetail(id, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT });
   if (
     !isCurrentWorkspaceView(workspaceId, navigationVersion) ||
     state.selectedId !== id ||
@@ -1195,12 +1204,159 @@ async function loadDetail(id, options = {}) {
   ) {
     return null;
   }
-  state.details[id] = detail;
-  return detail;
+  return applyResourceDetail(detail, "replace");
 }
 
-function fetchDetail(id, workspaceId = state.activeWorkspaceId) {
-  return api(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(id)}`);
+function fetchDetail(id, workspaceId = state.activeWorkspaceId, options = {}) {
+  const params = new URLSearchParams();
+  const cursor = options.logsCursor === undefined ? options.cursor : options.logsCursor;
+  const limit = options.logsLimit === undefined ? (options.limit === undefined ? RESOURCE_LOG_INITIAL_LIMIT : options.limit) : options.logsLimit;
+  params.set("logsLimit", String(limit));
+  if (cursor !== undefined && cursor !== null && String(cursor) !== "") {
+    params.set("logsCursor", String(cursor));
+  }
+  return api(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(id)}?${params.toString()}`);
+}
+
+function resetResourceLogState(resourceId) {
+  if (!state.resourceLogPages) state.resourceLogPages = {};
+  if (resourceId) delete state.resourceLogPages[resourceId];
+}
+
+function resourceLogPage(resourceId) {
+  if (!state.resourceLogPages) state.resourceLogPages = {};
+  if (!state.resourceLogPages[resourceId]) {
+    state.resourceLogPages[resourceId] = {
+      loaded: false,
+      hasMore: false,
+      nextCursor: "",
+      loading: false,
+      error: "",
+      requestVersion: 0,
+    };
+  }
+  return state.resourceLogPages[resourceId];
+}
+
+function resourceLogEntries(detail) {
+  if (Array.isArray(detail?.logs) && detail.logs.length) return detail.logs;
+  if (Array.isArray(detail?.logPage?.entries)) return detail.logPage.entries;
+  return Array.isArray(detail?.logs) ? detail.logs : [];
+}
+
+function mergeResourceLogs(existing, incoming, prepend) {
+  const next = [];
+  const byID = new Map();
+  const add = (entry, replaceDuplicate) => {
+    const id = String(entry?.id || "");
+    if (id && byID.has(id)) {
+      if (replaceDuplicate) next[byID.get(id)] = entry;
+      return;
+    }
+    if (id) byID.set(id, next.length);
+    next.push(entry);
+  };
+  const first = prepend ? incoming : existing;
+  const second = prepend ? existing : incoming;
+  for (const entry of first || []) add(entry, false);
+  for (const entry of second || []) add(entry, !prepend);
+  return next.sort(compareLogTimeDesc);
+}
+
+function resourceDetailSnapshot(resourceId) {
+  const page = state.resourceLogPages?.[resourceId];
+  return {
+    detail: state.details[resourceId] || null,
+    page: page ? {
+      loaded: page.loaded,
+      hasMore: page.hasMore,
+      nextCursor: page.nextCursor,
+      loading: page.loading,
+      error: page.error,
+    } : null,
+  };
+}
+
+function applyResourceDetail(detail, mode = "head") {
+  if (!detail?.id) return null;
+  const resourceId = detail.id;
+  const incoming = resourceLogEntries(detail);
+  const incomingPage = detail.logPage || null;
+  const page = resourceLogPage(resourceId);
+  const replace = mode === "replace" || !page.loaded || !state.details[resourceId];
+  if (replace) {
+    page.loaded = true;
+    page.hasMore = Boolean(incomingPage?.hasMore);
+    page.nextCursor = String(incomingPage?.nextCursor || "");
+    page.error = "";
+    const logs = mergeResourceLogs([], incoming, true);
+    state.details[resourceId] = { ...detail, logs, logPage: { hasMore: page.hasMore, nextCursor: page.nextCursor } };
+    return state.details[resourceId];
+  }
+
+  const current = state.details[resourceId];
+  const logs = mergeResourceLogs(current.logs || [], incoming, mode !== "older");
+  if (mode === "older" && incomingPage) {
+    page.hasMore = Boolean(incomingPage.hasMore);
+    page.nextCursor = String(incomingPage.nextCursor || "");
+  }
+  page.loaded = true;
+  page.error = "";
+  const nextDetail = mode === "older" ? current : { ...current, ...detail };
+  state.details[resourceId] = {
+    ...nextDetail,
+    logs,
+    logPage: { hasMore: page.hasMore, nextCursor: page.nextCursor },
+  };
+  return state.details[resourceId];
+}
+
+async function loadMoreLogs(resourceId = state.selectedId) {
+  if (!resourceId || resourceId === "workspace" || state.selectedId !== resourceId) return;
+  const page = resourceLogPage(resourceId);
+  if (!page.loaded || !page.hasMore || page.loading) return;
+  const cursor = String(page.nextCursor || "");
+  if (!cursor) {
+    page.error = "The log page did not provide a continuation cursor.";
+    renderDetails();
+    bindLogEvents();
+    return;
+  }
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const requestVersion = ++page.requestVersion;
+  page.loading = true;
+  page.error = "";
+  renderDetails();
+  bindLogEvents();
+  try {
+    const detail = await fetchDetail(resourceId, workspaceId, {
+      logsCursor: cursor,
+      logsLimit: RESOURCE_LOG_MORE_LIMIT,
+    });
+    if (!isCurrentWorkspaceView(workspaceId, navigationVersion) ||
+        state.selectedId !== resourceId ||
+        state.resourceLogPages[resourceId] !== page ||
+        requestVersion !== page.requestVersion) return;
+    applyResourceDetail(detail, "older");
+  } catch (err) {
+    if (isCurrentWorkspaceView(workspaceId, navigationVersion) &&
+        state.selectedId === resourceId &&
+        state.resourceLogPages[resourceId] === page &&
+        requestVersion === page.requestVersion) {
+      page.error = err.message || "Could not load older logs.";
+    }
+  } finally {
+    if (isCurrentWorkspaceView(workspaceId, navigationVersion) &&
+        state.selectedId === resourceId &&
+        state.resourceLogPages[resourceId] === page &&
+        requestVersion === page.requestVersion) {
+      page.loading = false;
+      renderDetails();
+      bindLogEvents();
+      refreshIcons();
+    }
+  }
 }
 
 async function loadWorkspaceAgents(options = {}) {
@@ -1300,14 +1456,15 @@ async function autoRefresh() {
       }
     } else if (selectedId) {
       const detailRequestVersion = ++state.detailRequestVersion;
-      const detail = await fetchDetail(selectedId, workspaceId);
+      const detail = await fetchDetail(selectedId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT });
       if (
         !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) ||
         state.selectedId !== selectedId ||
         detailRequestVersion !== state.detailRequestVersion
       ) return;
-      if (!sameJSON(state.details[selectedId], detail)) {
-        state.details[selectedId] = detail;
+      const previousDetail = resourceDetailSnapshot(selectedId);
+      applyResourceDetail(detail, "head");
+      if (!sameJSON(previousDetail, resourceDetailSnapshot(selectedId))) {
         changed = true;
       }
     }
@@ -1346,6 +1503,7 @@ function renderAll() {
   renderTree();
   renderSessions();
   renderDetails();
+  bindLogEvents();
   bindWorkspaceAgentsEvents();
   bindTemplateEvents();
   bindArtifactBrowserEvents();
@@ -1369,6 +1527,7 @@ function renderSelectionPanels() {
   renderTree();
   renderSessions();
   renderDetails();
+  bindLogEvents();
   bindWorkspaceAgentsEvents();
   bindTemplateEvents();
   bindArtifactBrowserEvents();
@@ -1480,6 +1639,8 @@ async function switchWorkspace(id) {
   await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
   state.selectedId = "workspace";
+  state.details = {};
+  state.resourceLogPages = {};
   initializeNotificationState(id);
   state.sessionMenu = null;
   resetWorkspaceAgentsDraft();
@@ -1989,6 +2150,10 @@ async function selectResource(id, options = {}) {
     state.workspaceAgentsRequestVersion++;
     state.previewRequestVersion++;
     state.diffRequestVersion++;
+    if (id !== "workspace") {
+      resetResourceLogState(id);
+      delete state.details[id];
+    }
   }
   if (selectionChanged) {
     if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
@@ -2315,9 +2480,47 @@ function updateDetailRegion(panel, name, key, html) {
   if (!region) return false;
   const normalizedKey = String(key ?? "");
   if (region.dataset.renderKey === normalizedKey) return false;
+  const logState = name === "logs" ? captureLogRegionState(panel, region) : null;
   region.innerHTML = (typeof html === "function" ? html() : html) || "";
   region.dataset.renderKey = normalizedKey;
+  if (logState) restoreLogRegionState(panel, region, logState);
   return true;
+}
+
+function captureLogRegionState(panel, region) {
+  const openIds = [...region.querySelectorAll("details[data-log-id][open]")]
+    .map((entry) => String(entry.dataset.logId || ""))
+    .filter(Boolean);
+  const snapshot = {
+    openIds,
+    scrollTop: Number(panel?.scrollTop) || 0,
+    anchorId: "",
+    anchorTop: 0,
+  };
+  if (!panel || typeof panel.getBoundingClientRect !== "function") return snapshot;
+  const panelRect = panel.getBoundingClientRect();
+  for (const entry of region.querySelectorAll("details[data-log-id]")) {
+    const rect = entry.getBoundingClientRect();
+    if (rect.bottom > panelRect.top) {
+      snapshot.anchorId = String(entry.dataset.logId || "");
+      snapshot.anchorTop = rect.top;
+      break;
+    }
+  }
+  return snapshot;
+}
+
+function restoreLogRegionState(panel, region, snapshot) {
+  const openIds = new Set(snapshot.openIds || []);
+  for (const entry of region.querySelectorAll("details[data-log-id]")) {
+    if (openIds.has(String(entry.dataset.logId || ""))) entry.open = true;
+  }
+  if (!panel || snapshot.scrollTop <= 0 || !snapshot.anchorId || typeof panel.getBoundingClientRect !== "function") return;
+  const anchor = [...region.querySelectorAll("details[data-log-id]")]
+    .find((entry) => String(entry.dataset.logId || "") === snapshot.anchorId);
+  if (!anchor) return;
+  const delta = anchor.getBoundingClientRect().top - snapshot.anchorTop;
+  if (Number.isFinite(delta)) panel.scrollTop = snapshot.scrollTop + delta;
 }
 
 function markdownRendererKey() {
@@ -2365,7 +2568,14 @@ function artifactRenderKey(section, entries, extra = {}) {
 }
 
 function detailLogsRenderKey(item) {
-  return JSON.stringify(item.logs || []);
+  const page = state.resourceLogPages?.[item.id] || {};
+  return JSON.stringify({
+    logs: item.logs || [],
+    hasMore: Boolean(page.hasMore ?? item.logPage?.hasMore),
+    nextCursor: String(page.nextCursor ?? item.logPage?.nextCursor ?? ""),
+    loading: Boolean(page.loading),
+    error: String(page.error || ""),
+  });
 }
 
 function workspaceAgentsRenderKey(agents) {
@@ -2687,22 +2897,51 @@ async function openBreadcrumbResource(id) {
 
 function logSection(item) {
   const logs = [...(item.logs || [])].sort((a, b) => compareLogTimeDesc(a, b));
-  if (!logs.length) return "";
+  const page = state.resourceLogPages?.[item.id] || {
+    hasMore: Boolean(item.logPage?.hasMore),
+    nextCursor: String(item.logPage?.nextCursor || ""),
+    loading: false,
+    error: "",
+  };
+  if (!logs.length && !page.error && !page.hasMore) return "";
+  const loadMore = page.hasMore ? `
+        <button
+          type="button"
+          class="secondary-button log-load-more"
+          data-log-load-more
+          data-log-resource="${escapeHTML(item.id)}"
+          ${page.loading ? "disabled" : ""}
+          aria-busy="${page.loading ? "true" : "false"}">
+          ${icon(page.loading ? "loader-circle" : "chevron-down", page.loading ? "spin" : "")}
+          <span>${page.loading ? "Loading older logs..." : page.error ? "Retry" : "Load More"}</span>
+        </button>` : "";
   return `
     <div class="content-section">
       <h3>${icon("history")}<span>Log</span></h3>
       <div class="log-timeline">
         ${logs.map((entry) => logTimelineEntry(entry)).join("")}
       </div>
+      ${page.error ? `<p class="log-load-error" role="alert">${escapeHTML(page.error)}</p>` : ""}
+      ${loadMore ? `<div class="log-load-actions">${loadMore}</div>` : ""}
     </div>
   `;
+}
+
+function bindLogEvents() {
+  document.querySelectorAll("[data-log-load-more]").forEach((button) => {
+    if (button.dataset.eventsBound === "true") return;
+    button.dataset.eventsBound = "true";
+    button.addEventListener("click", () => {
+      loadMoreLogs(button.dataset.logResource).catch((err) => toast(err.message));
+    });
+  });
 }
 
 function logTimelineEntry(entry) {
   const title = entry.title || "Untitled log entry";
   const details = entry.details || "";
   return `
-    <details class="log-entry">
+    <details class="log-entry" data-log-id="${escapeHTML(entry.id || "")}">
       <summary>
         <span class="log-time" title="${escapeHTML(entry.time || "")}">
           <strong>${escapeHTML(relativeTime(entry.time))}</strong>
@@ -3552,11 +3791,11 @@ async function refreshAgentRunMetadata(options = {}) {
     const resourceId = String(activeRun?.resourceId || "").trim();
     const [tree, detail] = await Promise.all([
       fetchCurrentTree(workspaceId),
-      resourceId ? fetchDetail(resourceId, workspaceId) : Promise.resolve(null),
+      resourceId ? fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }) : Promise.resolve(null),
     ]);
     if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
     if (tree) state.tree = tree;
-    if (detail && state.activeWorkspaceId === workspaceId) state.details[resourceId] = detail;
+    if (detail && state.activeWorkspaceId === workspaceId) applyResourceDetail(detail, "head");
   }
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   return true;
@@ -3608,8 +3847,8 @@ async function refreshAgentInputProjection(workspaceId, resourceId) {
     loadAgentRuns(),
     refreshTreeAfterAgentSessionMutation(),
     resourceId && resourceId !== "workspace"
-      ? fetchDetail(resourceId, workspaceId).then((detail) => {
-        if (state.activeWorkspaceId === workspaceId && detail) state.details[resourceId] = detail;
+      ? fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }).then((detail) => {
+        if (state.activeWorkspaceId === workspaceId && detail) applyResourceDetail(detail, "head");
       })
       : Promise.resolve(),
   ]);
@@ -4035,13 +4274,17 @@ function autoRunStatusReason(run, logs = []) {
   };
   const titles = titlesByState[run.state];
   if (!titles) return null;
+  const labelsByState = { running: "Retry reason", paused: "Pause reason", failed: "Failure reason" };
+  const structuredReason = String(run.statusReason || "").trim();
+  if (structuredReason) {
+    return { label: labelsByState[run.state], text: structuredReason };
+  }
   const generation = Number(run.generation);
   const entry = (logs || []).find((candidate) => candidate?.autoRun === true
     && Number(candidate.autoRunGeneration) === generation
     && titles.includes(candidate.title)
     && String(candidate.details || "").trim());
   if (!entry) return null;
-  const labelsByState = { running: "Retry reason", paused: "Pause reason", failed: "Failure reason" };
   return { label: labelsByState[run.state], text: String(entry.details).trim() };
 }
 
@@ -4069,7 +4312,7 @@ function autoRunStatus(detail) {
       <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
       ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
       ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-      ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
+      ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
       ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
     </section>
   `;
@@ -4619,7 +4862,9 @@ async function startChatAutoRun(options = {}) {
       await Promise.all([
         loadAgentRuns(),
         refreshTreeAfterAgentSessionMutation(),
-        fetchDetail(selected.id).then((fresh) => { state.details[selected.id] = fresh; }),
+        fetchDetail(selected.id, state.activeWorkspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }).then((fresh) => {
+          if (fresh && state.activeWorkspaceId) applyResourceDetail(fresh, "head");
+        }),
       ]);
       renderAll();
       const agent = response.agentName ? ` with ${response.agentName}` : "";
@@ -7228,6 +7473,10 @@ window.addEventListener("popstate", async () => {
   const navigationVersion = state.navigationVersion;
   state.activeWorkspaceId = route.workspaceId;
   state.selectedId = route.resourceId || "workspace";
+  if (!workspaceChanged && previousSelectedId !== state.selectedId && state.selectedId !== "workspace") {
+    resetResourceLogState(state.selectedId);
+    delete state.details[state.selectedId];
+  }
   state.preview = null;
   state.diff = null;
   state.sessionMenu = null;
