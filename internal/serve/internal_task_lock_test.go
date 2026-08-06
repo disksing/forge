@@ -63,7 +63,7 @@ function enabledAgentConfigs() { return state.config.agents.filter((agent) => ag
 function selectedAgentConfig() { return enabledAgentConfigs()[0] || null; }
 function agentDisplayName(agent) { return agent?.name || agent?.id || "Agent"; }
 function agentConfigSummary() { return "AgentHub"; }
-function autoRunComposerAction() { return state.selectedId === "project1.task1" ? '<button id="autoRunStartButton">Start AutoRun</button>' : ''; }
+function autoRunComposerAction() { return state.selectedId === "project1.task1" && !selectedResourceHasExternalLock() ? '<button id="autoRunStartButton">Start AutoRun</button>' : ''; }
 function externalResourceLockNotice() { return '<div id="externalLockNotice">This resource is locked by an external session.</div>'; }
 function icon() { return ""; }
 function escapeHTML(value) { return String(value ?? ""); }
@@ -87,7 +87,7 @@ function composer() {
   return agentComposerActions({ includeClose: true, collapsible: true });
 }
 function toolbar() {
-  return agentComposerToolbarActions({ includeEndTurn: true, includeClose: true });
+  return agentComposerToolbarActions({ includeEndTurn: true, includeClose: true, includeAutoRun: true });
 }
 const statuses = ["starting", "running", "waiting_approval", "idle", "stopping", "recovering", "unknown"];
 for (const [resourceId, hasAutoRun] of [["project1.task1", true], ["project1", false]]) {
@@ -99,7 +99,8 @@ for (const [resourceId, hasAutoRun] of [["project1.task1", true], ["project1", f
     const html = composer();
     assert(!html.includes('id="agentStartButton"'), resourceId + " " + status + " internal lock must hide New Session");
     assert(!html.includes("ttyAgentMenu"), resourceId + " " + status + " internal lock must hide the open Agent chooser");
-    assert(html.includes('id="autoRunStartButton"') === hasAutoRun, resourceId + " " + status + " AutoRun rendering mismatch");
+    assert(!html.includes('id="autoRunStartButton"'), resourceId + " " + status + " bottom actions must not render AutoRun");
+    assert(toolbar().includes('id="autoRunStartButton"') === hasAutoRun, resourceId + " " + status + " toolbar AutoRun rendering mismatch");
     assert(!html.includes('id="agentCloseSessionButton"'), resourceId + " " + status + " must not duplicate Close Session in bottom actions");
     assert(toolbar().includes('id="agentCloseSessionButton"'), resourceId + " " + status + " toolbar must preserve Close Session");
     assert(!state.agent.agentChooserOpen, resourceId + " " + status + " internal lock must close the chooser state");
@@ -120,6 +121,7 @@ closeNewSessionChooserForResourceLock();
 const externalHTML = composer();
 assert(!externalHTML.includes('id="agentStartButton"'), "external lock must keep New Session hidden");
 assert(externalHTML.includes("externalLockNotice"), "external lock must keep its dedicated notice");
+assert(!toolbar().includes('id="autoRunStartButton"'), "an external task lock must hide AutoRun from the toolbar");
 assert(!state.agent.agentChooserOpen, "external lock must close the chooser state");
 
 state.tree.sessions = [lockedSession("internal", "internal", "idle"), lockedSession("external", "external", "running")];
@@ -153,6 +155,7 @@ assert(!projectExternalHTML.includes('id="agentStartButton"'), "an external proj
 assert(projectExternalHTML.includes("externalLockNotice"), "an external project lock must keep its dedicated notice");
 assert(!projectExternalHTML.includes('id="agentCloseSessionButton"'), "an external project lock must not duplicate Close Session in bottom actions");
 assert(toolbar().includes('id="agentCloseSessionButton"'), "an external project lock must preserve Close Session in the toolbar");
+assert(!toolbar().includes('id="autoRunStartButton"'), "an external project lock must hide AutoRun from the toolbar");
 assert(!projectExternalHTML.includes("This task"), "an external project lock must not call the resource a task");
 assert(!state.agent.agentChooserOpen, "an external project lock must close the chooser state");
 

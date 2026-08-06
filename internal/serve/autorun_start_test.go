@@ -668,17 +668,23 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 	source := string(data)
 	for _, want := range []string{
 		`function autoRunComposerAction() {`,
+		`function standaloneComposerToolbar(markup) {`,
+		`includeAutoRun: true`,
 		`id="autoRunStartButton"`,
-		`label = "Start AutoRun";`,
-		`label = "Start New AutoRun";`,
-		`label = "Resume Now";`,
-		`label = "Resume AutoRun";`,
-		`label = "AutoRun Queued";`,
-		`label = "AutoRun Running";`,
-		"disabledReason = `AutoRun generation ${autoRun.generation} is already queued.`;",
-		`disabledReason = "Select an agent below to start AutoRun without an active session.";`,
+		`id="autoRunCancelButton"`,
+		`data-autorun-action=`,
+		`"Start AutoRun"`,
+		`"Start New AutoRun"`,
+		`"Resume AutoRun now"`,
+		`"Resume AutoRun"`,
+		`"Cancel AutoRun"`,
+		`"Cancel AutoRun and keep the Agent Session open."`,
+		`const startableStates = ["", "completed", "failed", "cancelled"];`,
+		`const resumableStates = ["suspended", "paused"];`,
+		`const cancellableStates = ["queued", "running", "suspended", "paused"];`,
 		`"The current session is busy; wait until it is idle to start AutoRun."`,
 		`"Resolve the pending approval before starting AutoRun in this session."`,
+		`run.resourceId === selected.id && isLiveAgentRun(run)`,
 		`/api/workspaces/${state.activeWorkspaceId}/autorun/start`,
 		`body.runInstructions = String(options.runInstructions || "");`,
 		`body.completionCriteria = String(options.completionCriteria || "");`,
@@ -707,7 +713,48 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(styles), ".tty-autorun-action {") {
-		t.Fatal("Chat AutoRun action styling is missing")
+	for _, want := range []string{
+		`.tty-composer-toolbar-standalone`,
+		`.tty-autorun-start-action`,
+		`.tty-autorun-resume-action`,
+		`.tty-autorun-cancel-action`,
+		`.tty-composer-action:focus-visible`,
+		`flex-wrap: wrap;`,
+		`.tty-composer-toolbar-standalone {`,
+		`@media (max-width: 420px)`,
+	} {
+		if !strings.Contains(string(styles), want) {
+			t.Fatalf("Chat AutoRun action styling is missing %q", want)
+		}
+	}
+
+	statusStart := strings.Index(source, `function autoRunStatus(detail) {`)
+	statusEnd := -1
+	if statusStart >= 0 {
+		statusEnd = strings.Index(source[statusStart:], `function autoRunPresentation(state) {`)
+	}
+	if statusStart < 0 || statusEnd < 0 {
+		t.Fatal("AutoRun status renderer boundary is missing")
+	}
+	if strings.Contains(source[statusStart:statusStart+statusEnd], `id="autoRunCancelButton"`) {
+		t.Fatal("AutoRun status card still renders a duplicate Cancel button")
+	}
+
+	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
+	actionsEnd := -1
+	if actionsStart >= 0 {
+		actionsEnd = strings.Index(source[actionsStart:], `function standaloneComposerToolbar(markup) {`)
+	}
+	if actionsStart < 0 || actionsEnd < 0 {
+		t.Fatal("Session actions renderer boundary is missing")
+	}
+	actions := source[actionsStart : actionsStart+actionsEnd]
+	if strings.Contains(actions, `autoRunStartButton`) || strings.Contains(actions, `autoRunCancelButton`) {
+		t.Fatal("bottom Session actions still render an AutoRun control")
+	}
+	uploadIndex := strings.Index(source, `id="agentUploadButton" class="tty-upload-button"`)
+	toolbarIndex := strings.Index(source, "\n        ${toolbarActionsMarkup}\n")
+	if uploadIndex < 0 || toolbarIndex < 0 || uploadIndex > toolbarIndex {
+		t.Fatal("AutoRun toolbar must be rendered after Upload files in the live composer")
 	}
 }
