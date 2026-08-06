@@ -115,9 +115,14 @@ type startAgentRequest struct {
 }
 
 type agentInputRequest struct {
-	Text              string `json:"text"`
-	SchedulerTurn     bool   `json:"schedulerTurn,omitempty"`
-	AutoRunGeneration int    `json:"autoRunGeneration,omitempty"`
+	Text                      string `json:"text"`
+	ResourceID                string `json:"resourceId,omitempty"`
+	SchedulerTurn             bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration         int    `json:"autoRunGeneration,omitempty"`
+	ResumeSuspendedAutoRun    bool   `json:"resumeSuspendedAutoRun,omitempty"`
+	AutoRunProjectionSet      bool   `json:"autoRunProjectionSet,omitempty"`
+	ExpectedAutoRunGeneration int    `json:"expectedAutoRunGeneration,omitempty"`
+	ExpectedAutoRunState      string `json:"expectedAutoRunState,omitempty"`
 }
 
 type agentApprovalRequest struct {

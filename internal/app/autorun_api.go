@@ -146,6 +146,37 @@ func (w *Workspace) ResumeAutoRun(taskID string) (Task, error) {
 	})
 }
 
+// ResumeAndStartAutoRun atomically resumes the expected suspended generation
+// and starts its scheduler turn. The queued and started log entries are
+// written together with the same task update, while suspension context is
+// retained for the resumed generation.
+func (w *Workspace) ResumeAndStartAutoRun(input AutoRunActionInput) (Task, error) {
+	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
+		if task.AutoRun == nil {
+			return errors.New("task has no AutoRun")
+		}
+		if input.ExpectedGeneration <= 0 {
+			return errors.New("expected AutoRun generation is required")
+		}
+		if strings.TrimSpace(input.ExpectedState) != autoRunStateSuspended {
+			return errors.New("expected AutoRun state must be suspended")
+		}
+		if err := validateAutoRunCAS(task.AutoRun, input); err != nil {
+			return err
+		}
+		if task.AutoRun.State != autoRunStateSuspended {
+			return fmt.Errorf("AutoRun is not suspended: %s", task.AutoRun.State)
+		}
+		generation := task.AutoRun.Generation
+		task.AutoRun.State = autoRunStateRunning
+		task.AutoRun.SuspendedAt = ""
+		return prependLogEntries(dir,
+			newAutoRunLogEntry("Auto Run started", "", generation),
+			newAutoRunLogEntry("Auto Run queued", "resumed", generation),
+		)
+	})
+}
+
 // RetryAutoRun records a retry and applies the existing retry budget.
 func (w *Workspace) RetryAutoRun(input AutoRunActionInput) (Task, error) {
 	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {

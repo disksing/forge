@@ -355,21 +355,36 @@ func logListUsage(kind string) string {
 }
 
 func prependLogEntry(dir string, entry LogEntry) error {
-	if entry.Title == "" {
-		return errors.New("log title cannot be empty")
+	return prependLogEntries(dir, entry)
+}
+
+// prependLogEntries writes a group of new entries in one file update. Callers
+// use this when a durable state transition has more than one protocol log
+// entry, so a partially written transition cannot expose only its first step.
+func prependLogEntries(dir string, entries ...LogEntry) error {
+	if len(entries) == 0 {
+		return nil
 	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
+	for _, entry := range entries {
+		if entry.Title == "" {
+			return errors.New("log title cannot be empty")
+		}
+	}
+
+	var next []byte
+	for _, entry := range entries {
+		data, err := json.Marshal(entry)
+		if err != nil {
+			return err
+		}
+		next = append(next, data...)
+		next = append(next, '\n')
 	}
 	path := filepath.Join(dir, logJSONLFile)
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	var next []byte
-	next = append(next, data...)
-	next = append(next, '\n')
 	next = append(next, existing...)
 	return os.WriteFile(path, next, 0o644)
 }

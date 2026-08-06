@@ -541,6 +541,133 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAPIResumeAndStartAutoRunUsesGenerationStateCAS(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Atomic resume project", "atomic-resume")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{
+		ProjectID: project.ID, Title: "Atomic resume task", Slug: "atomic-resume", AutoRun: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, Summary: "waiting for a human", WakeCondition: "human sends a message",
+		ExpectedGeneration: 1, ExpectedState: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resumed, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
+	})
+	if err != nil || resumed.AutoRun == nil {
+		t.Fatalf("atomic resume failed: task=%+v err=%v", resumed, err)
+	}
+	if resumed.AutoRun.State != "running" || resumed.AutoRun.Generation != 1 || resumed.AutoRun.SuspendedAt != "" ||
+		resumed.AutoRun.SuspensionSummary != "waiting for a human" || resumed.AutoRun.WakeCondition != "human sends a message" {
+		t.Fatalf("atomic resume changed the wrong projection: %+v", resumed.AutoRun)
+	}
+
+	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
+	}); err == nil {
+		t.Fatal("stale suspended CAS unexpectedly succeeded after the generation became running")
+	}
+	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 2, ExpectedState: "suspended",
+	}); err == nil {
+		t.Fatal("stale generation CAS unexpectedly succeeded")
+	}
+
+	logs, err := workspace.Logs(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	queued, started := 0, 0
+	for _, entry := range logs {
+		if !entry.AutoRun || entry.AutoRunGeneration != 1 {
+			continue
+		}
+		switch {
+		case entry.Title == "Auto Run queued" && entry.Details == "resumed":
+			queued++
+		case entry.Title == "Auto Run started":
+			started++
+		}
+	}
+	if queued != 1 || started != 2 {
+		t.Fatalf("atomic resume logged duplicate or incomplete transitions: queued=%d started=%d logs=%#v", queued, started, logs)
+	}
+
+	paused, err := workspace.PauseAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running",
+	})
+	if err != nil || paused.AutoRun == nil || paused.AutoRun.State != "paused" {
+		t.Fatalf("pause setup failed: task=%+v err=%v", paused, err)
+	}
+	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
+	}); err == nil {
+		t.Fatal("paused AutoRun was implicitly accepted as suspended")
+	}
+}
+
+func TestWorkspaceAPIResumeAndStartAutoRunConcurrentCASIsSingleWinner(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Atomic race project", "atomic-race")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Atomic race task", Slug: "atomic-race", AutoRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
+		t.Fatal(err)
+	}
+
+	const workers = 10
+	results := make(chan error, workers)
+	var group sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			_, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+				TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
+			})
+			results <- err
+		}()
+	}
+	group.Wait()
+	close(results)
+	winners := 0
+	for err := range results {
+		if err == nil {
+			winners++
+		}
+	}
+	if winners != 1 {
+		t.Fatalf("atomic resume had %d winners, want 1", winners)
+	}
+	resource, err := workspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+		t.Fatalf("reload resumed task: resource=%+v err=%v", resource, err)
+	}
+	if resource.Task.AutoRun.State != "running" || resource.Task.AutoRun.Generation != 1 {
+		t.Fatalf("concurrent resume final state: %+v", resource.Task.AutoRun)
+	}
+}
+
 func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("Cancellation project", "cancellation")

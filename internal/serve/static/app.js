@@ -3418,6 +3418,20 @@ async function refreshTreeAfterAgentSessionMutation() {
   if (tree) state.tree = tree;
 }
 
+async function refreshAgentInputProjection(workspaceId, resourceId) {
+  if (!workspaceId || state.activeWorkspaceId !== workspaceId) return;
+  await Promise.all([
+    loadAgentRuns(),
+    refreshTreeAfterAgentSessionMutation(),
+    resourceId && resourceId !== "workspace"
+      ? fetchDetail(resourceId, workspaceId).then((detail) => {
+        if (state.activeWorkspaceId === workspaceId && detail) state.details[resourceId] = detail;
+      })
+      : Promise.resolve(),
+  ]);
+  if (state.activeWorkspaceId === workspaceId) renderAll();
+}
+
 async function mutateAgentSession(action) {
   state.agentSessionMutationCount++;
   state.autoRefreshVersion++;
@@ -5206,14 +5220,46 @@ async function startAgentRun(agentName = "") {
   });
 }
 
+function agentInputAutoRunProjection(run) {
+  const selected = findResource(state.selectedId);
+  const detail = selected ? (state.details[selected.id] || selected) : null;
+  if (!selected || selected.type !== "task" || !run || run.resourceId !== selected.id) return null;
+  const autoRun = detail?.autoRun || null;
+  return {
+    resourceId: selected.id,
+    autoRunProjectionSet: true,
+    expectedAutoRunGeneration: Number(autoRun?.generation) || 0,
+    expectedAutoRunState: String(autoRun?.state || "").trim().toLowerCase(),
+  };
+}
+
+function agentInputResumeIntent(run) {
+  const projection = agentInputAutoRunProjection(run);
+  if (!projection || projection.expectedAutoRunGeneration <= 0 || projection.expectedAutoRunState !== "suspended") return false;
+  return isLiveAgentRun(run) && run.status === "idle" && !run.schedulerTurn &&
+    String(run.agentHubSessionId || "").trim() &&
+    Number(run.autoRunGeneration) === projection.expectedAutoRunGeneration;
+}
+
 async function sendAgentInput(text) {
   if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
   if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
     throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
   }
+  const run = currentAgentRun();
+  const projection = agentInputAutoRunProjection(run);
+  const resumeSuspendedAutoRun = agentInputResumeIntent(run);
+  const body = { text };
+  if (projection) {
+    Object.assign(body, projection);
+    if (resumeSuspendedAutoRun) {
+      body.resumeSuspendedAutoRun = true;
+      body.autoRunGeneration = projection.expectedAutoRunGeneration;
+    }
+  }
   return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -5657,9 +5703,11 @@ async function submitTTYInput(event) {
   const sendingRun = currentAgentRun();
   if (!sendingRun) return;
   restoreAgentDraftForRun(sendingRun);
+  const resumeIntent = typeof agentInputResumeIntent === "function" && agentInputResumeIntent(sendingRun);
   updateAgentDraft(rawText);
   const sendWorkspaceId = state.activeWorkspaceId;
   const sendRunId = state.agent.activeRunId;
+  const sendResourceId = sendingRun.resourceId || "";
   const sendDraftKey = state.agent.ttyDraftKey;
   const sendDraftVersion = state.agent.ttyDraftVersion;
   let restoreInputFocus = document.activeElement === input;
@@ -5682,9 +5730,25 @@ async function submitTTYInput(event) {
         text: rawText,
         version: sendDraftVersion,
       });
+      if (result.autoRunResumed || resumeIntent) {
+        try {
+          if (typeof refreshAgentInputProjection === "function") {
+            await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
+          }
+        } catch (refreshError) {
+          toast(`Message accepted, but the view could not refresh: ${refreshError.message}`);
+        }
+      }
     }
   } catch (err) {
     toast(err.message);
+    if (resumeIntent && typeof refreshAgentInputProjection === "function") {
+      try {
+        await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
+      } catch (_) {
+        // Preserve the original send error when a stale projection refresh also fails.
+      }
+    }
   } finally {
     document.removeEventListener("focusin", cancelInputFocusRestore, true);
     state.agent.sendingInput = false;

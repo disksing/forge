@@ -30,6 +30,7 @@ type runtimeFakeAgentHub struct {
 	stopAtStopping     bool
 	failNextInterrupt  bool
 	failNextResume     bool
+	failNextMessage    bool
 	rejectAgentName    string
 	stopHook           func(string)
 	messageSteers      []bool
@@ -111,7 +112,16 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		session := f.sessions[id]
 		session.State = "busy"
 		f.sessions[id] = session
+		fail := f.failNextMessage
+		f.failNextMessage = false
 		f.mu.Unlock()
+		if fail {
+			w.WriteHeader(http.StatusBadGateway)
+			writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+				"code": "message_outcome_unknown", "message": "synthetic ambiguous message failure",
+			}})
+			return
+		}
 		writeRuntimeFakeJSON(w, map[string]any{"session": session})
 		return
 	}
@@ -478,6 +488,261 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	var detail agentRunDetail
 	_ = json.Unmarshal(recorder.Body.Bytes(), &detail)
 	return recorder, detail
+}
+
+func seedSuspendedChatInputRun(t *testing.T, manager *agentManager, fake *runtimeFakeAgentHub, workspace guiWorkspace) (*agentRuntime, app.Task) {
+	t.Helper()
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource, err := forgeWorkspace.ResourceValue("project1.task1")
+	if err != nil || resource.Task == nil {
+		t.Fatalf("load AutoRun task: resource=%+v err=%v", resource, err)
+	}
+	if _, err := forgeWorkspace.StartAutoRun(resource.Task.ID); err != nil {
+		t.Fatal(err)
+	}
+	suspended, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{
+		TaskID: resource.Task.ID, Summary: "waiting for human input", WakeCondition: "the user sends a message",
+		ExpectedGeneration: 1, ExpectedState: "running",
+	})
+	if err != nil || suspended.AutoRun == nil || suspended.AutoRun.State != "suspended" {
+		t.Fatalf("seed suspended task: task=%+v err=%v", suspended, err)
+	}
+
+	run := agentRun{
+		ID: "run-chat-resume", WorkspaceID: workspace.ID, ResourceID: resource.Task.ID,
+		AgentHubSessionID: "ses_chat_resume", AgentHubAgentName: "fake-agent",
+		SourceExternalID: workspace.ID + "/run-chat-resume", Cwd: workspace.Path, Status: "idle",
+		AutoRunGeneration: 1, CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
+	}
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	fake.sessions[run.AgentHubSessionID] = agentHubSession{
+		ID: run.AgentHubSessionID, State: "ready", AgentName: "fake-agent",
+		Source:    &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-runtime-test", ExternalID: run.SourceExternalID},
+		CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
+	}
+	fake.mu.Unlock()
+	_, client, err := manager.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, run, client)
+	manager.registerRuntime(rt)
+	return rt, suspended
+}
+
+func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWorkspace, runID, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(body))
+	manager.handle(recorder, request, workspace.ID, []string{"runs", runID, "input"})
+	return recorder
+}
+
+func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	rt, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
+
+	recorder := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"resume manually","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("suspended Chat input failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode accepted input: %v (%s)", err, recorder.Body.String())
+	}
+	if response["status"] != "accepted" || response["autoRunResumed"] != true {
+		t.Fatalf("input did not report an AutoRun resume: %#v", response)
+	}
+
+	reloaded := reloadTestTask(t, workspace.Path, seeded.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "running" || reloaded.AutoRun.Generation != 1 ||
+		reloaded.AutoRun.SuspensionSummary != "waiting for human input" || reloaded.AutoRun.WakeCondition != "the user sends a message" {
+		t.Fatalf("Chat resume lost the suspended generation context: %+v", reloaded.AutoRun)
+	}
+	projected := pollerRunState(rt)
+	if projected.Status != "running" || !projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+		t.Fatalf("Chat resume did not restore the scheduler-turn projection: %#v", projected)
+	}
+
+	fake.mu.Lock()
+	events := append([]agentHubEvent(nil), fake.events[projected.AgentHubSessionID]...)
+	steers := append([]bool(nil), fake.messageSteers...)
+	fake.mu.Unlock()
+	messageCount := 0
+	for _, event := range events {
+		if event.Type == "message.user" && fakeEventText(event) == "resume manually" {
+			messageCount++
+		}
+	}
+	if messageCount != 1 || len(steers) != 1 || steers[0] {
+		t.Fatalf("resume message was duplicated or sent as a steer: messages=%d steers=%v events=%#v", messageCount, steers, events)
+	}
+}
+
+func TestAgentHubChatInputDoesNotImplicitlyResumePausedAutoRun(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	rt, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ResumeAutoRun(seeded.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.StartAutoRun(seeded.ID); err != nil {
+		t.Fatal(err)
+	}
+	paused, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: seeded.ID, ExpectedGeneration: 1, ExpectedState: "running"})
+	if err != nil || paused.AutoRun == nil || paused.AutoRun.State != "paused" {
+		t.Fatalf("pause setup failed: task=%+v err=%v", paused, err)
+	}
+
+	conflict := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"must not resume","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"paused"}`)
+	if conflict.Code != http.StatusConflict {
+		t.Fatalf("paused resume intent should conflict, got %d %s", conflict.Code, conflict.Body.String())
+	}
+	if countFakeUserMessages(fake) != 0 {
+		t.Fatal("paused resume intent sent a message")
+	}
+
+	ordinary := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"ordinary paused chat","resourceId":"project1.task1","autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"paused"}`)
+	if ordinary.Code != http.StatusOK {
+		t.Fatalf("ordinary paused Chat input failed: %d %s", ordinary.Code, ordinary.Body.String())
+	}
+	reloaded := reloadTestTask(t, workspace.Path, seeded.ID)
+	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "paused" {
+		t.Fatalf("ordinary Chat input implicitly changed paused AutoRun: %+v", reloaded.AutoRun)
+	}
+	projected := pollerRunState(rt)
+	if projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+		t.Fatalf("ordinary paused Chat input changed scheduler metadata: %#v", projected)
+	}
+	if countFakeUserMessages(fake) != 1 {
+		t.Fatalf("ordinary paused Chat input message count = %d, want 1", countFakeUserMessages(fake))
+	}
+}
+
+func TestAgentHubChatInputRejectsStaleGenerationAndAmbiguousMessageWithoutRetry(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	rt, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
+
+	fake.mu.Lock()
+	session := fake.sessions[rt.run.AgentHubSessionID]
+	session.Source.ExternalID = "another-run"
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+	wrongSource := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"wrong session","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	if wrongSource.Code != http.StatusConflict {
+		t.Fatalf("session with a mismatched source should conflict, got %d %s", wrongSource.Code, wrongSource.Body.String())
+	}
+	if countFakeUserMessages(fake) != 0 {
+		t.Fatal("mismatched source sent a message")
+	}
+	fake.mu.Lock()
+	session.Source.ExternalID = rt.run.SourceExternalID
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	stale := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"stale generation","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":2,"expectedAutoRunState":"suspended"}`)
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale generation should conflict, got %d %s", stale.Code, stale.Body.String())
+	}
+	if countFakeUserMessages(fake) != 0 {
+		t.Fatal("stale generation sent a message")
+	}
+	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.AutoRun == nil || task.AutoRun.State != "suspended" || task.AutoRun.Generation != 1 {
+		t.Fatalf("stale generation changed task state: %+v", task.AutoRun)
+	}
+
+	fake.mu.Lock()
+	fake.failNextMessage = true
+	fake.mu.Unlock()
+	ambiguous := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"possibly delivered","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	if ambiguous.Code != http.StatusBadGateway || !strings.Contains(ambiguous.Body.String(), "not retried") {
+		t.Fatalf("ambiguous message should fail closed without retry, got %d %s", ambiguous.Code, ambiguous.Body.String())
+	}
+	projected := pollerRunState(rt)
+	if projected.Status != "recovering" || !projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+		t.Fatalf("ambiguous message lost the durable scheduler projection: %#v", projected)
+	}
+	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.AutoRun == nil || task.AutoRun.State != "running" {
+		t.Fatalf("ambiguous message rolled back a durable AutoRun resume: %+v", task.AutoRun)
+	}
+	if countFakeUserMessages(fake) != 1 {
+		t.Fatalf("ambiguous message was retried or dropped: count=%d", countFakeUserMessages(fake))
+	}
+
+	second := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"duplicate retry","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	if second.Code != http.StatusConflict {
+		t.Fatalf("duplicate submission after ambiguous result should conflict, got %d %s", second.Code, second.Body.String())
+	}
+	if countFakeUserMessages(fake) != 1 {
+		t.Fatal("duplicate submission sent a second message")
+	}
+}
+
+func TestAgentHubChatInputDuplicateResumeSubmissionHasOneWinner(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	rt, _ := seedSuspendedChatInputRun(t, manager, fake, workspace)
+	body := `{"text":"race resume","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`
+	results := make(chan int, 2)
+	var group sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			results <- sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, body).Code
+		}()
+	}
+	group.Wait()
+	close(results)
+	accepted, conflicts := 0, 0
+	for code := range results {
+		switch code {
+		case http.StatusOK:
+			accepted++
+		case http.StatusConflict:
+			conflicts++
+		}
+	}
+	if accepted != 1 || conflicts != 1 {
+		t.Fatalf("duplicate resume results: accepted=%d conflicts=%d", accepted, conflicts)
+	}
+	if countFakeUserMessages(fake) != 1 {
+		t.Fatalf("duplicate resume sent %d messages", countFakeUserMessages(fake))
+	}
+}
+
+func countFakeUserMessages(fake *runtimeFakeAgentHub) int {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	count := 0
+	for _, events := range fake.events {
+		for _, event := range events {
+			if event.Type == "message.user" {
+				count++
+			}
+		}
+	}
+	return count
 }
 
 func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T) {

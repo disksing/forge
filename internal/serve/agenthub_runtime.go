@@ -390,13 +390,64 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 	m.publishNotice(runID, notice)
 }
 
+type agentInputConflictError struct {
+	err error
+}
+
+func (e *agentInputConflictError) Error() string { return e.err.Error() }
+func (e *agentInputConflictError) Unwrap() error { return e.err }
+
+func agentInputConflict(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &agentInputConflictError{err: err}
+}
+
 func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentInputRequest, text string) {
+	// A direct suspended-generation resume shares the dispatch boundary with
+	// timed wake, explicit Resume, Cancel, End Turn, Close, and SchedulerTurn
+	// finish. Ordinary Chat input keeps its existing turn-only serialization and
+	// therefore cannot implicitly resume AutoRun.
+	if req.ResumeSuspendedAutoRun {
+		m.server.autoRunDispatchMu.Lock()
+		defer m.server.autoRunDispatchMu.Unlock()
+	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
 	run, state, client := rt.run, rt.agentHubState, rt.agentHub
 	rt.mu.Unlock()
-	if req.SchedulerTurn {
+
+	resumed := false
+	if req.ResumeSuspendedAutoRun {
+		if err := m.server.requireResourceNotExternallyLocked(rt.workspace, run.ResourceID); err != nil {
+			writeResourceOperationError(w, err, http.StatusConflict)
+			return
+		}
+		resumedRun, err := m.resumeSuspendedAutoRunForInput(r.Context(), rt, run, state, client, req)
+		if err != nil {
+			status := http.StatusBadGateway
+			var conflictErr *agentInputConflictError
+			if errors.As(err, &conflictErr) {
+				status = http.StatusConflict
+			}
+			writeError(w, err, status)
+			return
+		}
+		run = resumedRun
+		resumed = true
+	} else if err := m.validateAgentInputProjection(rt.workspace, run, req); err != nil {
+		status := http.StatusBadGateway
+		var conflictErr *agentInputConflictError
+		if errors.As(err, &conflictErr) {
+			status = http.StatusConflict
+		}
+		writeError(w, err, status)
+		return
+	}
+
+	if req.SchedulerTurn && !resumed {
 		if run.Status != "idle" {
 			writeError(w, errors.New("session is busy"), http.StatusConflict)
 			return
@@ -411,15 +462,161 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 		_ = saveAgentRun(rt.workspace.Path, run)
 	}
 	steer := state == "busy" || state == "waiting_approval"
+	if resumed {
+		steer = false
+	}
 	session, err := client.Message(r.Context(), run.AgentHubSessionID, text, steer)
 	if err != nil {
 		// Message/steer is non-idempotent. Never repeat it; the session poller
-		// reconciles the projection. Report the ambiguous outcome to the caller.
-		writeError(w, fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
+		// reconciles the projection. Mark the local run recovering so timed
+		// dispatch cannot mistake the stale idle projection for a safe retry.
+		unknownErr := fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
+		rt.setRecoveryError(m, unknownErr)
+		writeError(w, unknownErr, http.StatusBadGateway)
 		return
 	}
 	rt.applyAgentHubSessionState(m, session)
-	writeJSON(w, map[string]string{"status": "accepted"})
+	writeJSON(w, map[string]any{"status": "accepted", "autoRunResumed": resumed})
+}
+
+func (m *agentManager) validateAgentInputProjection(workspace guiWorkspace, run agentRun, req agentInputRequest) error {
+	if !req.AutoRunProjectionSet {
+		return nil
+	}
+	resourceID := strings.TrimSpace(req.ResourceID)
+	if resourceID == "" || resourceID != strings.TrimSpace(run.ResourceID) {
+		return agentInputConflict(errors.New("selected resource does not match the Agent session"))
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		return err
+	}
+	resource, err := forgeWorkspace.ResourceValue(resourceID)
+	if err != nil {
+		return err
+	}
+	expectedGeneration := req.ExpectedAutoRunGeneration
+	if expectedGeneration < 0 {
+		return agentInputConflict(errors.New("expected AutoRun generation must not be negative"))
+	}
+	expectedState := strings.TrimSpace(req.ExpectedAutoRunState)
+	if resource.Task == nil {
+		if expectedGeneration != 0 || expectedState != "" {
+			return agentInputConflict(errors.New("selected resource is not a task"))
+		}
+		return nil
+	}
+	if resource.Task.AutoRun == nil {
+		if expectedGeneration != 0 || expectedState != "" {
+			return agentInputConflict(errors.New("AutoRun state changed; refresh the task before sending input"))
+		}
+		return nil
+	}
+	current := resource.Task.AutoRun
+	if current.Generation != expectedGeneration || current.State != expectedState {
+		return agentInputConflict(fmt.Errorf("AutoRun state changed from generation %d/%s to generation %d/%s; refresh the task before sending input",
+			expectedGeneration, expectedState, current.Generation, current.State))
+	}
+	return nil
+}
+
+func (m *agentManager) resumeSuspendedAutoRunForInput(ctx context.Context, rt *agentRuntime, run agentRun, projectedState string, client *agentHubClient, req agentInputRequest) (agentRun, error) {
+	resourceID := strings.TrimSpace(req.ResourceID)
+	if resourceID == "" || resourceID != strings.TrimSpace(run.ResourceID) {
+		return run, agentInputConflict(errors.New("selected resource does not match the Agent session"))
+	}
+	expectedGeneration := req.ExpectedAutoRunGeneration
+	if expectedGeneration <= 0 {
+		expectedGeneration = req.AutoRunGeneration
+	}
+	if expectedGeneration <= 0 {
+		return run, agentInputConflict(errors.New("expected AutoRun generation is required to resume a suspended generation"))
+	}
+	expectedState := strings.TrimSpace(req.ExpectedAutoRunState)
+	if expectedState == "" {
+		expectedState = "suspended"
+	}
+	if expectedState != "suspended" {
+		return run, agentInputConflict(errors.New("only a suspended AutoRun generation can be resumed by Chat input"))
+	}
+	rt.mu.Lock()
+	finishing := rt.schedulerTurnFinishing
+	rt.mu.Unlock()
+	if run.Status != "idle" || run.SchedulerTurn || finishing {
+		return run, agentInputConflict(errors.New("session is busy; suspended AutoRun was not resumed"))
+	}
+	if strings.TrimSpace(run.AgentHubSessionID) == "" || client == nil {
+		return run, agentInputConflict(errors.New("run is not attached to AgentHub"))
+	}
+	if run.AutoRunGeneration != expectedGeneration {
+		return run, agentInputConflict(fmt.Errorf("Agent session generation changed from %d to %d", expectedGeneration, run.AutoRunGeneration))
+	}
+	if projectedState != "" && projectedState != "ready" {
+		return run, agentInputConflict(errors.New("session is not idle; suspended AutoRun was not resumed"))
+	}
+
+	// Re-read AgentHub immediately before the durable CAS. A stale local idle
+	// projection must never turn a pending approval or active turn into a
+	// scheduler message.
+	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	if err != nil {
+		return run, fmt.Errorf("AgentHub idle session state could not be confirmed; message was not sent: %w", err)
+	}
+	if session.ID != run.AgentHubSessionID || session.State != "ready" || session.CurrentTurnID != "" || len(session.PendingApprovalIDs) > 0 {
+		return run, agentInputConflict(errors.New("session is not idle; suspended AutoRun was not resumed"))
+	}
+	cfg, _, err := m.agentHubRuntimeConfig()
+	if err != nil {
+		return run, fmt.Errorf("read AgentHub ownership configuration: %w", err)
+	}
+	source := session.Source
+	expectedExternalID := strings.TrimSpace(run.SourceExternalID)
+	if source == nil || source.App != agentHubSourceApp || source.InstanceID != cfg.AgentHubInstanceID ||
+		expectedExternalID == "" || strings.TrimSpace(source.ExternalID) != expectedExternalID {
+		return run, agentInputConflict(errors.New("AgentHub session is not associated with this Forge run"))
+	}
+
+	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
+	if err != nil {
+		return run, err
+	}
+	resource, err := forgeWorkspace.ResourceValue(resourceID)
+	if err != nil {
+		return run, err
+	}
+	if resource.Task == nil {
+		return run, agentInputConflict(errors.New("AutoRun chat resume requires a task resource"))
+	}
+	previous := *resource.Task
+	if previous.AutoRun == nil {
+		return run, agentInputConflict(errors.New("task has no AutoRun generation to resume"))
+	}
+	resumed, err := forgeWorkspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+		TaskID: resourceID, ExpectedGeneration: expectedGeneration, ExpectedState: expectedState,
+	})
+	if err != nil {
+		return run, agentInputConflict(err)
+	}
+	if resumed.AutoRun == nil || resumed.AutoRun.Generation != expectedGeneration || resumed.AutoRun.State != "running" {
+		return run, errors.New("AutoRun resume did not produce a running generation")
+	}
+
+	updated := run
+	updated.SchedulerTurn = true
+	updated.AutoRunGeneration = expectedGeneration
+	if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
+		_, rollbackErr := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{
+			TaskID: resourceID, Summary: previous.AutoRun.SuspensionSummary,
+			WakeCondition:      previous.AutoRun.WakeCondition,
+			ExpectedGeneration: expectedGeneration, ExpectedState: "running",
+		})
+		if rollbackErr != nil {
+			return run, fmt.Errorf("persist scheduler metadata after AutoRun resume: %v; rollback also failed: %w", err, rollbackErr)
+		}
+		return run, fmt.Errorf("persist scheduler metadata after AutoRun resume: %w", err)
+	}
+	rt.setRun(updated)
+	return updated, nil
 }
 
 func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
@@ -893,6 +1090,8 @@ func normalizeAgentHubApprovalReply(req agentApprovalRequest) (agentHubApprovalR
 }
 
 func (m *agentManager) resumeAttachedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	m.server.autoRunDispatchMu.Lock()
+	defer m.server.autoRunDispatchMu.Unlock()
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	m.resumeAttachedAgentHubRunLocked(w, r, rt)
@@ -929,6 +1128,8 @@ func (m *agentManager) resumeAttachedAgentHubRunLocked(w http.ResponseWriter, r 
 // provider process receives a valid FORGE_SESSION_ID. Any failure before the
 // AgentHub resume succeeds releases the replacement session and context.
 func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	m.server.autoRunDispatchMu.Lock()
+	defer m.server.autoRunDispatchMu.Unlock()
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	m.resumeStoppedAgentHubRunLocked(w, r, rt)
