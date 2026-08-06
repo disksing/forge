@@ -196,6 +196,18 @@ func TestChatAutoRunCancelDurablyStopsTurnAndRetainsSession(t *testing.T) {
 		projected := pollerRunState(run)
 		return !projected.SchedulerTurn && projected.Status == "idle"
 	})
+	// The finish worker marks the in-memory projection idle before its final
+	// agent-run index save. Wait for the worker itself so TempDir cleanup cannot
+	// race that durable write under -race.
+	waitForRuntimeTest(t, func() bool {
+		run := s.agents.runtimeByID(started.Run.ID)
+		if run == nil {
+			return false
+		}
+		run.mu.Lock()
+		defer run.mu.Unlock()
+		return !run.schedulerTurnFinishing
+	})
 	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
 		t.Fatalf("explicit cancellation released the Agent Session: %#v", sessions)
 	}
