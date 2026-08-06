@@ -54,6 +54,7 @@ func TestPaneResizeUsesIndependentSidebarAndChatWidths(t *testing.T) {
 			t.Fatalf("pane resize styles are missing %q", want)
 		}
 	}
+	assertBalancedCSSDelimiters(t, styles)
 
 	indexData, err := staticFiles.ReadFile("static/index.html")
 	if err != nil {
@@ -226,5 +227,60 @@ assert(oversized.sidebarWidth === 10000 && oversized.chatWidth === 10000 && over
 	appPath := filepath.Join("static", "app.js")
 	if output, err := exec.Command(node, testFile, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("pane resize behavior test failed: %v\n%s", err, output)
+	}
+}
+
+// assertBalancedCSSDelimiters rejects stylesheets with unbalanced (){}[] so a
+// typo in a complex declaration cannot silently invalidate a whole rule again.
+func assertBalancedCSSDelimiters(t *testing.T, styles string) {
+	t.Helper()
+	var stack []byte
+	line := 1
+	inComment := false
+	var quote byte
+	for i := 0; i < len(styles); i++ {
+		c := styles[i]
+		if c == '\n' {
+			line++
+		}
+		if inComment {
+			if c == '*' && i+1 < len(styles) && styles[i+1] == '/' {
+				inComment = false
+				i++
+			}
+			continue
+		}
+		if quote != 0 {
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		if c == '/' && i+1 < len(styles) && styles[i+1] == '*' {
+			inComment = true
+			i++
+			continue
+		}
+		if c == '"' || c == '\'' {
+			quote = c
+			continue
+		}
+		switch c {
+		case '(', '{', '[':
+			stack = append(stack, c)
+		case ')', '}', ']':
+			if len(stack) == 0 {
+				t.Fatalf("styles.css: unmatched %q at line %d", string(c), line)
+			}
+			open := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			matching := (open == '(' && c == ')') || (open == '{' && c == '}') || (open == '[' && c == ']')
+			if !matching {
+				t.Fatalf("styles.css: %q at line %d closes %q", string(c), line, string(open))
+			}
+		}
+	}
+	if len(stack) > 0 {
+		t.Fatalf("styles.css: %d unclosed delimiter(s), last opened %q", len(stack), string(stack[len(stack)-1]))
 	}
 }

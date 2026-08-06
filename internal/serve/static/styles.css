@@ -95,7 +95,7 @@ a[href],
 
 .app-shell {
   display: grid;
-  grid-template-columns: minmax(var(--sidebar-min-width), min(var(--sidebar-width), calc(100vw - var(--pane-handle-width) - var(--details-min-width) - var(--pane-handle-width) - var(--chat-min-width)))
+  grid-template-columns: minmax(var(--sidebar-min-width), min(var(--sidebar-width), calc(100vw - var(--pane-handle-width) - var(--details-min-width) - var(--pane-handle-width) - var(--chat-min-width))))
     var(--pane-handle-width) minmax(0, 1fr);
   width: 100vw;
   height: 100vh;
