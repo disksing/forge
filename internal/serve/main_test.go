@@ -842,6 +842,248 @@ assertEqual(
 	}
 }
 
+func TestSessionNavigationTargetKeepsRunAndControlResourcesDistinct(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the session navigation target behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, marker := range []string{
+		`function sessionNavigableResourceId(resourceId)`,
+		`function sessionNavigationTarget(session)`,
+		`navigation.navigationResourceId`,
+		`navigation.selectedResourceIds.includes(selectedId)`,
+	} {
+		if !strings.Contains(app, marker) {
+			t.Fatalf("session navigation target behavior is missing %q", marker)
+		}
+	}
+
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const signatureEnd = source.indexOf(")", start);
+  const open = source.indexOf("{", signatureEnd);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const resources = new Map([
+  ["project12.task9", { id: "project12.task9", title: "Run task", archived: false }],
+  ["project9.task7", { id: "project9.task7", title: "Control task", archived: false }],
+  ["project12.task10", { id: "project12.task10", title: "Temporary lock one", archived: false }],
+  ["project12.task11", { id: "project12.task11", title: "Temporary lock two", archived: false }],
+  ["project12.archived", { id: "project12.archived", title: "Archived run task", archived: true }],
+]);
+const context = {
+  state: { tree: { projects: [] } },
+  findResource(id) { return resources.get(id) || null; },
+};
+vm.createContext(context);
+vm.runInContext([
+  extract("sessionControls"),
+  extract("sessionNavigableResourceId"),
+  extract("sessionNavigationTarget"),
+  extract("sessionDisplayTitle"),
+  extract("notificationResourceIDFor"),
+].join("\n"), context);
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+function assertEqual(actual, expected, message) {
+  if (actual !== expected) throw new Error(message + ": expected " + expected + ", got " + actual);
+}
+const mismatched = {
+  id: "internal-mismatched",
+  source: "internal",
+  resourceId: "project12.task9",
+  agentRunTitle: "Project 12 Task 9",
+  controls: [{ resourceId: "project9.task7", path: "/temporary/control" }],
+};
+const mismatchedTarget = context.sessionNavigationTarget(mismatched);
+assertEqual(mismatchedTarget.kind, "run", "an internal Run resource should select run navigation mode");
+assertEqual(mismatchedTarget.primaryResourceId, "project12.task9", "Run resource should be the primary resource");
+assertEqual(mismatchedTarget.displayResourceId, "project12.task9", "display should use the Run resource");
+assertEqual(mismatchedTarget.navigationResourceId, "project12.task9", "navigation should use the Run resource");
+assert(JSON.stringify(mismatchedTarget.selectedResourceIds) === JSON.stringify(["project12.task9"]), "attached controls must not make the row selected");
+assertEqual(context.sessionDisplayTitle(mismatched, mismatchedTarget), "Project 12 Task 9", "internal title should remain the Run title");
+assertEqual(context.notificationResourceIDFor(mismatched), "project12.task9", "completion notification should use the Run resource");
+
+const multipleLocks = context.sessionNavigationTarget({
+  id: "internal-multiple-locks",
+  source: "internal",
+  resourceId: "project12.task9",
+  controls: [{ resourceId: "project12.task10" }, { resourceId: "project12.task11" }],
+});
+assertEqual(multipleLocks.navigationResourceId, "project12.task9", "multiple temporary locks must not replace the Run target");
+assert(!multipleLocks.menu, "internal Run rows must not turn the primary click into an attached-lock menu");
+
+const noRunSingle = context.sessionNavigationTarget({
+  id: "internal-no-run-single",
+  source: "internal",
+  controls: [{ resourceId: "project9.task7" }],
+});
+assertEqual(noRunSingle.kind, "single-control", "a Session without a Run resource should retain single-lock navigation");
+assertEqual(noRunSingle.navigationResourceId, "project9.task7", "single fallback control should be navigable");
+
+const noRunMultiple = context.sessionNavigationTarget({
+  id: "external-multiple-locks",
+  source: "external",
+  controls: [{ resourceId: "project12.task10" }, { resourceId: "project12.task11" }],
+});
+assertEqual(noRunMultiple.kind, "controls", "external multiple locks should retain menu navigation");
+assert(noRunMultiple.menu, "external multiple locks should open a resource menu");
+assert(JSON.stringify(noRunMultiple.selectedResourceIds) === JSON.stringify(["project12.task10", "project12.task11"]), "external selection should match its controls");
+
+for (const resourceId of ["project12.missing", "project12.archived"]) {
+  const unavailable = context.sessionNavigationTarget({
+    id: "internal-unavailable-" + resourceId,
+    source: "internal",
+    resourceId,
+    controls: [{ resourceId: "project9.task7" }],
+  });
+  assertEqual(unavailable.kind, "run", "an unavailable Run resource must remain the primary target");
+  assertEqual(unavailable.navigationResourceId, "", "an unavailable Run resource must not navigate");
+  assert(!unavailable.menu, "an unavailable Run resource must not silently expose attached controls as its main menu");
+  assert(JSON.stringify(unavailable.selectedResourceIds) === JSON.stringify([resourceId]), "selection must remain tied to the unavailable Run resource");
+}
+`
+
+	testFile := filepath.Join(t.TempDir(), "session-navigation-target.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+		t.Fatalf("session navigation target behavior test failed: %v\n%s", err, output)
+	}
+}
+
+func TestSessionClickUsesNavigationTargetForURLAndNotifications(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the session click behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, marker := range []string{
+		`function handleSessionClick(session)`,
+		`clearUnreadForResource(navigation.navigationResourceId);`,
+		`selectResource(navigation.navigationResourceId).catch`,
+		`function syncURL(options = {})`,
+	} {
+		if !strings.Contains(app, marker) {
+			t.Fatalf("session click navigation behavior is missing %q", marker)
+		}
+	}
+
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const signatureEnd = source.indexOf(")", start);
+  const open = source.indexOf("{", signatureEnd);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const resources = new Map([
+  ["project12.task9", { id: "project12.task9", title: "Run task", archived: false }],
+  ["project9.task7", { id: "project9.task7", title: "Control task", archived: false }],
+  ["project12.task10", { id: "project12.task10", title: "Temporary lock one", archived: false }],
+  ["project12.task11", { id: "project12.task11", title: "Temporary lock two", archived: false }],
+  ["project12.archived", { id: "project12.archived", title: "Archived run task", archived: true }],
+]);
+const context = {
+  state: {
+    activeWorkspaceId: "workspace-one",
+    selectedId: "workspace",
+    sessionMenu: null,
+    tree: { projects: [], sessions: [] },
+  },
+  window: {
+    location: { pathname: "/w/workspace-one" },
+    history: { pushState(_state, _title, path) { context.window.location.pathname = path; } },
+  },
+  findResource(id) { return resources.get(id) || null; },
+};
+vm.createContext(context);
+vm.runInContext([
+  extract("sessionControls"),
+  extract("sessionNavigableResourceId"),
+  extract("sessionNavigationTarget"),
+  extract("handleSessionClick"),
+  extract("syncURL"),
+  'const cleared = [];',
+  'const selected = [];',
+  'let renders = 0;',
+  'function clearUnreadForResource(resourceId) { cleared.push(resourceId); }',
+  'function selectResource(resourceId) { selected.push(resourceId); state.selectedId = resourceId; syncURL(); return Promise.resolve(); }',
+  'function renderSessions() { renders++; }',
+  'function refreshIcons() {}',
+  'function toast(message) { throw new Error(message); }',
+  'function assert(condition, message) { if (!condition) throw new Error(message); }',
+  'function reset() { cleared.length = 0; selected.length = 0; renders = 0; state.selectedId = "workspace"; state.sessionMenu = null; window.location.pathname = "/w/workspace-one"; }',
+  'const mismatched = { id: "internal-mismatched", source: "internal", resourceId: "project12.task9", controls: [{ resourceId: "project9.task7" }] };',
+  'handleSessionClick(mismatched);',
+  'assert(JSON.stringify(selected) === JSON.stringify(["project12.task9"]), "internal click opened an attached control instead of the Run resource");',
+  'assert(JSON.stringify(cleared) === JSON.stringify(["project12.task9"]), "internal click cleared the attached control notification");',
+  'assert(state.selectedId === "project12.task9", "internal click selected the wrong resource");',
+  'assert(window.location.pathname === "/w/workspace-one/r/project12.task9", "internal click wrote the wrong URL");',
+  'assert(state.sessionMenu === null, "internal Run click should not open an attached-lock menu");',
+  'reset();',
+  'handleSessionClick({ id: "internal-many", source: "internal", resourceId: "project12.task9", controls: [{ resourceId: "project12.task10" }, { resourceId: "project12.task11" }] });',
+  'assert(JSON.stringify(selected) === JSON.stringify(["project12.task9"]), "multiple attached locks changed the internal primary target");',
+  'assert(JSON.stringify(cleared) === JSON.stringify(["project12.task9"]), "multiple attached locks cleared the wrong notification");',
+  'assert(state.sessionMenu === null, "multiple attached locks must not replace the internal primary click");',
+  'reset();',
+  'handleSessionClick({ id: "external-many", source: "external", controls: [{ resourceId: "project12.task10" }, { resourceId: "project12.task11" }] });',
+  'assert(selected.length === 0 && cleared.length === 0, "external multiple-lock click should wait for an explicit menu choice");',
+  'assert(state.sessionMenu?.sessionId === "external-many" && renders === 1, "external multiple-lock click should open its menu");',
+  'reset();',
+  'handleSessionClick({ id: "internal-no-run", source: "internal", controls: [{ resourceId: "project9.task7" }] });',
+  'assert(JSON.stringify(selected) === JSON.stringify(["project9.task7"]), "a Session without a Run resource should retain single-lock navigation");',
+  'assert(JSON.stringify(cleared) === JSON.stringify(["project9.task7"]), "single-lock fallback should clear its opened resource");',
+  'for (const resourceId of ["project12.missing", "project12.archived"]) { reset(); handleSessionClick({ id: "internal-unavailable-" + resourceId, source: "internal", resourceId, controls: [{ resourceId: "project9.task7" }] }); assert(selected.length === 0 && cleared.length === 0, "unavailable Run resource must not navigate to an attached control"); assert(state.sessionMenu === null, "unavailable Run resource must not open an implicit fallback menu"); }',
+].join("\n"), context);
+`
+
+	testFile := filepath.Join(t.TempDir(), "session-click-navigation.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+		t.Fatalf("session click navigation behavior test failed: %v\n%s", err, output)
+	}
+}
+
 func TestProjectSessionStartRejectsStaleBackgroundSnapshots(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -3196,7 +3438,9 @@ func TestSessionRowReservesUnreadAndDragColumnsForEveryStatusLayout(t *testing.T
 		`<div class="session-title">`,
 		`<span class="drag-handle" draggable="true" title="Drag to reorder">`,
 		`bindListDrag(row, { kind: "session", id: session.id, projectId: "" });`,
-		`clearUnreadForResource(controls[0].resourceId);`,
+		`const navigation = sessionNavigationTarget(session);`,
+		`const clickable = Boolean(navigation.navigationResourceId || navigation.menu);`,
+		`clearUnreadForResource(navigation.navigationResourceId);`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("session row notification or drag behavior is missing %q", want)

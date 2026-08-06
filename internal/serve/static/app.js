@@ -435,6 +435,10 @@ function notificationSessionIDFor(item) {
 }
 
 function notificationResourceIDFor(item) {
+  if (item?.source === "internal" || item?.source === "external") {
+    const navigation = sessionNavigationTarget(item);
+    return navigation.primaryResourceId || "";
+  }
   if (item?.resourceId) return String(item.resourceId).trim();
   if (Array.isArray(item?.controls) && item.controls.length === 1) return String(item.controls[0]?.resourceId || "").trim();
   return "";
@@ -2079,8 +2083,9 @@ function renderSessions() {
     return;
   }
   for (const session of sessions) {
-    const controls = sessionControls(session);
-    const resourceId = session.resourceId || controls[0]?.resourceId || "";
+    const navigation = sessionNavigationTarget(session);
+    const controls = navigation.controls;
+    const resourceId = navigation.displayResourceId;
     const isInternal = session.source === "internal";
     const status = isInternal
       ? sessionStatusPresentation(session)
@@ -2091,10 +2096,10 @@ function renderSessions() {
       isInternal && taskState.autoRun ? [taskState.autoRun, status] : [status],
     );
     const statusLabel = sessionOperationalLabel(session, taskResource, taskState, status);
-    const clickable = controls.length > 0 || resourceId;
+    const clickable = Boolean(navigation.navigationResourceId || navigation.menu);
     const selectedId = state.selectedId;
     const isCurrent = Boolean(selectedId) && selectedId !== "workspace" &&
-      (resourceId === selectedId || controls.some((control) => control.resourceId === selectedId));
+      navigation.selectedResourceIds.includes(selectedId);
     const unread = hasUnreadNotificationForSession(session.id);
     const row = document.createElement(clickable ? "button" : "div");
     row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${statusPresentation.layoutClassName} ${statusPresentation.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""} ${unread ? "session-unread" : ""}`;
@@ -2104,7 +2109,7 @@ function renderSessions() {
       : null;
     const providerLabel = isInternal ? "AgentHub" : "External";
     const label = isInternal ? agent?.name || session.agentRunAgentName || "AgentHub" : "External";
-    const title = sessionDisplayTitle(session, resourceId);
+    const title = sessionDisplayTitle(session, navigation);
     const metaParts = [providerLabel];
     if (controls.length > 1) {
       metaParts.push(`${controls.length} locks`);
@@ -2131,26 +2136,82 @@ function renderSessions() {
     }
     bindListDrag(row, { kind: "session", id: session.id, projectId: "" });
     list.appendChild(row);
-    if (state.sessionMenu?.sessionId === session.id && controls.length > 1) {
+    if (state.sessionMenu?.sessionId === session.id && navigation.menu) {
       list.appendChild(sessionResourceMenu(session, controls));
     }
   }
 }
 
 function sessionDisplayTitle(session, resourceId) {
-  const resourceTitle = findResource(resourceId)?.title || "";
+  const navigation = resourceId && typeof resourceId === "object"
+    ? resourceId
+    : arguments.length > 1
+      ? { displayResourceId: resourceId || "" }
+      : sessionNavigationTarget(session);
+  const displayResourceId = navigation.displayResourceId || "";
+  const resourceTitle = findResource(displayResourceId)?.title || "";
   if (session.source === "internal") {
-    return session.agentRunTitle || resourceTitle || resourceId || session.id;
+    return session.agentRunTitle || resourceTitle || displayResourceId || session.id;
   }
-  return resourceTitle || resourceId || session.id;
+  return resourceTitle || displayResourceId || session.id;
 }
 
 function sessionControls(session) {
-  const controls = (session.controls || []).filter((control) => control.resourceId);
-  if (controls.length === 0 && session.resourceId) {
-    return [{ resourceId: session.resourceId, path: "" }];
+  const controls = (session?.controls || [])
+    .map((control) => ({
+      resourceId: String(control?.resourceId || "").trim(),
+      path: String(control?.path || ""),
+    }))
+    .filter((control) => control.resourceId);
+  if (controls.length === 0) {
+    const resourceId = String(session?.resourceId || "").trim();
+    if (resourceId) return [{ resourceId, path: "" }];
   }
   return controls;
+}
+
+function sessionNavigableResourceId(resourceId) {
+  const value = String(resourceId || "").trim();
+  if (!value) return "";
+  const resource = findResource(value);
+  return resource && resource.archived !== true ? value : "";
+}
+
+function sessionNavigationTarget(session) {
+  const controls = sessionControls(session);
+  const runResourceId = String(session?.resourceId || "").trim();
+  if (session?.source === "internal" && runResourceId) {
+    return {
+      kind: "run",
+      primaryResourceId: runResourceId,
+      displayResourceId: runResourceId,
+      navigationResourceId: sessionNavigableResourceId(runResourceId),
+      selectedResourceIds: [runResourceId],
+      controls,
+      menu: false,
+    };
+  }
+  if (controls.length === 1) {
+    const resourceId = controls[0].resourceId;
+    return {
+      kind: "single-control",
+      primaryResourceId: resourceId,
+      displayResourceId: resourceId,
+      navigationResourceId: sessionNavigableResourceId(resourceId),
+      selectedResourceIds: [resourceId],
+      controls,
+      menu: false,
+    };
+  }
+  return {
+    kind: controls.length > 1 ? "controls" : "none",
+    primaryResourceId: "",
+    displayResourceId: controls[0]?.resourceId || "",
+    navigationResourceId: "",
+    selectedResourceIds: controls.map((control) => control.resourceId),
+    controls,
+    menu: controls.length > 1,
+  };
 }
 
 function sessionTaskResource(session) {
@@ -2183,14 +2244,14 @@ function sessionOperationalLabel(session, taskResource, taskState, sessionStatus
 }
 
 function handleSessionClick(session) {
-  const controls = sessionControls(session);
-  if (controls.length === 0) return;
-  if (controls.length === 1) {
+  const navigation = sessionNavigationTarget(session);
+  if (navigation.navigationResourceId) {
     state.sessionMenu = null;
-    clearUnreadForResource(controls[0].resourceId);
-    selectResource(controls[0].resourceId).catch((err) => toast(err.message));
+    clearUnreadForResource(navigation.navigationResourceId);
+    selectResource(navigation.navigationResourceId).catch((err) => toast(err.message));
     return;
   }
+  if (!navigation.menu) return;
   state.sessionMenu = state.sessionMenu?.sessionId === session.id ? null : { sessionId: session.id };
   renderSessions();
   refreshIcons();
@@ -2211,9 +2272,11 @@ function sessionResourceMenu(session, controls) {
   `).join("");
   menu.querySelectorAll("[data-session-resource]").forEach((button) => {
     button.addEventListener("click", () => {
+      const resourceId = sessionNavigableResourceId(button.dataset.sessionResource);
+      if (!resourceId) return;
       state.sessionMenu = null;
-      clearUnreadForResource(button.dataset.sessionResource);
-      selectResource(button.dataset.sessionResource).catch((err) => toast(err.message));
+      clearUnreadForResource(resourceId);
+      selectResource(resourceId).catch((err) => toast(err.message));
     });
   });
   return menu;

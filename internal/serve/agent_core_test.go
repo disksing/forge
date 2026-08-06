@@ -75,7 +75,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	tree := workspaceTree{Sessions: []guiSession{
-		{ID: "session-one", Controls: []guiSessionControl{{ResourceID: "project1.task1"}}},
+		{ID: "session-one", Controls: []guiSessionControl{{ResourceID: "project1.task2"}}},
 		{ID: "external", Controls: []guiSessionControl{{ResourceID: "project1.task2"}}},
 	}}
 	if err := (&server{}).enrichTreeSessions(workspace, &tree); err != nil {
@@ -84,7 +84,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 	internal := tree.Sessions[0]
 	if internal.Source != "internal" || internal.AgentRunID != run.ID || internal.AgentRunAgentName != run.AgentHubAgentName ||
 		internal.AgentRunStatus != run.Status || internal.AgentRunLastOutputAt != run.LastOutputAt ||
-		!internal.SchedulerTurn || internal.AutoRunGeneration != 4 {
+		!internal.SchedulerTurn || internal.AutoRunGeneration != 4 || internal.ResourceID != run.ResourceID {
 		t.Fatalf("internal session was not enriched: %#v", internal)
 	}
 	if tree.Sessions[1].Source != "external" {
