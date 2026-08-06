@@ -4160,6 +4160,14 @@ function isTTYNearBottom(log) {
   return distanceFromBottom <= 32;
 }
 
+function agentComposerAgentKey() {
+  return JSON.stringify(enabledAgentConfigs().map((agent) => ({
+    id: agent.id || "",
+    name: agent.name || "",
+    model: agent.model || "",
+  })));
+}
+
 function renderTTYComposer(options = {}) {
   const skipDraftSync = options.skipDraftSync || state.agent.skipTTYDraftSync;
   state.agent.skipTTYDraftSync = false;
@@ -4169,15 +4177,15 @@ function renderTTYComposer(options = {}) {
   closeNewSessionChooserForResourceLock();
   const activeRun = currentAgentRun();
   if (!activeRun) {
-    const actionsMarkup = agentComposerActions();
-    const toolbarActionsMarkup = standaloneComposerToolbar(agentComposerToolbarActions({
+    const actionsMarkup = agentComposerActions({
+      standalone: true,
       includeAutoRun: true,
       autoRunCancelling: state.agent.autoRunCancelling,
-    }));
-    const key = `none:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${toolbarActionsMarkup ? "toolbar" : "no-toolbar"}:${autoRunComposerKey()}`;
+    });
+    const key = `none:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
-    composer.innerHTML = `${actionsMarkup}${toolbarActionsMarkup}`;
+    composer.innerHTML = actionsMarkup;
     return;
   }
   restoreAgentDraftForRun(activeRun);
@@ -4198,7 +4206,7 @@ function renderTTYComposer(options = {}) {
       autoRunCancelling: state.agent.autoRunCancelling,
     });
     const autoRunActionsMarkup = autoRunComposerAction();
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4245,15 +4253,16 @@ function renderTTYComposer(options = {}) {
   // A stopped AgentHub session resumes with a freshly created Forge session,
   // so the button only needs the AgentHub attachment, not a live Forge session.
   const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
-  const toolbarActionsMarkup = standaloneComposerToolbar(agentComposerToolbarActions({
+  const actionsMarkup = agentComposerActions({
+    standalone: true,
+    includeResume: canResume,
     includeAutoRun: true,
     autoRunCancelling: state.agent.autoRunCancelling,
-  }));
-  const actionsMarkup = agentComposerActions({ includeResume: canResume });
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${toolbarActionsMarkup ? "toolbar" : "no-toolbar"}:${autoRunComposerKey()}`;
+  });
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${autoRunComposerKey()}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
-  composer.innerHTML = `${actionsMarkup}${toolbarActionsMarkup}`;
+  composer.innerHTML = actionsMarkup;
 }
 
 function isAgentSessionReady(run) {
@@ -4277,7 +4286,8 @@ function agentComposerActions(options = {}) {
   const externalResourceLocked = selectedResourceHasExternalLock();
   const internalResourceLocked = selectedResourceHasInternalLock();
   const collapsible = Boolean(options.collapsible);
-  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${externalResourceLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
+  const standalone = Boolean(options.standalone);
+  const actionsClass = `tty-session-actions${collapsible ? " collapsible" : ""}${standalone ? " tty-standalone-actions" : ""}${externalResourceLocked || !collapsible || state.agent.sessionActionsOpen ? " open" : ""}`;
   if (externalResourceLocked) {
     return `
       <div class="${actionsClass}">
@@ -4297,7 +4307,7 @@ function agentComposerActions(options = {}) {
       : "Choose an Agent to start a new session.";
   const sessionButtonDisabled = sessionStarting || agents.length === 0;
   const sessionButtonDisabledAttribute = sessionButtonDisabled ? " disabled" : "";
-  const resumeMarkup = options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action">${icon("rotate-ccw")}<span>Resume Session</span></button>` : "";
+  const resumeMarkup = options.includeResume ? `<button type="button" id="agentResumeButton" class="tty-primary-action" title="Resume Session" aria-label="Resume Session">${icon("rotate-ccw")}<span>Resume Session</span></button>` : "";
   const newSessionMarkup = internalResourceLocked ? "" : `
     <div class="tty-new-session-control">
       <button type="button" id="agentStartButton" class="tty-new-session-button" title="${escapeHTML(sessionButtonTitle)}" aria-label="${escapeHTML(sessionButtonTitle)}" aria-haspopup="menu" aria-expanded="${chooserOpen ? "true" : "false"}" aria-controls="ttyAgentMenu"${sessionStarting ? ` aria-busy="true"` : ""}${sessionButtonDisabledAttribute}>
@@ -4315,18 +4325,14 @@ function agentComposerActions(options = {}) {
       ` : ""}
     </div>
   `;
-  const content = [resumeMarkup, newSessionMarkup].filter(Boolean).join("");
+  const autoRunMarkup = standalone && options.includeAutoRun ? autoRunComposerAction({ variant: "labeled" }) : "";
+  const content = [resumeMarkup, newSessionMarkup, autoRunMarkup].filter(Boolean).join("");
   if (!content) return "";
   return `
-    <div class="${actionsClass}">
+    <div class="${actionsClass}"${standalone ? ` role="toolbar" aria-label="Session and AutoRun actions"` : ""}>
       ${content}
     </div>
   `;
-}
-
-function standaloneComposerToolbar(markup) {
-  if (!markup) return "";
-  return `<div class="tty-composer-toolbar tty-composer-toolbar-standalone" role="toolbar" aria-label="AutoRun actions">${markup}</div>`;
 }
 
 function agentComposerToolbarActions(options = {}) {
@@ -4391,11 +4397,12 @@ function autoRunActionIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(-0.8,-0.8) scale(0.9)" stroke-width="2.25"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></g><circle cx="17.4" cy="17.4" r="6" fill="${badgeFill}" stroke="#fff" stroke-width="2.2"/><g transform="translate(17.4,17.4) scale(0.38) translate(-12,-12)">${badgeGlyph}</g></svg>`;
 }
 
-// autoRunComposerAction renders the stateful AutoRun icon actions in the
-// composer toolbar. The server re-validates every condition at execution
-// time; the matrix below only decides which action is offered and which
-// disabled reason is shown.
-function autoRunComposerAction() {
+// autoRunComposerAction renders the stateful AutoRun actions. Live sessions
+// use the compact icon-only variant in the input toolbar; standalone composer
+// states use the labeled variant in the shared Session/AutoRun action row. The
+// server re-validates every condition at execution time.
+function autoRunComposerAction(options = {}) {
+  const labeled = options.variant === "labeled";
   const selected = findResource(state.selectedId);
   const detail = selected ? (state.details[selected.id] || selected) : null;
   if (!detail || detail.type !== "task") return "";
@@ -4441,9 +4448,14 @@ function autoRunComposerAction() {
             ? `${label}: reuse the current idle session.`
             : label;
     const disabled = starting || cancelling || Boolean(busyReason);
+    const actionKind = isResume ? "resume" : "start";
+    const actionClass = labeled
+      ? `tty-primary-action tty-autorun-labeled-action tty-autorun-${actionKind}-action`
+      : `tty-composer-action tty-autorun-action tty-autorun-${actionKind}-action`;
+    const visibleLabel = starting || cancelling ? pendingLabel : label;
     actions.push(`
-      <button type="button" id="autoRunStartButton" class="tty-composer-action tty-autorun-action tty-autorun-${isResume ? "resume" : "start"}-action" data-autorun-action="${isResume ? "resume" : "start"}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
-        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(isResume ? "resume" : "start")}
+      <button type="button" id="autoRunStartButton" class="${actionClass}" data-autorun-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
+        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(actionKind)}${labeled ? `<span>${escapeHTML(visibleLabel)}</span>` : ""}
       </button>
     `);
   }
@@ -4452,9 +4464,12 @@ function autoRunComposerAction() {
     const cancelling = Boolean(state.agent.autoRunCancelling);
     const label = cancelling ? "Cancelling AutoRun…" : "Cancel AutoRun";
     const title = cancelling ? label : "Cancel AutoRun and keep the Agent Session open.";
+    const actionClass = labeled
+      ? "tty-primary-action tty-autorun-labeled-action tty-autorun-cancel-action"
+      : "tty-composer-action tty-autorun-action tty-autorun-cancel-action";
     actions.push(`
-      <button type="button" id="autoRunCancelButton" class="tty-composer-action tty-autorun-action tty-autorun-cancel-action" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${cancelling ? " disabled aria-busy=\"true\"" : ""}>
-        ${cancelling ? icon("loader-circle") : autoRunActionIcon("cancel")}
+      <button type="button" id="autoRunCancelButton" class="${actionClass}" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${cancelling ? " disabled aria-busy=\"true\"" : ""}>
+        ${cancelling ? icon("loader-circle") : autoRunActionIcon("cancel")}${labeled ? `<span>${escapeHTML(label)}</span>` : ""}
       </button>
     `);
   }

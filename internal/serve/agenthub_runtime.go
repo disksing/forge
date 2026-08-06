@@ -357,27 +357,56 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 	}
 }
 
-func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) {
+// releaseForgeSessionAfterStopped synchronously removes the Forge session,
+// its resource controls, and its launch context before reporting success to a
+// caller. Background poller/recovery paths may call the same function; the
+// mutex makes those calls idempotent without racing a close response or a
+// second poll.
+func (rt *agentRuntime) releaseForgeSessionAfterStopped(m *agentManager) error {
+	rt.forgeSessionReleaseMu.Lock()
+	defer rt.forgeSessionReleaseMu.Unlock()
+
 	rt.mu.Lock()
 	run := rt.run
 	rt.mu.Unlock()
 	if !run.AgentHubStoppedObserved || run.Status != "stopped" || strings.TrimSpace(run.ForgeSessionID) == "" {
-		return
+		return nil
 	}
-	if err := m.endForgeSession(context.Background(), rt.workspace, run.ForgeSessionID); err != nil {
-		rt.addForgeNotice(m, "error", "forge/session/end", "durable stopped observed but Forge session release failed: "+err.Error())
-		return
+	sessionID := strings.TrimSpace(run.ForgeSessionID)
+	if err := m.endForgeSession(context.Background(), rt.workspace, sessionID); err != nil {
+		releaseErr := fmt.Errorf("durable stopped observed but Forge session release failed: %w", err)
+		rt.addForgeNotice(m, "error", "forge/session/end", releaseErr.Error())
+		return releaseErr
 	}
-	removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
+	if err := removeForgeSessionContextFile(run.ForgeSessionContextPath, sessionID); err != nil {
+		releaseErr := fmt.Errorf("durable stopped observed but Forge session context cleanup failed: %w", err)
+		rt.addForgeNotice(m, "error", "forge/session/context", releaseErr.Error())
+		return releaseErr
+	}
+
 	rt.mu.Lock()
-	if rt.run.ForgeSessionID == run.ForgeSessionID && rt.run.AgentHubStoppedObserved {
-		rt.run.ForgeSessionID = ""
-		rt.run.ForgeSessionContextPath = ""
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-		run = rt.run
+	if rt.run.ForgeSessionID == sessionID && rt.run.AgentHubStoppedObserved && rt.run.Status == "stopped" {
+		updated := rt.run
+		updated.ForgeSessionID = ""
+		updated.ForgeSessionContextPath = ""
+		updated.UpdatedAt = time.Now().Format(time.RFC3339)
+		err := saveAgentRun(rt.workspace.Path, updated)
+		if err == nil {
+			rt.run = updated
+		}
+		rt.mu.Unlock()
+		if err != nil {
+			releaseErr := fmt.Errorf("durable stopped observed but Forge run cleanup could not be persisted: %w", err)
+			rt.addForgeNotice(m, "error", "forge/run/save", releaseErr.Error())
+			return releaseErr
+		}
+		return nil
 	}
 	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+	// A resume or another lifecycle transition replaced this Forge session while
+	// the idempotent release was in flight. The old session/context were already
+	// checked above; never overwrite the newer runtime projection.
+	return nil
 }
 
 func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text string) {
@@ -693,6 +722,10 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 			writeError(w, fmt.Errorf("cancel AutoRun before closing session: %w", err), http.StatusConflict)
 			return
 		}
+		if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned && !paused.Cancelled, "autoRunCancelled": paused.Cancelled})
 		return
 	}
@@ -718,6 +751,10 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 	// metadata was being checked. Do not send a second non-idempotent stop.
 	if rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved {
 		rt.mu.Unlock()
+		if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
 		writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned && !paused.Cancelled, "autoRunCancelled": paused.Cancelled})
 		return
 	}
@@ -777,6 +814,10 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 			}
 		}
 	}
+	if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, map[string]any{"status": "stopped", "autoRunPaused": paused.Transitioned && !paused.Cancelled, "autoRunCancelled": paused.Cancelled})
 }
 
@@ -834,7 +875,13 @@ func (m *agentManager) stopUnattachedAgentHubRunLocked(w http.ResponseWriter, r 
 			return
 		}
 	}
-	removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID)
+	if err := removeForgeSessionContextFile(run.ForgeSessionContextPath, run.ForgeSessionID); err != nil {
+		if rt != nil {
+			rt.setRecoveryError(m, err)
+		}
+		writeError(w, fmt.Errorf("remove Forge session context: %w", err), http.StatusInternalServerError)
+		return
+	}
 	run.Status = "stopped"
 	run.ForgeSessionID = ""
 	run.ForgeSessionContextPath = ""
@@ -1201,7 +1248,10 @@ func (m *agentManager) resumeStoppedAgentHubRunLocked(w http.ResponseWriter, r *
 			writeError(w, fmt.Errorf("release previous Forge session: %w", err), http.StatusInternalServerError)
 			return
 		}
-		removeForgeSessionContextFile(run.ForgeSessionContextPath, previousID)
+		if err := removeForgeSessionContextFile(run.ForgeSessionContextPath, previousID); err != nil {
+			writeError(w, fmt.Errorf("remove previous Forge session context: %w", err), http.StatusInternalServerError)
+			return
+		}
 		run.ForgeSessionID = ""
 		run.ForgeSessionContextPath = ""
 		run.UpdatedAt = time.Now().Format(time.RFC3339)

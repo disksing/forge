@@ -2470,14 +2470,6 @@ body.resizing-y {
   gap: 8px;
 }
 
-.tty-composer-toolbar-standalone {
-  margin: 0 12px 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
-}
-
 .tty-composer-toolbar .tty-composer-action {
   margin: 0;
 }
@@ -2527,6 +2519,34 @@ body.resizing-y {
 
 .tty-session-actions > .tty-primary-action {
   flex: 1 0 140px;
+}
+
+.tty-session-actions.tty-standalone-actions {
+  align-items: center;
+}
+
+.tty-standalone-actions > .tty-primary-action,
+.tty-standalone-actions > .tty-new-session-control,
+.tty-standalone-actions > .tty-autorun-labeled-action {
+  flex: 1 1 150px;
+  width: auto;
+  min-width: 0;
+}
+
+.tty-standalone-actions > .tty-primary-action,
+.tty-standalone-actions > .tty-autorun-labeled-action {
+  min-height: 32px;
+  padding-right: 11px;
+  padding-left: 11px;
+}
+
+.tty-standalone-actions .tty-new-session-control {
+  width: auto;
+  min-width: 0;
+}
+
+.tty-standalone-actions .tty-new-session-button {
+  width: 100%;
 }
 
 .tty-new-session-control {
@@ -5478,9 +5498,7 @@ i[data-lucide] {
 }
 
 @media (max-width: 420px) {
-  .tty-composer-toolbar-standalone {
-    margin-right: 8px;
-    margin-left: 8px;
+  .tty-session-actions.tty-standalone-actions {
     padding-right: 8px;
     padding-left: 8px;
   }

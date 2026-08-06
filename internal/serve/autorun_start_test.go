@@ -859,9 +859,11 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		`function autoRunComposerAction() {`,
-		`function standaloneComposerToolbar(markup) {`,
+		`function autoRunComposerAction(options = {}) {`,
+		`function agentComposerActions(options = {}) {`,
 		`includeAutoRun: true`,
+		`standalone: true`,
+		`variant: "labeled"`,
 		`id="autoRunStartButton"`,
 		`id="autoRunCancelButton"`,
 		`data-autorun-action=`,
@@ -912,13 +914,14 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		`.tty-composer-toolbar-standalone`,
+		`.tty-standalone-actions`,
+		`.tty-autorun-labeled-action`,
 		`.tty-autorun-start-action`,
 		`.tty-autorun-resume-action`,
 		`.tty-autorun-cancel-action`,
 		`.tty-composer-action:focus-visible`,
 		`flex-wrap: wrap;`,
-		`.tty-composer-toolbar-standalone {`,
+		`.tty-standalone-actions {`,
 		`@media (max-width: 420px)`,
 	} {
 		if !strings.Contains(string(styles), want) {
@@ -941,14 +944,14 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
 	actionsEnd := -1
 	if actionsStart >= 0 {
-		actionsEnd = strings.Index(source[actionsStart:], `function standaloneComposerToolbar(markup) {`)
+		actionsEnd = strings.Index(source[actionsStart:], `function agentComposerToolbarActions(options = {}) {`)
 	}
 	if actionsStart < 0 || actionsEnd < 0 {
 		t.Fatal("Session actions renderer boundary is missing")
 	}
 	actions := source[actionsStart : actionsStart+actionsEnd]
-	if strings.Contains(actions, `autoRunStartButton`) || strings.Contains(actions, `autoRunCancelButton`) {
-		t.Fatal("bottom Session actions still render an AutoRun control")
+	if !strings.Contains(actions, `autoRunComposerAction({ variant: "labeled" })`) {
+		t.Fatal("standalone Session actions must render labeled AutoRun controls in the shared action row")
 	}
 	uploadIndex := strings.Index(source, `id="agentUploadButton" class="tty-upload-button"`)
 	autoRunIndex := strings.Index(source, "${autoRunActionsMarkup ?")

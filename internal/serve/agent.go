@@ -157,6 +157,7 @@ type forgeSessionContext struct {
 type agentRuntime struct {
 	mu                     sync.Mutex
 	turnActionMu           sync.Mutex
+	forgeSessionReleaseMu  sync.Mutex
 	workspace              guiWorkspace
 	manager                *agentManager
 	run                    agentRun
@@ -626,23 +627,29 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 	return dirAbs, nil
 }
 
-func removeForgeSessionContextFile(contextPath, sessionID string) {
+func removeForgeSessionContextFile(contextPath, sessionID string) error {
 	contextPath = strings.TrimSpace(contextPath)
 	if contextPath == "" {
-		return
+		return nil
 	}
 	data, err := os.ReadFile(contextPath)
 	if err != nil {
-		return
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read Forge session context: %w", err)
 	}
 	var context forgeSessionContext
 	if err := json.Unmarshal(data, &context); err != nil {
-		return
+		return fmt.Errorf("decode Forge session context: %w", err)
 	}
 	if strings.TrimSpace(context.ForgeSessionID) != strings.TrimSpace(sessionID) {
-		return
+		return fmt.Errorf("Forge session context belongs to %q, not %q", strings.TrimSpace(context.ForgeSessionID), strings.TrimSpace(sessionID))
 	}
-	_ = os.Remove(contextPath)
+	if err := os.Remove(contextPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove Forge session context: %w", err)
+	}
+	return nil
 }
 
 func rewriteAgentRuns(workspacePath string, runs []agentRun) error {

@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -53,7 +54,6 @@ function isLiveAgentRun(run) {
 }
 eval(extract("autoRunActionIcon"));
 eval(extract("autoRunComposerAction"));
-eval(extract("standaloneComposerToolbar"));
 eval(extract("sessionControlComposerActions"));
 eval(extract("agentComposerToolbarActions"));
 
@@ -139,8 +139,11 @@ const toolbar = agentComposerToolbarActions({ includeEndTurn: true, includeClose
 assert(toolbar.indexOf('id="agentEndTurnButton"') < toolbar.indexOf('id="agentCloseSessionButton"'), "End Turn must precede Close Session");
 assert(toolbar.indexOf('id="agentCloseSessionButton"') < toolbar.indexOf('id="autoRunCancelButton"'), "AutoRun must follow Close Session");
 assertIconOnly(toolbar, "live composer toolbar");
-const standalone = standaloneComposerToolbar(render(null));
-assert(standalone.includes('role="toolbar"') && standalone.includes('aria-label="AutoRun actions"'), "no-Session AutoRun toolbar must be discoverable");
+render(null);
+const standalone = autoRunComposerAction({ variant: "labeled" });
+assert(standalone.includes("<span>Start AutoRun</span>"), "standalone AutoRun action must include its visible label");
+assert(standalone.includes("tty-primary-action"), "standalone AutoRun action must use a normal button style");
+assert(!standalone.includes("tty-composer-action"), "standalone AutoRun action must not use the compact icon-only style");
 
 const pendingToolbar = agentComposerToolbarActions({ includeEndTurn: true, includeClose: true, includeAutoRun: true, autoRunCancelling: true });
 assert(pendingToolbar.includes('id="agentEndTurnButton"') && pendingToolbar.includes('disabled') && pendingToolbar.includes('aria-busy="true"'), "cancel pending must disable End Turn");
@@ -149,5 +152,107 @@ assert(pendingToolbar.includes('id="agentCloseSessionButton"') && pendingToolbar
 	appPath := filepath.Join("static", "app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("AutoRun composer state matrix test failed: %v\n%s", err, output)
+	}
+}
+
+func TestStandaloneSessionAndAutoRunActionsShareLabeledRow(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the standalone composer layout test")
+	}
+	script := `
+const fs = require("node:fs");
+const source = fs.readFileSync(process.argv[2], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const signatureEnd = source.indexOf(") {", start);
+  const open = signatureEnd + 2;
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+function escapeHTML(value) { return String(value ?? ""); }
+function icon(name) { return '<svg data-icon="' + name + '"></svg>'; }
+function assert(condition, message) { if (!condition) throw new Error(message); }
+const task = { id: "project1.task1", type: "task", title: "Task One" };
+const state = {
+  selectedId: task.id,
+  details: { [task.id]: task },
+  externalLock: false,
+  internalLock: false,
+  config: { agents: [{ id: "agent-one", name: "Agent One", available: true }] },
+  agent: {
+    agentChooserOpen: false,
+    newSessionStarting: false,
+    sessionActionsOpen: false,
+    runs: [],
+    autoRunStarting: false,
+    autoRunCancelling: false,
+  },
+};
+function findResource(id) { return id === task.id ? task : null; }
+function enabledAgentConfigs() { return state.config.agents; }
+function selectedAgentConfig() { return state.config.agents[0] || null; }
+function agentDisplayName(agent) { return agent?.name || agent?.id || "Agent"; }
+function agentConfigSummary() { return "AgentHub"; }
+function selectedResourceHasExternalLock() { return state.externalLock; }
+function selectedResourceHasInternalLock() { return state.internalLock; }
+function externalResourceLockNotice() { return '<div class="external-lock-notice">Resource locked</div>'; }
+function autoRunActionIcon(kind) { return '<svg data-autorun-icon="' + kind + '"></svg>'; }
+function isLiveAgentRun(run) { return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status); }
+eval(extract("autoRunComposerAction"));
+eval(extract("agentComposerActions"));
+function render(autoRunState, includeResume = false) {
+  state.externalLock = false;
+  state.internalLock = false;
+  state.agent.runs = [];
+  state.details[task.id] = {
+    ...task,
+    ...(autoRunState === null ? {} : { autoRun: { generation: 7, state: autoRunState } }),
+  };
+  return agentComposerActions({ standalone: true, includeResume, includeAutoRun: true });
+}
+let html = render(null);
+assert(html.includes('class="tty-session-actions tty-standalone-actions open"'), "no-history actions must use one standalone row");
+assert(html.includes('role="toolbar" aria-label="Session and AutoRun actions"'), "standalone row must expose one combined action toolbar");
+assert(html.includes('id="agentStartButton"') && html.includes('id="autoRunStartButton"'), "no-history row must offer New Session and Start AutoRun");
+assert(html.indexOf('id="agentStartButton"') < html.indexOf('id="autoRunStartButton"'), "Session action must precede AutoRun in the shared row");
+assert(html.includes('<span>Start AutoRun</span>'), "standalone Start AutoRun must be labeled");
+assert(!html.includes('tty-composer-toolbar-standalone') && !html.includes('tty-composer-action'), "standalone row must not render the old icon-only toolbar");
+
+html = render("suspended", true);
+assert(html.includes('id="agentResumeButton"') && html.includes('id="agentStartButton"'), "resumable history must offer Resume and New Session together");
+assert(html.includes('<span>Resume AutoRun now</span>') && html.includes('id="autoRunCancelButton"'), "resumable AutoRun controls must stay labeled in the shared row");
+
+for (const [stateName, label] of [["completed", "Start New AutoRun"], ["failed", "Start New AutoRun"], ["cancelled", "Start New AutoRun"], ["paused", "Resume AutoRun"], ["queued", "Cancel AutoRun"], ["running", "Cancel AutoRun"]]) {
+  html = render(stateName, true);
+  assert(html.includes('<span>' + label + '</span>'), stateName + " standalone AutoRun action must be labeled");
+}
+
+state.internalLock = true;
+html = agentComposerActions({ standalone: true, includeResume: true, includeAutoRun: true });
+assert(!html.includes('id="agentStartButton"'), "a real internal lock must keep New Session unavailable");
+assert(!html.includes('id="ttyAgentMenu"'), "a real internal lock must close the Agent chooser");
+state.internalLock = false;
+state.externalLock = true;
+html = agentComposerActions({ standalone: true, includeResume: true, includeAutoRun: true });
+assert(html.includes("external") || html.includes("locked"), "an external lock must retain its lock notice");
+assert(!html.includes('id="agentStartButton"') && !html.includes('id="autoRunStartButton"'), "an external lock must hide standalone actions");
+`
+	appPath := filepath.Join("static", "app.js")
+	testFile := filepath.Join(t.TempDir(), "standalone-session-actions.js")
+	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command(node, testFile, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("standalone Session/AutoRun action row test failed: %v\n%s", err, output)
 	}
 }

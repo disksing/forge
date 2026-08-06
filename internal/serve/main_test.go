@@ -1736,8 +1736,11 @@ func TestTTYComposerOffersResumeForAgentHubAttachedRuns(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
+		`function agentComposerAgentKey() {`,
 		`const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);`,
-		`agentComposerActions({ includeResume: canResume })`,
+		`agentComposerActions({`,
+		`standalone: true,`,
+		`includeResume: canResume,`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY composer resume guard is missing %q", want)
