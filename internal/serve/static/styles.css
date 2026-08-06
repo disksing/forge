@@ -3116,7 +3116,7 @@ i[data-lucide] {
 }
 
 .session-row.has-task-status-dual {
-  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  grid-template-columns: 36px minmax(0, 1fr) auto auto auto;
 }
 
 .session-row:hover,
@@ -3196,6 +3196,10 @@ i[data-lucide] {
   color: #334155;
   font-size: 13px;
   font-weight: 600;
+}
+
+.session-row .session-title {
+  min-width: 0;
 }
 
 .session-row span {

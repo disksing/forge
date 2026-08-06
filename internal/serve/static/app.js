@@ -2118,7 +2118,7 @@ function renderSessions() {
     row.setAttribute("aria-label", `${title}. ${accessibleStatusLabel}. ${providerLabel}`);
     row.innerHTML = `
       ${operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })}
-      <div>
+      <div class="session-title">
         <strong>${escapeHTML(title)}</strong>
         <span>${escapeHTML(metaParts.join(" · "))}</span>
       </div>

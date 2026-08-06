@@ -3181,6 +3181,127 @@ func TestListDragHandleStaysHiddenUntilHoverAndRightAligned(t *testing.T) {
 	}
 }
 
+func TestSessionRowReservesUnreadAndDragColumnsForEveryStatusLayout(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const unread = hasUnreadNotificationForSession(session.id);`,
+		`<span class="session-unread-badge" aria-label="Unread turn completion">New</span>`,
+		`<div class="session-title">`,
+		`<span class="drag-handle" draggable="true" title="Drag to reorder">`,
+		`bindListDrag(row, { kind: "session", id: session.id, projectId: "" });`,
+		`clearUnreadForResource(controls[0].resourceId);`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("session row notification or drag behavior is missing %q", want)
+		}
+	}
+
+	renderStart := strings.Index(app, "function renderSessions()")
+	if renderStart < 0 {
+		t.Fatal("could not find renderSessions function")
+	}
+	renderEnd := strings.Index(app[renderStart:], "function sessionDisplayTitle(session, resourceId)")
+	if renderEnd < 0 {
+		t.Fatal("could not isolate renderSessions function")
+	}
+	renderEnd += renderStart
+	renderSessions := app[renderStart:renderEnd]
+
+	statusMarker := `operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })`
+	titleMarker := `<div class="session-title">`
+	badgeMarker := `<span class="session-badge`
+	unreadMarker := `<span class="session-unread-badge" aria-label="Unread turn completion">New</span>`
+	dragMarker := `<span class="drag-handle" draggable="true" title="Drag to reorder">`
+	markers := []string{statusMarker, titleMarker, badgeMarker, unreadMarker, dragMarker}
+	previous := -1
+	for _, marker := range markers {
+		index := strings.Index(renderSessions, marker)
+		if index < 0 {
+			t.Fatalf("session row markup is missing %q", marker)
+		}
+		if index <= previous {
+			t.Fatalf("session row markup must keep fixed child order; %q follows the wrong child", marker)
+		}
+		previous = index
+	}
+
+	stylesData, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	styles := string(stylesData)
+	extractRule := func(selector string) string {
+		start := strings.Index(styles, selector+" {")
+		if start < 0 {
+			t.Fatalf("styles are missing %q", selector)
+		}
+		end := strings.Index(styles[start:], "}")
+		if end < 0 {
+			t.Fatalf("styles rule %q is unterminated", selector)
+		}
+		return styles[start : start+end+1]
+	}
+
+	baseRule := extractRule(".session-row")
+	dualRule := extractRule(".session-row.has-task-status-dual")
+	const baseColumns = "grid-template-columns: 16px minmax(0, 1fr) auto auto auto;"
+	const dualColumns = "grid-template-columns: 36px minmax(0, 1fr) auto auto auto;"
+	if !strings.Contains(baseRule, baseColumns) {
+		t.Fatalf("single-status session rows must reserve five explicit columns: %s", baseRule)
+	}
+	if !strings.Contains(dualRule, dualColumns) {
+		t.Fatalf("dual-status session rows must reserve five explicit columns: %s", dualRule)
+	}
+	if strings.Contains(dualRule, "grid-template-columns: 36px minmax(0, 1fr) auto auto;") {
+		t.Fatal("dual-status session rows must not rely on an implicit grid row for the drag handle")
+	}
+	if !strings.Contains(baseRule, "min-height: 44px;") {
+		t.Fatalf("session rows must keep a stable minimum height while the handle is revealed: %s", baseRule)
+	}
+	titleRule := extractRule(".session-row .session-title")
+	if !strings.Contains(titleRule, "min-width: 0;") {
+		t.Fatalf("session title must remain shrinkable: %s", titleRule)
+	}
+
+	for _, combination := range []struct {
+		name      string
+		dual      bool
+		unread    bool
+		itemCount int
+	}{
+		{name: "single-status/read", dual: false, unread: false, itemCount: 4},
+		{name: "single-status/unread", dual: false, unread: true, itemCount: 5},
+		{name: "dual-status/read", dual: true, unread: false, itemCount: 4},
+		{name: "dual-status/unread", dual: true, unread: true, itemCount: 5},
+	} {
+		rule := baseRule
+		if combination.dual {
+			rule = dualRule
+		}
+		expectedColumns := baseColumns
+		if combination.dual {
+			expectedColumns = dualColumns
+		}
+		if !strings.Contains(rule, expectedColumns) {
+			t.Errorf("%s must have an explicit column for each optional control: %s", combination.name, rule)
+		}
+		if combination.itemCount > 5 {
+			t.Errorf("%s has more visible row children than the explicit grid columns", combination.name)
+		}
+		expectedItemCount := 4
+		if combination.unread {
+			expectedItemCount++
+		}
+		if combination.itemCount != expectedItemCount {
+			t.Errorf("%s fixture does not model the optional New badge", combination.name)
+		}
+	}
+}
+
 func TestListCustomOrderHelpers(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
