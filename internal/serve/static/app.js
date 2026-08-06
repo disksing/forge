@@ -4186,15 +4186,15 @@ function renderTTYComposer(options = {}) {
     const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
     const closeCancelsAutoRun = isAutoRunSessionCloseTarget(activeRun);
     const sessionActionsMarkup = agentComposerActions({ collapsible: true });
-    const toolbarActionsMarkup = agentComposerToolbarActions({
+    const sessionControlsMarkup = sessionControlComposerActions({
       includeEndTurn: stopTurnAvailable,
       endingTurn: stopTurnPending,
       includeClose: true,
       closingSession: sessionStopping,
       cancelAutoRunOnClose: closeCancelsAutoRun,
-      includeAutoRun: true,
       autoRunCancelling: state.agent.autoRunCancelling,
     });
+    const autoRunActionsMarkup = autoRunComposerAction();
     const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
@@ -4206,9 +4206,12 @@ function renderTTYComposer(options = {}) {
       <form id="ttyForm" class="tty-input">
         <span>&gt;</span>
         <textarea id="ttyInput" rows="1" autocomplete="off" data-agent-draft-key="${escapeHTML(state.agent.ttyDraftKey)}" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
-        <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
-        ${selectedResourceHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
-        ${toolbarActionsMarkup}
+        <span class="tty-composer-group">
+          ${selectedResourceHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
+          <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
+        </span>
+        ${sessionControlsMarkup ? `<span class="tty-composer-divider" aria-hidden="true"></span><span class="tty-composer-group">${sessionControlsMarkup}</span>` : ""}
+        ${autoRunActionsMarkup ? `<span class="tty-composer-divider" aria-hidden="true"></span><span class="tty-composer-group">${autoRunActionsMarkup}</span>` : ""}
         ${sessionActionsMarkup ? `<button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>` : ""}
       </form>
       ${sessionActionsMarkup}
@@ -4324,12 +4327,19 @@ function standaloneComposerToolbar(markup) {
 }
 
 function agentComposerToolbarActions(options = {}) {
+  const sessionControlsMarkup = sessionControlComposerActions(options);
+  const autoRunMarkup = options.includeAutoRun ? autoRunComposerAction() : "";
+  return `${sessionControlsMarkup}${autoRunMarkup}`;
+}
+
+// sessionControlComposerActions renders the end-turn and close-session
+// buttons that control the live AgentHub session.
+function sessionControlComposerActions(options = {}) {
   const includeEndTurn = Boolean(options.includeEndTurn);
   const endingTurn = Boolean(options.endingTurn);
   const includeClose = Boolean(options.includeClose);
   const closingSession = Boolean(options.closingSession);
   const cancelAutoRunOnClose = Boolean(options.cancelAutoRunOnClose);
-  const includeAutoRun = Boolean(options.includeAutoRun);
   const autoRunCancelling = Boolean(options.autoRunCancelling);
   const endTurnPending = endingTurn || closingSession || autoRunCancelling;
   const endTurnLabel = endingTurn
@@ -4357,12 +4367,25 @@ function agentComposerToolbarActions(options = {}) {
     <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button"${closePending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(closeLabel)}" aria-label="${escapeHTML(closeLabel)}">
       ${icon(closingSession || autoRunCancelling ? "loader-circle" : "square")}
     </button>` : "";
-  const autoRunMarkup = includeAutoRun ? autoRunComposerAction() : "";
-  return `${endTurnMarkup}${closeSessionMarkup}${autoRunMarkup}`;
+  return `${endTurnMarkup}${closeSessionMarkup}`;
 }
 
 function agentDisplayName(agent) {
   return agent?.name || agent?.id || "Agent";
+}
+
+// autoRunActionIcon renders the AutoRun action family icon: a workflow
+// base glyph marking the automation family, plus a state badge in the
+// lower-right corner (play = start, resume arrow = resume, stop square =
+// cancel). kind is "start", "resume", or "cancel".
+function autoRunActionIcon(kind) {
+  const badgeFill = kind === "cancel" ? "#b91c1c" : "#6d28d9";
+  const badgeGlyph = kind === "cancel"
+    ? `<rect width="15" height="15" x="4.5" y="4.5" rx="2" fill="#fff" stroke="none"/>`
+    : kind === "resume"
+      ? `<g stroke="#fff" stroke-width="5.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></g>`
+      : `<polygon points="7 4 20 12 7 20 7 4" fill="#fff" stroke="none"/>`;
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(-0.8,-0.8) scale(0.9)" stroke-width="2.25"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></g><circle cx="17.4" cy="17.4" r="6" fill="${badgeFill}" stroke="#fff" stroke-width="2.2"/><g transform="translate(17.4,17.4) scale(0.38) translate(-12,-12)">${badgeGlyph}</g></svg>`;
 }
 
 // autoRunComposerAction renders the stateful AutoRun icon actions in the
@@ -4415,7 +4438,7 @@ function autoRunComposerAction() {
     const disabled = starting || cancelling || Boolean(busyReason);
     actions.push(`
       <button type="button" id="autoRunStartButton" class="tty-composer-action tty-autorun-action tty-autorun-${isResume ? "resume" : "start"}-action" data-autorun-action="${isResume ? "resume" : "start"}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
-        ${icon(starting || cancelling ? "loader-circle" : isResume ? "rotate-ccw" : "play")}
+        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(isResume ? "resume" : "start")}
       </button>
     `);
   }
@@ -4426,7 +4449,7 @@ function autoRunComposerAction() {
     const title = cancelling ? label : "Cancel AutoRun and keep the Agent Session open.";
     actions.push(`
       <button type="button" id="autoRunCancelButton" class="tty-composer-action tty-autorun-action tty-autorun-cancel-action" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${cancelling ? " disabled aria-busy=\"true\"" : ""}>
-        ${icon(cancelling ? "loader-circle" : "ban")}
+        ${cancelling ? icon("loader-circle") : autoRunActionIcon("cancel")}
       </button>
     `);
   }

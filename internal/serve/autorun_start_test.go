@@ -753,8 +753,8 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		t.Fatal("bottom Session actions still render an AutoRun control")
 	}
 	uploadIndex := strings.Index(source, `id="agentUploadButton" class="tty-upload-button"`)
-	toolbarIndex := strings.Index(source, "\n        ${toolbarActionsMarkup}\n")
-	if uploadIndex < 0 || toolbarIndex < 0 || uploadIndex > toolbarIndex {
-		t.Fatal("AutoRun toolbar must be rendered after Upload files in the live composer")
+	autoRunIndex := strings.Index(source, "${autoRunActionsMarkup ?")
+	if uploadIndex < 0 || autoRunIndex < 0 || uploadIndex > autoRunIndex {
+		t.Fatal("AutoRun actions must be rendered after Upload files in the live composer")
 	}
 }

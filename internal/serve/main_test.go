@@ -2412,6 +2412,7 @@ const resources = new Map();
 function findResource(id) { return resources.get(id) || null; }
 eval(extract("isAgentTurnInterruptible"));
 eval(extract("isAutoRunSessionCloseTarget"));
+eval(extract("sessionControlComposerActions"));
 eval(extract("agentComposerToolbarActions"));
 for (const status of ["running", "waiting_approval"]) {
   assert(isAgentTurnInterruptible({ status }), status + " must be interruptible");

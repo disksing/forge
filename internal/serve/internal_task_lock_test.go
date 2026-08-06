@@ -74,6 +74,7 @@ function isLiveAgentRun() { return false; }
 ` + extract("selectedResourceHasExternalLock") + `
 ` + extract("selectedResourceHasInternalLock") + `
 ` + extract("selectedResourceHasNewSessionLock") + `
+` + extract("sessionControlComposerActions") + `
 ` + extract("agentComposerToolbarActions") + `
 ` + extract("closeNewSessionChooserForResourceLock") + `
 ` + extract("agentComposerActions") + `

@@ -51,8 +51,10 @@ function selectedResourceHasExternalLock() { return state.externalLock; }
 function isLiveAgentRun(run) {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status);
 }
+eval(extract("autoRunActionIcon"));
 eval(extract("autoRunComposerAction"));
 eval(extract("standaloneComposerToolbar"));
+eval(extract("sessionControlComposerActions"));
 eval(extract("agentComposerToolbarActions"));
 
 function render(stateName, runs = [], externalLock = false) {
@@ -75,6 +77,7 @@ function assertIconOnly(html, message) {
 let html = render(null);
 assert(html.includes('data-autorun-action="start"'), "no AutoRun must offer Start AutoRun");
 assert(html.includes('title="Start AutoRun"'), "Start AutoRun needs its exact tooltip");
+assert(html.includes('fill="#6d28d9"'), "Start AutoRun must use the violet workflow family badge");
 assertIconOnly(html, "Start AutoRun");
 
 for (const stateName of ["completed", "failed", "cancelled"]) {
@@ -89,6 +92,7 @@ for (const stateName of ["queued", "running"]) {
   assert(!html.includes('id="autoRunStartButton"'), stateName + " must not offer a duplicate start action");
   assert(html.includes('id="autoRunCancelButton"'), stateName + " must offer Cancel AutoRun");
   assert(html.includes('aria-label="Cancel AutoRun"'), stateName + " Cancel needs its accessible name");
+  assert(html.includes('fill="#b91c1c"'), stateName + " Cancel must use the red workflow family badge");
   assertIconOnly(html, "Cancel AutoRun");
 }
 
