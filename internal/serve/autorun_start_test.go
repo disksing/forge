@@ -155,6 +155,141 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 	}
 }
 
+func TestChatAutoRunStartRequiresExplicitAgentWithoutReusableSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "select an agent") {
+		t.Fatalf("missing Agent should be rejected by the manual endpoint, got %d %s", rec.Code, rec.Body.String())
+	}
+	if reloaded := reloadTestTask(t, workspace.Path, task.ID); reloaded.AutoRun != nil {
+		t.Fatalf("missing Agent changed the task projection: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 0 || len(fake.sessions) != 0 {
+		t.Fatalf("missing Agent created an AgentHub session: next=%d sessions=%#v", fake.nextSession, fake.sessions)
+	}
+}
+
+func TestChatAutoRunStartDoesNotReuseAnotherTasksIdleSession(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, currentTask := newChatAutoRunTestServer(t, hub.URL)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherTask, err := forgeWorkspace.CreateTask(app.CreateTaskInput{
+		ProjectID: "project1", Title: "Other task", Slug: "other-task",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder, _ := startRuntimeTestRun(t, s.agents, workspace, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","title":"Other task chat"}`, otherTask.ID))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("other task session start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, currentTask.ID))
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "select an agent") {
+		t.Fatalf("another Task's idle session should not satisfy current Task resume: %d %s", rec.Code, rec.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 1 || len(fake.sessions) != 1 {
+		t.Fatalf("cross-Task start created or reused the wrong session set: next=%d sessions=%#v", fake.nextSession, fake.sessions)
+	}
+}
+
+func TestChatAutoRunStartResumesWithoutSessionUsingExplicitAgentAndSameGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.extraAgents = []string{"other-agent"}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{
+		TaskID: task.ID, AgentName: "fake-agent", AgentNameSet: true,
+		Prompt: "Original resume instructions", PromptSet: true,
+		CompletionCriteria: "Original resume criteria", CompletionCriteriaSet: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{
+		TaskID: task.ID, Summary: "waiting for review", WakeCondition: "reviewer approves",
+		ExpectedGeneration: 1, ExpectedState: "running",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"other-agent","expectedGeneration":1,"expectedState":"suspended","runInstructions":"must stay unchanged","completionCriteria":"must stay unchanged"}`, task.ID))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("explicit no-session resume failed: %d %s", rec.Code, rec.Body.String())
+	}
+	response := decodeChatAutoRunResponse(t, rec)
+	if response.Action != "started" || response.Reused || response.AgentName != "other-agent" || response.Run == nil || response.Run.AgentHubAgentName != "other-agent" {
+		t.Fatalf("unexpected explicit resume response: %+v", response)
+	}
+	if response.Task.AutoRun == nil || response.Task.AutoRun.Generation != 1 || response.Task.AutoRun.State != "running" ||
+		response.Task.AutoRun.AgentName != "other-agent" || response.Task.AutoRun.Prompt != "Original resume instructions" ||
+		response.Task.AutoRun.CompletionCriteria != "Original resume criteria" || response.Task.AutoRun.SuspensionSummary != "waiting for review" ||
+		response.Task.AutoRun.WakeCondition != "reviewer approves" {
+		t.Fatalf("explicit resume changed generation parameters: %+v", response.Task.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 1 || len(fake.sessions) != 1 {
+		t.Fatalf("explicit resume created the wrong number of AgentHub sessions: next=%d sessions=%#v", fake.nextSession, fake.sessions)
+	}
+}
+
+func TestChatAutoRunStartRejectsStaleResumeWithoutSideEffects(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID, AgentName: "fake-agent", AgentNameSet: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running", Summary: "waiting"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended", Reason: "superseded"}); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","expectedGeneration":1,"expectedState":"suspended"}`, task.ID))
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("stale resume should conflict, got %d %s", rec.Code, rec.Body.String())
+	}
+	if reloaded := reloadTestTask(t, workspace.Path, task.ID); reloaded.AutoRun == nil || reloaded.AutoRun.State != "cancelled" || reloaded.AutoRun.Generation != 1 {
+		t.Fatalf("stale resume changed the terminal generation: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 0 || len(fake.sessions) != 0 {
+		t.Fatalf("stale resume created an AgentHub session: next=%d sessions=%#v", fake.nextSession, fake.sessions)
+	}
+}
+
 func TestChatAutoRunCancelDurablyStopsTurnAndRetainsSession(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
@@ -355,6 +490,9 @@ func TestChatAutoRunStartBusySessionStaysQueued(t *testing.T) {
 		t.Fatal(err)
 	}
 	workspace := guiWorkspace{ID: "workspace-one", Path: workspacePath}
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
 	// The internal endpoint reports the session busy at send time, simulating
 	// the race where a session turns busy after the click.
 	internal := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -368,13 +506,32 @@ func TestChatAutoRunStartBusySessionStaysQueued(t *testing.T) {
 	defer internal.Close()
 	s := &server{addr: internal.URL, config: filepath.Join(t.TempDir(), "gui.json")}
 	s.agents = newAgentManager(s)
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace}}); err != nil {
+	if err := s.saveConfig(config{
+		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-chat-test",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	registerSchedulerRun(t, s, workspacePath, agentRun{
 		ID: "run-idle", WorkspaceID: workspace.ID, ResourceID: task.ID,
+		AgentHubSessionID: "ses-run-idle", SourceExternalID: workspace.ID + "/run-idle",
 		AgentHubAgentName: "agent-one", Status: "idle",
 	}, true)
+	_, client, err := s.agents.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := s.agents.runtimeByID("run-idle")
+	rt.mu.Lock()
+	rt.agentHub = client
+	rt.agentHubState = "ready"
+	rt.mu.Unlock()
+	fake.mu.Lock()
+	fake.sessions["ses-run-idle"] = agentHubSession{
+		ID: "ses-run-idle", State: "ready", AgentName: "agent-one",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "forge-chat-test", ExternalID: workspace.ID + "/run-idle"},
+	}
+	fake.mu.Unlock()
 
 	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
 	if rec.Code != http.StatusOK {
@@ -550,7 +707,7 @@ func TestChatAutoRunStartStateMatrix(t *testing.T) {
 		if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "manual"}); err != nil {
 			t.Fatal(err)
 		}
-		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+		rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("resume from paused failed: %d %s", rec.Code, rec.Body.String())
 		}
@@ -660,6 +817,41 @@ func TestChatAutoRunStartBusyLiveSessionHasClearReason(t *testing.T) {
 	}
 }
 
+func TestChatAutoRunStartRejectsAgentHubBusyProjectionEvenWhenLocalRunIsIdle(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	s, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, s.agents, workspace, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent","title":"Chat"}`, task.ID))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("session start failed: %s", recorder.Body.String())
+	}
+	rt := s.agents.runtimeByID(detail.Run.ID)
+	rt.mu.Lock()
+	rt.run.Status = "idle"
+	rt.agentHubState = "ready"
+	rt.mu.Unlock()
+	fake.mu.Lock()
+	session := fake.sessions[detail.Run.AgentHubSessionID]
+	session.State = "busy"
+	session.CurrentTurnID = "turn-busy"
+	fake.sessions[detail.Run.AgentHubSessionID] = session
+	fake.mu.Unlock()
+
+	rec := chatAutoRunStart(t, s, workspace.ID, fmt.Sprintf(`{"resourceId":%q}`, task.ID))
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "session is busy") {
+		t.Fatalf("stale idle projection should be rejected as busy, got %d %s", rec.Code, rec.Body.String())
+	}
+	if reloaded := reloadTestTask(t, workspace.Path, task.ID); reloaded.AutoRun != nil {
+		t.Fatalf("busy AgentHub projection changed the task: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 1 || len(fake.sessions) != 1 {
+		t.Fatalf("busy projection caused a second session: next=%d sessions=%#v", fake.nextSession, fake.sessions)
+	}
+}
+
 func TestChatAutoRunComposerUI(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
@@ -693,6 +885,12 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		`name="completionCriteria"`,
 		`Start New AutoRun`,
 		`function submitAutoRunConfigDialog`,
+		`Preselected from this AutoRun generation; confirm it before resuming.`,
+		`This generation has no currently enabled saved Agent. Choose one explicitly.`,
+		`expectedGeneration: dialog.expectedGeneration`,
+		`expectedState: dialog.expectedState`,
+		`const expectedState = options.expectedState === undefined ? stateName`,
+		`const directResume = ["paused", "suspended"].includes(expectedState);`,
 		`The agent must finish with exactly one final side-effecting protocol action`,
 		`if (event.key === "Tab")`,
 		`if (state.agent.autoRunStarting) return;`,

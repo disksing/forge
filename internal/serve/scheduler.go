@@ -88,18 +88,6 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hasRunnableAgent := cfg.Version >= agentHubConfigVersion && configuredAgentProfileName(cfg.AgentProfiles, "default") != ""
-	if cfg.Version >= agentHubConfigVersion && !hasRunnableAgent {
-		for _, route := range cfg.AgentProfiles {
-			if strings.TrimSpace(route.AgentName) != "" {
-				hasRunnableAgent = true
-				break
-			}
-		}
-	}
-	if !hasRunnableAgent {
-		return nil
-	}
 	var failures []error
 	for _, workspace := range cfg.Workspaces {
 		// Only dispatch into Workspaces this serve instance owns; a workspace
@@ -212,7 +200,10 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			if openErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("open workspace to resume task %s: %w", task.ID, openErr)
 			}
-			if _, resumeErr := forgeWorkspace.ResumeAutoRun(task.ID); resumeErr != nil {
+			if _, resumeErr := forgeWorkspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+				TaskID: task.ID, AgentName: run.AgentHubAgentName, AgentNameSet: strings.TrimSpace(run.AgentHubAgentName) != "",
+				ExpectedGeneration: task.Generation, ExpectedState: "suspended",
+			}); resumeErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("resume suspended task %s: %w", task.ID, resumeErr)
 			}
 			task.State = "queued"
@@ -246,12 +237,20 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		SchedulerTurn:        true,
 		AutoRunGeneration:    task.Generation,
 		QueueAutoRun:         resumingSuspended,
+		ExpectedAutoRunGeneration: func() int {
+			if resumingSuspended {
+				return task.Generation
+			}
+			return 0
+		}(),
 		ExpectedAutoRunState: func() string {
 			if resumingSuspended {
 				return "suspended"
 			}
 			return ""
 		}(),
+		AutoRunAgentName:    selection.AgentName,
+		AutoRunAgentNameSet: resumingSuspended,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {

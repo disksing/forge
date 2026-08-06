@@ -77,6 +77,36 @@ func TestScheduleRunnableTasksScansPastActiveAndFailedCandidates(t *testing.T) {
 	}
 }
 
+func TestScheduleRunnableTasksUsesSavedGenerationAgentWithoutProfileFallback(t *testing.T) {
+	workspace := t.TempDir()
+	var request startAgentRequest
+	s := newSchedulerTestServer(t, workspace, []runnableTaskCandidate{
+		{ID: "project1.task1", Generation: 1, State: "queued", AgentName: "saved-agent"},
+	}, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode start request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.AgentProfiles = nil
+	if err := s.saveConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
+		t.Fatalf("saved generation Agent should remain schedulable without profiles: %v", err)
+	}
+	if request.ResourceID != "project1.task1" || request.AgentName != "saved-agent" || request.AutoRunAgentName != "saved-agent" || request.AutoRunAgentNameSet {
+		t.Fatalf("scheduler silently changed or duplicated the saved Agent selection: %#v", request)
+	}
+}
+
 func TestStartRunnableTaskReturnsExplicitNonStartResults(t *testing.T) {
 	workspace := t.TempDir()
 	requests := 0
@@ -380,7 +410,7 @@ func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTask
 		}
 		task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{
 			ProjectID: project.ID, Title: title, Slug: "task" + strconv.Itoa(number),
-			AutoRun: true, PreferredAgentProfiles: candidate.PreferredAgentProfiles,
+			AutoRun: true, AgentName: candidate.AgentName, PreferredAgentProfiles: candidate.PreferredAgentProfiles,
 			Prompt: candidate.Prompt,
 		})
 		if err != nil {

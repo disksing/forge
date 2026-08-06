@@ -109,7 +109,7 @@ assert(html.includes('id="autoRunCancelButton"'), "paused must keep Cancel along
 assert(render("unknown") === "", "unknown AutoRun state must not expose an action");
 assert(render("suspended", [], true) === "", "external locks must hide every AutoRun action");
 
-html = render(null, [{ resourceId: task.id, status: "idle", schedulerTurn: false }]);
+html = render(null, [{ resourceId: task.id, status: "idle", schedulerTurn: false, agentHubSessionId: "session-1" }]);
 assert(!html.includes(" disabled"), "an idle live Session must keep Start enabled");
 assert(html.includes("reuse the current idle session"), "an idle live Session must explain reuse");
 

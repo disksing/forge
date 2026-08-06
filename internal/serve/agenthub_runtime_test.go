@@ -32,6 +32,7 @@ type runtimeFakeAgentHub struct {
 	failNextResume     bool
 	failNextMessage    bool
 	rejectAgentName    string
+	extraAgents        []string
 	stopHook           func(string)
 	messageSteers      []bool
 	actions            []string
@@ -53,10 +54,18 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if r.URL.Path == "/v1/agents" && r.Method == http.MethodGet {
 		f.mu.Lock()
 		rejected := f.rejectAgentName
+		extraAgents := append([]string(nil), f.extraAgents...)
 		f.mu.Unlock()
 		agents := []map[string]any{{"name": "fake-agent", "providerId": "fake", "available": rejected != "fake-agent"}}
 		if rejected != "" && rejected != "fake-agent" {
 			agents = append(agents, map[string]any{"name": rejected, "providerId": "fake", "available": false, "unavailableReason": "configured AgentHub agent is unavailable"})
+		}
+		for _, extra := range extraAgents {
+			extra = strings.TrimSpace(extra)
+			if extra == "" || extra == "fake-agent" || extra == rejected {
+				continue
+			}
+			agents = append(agents, map[string]any{"name": extra, "providerId": "fake", "available": true})
 		}
 		writeRuntimeFakeJSON(w, map[string]any{
 			"providers": []any{map[string]any{"id": "fake", "name": "Fake", "type": "fake", "enabled": true}},
@@ -585,6 +594,27 @@ func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
 	}
 	if messageCount != 1 || len(steers) != 1 || steers[0] {
 		t.Fatalf("resume message was duplicated or sent as a steer: messages=%d steers=%v events=%#v", messageCount, steers, events)
+	}
+}
+
+func TestAgentHubManualAutoRunResumeRequiresExplicitAgent(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	_, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
+
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, fmt.Sprintf(`{"resourceId":%q,"schedulerTurn":true,"queueAutoRun":true,"manualAutoRun":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended","prompt":"must not start"}`, seeded.ID))
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "explicitly selected agent") {
+		t.Fatalf("manual recovery without an Agent should be rejected, got %d %s", recorder.Code, recorder.Body.String())
+	}
+	if reloaded := reloadTestTask(t, workspace.Path, seeded.ID); reloaded.AutoRun == nil || reloaded.AutoRun.State != "suspended" || reloaded.AutoRun.Generation != 1 {
+		t.Fatalf("rejected manual recovery changed AutoRun state: %+v", reloaded.AutoRun)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.nextSession != 0 || len(fake.sessions) != 1 {
+		t.Fatalf("rejected manual recovery created an AgentHub session: next=%d sessions=%#v", fake.nextSession, fake.sessions)
 	}
 }
 

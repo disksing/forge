@@ -78,6 +78,9 @@ const state = {
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
+    agentSource: "",
+    expectedGeneration: 0,
+    expectedState: "",
     runInstructions: "",
     completionCriteria: "",
     submitting: false,
@@ -4405,7 +4408,9 @@ function autoRunComposerAction() {
   if (!startableStates.includes(stateName) && !resumableStates.includes(stateName) && !cancellableStates.includes(stateName)) return "";
 
   const liveRuns = state.agent.runs.filter((run) => run.resourceId === selected.id && isLiveAgentRun(run));
-  const liveSession = liveRuns.length > 0;
+  const liveSession = liveRuns.some((run) =>
+    run.status === "idle" && !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
+  );
   const busyRun = liveRuns.find((run) => run.status !== "idle" || run.schedulerTurn);
   const busyReason = busyRun?.status === "waiting_approval"
     ? "Resolve the pending approval before starting AutoRun in this session."
@@ -4465,9 +4470,12 @@ function autoRunComposerKey() {
   if (!detail || detail.type !== "task") return `${resourceLockKey}:no-task`;
   const autoRun = detail.autoRun;
   const liveRuns = state.agent.runs.filter((run) => run.resourceId === selected.id && isLiveAgentRun(run));
-  const sessionKey = liveRuns.length
-    ? (liveRuns.some((run) => run.status !== "idle" || run.schedulerTurn) ? "busy" : "idle")
-    : "no-session";
+  const reusable = liveRuns.some((run) =>
+    run.status === "idle" && !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
+  );
+  const sessionKey = reusable
+    ? "idle"
+    : liveRuns.some((run) => run.status !== "idle" || run.schedulerTurn) ? "busy" : "no-session";
   return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}:${state.agent.autoRunCancelling ? "cancelling" : "idle"}`;
 }
 
@@ -4481,7 +4489,9 @@ function selectedResourceLockComposerKey() {
 
 function autoRunNeedsConfiguration(detail) {
   const stateName = String(detail?.autoRun?.state || "").trim().toLowerCase();
-  return !stateName || stateName === "completed" || stateName === "failed" || stateName === "cancelled";
+  if (!stateName || ["completed", "failed", "cancelled"].includes(stateName)) return true;
+  if (!["suspended", "paused"].includes(stateName)) return false;
+  return !autoRunIdleSessionForResource(detail?.id);
 }
 
 async function startChatAutoRun(options = {}) {
@@ -4493,29 +4503,33 @@ async function startChatAutoRun(options = {}) {
       throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
     const configuration = Boolean(options.configured);
+    const stateName = String(detail.autoRun?.state || "").trim().toLowerCase();
+    const expectedState = options.expectedState === undefined ? stateName : String(options.expectedState || "").trim().toLowerCase();
+    const expectedGeneration = options.expectedGeneration === undefined
+      ? Number(detail.autoRun?.generation) || 0
+      : Number(options.expectedGeneration) || 0;
+    const directResume = ["paused", "suspended"].includes(expectedState);
     if (!configuration && autoRunNeedsConfiguration(detail)) {
       openAutoRunConfigDialog();
       return null;
     }
-    const liveRuns = state.agent.runs.filter((run) => run.resourceId === selected.id && isLiveAgentRun(run));
-    const liveSession = liveRuns.length > 0;
-    const directResume = ["paused", "suspended"].includes(String(detail.autoRun?.state || ""));
+    const reusableSession = autoRunIdleSessionForResource(selected.id);
     let agentName = String(options.agentName || "").trim();
-    if (!liveSession && !agentName) {
-      agentName = directResume ? String(detail.autoRun?.agentName || "").trim() : "";
-      if (!agentName) {
-        const agent = selectedAgentConfig();
-        if (!agent) throw new Error("Select an agent to start AutoRun without an active session.");
-        agentName = agent.id;
-      }
+    if (!reusableSession && !agentName) {
+      throw new Error("Select an agent to start or resume AutoRun without an active session.");
     }
     state.agent.autoRunStarting = true;
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
     try {
-      const body = { resourceId: selected.id, agentName };
-      if (configuration) {
+      const body = {
+        resourceId: selected.id,
+        agentName: reusableSession ? "" : agentName,
+        expectedGeneration,
+        expectedState,
+      };
+      if (configuration && !directResume) {
         body.runInstructions = String(options.runInstructions || "");
         body.completionCriteria = String(options.completionCriteria || "");
       }
@@ -4554,6 +4568,9 @@ function autoRunDialogInitialState() {
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
+    agentSource: "",
+    expectedGeneration: 0,
+    expectedState: "",
     runInstructions: "",
     completionCriteria: "",
     submitting: false,
@@ -4590,8 +4607,22 @@ function openAutoRunConfigDialog() {
   }
   const reuseRun = autoRunIdleSessionForResource(selected.id);
   const autoRun = detail.autoRun || null;
-  const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state) ? "new" : "configure";
-  const selectedAgent = selectedAgentConfig();
+  const resumable = ["suspended", "paused"].includes(String(autoRun?.state || "").trim().toLowerCase());
+  const agents = enabledAgentConfigs();
+  const savedAgentName = String(autoRun?.agentName || "").trim();
+  const savedAgent = agents.find((agent) => String(agent.id || "").trim().toLowerCase() === savedAgentName.toLowerCase());
+  const selectedAgent = resumable ? null : selectedAgentConfig();
+  const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state)
+    ? "new"
+    : resumable && !reuseRun ? "resume" : "configure";
+  const agentName = String(reuseRun?.agentHubAgentName || (resumable ? savedAgent?.id || "" : selectedAgent?.id || "")).trim();
+  const agentSource = reuseRun
+    ? "Using the current strict-idle AgentHub session."
+    : resumable && savedAgent
+      ? "Preselected from this AutoRun generation; confirm it before resuming."
+      : resumable
+        ? "This generation has no currently enabled saved Agent. Choose one explicitly."
+        : "";
   state.modalEnter = "autorun";
   state.autoRunDialog = {
     open: true,
@@ -4600,11 +4631,14 @@ function openAutoRunConfigDialog() {
     title: detail.title || selected.title || selected.id,
     reuseRunId: reuseRun?.id || "",
     reuseCurrentSession: Boolean(reuseRun),
-    agentName: String(reuseRun?.agentHubAgentName || autoRun?.agentName || selectedAgent?.id || "").trim(),
+    agentName,
+    agentSource,
+    expectedGeneration: Number(autoRun?.generation) || 0,
+    expectedState: String(autoRun?.state || "").trim().toLowerCase(),
     runInstructions: String(autoRun?.prompt || ""),
     completionCriteria: String(autoRun?.completionCriteria || ""),
     submitting: false,
-    error: !reuseRun && !selectedAgentConfig() ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting AutoRun." : "",
+    error: !reuseRun && agents.length === 0 ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting AutoRun." : "",
     unknown: false,
     returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
   };
@@ -4629,8 +4663,9 @@ function renderAutoRunConfigDialog() {
     delete root.dataset.autoRunDialogKey;
     return;
   }
-  const title = dialog.mode === "new" ? "Start New AutoRun" : "Configure AutoRun";
-  const submitLabel = dialog.mode === "new" ? "Start New AutoRun" : "Start AutoRun";
+  const resumeMode = dialog.mode === "resume";
+  const title = dialog.mode === "new" ? "Start New AutoRun" : resumeMode ? "Resume AutoRun" : "Configure AutoRun";
+  const submitLabel = dialog.mode === "new" ? "Start New AutoRun" : resumeMode ? "Resume AutoRun" : "Start AutoRun";
   const agents = enabledAgentConfigs();
   const key = `${dialog.resourceId}:${dialog.mode}:${dialog.reuseRunId}:${dialog.agentName}:${dialog.submitting}:${dialog.error}:${dialog.unknown}`;
   if (root.dataset.autoRunDialogKey === key && root.querySelector("#autoRunConfigForm")) return;
@@ -4650,7 +4685,9 @@ function renderAutoRunConfigDialog() {
           <button class="icon-button" type="button" data-auto-run-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
         </header>
         <form id="autoRunConfigForm" class="details-form auto-run-dialog-form">
-          <p id="autoRunDialogDescription" class="auto-run-dialog-description">Choose how this generation should run. Paused and suspended generations resume directly without changing these parameters.</p>
+          <p id="autoRunDialogDescription" class="auto-run-dialog-description">${resumeMode
+            ? "Choose the Agent for this AutoRun generation. Confirming resumes the same generation; its saved instructions and completion criteria stay unchanged."
+            : "Choose how this generation should run. Paused and suspended generations keep their existing parameters."}</p>
           <label>
             <span>Agent</span>
             ${dialog.reuseCurrentSession ? `
@@ -4662,15 +4699,18 @@ function renderAutoRunConfigDialog() {
                 ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === dialog.agentName ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
               </select>
             `}
+            ${dialog.agentSource ? `<small>${escapeHTML(dialog.agentSource)}</small>` : ""}
           </label>
-          <label>
-            <span>Run instructions <small>(optional)</small></span>
-            <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this AutoRun generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
-          </label>
-          <label>
-            <span>Completion criteria <small>(optional, natural language)</small></span>
-            <textarea name="completionCriteria" rows="4" placeholder="What should be true before the agent marks this generation complete?"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.completionCriteria)}</textarea>
-          </label>
+          ${resumeMode ? "" : `
+            <label>
+              <span>Run instructions <small>(optional)</small></span>
+              <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this AutoRun generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
+            </label>
+            <label>
+              <span>Completion criteria <small>(optional, natural language)</small></span>
+              <textarea name="completionCriteria" rows="4" placeholder="What should be true before the agent marks this generation complete?"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.completionCriteria)}</textarea>
+            </label>
+          `}
           <p class="auto-run-dialog-protocol">The agent must finish with exactly one final side-effecting protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
           ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
           ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
@@ -4710,8 +4750,10 @@ async function submitAutoRunConfigDialog(event) {
   if (!dialog.open || dialog.submitting || dialog.unknown) return;
   const form = new FormData(event.currentTarget);
   dialog.agentName = String(form.get("agentName") || dialog.agentName || "").trim();
-  dialog.runInstructions = String(form.get("runInstructions") || "");
-  dialog.completionCriteria = String(form.get("completionCriteria") || "");
+  const runInstructions = form.get("runInstructions");
+  const completionCriteria = form.get("completionCriteria");
+  if (runInstructions !== null) dialog.runInstructions = String(runInstructions || "");
+  if (completionCriteria !== null) dialog.completionCriteria = String(completionCriteria || "");
   if (!dialog.reuseCurrentSession && !dialog.agentName) {
     dialog.error = "Select an Agent before starting AutoRun.";
     renderAutoRunConfigDialog();
@@ -4724,6 +4766,8 @@ async function submitAutoRunConfigDialog(event) {
     await startChatAutoRun({
       configured: true,
       agentName: dialog.agentName,
+      expectedGeneration: dialog.expectedGeneration,
+      expectedState: dialog.expectedState,
       runInstructions: dialog.runInstructions,
       completionCriteria: dialog.completionCriteria,
     });

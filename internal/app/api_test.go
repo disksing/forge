@@ -484,6 +484,91 @@ func TestWorkspaceAPIAutoRunStateTransitionsNormalizeSuspensionMetadata(t *testi
 	}
 }
 
+func TestWorkspaceAPIResumeAutoRunWithAgentPersistsCurrentGenerationCAS(t *testing.T) {
+	for _, state := range []string{"suspended", "paused"} {
+		t.Run(state, func(t *testing.T) {
+			workspace := openTestWorkspace(t)
+			project, err := workspace.CreateProject("Resume Agent project", "resume-agent")
+			if err != nil {
+				t.Fatal(err)
+			}
+			task, err := workspace.CreateTask(app.CreateTaskInput{
+				ProjectID: project.ID, Title: "Resume Agent task", Slug: "resume-agent", AutoRun: true,
+				AgentName: "saved-agent", PreferredAgentProfiles: []string{"preferred"},
+				Prompt: "Keep these instructions", CompletionCriteria: "Keep this completion rule",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := workspace.StartAutoRun(task.ID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+				TaskID: task.ID, Summary: "waiting for a reviewer", WakeCondition: "reviewer approves",
+				ExpectedGeneration: 1, ExpectedState: "running",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if state == "paused" {
+				if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := workspace.StartAutoRun(task.ID); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := workspace.PauseAutoRun(app.AutoRunActionInput{
+					TaskID: task.ID, Reason: "manual review", ExpectedGeneration: 1, ExpectedState: "running",
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			resumed, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+				TaskID: task.ID, AgentName: "explicit-agent", AgentNameSet: true,
+				ExpectedGeneration: 1, ExpectedState: state,
+			})
+			if err != nil || resumed.AutoRun == nil {
+				t.Fatalf("resume with explicit Agent failed: task=%+v err=%v", resumed, err)
+			}
+			got := resumed.AutoRun
+			if got.Generation != 1 || got.State != "queued" || got.AgentName != "explicit-agent" || got.SuspendedAt != "" ||
+				got.PreferredAgentProfiles[0] != "preferred" || got.Prompt != "Keep these instructions" ||
+				got.CompletionCriteria != "Keep this completion rule" || got.SuspensionSummary != "waiting for a reviewer" ||
+				got.WakeCondition != "reviewer approves" {
+				t.Fatalf("resume changed more than the selected Agent and state: %+v", got)
+			}
+
+			beforeStale, err := workspace.ResourceValue(task.ID)
+			if err != nil || beforeStale.Task == nil || beforeStale.Task.AutoRun == nil {
+				t.Fatalf("reload resumed task: resource=%+v err=%v", beforeStale, err)
+			}
+			if _, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+				TaskID: task.ID, AgentName: "stale-agent", AgentNameSet: true,
+				ExpectedGeneration: 1, ExpectedState: state,
+			}); err == nil {
+				t.Fatal("stale state CAS unexpectedly succeeded after resume")
+			}
+			afterStale, err := workspace.ResourceValue(task.ID)
+			if err != nil || afterStale.Task == nil || afterStale.Task.AutoRun == nil {
+				t.Fatalf("reload after stale resume: resource=%+v err=%v", afterStale, err)
+			}
+			if afterStale.Task.AutoRun.AgentName != "explicit-agent" || afterStale.Task.AutoRun.State != "queued" {
+				t.Fatalf("stale resume mutated the generation: %+v", afterStale.Task.AutoRun)
+			}
+
+			if _, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+				TaskID: task.ID, AgentNameSet: true, ExpectedGeneration: 1, ExpectedState: "queued",
+			}); err == nil {
+				t.Fatal("an explicit empty Agent unexpectedly succeeded")
+			}
+			final, err := workspace.ResourceValue(task.ID)
+			if err != nil || final.Task == nil || final.Task.AutoRun == nil || final.Task.AutoRun.AgentName != "explicit-agent" {
+				t.Fatalf("empty Agent attempt mutated persisted choice: resource=%+v err=%v", final, err)
+			}
+		})
+	}
+}
+
 func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("AutoRun wake project", "wake")

@@ -91,6 +91,10 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	if req.ManualAutoRun && req.SchedulerTurn && req.QueueAutoRun && strings.TrimSpace(req.AgentName) == "" {
+		writeError(w, errors.New("manual AutoRun start or resume requires an explicitly selected agent"), http.StatusBadRequest)
+		return
+	}
 	if err := m.server.requireResourceNotExternallyLocked(workspace, req.ResourceID); err != nil {
 		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
@@ -167,7 +171,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	}
 	if run.SchedulerTurn {
 		if req.QueueAutoRun {
-			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunState, app.AutoRunQueueInput{
+			task, queueErr := m.server.queueChatAutoRunForSession(workspace, run.ResourceID, req.ExpectedAutoRunGeneration, req.ExpectedAutoRunState, app.AutoRunQueueInput{
 				TaskID:    run.ResourceID,
 				AgentName: req.AutoRunAgentName, AgentNameSet: req.AutoRunAgentNameSet,
 				Prompt: req.AutoRunPrompt, PromptSet: req.AutoRunPromptSet,

@@ -22,6 +22,18 @@ type AutoRunQueueInput struct {
 	CompletionCriteriaSet  bool
 }
 
+// AutoRunResumeInput describes a manual or scheduled resume of the current
+// generation. AgentName is optional for existing callers that keep the
+// generation's persisted choice, but a caller that explicitly selected an
+// Agent must set AgentNameSet so the same generation can be updated atomically.
+type AutoRunResumeInput struct {
+	TaskID             string
+	AgentName          string
+	AgentNameSet       bool
+	ExpectedGeneration int
+	ExpectedState      string
+}
+
 // AutoRunActionInput describes a scheduler action.
 type AutoRunActionInput struct {
 	TaskID             string
@@ -127,16 +139,44 @@ func (w *Workspace) StartAutoRun(taskID string) (Task, error) {
 // resume, timed wake-up, and scheduler scans never double-transition or
 // double-log the same generation.
 func (w *Workspace) ResumeAutoRun(taskID string) (Task, error) {
-	return w.updateAutoRunTask(taskID, func(_ string, dir string, task *Task) error {
+	return w.ResumeAutoRunWithAgent(AutoRunResumeInput{TaskID: taskID})
+}
+
+// ResumeAutoRunWithAgent resumes the current generation and, when requested,
+// persists the explicitly selected Agent without creating a new generation.
+// ExpectedGeneration and ExpectedState form a durable CAS for callers that
+// already validated a page, session, or scheduler snapshot.
+func (w *Workspace) ResumeAutoRunWithAgent(input AutoRunResumeInput) (Task, error) {
+	return w.updateAutoRunTask(input.TaskID, func(_ string, dir string, task *Task) error {
 		if task.AutoRun == nil {
 			return errors.New("task has no AutoRun")
 		}
+		if input.ExpectedGeneration > 0 && task.AutoRun.Generation != input.ExpectedGeneration {
+			return fmt.Errorf("AutoRun generation changed from %d to %d", input.ExpectedGeneration, task.AutoRun.Generation)
+		}
+		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
+			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		}
 		if task.AutoRun.State == autoRunStateQueued {
+			if input.AgentNameSet {
+				agentName := strings.TrimSpace(input.AgentName)
+				if agentName == "" {
+					return errors.New("Agent name cannot be empty when resuming AutoRun")
+				}
+				task.AutoRun.AgentName = agentName
+			}
 			task.AutoRun.SuspendedAt = ""
 			return nil
 		}
 		if task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateSuspended {
 			return errors.New("AutoRun is not paused or suspended")
+		}
+		if input.AgentNameSet {
+			agentName := strings.TrimSpace(input.AgentName)
+			if agentName == "" {
+				return errors.New("Agent name cannot be empty when resuming AutoRun")
+			}
+			task.AutoRun.AgentName = agentName
 		}
 		task.AutoRun.State = autoRunStateQueued
 		task.AutoRun.SuspendedAt = ""

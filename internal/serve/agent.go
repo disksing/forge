@@ -114,6 +114,8 @@ type startAgentRequest struct {
 	SchedulerTurn                bool   `json:"schedulerTurn,omitempty"`
 	AutoRunGeneration            int    `json:"autoRunGeneration,omitempty"`
 	QueueAutoRun                 bool   `json:"queueAutoRun,omitempty"`
+	ManualAutoRun                bool   `json:"manualAutoRun,omitempty"`
+	ExpectedAutoRunGeneration    int    `json:"expectedAutoRunGeneration,omitempty"`
 	ExpectedAutoRunState         string `json:"expectedAutoRunState,omitempty"`
 	AutoRunAgentName             string `json:"autoRunAgentName,omitempty"`
 	AutoRunAgentNameSet          bool   `json:"autoRunAgentNameSet,omitempty"`
