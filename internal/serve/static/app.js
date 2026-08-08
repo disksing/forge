@@ -6275,13 +6275,24 @@ async function submitTTYInput(event) {
   try {
     const result = await sendAgentInput(rawText);
     if (result?.status === "accepted") {
-      clearAgentDraftAfterAccepted({
+      const clearedDraft = clearAgentDraftAfterAccepted({
         workspaceId: sendWorkspaceId,
         runId: sendRunId,
         key: sendDraftKey,
         text: rawText,
         version: sendDraftVersion,
       });
+      if (clearedDraft) {
+        // A suspended AutoRun refreshes the task, run, and session projections
+        // before this submit finishes. Do not let that render read the old
+        // textarea value back into the accepted-and-cleared draft.
+        state.agent.skipTTYDraftSync = true;
+        const currentInput = $("ttyInput");
+        if (currentInput && currentInput.dataset?.agentDraftKey === sendDraftKey) {
+          currentInput.value = "";
+          if (typeof resizeTTYInput === "function") resizeTTYInput(currentInput);
+        }
+      }
       if (result.autoRunResumed || resumeIntent) {
         try {
           if (typeof refreshAgentInputProjection === "function") {
