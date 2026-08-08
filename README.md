@@ -92,10 +92,10 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 
 The main UI is split into navigation, resource details, and agent chat:
 
-- **Navigation:** switch workspaces, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles.
+- **Navigation:** switch workspaces with an optional per-workspace icon, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles. The active workspace icon is also used as the browser tab icon; workspaces without a selection use the Forge icon.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** start, close, resume, or revisit agent sessions; end only the current turn with End Turn while keeping the Session open; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
-- **Settings:** add or remove workspaces, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents.
+- **Settings:** add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 

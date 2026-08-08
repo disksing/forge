@@ -2749,6 +2749,15 @@ i[data-lucide] {
   font-size: 10px;
   font-weight: 700;
   flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.workspace-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .workspace-menu {
@@ -4661,6 +4670,11 @@ i[data-lucide] {
   gap: 8px;
 }
 
+.settings-workspace-entry {
+  display: grid;
+  gap: 6px;
+}
+
 .settings-list-row {
   display: flex;
   align-items: center;
@@ -4714,6 +4728,15 @@ i[data-lucide] {
   color: #fff;
   font-size: 12px;
   font-weight: 700;
+  overflow: hidden;
+}
+
+.settings-workspace-mark img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .settings-row-actions {
@@ -4721,6 +4744,116 @@ i[data-lucide] {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+}
+
+.settings-workspace-icon-button {
+  max-width: 190px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  padding: 3px 7px 3px 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.settings-workspace-icon-button:hover:not(:disabled),
+.settings-workspace-icon-button[aria-expanded="true"] {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.settings-workspace-icon-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.settings-workspace-icon-button img {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border-radius: 5px;
+  object-fit: cover;
+}
+
+.settings-workspace-icon-button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-workspace-icon-button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.settings-workspace-icon-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 7px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+
+.settings-workspace-icon-picker button {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  place-items: center;
+  gap: 5px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #475569;
+  padding: 7px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.settings-workspace-icon-picker button:hover {
+  border-color: #bfdbfe;
+  background: #fff;
+}
+
+.settings-workspace-icon-picker button.selected {
+  border-color: #60a5fa;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.settings-workspace-icon-picker img {
+  width: 42px;
+  height: 42px;
+  border-radius: 9px;
+  object-fit: cover;
+}
+
+.settings-workspace-icon-picker span {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-workspace-icon-picker svg {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  padding: 2px;
 }
 
 .settings-pill {
@@ -4744,6 +4877,11 @@ i[data-lucide] {
 
 .settings-danger-button:hover {
   background: #fecaca;
+}
+
+.settings-danger-button:disabled {
+  cursor: wait;
+  opacity: 0.55;
 }
 
 .settings-empty {

@@ -53,6 +53,26 @@ type guiWorkspace struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Path string `json:"path"`
+	Icon string `json:"icon,omitempty"`
+}
+
+var workspaceIconFiles = map[string]string{
+	"home-base":               "01-home-base.png",
+	"personal-tasks":          "02-personal-tasks.png",
+	"product-roadmap":         "03-product-roadmap.png",
+	"software-engineering":    "04-software-engineering.png",
+	"design-studio":           "05-design-studio.png",
+	"marketing-campaign":      "06-marketing-campaign.png",
+	"sales-pipeline":          "07-sales-pipeline.png",
+	"operations":              "08-operations.png",
+	"finance":                 "09-finance.png",
+	"research-lab":            "10-research-lab.png",
+	"learning-education":      "11-learning-education.png",
+	"customer-support":        "12-customer-support.png",
+	"events-calendar":         "13-events-calendar.png",
+	"documentation-knowledge": "14-documentation-knowledge.png",
+	"analytics":               "15-analytics.png",
+	"community-team":          "16-community-team.png",
 }
 
 const (
@@ -341,6 +361,24 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 	id := parts[0]
 	if len(parts) == 1 {
+		if r.Method == http.MethodPut {
+			var body struct {
+				Icon string `json:"icon"`
+			}
+			decoder := json.NewDecoder(r.Body)
+			decoder.DisallowUnknownFields()
+			if err := decoder.Decode(&body); err != nil {
+				writeError(w, err, http.StatusBadRequest)
+				return
+			}
+			workspace, err := s.updateWorkspaceIcon(id, body.Icon)
+			if err != nil {
+				writeError(w, err, http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, workspace)
+			return
+		}
 		if r.Method != http.MethodDelete {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -985,6 +1023,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	replaced := false
 	for i := range cfg.Workspaces {
 		if cfg.Workspaces[i].ID == workspace.ID {
+			workspace.Icon = cfg.Workspaces[i].Icon
 			cfg.Workspaces[i] = workspace
 			replaced = true
 			break
@@ -998,6 +1037,30 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		return guiWorkspace{}, err
 	}
 	return workspace, nil
+}
+
+func (s *server) updateWorkspaceIcon(id, icon string) (guiWorkspace, error) {
+	icon = strings.TrimSpace(icon)
+	if icon != "" {
+		if _, ok := workspaceIconFiles[icon]; !ok {
+			return guiWorkspace{}, fmt.Errorf("unknown workspace icon: %s", icon)
+		}
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return guiWorkspace{}, err
+	}
+	for i := range cfg.Workspaces {
+		if cfg.Workspaces[i].ID != id {
+			continue
+		}
+		cfg.Workspaces[i].Icon = icon
+		if err := s.saveConfig(cfg); err != nil {
+			return guiWorkspace{}, err
+		}
+		return cfg.Workspaces[i], nil
+	}
+	return guiWorkspace{}, fmt.Errorf("workspace not found: %s", id)
 }
 
 func (s *server) removeWorkspace(id string) error {

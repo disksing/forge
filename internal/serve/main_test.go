@@ -2,6 +2,7 @@ package serve
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -49,6 +50,192 @@ func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
 	}
 	if icon.XMLName.Local != "svg" {
 		t.Fatalf("favicon root element is %q, want svg", icon.XMLName.Local)
+	}
+}
+
+func TestWorkspaceIconsAreEmbedded(t *testing.T) {
+	staticRoot, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		t.Fatal(err)
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for id, filename := range workspaceIconFiles {
+		if !strings.Contains(app, `{ id: "`+id+`",`) || !strings.Contains(app, `src: "/workspace-icons/`+filename+`"`) {
+			t.Fatalf("workspace icon %q is missing from the frontend catalog", id)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/workspace-icons/"+filename, nil)
+		rec := httptest.NewRecorder()
+		serveStatic(staticRoot, rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("workspace icon %q returned %d: %s", id, rec.Code, rec.Body.String())
+		}
+		if got := rec.Header().Get("Content-Type"); got != "image/png" {
+			t.Fatalf("workspace icon %q content type is %q, want image/png", id, got)
+		}
+		if rec.Body.Len() == 0 {
+			t.Fatalf("workspace icon %q is empty", id)
+		}
+	}
+}
+
+func TestWorkspaceIconCanBeUpdatedAndReset(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath}
+	if err := s.saveConfig(config{
+		Version:    agentHubConfigVersion,
+		Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "One", Path: t.TempDir()}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	update := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one", strings.NewReader(body))
+		rec := httptest.NewRecorder()
+		s.handleWorkspace(rec, req)
+		return rec
+	}
+
+	rec := update(`{"icon":"software-engineering"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace icon update returned %d: %s", rec.Code, rec.Body.String())
+	}
+	var workspace guiWorkspace
+	if err := json.Unmarshal(rec.Body.Bytes(), &workspace); err != nil {
+		t.Fatal(err)
+	}
+	if workspace.Icon != "software-engineering" {
+		t.Fatalf("updated workspace icon is %q", workspace.Icon)
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Workspaces[0].Icon; got != "software-engineering" {
+		t.Fatalf("persisted workspace icon is %q", got)
+	}
+
+	rec = update(`{"icon":"not-a-workspace-icon"}`)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unknown workspace icon returned %d, want 400", rec.Code)
+	}
+	cfg, err = s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Workspaces[0].Icon; got != "software-engineering" {
+		t.Fatalf("invalid update changed workspace icon to %q", got)
+	}
+
+	rec = update(`{"icon":""}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("workspace icon reset returned %d: %s", rec.Code, rec.Body.String())
+	}
+	cfg, err = s.loadConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Workspaces[0].Icon; got != "" {
+		t.Fatalf("reset workspace icon is %q, want empty", got)
+	}
+}
+
+func TestWorkspaceIconFrontendUsesOneFallbackForSwitcherAndFavicon(t *testing.T) {
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	for _, want := range []string{
+		`const DEFAULT_WORKSPACE_ICON = { id: "", label: "Forge default", src: "/favicon.svg", type: "image/svg+xml" };`,
+		`return WORKSPACE_ICON_BY_ID.get(String(workspace?.icon || "").trim()) || DEFAULT_WORKSPACE_ICON;`,
+		`avatar.innerHTML = workspaceIconMarkup(active);`,
+		`updateWorkspaceFavicon(active);`,
+		`<span class="workspace-avatar">${workspaceIconMarkup(workspace)}</span>`,
+		`data-workspace-icon="${escapeHTML(option.id)}"`,
+		`body: JSON.stringify({ icon: iconId || "" })`,
+	} {
+		if !strings.Contains(app, want) {
+			t.Fatalf("workspace icon frontend is missing %q", want)
+		}
+	}
+}
+
+func TestWorkspaceIconFallbackAndFaviconBehavior(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the workspace icon behavior test")
+	}
+	appData, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := string(appData)
+	extract := func(startMarker, endMarker string) string {
+		t.Helper()
+		start := strings.Index(app, startMarker)
+		if start < 0 {
+			t.Fatalf("could not find %q", startMarker)
+		}
+		end := strings.Index(app[start:], endMarker)
+		if end < 0 {
+			t.Fatalf("could not find %q after %q", endMarker, startMarker)
+		}
+		return app[start : start+end]
+	}
+	catalogSource := extract("const DEFAULT_WORKSPACE_ICON", "function notificationStorage")
+	behaviorSource := extract("function workspaceIconOption", "function renderWorkspaceSelect")
+	script := `
+function assert(condition, message) {
+  if (!condition) throw new Error(message);
+}
+let currentLink = { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" };
+let appendedLink = null;
+const document = {
+  querySelector() { return currentLink; },
+  createElement() { return {}; },
+  head: { appendChild(link) { appendedLink = link; currentLink = link; } },
+};
+` + catalogSource + behaviorSource + `
+const fallback = workspaceIconOption({ icon: "unknown-icon" });
+assert(fallback === DEFAULT_WORKSPACE_ICON, "an unknown icon did not use the Forge fallback");
+updateWorkspaceFavicon({ icon: "software-engineering" });
+assert(currentLink.href === "/workspace-icons/04-software-engineering.png", "selected icon did not update the favicon URL");
+assert(currentLink.type === "image/png", "selected icon did not update the favicon type");
+updateWorkspaceFavicon({});
+assert(currentLink.href === "/favicon.svg" && currentLink.type === "image/svg+xml", "empty icon did not restore the Forge favicon");
+currentLink = null;
+updateWorkspaceFavicon({ icon: "finance" });
+assert(appendedLink && appendedLink.rel === "icon", "missing favicon link was not created");
+assert(appendedLink.href === "/workspace-icons/09-finance.png", "created favicon link uses the wrong icon");
+`
+	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("workspace icon behavior test failed: %v\n%s", err, output)
+	}
+}
+
+func TestAddingExistingWorkspacePreservesIcon(t *testing.T) {
+	workspacePath := t.TempDir()
+	if _, err := app.Initialize(workspacePath, "en"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	workspace, err := s.addWorkspace(context.Background(), workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.updateWorkspaceIcon(workspace.ID, "research-lab"); err != nil {
+		t.Fatal(err)
+	}
+	readded, err := s.addWorkspace(context.Background(), workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readded.Icon != "research-lab" {
+		t.Fatalf("re-adding workspace changed icon to %q", readded.Icon)
 	}
 }
 
@@ -1299,7 +1486,7 @@ func TestDetailMarkdownIncrementalRefreshBehavior(t *testing.T) {
 
 	regionSource := extract("function updateDetailRegion", "function markdownRendererKey")
 	documentKeySource := extract("function markdownRendererKey", "function detailLogsRenderKey")
-	viewGuardSource := extract("function isCurrentWorkspaceView", "const WORKSPACE_AVATAR_PALETTE")
+	viewGuardSource := extract("function isCurrentWorkspaceView", "function workspaceIconOption")
 	detailSource := extract("async function loadDetail", "async function loadWorkspaceAgents")
 	previewSource := extract("async function previewFile", "async function saveWorkspaceAgents")
 	script := `

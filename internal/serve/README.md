@@ -22,7 +22,7 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 ## 配置
 
-持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`、`scheduler`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。`scheduler` 是为未来调度工作预留的系统路由，当前不会自动启动 Scheduler Agent，也不会改变现有 AutoRun 路由。可用环境变量：
+持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。每个 workspace 可保存一个可选的内置图标键；缺失、空值或未知值在界面中都回退为 Forge 默认图标，当前 workspace 的图标同时用于浏览器 favicon。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`、`scheduler`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。`scheduler` 是为未来调度工作预留的系统路由，当前不会自动启动 Scheduler Agent，也不会改变现有 AutoRun 路由。可用环境变量：
 
 - `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
 - `FORGE_GUI_CONFIG`：GUI 配置文件路径。

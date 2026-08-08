@@ -38,6 +38,8 @@ const state = {
     workspacePath: "",
     createWorkspace: false,
     saving: false,
+    workspaceIconPickerId: "",
+    workspaceIconSavingId: "",
     newProfile: {
       key: "",
       description: "",
@@ -193,6 +195,26 @@ const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_app
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning", "scheduler"]);
 const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
 const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
+const DEFAULT_WORKSPACE_ICON = { id: "", label: "Forge default", src: "/favicon.svg", type: "image/svg+xml" };
+const WORKSPACE_ICONS = [
+  { id: "home-base", label: "Home base", src: "/workspace-icons/01-home-base.png" },
+  { id: "personal-tasks", label: "Personal tasks", src: "/workspace-icons/02-personal-tasks.png" },
+  { id: "product-roadmap", label: "Product roadmap", src: "/workspace-icons/03-product-roadmap.png" },
+  { id: "software-engineering", label: "Software engineering", src: "/workspace-icons/04-software-engineering.png" },
+  { id: "design-studio", label: "Design studio", src: "/workspace-icons/05-design-studio.png" },
+  { id: "marketing-campaign", label: "Marketing campaign", src: "/workspace-icons/06-marketing-campaign.png" },
+  { id: "sales-pipeline", label: "Sales pipeline", src: "/workspace-icons/07-sales-pipeline.png" },
+  { id: "operations", label: "Operations", src: "/workspace-icons/08-operations.png" },
+  { id: "finance", label: "Finance", src: "/workspace-icons/09-finance.png" },
+  { id: "research-lab", label: "Research lab", src: "/workspace-icons/10-research-lab.png" },
+  { id: "learning-education", label: "Learning and education", src: "/workspace-icons/11-learning-education.png" },
+  { id: "customer-support", label: "Customer support", src: "/workspace-icons/12-customer-support.png" },
+  { id: "events-calendar", label: "Events and calendar", src: "/workspace-icons/13-events-calendar.png" },
+  { id: "documentation-knowledge", label: "Documentation and knowledge", src: "/workspace-icons/14-documentation-knowledge.png" },
+  { id: "analytics", label: "Analytics", src: "/workspace-icons/15-analytics.png" },
+  { id: "community-team", label: "Community and team", src: "/workspace-icons/16-community-team.png" },
+];
+const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, item]));
 
 function notificationStorage() {
   try {
@@ -1553,33 +1575,32 @@ function isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) {
   return isCurrentWorkspaceView(workspaceId, navigationVersion) && refreshVersion === state.autoRefreshVersion;
 }
 
-const WORKSPACE_AVATAR_PALETTE = [
-  ["#dbeafe", "#1d4ed8"],
-  ["#ede9fe", "#6d28d9"],
-  ["#fee2e2", "#b91c1c"],
-  ["#ffedd5", "#c2410c"],
-  ["#dcfce7", "#15803d"],
-  ["#cffafe", "#0e7490"],
-];
-
-function workspaceAvatarColors(workspace) {
-  const key = (workspace?.id || workspace?.name || "").trim();
-  let hash = 0;
-  for (const ch of key) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
-  return WORKSPACE_AVATAR_PALETTE[hash % WORKSPACE_AVATAR_PALETTE.length];
+function workspaceIconOption(workspace) {
+  return WORKSPACE_ICON_BY_ID.get(String(workspace?.icon || "").trim()) || DEFAULT_WORKSPACE_ICON;
 }
 
-function applyWorkspaceAvatarColor(element, workspace) {
-  const [bg, fg] = workspaceAvatarColors(workspace);
-  element.style.background = bg;
-  element.style.color = fg;
+function workspaceIconMarkup(workspace, className = "") {
+  const option = workspaceIconOption(workspace);
+  return `<img src="${escapeHTML(option.src)}" alt="" aria-hidden="true"${className ? ` class="${escapeHTML(className)}"` : ""} />`;
+}
+
+function updateWorkspaceFavicon(workspace) {
+  const option = workspaceIconOption(workspace);
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement("link");
+    link.rel = "icon";
+    document.head.appendChild(link);
+  }
+  link.type = option.type || "image/png";
+  link.href = option.src;
 }
 
 function renderWorkspaceSelect() {
   const active = state.config.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
   const avatar = $("workspaceAvatar");
-  avatar.textContent = (active?.name || "A").trim().slice(0, 1).toUpperCase();
-  applyWorkspaceAvatarColor(avatar, active);
+  avatar.innerHTML = workspaceIconMarkup(active);
+  updateWorkspaceFavicon(active);
   $("workspaceSwitcherName").textContent = active?.name || "Workspace";
   $("workspaceSwitcher").setAttribute("aria-expanded", String(state.workspaceMenuOpen));
   const menu = $("workspaceMenu");
@@ -1595,12 +1616,10 @@ function renderWorkspaceSelect() {
 
 function workspaceMenuMarkup(activeId) {
   const rows = state.config.workspaces.map((workspace) => {
-    const initial = (workspace.name || "?").trim().slice(0, 1).toUpperCase();
-    const [bg, fg] = workspaceAvatarColors(workspace);
     const active = workspace.id === activeId;
     return `
       <button type="button" class="workspace-menu-row" role="option" aria-selected="${active}" data-workspace-id="${escapeHTML(workspace.id)}">
-        <span class="workspace-avatar" style="background:${bg};color:${fg}">${escapeHTML(initial)}</span>
+        <span class="workspace-avatar">${workspaceIconMarkup(workspace)}</span>
         <span class="workspace-menu-main">
           <strong>${escapeHTML(workspace.name || workspace.id)}</strong>
           <small>${escapeHTML(workspace.path || "")}</small>
@@ -5259,22 +5278,48 @@ function settingsWorkspacePanel(data) {
         <button type="submit">${icon("plus")}<span>${state.settings.createWorkspace ? "Create" : "Add"}</span></button>
       </form>
       <div class="settings-list">
-        ${(data.workspaces || []).map((workspace) => `
-          <div class="settings-list-row">
-            <div class="settings-row-main">
-              <span class="settings-workspace-mark">${escapeHTML((workspace.name || "W").slice(0, 1).toUpperCase())}</span>
-              <span>
-                <strong>${escapeHTML(workspace.name)}</strong>
-                <small>${escapeHTML(workspace.path)}</small>
-              </span>
+        ${(data.workspaces || []).map((workspace) => {
+          const option = workspaceIconOption(workspace);
+          const pickerOpen = state.settings.workspaceIconPickerId === workspace.id;
+          const saving = state.settings.workspaceIconSavingId === workspace.id;
+          return `
+          <div class="settings-workspace-entry">
+            <div class="settings-list-row">
+              <div class="settings-row-main">
+                <span class="settings-workspace-mark">${workspaceIconMarkup(workspace)}</span>
+                <span>
+                  <strong>${escapeHTML(workspace.name)}</strong>
+                  <small>${escapeHTML(workspace.path)}</small>
+                </span>
+              </div>
+              <div class="settings-row-actions">
+                ${workspace.id === data.activeId ? `<span class="settings-pill">Active</span>` : ""}
+                <button type="button" class="settings-workspace-icon-button" data-workspace-icon-picker="${escapeHTML(workspace.id)}" aria-expanded="${pickerOpen}" title="Change workspace icon" ${saving ? "disabled" : ""}>
+                  ${workspaceIconMarkup(workspace)}<span>${saving ? "Saving..." : escapeHTML(option.label)}</span>${icon("chevron-down")}
+                </button>
+                <button type="button" class="settings-danger-button" data-remove-workspace="${escapeHTML(workspace.id)}" title="Remove workspace" ${saving ? "disabled" : ""}>${icon("trash-2")}</button>
+              </div>
             </div>
-            <div class="settings-row-actions">
-              ${workspace.id === data.activeId ? `<span class="settings-pill">Active</span>` : ""}
-              <button type="button" class="settings-danger-button" data-remove-workspace="${escapeHTML(workspace.id)}">${icon("trash-2")}</button>
-            </div>
+            ${pickerOpen ? settingsWorkspaceIconPicker(workspace) : ""}
           </div>
-        `).join("") || `<div class="settings-empty">No workspaces managed by Forge GUI.</div>`}
+        `;
+        }).join("") || `<div class="settings-empty">No workspaces managed by Forge GUI.</div>`}
       </div>
+    </div>
+  `;
+}
+
+function settingsWorkspaceIconPicker(workspace) {
+  const selected = workspaceIconOption(workspace).id;
+  return `
+    <div class="settings-workspace-icon-picker" role="radiogroup" aria-label="Icon for ${escapeHTML(workspace.name || "workspace")}">
+      ${[DEFAULT_WORKSPACE_ICON, ...WORKSPACE_ICONS].map((option) => `
+        <button type="button" role="radio" aria-checked="${option.id === selected}" class="${option.id === selected ? "selected" : ""}" data-workspace-icon="${escapeHTML(option.id)}" data-workspace-id="${escapeHTML(workspace.id)}" title="${escapeHTML(option.label)}">
+          <img src="${escapeHTML(option.src)}" alt="" aria-hidden="true" />
+          <span>${escapeHTML(option.label)}</span>
+          ${option.id === selected ? icon("check") : ""}
+        </button>
+      `).join("")}
     </div>
   `;
 }
@@ -5377,6 +5422,17 @@ function bindSettingsEvents() {
   });
   document.querySelectorAll("[data-remove-workspace]").forEach((button) => {
     button.addEventListener("click", () => removeSettingsWorkspace(button.dataset.removeWorkspace).catch((err) => toast(err.message)));
+  });
+  document.querySelectorAll("[data-workspace-icon-picker]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.settings.workspaceIconPickerId = state.settings.workspaceIconPickerId === button.dataset.workspaceIconPicker ? "" : button.dataset.workspaceIconPicker;
+      renderSettingsModal();
+    });
+  });
+  document.querySelectorAll("[data-workspace-icon]").forEach((button) => {
+    button.addEventListener("click", () => {
+      updateSettingsWorkspaceIcon(button.dataset.workspaceId, button.dataset.workspaceIcon).catch((err) => toast(err.message));
+    });
   });
   $("settingsSaveButton")?.addEventListener("click", () => {
     saveAgentSettings().catch((err) => toast(err.message));
@@ -6748,6 +6804,8 @@ async function openSettings(tab = "workspace") {
   state.settings.tab = tab;
   state.settings.agentDirty = false;
   state.settings.expandedAgents = new Set();
+  state.settings.workspaceIconPickerId = "";
+  state.settings.workspaceIconSavingId = "";
   await refreshSettings();
   renderSettingsModal();
 }
@@ -6848,6 +6906,28 @@ async function removeSettingsWorkspace(id) {
   await refreshSettingsPreservingAgentDraft();
   renderSettingsModal();
   toast("Workspace removed from Forge GUI.");
+}
+
+async function updateSettingsWorkspaceIcon(id, iconId) {
+  if (!id || state.settings.workspaceIconSavingId) return;
+  state.settings.workspaceIconSavingId = id;
+  state.settings.workspaceIconPickerId = "";
+  renderSettingsModal();
+  try {
+    const workspace = await api(`/api/workspaces/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify({ icon: iconId || "" }),
+    });
+    const replaceWorkspace = (items) => (items || []).map((item) => item.id === workspace.id ? workspace : item);
+    state.config = { ...(state.config || {}), workspaces: replaceWorkspace(state.config?.workspaces) };
+    state.settings.data = { ...(state.settings.data || {}), workspaces: replaceWorkspace(state.settings.data?.workspaces) };
+    state.settings.workspaceIconPickerId = "";
+    renderWorkspaceSelect();
+    toast(iconId ? "Workspace icon saved." : "Workspace icon reset to the Forge default.");
+  } finally {
+    state.settings.workspaceIconSavingId = "";
+    renderSettingsModal();
+  }
 }
 
 function syncSettingsDraftFromDOM() {
