@@ -188,7 +188,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
 		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目任务模板位于 templates/*.md") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") {
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
 		var projectLogs []LogEntry
@@ -366,7 +366,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "Project task templates live in templates/*.md") || !strings.Contains(projectAgents, "autorun: true") {
+		if !strings.Contains(projectAgents, "Project content templates live in templates/*.md") || !strings.Contains(projectAgents, "schema-version: 2") || !strings.Contains(projectAgents, "Templates organize task content only") {
 			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
 		}
 		if !strings.Contains(projectAgents, "workspace root AGENTS.md (../AGENTS.md)") {
@@ -765,7 +765,8 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
+		"  forge template list [--project=<project>] [--json]",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]\n  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
@@ -773,7 +774,8 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>",
 		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun]",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
+		"  forge template list|show|validate|render|create|migrate ...",
 		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
 		"  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
@@ -2706,6 +2708,113 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		archivedAfter := readFile(t, archivedAgents)
 		if archivedAfter != archivedBefore {
 			t.Fatalf("expected archived subtask AGENTS.md not to change\nbefore:\n%s\nafter:\n%s", archivedBefore, archivedAfter)
+		}
+	})
+}
+
+func TestStructuredTemplateCommandsAndTaskCreate(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Template project")
+		template := `---
+schema-version: 2
+title: Request
+task-title: "{{ summary }}"
+fields:
+  - name: summary
+    type: text
+    label: Summary
+    required: true
+  - name: body
+    type: textarea
+    label: Body
+    required: true
+  - name: enabled
+    type: boolean
+    label: Enabled
+    default: false
+---
+# {{ summary }}
+
+{{ body }}
+
+Enabled: {{ enabled }}
+`
+		templatePath := filepath.Join(root, "project1", "templates", "request.md")
+		if err := os.WriteFile(templatePath, []byte(template), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		listed := run(t, "template", "list", "--project=project1")
+		if !strings.Contains(listed, "request\tRequest\tv2\t3 fields\tvalid") {
+			t.Fatalf("unexpected template list:\n%s", listed)
+		}
+		shown := run(t, "template", "show", "--project=project1", "--schema", "request")
+		if !strings.Contains(shown, `"name": "summary"`) || !strings.Contains(shown, `"digest": "sha256:`) {
+			t.Fatalf("unexpected template schema:\n%s", shown)
+		}
+		rendered := run(t, "template", "render", "--project=project1", "--field", "summary=CLI task", "--field", "body=Created from CLI", "--field", "enabled=true", "request")
+		if !strings.Contains(rendered, "# CLI task") || !strings.Contains(rendered, "Enabled: true") {
+			t.Fatalf("unexpected rendered template:\n%s", rendered)
+		}
+		preview := run(t, "task", "create", "--project=project1", "--template=request", "--field", "summary=CLI task", "--field", "body=Created from CLI", "--dry-run")
+		if !strings.Contains(preview, `"title": "CLI task"`) || !strings.Contains(preview, `"autoRun"`) {
+			t.Fatalf("unexpected dry-run preview:\n%s", preview)
+		}
+		if matches, _ := filepath.Glob(filepath.Join(root, "project1", "task*")); len(matches) != 0 {
+			t.Fatalf("dry-run created task directories: %#v", matches)
+		}
+		created := run(t, "task", "create", "--project=project1", "--template=request", "--field", "summary=CLI task", "--field", "body=Created from CLI")
+		if !strings.Contains(created, `"template"`) || strings.Contains(created, `"autoRun"`) {
+			t.Fatalf("content template implicitly enabled AutoRun: %s", created)
+		}
+		var createdTask Task
+		if err := json.Unmarshal([]byte(created), &createdTask); err != nil {
+			t.Fatal(err)
+		}
+		var detail ResourceDetailView
+		if err := json.Unmarshal([]byte(run(t, "workspace", "resource", "--id=project1.task1", "--json")), &detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail.Template == nil || createdTask.Template == nil || detail.Template.Digest != createdTask.Template.Digest {
+			t.Fatalf("workspace resource omitted template source: %#v", detail)
+		}
+		automatic := run(t, "task", "create", "Explicit title", "--project=project1", "--template=request", "--field", "summary=Ignored title", "--field", "body=Automatic", "--autorun", "--agent=codex")
+		if !strings.Contains(automatic, `"title": "Explicit title"`) || !strings.Contains(automatic, `"state": "queued"`) {
+			t.Fatalf("explicit AutoRun or title override missing: %s", automatic)
+		}
+		if _, err := runErr(t, "task", "create", "Bad", "--project=project1", "--template=request", "--detail=conflict"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+			t.Fatalf("expected mutually exclusive template inputs, got %v", err)
+		}
+	})
+}
+
+func TestTemplateValidateAndMigrateCLI(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Migration project")
+		dir := filepath.Join(root, "project1", "templates")
+		legacy := "---\ntitle: Legacy\nautorun: true\nprompt: Do it\n---\n# Legacy\n"
+		if err := os.WriteFile(filepath.Join(dir, "legacy.md"), []byte(legacy), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if output := run(t, "template", "validate", "--project=project1", "--all"); !strings.Contains(output, "legacy\tvalid") {
+			t.Fatalf("legacy template should be visible with a warning: %s", output)
+		}
+		preview := run(t, "template", "migrate", "--project=project1", "legacy")
+		if !strings.Contains(preview, "schema-version: 2") || strings.Contains(readFile(t, filepath.Join(dir, "legacy.md")), "schema-version") {
+			t.Fatalf("migration preview changed file or omitted output: %s", preview)
+		}
+		run(t, "template", "migrate", "--project=project1", "--write", "legacy")
+		migrated := readFile(t, filepath.Join(dir, "legacy.md"))
+		if !strings.Contains(migrated, "schema-version: 2") || strings.Contains(migrated, "autorun") || strings.Contains(migrated, "prompt:") {
+			t.Fatalf("legacy execution properties survived migration:\n%s", migrated)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\nschema-version: 2\ntitle: Broken\nautorun: true\nfields: []\n---\nBody\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		output, err := runErr(t, "template", "validate", "--project=project1", "--all", "--json")
+		if err == nil || !strings.Contains(output, "execution_property_forbidden") {
+			t.Fatalf("expected invalid template and non-zero exit: err=%v output=%s", err, output)
 		}
 	})
 }

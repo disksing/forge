@@ -29,10 +29,19 @@ type Project struct {
 
 type Task struct {
 	ResourceMeta
-	Parent      string     `json:"parent"`
-	Description string     `json:"description,omitempty"`
-	Repos       []TaskRepo `json:"repos,omitempty"`
-	AutoRun     *AutoRun   `json:"autoRun,omitempty"`
+	Parent      string              `json:"parent"`
+	Description string              `json:"description,omitempty"`
+	Repos       []TaskRepo          `json:"repos,omitempty"`
+	AutoRun     *AutoRun            `json:"autoRun,omitempty"`
+	Template    *TaskTemplateSource `json:"template,omitempty"`
+	// Path is populated on create responses but is not persisted in task.json.
+	Path string `json:"path,omitempty"`
+}
+
+type TaskTemplateSource struct {
+	Name          string `json:"name"`
+	SchemaVersion int    `json:"schemaVersion"`
+	Digest        string `json:"digest"`
 }
 
 type Resource interface {

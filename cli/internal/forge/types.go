@@ -3,6 +3,8 @@ package forge
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 type Config struct {
@@ -29,10 +31,11 @@ type Project struct {
 
 type Task struct {
 	ResourceMeta
-	Parent      string     `json:"parent"`
-	Description string     `json:"description,omitempty"`
-	Repos       []TaskRepo `json:"repos,omitempty"`
-	AutoRun     *AutoRun   `json:"autoRun,omitempty"`
+	Parent      string                  `json:"parent"`
+	Description string                  `json:"description,omitempty"`
+	Repos       []TaskRepo              `json:"repos,omitempty"`
+	AutoRun     *AutoRun                `json:"autoRun,omitempty"`
+	Template    *app.TaskTemplateSource `json:"template,omitempty"`
 }
 
 type Resource interface {

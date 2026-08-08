@@ -216,24 +216,45 @@ The action calls one unified server operation (`POST /api/workspaces/<id>/autoru
 
 ## Task Templates
 
-Project-local templates live in `templates/*.md`. YAML front matter controls task creation and the remainder becomes the new task's complete `task.md`:
+Project-local content templates live in `templates/*.md`. Schema V2 declares a dynamic input form and deterministic title/Markdown rendering; it never chooses whether or how the task runs:
 
 ```markdown
 ---
-title: Daily inspection
-autorun: true
-agent-profiles: [fast, codex]
-prompt: Inspect the project and report findings.
-completion-criteria: The report is saved and verified.
+schema-version: 2
+title: Request or bug
+description: Capture a concrete change.
+task-title: "{{ summary }}"
+fields:
+  - name: summary
+    type: text
+    label: Summary
+    required: true
+  - name: behavior
+    type: textarea
+    label: Expected behavior
+    required: true
+  - name: priority
+    type: select
+    label: Priority
+    options: [low, medium, high]
+  - name: reproduced
+    type: boolean
+    label: Reproduced
+    default: false
 ---
-# Daily inspection
+# {{ summary }}
 
-## Background
+{{ behavior }}
 
-Inspect the current project state and report anything that needs attention.
+Priority: {{ priority }}
+Reproduced: {{ reproduced }}
 ```
 
-Supported front matter fields are `title`, `autorun`, `agent`, `agent-profiles`, `prompt`, and `completion-criteria`. Agent, Agent Profiles, prompts, and completion criteria apply only to AutoRun templates.
+Field types are `text`, `textarea`, `select`, and `boolean`. Placeholders may only reference declared fields and are replaced once, so template-like text inside a field value stays literal. Unknown properties, fields, placeholders, type mismatches, and missing required values produce stable structured errors. The normalized template bytes have a SHA-256 digest; previewed creates can submit that digest to detect template changes.
+
+Use `forge template list/show/validate/render/create/migrate` to inspect and manage templates. `forge task create --template=<name> --field name=value` creates from one, while `--dry-run` previews without filesystem or AutoRun side effects. `--fields` accepts a YAML or JSON object and repeated `--field` values override the file. AutoRun, Agent, Profile, instructions, and completion criteria remain explicit `task create` options and are never read from a V2 content template.
+
+Templates without `schema-version` remain visible as legacy V1 templates with deprecation warnings. Their old execution properties are ignored. `forge template migrate <name>` previews a static V2 conversion and `--write` atomically applies it without inventing fields or changing the Markdown body. Created tasks store only the template name, schema version, and digest in `task.json`; later template edits do not modify them.
 
 ## Workspace Layout
 
@@ -297,12 +318,15 @@ forge project show [--project=<project>]
 forge project archive [--project=<project>]
 forge project log add|list ...
 
+forge template list|show|validate|render|create|migrate ...
+
 forge resource archive --id=<resource>
 
-forge task create [--project=<project>] [--slug <slug>]
-                  [--detail <detail>|--task-markdown <markdown>]
+forge task create [<title>] [--project=<project>] [--slug <slug>]
+                  [--detail <detail>|--task-markdown <markdown>|--template=<name>]
+                  [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
                   [--autorun] [--agent=<agent>] [--agent-profile=<profile>...]
-                  [--prompt=<prompt>] [--completion-criteria=<text>] <title>
+                  [--prompt=<prompt>] [--completion-criteria=<text>]
 forge task list [--project=<project>] [--all]
                 [--runnable [--json]]
 forge task show|archive ...

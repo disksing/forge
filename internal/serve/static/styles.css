@@ -828,6 +828,72 @@ body.resizing-y {
   min-height: clamp(180px, 32vh, 340px);
 }
 
+.template-description {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.template-source {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.template-fields {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.template-boolean {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+
+.template-boolean small {
+  grid-column: 2;
+}
+
+.template-title-control,
+.template-preview-actions {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.template-title-control input {
+  flex: 1;
+}
+
+.compact {
+  white-space: nowrap;
+}
+
+.template-preview-actions {
+  justify-content: space-between;
+}
+
+.template-preview {
+  max-height: 17rem;
+  overflow: auto;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-subtle);
+}
+
+.template-preview h4 {
+  margin: 0 0 0.65rem;
+}
+
+.template-row.invalid {
+  border-color: var(--danger);
+}
+
 .create-task-automation-toggle {
   display: flex;
   align-items: flex-start;

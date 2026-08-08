@@ -497,7 +497,17 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
+		if len(parts) == 3 && parts[2] == "preview" {
+			s.previewTask(w, r, id)
+			return
+		}
+		if len(parts) != 2 {
+			http.NotFound(w, r)
+			return
+		}
 		s.createTask(w, r, id)
+	case "templates":
+		s.handleTemplates(w, r, id, parts[2:])
 	case "archive":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -566,36 +576,62 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 	writeJSON(w, result)
 }
 
-func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
-	var body struct {
-		Project                string   `json:"project"`
-		Title                  string   `json:"title"`
-		Detail                 string   `json:"detail"`
-		TaskMarkdown           *string  `json:"taskMarkdown"`
-		Description            string   `json:"description"`
-		Slug                   string   `json:"slug"`
-		AutoRun                bool     `json:"autorun"`
-		AgentName              string   `json:"agentName"`
-		PreferredAgentProfiles []string `json:"preferredAgentProfiles"`
-		Prompt                 string   `json:"prompt"`
-		CompletionCriteria     string   `json:"completionCriteria"`
-	}
+type createTaskRequest struct {
+	Project                string         `json:"project"`
+	Title                  string         `json:"title"`
+	Detail                 string         `json:"detail"`
+	TaskMarkdown           *string        `json:"taskMarkdown"`
+	Description            string         `json:"description"`
+	TemplateName           string         `json:"templateName"`
+	TemplateFields         map[string]any `json:"templateFields"`
+	ExpectedTemplateDigest string         `json:"expectedTemplateDigest"`
+	Slug                   string         `json:"slug"`
+	AutoRun                bool           `json:"autorun"`
+	AgentName              string         `json:"agentName"`
+	PreferredAgentProfiles []string       `json:"preferredAgentProfiles"`
+	Prompt                 string         `json:"prompt"`
+	CompletionCriteria     string         `json:"completionCriteria"`
+}
+
+func decodeCreateTaskRequest(r *http.Request) (createTaskRequest, error) {
+	var body createTaskRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&body); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
+		return body, err
 	}
-	title := body.Title
-	if strings.TrimSpace(title) == "" {
-		title = body.Description
+	if strings.TrimSpace(body.Title) == "" {
+		body.Title = body.Description
 	}
 	if body.TaskMarkdown != nil && strings.TrimSpace(body.Detail) != "" {
-		writeError(w, errors.New("detail and taskMarkdown are mutually exclusive"), http.StatusBadRequest)
-		return
+		return body, errors.New("detail and taskMarkdown are mutually exclusive")
+	}
+	if strings.TrimSpace(body.TemplateName) != "" && (body.TaskMarkdown != nil || strings.TrimSpace(body.Detail) != "") {
+		return body, errors.New("templateName is mutually exclusive with detail and taskMarkdown")
 	}
 	if !body.AutoRun && (strings.TrimSpace(body.AgentName) != "" || len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "" || strings.TrimSpace(body.CompletionCriteria) != "") {
-		writeError(w, errors.New("agentName, preferredAgentProfiles, prompt, and completionCriteria require autorun"), http.StatusBadRequest)
+		return body, errors.New("agentName, preferredAgentProfiles, prompt, and completionCriteria require autorun")
+	}
+	return body, nil
+}
+
+func createTaskInputFromRequest(body createTaskRequest) app.CreateTaskInput {
+	input := app.CreateTaskInput{
+		ProjectID: body.Project, Title: body.Title, Detail: body.Detail, Slug: body.Slug,
+		TemplateName: body.TemplateName, TemplateFields: body.TemplateFields, ExpectedTemplateDigest: body.ExpectedTemplateDigest,
+		AutoRun: body.AutoRun, AgentName: body.AgentName, PreferredAgentProfiles: body.PreferredAgentProfiles,
+		Prompt: body.Prompt, CompletionCriteria: body.CompletionCriteria,
+	}
+	if body.TaskMarkdown != nil {
+		input.CompleteMarkdown, input.CompleteMarkdownSet = *body.TaskMarkdown, true
+	}
+	return input
+}
+
+func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := decodeCreateTaskRequest(r)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	workspace, err := s.workspace(id)
@@ -608,20 +644,123 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	input := app.CreateTaskInput{
-		ProjectID: body.Project, Title: title, Detail: body.Detail, Slug: body.Slug,
-		AutoRun: body.AutoRun, AgentName: body.AgentName, PreferredAgentProfiles: body.PreferredAgentProfiles,
-		Prompt: body.Prompt, CompletionCriteria: body.CompletionCriteria,
+	result, err := forgeWorkspace.CreateTask(createTaskInputFromRequest(body))
+	if err != nil {
+		status := http.StatusBadRequest
+		if app.IsKind(err, "template_conflict") {
+			status = http.StatusConflict
+		}
+		writeError(w, err, status)
+		return
 	}
-	if body.TaskMarkdown != nil {
-		input.CompleteMarkdown, input.CompleteMarkdownSet = *body.TaskMarkdown, true
+	writeJSON(w, result)
+}
+
+func (s *server) previewTask(w http.ResponseWriter, r *http.Request, id string) {
+	body, err := decodeCreateTaskRequest(r)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
 	}
-	result, err := forgeWorkspace.CreateTask(input)
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	result, err := forgeWorkspace.PreviewTask(createTaskInputFromRequest(body))
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
 	writeJSON(w, result)
+}
+
+func (s *server) handleTemplates(w http.ResponseWriter, r *http.Request, id string, parts []string) {
+	workspace, err := s.workspace(id)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	projectID := strings.TrimSpace(r.URL.Query().Get("project"))
+	if len(parts) == 0 {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		result, err := forgeWorkspace.Templates(projectID)
+		if err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, map[string]any{"templates": result})
+		return
+	}
+	if len(parts) == 1 && parts[0] == "validate" {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Name    string `json:"name"`
+			Content string `json:"content"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, forgeWorkspace.ValidateTemplateContent(body.Name, body.Content))
+		return
+	}
+	name := parts[0]
+	if len(parts) == 1 {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		result, err := forgeWorkspace.Template(projectID, name)
+		if err != nil {
+			writeError(w, err, http.StatusNotFound)
+			return
+		}
+		writeJSON(w, result)
+		return
+	}
+	if len(parts) == 2 && parts[1] == "render" {
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var body struct {
+			Fields map[string]any `json:"fields"`
+			Title  string         `json:"title"`
+		}
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&body); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		result, err := forgeWorkspace.RenderTemplate(app.TemplateRenderInput{ProjectID: projectID, Name: name, Fields: body.Fields, Title: body.Title})
+		if err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, result)
+		return
+	}
+	http.NotFound(w, r)
 }
 
 func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id string) {
@@ -1575,7 +1714,17 @@ func writeRawJSON(w http.ResponseWriter, data []byte) {
 func writeError(w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+	payload := map[string]any{"error": err.Error()}
+	var validation *app.TemplateValidationError
+	if errors.As(err, &validation) {
+		payload["code"] = "template_validation"
+		payload["template"] = validation.Template
+		payload["issues"] = validation.Issues
+	}
+	if app.IsKind(err, "template_conflict") {
+		payload["code"] = "template_digest_conflict"
+	}
+	_ = json.NewEncoder(w).Encode(payload)
 }
 
 func serveStatic(root fs.FS, w http.ResponseWriter, r *http.Request) {

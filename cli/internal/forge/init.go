@@ -156,7 +156,7 @@ This directory is an AgentWorkspace managed by forge.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
-- Project task templates live under each project's ` + "`templates/`" + ` directory.
+- Project content templates live under each project's ` + "`templates/`" + ` directory.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
@@ -196,7 +196,9 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
+forge template list|show|validate|render|create|migrate ...
+
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run] [--autorun] ...
 forge task list [--project=<project>] [--all] [--runnable [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -231,7 +233,8 @@ Notes:
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
 - ` + "`forge project show`" + ` and ` + "`forge project archive`" + ` accept ` + "`--project=<project>`" + ` where project is a full id like ` + "`project22`" + ` or just a number like ` + "`22`" + `. When omitted, Forge uses the current directory's project.
-- ` + "`forge task create`" + ` creates a new open task directory under a project. Pass ` + "`<title>`" + ` for the task title stored in ` + "`task.json`" + `. Use ` + "`--detail <detail>`" + ` to initialize the default ` + "`task.md`" + ` scaffold, or ` + "`--task-markdown <markdown>`" + ` to write a complete ` + "`task.md`" + ` file. Use ` + "`--project=<project>`" + ` to select a project, or omit it to use the current directory's project. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the task id.
+- ` + "`forge template list/show/validate/render/create/migrate`" + ` manages schema V2 project content templates. Templates never select AutoRun or agents; choose execution settings explicitly at task creation.
+- ` + "`forge task create`" + ` creates a new open task directory under a project. Use ` + "`--template`" + ` with typed fields to render content, and ` + "`--dry-run`" + ` to preview without side effects. Existing ` + "`--detail`" + ` and ` + "`--task-markdown`" + ` forms remain supported.
 - ` + "`forge task list`" + ` lists open tasks under a project, or open and archived tasks with ` + "`--all`" + `. Use ` + "`--project=<project>`" + ` to select a project, or omit it to use the current directory's project.
 - ` + "`forge task show`" + ` and ` + "`forge task archive`" + ` accept ` + "`--project=<project>`" + ` plus ` + "`--task=<task>`" + `. Task can be a short id like ` + "`task4`" + ` or just a number like ` + "`4`" + `. When omitted, Forge uses the current directory's task.
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.

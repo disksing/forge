@@ -245,21 +245,25 @@ func taskAgentsPromptZH(resource Resource) string {
 		pendingLine = "可能改变项目范围、验收标准或稳定约束的问题应保存在 project.md 中；需要时请用户确认，并把长期有效的答案记录在那里。"
 		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Forge session、锁和文件职责规则。"
 		extra = `
-- 项目任务模板位于 templates/*.md。每个模板由 YAML front matter 和 Markdown 正文组成；正文会完整复制为新任务的 task.md。
-- 模板必须包含非空 title。还可设置 autorun（true 或 false）、agent-profiles 和 prompt。Agent 设置与 prompt 仅在 autorun 为 true 时生效。不要添加其他 front matter 字段。
+- 项目内容模板位于 templates/*.md。使用 schema-version: 2，并声明 title、可选 description/task-title、fields 和 Markdown 正文；字段类型支持 text、textarea、select、boolean。
+- 模板只组织任务内容，不得包含 autorun、agent、agent-profiles、prompt 或 completion-criteria；这些运行选项必须在创建任务时显式选择。
 - 模板格式：
 
   ` + "```markdown" + `
   ---
+  schema-version: 2
   title: 每日检查
-  autorun: true
-  agent-profiles: [kimi, codex]
-  prompt: 检查项目并报告发现。
+  task-title: "{{ summary }}"
+  fields:
+    - name: summary
+      type: text
+      label: 检查概述
+      required: true
   ---
-  检查当前项目状态，并报告需要关注的问题。
+  # {{ summary }}
   ` + "```" + `
 
-- 直接创建、编辑或删除模板文件。由模板创建的任务是独立副本，不会继续引用模板。
+- 使用 forge template list/show/validate/render/create/migrate 确定性地检查和迁移模板，也可直接编辑或删除文件。创建后的任务是独立副本，只保留来源 name、schema version 和 digest。
 `
 	}
 	return fmt.Sprintf(`# %s
@@ -312,7 +316,7 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 开放项目直接位于 workspace 下的 ` + "`projectN/`" + ` 或 ` + "`projectN-slug/`" + ` 目录。
 - 项目任务直接位于项目目录下简短的 ` + "`taskM/`" + ` 或 ` + "`taskM-slug/`" + ` 目录；资源 ID 仍是 ` + "`projectN.taskM`" + ` 形式的完整 ID。
 - 已归档项目位于 ` + "`archive/`" + `。已归档项目任务位于其项目目录下的 ` + "`archive/`" + `。
-- 项目任务模板位于各项目的 ` + "`templates/`" + ` 目录。
+- 项目内容模板位于各项目的 ` + "`templates/`" + ` 目录。
 - Git 仓库默认以普通 checkout 形式位于 ` + "`repos/`" + `。
 - 将 ` + "`repos/`" + ` 下的仓库视为共享源码缓存；代码修改应在任务 worktree 中进行。
 - 项目拥有 ` + "`project.json`" + `、` + "`project.md`" + `、` + "`log.jsonl`" + `、` + "`AGENTS.md`" + ` 和 ` + "`artifacts/`" + `。
@@ -352,7 +356,9 @@ forge project archive [--project=<project>]
 forge project log add [--project=<project>] [--details <text>|--details -] <title>
 forge project log list [--project=<project>] [--json]
 
-forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
+forge template list|show|validate|render|create|migrate ...
+
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run] [--autorun] ...
 forge task list [--project=<project>] [--all] [--runnable [--json]]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -387,7 +393,8 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge project create`" + ` 创建新的开放项目目录。使用 ` + "`--slug <slug>`" + ` 可在不改变项目 ID 的情况下追加可读目录后缀。
 - ` + "`forge project list`" + ` 列出开放项目，传入 ` + "`--all`" + ` 时同时列出归档项目。它不会包含任务；项目任务使用 ` + "`forge task list [--project=<project>]`" + `。
 - ` + "`forge project show`" + ` 和 ` + "`forge project archive`" + ` 接受 ` + "`--project=<project>`" + `；project 可为 ` + "`project22`" + ` 形式的完整 ID 或 ` + "`22`" + ` 形式的数字。省略时使用当前目录所属项目。
-- ` + "`forge task create`" + ` 在项目下创建新的开放任务目录。` + "`<title>`" + ` 写入 ` + "`task.json`" + `；` + "`--detail <detail>`" + ` 初始化默认 ` + "`task.md`" + `，` + "`--task-markdown <markdown>`" + ` 则写入完整文件。使用 ` + "`--project`" + ` 选择项目，省略时使用当前目录所属项目。` + "`--slug`" + ` 可追加可读目录后缀而不改变任务 ID。
+- ` + "`forge template list/show/validate/render/create/migrate`" + ` 管理 schema V2 项目内容模板。模板不选择 AutoRun 或 Agent，执行设置必须在创建任务时显式指定。
+- ` + "`forge task create`" + ` 在项目下创建开放任务目录。使用 ` + "`--template`" + ` 和结构化字段渲染内容，` + "`--dry-run`" + ` 可无副作用预览；原有 ` + "`--detail`" + ` 与 ` + "`--task-markdown`" + ` 形式保持兼容。
 - ` + "`forge task list`" + ` 列出项目下的开放任务，传入 ` + "`--all`" + ` 时同时列出归档任务。使用 ` + "`--project`" + ` 选择项目，省略时使用当前目录所属项目。
 - ` + "`forge task show`" + ` 和 ` + "`forge task archive`" + ` 接受 ` + "`--project`" + ` 及 ` + "`--task`" + `。task 可为 ` + "`task4`" + ` 或 ` + "`4`" + `。省略时使用当前目录所属任务。
 - ` + "`forge task archive`" + ` 将开放任务移入项目的 archive；` + "`forge project archive`" + ` 将开放项目移入 workspace 的 ` + "`archive/`" + `。

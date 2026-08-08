@@ -1019,21 +1019,25 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
-- Project task templates live in templates/*.md. Each template uses YAML front matter followed by the Markdown body copied as a new task's complete task.md file.
-- A template must have a non-empty title. It may also set autorun (true or false), agent-profiles, and prompt. Agent settings and prompt apply only when autorun is true. Do not add other front matter fields.
+- Project content templates live in templates/*.md. Use schema-version: 2 with title, optional description/task-title, fields, and a Markdown body. Supported field types are text, textarea, select, and boolean.
+- Templates organize task content only. They must not contain autorun, agent, agent-profiles, prompt, or completion-criteria; choose those explicitly when creating a task.
 - Template format:
 
   ` + "```markdown" + `
   ---
+  schema-version: 2
   title: Daily inspection
-  autorun: true
-  agent-profiles: [kimi, codex]
-  prompt: Inspect the project and report findings.
+  task-title: "{{ summary }}"
+  fields:
+    - name: summary
+      type: text
+      label: Summary
+      required: true
   ---
-  Inspect the current project state and report anything that needs attention.
+  # {{ summary }}
   ` + "```" + `
 
-- Create, edit, or remove template files directly. Tasks created from a template are independent copies and do not keep a live reference to the template.
+- Use forge template list/show/validate/render/create/migrate for deterministic inspection and migration. You may also edit or remove files directly. Created tasks are independent copies and retain only source name, schema version, and digest.
 `
 	}
 	return fmt.Sprintf(`# %s

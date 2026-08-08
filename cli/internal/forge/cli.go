@@ -11,7 +11,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>"
+	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -43,6 +43,8 @@ func Run(args []string) error {
 		return runProject(args[1:])
 	case "task":
 		return runTask(args[1:])
+	case "template":
+		return runTemplate(args[1:])
 	case "resource":
 		return runResource(args[1:])
 	case "session":
@@ -185,7 +187,27 @@ func runTask(args []string) error {
 				return errors.New("could not infer current project; use forge task create --project=<project> <title>")
 			}
 		}
-		return projectTaskCreate(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
+		workspace, err := openApplicationWorkspace()
+		if err != nil {
+			return err
+		}
+		var fields map[string]any
+		if options.TemplateName != "" {
+			fields, err = templateFieldValues(workspace, parentID, options.TemplateName, options.FieldsFile, options.Fields)
+			if err != nil {
+				return err
+			}
+		}
+		input := appCreateTaskInput(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
+		input.TemplateName, input.TemplateFields = options.TemplateName, fields
+		if options.DryRun {
+			preview, err := workspace.PreviewTask(input)
+			if err != nil {
+				return err
+			}
+			return printJSON(preview)
+		}
+		return applicationTaskCreate(input)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
 		if err != nil {
@@ -262,9 +284,16 @@ Usage:
   forge project log add [--project=<project>] [--details <text>|--details -] <title>
   forge project log list [--project=<project>] [--json]
 
+  forge template list [--project=<project>] [--json]
+  forge template show [--project=<project>] [--json|--raw|--schema] <name>
+  forge template validate [--project=<project>] [<name>|--all] [--json]
+  forge template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
+  forge template create [--project=<project>] [--title=<title>] <name>
+  forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
+
   forge resource archive --id=<resource>
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--autorun] ...
   forge task list [--project=<project>] [--all] [--runnable [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -328,7 +357,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>] <title>
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--autorun] ...
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -337,6 +366,13 @@ Commands:
     and is mutually exclusive with --detail. <project> may be a full id such as
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
+
+  forge template list|show|validate|render|create|migrate ...
+    Manage project-local schema V2 content templates. Templates declare typed
+    fields and deterministic title/Markdown rendering but never AutoRun or
+    agent settings. list and validate include invalid templates. render and
+    task create --dry-run have no side effects. migrate previews legacy V1
+    conversion unless --write is provided.
 
   forge task list [--project=<project>] [--all] [--runnable [--json]]
     List open tasks in a project. Use --all to include archived tasks.
@@ -497,6 +533,12 @@ type taskCreateOptions struct {
 	PreferredAgentProfiles []string
 	Prompt                 string
 	CompletionCriteria     string
+	TemplateName           string
+	FieldsFile             string
+	Fields                 []string
+	DryRun                 bool
+	TitleSet               bool
+	JSON                   bool
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -572,6 +614,83 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			options.TaskMarkdownSet = true
 			continue
 		}
+		if strings.HasPrefix(arg, "--template=") {
+			if options.TemplateName != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.TemplateName = strings.TrimSpace(strings.TrimPrefix(arg, "--template="))
+			if options.TemplateName == "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			continue
+		}
+		if arg == "--template" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") || options.TemplateName != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.TemplateName = strings.TrimSpace(args[i+1])
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--fields=") {
+			if options.FieldsFile != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.FieldsFile = strings.TrimPrefix(arg, "--fields=")
+			if options.FieldsFile == "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			continue
+		}
+		if arg == "--fields" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") || options.FieldsFile != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.FieldsFile = args[i+1]
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--field=") {
+			options.Fields = append(options.Fields, strings.TrimPrefix(arg, "--field="))
+			continue
+		}
+		if arg == "--field" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.Fields = append(options.Fields, args[i+1])
+			i++
+			continue
+		}
+		if strings.HasPrefix(arg, "--title=") {
+			if options.TitleSet {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.Title, options.TitleSet = strings.TrimPrefix(arg, "--title="), true
+			continue
+		}
+		if arg == "--title" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") || options.TitleSet {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.Title, options.TitleSet = args[i+1], true
+			i++
+			continue
+		}
+		if arg == "--dry-run" {
+			if options.DryRun {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.DryRun = true
+			continue
+		}
+		if arg == "--json" {
+			if options.JSON {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			options.JSON = true
+			continue
+		}
 		if arg == "--task-markdown" {
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return taskCreateOptions{}, errors.New(taskCreateUsage)
@@ -632,13 +751,25 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 		}
 		title = append(title, arg)
 	}
-	if len(title) == 0 {
+	if len(title) == 0 && options.TemplateName == "" {
 		return taskCreateOptions{}, errors.New(taskCreateUsage)
 	}
-	if options.DetailSet && options.TaskMarkdownSet {
-		return taskCreateOptions{}, errors.New("--detail and --task-markdown are mutually exclusive")
+	if len(title) > 0 && options.TitleSet {
+		return taskCreateOptions{}, errors.New("positional title and --title are mutually exclusive")
 	}
-	options.Title = strings.Join(title, " ")
+	if !options.TitleSet {
+		options.Title = strings.Join(title, " ")
+	}
+	contentSources := boolCount(options.DetailSet, options.TaskMarkdownSet, options.TemplateName != "")
+	if contentSources > 1 {
+		return taskCreateOptions{}, errors.New("--template, --detail, and --task-markdown are mutually exclusive")
+	}
+	if (options.FieldsFile != "" || len(options.Fields) > 0) && options.TemplateName == "" {
+		return taskCreateOptions{}, errors.New("--field and --fields require --template")
+	}
+	if options.DryRun && options.TemplateName == "" {
+		return taskCreateOptions{}, errors.New("--dry-run currently requires --template")
+	}
 	return options, nil
 }
 

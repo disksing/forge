@@ -1947,10 +1947,55 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`, `{ taskMarkdown: dialog.detail }`, `{ detail: dialog.detail }`} {
+	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`, `templateFields: dialog.templateFields`, `{ detail: dialog.detail }`, `/tasks/preview`, `expectedTemplateDigest`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("task template UI is missing %q", want)
 		}
+	}
+	for _, forbidden := range []string{`dialog.autorun = Boolean(template.autorun)`, `dialog.agentName = template.agentName`, `{ taskMarkdown: dialog.detail }`} {
+		if strings.Contains(source, forbidden) {
+			t.Fatalf("content template still controls execution or copies Markdown with %q", forbidden)
+		}
+	}
+}
+
+func TestCreateTaskTemplateRequestKeepsExecutionSeparate(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for the template request behavior test")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const start = source.indexOf("function " + name + "(");
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", source.indexOf(")", start));
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}" && --depth === 0) return source.slice(start, index + 1);
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {};
+vm.createContext(context);
+vm.runInContext(extract("createTaskRequest"), context);
+const template = context.createTaskRequest({
+  projectId: "project1", templateName: "request", templateFields: { summary: "One" },
+  templateDigest: "sha256:abc", titleOverride: false, title: "Generated", detail: "must not leak",
+  slug: "one", autorun: true, agentName: "codex", preferredAgentProfiles: ["fast"],
+  prompt: "Run it", completionCriteria: "Verified",
+});
+if (template.title !== "" || template.taskMarkdown !== undefined || template.detail !== undefined) throw new Error("template request copied client Markdown or generated title");
+if (template.expectedTemplateDigest !== "sha256:abc" || template.templateFields.summary !== "One") throw new Error("template identity was lost");
+if (!template.autorun || template.agentName !== "codex" || template.prompt !== "Run it" || template.completionCriteria !== "Verified") throw new Error("explicit execution settings were lost");
+const blank = context.createTaskRequest({ projectId: "project1", templateName: "", title: "Blank", detail: "Only once", slug: "", autorun: false, preferredAgentProfiles: [] });
+if (blank.detail !== "Only once" || blank.templateName !== undefined || blank.agentName !== "") throw new Error("blank request did not remain independent");
+`
+	if output, err := exec.Command(node, "-e", script, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+		t.Fatalf("template request behavior test failed: %v\n%s", err, output)
 	}
 }
 

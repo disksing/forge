@@ -280,12 +280,27 @@ type CreateTaskInput struct {
 	Detail                 string
 	CompleteMarkdown       string
 	CompleteMarkdownSet    bool
+	TemplateName           string
+	TemplateFields         map[string]any
+	ExpectedTemplateDigest string
 	Slug                   string
 	AutoRun                bool
 	AgentName              string
 	PreferredAgentProfiles []string
 	Prompt                 string
 	CompletionCriteria     string
+}
+
+// TaskPreview is the side-effect-free result of resolving task content and
+// execution settings. It is also the contract shown by GUI and CLI previews.
+type TaskPreview struct {
+	ProjectID string              `json:"project"`
+	Title     string              `json:"title"`
+	Slug      string              `json:"slug,omitempty"`
+	Markdown  string              `json:"markdown"`
+	Template  *TaskTemplateSource `json:"template,omitempty"`
+	AutoRun   *AutoRun            `json:"autoRun"`
+	Warnings  []TemplateIssue     `json:"warnings,omitempty"`
 }
 
 // ArchiveResult describes an archive operation without relying on printed
@@ -515,17 +530,102 @@ func (w *Workspace) CreateTask(input CreateTaskInput) (Task, error) {
 	return task, nil
 }
 
+// PreviewTask validates and resolves a task creation request without
+// allocating a task id, writing files, appending logs, or queueing AutoRun.
+func (w *Workspace) PreviewTask(input CreateTaskInput) (TaskPreview, error) {
+	if err := w.require(); err != nil {
+		return TaskPreview{}, err
+	}
+	parentID := strings.TrimSpace(input.ProjectID)
+	if parentID == "" {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, Err: errors.New("project id is required")}
+	}
+	parentPath, err := findResourceDir(w.root, parentID)
+	if err != nil {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
+	}
+	if isArchivedPath(w.root, parentPath) {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: fmt.Errorf("cannot create task under archived project: %s", parentID)}
+	}
+	var parent Project
+	if err := readProjectAtDir(parentPath, &parent); err != nil {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
+	}
+	slug, err := normalizeResourceSlug(input.Slug)
+	if err != nil {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
+	}
+	title, markdown, source, warnings, err := w.resolveTaskContent(input)
+	if err != nil {
+		return TaskPreview{}, err
+	}
+	autoRun, err := resolvedTaskAutoRun(input)
+	if err != nil {
+		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
+	}
+	return TaskPreview{ProjectID: parentID, Title: title, Slug: slug, Markdown: markdown, Template: source, AutoRun: autoRun, Warnings: warnings}, nil
+}
+
+func resolvedTaskAutoRun(input CreateTaskInput) (*AutoRun, error) {
+	if input.AutoRun {
+		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
+		if err != nil {
+			return nil, err
+		}
+		return &AutoRun{
+			Generation: 1, State: autoRunStateQueued, AgentName: strings.TrimSpace(input.AgentName),
+			PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt),
+			CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
+		}, nil
+	}
+	if strings.TrimSpace(input.AgentName) != "" || len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" || strings.TrimSpace(input.CompletionCriteria) != "" {
+		return nil, errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --autorun")
+	}
+	return nil, nil
+}
+
+func (w *Workspace) resolveTaskContent(input CreateTaskInput) (string, string, *TaskTemplateSource, []TemplateIssue, error) {
+	templateName := strings.TrimSpace(input.TemplateName)
+	if templateName != "" {
+		if strings.TrimSpace(input.Detail) != "" || input.CompleteMarkdownSet {
+			return "", "", nil, nil, &APIError{Operation: "render task template", Kind: "template", Workspace: w.root, ResourceID: input.ProjectID, Err: errors.New("template is mutually exclusive with detail and taskMarkdown")}
+		}
+		result, err := w.RenderTemplate(TemplateRenderInput{ProjectID: input.ProjectID, Name: templateName, Fields: input.TemplateFields, Title: input.Title})
+		if err != nil {
+			return "", "", nil, nil, err
+		}
+		if expected := strings.TrimSpace(input.ExpectedTemplateDigest); expected != "" && expected != result.Digest {
+			issue := templateProblem("template_digest_conflict", fmt.Sprintf("template digest changed: expected %s, got %s", expected, result.Digest), "expectedTemplateDigest", nil)
+			return "", "", nil, nil, &APIError{Operation: "render task template", Kind: "template_conflict", Workspace: w.root, ResourceID: input.ProjectID, Err: &TemplateValidationError{Template: templateName, Issues: []TemplateIssue{issue}}}
+		}
+		source := &TaskTemplateSource{Name: result.TemplateName, SchemaVersion: result.SchemaVersion, Digest: result.Digest}
+		return result.Title, result.Markdown, source, result.Warnings, nil
+	}
+	if len(input.TemplateFields) > 0 || strings.TrimSpace(input.ExpectedTemplateDigest) != "" {
+		return "", "", nil, nil, &APIError{Operation: "create task", Kind: "template", Workspace: w.root, ResourceID: input.ProjectID, Err: errors.New("templateFields and expectedTemplateDigest require templateName")}
+	}
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		return "", "", nil, nil, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: input.ProjectID, Err: errors.New("title cannot be empty")}
+	}
+	language, err := workspaceLanguage(w.root)
+	if err != nil {
+		return "", "", nil, nil, err
+	}
+	markdown := taskMarkdown(title, strings.TrimSpace(input.Detail), language)
+	if input.CompleteMarkdownSet {
+		markdown = input.CompleteMarkdown
+	}
+	return title, markdown, nil, nil, nil
+}
+
 func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err := w.require(); err != nil {
 		return Task{}, err
 	}
 	parentID := strings.TrimSpace(input.ProjectID)
-	title := strings.TrimSpace(input.Title)
 	if parentID == "" {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, Err: errors.New("project id is required")}
-	}
-	if title == "" {
-		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, Err: errors.New("title cannot be empty")}
 	}
 	slug, err := normalizeResourceSlug(input.Slug)
 	if err != nil {
@@ -542,6 +642,14 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err := readProjectAtDir(parentPath, &parent); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
 	}
+	title, markdown, templateSource, _, err := w.resolveTaskContent(input)
+	if err != nil {
+		return Task{}, err
+	}
+	autoRun, err := resolvedTaskAutoRun(input)
+	if err != nil {
+		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
+	}
 	id, err := nextProjectTaskID(parentPath, parentID)
 	if err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
@@ -550,27 +658,12 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	staging := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	task := newTask(id, parentID, title, "")
+	task.Template = templateSource
 	language, err := workspaceLanguage(w.root)
 	if err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
 	}
-	if input.AutoRun {
-		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
-		if err != nil {
-			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
-		}
-		task.AutoRun = &AutoRun{
-			Generation: 1, State: autoRunStateQueued, AgentName: strings.TrimSpace(input.AgentName),
-			PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt),
-			CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
-		}
-	} else if strings.TrimSpace(input.AgentName) != "" || len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" || strings.TrimSpace(input.CompletionCriteria) != "" {
-		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --autorun")}
-	}
-	markdown := taskMarkdown(title, strings.TrimSpace(input.Detail), language)
-	if input.CompleteMarkdownSet {
-		markdown = input.CompleteMarkdown
-	}
+	task.AutoRun = autoRun
 	if err := createResourceFilesWithMarkdown(staging, &task, markdown, language); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
@@ -582,6 +675,7 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err := os.Rename(staging, path); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
+	task.Path = relPath(w.root, path)
 	return task, nil
 }
 

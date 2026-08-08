@@ -4,11 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 type WorkspaceTree struct {
@@ -40,36 +41,26 @@ type AutoRunTreeView struct {
 }
 
 type ResourceDetailView struct {
-	ID          string             `json:"id"`
-	Type        string             `json:"type"`
-	Title       string             `json:"title"`
-	Description string             `json:"description,omitempty"`
-	CreatedAt   string             `json:"createdAt"`
-	UpdatedAt   string             `json:"updatedAt"`
-	Path        string             `json:"path"`
-	Archived    bool               `json:"archived"`
-	Repos       []TaskRepo         `json:"repos,omitempty"`
-	AutoRun     *AutoRun           `json:"autoRun,omitempty"`
-	Logs        []LogEntry         `json:"logs,omitempty"`
-	Files       []ResourceFile     `json:"files,omitempty"`
-	Artifacts   []FileTreeEntry    `json:"artifacts"`
-	Worktrees   []FileTreeEntry    `json:"worktrees"`
-	Children    []ResourceTreeView `json:"children,omitempty"`
-	Templates   []TaskTemplate     `json:"templates,omitempty"`
+	ID          string                  `json:"id"`
+	Type        string                  `json:"type"`
+	Title       string                  `json:"title"`
+	Description string                  `json:"description,omitempty"`
+	CreatedAt   string                  `json:"createdAt"`
+	UpdatedAt   string                  `json:"updatedAt"`
+	Path        string                  `json:"path"`
+	Archived    bool                    `json:"archived"`
+	Repos       []TaskRepo              `json:"repos,omitempty"`
+	AutoRun     *AutoRun                `json:"autoRun,omitempty"`
+	Logs        []LogEntry              `json:"logs,omitempty"`
+	Files       []ResourceFile          `json:"files,omitempty"`
+	Artifacts   []FileTreeEntry         `json:"artifacts"`
+	Worktrees   []FileTreeEntry         `json:"worktrees"`
+	Children    []ResourceTreeView      `json:"children,omitempty"`
+	Templates   []TaskTemplate          `json:"templates,omitempty"`
+	Template    *app.TaskTemplateSource `json:"template,omitempty"`
 }
 
-type TaskTemplate struct {
-	Name                   string   `json:"name"`
-	Path                   string   `json:"path"`
-	Title                  string   `json:"title"`
-	Detail                 string   `json:"detail"`
-	AutoRun                bool     `json:"autorun,omitempty"`
-	AgentName              string   `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string   `json:"prompt,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
-	Content                string   `json:"content"`
-}
+type TaskTemplate = app.TaskTemplate
 
 type ResourceFile struct {
 	Name        string `json:"name"`
@@ -222,6 +213,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
 		detail.AutoRun = typed.AutoRun
+		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}
 	if isProject(entry.Resource) {
@@ -235,94 +227,19 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 }
 
 func readTaskTemplates(root, projectDir string) []TaskTemplate {
-	dir := filepath.Join(projectDir, "templates")
-	entries, err := os.ReadDir(dir)
+	var project Project
+	if err := readProjectAtDir(projectDir, &project); err != nil {
+		return []TaskTemplate{}
+	}
+	workspace, err := app.OpenWorkspace(root)
 	if err != nil {
 		return []TaskTemplate{}
 	}
-	templates := make([]TaskTemplate, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IsDir() || strings.ToLower(filepath.Ext(entry.Name())) != ".md" {
-			continue
-		}
-		path := filepath.Join(dir, entry.Name())
-		data, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		template, err := parseTaskTemplate(strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name())), string(data))
-		if err != nil {
-			continue
-		}
-		template.Path = relPath(root, path)
-		template.Content = string(data)
-		templates = append(templates, template)
+	templates, err := workspace.Templates(project.ID)
+	if err != nil {
+		return []TaskTemplate{}
 	}
 	return templates
-}
-
-func parseTaskTemplate(name, content string) (TaskTemplate, error) {
-	template := TaskTemplate{Name: name}
-	normalized := strings.ReplaceAll(content, "\r\n", "\n")
-	if !strings.HasPrefix(normalized, "---\n") {
-		return template, fmt.Errorf("task template %s must start with YAML front matter", name)
-	}
-	end := strings.Index(normalized[4:], "\n---\n")
-	if end < 0 {
-		return template, fmt.Errorf("task template %s has unterminated YAML front matter", name)
-	}
-	frontMatter := normalized[4 : 4+end]
-	template.Detail = strings.TrimLeft(normalized[4+end+5:], "\n")
-	lines := strings.Split(frontMatter, "\n")
-	for index := 0; index < len(lines); index++ {
-		line := strings.TrimSpace(lines[index])
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		key, value, ok := strings.Cut(line, ":")
-		if !ok {
-			return template, fmt.Errorf("task template %s has invalid front matter line %q", name, line)
-		}
-		key = strings.TrimSpace(key)
-		value = strings.TrimSpace(value)
-		if value == "|" || value == ">" {
-			var block []string
-			for index+1 < len(lines) && (strings.HasPrefix(lines[index+1], "  ") || strings.TrimSpace(lines[index+1]) == "") {
-				index++
-				block = append(block, strings.TrimPrefix(lines[index], "  "))
-			}
-			value = strings.TrimRight(strings.Join(block, "\n"), "\n")
-		}
-		value = strings.Trim(value, `"'`)
-		switch key {
-		case "title":
-			template.Title = value
-		case "autorun":
-			if value != "true" && value != "false" {
-				return template, fmt.Errorf("task template %s has invalid autorun value", name)
-			}
-			template.AutoRun = value == "true"
-		case "agent", "agent-name":
-			template.AgentName = value
-		case "agent-profiles":
-			value = strings.TrimSpace(strings.Trim(value, "[]"))
-			profiles, err := normalizeAgentProfiles(strings.Split(value, ","))
-			if err != nil {
-				return template, fmt.Errorf("task template %s: %w", name, err)
-			}
-			template.PreferredAgentProfiles = profiles
-		case "prompt":
-			template.Prompt = value
-		case "completion-criteria":
-			template.CompletionCriteria = value
-		default:
-			return template, fmt.Errorf("task template %s has unknown field %q", name, key)
-		}
-	}
-	if strings.TrimSpace(template.Title) == "" {
-		return template, fmt.Errorf("task template %s requires title", name)
-	}
-	return template, nil
 }
 
 func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {
