@@ -1662,6 +1662,12 @@ func TestAgentHubCloseDuplicateClicksSendOneStop(t *testing.T) {
 		t.Fatalf("duplicate close repeated AgentHub Stop: %v", actions)
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
+	waitForRuntimeTest(t, func() bool {
+		rt := manager.runtimeByID(detail.Run.ID)
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		return !rt.run.SchedulerTurn && !rt.schedulerTurnFinishing
+	})
 }
 
 func TestAgentHubInterruptPausesSelfDrivingAndRetainsSession(t *testing.T) {

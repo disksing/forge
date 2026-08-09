@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"image/png"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
@@ -78,6 +79,29 @@ func TestWorkspaceIconsAreEmbedded(t *testing.T) {
 		}
 		if rec.Body.Len() == 0 {
 			t.Fatalf("workspace icon %q is empty", id)
+		}
+
+		icon, err := png.Decode(bytes.NewReader(rec.Body.Bytes()))
+		if err != nil {
+			t.Fatalf("workspace icon %q is not a valid PNG: %v", id, err)
+		}
+		bounds := icon.Bounds()
+		if bounds.Empty() {
+			t.Fatalf("workspace icon %q has empty bounds", id)
+		}
+		corners := []struct{ x, y int }{
+			{bounds.Min.X, bounds.Min.Y},
+			{bounds.Max.X - 1, bounds.Min.Y},
+			{bounds.Min.X, bounds.Max.Y - 1},
+			{bounds.Max.X - 1, bounds.Max.Y - 1},
+		}
+		for _, corner := range corners {
+			if _, _, _, alpha := icon.At(corner.x, corner.y).RGBA(); alpha != 0 {
+				t.Fatalf("workspace icon %q corner (%d, %d) is not transparent", id, corner.x, corner.y)
+			}
+		}
+		if _, _, _, alpha := icon.At(bounds.Min.X+bounds.Dx()/2, bounds.Min.Y+bounds.Dy()/2).RGBA(); alpha == 0 {
+			t.Fatalf("workspace icon %q has no visible center content", id)
 		}
 	}
 }
