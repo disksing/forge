@@ -2535,16 +2535,86 @@ function setDetailsHTML(panel, html) {
   panel.scrollTop = sameResource ? scrollTop : 0;
 }
 
-function detailsPanelShell(kind) {
+// Resource details are grouped into tabs; each tab simply shows/hides the
+// regions it owns. Rendering logic and data flow stay unchanged.
+const DETAILS_RESOURCE_TABS = [
+  { id: "details", label: "Details", regions: ["documents", "templates"] },
+  { id: "logs", label: "Logs", regions: ["logs"] },
+  { id: "artifacts", label: "Artifacts", regions: ["artifacts"] },
+  { id: "worktrees", label: "Worktrees", regions: ["worktrees"] },
+];
+
+// Projects have no worktrees of their own, so the Worktrees tab only
+// applies to tasks.
+function detailsResourceTabs(resourceType) {
+  return DETAILS_RESOURCE_TABS.filter((tab) => tab.id !== "worktrees" || resourceType !== "project");
+}
+
+// Remembers the last selected tab per resource (in-memory only).
+const detailsTabMemory = new Map();
+
+function detailsPanelShell(kind, resourceType) {
   const regions = kind === "workspace"
     ? ["header", "workspace-agents", "wiki", "file-modal", "diff-modal"]
     : ["header", "documents", "logs", "templates", "artifacts", "worktrees", "file-modal", "diff-modal"];
-  return regions.map((name) => `<div data-detail-region="${name}"></div>`).join("");
+  const tabs = kind === "resource" ? `
+    <div class="details-tabs" role="tablist" data-details-tabs>
+      ${detailsResourceTabs(resourceType).map((tab) => `
+        <button type="button" class="details-tab" role="tab" data-details-tab="${tab.id}" aria-selected="false">
+          <span>${tab.label}</span>${tab.id === "logs" ? `<span class="details-tab-count" data-details-tab-count="logs" hidden></span>` : ""}
+        </button>`).join("")}
+    </div>` : "";
+  return regions.map((name) => {
+    const div = `<div data-detail-region="${name}"></div>`;
+    // The tab bar sits directly under the header region.
+    return name === "header" ? div + tabs : div;
+  }).join("");
 }
 
-function ensureDetailsShell(panel, key, kind) {
+function applyDetailsTab(panel, resourceKey) {
+  const tabBar = panel.querySelector("[data-details-tabs]");
+  if (!tabBar) return;
+  const available = DETAILS_RESOURCE_TABS.filter((tab) => tabBar.querySelector(`[data-details-tab="${tab.id}"]`));
+  if (!available.length) return;
+  const saved = detailsTabMemory.get(resourceKey);
+  const active = available.find((tab) => tab.id === saved) || available[0];
+  const visible = new Set(active.regions);
+  tabBar.querySelectorAll("[data-details-tab]").forEach((button) => {
+    const on = button.dataset.detailsTab === active.id;
+    button.classList.toggle("active", on);
+    button.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  for (const tab of DETAILS_RESOURCE_TABS) {
+    for (const name of tab.regions) {
+      const region = panel.querySelector(`[data-detail-region="${name}"]`);
+      if (region) region.hidden = !visible.has(name);
+    }
+  }
+}
+
+function bindDetailsTabs(panel, resourceKey) {
+  const tabBar = panel.querySelector("[data-details-tabs]");
+  if (!tabBar || tabBar.dataset.eventsBound === "true") return;
+  tabBar.dataset.eventsBound = "true";
+  tabBar.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-details-tab]");
+    if (!button) return;
+    detailsTabMemory.set(resourceKey, button.dataset.detailsTab);
+    applyDetailsTab(panel, resourceKey);
+  });
+}
+
+function updateDetailsTabCounts(panel, detail) {
+  const badge = panel.querySelector('[data-details-tab-count="logs"]');
+  if (!badge) return;
+  const count = (detail?.logs || []).length;
+  badge.hidden = count === 0;
+  badge.textContent = String(count);
+}
+
+function ensureDetailsShell(panel, key, kind, resourceType) {
   if (panel.dataset.detailsShellKey === key) return false;
-  setDetailsHTML(panel, detailsPanelShell(kind));
+  setDetailsHTML(panel, detailsPanelShell(kind, resourceType));
   panel.dataset.detailsShellKey = key;
   return true;
 }
@@ -2805,7 +2875,9 @@ function renderDetails() {
     setDetailsHTML(panel, loadingDetails(selected));
     return;
   }
-  ensureDetailsShell(panel, `resource:${state.activeWorkspaceId}:${selected.id}:${selected.type}`, "resource");
+  const resourceShellKey = `resource:${state.activeWorkspaceId}:${selected.id}:${selected.type}`;
+  if (ensureDetailsShell(panel, resourceShellKey, "resource", selected.type)) bindDetailsTabs(panel, resourceShellKey);
+  applyDetailsTab(panel, resourceShellKey);
   updateDetailRegion(panel, "header", JSON.stringify({
     workspaceId: state.activeWorkspaceId,
     id: selected.id,
@@ -2821,6 +2893,7 @@ function renderDetails() {
   updateDetailRegion(panel, "worktrees", JSON.stringify(detail.repos || []), () => selected.type === "project" ? "" : worktreeSection(detail.repos));
   updateDetailRegion(panel, "file-modal", fileModalRenderKey(state.preview), () => fileModal());
   updateDetailRegion(panel, "diff-modal", diffModalRenderKey(state.diff), () => diffModal());
+  updateDetailsTabCounts(panel, detail);
   restoreFilePreviewScrollState(previewScrollState);
   bindDetailHeaderEvents(selected);
 }
