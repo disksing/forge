@@ -901,9 +901,7 @@ You are working inside a %s.
 - When a GUI scheduler starts an AutoRun turn, finish it by calling exactly one of `+"`forge task autorun complete`"+`, `+"`forge task autorun suspend`"+`, `+"`forge task autorun pause`"+`, or `+"`forge task autorun fail`"+` as the turn's last side-effecting command. `+"`cancel`"+` is a control-plane action for ending a generation and is not a scheduler-turn result.
 - To delegate AutoRun work, create a child with `+"`forge task create --autorun [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current AutoRun, record a natural-language context with `+"`--summary=<text>`"+` and a separate wake condition with `+"`--wake-condition=<text>`"+`; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
 `+autoRunAgentGuidanceEnglish+`- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
-- When accessing another project/task directory outside this locked resource, take a temporary lock with `+"`forge session lock --id=$FORGE_SESSION_ID`"+` using explicit `+"`--project`"+`/`+"`--task`"+` selectors, then release that temporary lock with `+"`forge session unlock --id=$FORGE_SESSION_ID`"+` when finished.
-- You may read other task directories for reference.
-- %s
+`+crossResourceReadGuidanceEnglish+`- %s
 - Treat workspace repos/ checkouts as shared source caches; make code changes in task worktrees.
 - %s
 - %s

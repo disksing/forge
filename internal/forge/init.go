@@ -148,10 +148,10 @@ This directory is an AgentWorkspace managed by forge.
 - Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
 - When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
 - Agents coordinate writes with sessions that lock the project or task they are updating; stale locks are pruned from session liveness.
-- Agents may read other projects and tasks freely for context, but should only update the resource they have locked and any task worktrees owned by that resource.
+` + crossResourceReadGuidanceEnglish + `- Agents should only update the resource they have locked and any task worktrees owned by that resource.
 - When started through ` + "`forge start`" + ` or the Forge web service, Forge creates the session, locks the selected resource, injects ` + "`FORGE_SESSION_ID`" + ` through the environment or explicit Forge session context, and releases the session when the agent exits; agents should reuse that id and should not lock/unlock the starting resource themselves.
 - When started directly without ` + "`FORGE_SESSION_ID`" + ` in the environment or injected session context, agents should detect their own PID, run ` + "`forge session new --pid <pid>`" + `, export ` + "`FORGE_SESSION_ID`" + `, lock the current project/task resource once, and end that session when the agent exits.
-- Agents should only use extra lock/unlock pairs for temporary access to other project/task resources outside their starting resource.
+- Agents should use extra lock/unlock pairs only when writing to other project/task resources outside their starting resource; read-only inspection does not require an extra lock.
 - The workspace root does not require a lock.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
@@ -164,7 +164,7 @@ This directory is an AgentWorkspace managed by forge.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
 - Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
-- Agents may read other task directories for reference.
+- Read-only inspection of other task directories is allowed without an extra lock; use the state files and Forge commands described above.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
 - Treat ` + "`project.md`" + ` and ` + "`task.md`" + ` as durable contracts. Keep why the work exists, scope and non-scope, acceptance criteria, stable constraints, durable decisions, and contract-changing open questions there.

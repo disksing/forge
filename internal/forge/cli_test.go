@@ -258,6 +258,92 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 	})
 }
 
+func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecycle(t *testing.T) {
+	cases := []struct {
+		name     string
+		language string
+		anchors  []string
+		wrong    string
+	}{
+		{
+			name:     "English",
+			language: "en",
+			anchors: []string{
+				"Read-only inspection of other project/task resources does not change them and needs no additional Forge lock.",
+				"Only when writing to a project/task outside the resource already locked for this session",
+				"relevant `artifacts/`",
+				"task.json` contains structured state",
+				"task.md` the durable contract",
+				"work.md` the current recovery checkpoint",
+				"log.jsonl` the historical timeline",
+				"You may use `sed`, `rg`, or `less` on the resolved paths.",
+				"forge task show --project=<project> --task=<task>",
+				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge workspace resource --id=<project.task> --json",
+				"forge session lock --id=$FORGE_SESSION_ID",
+				"forge session unlock --id=$FORGE_SESSION_ID",
+			},
+			wrong: "只读检查其他项目/任务资源",
+		},
+		{
+			name:     "Simplified Chinese",
+			language: "zh-CN",
+			anchors: []string{
+				"只读检查其他项目/任务资源不会改变资源，因此不需要额外的 Forge 锁。",
+				"只有准备写入当前 session 已锁定资源之外的项目/任务时",
+				"相关 `artifacts/`",
+				"`task.json` 是结构化状态",
+				"`task.md` 是长期约定",
+				"`work.md` 是当前恢复检查点",
+				"`log.jsonl` 是历史时间线",
+				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
+				"forge task show --project=<project> --task=<task>",
+				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge workspace resource --id=<project.task> --json",
+				"forge session lock --id=$FORGE_SESSION_ID",
+				"forge session unlock --id=$FORGE_SESSION_ID",
+			},
+			wrong: "Read-only inspection of other project/task resources",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withTempCwd(t, func(root string) {
+				run(t, "init", "--language", tc.language)
+				run(t, "project", "create", "Guidance project")
+				run(t, "task", "create", "--project=project1", "Guidance task")
+
+				paths := []string{
+					filepath.Join(root, "AGENTS.md"),
+					filepath.Join(root, "project1", "AGENTS.md"),
+					filepath.Join(root, "project1", "task1", "AGENTS.md"),
+				}
+				assertGuidance := func(stage string) {
+					t.Helper()
+					for _, path := range paths {
+						content := readFile(t, path)
+						for _, want := range tc.anchors {
+							if !strings.Contains(content, want) {
+								t.Fatalf("generated %s card after %s is missing %q:\n%s", path, stage, want, content)
+							}
+						}
+						if strings.Contains(content, tc.wrong) || strings.Contains(content, "forge task work show") {
+							t.Fatalf("generated %s card after %s contains wrong-language or nonexistent guidance:\n%s", path, stage, content)
+						}
+					}
+				}
+
+				assertGuidance("create")
+				if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+					t.Fatal(err)
+				}
+				run(t, "migrate", "--language", tc.language)
+				assertGuidance("migrate")
+			})
+		})
+	}
+}
+
 func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		if _, err := runErr(t, "init", "--language=fr"); err == nil || !strings.Contains(err.Error(), "unsupported language") {
@@ -345,7 +431,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md") {
 			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set in the environment or supplied in injected Forge session context, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "When accessing another project/task directory outside this locked resource") {
+		if !strings.Contains(projectAgents, "if `FORGE_SESSION_ID` is set in the environment or supplied in injected Forge session context, reuse it") || !strings.Contains(projectAgents, "the outer launcher already registered the session and locked this directory's resource") || !strings.Contains(projectAgents, "Only when writing to a project/task outside the resource already locked for this session") {
 			t.Fatalf("expected project AGENTS.md to include managed session guidance, got:\n%s", projectAgents)
 		}
 		projectMDPath := filepath.Join(root, "project1", "project.md")

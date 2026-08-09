@@ -31,6 +31,19 @@ func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
 				"prefer an existing suitable template",
 				"preserve all existing template rules by default",
 				"override a particular rule only when the user explicitly asks for that override",
+				"Read-only inspection of other project/task resources does not change them and needs no additional Forge lock.",
+				"Only when writing to a project/task outside the resource already locked for this session",
+				"relevant `artifacts/`",
+				"task.json` contains structured state",
+				"task.md` the durable contract",
+				"work.md` the current recovery checkpoint",
+				"log.jsonl` the historical timeline",
+				"You may use `sed`, `rg`, or `less` on the resolved paths.",
+				"forge task show --project=<project> --task=<task>",
+				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge workspace resource --id=<project.task> --json",
+				"forge session lock --id=$FORGE_SESSION_ID",
+				"forge session unlock --id=$FORGE_SESSION_ID",
 			},
 		},
 		{
@@ -48,6 +61,19 @@ func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
 				"如果存在适用的现有模板，应优先使用",
 				"默认保留模板已有的全部规则",
 				"只有用户明确要求覆盖某一项规则时才可针对该项覆盖",
+				"只读检查其他项目/任务资源不会改变资源，因此不需要额外的 Forge 锁。",
+				"只有准备写入当前 session 已锁定资源之外的项目/任务时",
+				"相关 `artifacts/`",
+				"`task.json` 是结构化状态",
+				"`task.md` 是长期约定",
+				"`work.md` 是当前恢复检查点",
+				"`log.jsonl` 是历史时间线",
+				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
+				"forge task show --project=<project> --task=<task>",
+				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge workspace resource --id=<project.task> --json",
+				"forge session lock --id=$FORGE_SESSION_ID",
+				"forge session unlock --id=$FORGE_SESSION_ID",
 			},
 		},
 	}
@@ -78,17 +104,28 @@ func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
 				filepath.Join(workspace.Root(), projectResource.Path, "AGENTS.md"),
 				filepath.Join(workspace.Root(), taskResource.Path, "AGENTS.md"),
 			}
-			for _, path := range paths {
-				data, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatalf("read generated %s: %v", path, err)
-				}
-				for _, want := range tc.anchors {
-					if !strings.Contains(string(data), want) {
-						t.Fatalf("generated %s is missing %q:\n%s", path, want, data)
+			assertGuidance := func(stage string) {
+				t.Helper()
+				for _, path := range paths {
+					data, err := os.ReadFile(path)
+					if err != nil {
+						t.Fatalf("read generated %s card after %s: %v", path, stage, err)
+					}
+					for _, want := range tc.anchors {
+						if !strings.Contains(string(data), want) {
+							t.Fatalf("generated %s card after %s is missing %q:\n%s", path, stage, want, data)
+						}
+					}
+					if strings.Contains(string(data), "forge task work show") {
+						t.Fatalf("generated %s card after %s references nonexistent forge task work show command:\n%s", path, stage, data)
 					}
 				}
 			}
+			assertGuidance("create")
+			if err := workspace.Migrate(tc.language); err != nil {
+				t.Fatalf("migrate workspace: %v", err)
+			}
+			assertGuidance("migrate")
 		})
 	}
 }
