@@ -1265,10 +1265,15 @@ body.resizing-y {
   position: relative;
   margin: 0;
   padding: 7px 10px;
-  border: 1px solid var(--line);
+  border: 1px solid #e8c98f;
   border-radius: 6px;
-  background: #f4f5f7;
+  background: #fdf3e3;
   transition: border-color 160ms ease;
+}
+
+.self-driving-bar .self-driving-bar-title,
+.self-driving-bar .self-driving-bar-summary {
+  color: #7c4a12;
 }
 
 .self-driving-bar-row {
@@ -1515,6 +1520,12 @@ body.resizing-y {
 .self-driving-bar-running,
 .self-driving-bar-reconciling {
   --self-driving-tone: var(--amber);
+  background: repeating-linear-gradient(
+    -45deg,
+    #fbdca8 0 12px,
+    #f8cd8b 12px 24px
+  );
+  border-color: #e6a23c;
 }
 
 .self-driving-bar-running .self-driving-state-icon,
@@ -1737,7 +1748,14 @@ body.resizing-y {
 .agent-current-run.active,
 .agent-session-menu-row.active,
 .agent-run-row.active {
-  border-color: var(--accent);
+  border-color: #8a97a5;
+  background: #e8eaee;
+}
+
+.agent-current-run.active strong,
+.agent-session-menu-row.active strong,
+.agent-run-row.active strong {
+  font-weight: 700;
 }
 
 .session-select-icon {
@@ -5976,5 +5994,46 @@ i[data-lucide] {
 
   .tree-item .name {
     gap: 4px;
+  }
+}
+
+/* Self-Driving running highlight: animated striped frame around the agent
+   panel. Stripes flow counterclockwise (left down, top left, right up,
+   bottom right); each loop shifts the pattern by exactly one 28px stripe
+   period so the animation is seamless. Pure CSS via :has(), no JS hooks. */
+.agent-panel:has(.self-driving-bar-running),
+.agent-panel:has(.self-driving-bar-reconciling) {
+  position: relative;
+}
+
+.agent-panel:has(.self-driving-bar-running)::before,
+.agent-panel:has(.self-driving-bar-reconciling)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 4px;
+  background:
+    repeating-linear-gradient(90deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 0 / 100% 4px repeat-x,
+    repeating-linear-gradient(90deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 100% / 100% 4px repeat-x,
+    repeating-linear-gradient(0deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 0 / 4px 100% repeat-y,
+    repeating-linear-gradient(0deg, #e6a23c 0 14px, #2c3e50 14px 28px) 100% 0 / 4px 100% repeat-y;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: self-driving-frame-stripes 1.12s linear infinite;
+  pointer-events: none;
+  z-index: 20;
+}
+
+@keyframes self-driving-frame-stripes {
+  0% { background-position: 0 0, 0 100%, 0 0, 100% 0; }
+  100% { background-position: -28px 0, 28px 100%, 0 28px, 100% -28px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-panel:has(.self-driving-bar-running)::before,
+  .agent-panel:has(.self-driving-bar-reconciling)::before {
+    animation: none;
   }
 }
