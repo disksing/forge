@@ -218,6 +218,8 @@ The action calls one unified server operation (`POST /api/workspaces/<id>/autoru
 
 Project-local content templates live in `templates/*.md`. Schema V2 declares a dynamic input form and deterministic title/Markdown rendering; it never chooses whether or how the task runs:
 
+When creating a task, prefer an existing suitable project template whenever one is available. When creating a task from a template, preserve all existing template rules by default: do not delete, weaken, bypass, or accidentally override them. Override a particular rule only when the user explicitly asks for that override.
+
 ```markdown
 ---
 schema-version: 2

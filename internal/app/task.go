@@ -1003,6 +1003,8 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		extra = `
 - This task belongs to a project. Read the parent project directory's project.json, project.md, and log.jsonl when you need broader context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
+- When creating a task, prefer an existing suitable template from the current project's templates/ directory whenever one is available.
+- When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 `
 	}
 	readLine := "Read task.json, task.md, work.md, and log.jsonl before acting."
@@ -1021,6 +1023,8 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		extra = `
 - Project content templates live in templates/*.md. Use schema-version: 2 with title, optional description/task-title, fields, and a Markdown body. Supported field types are text, textarea, select, and boolean.
 - Templates organize task content only. They must not contain autorun, agent, agent-profiles, prompt, or completion-criteria; choose those explicitly when creating a task.
+- When creating a task, prefer an existing suitable template whenever one is available.
+- When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 - Template format:
 
   ` + "```markdown" + `

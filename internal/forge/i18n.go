@@ -230,6 +230,8 @@ func taskAgentsPromptZH(resource Resource) string {
 	extra := `
 - 此任务属于一个项目。需要更广泛的上下文时，读取父项目目录中的 project.json、project.md 和 log.jsonl。
 - 父项目文件仅作参考；除非用户明确要求，否则修改应限定在此任务目录及其 worktree 中。
+- 创建任务时，如果存在适用的现有模板，应优先使用该模板。
+- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
 `
 	if isProject(resource) {
 		title = "项目 Agent 指引"
@@ -247,6 +249,8 @@ func taskAgentsPromptZH(resource Resource) string {
 		extra = `
 - 项目内容模板位于 templates/*.md。使用 schema-version: 2，并声明 title、可选 description/task-title、fields 和 Markdown 正文；字段类型支持 text、textarea、select、boolean。
 - 模板只组织任务内容，不得包含 autorun、agent、agent-profiles、prompt 或 completion-criteria；这些运行选项必须在创建任务时显式选择。
+- 创建任务时，如果存在适用的现有模板，应优先使用该模板。
+- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
 - 模板格式：
 
   ` + "```markdown" + `
@@ -317,6 +321,8 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 项目任务直接位于项目目录下简短的 ` + "`taskM/`" + ` 或 ` + "`taskM-slug/`" + ` 目录；资源 ID 仍是 ` + "`projectN.taskM`" + ` 形式的完整 ID。
 - 已归档项目位于 ` + "`archive/`" + `。已归档项目任务位于其项目目录下的 ` + "`archive/`" + `。
 - 项目内容模板位于各项目的 ` + "`templates/`" + ` 目录。
+- 在项目中创建任务时，应检查该项目的 ` + "`templates/`" + ` 目录；如果存在适用的现有模板，应优先使用该模板。
+- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
 - Git 仓库默认以普通 checkout 形式位于 ` + "`repos/`" + `。
 - 将 ` + "`repos/`" + ` 下的仓库视为共享源码缓存；代码修改应在任务 worktree 中进行。
 - 项目拥有 ` + "`project.json`" + `、` + "`project.md`" + `、` + "`log.jsonl`" + `、` + "`AGENTS.md`" + ` 和 ` + "`artifacts/`" + `。

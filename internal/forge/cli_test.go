@@ -177,7 +177,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "AutoRun suspend 仅适用于任务无法继续推进") || !strings.Contains(got, "--summary=<text>") || !strings.Contains(got, "--wake-condition=<text>") {
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "AutoRun suspend 仅适用于任务无法继续推进") || !strings.Contains(got, "--summary=<text>") || !strings.Contains(got, "--wake-condition=<text>") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") {
 			t.Fatalf("expected Chinese workspace prompt, got:\n%s", got)
 		}
 
@@ -188,7 +188,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
 		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") {
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
 		var projectLogs []LogEntry
@@ -210,7 +210,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
 			t.Fatalf("expected Chinese work template, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做") {
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
 		var taskLogs []LogEntry
@@ -233,13 +233,13 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if config.Language != defaultLanguage {
 			t.Fatalf("expected migration to persist English, got %+v", config)
 		}
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "This directory is an AgentWorkspace managed by forge.") || strings.Contains(got, "此目录是由 Forge 管理") {
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "This directory is an AgentWorkspace managed by forge.") || strings.Contains(got, "此目录是由 Forge 管理") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") {
 			t.Fatalf("expected English workspace prompt after migration, got:\n%s", got)
 		}
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# Project Agent Instructions") || !strings.Contains(got, "保留这行。") {
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# Project Agent Instructions") || !strings.Contains(got, "保留这行。") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") || !strings.Contains(got, "override a particular rule only when the user explicitly asks for that override") {
 			t.Fatalf("expected English project prompt with manual content preserved, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# Task Agent Instructions") {
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# Task Agent Instructions") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") {
 			t.Fatalf("expected English task prompt after migration, got:\n%s", got)
 		}
 		if got := readFile(t, taskMDPath); got != chineseTaskMD {
@@ -252,7 +252,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		}
 
 		run(t, "migrate", "--language=zh-CN")
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") {
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") {
 			t.Fatalf("expected migration to switch prompts back to Chinese, got:\n%s", got)
 		}
 	})
@@ -366,7 +366,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "Project content templates live in templates/*.md") || !strings.Contains(projectAgents, "schema-version: 2") || !strings.Contains(projectAgents, "Templates organize task content only") {
+		if !strings.Contains(projectAgents, "Project content templates live in templates/*.md") || !strings.Contains(projectAgents, "schema-version: 2") || !strings.Contains(projectAgents, "Templates organize task content only") || !strings.Contains(projectAgents, "prefer an existing suitable template") || !strings.Contains(projectAgents, "preserve all existing template rules by default") || !strings.Contains(projectAgents, "override a particular rule only when the user explicitly asks for that override") {
 			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
 		}
 		if !strings.Contains(projectAgents, "workspace root AGENTS.md (../AGENTS.md)") {
@@ -424,6 +424,9 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, and log.jsonl") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
+		}
+		if !strings.Contains(subtaskAgents, "prefer an existing suitable template") || !strings.Contains(subtaskAgents, "preserve all existing template rules by default") || !strings.Contains(subtaskAgents, "override a particular rule only when the user explicitly asks for that override") {
+			t.Fatalf("expected subtask AGENTS.md to preserve applicable template guidance, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "forge task log add <title> --details <details>") {
 			t.Fatalf("expected subtask AGENTS.md to mention structured log command, got:\n%s", subtaskAgents)
