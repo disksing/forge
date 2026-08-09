@@ -369,7 +369,7 @@ scripts/build
 Useful focused commands:
 
 ```bash
-go test ./cli/internal/forge
+go test ./internal/forge
 go test ./internal/serve/...
 go run ./cli/cmd/forge help
 go run ./cli/cmd/forge serve --workspace /path/to/AgentWorkspace
