@@ -321,7 +321,6 @@ body.resizing-y {
 
 .tree-item.active {
   background: var(--ink-deep);
-  box-shadow: inset 4px 0 0 var(--accent);
   color: #fff;
   font-weight: 700;
 }
@@ -1267,7 +1266,6 @@ body.resizing-y {
   margin: 0;
   padding: 7px 10px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--self-driving-tone);
   border-radius: 6px;
   background: #f4f5f7;
   transition: border-color 160ms ease;
@@ -1346,7 +1344,7 @@ body.resizing-y {
   height: 1.02rem;
   border-radius: 50%;
   background: var(--panel);
-  box-shadow: 0 1px 3px color-mix(in srgb, #000 30%, transparent);
+  border: 1px solid var(--line);
   transition: transform 140ms ease;
 }
 
@@ -1893,13 +1891,8 @@ body.resizing-y {
 .agent-message-row.system .agent-message-bubble,
 .agent-message-row.agent .agent-message-bubble {
   border: 1px solid #dcdfe4;
-  border-left: 3px solid #8a97a5;
   background: #f4f5f7;
   padding: 8px 10px;
-}
-
-.agent-message-row.agent .agent-message-bubble {
-  border-left-color: #2980b9;
 }
 
 .agent-message-row.system .agent-message-meta strong,
@@ -2281,7 +2274,6 @@ body.resizing-y {
   margin: 10px 12px;
   padding: 9px 10px;
   border: 1px solid #c3c9d1;
-  border-left: 4px solid #e74c3c;
   border-radius: 6px;
   background: #fff;
   transition: border-color 0.16s ease;
@@ -2289,7 +2281,8 @@ body.resizing-y {
 
 .tty-input:focus-within {
   border-color: var(--accent);
-  border-left-color: var(--accent-deep);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .tty-input span {
@@ -3182,7 +3175,6 @@ i[data-lucide] {
 
 .tree-item.active {
   background: var(--ink-deep);
-  box-shadow: inset 4px 0 0 var(--accent);
   color: #fff;
   font-weight: 700;
 }
@@ -3200,7 +3192,7 @@ i[data-lucide] {
 
 .tree-item.active .tree-icon,
 .tree-item.active .chevron {
-  color: var(--accent);
+  color: #fff;
 }
 
 .task-status-slot,
@@ -3421,7 +3413,6 @@ i[data-lucide] {
 
 .session-row.current-session {
   background: var(--ink-deep);
-  box-shadow: inset 4px 0 0 var(--accent);
 }
 
 .session-row.current-session:hover,
@@ -3433,16 +3424,9 @@ i[data-lucide] {
   color: #fff;
 }
 
-.session-row.session-unread {
-  box-shadow: inset 3px 0 0 var(--amber);
-}
-
-.session-row.session-unread:not(.current-session) {
-  background: #36485c;
-}
-
-.session-row.session-unread:not(.current-session):hover {
-  background: #3e5268;
+/* Unread sessions are marked only by the amber unread badge, not a bar. */
+.session-row.session-unread:not(.current-session) strong {
+  color: #fff;
 }
 
 .clickable-session {
@@ -3698,6 +3682,61 @@ i[data-lucide] {
 .details-header {
   padding: 24px 32px 22px;
   border-bottom-color: var(--line);
+}
+
+/* Resource details tabs: flat bar, active tab marked by a bottom accent line. */
+.details-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 24px;
+  overflow-x: auto;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.details-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.details-tab:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.details-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.details-tab-count {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.details-tab.active .details-tab-count {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
 }
 
 .breadcrumb {
@@ -5634,6 +5673,10 @@ i[data-lucide] {
   .content-section {
     padding-right: 18px;
     padding-left: 18px;
+  }
+
+  .details-tabs {
+    padding: 0 10px;
   }
 
   .title-row {
