@@ -128,15 +128,33 @@ type agentHubSession struct {
 	UpdatedAt          string            `json:"updatedAt"`
 }
 
+// agentHubMessageSender is provenance identity metadata attached to an
+// inbound message. It records who sent the message; it is never an
+// authentication or authorization boundary.
+type agentHubMessageSender struct {
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	SessionID string `json:"sessionId,omitempty"`
+}
+
+// agentHubInboundMessage is the wire shape shared by the messages endpoint
+// and the optional initial message on session creation. Role and sender
+// describe provenance only; an omitted role persists as an ordinary user
+// message.
+type agentHubInboundMessage struct {
+	Text   string                 `json:"text"`
+	Role   string                 `json:"role,omitempty"`
+	Sender *agentHubMessageSender `json:"sender,omitempty"`
+	Steer  bool                   `json:"steer,omitempty"`
+}
+
 type agentHubCreateSessionRequest struct {
-	Title             string            `json:"title,omitempty"`
-	Cwd               string            `json:"cwd"`
-	AgentName         string            `json:"agentName"`
-	LaunchEnvironment map[string]string `json:"launchEnvironment,omitempty"`
-	Source            *agentHubSource   `json:"source,omitempty"`
-	InitialMessage    *struct {
-		Text string `json:"text"`
-	} `json:"initialMessage,omitempty"`
+	Title             string                  `json:"title,omitempty"`
+	Cwd               string                  `json:"cwd"`
+	AgentName         string                  `json:"agentName"`
+	LaunchEnvironment map[string]string       `json:"launchEnvironment,omitempty"`
+	Source            *agentHubSource         `json:"source,omitempty"`
+	InitialMessage    *agentHubInboundMessage `json:"initialMessage,omitempty"`
 }
 
 type agentHubApprovalReply struct {
@@ -291,14 +309,11 @@ func (c *agentHubClient) ListSessions(ctx context.Context, filter agentHubSessio
 	return response.Sessions, err
 }
 
-func (c *agentHubClient) Message(ctx context.Context, sessionID, text string, steer bool) (agentHubSession, error) {
+func (c *agentHubClient) Message(ctx context.Context, sessionID string, message agentHubInboundMessage) (agentHubSession, error) {
 	var response struct {
 		Session agentHubSession `json:"session"`
 	}
-	err := c.doJSON(ctx, http.MethodPost, sessionPath(sessionID)+"/messages", struct {
-		Text  string `json:"text"`
-		Steer bool   `json:"steer,omitempty"`
-	}{Text: text, Steer: steer}, &response)
+	err := c.doJSON(ctx, http.MethodPost, sessionPath(sessionID)+"/messages", message, &response)
 	return response.Session, err
 }
 

@@ -5443,17 +5443,24 @@ function bindSettingsEvents() {
 
 function agentTimelineItemRow(item, index, items) {
   if (item.kind === "message") {
-    const isAssistant = item.role === "assistant";
+    const role = item.role === "assistant" || item.role === "system" || item.role === "agent" ? item.role : "user";
+    const isAssistant = role === "assistant";
     const content = isAssistant
       ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`
       : `<p>${escapeHTML(item.text)}</p>`;
     const steerTag = item.steer ? `<span class="agent-message-tag">steer</span>` : "";
+    const roleTag = role === "system" || role === "agent" ? `<span class="agent-message-tag agent-message-role-tag">${role}</span>` : "";
+    const sourceSession = role === "agent" && item.sender?.sessionId
+      ? `<span class="agent-message-source" title="${escapeHTML(item.sender.sessionId)}">from session ${escapeHTML(item.sender.sessionId)}</span>`
+      : "";
     return `
-      <div class="agent-message-row ${isAssistant ? "assistant final" : "user"}">
+      <div class="agent-message-row ${isAssistant ? "assistant final" : role}">
         <div class="agent-message-main">
           <div class="agent-message-meta">
             <strong>${escapeHTML(agentMessageSenderName(item))}</strong>
+            ${roleTag}
             ${steerTag}
+            ${sourceSession}
             <span>${escapeHTML(agentClockTime(item.time))}</span>
           </div>
           <div class="agent-message-bubble">${content}</div>
@@ -5589,11 +5596,18 @@ function humanizeApprovalKind(kind) {
 }
 
 function agentMessageSenderName(item) {
-  if (item.role !== "assistant") return "You";
-  const run = currentAgentRun();
-  const agents = state.config?.agents || [];
-  const configured = agents.find((agent) => agent.id === run?.agentHubAgentName);
-  return agentDisplayName(configured || selectedAgentConfig());
+  if (item.role === "assistant") {
+    const run = currentAgentRun();
+    const agents = state.config?.agents || [];
+    const configured = agents.find((agent) => agent.id === run?.agentHubAgentName);
+    return agentDisplayName(configured || selectedAgentConfig());
+  }
+  if (item.role === "system" || item.role === "agent") {
+    const name = String(item.sender?.name || item.sender?.id || "").trim();
+    if (name) return name;
+    return item.role === "system" ? "System" : "Agent";
+  }
+  return "You";
 }
 
 function agentClockTime(value) {

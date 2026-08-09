@@ -101,9 +101,28 @@ func fakeEventText(event agentHubEvent) string {
 	return text
 }
 
+func fakeEventRole(event agentHubEvent) string {
+	var data map[string]any
+	if err := json.Unmarshal(event.Data, &data); err != nil {
+		return ""
+	}
+	role, _ := data["role"].(string)
+	return role
+}
+
+func fakeEventSenderName(event agentHubEvent) string {
+	var data map[string]any
+	if err := json.Unmarshal(event.Data, &data); err != nil {
+		return ""
+	}
+	sender, _ := data["sender"].(map[string]any)
+	name, _ := sender["name"].(string)
+	return name
+}
+
 func fakeSessionHasMessage(events []agentHubEvent, marker string) bool {
 	for _, event := range events {
-		if event.Type == "message.user" && strings.Contains(fakeEventText(event), marker) {
+		if event.Type == "message.input" && strings.Contains(fakeEventText(event), marker) {
 			return true
 		}
 	}
@@ -151,6 +170,17 @@ func TestChatAutoRunStartCreatesSessionWithSelectedAgent(t *testing.T) {
 		}
 		if !fakeSessionHasMessage(events, "The focused AutoRun test passes.") {
 			t.Fatalf("new session did not receive the completion criteria")
+		}
+		for _, event := range events {
+			if event.Type != "message.input" {
+				continue
+			}
+			if role := fakeEventRole(event); role != "system" {
+				t.Fatalf("AutoRun start message persisted with role %q, want system", role)
+			}
+			if name := fakeEventSenderName(event); name != agentHubSchedulerSenderName {
+				t.Fatalf("AutoRun start message sender = %q, want %q", name, agentHubSchedulerSenderName)
+			}
 		}
 	}
 }
@@ -370,7 +400,7 @@ func TestChatAutoRunCancelDurablyStopsTurnAndRetainsSession(t *testing.T) {
 	}
 	userMessages := 0
 	for _, event := range events {
-		if event.Type == "message.user" {
+		if event.Type == "message.input" {
 			userMessages++
 		}
 	}
@@ -472,6 +502,9 @@ func TestChatAutoRunStartReusesIdleSession(t *testing.T) {
 	}
 	if !fakeSessionHasMessage(fake.events[detail.Run.AgentHubSessionID], "This is an AutoRun scheduler turn") {
 		t.Fatalf("reused session did not receive the standard AutoRun start message")
+	}
+	if len(fake.messageRoles) != 1 || fake.messageRoles[0] != "system" {
+		t.Fatalf("reused-session scheduler turn message roles = %v, want exactly one system message", fake.messageRoles)
 	}
 }
 

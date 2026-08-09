@@ -1799,6 +1799,39 @@ body.resizing-y {
   padding: 8px 10px;
 }
 
+/* System and agent provenance messages stay quiet but visually distinct from
+   the user's own conversation: neutral card, muted sender, small role tag. */
+.agent-message-row.system .agent-message-bubble,
+.agent-message-row.agent .agent-message-bubble {
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #94a3b8;
+  background: #f8fafc;
+  padding: 8px 10px;
+}
+
+.agent-message-row.agent .agent-message-bubble {
+  border-left-color: #6f9eb5;
+}
+
+.agent-message-row.system .agent-message-meta strong,
+.agent-message-row.agent .agent-message-meta strong {
+  color: #64748b;
+}
+
+.agent-message-meta .agent-message-role-tag {
+  border: 1px solid #e2e8f0;
+  background: #f1f5f9;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.agent-message-source {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .agent-message-bubble > p {
   margin: 0;
   white-space: pre-wrap;

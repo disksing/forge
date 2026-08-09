@@ -98,10 +98,13 @@ func TestAgentHubClientContract(t *testing.T) {
 	if _, err := client.GetSession(ctx, "ses_1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Message(ctx, "ses_1", "hello", false); err != nil {
+	if _, err := client.Message(ctx, "ses_1", agentHubInboundMessage{Text: "hello"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Message(ctx, "ses_1", "steer", true); err != nil {
+	if _, err := client.Message(ctx, "ses_1", agentHubInboundMessage{
+		Text: "steer", Steer: true, Role: "system",
+		Sender: &agentHubMessageSender{Name: agentHubSchedulerSenderName},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Approval(ctx, "ses_1", "approval/1", agentHubApprovalReply{Decision: "accept"}); err != nil {

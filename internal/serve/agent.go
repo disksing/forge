@@ -856,7 +856,14 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	hubState := rt.agentHubState
 	rt.mu.Unlock()
 	if client != nil && sessionID != "" {
-		session, err := client.Message(context.Background(), sessionID, text, hubState == "busy" || hubState == "waiting_approval")
+		// sendInput currently only delivers scheduler-turn continuation
+		// prompts, so the message is always system-originated.
+		role, sender := agentHubMessageProvenance(true)
+		message := agentHubInboundMessage{
+			Text: text, Steer: hubState == "busy" || hubState == "waiting_approval",
+			Role: role, Sender: sender,
+		}
+		session, err := client.Message(context.Background(), sessionID, message)
 		if err != nil {
 			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
 		}

@@ -36,6 +36,7 @@ type runtimeFakeAgentHub struct {
 	extraAgents        []string
 	stopHook           func(string)
 	messageSteers      []bool
+	messageRoles       []string
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
@@ -107,18 +108,12 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if len(parts) == 4 && parts[3] == "messages" {
-		var body struct {
-			Text  string `json:"text"`
-			Steer bool   `json:"steer"`
-		}
+		var body agentHubInboundMessage
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		f.mu.Lock()
 		f.messageSteers = append(f.messageSteers, body.Steer)
-		eventType := "message.user"
-		if body.Steer {
-			eventType = "message.user.steer"
-		}
-		f.appendLocked(id, eventType, map[string]any{"text": body.Text})
+		f.messageRoles = append(f.messageRoles, body.Role)
+		f.appendLocked(id, "message.input", fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
 		session.State = "busy"
@@ -250,6 +245,20 @@ func writeRuntimeFakeJSON(w http.ResponseWriter, value any) {
 	_ = json.NewEncoder(w).Encode(value)
 }
 
+// fakeMessageInputData mirrors the canonical message.input event a real
+// AgentHub daemon persists: the role defaults to user and the sender, when
+// present, is stored alongside the text.
+func fakeMessageInputData(text, role string, sender *agentHubMessageSender, steer bool) map[string]any {
+	if role == "" {
+		role = "user"
+	}
+	data := map[string]any{"text": text, "role": role, "steer": steer}
+	if sender != nil {
+		data["sender"] = sender
+	}
+	return data
+}
+
 func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	var request agentHubCreateSessionRequest
 	_ = json.NewDecoder(r.Body).Decode(&request)
@@ -273,7 +282,8 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	f.appendLocked(id, "session.created", session)
 	f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
 	if request.InitialMessage != nil {
-		f.appendLocked(id, "message.user", map[string]any{"text": request.InitialMessage.Text})
+		f.appendLocked(id, "message.input", fakeMessageInputData(
+			request.InitialMessage.Text, request.InitialMessage.Role, request.InitialMessage.Sender, request.InitialMessage.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": request.InitialMessage.Text})
 		session.State = "busy"
 	}
@@ -602,8 +612,11 @@ func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
 	fake.mu.Unlock()
 	messageCount := 0
 	for _, event := range events {
-		if event.Type == "message.user" && fakeEventText(event) == "resume manually" {
+		if event.Type == "message.input" && fakeEventText(event) == "resume manually" {
 			messageCount++
+			if role := fakeEventRole(event); role != "user" {
+				t.Fatalf("user-typed resume message persisted with role %q", role)
+			}
 		}
 	}
 	if messageCount != 1 || len(steers) != 1 || steers[0] {
@@ -781,7 +794,7 @@ func countFakeUserMessages(fake *runtimeFakeAgentHub) int {
 	count := 0
 	for _, events := range fake.events {
 		for _, event := range events {
-			if event.Type == "message.user" {
+			if event.Type == "message.input" {
 				count++
 			}
 		}
@@ -1620,7 +1633,7 @@ func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
 	}
 	messageCount := 0
 	for _, event := range events {
-		if event.Type == "message.user" {
+		if event.Type == "message.input" {
 			messageCount++
 		}
 	}

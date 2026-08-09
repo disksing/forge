@@ -2991,6 +2991,53 @@ for (const [item, want] of cases) {
 	}
 }
 
+func TestAgentMessageSenderNameProvenance(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for sender name provenance tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const context = {};
+vm.createContext(context);
+vm.runInContext(extract("agentMessageSenderName"), context);
+const cases = [
+  [{ role: "user" }, "You"],
+  [{ role: "user", steer: true }, "You"],
+  [{ role: "system", sender: { name: "Forge Scheduler" } }, "Forge Scheduler"],
+  [{ role: "system" }, "System"],
+  [{ role: "agent", sender: { name: "Review Agent", sessionId: "ses_1" } }, "Review Agent"],
+  [{ role: "agent", sender: { id: "agent-7" } }, "agent-7"],
+  [{ role: "agent" }, "Agent"],
+];
+for (const [item, want] of cases) {
+  const got = context.agentMessageSenderName(item);
+  if (got !== want) throw new Error(JSON.stringify(item) + ": got " + got + ", want " + want);
+}
+`
+	appPath := frontendAssetPath("app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("sender name provenance test failed: %v\n%s", err, output)
+	}
+}
+
 func TestAgentLiveDeltaMergePreservesThinkingStartTime(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
