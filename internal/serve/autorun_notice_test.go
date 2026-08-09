@@ -201,7 +201,7 @@ assert(state.agent.notices.length === 2, "a replaced SSE stream must not append 
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("AutoRun notice lifecycle test failed: %v\n%s", err, output)
 	}
 

@@ -2,7 +2,6 @@ package serve
 
 import (
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -70,7 +69,7 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
   assert(!ordinary.resumeSuspendedAutoRun, "paused chat must not request implicit resume");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("Agent input frontend test failed: %v\n%s", err, output)
 	}
@@ -212,7 +211,7 @@ context.resizeTTYInput = () => {};
 });
 `
 
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("suspended Chat draft test failed: %v\n%s", err, output)
 	}

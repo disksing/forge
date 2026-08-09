@@ -2,7 +2,6 @@ package serve
 
 import (
 	"os/exec"
-	"path/filepath"
 	"testing"
 )
 
@@ -171,7 +170,7 @@ eval(extract("autoRunStatusReason"));
   assert(structuredReason && structuredReason.text === "server-side failure", "AutoRun status reason must survive outside the first log page");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
-	if output, err := exec.Command(node, "-e", script, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("resource log pagination frontend test failed: %v\n%s", err, output)
 	}
 }

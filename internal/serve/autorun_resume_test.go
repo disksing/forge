@@ -2,7 +2,6 @@ package serve
 
 import (
 	"os/exec"
-	"path/filepath"
 	"testing"
 )
 
@@ -114,7 +113,7 @@ eval(extract("startChatAutoRun", true));
   assert(apiCalls.length === 1, "cancel must have zero additional side effects");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("AutoRun resume dialog test failed: %v\n%s", err, output)
 	}

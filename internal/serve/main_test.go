@@ -897,7 +897,7 @@ assert(context.projectTaskSummary({ id: "one", children: [{ id: "one.task1" }] }
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("project task summary behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -961,7 +961,7 @@ if (JSON.stringify(ids) !== JSON.stringify(["internal", "manual"])) {
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("manual session status behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -1155,7 +1155,7 @@ for (const resourceId of ["project12.missing", "project12.archived"]) {
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("session navigation target behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -1266,7 +1266,7 @@ vm.runInContext([
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("session click navigation behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -1936,7 +1936,7 @@ assert(label.includes("Session waiting for input"), "Session label should includ
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("Session operational status behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -1994,7 +1994,7 @@ if (!template.autorun || template.agentName !== "codex" || template.prompt !== "
 const blank = context.createTaskRequest({ projectId: "project1", templateName: "", title: "Blank", detail: "Only once", slug: "", autorun: false, preferredAgentProfiles: [] });
 if (blank.detail !== "Only once" || blank.templateName !== undefined || blank.agentName !== "") throw new Error("blank request did not remain independent");
 `
-	if output, err := exec.Command(node, "-e", script, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("template request behavior test failed: %v\n%s", err, output)
 	}
 }
@@ -2452,7 +2452,7 @@ assert(state.agent.ttyDraft === "typed while sending" && data.has(keyA), "a stal
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if output, err := exec.Command(node, testFile, "static/app.js").CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, testFile, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("TTY draft persistence test failed: %v\n%s", err, output)
 	}
 }
@@ -2563,7 +2563,7 @@ assert(!completed.includes("wait for review") && !completed.includes("failed now
 const newGeneration = render("queued", 8, "new generation summary");
 assert(!newGeneration.includes("new generation summary") && !newGeneration.includes("wait for review"), "new generation displayed a prior status reason");
 `
-	if output, err := exec.Command(node, "-e", script, filepath.Join("static", "app.js")).CombinedOutput(); err != nil {
+	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
 		t.Fatalf("AutoRun status rendering test failed: %v\n%s", err, output)
 	}
 }
@@ -2613,7 +2613,7 @@ for (const [selection, want] of cases) {
   if (got !== want) throw new Error("ttyLogHasActiveSelection(" + JSON.stringify(selection) + ") = " + got + ", want " + want);
 }
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("TTY selection detection failed: %v\n%s", err, output)
 	}
@@ -2988,7 +2988,7 @@ const closing = agentComposerToolbarActions({ includeEndTurn: true, closingSessi
 assert(closing.includes('title="Closing session…"'), "closing session must expose pending feedback");
 assert(closing.includes('id="agentCloseSessionButton"') && closing.includes('disabled aria-busy="true"'), "closing session must disable duplicate close");
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("composer toolbar state test failed: %v\n%s", err, output)
 	}
@@ -3147,7 +3147,7 @@ for (const [item, want] of cases) {
   if (got !== want) throw new Error("thinking title: got " + got + ", want " + want);
 }
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("timeline presentation helpers failed: %v\n%s", err, output)
 	}
@@ -3212,7 +3212,7 @@ if (healed.startTime !== "2026-01-01T00:00:00Z" || healed.time !== "2026-01-01T0
   throw new Error("full replacement lost thinking start time: " + JSON.stringify(healed));
 }
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("live delta merge behavior failed: %v\n%s", err, output)
 	}
@@ -3257,7 +3257,7 @@ if (context.state.agent.events.length !== 2) {
   throw new Error("timeline filtering must preserve raw events");
 }
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("launch environment timeline filtering failed: %v\n%s", err, output)
 	}
@@ -3300,7 +3300,7 @@ if (Array.isArray(fixture.scenarios)) {
 		t.Run(fixture, func(t *testing.T) {
 			args := []string{
 				"-e", script,
-				filepath.Join("static", "vendor", "agenthub-event-timeline", "event-timeline.iife.js"),
+				frontendAssetPath("vendor", "agenthub-event-timeline", "event-timeline.iife.js"),
 				filepath.Join("testdata", "agenthub-event-timeline", fixture+".json"),
 				filepath.Join("testdata", "agenthub-event-timeline", fixture+".timeline.json"),
 			}
@@ -3351,7 +3351,7 @@ if (approval.question !== "Choose one" || approval.options.length !== 1 || appro
   throw new Error("question approval was not projected");
 }
 `
-	bundlePath := filepath.Join("static", "vendor", "agenthub-event-timeline", "event-timeline.iife.js")
+	bundlePath := frontendAssetPath("vendor", "agenthub-event-timeline", "event-timeline.iife.js")
 	if output, err := exec.Command(node, "-e", script, bundlePath).CombinedOutput(); err != nil {
 		t.Fatalf("shared timeline feature conformance failed: %v\n%s", err, output)
 	}

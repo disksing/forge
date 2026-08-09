@@ -149,7 +149,7 @@ const pendingToolbar = agentComposerToolbarActions({ includeEndTurn: true, inclu
 assert(pendingToolbar.includes('id="agentEndTurnButton"') && pendingToolbar.includes('disabled') && pendingToolbar.includes('aria-busy="true"'), "cancel pending must disable End Turn");
 assert(pendingToolbar.includes('id="agentCloseSessionButton"') && pendingToolbar.includes('disabled') && pendingToolbar.includes('aria-busy="true"'), "cancel pending must disable Close Session");
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("AutoRun composer state matrix test failed: %v\n%s", err, output)
 	}
@@ -247,7 +247,7 @@ html = agentComposerActions({ standalone: true, includeResume: true, includeAuto
 assert(html.includes("external") || html.includes("locked"), "an external lock must retain its lock notice");
 assert(!html.includes('id="agentStartButton"') && !html.includes('id="autoRunStartButton"'), "an external lock must hide standalone actions");
 `
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	testFile := filepath.Join(t.TempDir(), "standalone-session-actions.js")
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)

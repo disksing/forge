@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha1"
 	"crypto/sha256"
-	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -29,10 +28,10 @@ import (
 
 	"github.com/disksing/forge/internal/app"
 	"github.com/disksing/forge/internal/buildinfo"
+	"github.com/disksing/forge/web"
 )
 
-//go:embed static
-var staticFiles embed.FS
+var staticFiles = web.Assets
 
 type config struct {
 	Version            int                 `json:"version"`

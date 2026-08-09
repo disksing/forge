@@ -2,7 +2,6 @@ package serve
 
 import (
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -75,7 +74,7 @@ func TestCurrentRunSchemaDoesNotWriteLegacyProviderFields(t *testing.T) {
 }
 
 func TestFrontendHasNoDirectRunnerSettingsOrFallback(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("static", "app.js"))
+	data, err := os.ReadFile(frontendAssetPath("app.js"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +98,7 @@ func TestFrontendHasNoDirectRunnerSettingsOrFallback(t *testing.T) {
 }
 
 func TestProductionHasNoLegacyEventPipeline(t *testing.T) {
-	files := []string{"agent.go", "agenthub_runtime.go", filepath.Join("static", "app.js")}
+	files := []string{"agent.go", "agenthub_runtime.go", frontendAssetPath("app.js")}
 	forbidden := []string{
 		"translateAgentHub" + "Event",
 		"displayAgent" + "Events",

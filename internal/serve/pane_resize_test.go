@@ -224,7 +224,7 @@ assert(oversized.sidebarWidth === 10000 && oversized.chatWidth === 10000 && over
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	appPath := filepath.Join("static", "app.js")
+	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, testFile, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("pane resize behavior test failed: %v\n%s", err, output)
 	}
