@@ -4267,14 +4267,15 @@ function projectAgentTimeline() {
 function renderAgent() {
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   const controls = $("agentControls");
+  const barWrap = $("autoRunBarWrap");
   const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
   const visibleRun = activeRun || state.agent.runs[0] || null;
   controls.hidden = true;
   controls.innerHTML = "";
   const detail = state.details[state.selectedId];
+  barWrap.innerHTML = autoRunTopBar(detail);
   wrap.innerHTML = `
-    ${autoRunStatus(detail)}
     <div id="agentSessions" class="agent-session-switcher">
       ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start an agent session from the selected task.</span></div>`}
       ${state.agent.historyOpen && state.agent.runs.length ? `
@@ -4314,10 +4315,63 @@ function autoRunStatusReason(run, logs = []) {
   return { label: labelsByState[run.state], text: String(entry.details).trim() };
 }
 
-function autoRunStatus(detail) {
+// autoRunTopBar renders the single, always-visible AutoRun status and control
+// entry at the top of a Task chat. Tasks without an AutoRun generation get a
+// compact not-started bar with Start AutoRun; every real state shows its state
+// chip, a one-line truncated summary and the currently legal actions. Longer
+// context (generation, profiles, actual Agent, reasons, wake condition) stays
+// behind the details toggle so the bar never crowds the chat.
+function autoRunTopBar(detail) {
+  const selected = findResource(state.selectedId);
+  if (!selected || selected.type !== "task" || !detail) return "";
+  const run = detail.autoRun || null;
+  const presentation = autoRunPresentation(run ? run.state : "");
+  const expanded = Boolean(run && state.agent.autoRunExpanded);
+  const externalLocked = selectedResourceHasExternalLock();
+  const summary = autoRunBarSummary(run, detail);
+  const actions = externalLocked
+    ? `<span class="autorun-bar-lock"><i data-lucide="lock" class="autorun-lock-icon" aria-hidden="true"></i><span>Locked by an external session</span></span>`
+    : autoRunBarActions(detail);
+  const toggleLabel = expanded ? "Hide AutoRun details" : "Show AutoRun details";
+  return `
+    <section class="autorun-bar autorun-bar-${presentation.key}${expanded ? " expanded" : ""}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
+      <div class="autorun-bar-row">
+        <span class="autorun-bar-title"><i data-lucide="workflow" class="autorun-title-icon" aria-hidden="true"></i><strong>AutoRun</strong></span>
+        <span class="autorun-state autorun-state-${presentation.key}">
+          <i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>
+          <span>${escapeHTML(presentation.label)}</span>
+        </span>
+        ${summary ? `<span class="autorun-bar-summary" title="${escapeHTML(summary)}">${escapeHTML(summary)}</span>` : ""}
+        <span class="autorun-bar-actions">
+          ${actions}
+          ${run ? `<button type="button" class="autorun-bar-toggle" data-autorun-toggle aria-expanded="${expanded ? "true" : "false"}" aria-controls="autoRunBarDetails" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(expanded ? "chevron-up" : "chevron-down", "autorun-expand-icon")}</button>` : ""}
+        </span>
+      </div>
+      ${run ? `<div class="autorun-bar-details" id="autoRunBarDetails"${expanded ? "" : " hidden"}>${autoRunBarDetails(detail)}</div>` : ""}
+    </section>
+  `;
+}
+
+// autoRunBarSummary picks the single most useful line of context for the
+// collapsed bar; CSS truncates it with an ellipsis and the full text stays
+// available via the title attribute and the expanded details.
+function autoRunBarSummary(run, detail) {
+  if (!run) return "No AutoRun generation yet.";
+  const reason = autoRunStatusReason(run, detail?.logs);
+  if (reason) return `${reason.label}: ${reason.text}`;
+  const stateName = String(run.state || "").trim().toLowerCase();
+  if (stateName === "suspended" && run.wakeCondition) return `Wake condition: ${run.wakeCondition}`;
+  const actual = currentAgentRun();
+  if (actual?.schedulerTurn && actual.resourceId === detail.id) {
+    const selection = `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentHubAgentName || ""}`.trim();
+    if (selection) return `Agent: ${selection}`;
+  }
+  return `Generation ${Number(run.generation) || 0}`;
+}
+
+function autoRunBarDetails(detail) {
   const run = detail?.autoRun;
   if (!run) return "";
-  const presentation = autoRunPresentation(run.state);
   const reason = autoRunStatusReason(run, detail?.logs);
   const latestSuspension = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run suspended", "Auto Run wake condition migrated"].includes(entry.title));
   const profiles = run.preferredAgentProfiles || [];
@@ -4326,26 +4380,17 @@ function autoRunStatus(detail) {
     ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentHubAgentName || ""}`
     : "";
   return `
-    <section class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
-      <div class="autorun-status-heading" data-autorun-toggle role="button" tabindex="0" aria-expanded="${state.agent.autoRunExpanded ? "true" : "false"}">
-        <div class="autorun-status-title"><i data-lucide="workflow" class="autorun-title-icon" aria-hidden="true"></i><strong>AutoRun</strong></div>
-        <span class="autorun-state autorun-state-${presentation.key}">
-          <i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>
-          <span>${escapeHTML(presentation.label)}</span>
-        </span>
-        ${icon(state.agent.autoRunExpanded ? "chevron-up" : "chevron-down", "autorun-expand-icon")}
-      </div>
-      <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
-      ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-      ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-      ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
-      ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
-    </section>
+    <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
+    ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
+    ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
+    ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
+    ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
   `;
 }
 
 function autoRunPresentation(state) {
   const presentations = {
+    none: { label: "Not started", icon: "circle-dashed" },
     queued: { label: "Queued", icon: "list-start" },
     running: { label: "Running", icon: "activity" },
     suspended: { label: "Suspended", icon: "pause" },
@@ -4354,8 +4399,9 @@ function autoRunPresentation(state) {
     failed: { label: "Failed", icon: "circle-x" },
     cancelled: { label: "Cancelled", icon: "ban" },
   };
-  const key = Object.hasOwn(presentations, state) ? state : "unknown";
-  return { key, ...(presentations[key] || { label: state || "Unknown", icon: "circle-help" }) };
+  const stateName = String(state || "").trim().toLowerCase();
+  const key = stateName === "" ? "none" : Object.hasOwn(presentations, stateName) ? stateName : "unknown";
+  return { key, ...(presentations[key] || { label: stateName || "Unknown", icon: "circle-help" }) };
 }
 
 function agentSelectOptions(agents) {
@@ -4509,12 +4555,8 @@ function renderTTYComposer(options = {}) {
   closeNewSessionChooserForResourceLock();
   const activeRun = currentAgentRun();
   if (!activeRun) {
-    const actionsMarkup = agentComposerActions({
-      standalone: true,
-      includeAutoRun: true,
-      autoRunCancelling: state.agent.autoRunCancelling,
-    });
-    const key = `none:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${autoRunComposerKey()}`;
+    const actionsMarkup = agentComposerActions({ standalone: true });
+    const key = `none:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${selectedResourceLockComposerKey()}`;
     if (composer.dataset.composerKey === key) return;
     composer.dataset.composerKey = key;
     composer.innerHTML = actionsMarkup;
@@ -4537,8 +4579,7 @@ function renderTTYComposer(options = {}) {
       cancelAutoRunOnClose: closeCancelsAutoRun,
       autoRunCancelling: state.agent.autoRunCancelling,
     });
-    const autoRunActionsMarkup = autoRunComposerAction();
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${autoRunComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4554,7 +4595,6 @@ function renderTTYComposer(options = {}) {
           <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
         </span>
         ${sessionControlsMarkup ? `<span class="tty-composer-divider" aria-hidden="true"></span><span class="tty-composer-group">${sessionControlsMarkup}</span>` : ""}
-        ${autoRunActionsMarkup ? `<span class="tty-composer-divider" aria-hidden="true"></span><span class="tty-composer-group">${autoRunActionsMarkup}</span>` : ""}
         ${sessionActionsMarkup ? `<button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>` : ""}
       </form>
       ${sessionActionsMarkup}
@@ -4588,10 +4628,8 @@ function renderTTYComposer(options = {}) {
   const actionsMarkup = agentComposerActions({
     standalone: true,
     includeResume: canResume,
-    includeAutoRun: true,
-    autoRunCancelling: state.agent.autoRunCancelling,
   });
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${autoRunComposerKey()}`;
+  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${selectedResourceLockComposerKey()}`;
   if (composer.dataset.composerKey === key) return;
   composer.dataset.composerKey = key;
   composer.innerHTML = actionsMarkup;
@@ -4657,20 +4695,13 @@ function agentComposerActions(options = {}) {
       ` : ""}
     </div>
   `;
-  const autoRunMarkup = standalone && options.includeAutoRun ? autoRunComposerAction({ variant: "labeled" }) : "";
-  const content = [resumeMarkup, newSessionMarkup, autoRunMarkup].filter(Boolean).join("");
+  const content = [resumeMarkup, newSessionMarkup].filter(Boolean).join("");
   if (!content) return "";
   return `
-    <div class="${actionsClass}"${standalone ? ` role="toolbar" aria-label="Session and AutoRun actions"` : ""}>
+    <div class="${actionsClass}"${standalone ? ` role="toolbar" aria-label="Session actions"` : ""}>
       ${content}
     </div>
   `;
-}
-
-function agentComposerToolbarActions(options = {}) {
-  const sessionControlsMarkup = sessionControlComposerActions(options);
-  const autoRunMarkup = options.includeAutoRun ? autoRunComposerAction() : "";
-  return `${sessionControlsMarkup}${autoRunMarkup}`;
 }
 
 // sessionControlComposerActions renders the end-turn and close-session
@@ -4729,14 +4760,11 @@ function autoRunActionIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(-0.8,-0.8) scale(0.9)" stroke-width="2.25"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></g><circle cx="17.4" cy="17.4" r="6" fill="${badgeFill}" stroke="#fff" stroke-width="2.2"/><g transform="translate(17.4,17.4) scale(0.38) translate(-12,-12)">${badgeGlyph}</g></svg>`;
 }
 
-// autoRunComposerAction renders the stateful AutoRun actions. Live sessions
-// use the compact icon-only variant in the input toolbar; standalone composer
-// states use the labeled variant in the shared Session/AutoRun action row. The
-// server re-validates every condition at execution time.
-function autoRunComposerAction(options = {}) {
-  const labeled = options.variant === "labeled";
-  const selected = findResource(state.selectedId);
-  const detail = selected ? (state.details[selected.id] || selected) : null;
+// autoRunBarActions renders the stateful AutoRun flow controls. The top bar is
+// the only place Start/Resume/Cancel appear; every button keeps a visible
+// label next to its icon. The server re-validates every condition at
+// execution time.
+function autoRunBarActions(detail) {
   if (!detail || detail.type !== "task") return "";
   if (selectedResourceHasExternalLock()) return "";
   const autoRun = detail.autoRun || null;
@@ -4746,7 +4774,7 @@ function autoRunComposerAction(options = {}) {
   const cancellableStates = ["queued", "running", "suspended", "paused"];
   if (!startableStates.includes(stateName) && !resumableStates.includes(stateName) && !cancellableStates.includes(stateName)) return "";
 
-  const liveRuns = state.agent.runs.filter((run) => run.resourceId === selected.id && isLiveAgentRun(run));
+  const liveRuns = state.agent.runs.filter((run) => run.resourceId === detail.id && isLiveAgentRun(run));
   const liveSession = liveRuns.some((run) =>
     run.status === "idle" && !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
   );
@@ -4781,49 +4809,25 @@ function autoRunComposerAction(options = {}) {
             : label;
     const disabled = starting || cancelling || Boolean(busyReason);
     const actionKind = isResume ? "resume" : "start";
-    const actionClass = labeled
-      ? `tty-primary-action tty-autorun-labeled-action tty-autorun-${actionKind}-action`
-      : `tty-composer-action tty-autorun-action tty-autorun-${actionKind}-action`;
     const visibleLabel = starting || cancelling ? pendingLabel : label;
     actions.push(`
-      <button type="button" id="autoRunStartButton" class="${actionClass}" data-autorun-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
-        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(actionKind)}${labeled ? `<span>${escapeHTML(visibleLabel)}</span>` : ""}
+      <button type="button" id="autoRunStartButton" class="autorun-bar-button autorun-bar-${actionKind}-action" data-autorun-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
+        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(actionKind)}<span>${escapeHTML(visibleLabel)}</span>
       </button>
     `);
   }
 
   if (cancellableStates.includes(stateName)) {
-    const cancelling = Boolean(state.agent.autoRunCancelling);
-    const label = cancelling ? "Cancelling AutoRun…" : "Cancel AutoRun";
-    const title = cancelling ? label : "Cancel AutoRun and keep the Agent Session open.";
-    const actionClass = labeled
-      ? "tty-primary-action tty-autorun-labeled-action tty-autorun-cancel-action"
-      : "tty-composer-action tty-autorun-action tty-autorun-cancel-action";
+    const pending = Boolean(state.agent.autoRunCancelling);
+    const label = pending ? "Cancelling AutoRun…" : "Cancel AutoRun";
+    const title = pending ? label : "Cancel AutoRun and keep the Agent Session open.";
     actions.push(`
-      <button type="button" id="autoRunCancelButton" class="${actionClass}" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${cancelling ? " disabled aria-busy=\"true\"" : ""}>
-        ${cancelling ? icon("loader-circle") : autoRunActionIcon("cancel")}${labeled ? `<span>${escapeHTML(label)}</span>` : ""}
+      <button type="button" id="autoRunCancelButton" class="autorun-bar-button autorun-bar-cancel-action" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${pending ? " disabled aria-busy=\"true\"" : ""}>
+        ${pending ? icon("loader-circle") : autoRunActionIcon("cancel")}<span>${escapeHTML(label)}</span>
       </button>
     `);
   }
   return actions.join("");
-}
-
-// autoRunComposerKey is the render-cache signature of the composer AutoRun
-// action, appended to every composer key so state transitions re-render it.
-function autoRunComposerKey() {
-  const selected = findResource(state.selectedId);
-  const detail = selected ? (state.details[selected.id] || selected) : null;
-  const resourceLockKey = selectedResourceLockComposerKey();
-  if (!detail || detail.type !== "task") return `${resourceLockKey}:no-task`;
-  const autoRun = detail.autoRun;
-  const liveRuns = state.agent.runs.filter((run) => run.resourceId === selected.id && isLiveAgentRun(run));
-  const reusable = liveRuns.some((run) =>
-    run.status === "idle" && !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
-  );
-  const sessionKey = reusable
-    ? "idle"
-    : liveRuns.some((run) => run.status !== "idle" || run.schedulerTurn) ? "busy" : "no-session";
-  return `${resourceLockKey}:${autoRun?.state || "none"}:${autoRun?.generation || 0}:${sessionKey}:${state.agent.autoRunStarting ? "starting" : "idle"}:${state.agent.autoRunCancelling ? "cancelling" : "idle"}`;
 }
 
 function selectedResourceLockComposerKey() {
@@ -4866,6 +4870,7 @@ async function startChatAutoRun(options = {}) {
       throw new Error("Select an agent to start or resume AutoRun without an active session.");
     }
     state.agent.autoRunStarting = true;
+    renderAgent();
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
@@ -4901,6 +4906,7 @@ async function startChatAutoRun(options = {}) {
       }
     } finally {
       state.agent.autoRunStarting = false;
+      renderAgent();
       renderTTYComposer();
       bindAgentEvents();
       refreshIcons();
@@ -5719,18 +5725,15 @@ function bindAgentEvents() {
     bindAgentEvents();
     refreshIcons();
   };
-  document.querySelectorAll("[data-autorun-toggle]").forEach((heading) => {
-    const toggle = (event) => {
-      if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ") return;
+  document.querySelectorAll("[data-autorun-toggle]").forEach((toggle) => {
+    toggle.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       state.agent.autoRunExpanded = !state.agent.autoRunExpanded;
       renderAgent();
       bindAgentEvents();
       refreshIcons();
-    };
-    heading.addEventListener("click", toggle);
-    heading.addEventListener("keydown", toggle);
+    });
   });
   document.querySelectorAll("[data-agent-run]").forEach((button) => {
     button.addEventListener("click", (event) => {

@@ -258,7 +258,7 @@ func TestExternalResourceLockComposerProtection(t *testing.T) {
 		`session.source === "external"`,
 		`function externalResourceLockNotice()`,
 		`function agentComposerActions(options = {})`,
-		`function agentComposerToolbarActions(options = {})`,
+		`function autoRunBarActions(detail) {`,
 		`if (externalResourceLocked)`,
 		`id="agentCloseSessionButton"`,
 		`Close session; end the entire AgentHub Session.`,

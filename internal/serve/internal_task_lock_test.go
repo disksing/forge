@@ -63,7 +63,6 @@ function enabledAgentConfigs() { return state.config.agents.filter((agent) => ag
 function selectedAgentConfig() { return enabledAgentConfigs()[0] || null; }
 function agentDisplayName(agent) { return agent?.name || agent?.id || "Agent"; }
 function agentConfigSummary() { return "AgentHub"; }
-function autoRunComposerAction() { return state.selectedId === "project1.task1" && !selectedResourceHasExternalLock() ? '<button id="autoRunStartButton">Start AutoRun</button>' : ''; }
 function externalResourceLockNotice() { return '<div id="externalLockNotice">This resource is locked by an external session.</div>'; }
 function icon() { return ""; }
 function escapeHTML(value) { return String(value ?? ""); }
@@ -75,11 +74,9 @@ function isLiveAgentRun() { return false; }
 ` + extract("selectedResourceHasInternalLock") + `
 ` + extract("selectedResourceHasNewSessionLock") + `
 ` + extract("sessionControlComposerActions") + `
-` + extract("agentComposerToolbarActions") + `
 ` + extract("closeNewSessionChooserForResourceLock") + `
 ` + extract("agentComposerActions") + `
 ` + extract("selectedResourceLockComposerKey") + `
-` + extract("autoRunComposerKey") + `
 function assert(condition, message) { if (!condition) throw new Error(message); }
 function lockedSession(id, source, status, resourceId = "project1.task1") {
   return { id, source, agentRunStatus: status, controls: [{ resourceId }] };
@@ -88,10 +85,10 @@ function composer() {
   return agentComposerActions({ includeClose: true, collapsible: true });
 }
 function toolbar() {
-  return agentComposerToolbarActions({ includeEndTurn: true, includeClose: true, includeAutoRun: true });
+  return sessionControlComposerActions({ includeEndTurn: true, includeClose: true });
 }
 const statuses = ["starting", "running", "waiting_approval", "idle", "stopping", "recovering", "unknown"];
-for (const [resourceId, hasAutoRun] of [["project1.task1", true], ["project1", false]]) {
+for (const resourceId of ["project1.task1", "project1"]) {
   for (const status of statuses) {
     state.selectedId = resourceId;
     state.tree.sessions = [lockedSession(resourceId + "-internal-" + status, "internal", status, resourceId)];
@@ -101,7 +98,7 @@ for (const [resourceId, hasAutoRun] of [["project1.task1", true], ["project1", f
     assert(!html.includes('id="agentStartButton"'), resourceId + " " + status + " internal lock must hide New Session");
     assert(!html.includes("ttyAgentMenu"), resourceId + " " + status + " internal lock must hide the open Agent chooser");
     assert(!html.includes('id="autoRunStartButton"'), resourceId + " " + status + " bottom actions must not render AutoRun");
-    assert(toolbar().includes('id="autoRunStartButton"') === hasAutoRun, resourceId + " " + status + " toolbar AutoRun rendering mismatch");
+    assert(!toolbar().includes('id="autoRunStartButton"'), resourceId + " " + status + " composer toolbar must not render AutoRun");
     assert(!html.includes('id="agentCloseSessionButton"'), resourceId + " " + status + " must not duplicate Close Session in bottom actions");
     assert(toolbar().includes('id="agentCloseSessionButton"'), resourceId + " " + status + " toolbar must preserve Close Session");
     assert(!state.agent.agentChooserOpen, resourceId + " " + status + " internal lock must close the chooser state");
@@ -122,7 +119,7 @@ closeNewSessionChooserForResourceLock();
 const externalHTML = composer();
 assert(!externalHTML.includes('id="agentStartButton"'), "external lock must keep New Session hidden");
 assert(externalHTML.includes("externalLockNotice"), "external lock must keep its dedicated notice");
-assert(!toolbar().includes('id="autoRunStartButton"'), "an external task lock must hide AutoRun from the toolbar");
+assert(!toolbar().includes('id="autoRunStartButton"'), "an external task lock must not render AutoRun in the composer toolbar");
 assert(!state.agent.agentChooserOpen, "external lock must close the chooser state");
 
 state.tree.sessions = [lockedSession("internal", "internal", "idle"), lockedSession("external", "external", "running")];
@@ -156,7 +153,7 @@ assert(!projectExternalHTML.includes('id="agentStartButton"'), "an external proj
 assert(projectExternalHTML.includes("externalLockNotice"), "an external project lock must keep its dedicated notice");
 assert(!projectExternalHTML.includes('id="agentCloseSessionButton"'), "an external project lock must not duplicate Close Session in bottom actions");
 assert(toolbar().includes('id="agentCloseSessionButton"'), "an external project lock must preserve Close Session in the toolbar");
-assert(!toolbar().includes('id="autoRunStartButton"'), "an external project lock must hide AutoRun from the toolbar");
+assert(!toolbar().includes('id="autoRunStartButton"'), "an external project lock must not render AutoRun in the composer toolbar");
 assert(!projectExternalHTML.includes("This task"), "an external project lock must not call the resource a task");
 assert(!state.agent.agentChooserOpen, "an external project lock must close the chooser state");
 
@@ -165,21 +162,21 @@ assert(composer().includes('id="agentStartButton"'), "workspace resources must n
 
 state.selectedId = "project1.task1";
 state.tree.sessions = [];
-const unlockedKey = autoRunComposerKey();
+const unlockedKey = selectedResourceLockComposerKey();
 state.tree.sessions = [lockedSession("internal-key", "internal", "idle")];
-const lockedKey = autoRunComposerKey();
+const lockedKey = selectedResourceLockComposerKey();
 assert(unlockedKey !== lockedKey, "composer cache key must change when an internal lock appears");
 state.tree.sessions = [];
-assert(autoRunComposerKey() === unlockedKey, "composer cache key must recover after an internal lock is released");
+assert(selectedResourceLockComposerKey() === unlockedKey, "composer cache key must recover after an internal lock is released");
 
 state.selectedId = "project1";
 state.tree.sessions = [];
-const unlockedProjectKey = autoRunComposerKey();
+const unlockedProjectKey = selectedResourceLockComposerKey();
 state.tree.sessions = [lockedSession("internal-project-key", "internal", "idle", "project1")];
-const lockedProjectKey = autoRunComposerKey();
+const lockedProjectKey = selectedResourceLockComposerKey();
 assert(unlockedProjectKey !== lockedProjectKey, "composer cache key must include a Project internal lock");
 state.tree.sessions = [];
-assert(autoRunComposerKey() === unlockedProjectKey, "Project composer cache key must recover after lock release");
+assert(selectedResourceLockComposerKey() === unlockedProjectKey, "Project composer cache key must recover after lock release");
 `
 
 	testFile := filepath.Join(t.TempDir(), "internal-task-lock-composer.js")
