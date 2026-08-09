@@ -390,4 +390,4 @@ FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 
 ## License
 
-[MIT](LICENSE)
+[BSD 3-Clause License](LICENSE)
