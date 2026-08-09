@@ -840,9 +840,13 @@ body.resizing-y {
   justify-content: space-between;
 }
 
+.template-preview-actions[hidden] {
+  display: none;
+}
+
 .template-preview {
-  max-height: 17rem;
-  overflow: auto;
+  display: grid;
+  gap: 0.5rem;
   padding: 0.85rem;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -850,7 +854,64 @@ body.resizing-y {
 }
 
 .template-preview h4 {
-  margin: 0 0 0.65rem;
+  margin: 0;
+}
+
+.create-dialog-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.create-dialog-tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  padding: 6px 12px;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.create-dialog-tab:hover {
+  color: var(--text);
+}
+
+.create-dialog-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.create-task-preview-pane {
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+
+.create-task-preview-editor {
+  width: 100%;
+  min-height: 240px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.create-task-preview-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.create-task-preview-error {
+  margin: 0;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  background: #fef2f2;
+  padding: 9px 11px;
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .template-row.invalid {
