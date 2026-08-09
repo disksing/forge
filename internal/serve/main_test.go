@@ -591,6 +591,107 @@ func TestAgentHubSettingsReplaceLocalProviderEditors(t *testing.T) {
 	}
 }
 
+func TestBrowserLocalUserSettingsAndMessagePresentation(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	for _, want := range []string{
+		`settingsTabButton("user", "user-round", "User")`,
+		`function settingsUserPanel()`,
+		`id="settingsUserForm"`,
+		`id="settingsUserName"`,
+		`window.localStorage.setItem(USER_SETTINGS_KEY`,
+		`userName: currentUserName()`,
+		`const roleTag = !isAssistant ?`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("browser-local User UI is missing %q", want)
+		}
+	}
+	if got := strings.Count(source, `userName: currentUserName()`); got != 2 {
+		t.Fatalf("user name must be attached to initial and follow-up message requests; got %d call sites", got)
+	}
+
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is required for browser-local User settings tests")
+	}
+	script := `
+const fs = require("node:fs");
+const vm = require("node:vm");
+const source = fs.readFileSync(process.argv[1], "utf8");
+function extract(name) {
+  const marker = "function " + name + "(";
+  const start = source.indexOf(marker);
+  if (start < 0) throw new Error("missing " + name);
+  const open = source.indexOf("{", start);
+  let depth = 0;
+  for (let index = open; index < source.length; index++) {
+    if (source[index] === "{") depth++;
+    if (source[index] === "}") {
+      depth--;
+      if (depth === 0) return source.slice(start, index + 1);
+    }
+  }
+  throw new Error("unterminated " + name);
+}
+const constantsStart = source.indexOf("const USER_SETTINGS_KEY");
+const constantsEnd = source.indexOf("const NOTIFICATION_MAX_SEEN", constantsStart);
+if (constantsStart < 0 || constantsEnd < 0) throw new Error("User settings constants are missing");
+const helperSource = [
+  "normalizeUserName", "decodeStoredUserName", "readStoredUserName",
+  "currentUserName", "saveStoredUserName", "installUserSettingsCrossTabListener",
+].map(extract).join("\n");
+const data = new Map();
+let failStorage = false;
+const storage = {
+  getItem(key) { if (failStorage) throw new Error("blocked"); return data.get(key) ?? null; },
+  setItem(key, value) { if (failStorage) throw new Error("blocked"); data.set(key, String(value)); },
+};
+let storageListener = null;
+let renderCount = 0;
+const state = { user: { name: "User" }, settings: { open: false, tab: "workspace" } };
+const context = {
+  state,
+  window: {
+    localStorage: storage,
+    addEventListener(type, listener) { if (type === "storage") storageListener = listener; },
+  },
+  renderSettingsModal() { renderCount++; },
+};
+vm.createContext(context);
+vm.runInContext(source.slice(constantsStart, constantsEnd) + helperSource, context);
+function assert(condition, message) { if (!condition) throw new Error(message); }
+assert(context.normalizeUserName("  ") === "User", "blank name should use the default");
+assert(context.normalizeUserName("  Ada Lovelace  ") === "Ada Lovelace", "name should be trimmed");
+assert(Array.from(context.normalizeUserName("名".repeat(85))).length === 80, "Unicode names should be limited by code point");
+assert(context.decodeStoredUserName("not-json") === "User", "corrupt storage should use the default");
+assert(context.decodeStoredUserName(JSON.stringify({ version: 9, name: "Wrong" })) === "User", "unknown storage versions should use the default");
+assert(context.saveStoredUserName("  Grace Hopper  ") === true, "valid name should save");
+assert(state.user.name === "Grace Hopper" && context.currentUserName() === "Grace Hopper", "saved name should update live state");
+assert(context.readStoredUserName() === "Grace Hopper", "saved name should round-trip");
+failStorage = true;
+assert(context.saveStoredUserName("Blocked") === false, "storage failures should be contained");
+assert(state.user.name === "Grace Hopper", "failed storage must not replace live state");
+assert(context.readStoredUserName() === "User", "read failures should use the default");
+failStorage = false;
+context.installUserSettingsCrossTabListener();
+assert(typeof storageListener === "function", "cross-tab storage listener was not installed");
+state.settings = { open: true, tab: "user" };
+storageListener({ key: "forge.gui.user.v1", newValue: JSON.stringify({ version: 1, name: "Katherine Johnson" }) });
+assert(state.user.name === "Katherine Johnson", "cross-tab update did not refresh the user name");
+assert(renderCount === 1, "open User settings should refresh after a cross-tab update");
+storageListener({ key: "forge.gui.user.v1", newValue: null });
+assert(state.user.name === "User", "cross-tab deletion should restore the default");
+`
+	appPath := frontendAssetPath("app.js")
+	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
+		t.Fatalf("browser-local User settings test failed: %v\n%s", err, output)
+	}
+}
+
 func TestBackgroundRenderPreservesOpenSettingsModal(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
@@ -1358,6 +1459,7 @@ async function api(path, options = {}) {
   if (path.endsWith("/agent/runs") && options.method === "POST") {
     const request = JSON.parse(options.body);
     assert(request.resourceId === "project1", "project session used the wrong resource id");
+    assert(request.userName === "Ada Lovelace", "project session omitted the browser-local user name");
     return { run: { id: "run-new" } };
   }
   throw new Error("unexpected API request " + path);
@@ -1392,6 +1494,7 @@ function findResource(id) { return id === "project1" ? { id, title: "Forge", pat
 function selectedAgentConfig() { return { id: "agent-one" }; }
 function workspaceName() { return "Workspace"; }
 function agentDefaultCwd() { return "project1-forge"; }
+function currentUserName() { return "Ada Lovelace"; }
 async function loadAgentRuns() { state.agent.runs = await fetchAgentRuns(); }
 function toast() {}
 ` + autoRefreshSource + treeRefreshSource + startRunSource + `
@@ -2678,6 +2781,7 @@ function findResource(id) { return id === "project1" ? { id, title: "Forge", pat
 function agentDefaultCwd() { return "/tmp/project1"; }
 function workspaceName() { return "Workspace"; }
 function mutateAgentSession(action) { return action(); }
+function currentUserName() { return "Ada Lovelace"; }
 function renderTTYComposer() {}
 function bindAgentEvents() {}
 function refreshIcons() {}
@@ -2692,6 +2796,7 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
   await Promise.resolve();
   assert(apiCalls.length === 1, "first Agent choice should issue one request");
   assert(apiCalls[0].agentName === "agent-two", "request must use the clicked Agent");
+  assert(apiCalls[0].userName === "Ada Lovelace", "request must include the browser-local user name");
   assert(state.agent.newSessionStarting, "Session creation should expose a pending state");
   const duplicate = startAgentRun("agent-one");
   assert(await duplicate === undefined, "a second click must be ignored while creating");
@@ -3019,8 +3124,10 @@ const context = {};
 vm.createContext(context);
 vm.runInContext(extract("agentMessageSenderName"), context);
 const cases = [
-  [{ role: "user" }, "You"],
-  [{ role: "user", steer: true }, "You"],
+  [{ role: "user" }, "User"],
+  [{ role: "user", steer: true }, "User"],
+  [{ role: "user", sender: { name: "Ada Lovelace" } }, "Ada Lovelace"],
+  [{ role: "user", sender: { id: "user-7" } }, "user-7"],
   [{ role: "system", sender: { name: "Forge Scheduler" } }, "Forge Scheduler"],
   [{ role: "system" }, "System"],
   [{ role: "agent", sender: { name: "Review Agent", sessionId: "ses_1" } }, "Review Agent"],

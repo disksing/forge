@@ -37,6 +37,7 @@ type runtimeFakeAgentHub struct {
 	stopHook           func(string)
 	messageSteers      []bool
 	messageRoles       []string
+	messageSenders     []*agentHubMessageSender
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
@@ -113,6 +114,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.mu.Lock()
 		f.messageSteers = append(f.messageSteers, body.Steer)
 		f.messageRoles = append(f.messageRoles, body.Role)
+		f.messageSenders = append(f.messageSenders, body.Sender)
 		f.appendLocked(id, "message.input", fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
@@ -575,6 +577,86 @@ func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWor
 	request := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(body))
 	manager.handle(recorder, request, workspace.ID, []string{"runs", runID, "input"})
 	return recorder
+}
+
+func TestAgentHubManualMessagesCarryBrowserUserProvenance(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"hello","userName":"  Ada Lovelace  "}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	fake.mu.Lock()
+	initialEvents := append([]agentHubEvent(nil), fake.events[detail.Run.AgentHubSessionID]...)
+	fake.mu.Unlock()
+	var initial agentHubEvent
+	for _, event := range initialEvents {
+		if event.Type == "message.input" && fakeEventText(event) == "hello" {
+			initial = event
+			break
+		}
+	}
+	if initial.Type == "" || fakeEventRole(initial) != "user" || fakeEventSenderName(initial) != "Ada Lovelace" {
+		t.Fatalf("initial user provenance = role %q sender %q; events=%#v", fakeEventRole(initial), fakeEventSenderName(initial), initialEvents)
+	}
+	storedRuns, err := loadAgentRuns(workspace.Path)
+	if err != nil || len(storedRuns) != 1 {
+		t.Fatalf("load stored runs: runs=%#v err=%v", storedRuns, err)
+	}
+	storedJSON, err := json.Marshal(storedRuns[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(storedJSON), "Ada Lovelace") {
+		t.Fatalf("browser-local user name leaked into persisted run: %s", storedJSON)
+	}
+
+	for _, input := range []struct {
+		body string
+		name string
+	}{
+		{body: `{"text":"named follow-up","userName":"Grace Hopper"}`, name: "Grace Hopper"},
+		{body: `{"text":"default follow-up"}`, name: "User"},
+	} {
+		response := sendRuntimeAgentInput(t, manager, workspace, detail.Run.ID, input.body)
+		if response.Code != http.StatusOK {
+			t.Fatalf("input failed: %d %s", response.Code, response.Body.String())
+		}
+		fake.mu.Lock()
+		role := fake.messageRoles[len(fake.messageRoles)-1]
+		sender := fake.messageSenders[len(fake.messageSenders)-1]
+		fake.mu.Unlock()
+		if role != "user" || sender == nil || sender.Name != input.name {
+			t.Fatalf("follow-up provenance = role %q sender %#v; want user/%q", role, sender, input.name)
+		}
+	}
+
+	if response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID); response.Code != http.StatusOK {
+		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestNormalizeAgentHubUserName(t *testing.T) {
+	longName := strings.Repeat("名", agentHubUserNameMaxLength+5)
+	for _, test := range []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "missing", want: "User"},
+		{name: "blank", in: "  \n ", want: "User"},
+		{name: "trim", in: "  Ada Lovelace  ", want: "Ada Lovelace"},
+		{name: "unicode limit", in: longName, want: strings.Repeat("名", agentHubUserNameMaxLength)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := normalizeAgentHubUserName(test.in); got != test.want {
+				t.Fatalf("normalizeAgentHubUserName(%q) = %q, want %q", test.in, got, test.want)
+			}
+		})
+	}
 }
 
 func TestAgentHubChatInputResumesExactSuspendedSelfDrivingGeneration(t *testing.T) {

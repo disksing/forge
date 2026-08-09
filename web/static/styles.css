@@ -4846,6 +4846,7 @@ i[data-lucide] {
 }
 
 .settings-path-form input,
+.settings-user-form input,
 .settings-agent-panel input,
 .settings-agent-panel select {
   height: 36px;
@@ -4859,6 +4860,7 @@ i[data-lucide] {
 }
 
 .settings-path-form input:focus,
+.settings-user-form input:focus,
 .settings-agent-panel input:focus,
 .settings-agent-panel select:focus {
   border-color: #2563eb;
@@ -4902,6 +4904,33 @@ i[data-lucide] {
 .settings-check input {
   width: 14px;
   height: 14px;
+}
+
+.settings-user-form {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.settings-user-form label {
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.settings-user-form input {
+  width: 100%;
+}
+
+.settings-user-form small {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-user-form .settings-form-actions {
+  justify-content: flex-start;
+  margin-top: 4px;
 }
 
 .settings-list {

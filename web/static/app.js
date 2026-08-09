@@ -46,6 +46,9 @@ const state = {
       agentName: "",
     },
   },
+  user: {
+    name: "User",
+  },
   notifications: {
     ready: false,
     workspaceId: "",
@@ -183,6 +186,9 @@ const AGENT_DRAFT_STORAGE_VERSION = 1;
 const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
 const NOTIFICATION_SETTINGS_KEY = `${NOTIFICATION_STORAGE_PREFIX}.settings`;
 const NOTIFICATION_STORE_VERSION = 1;
+const USER_SETTINGS_KEY = "forge.gui.user.v1";
+const USER_SETTINGS_VERSION = 1;
+const USER_NAME_MAX_LENGTH = 80;
 const NOTIFICATION_MAX_SEEN = 2000;
 const NOTIFICATION_MAX_UNREAD = 200;
 const NOTIFICATION_MAX_EFFECTS = 2000;
@@ -226,6 +232,54 @@ function notificationStorage() {
   } catch (_) {
     return null;
   }
+}
+
+function normalizeUserName(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "User";
+  return Array.from(trimmed).slice(0, USER_NAME_MAX_LENGTH).join("") || "User";
+}
+
+function decodeStoredUserName(raw) {
+  if (!raw) return "User";
+  try {
+    const stored = JSON.parse(raw);
+    if (!stored || stored.version !== USER_SETTINGS_VERSION) return "User";
+    return normalizeUserName(stored.name);
+  } catch (_) {
+    return "User";
+  }
+}
+
+function readStoredUserName() {
+  try {
+    return decodeStoredUserName(window.localStorage.getItem(USER_SETTINGS_KEY));
+  } catch (_) {
+    return "User";
+  }
+}
+
+function currentUserName() {
+  return normalizeUserName(state.user?.name);
+}
+
+function saveStoredUserName(value) {
+  const name = normalizeUserName(value);
+  try {
+    window.localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({ version: USER_SETTINGS_VERSION, name }));
+  } catch (_) {
+    return false;
+  }
+  state.user.name = name;
+  return true;
+}
+
+function installUserSettingsCrossTabListener() {
+  window.addEventListener("storage", (event) => {
+    if (event.key !== USER_SETTINGS_KEY) return;
+    state.user.name = decodeStoredUserName(event.newValue);
+    if (state.settings.open && state.settings.tab === "user") renderSettingsModal();
+  });
 }
 
 function notificationStateKey(workspaceId = state.notifications.workspaceId) {
@@ -5135,6 +5189,7 @@ function renderSettingsModal() {
       <aside class="settings-tabs">
         <div class="settings-title">System Settings</div>
         ${settingsTabButton("workspace", "hard-drive", "Workspace")}
+        ${settingsTabButton("user", "user-round", "User")}
         ${settingsTabButton("agenthub", "network", "AgentHub")}
         ${settingsTabButton("profiles", "route", "Profiles")}
         ${settingsTabButton("notifications", "bell", "Notifications")}
@@ -5162,10 +5217,32 @@ function settingsTabButton(id, iconName, label) {
 }
 
 function settingsActivePanel(data) {
+  if (state.settings.tab === "user") return settingsUserPanel();
   if (state.settings.tab === "agenthub") return settingsAgentHubPanel(data);
   if (state.settings.tab === "profiles") return settingsProfilesPanel(data);
   if (state.settings.tab === "notifications") return settingsNotificationsPanel();
   return settingsWorkspacePanel(data);
+}
+
+function settingsUserPanel() {
+  return `
+    <div class="settings-panel settings-user-panel" data-settings-section="user">
+      <div class="settings-panel-header">
+        <h2>User</h2>
+        <p>Your name belongs to this browser and device. Forge sends it with your messages, but never stores it in the workspace or server settings.</p>
+      </div>
+      <section class="settings-agent-section">
+        <form id="settingsUserForm" class="settings-user-form">
+          <label for="settingsUserName">Name</label>
+          <input id="settingsUserName" value="${escapeHTML(currentUserName())}" maxlength="${USER_NAME_MAX_LENGTH}" autocomplete="name" placeholder="User" />
+          <small>Messages are identified as this name with the USER role. Leaving the field empty restores the default name, User.</small>
+          <div class="settings-form-actions">
+            <button type="submit">${icon("save")}<span>Save</span></button>
+          </div>
+        </form>
+      </section>
+    </div>
+  `;
 }
 
 function settingsNotificationsPanel() {
@@ -5404,6 +5481,17 @@ function bindSettingsEvents() {
     event.preventDefault();
     submitSettingsWorkspace().catch((err) => toast(err.message));
   });
+  $("settingsUserForm")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const name = normalizeUserName($("settingsUserName")?.value);
+    if (!saveStoredUserName(name)) {
+      toast("User name could not be saved in this browser.");
+      return;
+    }
+    const input = $("settingsUserName");
+    if (input) input.value = name;
+    toast(name === "User" ? "User name reset to User." : `User name saved as ${name}.`);
+  });
   document.querySelectorAll("[data-remove-workspace]").forEach((button) => {
     button.addEventListener("click", () => removeSettingsWorkspace(button.dataset.removeWorkspace).catch((err) => toast(err.message)));
   });
@@ -5449,7 +5537,7 @@ function agentTimelineItemRow(item, index, items) {
       ? `<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`
       : `<p>${escapeHTML(item.text)}</p>`;
     const steerTag = item.steer ? `<span class="agent-message-tag">steer</span>` : "";
-    const roleTag = role === "system" || role === "agent" ? `<span class="agent-message-tag agent-message-role-tag">${role}</span>` : "";
+    const roleTag = !isAssistant ? `<span class="agent-message-tag agent-message-role-tag">${role}</span>` : "";
     const sourceSession = role === "agent" && item.sender?.sessionId
       ? `<span class="agent-message-source" title="${escapeHTML(item.sender.sessionId)}">from session ${escapeHTML(item.sender.sessionId)}</span>`
       : "";
@@ -5607,7 +5695,8 @@ function agentMessageSenderName(item) {
     if (name) return name;
     return item.role === "system" ? "System" : "Agent";
   }
-  return "You";
+  const name = String(item.sender?.name || item.sender?.id || "").trim();
+  return name || "User";
 }
 
 function agentClockTime(value) {
@@ -5793,6 +5882,7 @@ async function startAgentRun(agentName = "") {
         method: "POST",
         body: JSON.stringify({
           agentName: agent.id,
+          userName: currentUserName(),
           resourceId: selected?.id || "",
           title: selected?.title || workspaceName(),
           prompt: "",
@@ -5852,7 +5942,7 @@ async function sendAgentInput(text) {
   const run = currentAgentRun();
   const projection = agentInputSelfDrivingProjection(run);
   const resumeSuspendedSelfDriving = agentInputResumeIntent(run);
-  const body = { text };
+  const body = { text, userName: currentUserName() };
   if (projection) {
     Object.assign(body, projection);
     if (resumeSuspendedSelfDriving) {
@@ -7759,6 +7849,8 @@ document.addEventListener("click", (event) => {
 
 initPaneResize();
 installNotificationCrossTabListeners();
+state.user.name = readStoredUserName();
+installUserSettingsCrossTabListener();
 
 function flushAgentDraftOnPageLeave() {
   flushAgentDraft();

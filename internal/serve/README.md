@@ -22,7 +22,7 @@ Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpo
 
 ## 配置
 
-持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。每个 workspace 可保存一个可选的内置图标键；缺失、空值或未知值在界面中都回退为 Forge 默认图标，当前 workspace 的图标同时用于浏览器 favicon。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`、`scheduler`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。`scheduler` 是为未来调度工作预留的系统路由，当前不会自动启动 Scheduler Agent，也不会改变现有 Self-Driving 路由。可用环境变量：
+持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。每个 workspace 可保存一个可选的内置图标键；缺失、空值或未知值在界面中都回退为 Forge 默认图标，当前 workspace 的图标同时用于浏览器 favicon。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`、`scheduler`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。`scheduler` 是为未来调度工作预留的系统路由，当前不会自动启动 Scheduler Agent，也不会改变现有 Self-Driving 路由。Settings 的 `User` 页签另行把用户名保存在当前浏览器的 `localStorage` 中，不进入此配置或任何 Workspace、Task、Session 数据；空值、损坏数据和旧客户端请求都回退为 `User`，同源页面之间通过 storage event 同步。可用环境变量：
 
 - `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
 - `FORGE_GUI_CONFIG`：GUI 配置文件路径。
@@ -38,6 +38,8 @@ GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 �
 新 chat 和 Self-Driving 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。手动首次启动和新 generation 通过单个 `POST /api/workspaces/<id>/self-driving/start` 收集并持久化 `agentName`、`runInstructions` 和 `completionCriteria`；暂停或挂起恢复保留当前 generation 参数。若当前 Task 没有严格 idle 的可复用 AgentHub session，GUI Resume 必须打开明确的 Agent 选择框；当前 generation 保存且仍可用的 Agent 只能作为预选，用户确认后才恢复，不能读取其他 Task 的最近选择。Forge 在创建 Forge session 或推进 generation 前查询 AgentHub catalog，目标不可用时保持任务、session 和锁不变。
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
+
+浏览器在新 Session 的初始消息和后续 Chat 输入中都提交当前用户名。Forge 转发为 AgentHub provenance `role=user` 和 `sender.name=<用户名>`，timeline 使用该名字并附加 `USER` 标签；字段只描述消息来源，不参与认证或授权。Self-Driving 调度、定时唤醒和 continuation prompt 继续使用 `role=system`、`sender.name=Forge Scheduler`，不会继承浏览器用户名。
 
 当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New Session、Start/Resume Self-Driving 和 Resume Session 入口，并暂停输入与上传。外部锁释放后，下一次 tree 刷新恢复正常操作。服务端在创建/恢复 Session、发送输入和手动或调度 Self-Driving 的执行路径再次读取同一锁投影；页面过期或直接调用 API 只返回 conflict，不创建 AgentHub session、不推进 Self-Driving generation，也不发送消息。
 

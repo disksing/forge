@@ -109,6 +109,7 @@ var agentIndexMu sync.Mutex
 
 type startAgentRequest struct {
 	AgentName                        string `json:"agentName"`
+	UserName                         string `json:"userName,omitempty"`
 	AgentProfile                     string `json:"agentProfile,omitempty"`
 	AgentSelectionReason             string `json:"agentSelectionReason,omitempty"`
 	ResourceID                       string `json:"resourceId"`
@@ -131,6 +132,7 @@ type startAgentRequest struct {
 
 type agentInputRequest struct {
 	Text                          string `json:"text"`
+	UserName                      string `json:"userName,omitempty"`
 	ResourceID                    string `json:"resourceId,omitempty"`
 	SchedulerTurn                 bool   `json:"schedulerTurn,omitempty"`
 	SelfDrivingGeneration         int    `json:"selfDrivingGeneration,omitempty"`
@@ -858,7 +860,7 @@ func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
 	if client != nil && sessionID != "" {
 		// sendInput currently only delivers scheduler-turn continuation
 		// prompts, so the message is always system-originated.
-		role, sender := agentHubMessageProvenance(true)
+		role, sender := agentHubMessageProvenance(true, "")
 		message := agentHubInboundMessage{
 			Text: text, Steer: hubState == "busy" || hubState == "waiting_approval",
 			Role: role, Sender: sender,

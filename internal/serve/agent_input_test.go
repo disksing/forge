@@ -48,9 +48,10 @@ function findResource(id) { return id === task.id ? task : null; }
 function currentAgentRun() { return state.agent.runs.find((item) => item.id === state.agent.activeRunId) || null; }
 function isLiveAgentRun(item) { return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(item?.status); }
 function selectedResourceHasExternalLock() { return false; }
+function currentUserName() { return "Ada Lovelace"; }
 const EXTERNAL_RESOURCE_LOCK_MESSAGE = "external lock";
 async function api(path, options) { calls.push({ path, body: JSON.parse(options.body) }); return { status: "accepted" }; }
-const context = { state, findResource, currentAgentRun, isLiveAgentRun, selectedResourceHasExternalLock, EXTERNAL_RESOURCE_LOCK_MESSAGE, api };
+const context = { state, findResource, currentAgentRun, isLiveAgentRun, selectedResourceHasExternalLock, currentUserName, EXTERNAL_RESOURCE_LOCK_MESSAGE, api };
 vm.createContext(context);
 vm.runInContext(source.slice(start, end), context);
 function assert(condition, message) { if (!condition) throw new Error(message); }
@@ -61,12 +62,14 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
   assert(resumed.resourceId === task.id && resumed.selfDrivingProjectionSet === true, "resume request lacks resource projection");
   assert(resumed.expectedSelfDrivingGeneration === 7 && resumed.expectedSelfDrivingState === "suspended", "resume request lacks generation/state CAS");
   assert(resumed.resumeSuspendedSelfDriving === true && resumed.selfDrivingGeneration === 7, "resume intent was not sent");
+  assert(resumed.userName === "Ada Lovelace", "resume request lacks the browser-local user name");
 
   task.selfDriving.state = "paused";
   await context.sendAgentInput("ordinary paused chat");
   const ordinary = calls.pop().body;
   assert(ordinary.expectedSelfDrivingState === "paused", "paused projection was not sent");
   assert(!ordinary.resumeSuspendedSelfDriving, "paused chat must not request implicit resume");
+  assert(ordinary.userName === "Ada Lovelace", "ordinary chat request lacks the browser-local user name");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
 	appPath := frontendAssetPath("app.js")

@@ -212,7 +212,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		Title: run.Title, Cwd: run.Cwd, AgentName: agentName,
 		LaunchEnvironment: map[string]string{"FORGE_SESSION_ID": forgeSessionID},
 		Source:            &source,
-		InitialMessage:    agentHubInitialMessage(strings.TrimSpace(req.Prompt), req.SchedulerTurn),
+		InitialMessage:    agentHubInitialMessage(strings.TrimSpace(req.Prompt), req.SchedulerTurn, req.UserName),
 	})
 	if err != nil {
 		cleanup = false
@@ -244,24 +244,40 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
 }
 
-const agentHubSchedulerSenderName = "Forge Scheduler"
+const (
+	agentHubSchedulerSenderName = "Forge Scheduler"
+	agentHubDefaultUserName     = "User"
+	agentHubUserNameMaxLength   = 80
+)
+
+func normalizeAgentHubUserName(value string) string {
+	name := strings.TrimSpace(value)
+	if name == "" {
+		return agentHubDefaultUserName
+	}
+	runes := []rune(name)
+	if len(runes) > agentHubUserNameMaxLength {
+		name = string(runes[:agentHubUserNameMaxLength])
+	}
+	return name
+}
 
 // agentHubMessageProvenance maps a Forge-internal sender onto the AgentHub
 // provenance role. Scheduler turns (Self-Driving dispatch, timed wake and
 // continuation prompts) are system-originated; everything else is ordinary
 // user input. The role records provenance only, never a privilege level.
-func agentHubMessageProvenance(schedulerTurn bool) (string, *agentHubMessageSender) {
-	if !schedulerTurn {
-		return "", nil
+func agentHubMessageProvenance(schedulerTurn bool, userName string) (string, *agentHubMessageSender) {
+	if schedulerTurn {
+		return "system", &agentHubMessageSender{Name: agentHubSchedulerSenderName}
 	}
-	return "system", &agentHubMessageSender{Name: agentHubSchedulerSenderName}
+	return "user", &agentHubMessageSender{Name: normalizeAgentHubUserName(userName)}
 }
 
-func agentHubInitialMessage(text string, schedulerTurn bool) *agentHubInboundMessage {
+func agentHubInitialMessage(text string, schedulerTurn bool, userName string) *agentHubInboundMessage {
 	if text == "" {
 		return nil
 	}
-	role, sender := agentHubMessageProvenance(schedulerTurn)
+	role, sender := agentHubMessageProvenance(schedulerTurn, userName)
 	return &agentHubInboundMessage{Text: text, Role: role, Sender: sender}
 }
 
@@ -545,7 +561,7 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 	if resumed {
 		steer = false
 	}
-	role, sender := agentHubMessageProvenance(req.SchedulerTurn)
+	role, sender := agentHubMessageProvenance(req.SchedulerTurn, req.UserName)
 	session, err := client.Message(r.Context(), run.AgentHubSessionID, agentHubInboundMessage{
 		Text: text, Steer: steer, Role: role, Sender: sender,
 	})
@@ -1461,7 +1477,7 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 			Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
 			LaunchEnvironment: map[string]string{"FORGE_SESSION_ID": run.ForgeSessionID},
 			Source:            &source,
-			InitialMessage:    agentHubInitialMessage(run.PendingInitialMessage, run.SchedulerTurn),
+			InitialMessage:    agentHubInitialMessage(run.PendingInitialMessage, run.SchedulerTurn, ""),
 		})
 		if createErr != nil {
 			m.markAgentRunRecovering(workspace, run)
