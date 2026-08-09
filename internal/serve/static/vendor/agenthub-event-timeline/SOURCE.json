@@ -4,8 +4,8 @@
   "version": "1.0.0",
   "apiEventContractVersion": "agenthub.api.v1",
   "repository": "https://github.com/disksing/agenthub",
-  "revision": "a34d8b009c5278d8aa50fcd637ec1d9005bacc28",
+  "revision": "e48ab944c4709501ef666212b50df04cae539fd7",
   "artifact": "event-timeline.iife.js",
-  "sha256": "f8b1fa87df04394f617b0ae129c4991f8f401142ebc15a98433dfc184f2ee8eb",
+  "sha256": "3b7c02d4e9e1afa9216d5979f677174175c022d9cc2df8eadedc79e7798bab78",
   "license": "BSD-3-Clause"
 }
