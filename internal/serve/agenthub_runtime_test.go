@@ -28,6 +28,7 @@ type runtimeFakeAgentHub struct {
 	gapAfter           int64
 	failEvents         bool
 	stopAtStopping     bool
+	failNextStop       bool
 	failNextInterrupt  bool
 	failNextResume     bool
 	failNextMessage    bool
@@ -38,6 +39,7 @@ type runtimeFakeAgentHub struct {
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
+	stopCalls          int
 	eventsAttempts     int
 	eventsCalls        int
 	streamCalls        int
@@ -189,6 +191,18 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 				"code": "interrupt_unknown", "message": "synthetic interrupt failure",
 			}})
 			return
+		}
+		if action == "stop" {
+			f.stopCalls++
+			if f.failNextStop {
+				f.failNextStop = false
+				f.mu.Unlock()
+				w.WriteHeader(http.StatusBadGateway)
+				writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+					"code": "stop_outcome_unknown", "message": "synthetic ambiguous stop failure",
+				}})
+				return
+			}
 		}
 		f.actions = append(f.actions, action)
 		session := f.sessions[id]

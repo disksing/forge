@@ -34,17 +34,21 @@ type agentRun struct {
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
-	PendingInitialMessage   string `json:"pendingInitialMessage,omitempty"`
-	Title                   string `json:"title"`
-	Cwd                     string `json:"cwd"`
-	Status                  string `json:"status"`
-	CreatedAt               string `json:"createdAt"`
-	UpdatedAt               string `json:"updatedAt"`
-	LastOutputAt            string `json:"lastOutputAt,omitempty"`
-	SchedulerTurn           bool   `json:"schedulerTurn,omitempty"`
-	AutoRunGeneration       int    `json:"autoRunGeneration,omitempty"`
-	SchedulerTurnID         string `json:"schedulerTurnId,omitempty"`
-	SchedulerTurnSequence   int    `json:"schedulerTurnSequence,omitempty"`
+	// ArchivedTaskStopRequested is a durable ambiguity guard for the
+	// reconciliation-owned stop action. It prevents a failed or interrupted
+	// request from being retried after a poll or Forge restart.
+	ArchivedTaskStopRequested bool   `json:"archivedTaskStopRequested,omitempty"`
+	PendingInitialMessage     string `json:"pendingInitialMessage,omitempty"`
+	Title                     string `json:"title"`
+	Cwd                       string `json:"cwd"`
+	Status                    string `json:"status"`
+	CreatedAt                 string `json:"createdAt"`
+	UpdatedAt                 string `json:"updatedAt"`
+	LastOutputAt              string `json:"lastOutputAt,omitempty"`
+	SchedulerTurn             bool   `json:"schedulerTurn,omitempty"`
+	AutoRunGeneration         int    `json:"autoRunGeneration,omitempty"`
+	SchedulerTurnID           string `json:"schedulerTurnId,omitempty"`
+	SchedulerTurnSequence     int    `json:"schedulerTurnSequence,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a

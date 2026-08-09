@@ -7,6 +7,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 // This file reconciles local run projections with AgentHub session state by
@@ -89,14 +91,36 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
+		forgeWorkspace, openErr := app.OpenWorkspace(workspace.Path)
+		if openErr != nil {
+			failures = append(failures, fmt.Sprintf("%s: inspect resources: %v", workspace.ID, openErr))
+			continue
+		}
 		runs, loadErr := loadAgentRuns(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue
 		}
+		taskArchiveStates := inspectTaskArchiveStates(forgeWorkspace, runs)
 		for _, run := range runs {
 			if !isAgentHubRun(run) {
 				continue
+			}
+			resourceID := strings.TrimSpace(run.ResourceID)
+			archiveState, isTask := taskArchiveStates[resourceID]
+			if isTask && archiveState.err != nil {
+				// A missing or unreadable resource is not proof that Forge
+				// intentionally reclaimed the task. Keep the AgentHub session
+				// open and surface the failed inspection instead.
+				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
+			} else if isTask && archiveState.archived {
+				// Reclaim only the session id already bound to this run. Source
+				// lookup is deliberately not used here: duplicate or stale
+				// external ids must never make archival stop the wrong session.
+				if session, found := byID[strings.TrimSpace(run.AgentHubSessionID)]; found &&
+					m.stopAgentHubSessionForArchivedTask(ctx, cfg, workspace, run, session, client) {
+					continue
+				}
 			}
 			m.reconcileAgentHubRun(ctx, workspace, run, byExternalID, byID, client)
 		}
@@ -105,6 +129,133 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 		return errors.New(strings.Join(failures, "; "))
 	}
 	return nil
+}
+
+type taskArchiveState struct {
+	archived bool
+	err      error
+}
+
+// inspectTaskArchiveStates batches resource inspection by project. Calling
+// ResourceValue for every retained run would repeatedly scan the same task
+// directory on every two-second poll, which gets expensive precisely when a
+// Workspace has accumulated many sessions.
+func inspectTaskArchiveStates(workspace *app.Workspace, runs []agentRun) map[string]taskArchiveState {
+	projectTasks := make(map[string]map[string]struct{})
+	for _, run := range runs {
+		if !isAgentHubRun(run) {
+			continue
+		}
+		resourceID := strings.TrimSpace(run.ResourceID)
+		projectID, _, isTask := strings.Cut(resourceID, ".task")
+		if !isTask || projectID == "" {
+			continue
+		}
+		if projectTasks[projectID] == nil {
+			projectTasks[projectID] = make(map[string]struct{})
+		}
+		projectTasks[projectID][resourceID] = struct{}{}
+	}
+
+	states := make(map[string]taskArchiveState)
+	for projectID, wanted := range projectTasks {
+		listed, err := workspace.Tasks(app.TaskListOptions{ProjectID: projectID, IncludeArchived: true})
+		if err != nil {
+			for resourceID := range wanted {
+				states[resourceID] = taskArchiveState{err: err}
+			}
+			continue
+		}
+		for resourceID := range wanted {
+			states[resourceID] = taskArchiveState{err: fmt.Errorf("resource not found: %s", resourceID)}
+		}
+		seen := make(map[string]bool)
+		for _, entry := range listed.Tasks {
+			resourceID := strings.TrimSpace(entry.Task.ID)
+			if _, ok := wanted[resourceID]; !ok {
+				continue
+			}
+			if seen[resourceID] {
+				states[resourceID] = taskArchiveState{err: fmt.Errorf("multiple task resources found: %s", resourceID)}
+				continue
+			}
+			seen[resourceID] = true
+			states[resourceID] = taskArchiveState{archived: entry.Archived}
+		}
+	}
+	return states
+}
+
+// stopAgentHubSessionForArchivedTask starts a single fail-closed stop for an
+// active AgentHub session whose owning Forge task is archived. It returns true
+// when normal reconciliation should be skipped for this poll.
+func (m *agentManager) stopAgentHubSessionForArchivedTask(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
+	if !activeAgentHubSessionState(session.State) || !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+		return false
+	}
+	rt := m.runtimeByID(run.ID)
+	if rt == nil {
+		rt = newAgentHubRuntime(m, workspace, run, client)
+		m.registerRuntime(rt)
+	}
+
+	rt.mu.Lock()
+	if rt.agentHubStopRequested || rt.run.ArchivedTaskStopRequested {
+		rt.mu.Unlock()
+		// An earlier request still has no durable terminal observation. Keep
+		// the run's stopping/recovering projection and do not let an active
+		// list result hide the ambiguous outcome.
+		return true
+	}
+	previous := rt.run
+	rt.run.Status = "stopping"
+	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+	rt.run.ArchivedTaskStopRequested = true
+	rt.agentHub = client
+	rt.agentHubStopRequested = true
+	updated := rt.run
+	rt.mu.Unlock()
+	if err := saveAgentRun(workspace.Path, updated); err != nil {
+		// Do not issue a non-idempotent stop unless the guard was persisted.
+		rt.mu.Lock()
+		rt.run = previous
+		rt.agentHubStopRequested = false
+		rt.mu.Unlock()
+		rt.addForgeNotice(m, "error", "agenthub/task-reclaim", fmt.Sprintf("persist archived-task session stop guard: %v", err))
+		return false
+	}
+
+	go func() {
+		stopped, err := client.Stop(ctx, session.ID)
+		if err != nil {
+			rt.setRecoveryError(m, fmt.Errorf("stop AgentHub session for archived task %s: %w", run.ResourceID, err))
+			return
+		}
+		if !agentHubSessionExactlyMatchesRun(cfg, run, stopped) {
+			rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source; stop outcome will not be retried", run.ResourceID))
+			return
+		}
+		rt.applyAgentHubSessionState(m, stopped)
+	}()
+	return true
+}
+
+func activeAgentHubSessionState(state string) bool {
+	switch state {
+	case "starting", "ready", "busy", "waiting_approval":
+		return true
+	default:
+		return false
+	}
+}
+
+func agentHubSessionExactlyMatchesRun(cfg config, run agentRun, session agentHubSession) bool {
+	sessionID := strings.TrimSpace(run.AgentHubSessionID)
+	externalID := strings.TrimSpace(run.SourceExternalID)
+	return sessionID != "" && externalID != "" && session.ID == sessionID && session.Source != nil &&
+		session.Source.App == agentHubSourceApp &&
+		session.Source.InstanceID == cfg.AgentHubInstanceID &&
+		session.Source.ExternalID == externalID
 }
 
 // reconcileAgentHubRun projects one AgentHub session onto a local run. Runs
@@ -173,6 +324,13 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
 		(session.State == "ready" || session.State == "stopped")
 	stoppedObserved := current.AgentHubStoppedObserved || session.State == "stopped"
+	archivedTaskStopRequested := current.ArchivedTaskStopRequested
+	if session.State == "stopped" {
+		// The durable terminal state resolves any ambiguity around the stop
+		// action. Clear the guard so an explicit out-of-band resume can be
+		// reclaimed again while the task remains archived.
+		archivedTaskStopRequested = false
+	}
 	if session.State == "ready" || session.State == "starting" {
 		// A resumed session proves the stopped observation is stale.
 		stoppedObserved = false
@@ -181,6 +339,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	updated := current
 	updated.Status = newStatus
 	updated.AgentHubStoppedObserved = stoppedObserved
+	updated.ArchivedTaskStopRequested = archivedTaskStopRequested
 	if strings.TrimSpace(session.ID) != "" {
 		if updated.CompletionSessionID != session.ID && !turnFinished {
 			// A new AgentHub session starts a new cursor. Baseline it unless
@@ -210,6 +369,9 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 	changed := updated != current
 	rt.run = updated
 	rt.agentHubState = session.State
+	if session.State == "stopped" {
+		rt.agentHubStopRequested = false
+	}
 	if rt.agentHub == nil {
 		rt.agentHub = client
 	}
@@ -295,6 +457,8 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	rt.run.Status = forgeStatusForAgentHubState(session.State)
 	if session.State == "stopped" {
 		rt.run.AgentHubStoppedObserved = true
+		rt.run.ArchivedTaskStopRequested = false
+		rt.agentHubStopRequested = false
 	}
 	if session.State == "ready" || session.State == "starting" {
 		// A resumed session proves the stopped observation is stale.

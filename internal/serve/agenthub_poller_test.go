@@ -112,6 +112,212 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
+func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-archived-task", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "ses_archived_task", SourceExternalID: workspace.ID + "/run-archived-task",
+		ForgeSessionID: "session-test", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_archived_task", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions["ses_archived_task"].State == "stopped"
+	})
+	fake.mu.Lock()
+	actions := append([]string(nil), fake.actions...)
+	fake.mu.Unlock()
+	if strings.Count(strings.Join(actions, ","), "stop") != 1 {
+		t.Fatalf("archived task must stop its AgentHub session exactly once: %#v", actions)
+	}
+	waitForRuntimeTest(t, func() bool {
+		run := pollerRunState(manager.runtimeByID("run-archived-task"))
+		return run.Status == "stopped" && run.AgentHubStoppedObserved && run.ForgeSessionID == ""
+	})
+}
+
+func TestAgentHubPollerKeepsSessionForOpenTask(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-open-task", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "ses_open_task", SourceExternalID: workspace.ID + "/run-open-task", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_open_task", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions["ses_open_task"].State != "ready" || len(fake.actions) != 0 {
+		t.Fatalf("open task session must remain ready: session=%#v actions=%#v", fake.sessions["ses_open_task"], fake.actions)
+	}
+}
+
+func TestAgentHubPollerDoesNotStopProjectSessionWhenProjectArchived(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-project", WorkspaceID: workspace.ID, ResourceID: "project1",
+		AgentHubSessionID: "ses_project", SourceExternalID: workspace.ID + "/run-project", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_project", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ArchiveResource("project1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions["ses_project"].State != "ready" || len(fake.actions) != 0 {
+		t.Fatalf("project-level session must not be reclaimed with task sessions: session=%#v actions=%#v", fake.sessions["ses_project"], fake.actions)
+	}
+}
+
+func TestAgentHubPollerDoesNotStopArchivedTaskSessionWithMismatchedSource(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := agentRun{
+		ID: "run-source-mismatch", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "ses_source_mismatch", SourceExternalID: workspace.ID + "/run-source-mismatch", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	seedPollerRun(t, fake, workspace, run, agentHubSession{
+		ID: "ses_source_mismatch", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z",
+		Source: &agentHubSource{App: agentHubSourceApp, InstanceID: "another-forge", ExternalID: run.SourceExternalID},
+	})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions["ses_source_mismatch"].State != "ready" || fake.stopCalls != 0 {
+		t.Fatalf("source mismatch must fail closed without stop: session=%#v stopCalls=%d", fake.sessions["ses_source_mismatch"], fake.stopCalls)
+	}
+}
+
+func TestAgentHubPollerDoesNotStopSessionForMissingTask(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-missing-task", WorkspaceID: workspace.ID, ResourceID: "project1.task99",
+		AgentHubSessionID: "ses_missing_task", SourceExternalID: workspace.ID + "/run-missing-task", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_missing_task", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+
+	if err := manager.pollAgentHubSessions(context.Background()); err == nil || !strings.Contains(err.Error(), "resource not found: project1.task99") {
+		t.Fatalf("missing task inspection error = %v", err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions["ses_missing_task"].State != "ready" || fake.stopCalls != 0 {
+		t.Fatalf("missing task must fail closed without stop: session=%#v stopCalls=%d", fake.sessions["ses_missing_task"], fake.stopCalls)
+	}
+}
+
+func TestAgentHubPollerDoesNotRetryAmbiguousArchivedTaskStop(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.failNextStop = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-stop-failure", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "ses_stop_failure", SourceExternalID: workspace.ID + "/run-stop-failure",
+		ForgeSessionID: "session-test", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_stop_failure", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		rt := manager.runtimeByID("run-stop-failure")
+		rt.mu.Lock()
+		defer rt.mu.Unlock()
+		return rt.agentHubStopRequested && rt.run.ArchivedTaskStopRequested &&
+			rt.run.Status == "recovering" && rt.run.ForgeSessionID != ""
+	})
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	stopCalls := fake.stopCalls
+	session := fake.sessions["ses_stop_failure"]
+	fake.mu.Unlock()
+	if stopCalls != 1 || session.State != "ready" {
+		t.Fatalf("ambiguous stop must not be retried: session=%#v stopCalls=%d", session, stopCalls)
+	}
+	run := pollerRunState(manager.runtimeByID("run-stop-failure"))
+	if run.Status != "recovering" || !run.ArchivedTaskStopRequested || run.ForgeSessionID == "" {
+		t.Fatalf("ambiguous stop did not remain fail-closed: %#v", run)
+	}
+
+	// The guard is durable: replacing the manager simulates a Forge restart
+	// and must not turn an unknown prior stop outcome into a duplicate request.
+	restarted := newAgentManager(manager.server)
+	if err := restarted.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.stopCalls != 1 {
+		t.Fatalf("ambiguous stop was retried after manager restart: stopCalls=%d", fake.stopCalls)
+	}
+	restartedRun := pollerRunState(restarted.runtimeByID("run-stop-failure"))
+	if restartedRun.Status != "recovering" || !restartedRun.ArchivedTaskStopRequested {
+		t.Fatalf("restart lost ambiguous stop guard: %#v", restartedRun)
+	}
+}
+
 func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 	for _, previousStatus := range []string{"running", "waiting_approval"} {
 		t.Run(previousStatus, func(t *testing.T) {
