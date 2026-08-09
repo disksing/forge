@@ -882,16 +882,12 @@ func TestChatAutoRunTopBarUI(t *testing.T) {
 		`body.completionCriteria = String(options.completionCriteria || "");`,
 		`function openAutoRunConfigDialog() {`,
 		`name="runInstructions"`,
-		`name="completionCriteria"`,
 		`Start New AutoRun`,
 		`function submitAutoRunConfigDialog`,
-		`Preselected from this AutoRun generation; confirm it before resuming.`,
-		`This generation has no currently enabled saved Agent. Choose one explicitly.`,
 		`expectedGeneration: dialog.expectedGeneration`,
 		`expectedState: dialog.expectedState`,
 		`const expectedState = options.expectedState === undefined ? stateName`,
 		`const directResume = ["paused", "suspended"].includes(expectedState);`,
-		`The agent must finish with exactly one final side-effecting protocol action`,
 		`if (event.key === "Tab")`,
 		`if (state.agent.autoRunStarting) return;`,
 		`state.agent.autoRunStarting = true;`,
@@ -956,6 +952,82 @@ func TestChatAutoRunTopBarUI(t *testing.T) {
 	for _, removed := range []string{`autoRunBarActions`, `includeAutoRun`, `id="autoRunStartButton"`, `id="autoRunCancelButton"`} {
 		if strings.Contains(actions, removed) {
 			t.Fatalf("standalone Session actions still render the moved AutoRun control %q", removed)
+		}
+	}
+}
+
+func TestChatAutoRunStartDialogShowsOnlyAgentAndPrompt(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+
+	// The start/new-generation dialog is intentionally minimal: the Agent
+	// selector and the optional Run instructions prompt are the only visible
+	// business fields. Task info, descriptions, completion criteria, and the
+	// protocol explanations were removed from the dialog body.
+	dialogStart := strings.Index(source, `function renderAutoRunConfigDialog() {`)
+	dialogEnd := -1
+	if dialogStart >= 0 {
+		dialogEnd = strings.Index(source[dialogStart:], `function bindAutoRunConfigDialogEvents() {`)
+	}
+	if dialogStart < 0 || dialogEnd < 0 {
+		t.Fatal("AutoRun config dialog renderer boundary is missing")
+	}
+	dialog := source[dialogStart : dialogStart+dialogEnd]
+	for _, want := range []string{
+		`role="dialog" aria-modal="true" aria-labelledby="autoRunDialogTitle"`,
+		`name="agentName"`,
+		`name="runInstructions"`,
+		`<span>Agent</span>`,
+		`<span>Run instructions <small>(optional)</small></span>`,
+		`data-auto-run-dialog-close="true"`,
+		`>Cancel</button>`,
+		`${dialog.submitting ? "Starting…" : submitLabel}`,
+		`role="alert"`,
+	} {
+		if !strings.Contains(dialog, want) {
+			t.Fatalf("minimal AutoRun start dialog is missing %q", want)
+		}
+	}
+	for _, removed := range []string{
+		`name="completionCriteria"`,
+		`Completion criteria`,
+		`autoRunDialogDescription`,
+		`aria-describedby`,
+		`auto-run-dialog-description`,
+		`auto-run-dialog-protocol`,
+		`agentSource`,
+		`dialog.title`,
+		`${escapeHTML(dialog.resourceId)} · ${escapeHTML(dialog.title)}`,
+		`Using the current idle AgentHub session.`,
+		`The agent must finish with exactly one final side-effecting protocol action`,
+	} {
+		if strings.Contains(dialog, removed) {
+			t.Fatalf("AutoRun start dialog still renders removed content %q", removed)
+		}
+	}
+
+	// Completion criteria stay part of the start request and keep their
+	// inherit-from-previous-generation default; only the textarea is gone.
+	for _, want := range []string{
+		`body.completionCriteria = String(options.completionCriteria || "");`,
+		`completionCriteria: String(autoRun?.completionCriteria || ""),`,
+		`runInstructions: String(autoRun?.prompt || ""),`,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("AutoRun start request lost its parameter default %q", want)
+		}
+	}
+
+	styles, err := staticFiles.ReadFile("static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, removed := range []string{`.auto-run-dialog-description`, `.auto-run-dialog-protocol`, `.auto-run-dialog-header span`} {
+		if strings.Contains(string(styles), removed) {
+			t.Fatalf("removed AutoRun dialog styles are still present: %q", removed)
 		}
 	}
 }

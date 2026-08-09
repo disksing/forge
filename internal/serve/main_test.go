@@ -501,30 +501,6 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 	}
 }
 
-func TestAutoRunDialogExplainsResultProtocol(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	for _, want := range []string{
-		`Final action: <code>complete</code> only after requirements and verification`,
-		`<code>suspend</code> only when no in-scope work remains`,
-		`repeated polling of one specific, observable external condition`,
-		`not for phase completion, saving progress, or yielding early`,
-		`<code>summary</code>`,
-		`<code>wakeCondition</code>`,
-		`<code>pause</code> for a user decision or manual handling`,
-		`<code>fail</code> only when no feasible safe path remains`,
-		`fixed 30-minute server fallback`,
-		`natural-language wake conditions are stored, not parsed`,
-	} {
-		if !strings.Contains(source, want) {
-			t.Fatalf("AutoRun dialog is missing protocol guidance %q", want)
-		}
-	}
-}
-
 func TestREADMEDocumentsAutoRunSuspendProtocol(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {

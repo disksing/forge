@@ -716,22 +716,11 @@ body.resizing-y {
   padding: 18px 20px;
 }
 
-.auto-run-dialog-header strong,
-.auto-run-dialog-header span {
-  display: block;
-}
-
 .auto-run-dialog-header strong {
+  display: block;
   color: var(--text);
   font-size: 18px;
   line-height: 1.25;
-}
-
-.auto-run-dialog-header span {
-  margin-top: 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
 }
 
 .auto-run-dialog-form {
@@ -757,34 +746,8 @@ body.resizing-y {
   font-weight: 600;
 }
 
-.auto-run-dialog-form label > small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
 .auto-run-dialog-form textarea {
   min-height: 86px;
-}
-
-.auto-run-dialog-description,
-.auto-run-dialog-protocol {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.auto-run-dialog-protocol {
-  border-radius: 7px;
-  background: #f8fafc;
-  padding: 10px 12px;
-}
-
-.auto-run-dialog-protocol code {
-  color: #1d4ed8;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .auto-run-dialog-error {

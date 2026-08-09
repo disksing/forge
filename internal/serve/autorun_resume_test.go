@@ -90,7 +90,6 @@ eval(extract("startChatAutoRun", true));
   openAutoRunConfigDialog();
   assert(state.autoRunDialog.mode === "resume", "a suspended task without an idle Session must use resume mode");
   assert(state.autoRunDialog.agentName === "agent-a", "the dialog may preselect only this generation's saved Agent");
-  assert(state.autoRunDialog.agentSource.includes("this AutoRun generation"), "the saved Agent preselection must be explained");
   assert(state.autoRunDialog.agentName !== state.agent.agentName, "the dialog must not use another Task's recent Agent");
 
   const beforeDialog = apiCalls.length;

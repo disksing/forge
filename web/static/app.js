@@ -83,11 +83,9 @@ const state = {
     open: false,
     mode: "",
     resourceId: "",
-    title: "",
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
-    agentSource: "",
     expectedGeneration: 0,
     expectedState: "",
     runInstructions: "",
@@ -4919,11 +4917,9 @@ function autoRunDialogInitialState() {
     open: false,
     mode: "",
     resourceId: "",
-    title: "",
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
-    agentSource: "",
     expectedGeneration: 0,
     expectedState: "",
     runInstructions: "",
@@ -4971,23 +4967,14 @@ function openAutoRunConfigDialog() {
     ? "new"
     : resumable && !reuseRun ? "resume" : "configure";
   const agentName = String(reuseRun?.agentHubAgentName || (resumable ? savedAgent?.id || "" : selectedAgent?.id || "")).trim();
-  const agentSource = reuseRun
-    ? "Using the current strict-idle AgentHub session."
-    : resumable && savedAgent
-      ? "Preselected from this AutoRun generation; confirm it before resuming."
-      : resumable
-        ? "This generation has no currently enabled saved Agent. Choose one explicitly."
-        : "";
   state.modalEnter = "autorun";
   state.autoRunDialog = {
     open: true,
     mode,
     resourceId: selected.id,
-    title: detail.title || selected.title || selected.id,
     reuseRunId: reuseRun?.id || "",
     reuseCurrentSession: Boolean(reuseRun),
     agentName,
-    agentSource,
     expectedGeneration: Number(autoRun?.generation) || 0,
     expectedState: String(autoRun?.state || "").trim().toLowerCase(),
     runInstructions: String(autoRun?.prompt || ""),
@@ -5031,44 +5018,29 @@ function renderAutoRunConfigDialog() {
   root.innerHTML = `
     <div class="auto-run-dialog-layer" role="presentation">
       <div class="auto-run-dialog-backdrop${entering ? " modal-enter" : ""}" data-auto-run-dialog-close="true"></div>
-      <section class="auto-run-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="autoRunDialogTitle" aria-describedby="autoRunDialogDescription">
+      <section class="auto-run-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="autoRunDialogTitle">
         <header class="auto-run-dialog-header">
-          <div>
-            <strong id="autoRunDialogTitle">${title}</strong>
-            <span>${escapeHTML(dialog.resourceId)} · ${escapeHTML(dialog.title)}</span>
-          </div>
+          <strong id="autoRunDialogTitle">${title}</strong>
           <button class="icon-button" type="button" data-auto-run-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
         </header>
         <form id="autoRunConfigForm" class="details-form auto-run-dialog-form">
-          <p id="autoRunDialogDescription" class="auto-run-dialog-description">${resumeMode
-            ? "Choose the Agent for this AutoRun generation. Confirming resumes the same generation; its saved instructions and completion criteria stay unchanged."
-            : "Choose how this generation should run. Paused and suspended generations keep their existing parameters."}</p>
           <label>
             <span>Agent</span>
             ${dialog.reuseCurrentSession ? `
               <input name="agentName" value="${escapeHTML(dialog.agentName)}" readonly aria-readonly="true" />
-              <small>Using the current idle AgentHub session.</small>
             ` : `
               <select name="agentName" required ${agents.length === 0 || dialog.submitting ? "disabled" : ""}>
                 <option value="">Select an Agent</option>
                 ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === dialog.agentName ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
               </select>
             `}
-            ${dialog.agentSource ? `<small>${escapeHTML(dialog.agentSource)}</small>` : ""}
           </label>
           ${resumeMode ? "" : `
             <label>
               <span>Run instructions <small>(optional)</small></span>
               <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this AutoRun generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
             </label>
-            <label>
-              <span>Completion criteria <small>(optional, natural language)</small></span>
-              <textarea name="completionCriteria" rows="4" placeholder="What should be true before the agent marks this generation complete?"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.completionCriteria)}</textarea>
-            </label>
           `}
-          <p class="auto-run-dialog-protocol">The agent must finish with exactly one final side-effecting protocol action: <code>complete</code>, <code>suspend</code>, <code>pause</code>, or <code>fail</code>.</p>
-          <p class="auto-run-dialog-protocol">Final action: <code>complete</code> only after requirements and verification; <code>suspend</code> only when no in-scope work remains and only repeated polling of one specific, observable external condition could make progress. It is not for phase completion, saving progress, or yielding early. Record progress and blocking context in <code>summary</code>, the separate verifiable signal in <code>wakeCondition</code>, use <code>pause</code> for a user decision or manual handling, and use <code>fail</code> only when no feasible safe path remains.</p>
-          <p class="auto-run-dialog-protocol">Suspended work currently uses a fixed 30-minute server fallback; natural-language wake conditions are stored, not parsed.</p>
           ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
           ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
           <div class="form-actions">
@@ -5091,7 +5063,6 @@ function bindAutoRunConfigDialogEvents() {
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
     if (target.name === "agentName" && !state.autoRunDialog.reuseCurrentSession) state.autoRunDialog.agentName = target.value;
     if (target.name === "runInstructions") state.autoRunDialog.runInstructions = target.value;
-    if (target.name === "completionCriteria") state.autoRunDialog.completionCriteria = target.value;
     state.autoRunDialog.error = "";
   });
   form.addEventListener("submit", submitAutoRunConfigDialog);
