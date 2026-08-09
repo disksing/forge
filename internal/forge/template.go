@@ -285,12 +285,64 @@ func templateShow(options templateCLIOptions) error {
 	if options.JSON {
 		return printJSON(template)
 	}
+	return printHumanTemplate(template)
+}
+
+func printHumanTemplate(template app.TaskTemplate) error {
 	fmt.Printf("Name: %s\nTitle: %s\nPath: %s\nSchema version: %d\nDigest: %s\nStatus: %s\n", template.Name, template.Title, template.Path, template.SchemaVersion, template.Digest, map[bool]string{true: "valid", false: "invalid"}[template.Valid])
-	for _, field := range template.Fields {
-		fmt.Printf("Field: %s\t%s\t%s\trequired=%t\n", field.Name, field.Type, field.Label, field.Required)
+	if template.Description != "" {
+		fmt.Printf("Description: %s\n", template.Description)
 	}
-	for _, issue := range append(append([]app.TemplateIssue{}, template.Errors...), template.Warnings...) {
-		fmt.Printf("%s: %s\t%s\t%s\n", strings.ToUpper(issue.Severity), issue.Code, issue.Path, issue.Message)
+	if template.TaskTitle != "" {
+		fmt.Printf("Task title: %s\n", template.TaskTitle)
+	}
+
+	fmt.Println("Fields:")
+	if len(template.Fields) == 0 {
+		fmt.Println("  (none)")
+	}
+	for _, field := range template.Fields {
+		required := "optional"
+		if field.Required {
+			required = "required"
+		}
+		fmt.Printf("  - %s (%s, %s): %s\n", field.Name, field.Type, required, field.Label)
+		if field.Description != "" {
+			fmt.Printf("    Description: %s\n", field.Description)
+		}
+		if field.Placeholder != "" {
+			fmt.Printf("    Placeholder: %s\n", field.Placeholder)
+		}
+		if field.HasDefault {
+			fmt.Printf("    Default: %v\n", field.Default)
+		}
+		if len(field.Options) > 0 {
+			fmt.Printf("    Options: %s\n", strings.Join(field.Options, ", "))
+		}
+	}
+
+	issues := append(append([]app.TemplateIssue{}, template.Errors...), template.Warnings...)
+	if len(issues) > 0 {
+		fmt.Println("Diagnostics:")
+		for _, issue := range issues {
+			fmt.Printf("  %s: %s\t%s\t%s\n", strings.ToUpper(issue.Severity), issue.Code, issue.Path, issue.Message)
+		}
+	}
+
+	fmt.Println("Markdown body:")
+	body := template.Body
+	if body == "" && template.Content != "" {
+		// Keep malformed templates inspectable even when front matter parsing
+		// could not identify a separate Markdown body.
+		body = template.Content
+	}
+	if body == "" {
+		fmt.Println("  (empty)")
+		return nil
+	}
+	fmt.Print(body)
+	if !strings.HasSuffix(body, "\n") {
+		fmt.Println()
 	}
 	return nil
 }

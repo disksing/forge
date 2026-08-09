@@ -2819,6 +2819,81 @@ func TestTemplateValidateAndMigrateCLI(t *testing.T) {
 	})
 }
 
+func TestTemplateShowIncludesBodyAndPreservesOutputModes(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Template project")
+		body := "# {{ summary }}\n\nExecution rule: inspect every configured input.\n" + strings.Repeat("Long rule text must remain visible.\n", 128) + "\nAcceptance: preserve every line.\n"
+		source := "---\nschema-version: 2\ntitle: Request\ndescription: Capture a concrete change.\ntask-title: \"{{ summary }}\"\nfields:\n  - name: summary\n    type: text\n    label: Summary\n    description: The short task summary.\n    placeholder: e.g. fix template output\n    required: true\n  - name: priority\n    type: select\n    label: Priority\n    default: medium\n    options: [low, medium, high]\n---\n" + body
+		path := filepath.Join(root, "project1", "templates", "request.md")
+		if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		shown := run(t, "template", "show", "--project=project1", "request")
+		for _, marker := range []string{
+			"Name: request",
+			"Description: Capture a concrete change.",
+			"Fields:\n",
+			"  - summary (text, required): Summary",
+			"    Description: The short task summary.",
+			"    Placeholder: e.g. fix template output",
+			"  - priority (select, optional): Priority",
+			"    Default: medium",
+			"    Options: low, medium, high",
+			"Markdown body:\n" + body,
+		} {
+			if !strings.Contains(shown, marker) {
+				t.Fatalf("default template show output is missing %q:\n%s", marker, shown)
+			}
+		}
+
+		if raw := run(t, "template", "show", "--project=project1", "--raw", "request"); raw != source {
+			t.Fatalf("--raw changed the original template source:\nwant:\n%s\ngot:\n%s", source, raw)
+		}
+		var structured map[string]any
+		if err := json.Unmarshal([]byte(run(t, "template", "show", "--project=project1", "--json", "request")), &structured); err != nil {
+			t.Fatal(err)
+		}
+		if structured["content"] != source || structured["body"] != body || structured["valid"] != true {
+			t.Fatalf("--json lost template content: %#v", structured)
+		}
+		var schema map[string]any
+		if err := json.Unmarshal([]byte(run(t, "template", "show", "--project=project1", "--schema", "request")), &schema); err != nil {
+			t.Fatal(err)
+		}
+		if schema["name"] != "request" || schema["schemaVersion"] != float64(2) || schema["digest"] == "" || schema["fields"] == nil {
+			t.Fatalf("--schema changed schema output contract: %#v", schema)
+		}
+		if _, err := runErr(t, "template", "show", "--project=project1", "--json", "--schema", "request"); err == nil || !strings.Contains(err.Error(), "usage: forge template show") {
+			t.Fatalf("expected mutually exclusive template show modes to return usage, got %v", err)
+		}
+
+		brokenBody := "# Broken rules\n\nThis body must remain inspectable even when the schema is invalid.\n"
+		broken := "---\nschema-version: 2\ntitle: Broken\nautorun: true\nfields: []\n---\n" + brokenBody
+		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "broken.md"), []byte(broken), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		invalid := run(t, "template", "show", "--project=project1", "broken")
+		for _, marker := range []string{"Status: invalid", "execution_property_forbidden", "Markdown body:\n" + brokenBody} {
+			if !strings.Contains(invalid, marker) {
+				t.Fatalf("invalid template show output is missing %q:\n%s", marker, invalid)
+			}
+		}
+	})
+
+	help := strings.Join(strings.Fields(run(t, "help")), " ")
+	for _, marker := range []string{
+		"show defaults to metadata, field requirements, diagnostics, and the complete Markdown body",
+		"--raw for the original file, --json for structured template data,",
+		"or --schema for schema metadata and diagnostics",
+	} {
+		if !strings.Contains(help, marker) {
+			t.Fatalf("template show help is missing %q:\n%s", marker, help)
+		}
+	}
+}
+
 func withTempCwd(t *testing.T, fn func(root string)) {
 	t.Helper()
 	root := t.TempDir()

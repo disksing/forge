@@ -370,9 +370,12 @@ Commands:
   forge template list|show|validate|render|create|migrate ...
     Manage project-local schema V2 content templates. Templates declare typed
     fields and deterministic title/Markdown rendering but never AutoRun or
-    agent settings. list and validate include invalid templates. render and
-    task create --dry-run have no side effects. migrate previews legacy V1
-    conversion unless --write is provided.
+    agent settings. list and validate include invalid templates. show defaults
+    to metadata, field requirements, diagnostics, and the complete Markdown
+    body; use --raw for the original file, --json for structured template data,
+    or --schema for schema metadata and diagnostics. render and task create
+    --dry-run have no side effects. migrate previews legacy V1 conversion
+    unless --write is provided.
 
   forge task list [--project=<project>] [--all] [--runnable [--json]]
     List open tasks in a project. Use --all to include archived tasks.
