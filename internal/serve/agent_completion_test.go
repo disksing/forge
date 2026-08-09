@@ -224,7 +224,7 @@ const storage = {
 const resources = {
   "task-one": { id: "task-one", type: "task", title: "Task One" },
   "task-two": { id: "task-two", type: "task", title: "Task Two" },
-  "auto-one": { id: "auto-one", type: "task", title: "Auto One", autoRun: { state: "running" } },
+  "auto-one": { id: "auto-one", type: "task", title: "Auto One", selfDriving: { state: "running" } },
 };
 const context = {
 	storage,
@@ -289,29 +289,29 @@ assert(observeCompletion(item("sound-only", "task-one"), "completed"), "sound-on
 assert(browserNotifications.length === browserBeforeSound, "sound-only completion called browser notification API");
 assert(soundStarts === 1, "sound-only completion did not play one sound");
 state.notifications.settings.sound = false;
-const autoItem = item("autorun-intermediate", "auto-one", { schedulerTurn: true, autoRunGeneration: 1 });
-assert(!observeCompletion(autoItem, "completed"), "AutoRun intermediate turn was reported");
-assert(notificationStore().pending.some((record) => record.marker === "autorun-intermediate"), "AutoRun intermediate turn was not deferred");
-resources["auto-one"].autoRun.state = "suspended";
-assert(!observeCompletion(autoItem, "completed"), "suspended AutoRun turn was reported");
-assert(!notificationStore().pending.some((record) => record.marker === "autorun-intermediate"), "suspended AutoRun turn remained pending");
-resources["auto-one"].autoRun.state = "completed";
-assert(observeCompletion(item("autorun-final", "auto-one", { autoRunGeneration: 1 }), "completed"), "terminal AutoRun generation was not reported");
-resources["auto-one"].autoRun.state = "failed";
-assert(observeCompletion(item("autorun-failed", "auto-one", { autoRunGeneration: 1 }), "failed"), "failed AutoRun generation was not reported");
-resources["auto-one"].autoRun.state = "paused";
-assert(observeCompletion(item("autorun-paused", "auto-one", { autoRunGeneration: 1 }), "completed"), "paused AutoRun generation was not reported");
-resources["auto-one"].autoRun.state = "cancelled";
+const autoItem = item("self-driving-intermediate", "auto-one", { schedulerTurn: true, selfDrivingGeneration: 1 });
+assert(!observeCompletion(autoItem, "completed"), "Self-Driving intermediate turn was reported");
+assert(notificationStore().pending.some((record) => record.marker === "self-driving-intermediate"), "Self-Driving intermediate turn was not deferred");
+resources["auto-one"].selfDriving.state = "suspended";
+assert(!observeCompletion(autoItem, "completed"), "suspended Self-Driving turn was reported");
+assert(!notificationStore().pending.some((record) => record.marker === "self-driving-intermediate"), "suspended Self-Driving turn remained pending");
+resources["auto-one"].selfDriving.state = "completed";
+assert(observeCompletion(item("self-driving-final", "auto-one", { selfDrivingGeneration: 1 }), "completed"), "terminal Self-Driving generation was not reported");
+resources["auto-one"].selfDriving.state = "failed";
+assert(observeCompletion(item("self-driving-failed", "auto-one", { selfDrivingGeneration: 1 }), "failed"), "failed Self-Driving generation was not reported");
+resources["auto-one"].selfDriving.state = "paused";
+assert(observeCompletion(item("self-driving-paused", "auto-one", { selfDrivingGeneration: 1 }), "completed"), "paused Self-Driving generation was not reported");
+resources["auto-one"].selfDriving.state = "cancelled";
 const cancelledBefore = { unread: notificationStore().unread.length, pending: notificationStore().pending.length, browser: browserNotifications.length, sound: soundStarts };
-assert(!observeCompletion(item("autorun-cancelled", "auto-one", { schedulerTurn: true, autoRunGeneration: 1 }), "cancelled"), "cancelled AutoRun turn was reported");
-assert(!notificationStore().unread.some((record) => record.marker === "autorun-cancelled"), "cancelled AutoRun turn became unread");
-assert(!notificationStore().pending.some((record) => record.marker === "autorun-cancelled"), "cancelled AutoRun turn remained pending");
-assert(browserNotifications.length === cancelledBefore.browser && soundStarts === cancelledBefore.sound, "cancelled AutoRun turn triggered completion effects");
+assert(!observeCompletion(item("self-driving-cancelled", "auto-one", { schedulerTurn: true, selfDrivingGeneration: 1 }), "cancelled"), "cancelled Self-Driving turn was reported");
+assert(!notificationStore().unread.some((record) => record.marker === "self-driving-cancelled"), "cancelled Self-Driving turn became unread");
+assert(!notificationStore().pending.some((record) => record.marker === "self-driving-cancelled"), "cancelled Self-Driving turn remained pending");
+assert(browserNotifications.length === cancelledBefore.browser && soundStarts === cancelledBefore.sound, "cancelled Self-Driving turn triggered completion effects");
 const effectsBeforeRefresh = browserNotifications.length;
 initializeNotificationState("workspace-one");
-state.agent.runs = [item("autorun-final", "auto-one", { autoRunGeneration: 1 })];
+state.agent.runs = [item("self-driving-final", "auto-one", { selfDrivingGeneration: 1 })];
 establishNotificationBaseline();
-assert(notificationStore().unread.some((record) => record.marker === "autorun-final"), "refresh lost persisted unread state");
+assert(notificationStore().unread.some((record) => record.marker === "self-driving-final"), "refresh lost persisted unread state");
 assert(browserNotifications.length === effectsBeforeRefresh, "refresh replayed a browser notification");
 storage.setItem(notificationStateKey("workspace-one"), "{not-json");
 const recoveredStore = readNotificationStore("workspace-one");

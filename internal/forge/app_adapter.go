@@ -110,10 +110,10 @@ func applicationTaskCreate(input app.CreateTaskInput) error {
 	return printJSON(task)
 }
 
-func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, autorun bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) app.CreateTaskInput {
+func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, selfDriving bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) app.CreateTaskInput {
 	return app.CreateTaskInput{
 		ProjectID: parentID, Title: title, Detail: detail, CompleteMarkdown: completeMarkdown,
-		CompleteMarkdownSet: completeMarkdownSet, Slug: slug, AutoRun: autorun,
+		CompleteMarkdownSet: completeMarkdownSet, Slug: slug, SelfDriving: selfDriving,
 		AgentName: agentName, PreferredAgentProfiles: append([]string(nil), preferredAgentProfiles...), Prompt: prompt,
 		CompletionCriteria: completionCriteria,
 	}
@@ -200,12 +200,12 @@ func applicationLogList(kind, projectID, taskID string, jsonOutput bool) error {
 	return nil
 }
 
-func applicationAutoRunQueue(opts autoRunCommandOptions) error {
+func applicationSelfDrivingQueue(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.QueueAutoRun(app.AutoRunQueueInput{
+	task, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{
 		TaskID: opts.TaskID, AgentName: opts.AgentName, AgentNameSet: opts.AgentNameSet,
 		PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt, PromptSet: opts.PromptSet,
 		CompletionCriteria: opts.CompletionCriteria, CompletionCriteriaSet: opts.CompletionCriteriaSet,
@@ -216,24 +216,24 @@ func applicationAutoRunQueue(opts autoRunCommandOptions) error {
 	return printJSON(task)
 }
 
-func applicationAutoRunStart(opts autoRunCommandOptions) error {
+func applicationSelfDrivingStart(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.StartAutoRun(opts.TaskID)
+	task, err := workspace.StartSelfDriving(opts.TaskID)
 	if err != nil {
 		return err
 	}
 	return printJSON(task)
 }
 
-func applicationAutoRunRetry(opts autoRunCommandOptions) error {
+func applicationSelfDrivingRetry(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.RetryAutoRun(app.AutoRunActionInput{
+	task, err := workspace.RetrySelfDriving(app.SelfDrivingActionInput{
 		TaskID: opts.TaskID, Reason: opts.Reason,
 		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
 	})
@@ -243,41 +243,41 @@ func applicationAutoRunRetry(opts autoRunCommandOptions) error {
 	return printJSON(task)
 }
 
-func applicationAutoRunResume(opts autoRunCommandOptions) error {
+func applicationSelfDrivingResume(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.ResumeAutoRun(opts.TaskID)
+	task, err := workspace.ResumeSelfDriving(opts.TaskID)
 	if err != nil {
 		return err
 	}
 	return printJSON(task)
 }
 
-func applicationAutoRunAction(action string, opts autoRunCommandOptions) error {
+func applicationSelfDrivingAction(action string, opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	input := app.AutoRunActionInput{
+	input := app.SelfDrivingActionInput{
 		TaskID: opts.TaskID, Summary: opts.Summary, WakeCondition: opts.WakeCondition, Reason: opts.Reason,
 		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
 	}
 	var task app.Task
 	switch action {
 	case "complete":
-		task, err = workspace.CompleteAutoRun(input)
+		task, err = workspace.CompleteSelfDriving(input)
 	case "suspend":
-		task, err = workspace.SuspendAutoRun(input)
+		task, err = workspace.SuspendSelfDriving(input)
 	case "pause":
-		task, err = workspace.PauseAutoRun(input)
+		task, err = workspace.PauseSelfDriving(input)
 	case "fail":
-		task, err = workspace.FailAutoRun(input)
+		task, err = workspace.FailSelfDriving(input)
 	case "cancel":
-		task, err = workspace.CancelAutoRun(input)
+		task, err = workspace.CancelSelfDriving(input)
 	default:
-		return fmt.Errorf("unknown AutoRun action %q", action)
+		return fmt.Errorf("unknown Self-Driving action %q", action)
 	}
 	if err != nil {
 		return err

@@ -11,7 +11,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
 - **Interactive and autonomous agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
-- **Simplified AutoRun.** Tasks can be queued with preferred Agent Profiles and run as a self-contained state machine. The GUI driver starts queued work, wakes suspended work after a fixed delay, records retries, and exposes queued, running, suspended, paused, completed, failed, and cancelled states.
+- **Simplified Self-Driving.** Tasks can be queued with preferred Agent Profiles and run as a self-contained state machine. The GUI driver starts queued work, wakes suspended work after a fixed delay, records retries, and exposes queued, running, suspended, paused, completed, failed, and cancelled states.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
 
 ## Design
@@ -32,7 +32,7 @@ shared checkout in repos/ ── git worktree ── task-owned branch in worktr
 
 - The **CLI** owns flag parsing and compatibility output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
 - **`forge start`** launches a terminal agent inside one resource with a managed session and lock.
-- **`forge serve`** renders workspace state in the web UI, routes chat and AutoRun through AgentHub, and calls `internal/app` with each Workspace root directly. It does not spawn `forge` for workspace operations.
+- **`forge serve`** renders workspace state in the web UI, routes chat and Self-Driving through AgentHub, and calls `internal/app` with each Workspace root directly. It does not spawn `forge` for workspace operations.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
 - **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
 
@@ -42,7 +42,7 @@ The workspace root itself is not lockable. Project and task resources are indepe
 
 - Go 1.22 or newer
 - Git
-- A compatible AgentHub service for GUI chat and AutoRun
+- A compatible AgentHub service for GUI chat and Self-Driving
 
 ## Build
 
@@ -84,7 +84,7 @@ Open the GUI for that workspace:
 forge serve --workspace "$PWD"
 ```
 
-Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and the system or custom Agent Profiles in Settings. The reserved `scheduler` system Profile is available for future scheduling work but does not start a Scheduler Agent or change current AutoRun routing. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
+Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and the system or custom Agent Profiles in Settings. The reserved `scheduler` system Profile is available for future scheduling work but does not start a Scheduler Agent or change current Self-Driving routing. The GUI can also create or add workspaces, create projects and tasks, and apply project task templates.
 
 The GUI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
 
@@ -92,16 +92,16 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 
 The main UI is split into navigation, resource details, and agent chat:
 
-- **Navigation:** switch workspaces with an optional per-workspace icon, expand the project/task tree, see AutoRun and lock state, and monitor active or external sessions with their controlled resource titles. The active workspace icon is also used as the browser tab icon; workspaces without a selection use the Forge icon.
+- **Navigation:** switch workspaces with an optional per-workspace icon, expand the project/task tree, see Self-Driving and lock state, and monitor active or external sessions with their controlled resource titles. The active workspace icon is also used as the browser tab icon; workspaces without a selection use the Forge icon.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** start, close, resume, or revisit agent sessions; end only the current turn with End Turn while keeping the Session open; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while an AutoRun is active.
+- **Chat:** start, close, resume, or revisit agent sessions; end only the current turn with End Turn while keeping the Session open; stream responses and tool activity; answer approval requests; upload files into the session artifact directory; and send new instructions while Self-Driving is active.
 - **Settings:** add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
 ### AgentHub execution
 
-Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. A new chat or AutoRun resolves a Forge Profile to an AgentHub `agentName`, creates or resumes a durable AgentHub session, and projects canonical AgentHub events into the GUI.
+Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. A new chat or Self-Driving resolves a Forge Profile to an AgentHub `agentName`, creates or resumes a durable AgentHub session, and projects canonical AgentHub events into the GUI.
 
 Forge retains workspace/task/session-lock/Profile control. `forge serve` is the only owner of AgentHub session reconciliation: a resource lock is released only after the service observes a durable `stopped` state, or proves through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the lock. Plain CLI commands (`forge session list/show`, `forge workspace tree`, `forge start`, session create/lock/unlock/heartbeat/end, resource archival) never contact AgentHub; an AgentHub-managed session stays active in the session store until the service reconciles it or `forge session end --id=<id>` releases it manually. While the service is stopped, those sessions and locks are conservatively retained. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
 
@@ -162,16 +162,16 @@ Selectors may be omitted when the current directory already identifies the task 
 Agents launched by `forge start` or the Forge web UI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
 The first resource locked by a session is its primary resource; later controls are temporary. Archiving the primary resource ends the session, while archiving a temporarily controlled resource removes only the archived controls and preserves the primary session.
 
-## AutoRun
+## Self-Driving
 
-AutoRun adds a generation-numbered state machine to a task. `forge serve` runs a minimal driver: it starts queued work, re-queues suspended work whose suspension limit (30 minutes) elapsed, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`. A cancelled generation is terminal: it is never dispatched, retried, or timed-woken, and a new generation must be started explicitly.
+Self-Driving adds a generation-numbered state machine to a task. `forge serve` runs a minimal driver: it starts queued work, re-queues suspended work whose suspension limit (30 minutes) elapsed, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`. A cancelled generation is terminal: it is never dispatched, retried, or timed-woken, and a new generation must be started explicitly.
 
 Create an autonomous task:
 
 ```bash
 forge task create \
   --project=project1 \
-  --autorun \
+  --self-driving \
   --agent=codex \
   --agent-profile=fast \
   --agent-profile=codex \
@@ -180,7 +180,7 @@ forge task create \
   "Implement the change"
 ```
 
-`--agent` records the concrete AgentHub agent for this generation; preferred profiles remain an optional portable fallback. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current AutoRun driver. Forge validates the selected AgentHub target before creating a session or changing AutoRun state, so an unavailable target has no partial side effects.
+`--agent` records the concrete AgentHub agent for this generation; preferred profiles remain an optional portable fallback. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current Self-Driving driver. Forge validates the selected AgentHub target before creating a session or changing Self-Driving state, so an unavailable target has no partial side effects.
 
 A scheduler-started turn must finish with exactly one result action:
 
@@ -191,28 +191,28 @@ Before suspending, the agent must exhaust work that does not depend on the exter
 When suspending, record completed work, current status, and blocking context in `suspensionSummary`, and record the separate, specific, observable, verifiable external signal in `wakeCondition`. Forge stores natural-language conditions without parsing them. The current server uses a fixed 30-minute fallback re-check; a future Scheduler may observe the condition and wake the task proactively.
 
 ```bash
-forge task autorun complete --summary="Implemented and verified"
-forge task autorun suspend \
+forge task self-driving complete --summary="Implemented and verified"
+forge task self-driving suspend \
   --summary="Waiting for the upstream merge" \
   --wake-condition="The upstream merge is present in origin/master"
-forge task autorun pause --reason="User decision required"
-forge task autorun fail --reason="Verification cannot pass"
-forge task autorun cancel --reason="User cancelled this generation"
+forge task self-driving pause --reason="User decision required"
+forge task self-driving fail --reason="Verification cannot pass"
+forge task self-driving cancel --reason="User cancelled this generation"
 ```
 
 `suspend` records a natural-language `suspensionSummary` (the context) and separate `wakeCondition`, plus a `suspendedAt` timestamp. Forge stores the condition for the next agent but does not parse it; the prompt tells the agent to check it before continuing and to suspend again with both fields if it is unmet. Summary-only clients remain compatible by copying the summary into `wakeCondition` and recording a fallback marker. The server wakes the task after 30 minutes by re-queueing it; every new suspend resets the timer. `pause` is for human intervention and is never auto-woken. `cancel` durably ends the current generation, records the reason in `log.jsonl`, interrupts an active Scheduler turn, and leaves the Agent Session open when cancellation is requested from the UI. If a running turn exits without reporting a result, the driver records a retry and continues within a shared three-attempt budget before pausing the task. A completed, failed, or cancelled task can be started again as a new generation; cancelled generations inherit editable configuration but clear suspension metadata.
 
-### New Session and Manual AutoRun from Chat
+### New Session and Manual Self-Driving from Chat
 
 The chat composer has one **New Session** button. Clicking it opens the enabled AgentHub agents with their name and model summary; choosing an agent immediately creates a new session for the selected resource. The button is disabled with an explanation when no enabled agent exists, shows a creating state while the request is in flight, ignores duplicate clicks, and keeps the chooser open when creation fails so the user can retry. The chooser also supports Escape and clicking outside the control.
 
-When the selected Project or Task is controlled by an active external Forge Session, the composer shows a clear resource lock notice and hides New Session, AutoRun start/resume, and Resume Session controls; input and uploads are paused until a refresh observes that the lock has been released. The server repeats this check at execution time, including direct API and scheduler paths, and returns a conflict before creating an AgentHub session, advancing AutoRun, or sending a message.
+When the selected Project or Task is controlled by an active external Forge Session, the composer shows a clear resource lock notice and hides New Session, Self-Driving start/resume, and Resume Session controls; input and uploads are paused until a refresh observes that the lock has been released. The server repeats this check at execution time, including direct API and scheduler paths, and returns a conflict before creating an AgentHub session, advancing Self-Driving, or sending a message.
 
-When the selected Project or Task is controlled by an active internal Forge GUI Session, the composer hides New Session and closes any open Agent chooser, even when the currently viewed Agent Run is historical. The current Session's input, approval, Close Session, and idle Task AutoRun reuse actions remain available; the New Session action returns after the tree refresh observes that the internal lock has been released. AutoRun remains a Task-only action.
+When the selected Project or Task is controlled by an active internal Forge GUI Session, the composer hides New Session and closes any open Agent chooser, even when the currently viewed Agent Run is historical. The current Session's input, approval, Close Session, and idle Task Self-Driving reuse actions remain available; the New Session action returns after the tree refresh observes that the internal lock has been released. Self-Driving remains a Task-only action.
 
-The task chat composer shows a stateful AutoRun action: **Start AutoRun** on tasks without AutoRun, **Start New AutoRun** after a completed, failed, or cancelled generation (creating the next generation), **Resume Now** while suspended, and **Resume AutoRun** while paused. The first and next-generation actions open a minimal configuration dialog whose only editable fields are the Agent and the optional Run instructions (prompt); the generation's completion criteria are inherited from the previous generation and are no longer shown in the dialog. A suspended or paused generation resumes directly only when the server can re-validate a strictly idle AgentHub session for the same task; otherwise Resume opens an explicit Agent dialog. A valid Agent saved on the current generation may be preselected, but the user must confirm it, and another task's recent Agent is never used silently. Resume keeps the generation's saved instructions and completion criteria unchanged. Cancelled generations cannot be resumed; they offer Start New AutoRun. Queued and running generations render as disabled states so they cannot be started twice. **Close Session** cancels an active AutoRun generation before closing that AgentHub Session, while **End Turn** pauses only the current generation and keeps the Session open.
+The task chat composer shows a stateful Self-Driving action: **Start Self-Driving** on tasks without Self-Driving, **Start New Self-Driving** after a completed, failed, or cancelled generation (creating the next generation), **Resume Now** while suspended, and **Resume Self-Driving** while paused. The first and next-generation actions open a minimal configuration dialog whose only editable fields are the Agent and the optional Run instructions (prompt); the generation's completion criteria are inherited from the previous generation and are no longer shown in the dialog. A suspended or paused generation resumes directly only when the server can re-validate a strictly idle AgentHub session for the same task; otherwise Resume opens an explicit Agent dialog. A valid Agent saved on the current generation may be preselected, but the user must confirm it, and another task's recent Agent is never used silently. Resume keeps the generation's saved instructions and completion criteria unchanged. Cancelled generations cannot be resumed; they offer Start New Self-Driving. Queued and running generations render as disabled states so they cannot be started twice. **Close Session** cancels an active Self-Driving generation before closing that AgentHub Session, while **End Turn** pauses only the current generation and keeps the Session open.
 
-The action calls one unified server operation (`POST /api/workspaces/<id>/autorun/start`) that accepts the selected Agent and generation/state expectations, queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard AutoRun start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the dialog selects the agent for the new session, and the request fails without changing task state if none is explicitly selected. If the session is busy, the operation rejects before creating another session. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
+The action calls one unified server operation (`POST /api/workspaces/<id>/self-driving/start`) that accepts the selected Agent and generation/state expectations, queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard Self-Driving start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the dialog selects the agent for the new session, and the request fails without changing task state if none is explicitly selected. If the session is busy, the operation rejects before creating another session. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
 
 ## Task Templates
 
@@ -254,7 +254,7 @@ Reproduced: {{ reproduced }}
 
 Field types are `text`, `textarea`, `select`, and `boolean`. Placeholders may only reference declared fields and are replaced once, so template-like text inside a field value stays literal. Unknown properties, fields, placeholders, type mismatches, and missing required values produce stable structured errors. The normalized template bytes have a SHA-256 digest; previewed creates can submit that digest to detect template changes.
 
-Use `forge template list/show/validate/render/create/migrate` to inspect and manage templates. `forge template show <name>` defaults to human-readable metadata, every field requirement, diagnostics, and the complete Markdown body. Use `--raw` for the original template file, `--json` for structured template data, or `--schema` for schema metadata and diagnostics; these output modes are mutually exclusive. `forge task create --template=<name> --field name=value` creates from one, while `--dry-run` previews without filesystem or AutoRun side effects. `--fields` accepts a YAML or JSON object and repeated `--field` values override the file. AutoRun, Agent, Profile, instructions, and completion criteria remain explicit `task create` options and are never read from a V2 content template.
+Use `forge template list/show/validate/render/create/migrate` to inspect and manage templates. `forge template show <name>` defaults to human-readable metadata, every field requirement, diagnostics, and the complete Markdown body. Use `--raw` for the original template file, `--json` for structured template data, or `--schema` for schema metadata and diagnostics; these output modes are mutually exclusive. `forge task create --template=<name> --field name=value` creates from one, while `--dry-run` previews without filesystem or Self-Driving side effects. `--fields` accepts a YAML or JSON object and repeated `--field` values override the file. Self-Driving, Agent, Profile, instructions, and completion criteria remain explicit `task create` options and are never read from a V2 content template.
 
 Templates without `schema-version` remain visible as legacy V1 templates with deprecation warnings. Their old execution properties are ignored. `forge template migrate <name>` previews a static V2 conversion and `--write` atomically applies it without inventing fields or changing the Markdown body. Created tasks store only the template name, schema version, and digest in `task.json`; later template edits do not modify them.
 
@@ -278,7 +278,7 @@ AgentWorkspace/
     artifacts/                project outputs
     task1-first-change/
       AGENTS.md               generated task launch card
-      task.json               task, repository, and AutoRun metadata
+      task.json               task, repository, and Self-Driving metadata
       task.md                 durable task contract
       work.md                 replaceable recovery checkpoint
       log.jsonl               append-only task timeline
@@ -327,14 +327,14 @@ forge resource archive --id=<resource>
 forge task create [<title>] [--project=<project>] [--slug <slug>]
                   [--detail <detail>|--task-markdown <markdown>|--template=<name>]
                   [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
-                  [--autorun] [--agent=<agent>] [--agent-profile=<profile>...]
+                  [--self-driving] [--agent=<agent>] [--agent-profile=<profile>...]
                   [--prompt=<prompt>] [--completion-criteria=<text>]
 forge task list [--project=<project>] [--all]
                 [--runnable [--json]]
 forge task show|archive ...
 forge task log add|list ...
 forge task repo add|list|remove ...
-forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
 
 forge session new|heartbeat|lock|unlock|end|list|show ...
 

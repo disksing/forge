@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestAutoRunResumeDialogRequiresExplicitAgentAcrossTasks(t *testing.T) {
+func TestSelfDrivingResumeDialogRequiresExplicitAgentAcrossTasks(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is required for the AutoRun resume dialog test")
+		t.Skip("node is required for the Self-Driving resume dialog test")
 	}
 	script := `
 const fs = require("node:fs");
@@ -34,7 +34,7 @@ const document = { activeElement: null, contains: () => false };
 const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const task = {
   id: "project1.task1", type: "task", title: "Current Task",
-  autoRun: {
+  selfDriving: {
     generation: 7, state: "suspended", agentName: "agent-a",
     prompt: "saved instructions", completionCriteria: "saved criteria",
   },
@@ -46,7 +46,7 @@ const state = {
   modalEnter: "",
   agent: {
     runs: [], agentName: "agent-from-another-task",
-    autoRunStarting: false, autoRunCancelling: false,
+    selfDrivingStarting: false, selfDrivingCancelling: false,
   },
   config: {
     agents: [
@@ -64,7 +64,7 @@ function isLiveAgentRun(run) { return ["starting", "running", "waiting_approval"
 function enabledAgentConfigs() { return state.config.agents.filter((agent) => agent.available !== false); }
 function selectedAgentConfig() { return { id: state.agent.agentName }; }
 function mutateAgentSession(action) { return action(); }
-function renderAutoRunConfigDialog() { renderCount++; }
+function renderSelfDrivingConfigDialog() { renderCount++; }
 function renderAgent() {}
 function renderTTYComposer() {}
 function bindAgentEvents() {}
@@ -79,42 +79,42 @@ async function api(path, options = {}) {
   apiCalls.push({ path, body: JSON.parse(options.body) });
   return { action: "started", reused: false, agentName: "agent-b", task, run: { id: "run-new" } };
 }
-eval(extract("autoRunIdleSessionForResource"));
-eval(extract("autoRunNeedsConfiguration"));
-eval(extract("autoRunDialogInitialState"));
-eval(extract("openAutoRunConfigDialog"));
-eval(extract("closeAutoRunConfigDialog"));
-eval(extract("startChatAutoRun", true));
+eval(extract("selfDrivingIdleSessionForResource"));
+eval(extract("selfDrivingNeedsConfiguration"));
+eval(extract("selfDrivingDialogInitialState"));
+eval(extract("openSelfDrivingConfigDialog"));
+eval(extract("closeSelfDrivingConfigDialog"));
+eval(extract("startChatSelfDriving", true));
 
 (async function run() {
-  openAutoRunConfigDialog();
-  assert(state.autoRunDialog.mode === "resume", "a suspended task without an idle Session must use resume mode");
-  assert(state.autoRunDialog.agentName === "agent-a", "the dialog may preselect only this generation's saved Agent");
-  assert(state.autoRunDialog.agentName !== state.agent.agentName, "the dialog must not use another Task's recent Agent");
+  openSelfDrivingConfigDialog();
+  assert(state.selfDrivingDialog.mode === "resume", "a suspended task without an idle Session must use resume mode");
+  assert(state.selfDrivingDialog.agentName === "agent-a", "the dialog may preselect only this generation's saved Agent");
+  assert(state.selfDrivingDialog.agentName !== state.agent.agentName, "the dialog must not use another Task's recent Agent");
 
   const beforeDialog = apiCalls.length;
   const beforeDialogRender = renderCount;
-  const noConfiguration = await startChatAutoRun();
+  const noConfiguration = await startChatSelfDriving();
   assert(noConfiguration === null, "clicking Resume must stop at the dialog before confirmation");
   assert(renderCount === beforeDialogRender + 1, "the unconfigured Resume click must open the Agent dialog");
   assert(apiCalls.length === beforeDialog, "opening the Resume dialog must not call the start API");
 
-  await startChatAutoRun({ configured: true, agentName: "agent-b", expectedGeneration: 7, expectedState: "suspended", runInstructions: "discarded", completionCriteria: "discarded" });
+  await startChatSelfDriving({ configured: true, agentName: "agent-b", expectedGeneration: 7, expectedState: "suspended", runInstructions: "discarded", completionCriteria: "discarded" });
   assert(apiCalls.length === 1, "confirmation must issue exactly one start request");
   const body = apiCalls[0].body;
   assert(body.agentName === "agent-b", "confirmation must use the explicitly selected Agent");
   assert(body.expectedGeneration === 7 && body.expectedState === "suspended", "confirmation must carry the generation/state CAS");
   assert(!Object.prototype.hasOwnProperty.call(body, "runInstructions") && !Object.prototype.hasOwnProperty.call(body, "completionCriteria"), "resume confirmation must preserve saved parameters");
 
-  state.autoRunDialog = { open: true, submitting: false, returnFocus: null };
+  state.selfDrivingDialog = { open: true, submitting: false, returnFocus: null };
   const beforeCancelRender = renderCount;
-  closeAutoRunConfigDialog();
-  assert(!state.autoRunDialog.open && renderCount === beforeCancelRender + 1, "cancel must close the dialog without submitting");
+  closeSelfDrivingConfigDialog();
+  assert(!state.selfDrivingDialog.open && renderCount === beforeCancelRender + 1, "cancel must close the dialog without submitting");
   assert(apiCalls.length === 1, "cancel must have zero additional side effects");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
 	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
-		t.Fatalf("AutoRun resume dialog test failed: %v\n%s", err, output)
+		t.Fatalf("Self-Driving resume dialog test failed: %v\n%s", err, output)
 	}
 }

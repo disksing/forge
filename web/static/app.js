@@ -72,14 +72,14 @@ const state = {
     description: "",
     detail: "",
     slug: "",
-    autorun: false,
+    selfDriving: false,
     agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
     completionCriteria: "",
     submitting: false,
   },
-  autoRunDialog: {
+  selfDrivingDialog: {
     open: false,
     mode: "",
     resourceId: "",
@@ -139,9 +139,9 @@ const state = {
     optionsOpen: false,
     agentChooserOpen: false,
     historyOpen: false,
-    autoRunExpanded: false,
-    autoRunStarting: false,
-    autoRunCancelling: false,
+    selfDrivingExpanded: false,
+    selfDrivingStarting: false,
+    selfDrivingCancelling: false,
     newSessionStarting: false,
     sessionActionsOpen: false,
     eventsHasMore: false,
@@ -154,7 +154,7 @@ const state = {
     sessionStoppingRunId: "",
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
-    autoRunFinishNoticeWatermarks: new Map(),
+    selfDrivingFinishNoticeWatermarks: new Map(),
     renderDeferredForSelection: false,
   },
   tty: [
@@ -174,10 +174,10 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
-const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";
-const AUTORUN_FINISH_NOTICE_KIND = "autorun-finish";
-const AUTORUN_FINISH_NOTICE_WAITING_LIFECYCLE = "until-resume";
-const AUTORUN_RESUMABLE_STATES = new Set(["suspended", "paused"]);
+const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and Self-Driving are unavailable until the lock is released.";
+const SELF_DRIVING_FINISH_NOTICE_KIND = "self-driving-finish";
+const SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE = "until-resume";
+const SELF_DRIVING_RESUMABLE_STATES = new Set(["suspended", "paused"]);
 const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
 const AGENT_DRAFT_STORAGE_VERSION = 1;
 const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
@@ -249,8 +249,8 @@ function notificationRecord(raw) {
     resourceId: String(raw.resourceId || "").trim(),
     marker,
     completionState: String(raw.completionState || "completed").trim(),
-    autoRun: Boolean(raw.autoRun),
-    autoRunState: String(raw.autoRunState || "").trim(),
+    selfDriving: Boolean(raw.selfDriving),
+    selfDrivingState: String(raw.selfDrivingState || "").trim(),
     title: String(raw.title || "").trim(),
     resourceType: String(raw.resourceType || "").trim(),
     resourceTitle: String(raw.resourceTitle || "").trim(),
@@ -482,22 +482,22 @@ function notificationEventState(event) {
   }
 }
 
-function notificationAutoRunContext(item, resourceId) {
-  const generation = Number(item?.autoRunGeneration) || 0;
-  const isAutoRun = Boolean(item?.schedulerTurn) || generation > 0;
-  if (!isAutoRun) return { isAutoRun: false, state: "", final: false, suppressed: false };
+function notificationSelfDrivingContext(item, resourceId) {
+  const generation = Number(item?.selfDrivingGeneration) || 0;
+  const isSelfDriving = Boolean(item?.schedulerTurn) || generation > 0;
+  if (!isSelfDriving) return { isSelfDriving: false, state: "", final: false, suppressed: false };
   const resource = findResource(resourceId);
-  const autoRun = resource?.autoRun;
-  const stateName = String(autoRun?.state || "").trim().toLowerCase();
+  const selfDriving = resource?.selfDriving;
+  const stateName = String(selfDriving?.state || "").trim().toLowerCase();
   const final = ["completed", "failed", "paused", "cancelled"].includes(stateName);
   const suppressed = stateName === "suspended" || stateName === "queued" || stateName === "running" || !final;
-  return { isAutoRun: true, state: stateName, final, suppressed, cancelled: stateName === "cancelled" };
+  return { isSelfDriving: true, state: stateName, final, suppressed, cancelled: stateName === "cancelled" };
 }
 
 function notificationRecordFor(item, marker, completionState = "") {
   const resourceId = notificationResourceIDFor(item);
   const resource = findResource(resourceId);
-  const autoRun = notificationAutoRunContext(item, resourceId);
+  const selfDriving = notificationSelfDrivingContext(item, resourceId);
   return notificationRecord({
     workspaceId: state.notifications.workspaceId,
     sessionId: notificationSessionIDFor(item),
@@ -505,8 +505,8 @@ function notificationRecordFor(item, marker, completionState = "") {
     resourceId,
     marker,
     completionState: completionState || item?.completionState || "completed",
-    autoRun: autoRun.isAutoRun,
-    autoRunState: autoRun.state,
+    selfDriving: selfDriving.isSelfDriving,
+    selfDrivingState: selfDriving.state,
     title: resource?.title || item?.title || item?.agentRunTitle || item?.id || "Session",
     resourceType: resource?.type || "",
     resourceTitle: resource?.title || "",
@@ -581,9 +581,9 @@ function notificationDisplayTitle(record) {
 }
 
 function notificationDisplayBody(record) {
-  if (record.autoRun) {
-    const stateName = record.autoRunState || "finished";
-    return `AutoRun ${stateName}.`;
+  if (record.selfDriving) {
+    const stateName = record.selfDrivingState || "finished";
+    return `Self-Driving ${stateName}.`;
   }
   if (record.completionState === "failed") return "Turn failed.";
   if (record.completionState === "cancelled") return "Turn cancelled.";
@@ -667,7 +667,7 @@ function observeCompletion(item, completionState = "") {
   const store = notificationStore();
   const seen = store.seen.some((entry) => entry.marker === marker);
   const pendingIndex = store.pending.findIndex((entry) => entry.marker === marker);
-  const autoRun = notificationAutoRunContext(item, record.resourceId);
+  const selfDriving = notificationSelfDrivingContext(item, record.resourceId);
   if (!state.notifications.ready) {
     if (!seen) store.seen.push({ marker, at: Date.now() });
     store.pending = store.pending.filter((entry) => entry.marker !== marker);
@@ -676,15 +676,15 @@ function observeCompletion(item, completionState = "") {
     return false;
   }
   if (seen && pendingIndex < 0) return false;
-  if (autoRun.isAutoRun && autoRun.state === "suspended") {
+  if (selfDriving.isSelfDriving && selfDriving.state === "suspended") {
     if (!seen) store.seen.push({ marker, at: Date.now() });
     store.pending = store.pending.filter((entry) => entry.marker !== marker);
     state.notifications.store = store;
     writeNotificationStore();
     return false;
   }
-  if (autoRun.isAutoRun && autoRun.cancelled) {
-    // Cancelling an AutoRun generation is a control-plane action, not a
+  if (selfDriving.isSelfDriving && selfDriving.cancelled) {
+    // Cancelling a Self-Driving generation is a control-plane action, not a
     // completed/failed turn. Mark any projection as handled without adding
     // unread state or triggering browser/sound effects.
     if (!seen) store.seen.push({ marker, at: Date.now() });
@@ -694,7 +694,7 @@ function observeCompletion(item, completionState = "") {
     writeNotificationStore();
     return false;
   }
-  if (autoRun.isAutoRun && autoRun.suppressed && !autoRun.final) {
+  if (selfDriving.isSelfDriving && selfDriving.suppressed && !selfDriving.final) {
     if (!seen) store.seen.push({ marker, at: Date.now() });
     if (pendingIndex < 0) store.pending.push(record);
     state.notifications.store = store;
@@ -1542,7 +1542,7 @@ function renderAll() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
-  renderAutoRunConfigDialog();
+  renderSelfDrivingConfigDialog();
   // Background refreshes render the main workspace frequently. Keep an open
   // settings modal mounted so its scroll position and in-progress controls
   // are not reset; settings actions render it explicitly when needed.
@@ -1566,7 +1566,7 @@ function renderSelectionPanels() {
   refreshIcons();
   renderDiffContent();
   renderCreateDialog();
-  renderAutoRunConfigDialog();
+  renderSelfDrivingConfigDialog();
 }
 
 function isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion = null) {
@@ -1669,7 +1669,7 @@ async function switchWorkspace(id) {
   resetWorkspaceAgentsDraft();
   state.workspaceAgentsSaving = false;
   closeCreateDialog();
-  if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
+  if (state.selfDrivingDialog.open && !state.selfDrivingDialog.submitting) closeSelfDrivingConfigDialog();
   resetAgentState();
   renderWorkspaceSelect();
   if (!await loadUIState(id, navigationVersion)) return;
@@ -1713,7 +1713,7 @@ function projectTaskSummary(project) {
     .filter((task) => task && task.archived !== true);
   const runningTaskIds = new Set();
   for (const task of tasks) {
-    if (task.autoRun?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+    if (task.selfDriving?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
       runningTaskIds.add(task.id);
     }
   }
@@ -1873,7 +1873,7 @@ function commitListDrag(drag, target, after) {
 
 function noTaskOperationalState() {
   return {
-    autoRun: null,
+    selfDriving: null,
     session: null,
     className: "",
     label: "",
@@ -1885,22 +1885,22 @@ function noTaskOperationalState() {
 function taskOperationalState(item) {
   const sessions = taskAgentSessions(item.id);
   const locks = resourceLocks(item.id);
-  const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);
+  const selfDriving = deriveTaskSelfDrivingState(item.selfDriving, sessions);
   const session = deriveTaskSessionState(sessions);
   const lock = deriveTaskLockState(locks);
-  const statusPresentation = operationalStatusPresentation([autoRun, session], lock);
+  const statusPresentation = operationalStatusPresentation([selfDriving, session], lock);
   return {
-    autoRun,
+    selfDriving,
     session,
     className: statusPresentation.className,
     lock,
     statusPresentation,
-    label: taskOperationalLabel(item.autoRun, sessions, lock, { autoRun, session }),
+    label: taskOperationalLabel(item.selfDriving, sessions, lock, { selfDriving, session }),
   };
 }
 
 // operationalStatusPresentation is shared by the tree and Session list. The
-// status objects themselves come from the existing AutoRun and Session
+// status objects themselves come from the existing Self-Driving and Session
 // presentation helpers, so both views keep the same icon, tone, animation,
 // ordering, and single/dual layout semantics.
 function operationalStatusPresentation(statuses, lock = null) {
@@ -1930,35 +1930,35 @@ function operationalStatusMarkup(presentation, options = {}) {
     </span>`;
 }
 
-function deriveTaskAutoRunState(autoRun, sessions) {
-  if (!autoRun) return null;
-  const autoRunState = autoRun?.state || "";
-  if (autoRunState === "running") {
-    const scheduler = sessions.find((session) => session.schedulerTurn && session.autoRunGeneration === autoRun.generation && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
+function deriveTaskSelfDrivingState(selfDriving, sessions) {
+  if (!selfDriving) return null;
+  const selfDrivingState = selfDriving?.state || "";
+  if (selfDrivingState === "running") {
+    const scheduler = sessions.find((session) => session.schedulerTurn && session.selfDrivingGeneration === selfDriving.generation && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
     if (scheduler) {
-      return taskStatusState("auto-running", "task-status-auto-running", "workflow", "AutoRun running", "auto-run");
+      return taskStatusState("self-driving-running", "task-status-self-driving-running", "workflow", "Self-Driving running", "self-driving");
     }
-    return taskStatusState("auto-recovering", "task-status-attention", "rotate-ccw", "AutoRun waiting for scheduler recovery", "auto-run");
+    return taskStatusState("auto-recovering", "task-status-attention", "rotate-ccw", "Self-Driving waiting for scheduler recovery", "self-driving");
   }
-  if (autoRunState === "failed") {
-    return taskStatusState("failed", "task-status-danger", "triangle-alert", "AutoRun failed", "auto-run");
+  if (selfDrivingState === "failed") {
+    return taskStatusState("failed", "task-status-danger", "triangle-alert", "Self-Driving failed", "self-driving");
   }
-  if (autoRunState === "paused") {
-    return taskStatusState("paused", "task-status-attention", "square", "AutoRun paused", "auto-run");
+  if (selfDrivingState === "paused") {
+    return taskStatusState("paused", "task-status-attention", "square", "Self-Driving paused", "self-driving");
   }
-  if (autoRunState === "suspended") {
-    return taskStatusState("suspended", "task-status-attention", "pause", "AutoRun suspended, waiting for timed wake-up", "auto-run");
+  if (selfDrivingState === "suspended") {
+    return taskStatusState("suspended", "task-status-attention", "pause", "Self-Driving suspended, waiting for timed wake-up", "self-driving");
   }
-  if (autoRunState === "queued") {
-    return taskStatusState("queued", "task-status-queued", "clock", "AutoRun queued", "auto-run");
+  if (selfDrivingState === "queued") {
+    return taskStatusState("queued", "task-status-queued", "clock", "Self-Driving queued", "self-driving");
   }
-  if (autoRunState === "completed") {
-    return taskStatusState("completed", "task-status-completed", "check-circle-2", "AutoRun completed", "auto-run");
+  if (selfDrivingState === "completed") {
+    return taskStatusState("completed", "task-status-completed", "check-circle-2", "Self-Driving completed", "self-driving");
   }
-  if (autoRunState === "cancelled") {
-    return taskStatusState("cancelled", "task-status-cancelled", "ban", "AutoRun cancelled", "auto-run");
+  if (selfDrivingState === "cancelled") {
+    return taskStatusState("cancelled", "task-status-cancelled", "ban", "Self-Driving cancelled", "self-driving");
   }
-  return taskStatusState("unknown", "task-status-neutral", "circle-help", `AutoRun ${autoRunState || "unknown"}`, "auto-run");
+  return taskStatusState("unknown", "task-status-neutral", "circle-help", `Self-Driving ${selfDrivingState || "unknown"}`, "self-driving");
 }
 
 function deriveTaskSessionState(sessions) {
@@ -2070,10 +2070,10 @@ function taskLockOwnerLabel(session) {
   return `${agent?.name || session.agentRunAgentName || "Forge GUI"} session`;
 }
 
-function taskOperationalLabel(autoRun, sessions, lock, statuses) {
+function taskOperationalLabel(selfDriving, sessions, lock, statuses) {
   const parts = [];
-  if (autoRun) {
-    parts.push(`AutoRun ${autoRun.state}, generation ${autoRun.generation}`);
+  if (selfDriving) {
+    parts.push(`Self-Driving ${selfDriving.state}, generation ${selfDriving.generation}`);
   }
   if (sessions.length === 1) {
     parts.push(taskAgentSessionLabel(sessions[0]));
@@ -2081,7 +2081,7 @@ function taskOperationalLabel(autoRun, sessions, lock, statuses) {
     const sessionStatuses = [...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ");
     parts.push(`${sessions.length} agent sessions: ${sessionStatuses}`);
   }
-  if (statuses.autoRun?.kind === "auto-recovering") {
+  if (statuses.selfDriving?.kind === "auto-recovering") {
     parts.push("No matching active scheduler session");
   }
   if (lock) parts.push(lock.label);
@@ -2089,7 +2089,7 @@ function taskOperationalLabel(autoRun, sessions, lock, statuses) {
 }
 
 function taskAgentSessionLabel(session) {
-  const role = session.schedulerTurn ? "AutoRun session" : "Agent session";
+  const role = session.schedulerTurn ? "Self-Driving session" : "Agent session";
   const status = session.agentRunStatus || "open";
   return `${role} ${status.replace("waiting_approval", "waiting for approval")}`;
 }
@@ -2100,10 +2100,10 @@ function taskOperationalStateKey() {
   for (const project of state.tree.projects || []) {
     const projectState = taskOperationalState(project);
     const summary = projectTaskSummary(project);
-    parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
+    parts.push(`${project.id}:auto=${taskStatusKey(projectState.selfDriving)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || "none"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
     for (const task of project.children || []) {
       const taskState = taskOperationalState(task);
-      parts.push(`${task.id}:auto=${taskStatusKey(taskState.autoRun)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
+      parts.push(`${task.id}:auto=${taskStatusKey(taskState.selfDriving)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
     }
   }
   return parts.join("|");
@@ -2179,7 +2179,7 @@ async function selectResource(id, options = {}) {
     }
   }
   if (selectionChanged) {
-    if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
+    if (state.selfDrivingDialog.open && !state.selfDrivingDialog.submitting) closeSelfDrivingConfigDialog();
     state.workspaceAgentsSaving = false;
     flushAgentDraft();
     discardAgentUploadDialog();
@@ -2281,7 +2281,7 @@ function renderSessions() {
     const taskResource = sessionTaskResource(session);
     const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
     const statusPresentation = operationalStatusPresentation(
-      isInternal && taskState.autoRun ? [taskState.autoRun, status] : [status],
+      isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status],
     );
     const statusLabel = sessionOperationalLabel(session, taskResource, taskState, status);
     const clickable = Boolean(navigation.navigationResourceId || navigation.menu);
@@ -2405,25 +2405,25 @@ function sessionNavigationTarget(session) {
 function sessionTaskResource(session) {
   if (!session || session.source !== "internal") return null;
   const explicitResourceId = String(session.resourceId || "").trim();
-  if (explicitResourceId) return taskResourceForAutoRun(explicitResourceId);
+  if (explicitResourceId) return taskResourceForSelfDriving(explicitResourceId);
   const controls = sessionControls(session);
   if (controls.length !== 1) return null;
-  return taskResourceForAutoRun(controls[0].resourceId);
+  return taskResourceForSelfDriving(controls[0].resourceId);
 }
 
-function taskResourceForAutoRun(resourceId) {
+function taskResourceForSelfDriving(resourceId) {
   const resource = findResource(resourceId);
   return resource && resource.type === "task" && !resource.archived ? resource : null;
 }
 
 function sessionOperationalLabel(session, taskResource, taskState, sessionStatus) {
   const parts = [];
-  if (taskResource?.autoRun && taskState?.autoRun) {
-    const rawState = taskResource.autoRun.state || "unknown";
-    const stateLabel = taskState.autoRun.kind === "auto-recovering"
-      ? `${taskState.autoRun.label} (${rawState})`
-      : `AutoRun ${rawState}`;
-    const generation = Number.isFinite(taskResource.autoRun.generation) ? taskResource.autoRun.generation : "unknown";
+  if (taskResource?.selfDriving && taskState?.selfDriving) {
+    const rawState = taskResource.selfDriving.state || "unknown";
+    const stateLabel = taskState.selfDriving.kind === "auto-recovering"
+      ? `${taskState.selfDriving.label} (${rawState})`
+      : `Self-Driving ${rawState}`;
+    const generation = Number.isFinite(taskResource.selfDriving.generation) ? taskResource.selfDriving.generation : "unknown";
     parts.push(`${stateLabel}, generation ${generation}`);
   }
   if (sessionStatus) parts.push(sessionStatus.label);
@@ -3689,83 +3689,83 @@ function repoSection(item) {
   `;
 }
 
-function isAutoRunWaitingFinishNotice(notice) {
+function isSelfDrivingWaitingFinishNotice(notice) {
   const data = notice?.data;
-  return data?.method === "forge/autorun/finish" &&
-    data?.kind === AUTORUN_FINISH_NOTICE_KIND &&
-    data?.lifecycle === AUTORUN_FINISH_NOTICE_WAITING_LIFECYCLE &&
+  return data?.method === "forge/self-driving/finish" &&
+    data?.kind === SELF_DRIVING_FINISH_NOTICE_KIND &&
+    data?.lifecycle === SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE &&
     data?.level !== "error" &&
     String(data.runId || "").trim() !== "" &&
     String(data.resourceId || "").trim() !== "" &&
-    Number(data.autoRunGeneration) > 0;
+    Number(data.selfDrivingGeneration) > 0;
 }
 
-function autoRunWaitingNoticeKey(notice) {
+function selfDrivingWaitingNoticeKey(notice) {
   const data = notice?.data || {};
-  return `${String(data.runId || "").trim()}:${String(data.resourceId || "").trim()}:${Number(data.autoRunGeneration) || 0}`;
+  return `${String(data.runId || "").trim()}:${String(data.resourceId || "").trim()}:${Number(data.selfDrivingGeneration) || 0}`;
 }
 
-function autoRunWaitingNoticeSequence(notice) {
+function selfDrivingWaitingNoticeSequence(notice) {
   return Number(notice?.data?.schedulerTurnSequence) || 0;
 }
 
-function autoRunProjectionForRun(run) {
+function selfDrivingProjectionForRun(run) {
   const resourceId = String(run?.resourceId || "").trim();
   if (!resourceId) return null;
   const candidates = [
     state.details?.[resourceId],
     findResource(resourceId),
-  ].map((resource) => resource?.autoRun).filter(Boolean).map((autoRun) => ({
-    generation: Number(autoRun.generation) || 0,
-    state: String(autoRun.state || "").trim().toLowerCase(),
+  ].map((resource) => resource?.selfDriving).filter(Boolean).map((selfDriving) => ({
+    generation: Number(selfDriving.generation) || 0,
+    state: String(selfDriving.state || "").trim().toLowerCase(),
   }));
   if (!candidates.length) return null;
-  const statePriority = (stateName) => AUTORUN_RESUMABLE_STATES.has(stateName) ? 0 : 1;
+  const statePriority = (stateName) => SELF_DRIVING_RESUMABLE_STATES.has(stateName) ? 0 : 1;
   candidates.sort((left, right) => right.generation - left.generation || statePriority(right.state) - statePriority(left.state));
   return candidates[0];
 }
 
-function currentAutoRunWaitingNotice(notice, runs = state.agent.runs) {
-  if (!isAutoRunWaitingFinishNotice(notice)) return true;
+function currentSelfDrivingWaitingNotice(notice, runs = state.agent.runs) {
+  if (!isSelfDrivingWaitingFinishNotice(notice)) return true;
   const data = notice.data;
   if (!state.agent.activeRunId || String(data.runId).trim() !== state.agent.activeRunId) return false;
   const run = (runs || []).find((candidate) => candidate.id === state.agent.activeRunId);
   if (!run || String(run.resourceId || "").trim() !== String(data.resourceId).trim() ||
-      Number(run.autoRunGeneration) !== Number(data.autoRunGeneration)) return false;
+      Number(run.selfDrivingGeneration) !== Number(data.selfDrivingGeneration)) return false;
 
-  const noticeSequence = autoRunWaitingNoticeSequence(notice);
+  const noticeSequence = selfDrivingWaitingNoticeSequence(notice);
   const runSequence = Number(run.schedulerTurnSequence) || 0;
   if (runSequence > noticeSequence && runSequence > 0) return false;
   if (runSequence === noticeSequence && run.schedulerTurnId && data.schedulerTurnId &&
       run.schedulerTurnId !== data.schedulerTurnId) return false;
   if (run.schedulerTurn && (runSequence === 0 || runSequence >= noticeSequence)) return false;
 
-  const projection = autoRunProjectionForRun(run);
+  const projection = selfDrivingProjectionForRun(run);
   if (!projection) return true;
-  if (projection.generation !== Number(data.autoRunGeneration)) return false;
-  return AUTORUN_RESUMABLE_STATES.has(projection.state);
+  if (projection.generation !== Number(data.selfDrivingGeneration)) return false;
+  return SELF_DRIVING_RESUMABLE_STATES.has(projection.state);
 }
 
 function reconcileAgentNotices(runs = state.agent.runs) {
   const before = state.agent.notices.length;
-  state.agent.notices = state.agent.notices.filter((notice) => currentAutoRunWaitingNotice(notice, runs));
+  state.agent.notices = state.agent.notices.filter((notice) => currentSelfDrivingWaitingNotice(notice, runs));
   return state.agent.notices.length !== before;
 }
 
-function recordAutoRunWaitingNoticeWatermark(notice) {
-  if (!isAutoRunWaitingFinishNotice(notice)) return;
-  if (!(state.agent.autoRunFinishNoticeWatermarks instanceof Map)) state.agent.autoRunFinishNoticeWatermarks = new Map();
-  const key = autoRunWaitingNoticeKey(notice);
-  const sequence = autoRunWaitingNoticeSequence(notice);
-  const previous = state.agent.autoRunFinishNoticeWatermarks.get(key) || 0;
-  if (sequence > previous) state.agent.autoRunFinishNoticeWatermarks.set(key, sequence);
+function recordSelfDrivingWaitingNoticeWatermark(notice) {
+  if (!isSelfDrivingWaitingFinishNotice(notice)) return;
+  if (!(state.agent.selfDrivingFinishNoticeWatermarks instanceof Map)) state.agent.selfDrivingFinishNoticeWatermarks = new Map();
+  const key = selfDrivingWaitingNoticeKey(notice);
+  const sequence = selfDrivingWaitingNoticeSequence(notice);
+  const previous = state.agent.selfDrivingFinishNoticeWatermarks.get(key) || 0;
+  if (sequence > previous) state.agent.selfDrivingFinishNoticeWatermarks.set(key, sequence);
 }
 
-function isStaleAutoRunWaitingNotice(notice) {
-  if (!isAutoRunWaitingFinishNotice(notice)) return false;
-  if (!(state.agent.autoRunFinishNoticeWatermarks instanceof Map)) state.agent.autoRunFinishNoticeWatermarks = new Map();
-  const sequence = autoRunWaitingNoticeSequence(notice);
-  const previous = state.agent.autoRunFinishNoticeWatermarks.get(autoRunWaitingNoticeKey(notice)) || 0;
+function isStaleSelfDrivingWaitingNotice(notice) {
+  if (!isSelfDrivingWaitingFinishNotice(notice)) return false;
+  if (!(state.agent.selfDrivingFinishNoticeWatermarks instanceof Map)) state.agent.selfDrivingFinishNoticeWatermarks = new Map();
+  const sequence = selfDrivingWaitingNoticeSequence(notice);
+  const previous = state.agent.selfDrivingFinishNoticeWatermarks.get(selfDrivingWaitingNoticeKey(notice)) || 0;
   return previous > 0 && sequence <= previous;
 }
 
@@ -3810,7 +3810,7 @@ async function refreshAgentRunMetadata(options = {}) {
     if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
     connectAgentStream();
   }
-  if (options.refreshAutoRunProjection && state.agent.activeRunId) {
+  if (options.refreshSelfDrivingProjection && state.agent.activeRunId) {
     const activeRun = currentAgentRun();
     const resourceId = String(activeRun?.resourceId || "").trim();
     const [tree, detail] = await Promise.all([
@@ -3846,8 +3846,8 @@ function reconcileActiveAgentRun(runs) {
 }
 
 function preferredAgentRunID(runs) {
-  const autoRun = runs.find((run) => run.schedulerTurn && isLiveAgentRun(run));
-  if (autoRun) return autoRun.id;
+  const selfDriving = runs.find((run) => run.schedulerTurn && isLiveAgentRun(run));
+  if (selfDriving) return selfDriving.id;
   if (runs.some((run) => run.id === state.agent.activeRunId)) return state.agent.activeRunId;
   return runs[0]?.id || "";
 }
@@ -4079,7 +4079,7 @@ async function reloadAgentRunsForSelection() {
 }
 
 function resetAgentState() {
-  if (state.autoRunDialog.open && !state.autoRunDialog.submitting) closeAutoRunConfigDialog();
+  if (state.selfDrivingDialog.open && !state.selfDrivingDialog.submitting) closeSelfDrivingConfigDialog();
   flushAgentDraft();
   discardAgentUploadDialog();
   closeAgentStream();
@@ -4102,7 +4102,7 @@ function resetAgentState() {
   state.agent.sessionStoppingRunId = "";
   state.agent.toolGroupOpen.clear();
   state.agent.approvalDrafts.clear();
-  if (state.agent.autoRunFinishNoticeWatermarks instanceof Map) state.agent.autoRunFinishNoticeWatermarks.clear();
+  if (state.agent.selfDrivingFinishNoticeWatermarks instanceof Map) state.agent.selfDrivingFinishNoticeWatermarks.clear();
   state.agent.renderDeferredForSelection = false;
   clearAgentRenderTimer();
 }
@@ -4191,7 +4191,7 @@ function appendCanonicalAgentEvent(event) {
   }
   if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
     refreshAgentRunMetadata({
-      refreshAutoRunProjection: ["turn.completed", "turn.failed", "turn.cancelled", "session.state"].includes(event.type),
+      refreshSelfDrivingProjection: ["turn.completed", "turn.failed", "turn.cancelled", "session.state"].includes(event.type),
     }).then(renderAll).catch((err) => console.warn("agent refresh failed", err));
   } else {
     scheduleAgentRender();
@@ -4202,24 +4202,24 @@ function appendForgeNotice(notice) {
   if (notice?.source !== "forge" || notice?.type !== "forge.notice") return;
   const scopedRunID = String(notice?.data?.runId || "").trim();
   if (scopedRunID && scopedRunID !== state.agent.activeRunId) return;
-  if (isStaleAutoRunWaitingNotice(notice)) return;
-  if (isAutoRunWaitingFinishNotice(notice)) {
-    recordAutoRunWaitingNoticeWatermark(notice);
-    const key = autoRunWaitingNoticeKey(notice);
+  if (isStaleSelfDrivingWaitingNotice(notice)) return;
+  if (isSelfDrivingWaitingFinishNotice(notice)) {
+    recordSelfDrivingWaitingNoticeWatermark(notice);
+    const key = selfDrivingWaitingNoticeKey(notice);
     state.agent.notices = state.agent.notices.filter((existing) =>
-      !isAutoRunWaitingFinishNotice(existing) || autoRunWaitingNoticeKey(existing) !== key
+      !isSelfDrivingWaitingFinishNotice(existing) || selfDrivingWaitingNoticeKey(existing) !== key
     );
   }
   state.agent.notices.push(notice);
   if (state.agent.notices.length > 20) state.agent.notices.shift();
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   scheduleAgentRender();
-  if (isAutoRunWaitingFinishNotice(notice) && typeof refreshAgentRunMetadata === "function") {
-    refreshAgentRunMetadata({ refreshAutoRunProjection: true })
+  if (isSelfDrivingWaitingFinishNotice(notice) && typeof refreshAgentRunMetadata === "function") {
+    refreshAgentRunMetadata({ refreshSelfDrivingProjection: true })
       .then(() => {
         if (state.activeWorkspaceId && state.agent.activeRunId === scopedRunID) renderAll();
       })
-      .catch((err) => console.warn("AutoRun notice projection refresh failed", err));
+      .catch((err) => console.warn("Self-Driving notice projection refresh failed", err));
   }
 }
 
@@ -4265,14 +4265,14 @@ function projectAgentTimeline() {
 function renderAgent() {
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   const controls = $("agentControls");
-  const barWrap = $("autoRunBarWrap");
+  const barWrap = $("selfDrivingBarWrap");
   const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
   const visibleRun = activeRun || state.agent.runs[0] || null;
   controls.hidden = true;
   controls.innerHTML = "";
   const detail = state.details[state.selectedId];
-  barWrap.innerHTML = autoRunTopBar(detail);
+  barWrap.innerHTML = selfDrivingTopBar(detail);
   wrap.innerHTML = `
     <div id="agentSessions" class="agent-session-switcher">
       ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start an agent session from the selected task.</span></div>`}
@@ -4285,7 +4285,7 @@ function renderAgent() {
   `;
 }
 
-function autoRunStatusReason(run, logs = []) {
+function selfDrivingStatusReason(run, logs = []) {
   if (!run) return null;
   if (run.state === "suspended") {
     const summary = String(run.suspensionSummary || "").trim();
@@ -4293,9 +4293,9 @@ function autoRunStatusReason(run, logs = []) {
   }
 
   const titlesByState = {
-    running: ["Auto Run retry"],
-    paused: ["Auto Run paused"],
-    failed: ["Auto Run failed"],
+    running: ["Self-Driving retry"],
+    paused: ["Self-Driving paused"],
+    failed: ["Self-Driving failed"],
   };
   const titles = titlesByState[run.state];
   if (!titles) return null;
@@ -4305,57 +4305,57 @@ function autoRunStatusReason(run, logs = []) {
     return { label: labelsByState[run.state], text: structuredReason };
   }
   const generation = Number(run.generation);
-  const entry = (logs || []).find((candidate) => candidate?.autoRun === true
-    && Number(candidate.autoRunGeneration) === generation
+  const entry = (logs || []).find((candidate) => candidate?.selfDriving === true
+    && Number(candidate.selfDrivingGeneration) === generation
     && titles.includes(candidate.title)
     && String(candidate.details || "").trim());
   if (!entry) return null;
   return { label: labelsByState[run.state], text: String(entry.details).trim() };
 }
 
-// autoRunTopBar renders the single, always-visible AutoRun status and control
-// entry at the top of a Task chat. Tasks without an AutoRun generation get a
-// compact not-started bar with Start AutoRun; every real state shows its state
+// selfDrivingTopBar renders the single, always-visible Self-Driving status and control
+// entry at the top of a Task chat. Tasks without a Self-Driving generation get a
+// compact not-started bar with Start Self-Driving; every real state shows its state
 // chip, a one-line truncated summary and the currently legal actions. Longer
 // context (generation, profiles, actual Agent, reasons, wake condition) stays
 // behind the details toggle so the bar never crowds the chat.
-function autoRunTopBar(detail) {
+function selfDrivingTopBar(detail) {
   const selected = findResource(state.selectedId);
   if (!selected || selected.type !== "task" || !detail) return "";
-  const run = detail.autoRun || null;
-  const presentation = autoRunPresentation(run ? run.state : "");
-  const expanded = Boolean(run && state.agent.autoRunExpanded);
+  const run = detail.selfDriving || null;
+  const presentation = selfDrivingPresentation(run ? run.state : "");
+  const expanded = Boolean(run && state.agent.selfDrivingExpanded);
   const externalLocked = selectedResourceHasExternalLock();
-  const summary = autoRunBarSummary(run, detail);
+  const summary = selfDrivingBarSummary(run, detail);
   const actions = externalLocked
-    ? `<span class="autorun-bar-lock"><i data-lucide="lock" class="autorun-lock-icon" aria-hidden="true"></i><span>Locked by an external session</span></span>`
-    : autoRunBarActions(detail);
-  const toggleLabel = expanded ? "Hide AutoRun details" : "Show AutoRun details";
+    ? `<span class="self-driving-bar-lock"><i data-lucide="lock" class="self-driving-lock-icon" aria-hidden="true"></i><span>Locked by an external session</span></span>`
+    : selfDrivingBarActions(detail);
+  const toggleLabel = expanded ? "Hide Self-Driving details" : "Show Self-Driving details";
   return `
-    <section class="autorun-bar autorun-bar-${presentation.key}${expanded ? " expanded" : ""}" role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}">
-      <div class="autorun-bar-row">
-        <span class="autorun-bar-title"><i data-lucide="workflow" class="autorun-title-icon" aria-hidden="true"></i><strong>AutoRun</strong></span>
-        <span class="autorun-state autorun-state-${presentation.key}">
-          <i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>
+    <section class="self-driving-bar self-driving-bar-${presentation.key}${expanded ? " expanded" : ""}" role="status" aria-label="Self-Driving: ${escapeHTML(presentation.label)}">
+      <div class="self-driving-bar-row">
+        <span class="self-driving-bar-title"><i data-lucide="workflow" class="self-driving-title-icon" aria-hidden="true"></i><strong>Self-Driving</strong></span>
+        <span class="self-driving-state self-driving-state-${presentation.key}">
+          <i data-lucide="${presentation.icon}" class="self-driving-state-icon" aria-hidden="true"></i>
           <span>${escapeHTML(presentation.label)}</span>
         </span>
-        ${summary ? `<span class="autorun-bar-summary" title="${escapeHTML(summary)}">${escapeHTML(summary)}</span>` : ""}
-        <span class="autorun-bar-actions">
+        ${summary ? `<span class="self-driving-bar-summary" title="${escapeHTML(summary)}">${escapeHTML(summary)}</span>` : ""}
+        <span class="self-driving-bar-actions">
           ${actions}
-          ${run ? `<button type="button" class="autorun-bar-toggle" data-autorun-toggle aria-expanded="${expanded ? "true" : "false"}" aria-controls="autoRunBarDetails" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(expanded ? "chevron-up" : "chevron-down", "autorun-expand-icon")}</button>` : ""}
+          ${run ? `<button type="button" class="self-driving-bar-toggle" data-self-driving-toggle aria-expanded="${expanded ? "true" : "false"}" aria-controls="selfDrivingBarDetails" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(expanded ? "chevron-up" : "chevron-down", "self-driving-expand-icon")}</button>` : ""}
         </span>
       </div>
-      ${run ? `<div class="autorun-bar-details" id="autoRunBarDetails"${expanded ? "" : " hidden"}>${autoRunBarDetails(detail)}</div>` : ""}
+      ${run ? `<div class="self-driving-bar-details" id="selfDrivingBarDetails"${expanded ? "" : " hidden"}>${selfDrivingBarDetails(detail)}</div>` : ""}
     </section>
   `;
 }
 
-// autoRunBarSummary picks the single most useful line of context for the
+// selfDrivingBarSummary picks the single most useful line of context for the
 // collapsed bar; CSS truncates it with an ellipsis and the full text stays
 // available via the title attribute and the expanded details.
-function autoRunBarSummary(run, detail) {
-  if (!run) return "No AutoRun generation yet.";
-  const reason = autoRunStatusReason(run, detail?.logs);
+function selfDrivingBarSummary(run, detail) {
+  if (!run) return "No Self-Driving generation yet.";
+  const reason = selfDrivingStatusReason(run, detail?.logs);
   if (reason) return `${reason.label}: ${reason.text}`;
   const stateName = String(run.state || "").trim().toLowerCase();
   if (stateName === "suspended" && run.wakeCondition) return `Wake condition: ${run.wakeCondition}`;
@@ -4367,11 +4367,11 @@ function autoRunBarSummary(run, detail) {
   return `Generation ${Number(run.generation) || 0}`;
 }
 
-function autoRunBarDetails(detail) {
-  const run = detail?.autoRun;
+function selfDrivingBarDetails(detail) {
+  const run = detail?.selfDriving;
   if (!run) return "";
-  const reason = autoRunStatusReason(run, detail?.logs);
-  const latestSuspension = (detail.logs || []).find((entry) => entry.autoRun && entry.autoRunGeneration === run.generation && ["Auto Run suspended", "Auto Run wake condition migrated"].includes(entry.title));
+  const reason = selfDrivingStatusReason(run, detail?.logs);
+  const latestSuspension = (detail.logs || []).find((entry) => entry.selfDriving && entry.selfDrivingGeneration === run.generation && ["Self-Driving suspended", "Self-Driving wake condition migrated"].includes(entry.title));
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
@@ -4381,12 +4381,12 @@ function autoRunBarDetails(detail) {
     <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
     ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
     ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-    ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.autoRunWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
+    ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.selfDrivingWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
     ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
   `;
 }
 
-function autoRunPresentation(state) {
+function selfDrivingPresentation(state) {
   const presentations = {
     none: { label: "Not started", icon: "circle-dashed" },
     queued: { label: "Queued", icon: "list-start" },
@@ -4567,17 +4567,17 @@ function renderTTYComposer(options = {}) {
     const stopTurnPending = isAgentTurnStopping(activeRun);
     const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
     const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
-    const closeCancelsAutoRun = isAutoRunSessionCloseTarget(activeRun);
+    const closeCancelsSelfDriving = isSelfDrivingSessionCloseTarget(activeRun);
     const sessionActionsMarkup = agentComposerActions({ collapsible: true });
     const sessionControlsMarkup = sessionControlComposerActions({
       includeEndTurn: stopTurnAvailable,
       endingTurn: stopTurnPending,
       includeClose: true,
       closingSession: sessionStopping,
-      cancelAutoRunOnClose: closeCancelsAutoRun,
-      autoRunCancelling: state.agent.autoRunCancelling,
+      cancelSelfDrivingOnClose: closeCancelsSelfDriving,
+      selfDrivingCancelling: state.agent.selfDrivingCancelling,
     });
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsAutoRun ? "cancel-autorun" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsSelfDriving ? "cancel-selfDriving" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4709,25 +4709,25 @@ function sessionControlComposerActions(options = {}) {
   const endingTurn = Boolean(options.endingTurn);
   const includeClose = Boolean(options.includeClose);
   const closingSession = Boolean(options.closingSession);
-  const cancelAutoRunOnClose = Boolean(options.cancelAutoRunOnClose);
-  const autoRunCancelling = Boolean(options.autoRunCancelling);
-  const endTurnPending = endingTurn || closingSession || autoRunCancelling;
+  const cancelSelfDrivingOnClose = Boolean(options.cancelSelfDrivingOnClose);
+  const selfDrivingCancelling = Boolean(options.selfDrivingCancelling);
+  const endTurnPending = endingTurn || closingSession || selfDrivingCancelling;
   const endTurnLabel = endingTurn
     ? "Ending turn…"
     : closingSession
       ? "Closing session…"
-      : autoRunCancelling
-        ? "Cancelling AutoRun…"
+      : selfDrivingCancelling
+        ? "Cancelling Self-Driving…"
         : "End current turn; keep the Session open.";
-  const closePending = endingTurn || closingSession || autoRunCancelling;
+  const closePending = endingTurn || closingSession || selfDrivingCancelling;
   const closeLabel = closingSession
     ? "Closing session…"
     : endingTurn
       ? "Ending turn…"
-      : autoRunCancelling
-        ? "Cancelling AutoRun…"
-        : cancelAutoRunOnClose
-          ? "Cancel AutoRun and close the session."
+      : selfDrivingCancelling
+        ? "Cancelling Self-Driving…"
+        : cancelSelfDrivingOnClose
+          ? "Cancel Self-Driving and close the session."
           : "Close session; end the entire AgentHub Session.";
   const endTurnMarkup = includeEndTurn ? `
     <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button"${endTurnPending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(endTurnLabel)}" aria-label="${escapeHTML(endTurnLabel)}">
@@ -4735,7 +4735,7 @@ function sessionControlComposerActions(options = {}) {
     </button>` : "";
   const closeSessionMarkup = includeClose ? `
     <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button"${closePending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(closeLabel)}" aria-label="${escapeHTML(closeLabel)}">
-      ${icon(closingSession || autoRunCancelling ? "loader-circle" : "square")}
+      ${icon(closingSession || selfDrivingCancelling ? "loader-circle" : "square")}
     </button>` : "";
   return `${endTurnMarkup}${closeSessionMarkup}`;
 }
@@ -4744,11 +4744,11 @@ function agentDisplayName(agent) {
   return agent?.name || agent?.id || "Agent";
 }
 
-// autoRunActionIcon renders the AutoRun action family icon: a workflow
+// selfDrivingActionIcon renders the Self-Driving action family icon: a workflow
 // base glyph marking the automation family, plus a state badge in the
 // lower-right corner (play = start, resume arrow = resume, stop square =
 // cancel). kind is "start", "resume", or "cancel".
-function autoRunActionIcon(kind) {
+function selfDrivingActionIcon(kind) {
   const badgeFill = kind === "cancel" ? "#b91c1c" : "#6d28d9";
   const badgeGlyph = kind === "cancel"
     ? `<rect width="15" height="15" x="4.5" y="4.5" rx="2" fill="#fff" stroke="none"/>`
@@ -4758,15 +4758,15 @@ function autoRunActionIcon(kind) {
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(-0.8,-0.8) scale(0.9)" stroke-width="2.25"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></g><circle cx="17.4" cy="17.4" r="6" fill="${badgeFill}" stroke="#fff" stroke-width="2.2"/><g transform="translate(17.4,17.4) scale(0.38) translate(-12,-12)">${badgeGlyph}</g></svg>`;
 }
 
-// autoRunBarActions renders the stateful AutoRun flow controls. The top bar is
+// selfDrivingBarActions renders the stateful Self-Driving flow controls. The top bar is
 // the only place Start/Resume/Cancel appear; every button keeps a visible
 // label next to its icon. The server re-validates every condition at
 // execution time.
-function autoRunBarActions(detail) {
+function selfDrivingBarActions(detail) {
   if (!detail || detail.type !== "task") return "";
   if (selectedResourceHasExternalLock()) return "";
-  const autoRun = detail.autoRun || null;
-  const stateName = String(autoRun?.state || "").trim().toLowerCase();
+  const selfDriving = detail.selfDriving || null;
+  const stateName = String(selfDriving?.state || "").trim().toLowerCase();
   const startableStates = ["", "completed", "failed", "cancelled"];
   const resumableStates = ["suspended", "paused"];
   const cancellableStates = ["queued", "running", "suspended", "paused"];
@@ -4778,26 +4778,26 @@ function autoRunBarActions(detail) {
   );
   const busyRun = liveRuns.find((run) => run.status !== "idle" || run.schedulerTurn);
   const busyReason = busyRun?.status === "waiting_approval"
-    ? "Resolve the pending approval before starting AutoRun in this session."
+    ? "Resolve the pending approval before starting Self-Driving in this session."
     : busyRun
-      ? "The current session is busy; wait until it is idle to start AutoRun."
+      ? "The current session is busy; wait until it is idle to start Self-Driving."
       : "";
-  const starting = state.agent.autoRunStarting;
-  const cancelling = state.agent.autoRunCancelling;
+  const starting = state.agent.selfDrivingStarting;
+  const cancelling = state.agent.selfDrivingCancelling;
   const actions = [];
 
   if (startableStates.includes(stateName) || resumableStates.includes(stateName)) {
     const isResume = resumableStates.includes(stateName);
     const label = stateName === "suspended"
-      ? "Resume AutoRun now"
+      ? "Resume Self-Driving now"
       : stateName === "paused"
-        ? "Resume AutoRun"
+        ? "Resume Self-Driving"
         : ["completed", "failed", "cancelled"].includes(stateName)
-          ? "Start New AutoRun"
-          : "Start AutoRun";
-    const pendingLabel = isResume ? "Resuming AutoRun…" : "Starting AutoRun…";
+          ? "Start New Self-Driving"
+          : "Start Self-Driving";
+    const pendingLabel = isResume ? "Resuming Self-Driving…" : "Starting Self-Driving…";
     const title = cancelling
-      ? "Cancelling AutoRun…"
+      ? "Cancelling Self-Driving…"
       : starting
         ? pendingLabel
         : busyReason
@@ -4809,19 +4809,19 @@ function autoRunBarActions(detail) {
     const actionKind = isResume ? "resume" : "start";
     const visibleLabel = starting || cancelling ? pendingLabel : label;
     actions.push(`
-      <button type="button" id="autoRunStartButton" class="autorun-bar-button autorun-bar-${actionKind}-action" data-autorun-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
-        ${starting || cancelling ? icon("loader-circle") : autoRunActionIcon(actionKind)}<span>${escapeHTML(visibleLabel)}</span>
+      <button type="button" id="selfDrivingStartButton" class="self-driving-bar-button self-driving-bar-${actionKind}-action" data-self-driving-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
+        ${starting || cancelling ? icon("loader-circle") : selfDrivingActionIcon(actionKind)}<span>${escapeHTML(visibleLabel)}</span>
       </button>
     `);
   }
 
   if (cancellableStates.includes(stateName)) {
-    const pending = Boolean(state.agent.autoRunCancelling);
-    const label = pending ? "Cancelling AutoRun…" : "Cancel AutoRun";
-    const title = pending ? label : "Cancel AutoRun and keep the Agent Session open.";
+    const pending = Boolean(state.agent.selfDrivingCancelling);
+    const label = pending ? "Cancelling Self-Driving…" : "Cancel Self-Driving";
+    const title = pending ? label : "Cancel Self-Driving and keep the Agent Session open.";
     actions.push(`
-      <button type="button" id="autoRunCancelButton" class="autorun-bar-button autorun-bar-cancel-action" data-autorun-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${pending ? " disabled aria-busy=\"true\"" : ""}>
-        ${pending ? icon("loader-circle") : autoRunActionIcon("cancel")}<span>${escapeHTML(label)}</span>
+      <button type="button" id="selfDrivingCancelButton" class="self-driving-bar-button self-driving-bar-cancel-action" data-self-driving-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${pending ? " disabled aria-busy=\"true\"" : ""}>
+        ${pending ? icon("loader-circle") : selfDrivingActionIcon("cancel")}<span>${escapeHTML(label)}</span>
       </button>
     `);
   }
@@ -4836,14 +4836,14 @@ function selectedResourceLockComposerKey() {
   return `${selected.type}:${selected.id}:${external}:${internal}`;
 }
 
-function autoRunNeedsConfiguration(detail) {
-  const stateName = String(detail?.autoRun?.state || "").trim().toLowerCase();
+function selfDrivingNeedsConfiguration(detail) {
+  const stateName = String(detail?.selfDriving?.state || "").trim().toLowerCase();
   if (!stateName || ["completed", "failed", "cancelled"].includes(stateName)) return true;
   if (!["suspended", "paused"].includes(stateName)) return false;
-  return !autoRunIdleSessionForResource(detail?.id);
+  return !selfDrivingIdleSessionForResource(detail?.id);
 }
 
-async function startChatAutoRun(options = {}) {
+async function startChatSelfDriving(options = {}) {
   return mutateAgentSession(async () => {
     const selected = findResource(state.selectedId);
     const detail = selected ? (state.details[selected.id] || selected) : null;
@@ -4852,22 +4852,22 @@ async function startChatAutoRun(options = {}) {
       throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
     }
     const configuration = Boolean(options.configured);
-    const stateName = String(detail.autoRun?.state || "").trim().toLowerCase();
+    const stateName = String(detail.selfDriving?.state || "").trim().toLowerCase();
     const expectedState = options.expectedState === undefined ? stateName : String(options.expectedState || "").trim().toLowerCase();
     const expectedGeneration = options.expectedGeneration === undefined
-      ? Number(detail.autoRun?.generation) || 0
+      ? Number(detail.selfDriving?.generation) || 0
       : Number(options.expectedGeneration) || 0;
     const directResume = ["paused", "suspended"].includes(expectedState);
-    if (!configuration && autoRunNeedsConfiguration(detail)) {
-      openAutoRunConfigDialog();
+    if (!configuration && selfDrivingNeedsConfiguration(detail)) {
+      openSelfDrivingConfigDialog();
       return null;
     }
-    const reusableSession = autoRunIdleSessionForResource(selected.id);
+    const reusableSession = selfDrivingIdleSessionForResource(selected.id);
     let agentName = String(options.agentName || "").trim();
     if (!reusableSession && !agentName) {
-      throw new Error("Select an agent to start or resume AutoRun without an active session.");
+      throw new Error("Select an agent to start or resume Self-Driving without an active session.");
     }
-    state.agent.autoRunStarting = true;
+    state.agent.selfDrivingStarting = true;
     renderAgent();
     renderTTYComposer();
     bindAgentEvents();
@@ -4883,7 +4883,7 @@ async function startChatAutoRun(options = {}) {
         body.runInstructions = String(options.runInstructions || "");
         body.completionCriteria = String(options.completionCriteria || "");
       }
-      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/autorun/start`, {
+      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving/start`, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -4898,12 +4898,12 @@ async function startChatAutoRun(options = {}) {
       renderAll();
       const agent = response.agentName ? ` with ${response.agentName}` : "";
       if (response.action === "queued") {
-        toast(response.reason || `AutoRun generation ${response.task?.autoRun?.generation} is queued.`);
+        toast(response.reason || `Self-Driving generation ${response.task?.selfDriving?.generation} is queued.`);
       } else {
-        toast(`${response.reused ? "AutoRun resumed in the current session" : "AutoRun started"}${agent}.`);
+        toast(`${response.reused ? "Self-Driving resumed in the current session" : "Self-Driving started"}${agent}.`);
       }
     } finally {
-      state.agent.autoRunStarting = false;
+      state.agent.selfDrivingStarting = false;
       renderAgent();
       renderTTYComposer();
       bindAgentEvents();
@@ -4912,7 +4912,7 @@ async function startChatAutoRun(options = {}) {
   });
 }
 
-function autoRunDialogInitialState() {
+function selfDrivingDialogInitialState() {
   return {
     open: false,
     mode: "",
@@ -4931,14 +4931,14 @@ function autoRunDialogInitialState() {
   };
 }
 
-function autoRunIdleSessionForResource(resourceId) {
+function selfDrivingIdleSessionForResource(resourceId) {
   return state.agent.runs.find((run) =>
     run.resourceId === resourceId && isLiveAgentRun(run) && run.status === "idle" &&
     !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
   ) || null;
 }
 
-function openAutoRunConfigDialog() {
+function openSelfDrivingConfigDialog() {
   const selected = findResource(state.selectedId);
   const detail = selected ? (state.details[selected.id] || selected) : null;
   if (!selected || !detail || detail.type !== "task") {
@@ -4952,78 +4952,78 @@ function openAutoRunConfigDialog() {
   const busyRun = state.agent.runs.find((run) => run.resourceId === selected.id && isLiveAgentRun(run) && (run.status !== "idle" || run.schedulerTurn));
   if (busyRun) {
     toast(busyRun.status === "waiting_approval"
-      ? "Resolve the pending approval before starting AutoRun in this session."
-      : "The current session is busy; wait until it is idle to start AutoRun.");
+      ? "Resolve the pending approval before starting Self-Driving in this session."
+      : "The current session is busy; wait until it is idle to start Self-Driving.");
     return;
   }
-  const reuseRun = autoRunIdleSessionForResource(selected.id);
-  const autoRun = detail.autoRun || null;
-  const resumable = ["suspended", "paused"].includes(String(autoRun?.state || "").trim().toLowerCase());
+  const reuseRun = selfDrivingIdleSessionForResource(selected.id);
+  const selfDriving = detail.selfDriving || null;
+  const resumable = ["suspended", "paused"].includes(String(selfDriving?.state || "").trim().toLowerCase());
   const agents = enabledAgentConfigs();
-  const savedAgentName = String(autoRun?.agentName || "").trim();
+  const savedAgentName = String(selfDriving?.agentName || "").trim();
   const savedAgent = agents.find((agent) => String(agent.id || "").trim().toLowerCase() === savedAgentName.toLowerCase());
   const selectedAgent = resumable ? null : selectedAgentConfig();
-  const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state)
+  const mode = ["completed", "failed", "cancelled"].includes(selfDriving?.state)
     ? "new"
     : resumable && !reuseRun ? "resume" : "configure";
   const agentName = String(reuseRun?.agentHubAgentName || (resumable ? savedAgent?.id || "" : selectedAgent?.id || "")).trim();
-  state.modalEnter = "autorun";
-  state.autoRunDialog = {
+  state.modalEnter = "selfDriving";
+  state.selfDrivingDialog = {
     open: true,
     mode,
     resourceId: selected.id,
     reuseRunId: reuseRun?.id || "",
     reuseCurrentSession: Boolean(reuseRun),
     agentName,
-    expectedGeneration: Number(autoRun?.generation) || 0,
-    expectedState: String(autoRun?.state || "").trim().toLowerCase(),
-    runInstructions: String(autoRun?.prompt || ""),
-    completionCriteria: String(autoRun?.completionCriteria || ""),
+    expectedGeneration: Number(selfDriving?.generation) || 0,
+    expectedState: String(selfDriving?.state || "").trim().toLowerCase(),
+    runInstructions: String(selfDriving?.prompt || ""),
+    completionCriteria: String(selfDriving?.completionCriteria || ""),
     submitting: false,
-    error: !reuseRun && agents.length === 0 ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting AutoRun." : "",
+    error: !reuseRun && agents.length === 0 ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting Self-Driving." : "",
     unknown: false,
     returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
   };
-  renderAutoRunConfigDialog();
+  renderSelfDrivingConfigDialog();
 }
 
-function closeAutoRunConfigDialog() {
-  const dialog = state.autoRunDialog;
+function closeSelfDrivingConfigDialog() {
+  const dialog = state.selfDrivingDialog;
   if (!dialog.open || dialog.submitting) return;
   const returnFocus = dialog.returnFocus;
-  state.autoRunDialog = autoRunDialogInitialState();
-  renderAutoRunConfigDialog();
+  state.selfDrivingDialog = selfDrivingDialogInitialState();
+  renderSelfDrivingConfigDialog();
   if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
 }
 
-function renderAutoRunConfigDialog() {
-  const root = $("autoRunDialogRoot");
+function renderSelfDrivingConfigDialog() {
+  const root = $("selfDrivingDialogRoot");
   if (!root) return;
-  const dialog = state.autoRunDialog;
+  const dialog = state.selfDrivingDialog;
   if (!dialog.open) {
     root.innerHTML = "";
-    delete root.dataset.autoRunDialogKey;
+    delete root.dataset.selfDrivingDialogKey;
     return;
   }
   const resumeMode = dialog.mode === "resume";
-  const title = dialog.mode === "new" ? "Start New AutoRun" : resumeMode ? "Resume AutoRun" : "Configure AutoRun";
-  const submitLabel = dialog.mode === "new" ? "Start New AutoRun" : resumeMode ? "Resume AutoRun" : "Start AutoRun";
+  const title = dialog.mode === "new" ? "Start New Self-Driving" : resumeMode ? "Resume Self-Driving" : "Configure Self-Driving";
+  const submitLabel = dialog.mode === "new" ? "Start New Self-Driving" : resumeMode ? "Resume Self-Driving" : "Start Self-Driving";
   const agents = enabledAgentConfigs();
   const key = `${dialog.resourceId}:${dialog.mode}:${dialog.reuseRunId}:${dialog.agentName}:${dialog.submitting}:${dialog.error}:${dialog.unknown}`;
-  if (root.dataset.autoRunDialogKey === key && root.querySelector("#autoRunConfigForm")) return;
-  root.dataset.autoRunDialogKey = key;
-  const entering = state.modalEnter === "autorun";
+  if (root.dataset.selfDrivingDialogKey === key && root.querySelector("#selfDrivingConfigForm")) return;
+  root.dataset.selfDrivingDialogKey = key;
+  const entering = state.modalEnter === "selfDriving";
   if (entering) state.modalEnter = "";
   const submitDisabled = dialog.submitting || dialog.unknown || (!dialog.reuseCurrentSession && !dialog.agentName) || (!dialog.reuseCurrentSession && agents.length === 0);
   root.innerHTML = `
-    <div class="auto-run-dialog-layer" role="presentation">
-      <div class="auto-run-dialog-backdrop${entering ? " modal-enter" : ""}" data-auto-run-dialog-close="true"></div>
-      <section class="auto-run-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="autoRunDialogTitle">
-        <header class="auto-run-dialog-header">
-          <strong id="autoRunDialogTitle">${title}</strong>
-          <button class="icon-button" type="button" data-auto-run-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
+    <div class="self-driving-dialog-layer" role="presentation">
+      <div class="self-driving-dialog-backdrop${entering ? " modal-enter" : ""}" data-self-driving-dialog-close="true"></div>
+      <section class="self-driving-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="selfDrivingDialogTitle">
+        <header class="self-driving-dialog-header">
+          <strong id="selfDrivingDialogTitle">${title}</strong>
+          <button class="icon-button" type="button" data-self-driving-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
         </header>
-        <form id="autoRunConfigForm" class="details-form auto-run-dialog-form">
+        <form id="selfDrivingConfigForm" class="details-form self-driving-dialog-form">
           <label>
             <span>Agent</span>
             ${dialog.reuseCurrentSession ? `
@@ -5038,43 +5038,43 @@ function renderAutoRunConfigDialog() {
           ${resumeMode ? "" : `
             <label>
               <span>Run instructions <small>(optional)</small></span>
-              <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this AutoRun generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
+              <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this Self-Driving generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
             </label>
           `}
-          ${dialog.error ? `<p class="auto-run-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
-          ${dialog.unknown ? `<p class="auto-run-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
+          ${dialog.error ? `<p class="self-driving-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
+          ${dialog.unknown ? `<p class="self-driving-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
           <div class="form-actions">
             <button type="submit"${submitDisabled ? " disabled" : ""}${dialog.submitting ? " aria-busy=\"true\"" : ""}>${dialog.submitting ? "Starting…" : submitLabel}</button>
-            <button type="button" class="secondary" data-auto-run-dialog-close="true"${dialog.submitting ? " disabled" : ""}>Cancel</button>
+            <button type="button" class="secondary" data-self-driving-dialog-close="true"${dialog.submitting ? " disabled" : ""}>Cancel</button>
           </div>
         </form>
       </section>
     </div>
   `;
-  bindAutoRunConfigDialogEvents();
+  bindSelfDrivingConfigDialogEvents();
   refreshIcons();
 }
 
-function bindAutoRunConfigDialogEvents() {
-  const form = $("autoRunConfigForm");
+function bindSelfDrivingConfigDialogEvents() {
+  const form = $("selfDrivingConfigForm");
   if (!form) return;
   form.addEventListener("input", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement)) return;
-    if (target.name === "agentName" && !state.autoRunDialog.reuseCurrentSession) state.autoRunDialog.agentName = target.value;
-    if (target.name === "runInstructions") state.autoRunDialog.runInstructions = target.value;
-    state.autoRunDialog.error = "";
+    if (target.name === "agentName" && !state.selfDrivingDialog.reuseCurrentSession) state.selfDrivingDialog.agentName = target.value;
+    if (target.name === "runInstructions") state.selfDrivingDialog.runInstructions = target.value;
+    state.selfDrivingDialog.error = "";
   });
-  form.addEventListener("submit", submitAutoRunConfigDialog);
-  document.querySelectorAll("[data-auto-run-dialog-close]").forEach((node) => node.addEventListener("click", closeAutoRunConfigDialog));
-  if (!state.autoRunDialog.submitting) {
+  form.addEventListener("submit", submitSelfDrivingConfigDialog);
+  document.querySelectorAll("[data-self-driving-dialog-close]").forEach((node) => node.addEventListener("click", closeSelfDrivingConfigDialog));
+  if (!state.selfDrivingDialog.submitting) {
     (form.elements.agentName || form.elements.runInstructions)?.focus({ preventScroll: true });
   }
 }
 
-async function submitAutoRunConfigDialog(event) {
+async function submitSelfDrivingConfigDialog(event) {
   event.preventDefault();
-  const dialog = state.autoRunDialog;
+  const dialog = state.selfDrivingDialog;
   if (!dialog.open || dialog.submitting || dialog.unknown) return;
   const form = new FormData(event.currentTarget);
   dialog.agentName = String(form.get("agentName") || dialog.agentName || "").trim();
@@ -5083,15 +5083,15 @@ async function submitAutoRunConfigDialog(event) {
   if (runInstructions !== null) dialog.runInstructions = String(runInstructions || "");
   if (completionCriteria !== null) dialog.completionCriteria = String(completionCriteria || "");
   if (!dialog.reuseCurrentSession && !dialog.agentName) {
-    dialog.error = "Select an Agent before starting AutoRun.";
-    renderAutoRunConfigDialog();
+    dialog.error = "Select an Agent before starting Self-Driving.";
+    renderSelfDrivingConfigDialog();
     return;
   }
   dialog.submitting = true;
   dialog.error = "";
-  renderAutoRunConfigDialog();
+  renderSelfDrivingConfigDialog();
   try {
-    await startChatAutoRun({
+    await startChatSelfDriving({
       configured: true,
       agentName: dialog.agentName,
       expectedGeneration: dialog.expectedGeneration,
@@ -5100,15 +5100,15 @@ async function submitAutoRunConfigDialog(event) {
       completionCriteria: dialog.completionCriteria,
     });
     const returnFocus = dialog.returnFocus;
-    state.autoRunDialog = autoRunDialogInitialState();
-    renderAutoRunConfigDialog();
+    state.selfDrivingDialog = selfDrivingDialogInitialState();
+    renderSelfDrivingConfigDialog();
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
   } catch (err) {
     dialog.submitting = false;
-    const message = String(err?.message || err || "AutoRun could not be started.");
+    const message = String(err?.message || err || "Self-Driving could not be started.");
     dialog.error = message;
     dialog.unknown = !Number.isFinite(Number(err?.status)) || Number(err.status) >= 500 || message.includes("outcome may be unknown") || message.includes("was updated but the start message failed");
-    renderAutoRunConfigDialog();
+    renderSelfDrivingConfigDialog();
   }
 }
 
@@ -5313,7 +5313,7 @@ function settingsProfilesPanel(data) {
     <div class="settings-panel settings-agent-panel" data-settings-section="profiles">
       <div class="settings-panel-header">
         <h2>Agent Profiles</h2>
-        <p>Profiles map chat and AutoRun preferences to AgentHub agents. System profiles are reserved; the scheduler profile is a future scheduling route and does not start a Scheduler Agent. Custom profile keys must be unique.</p>
+        <p>Profiles map chat and Self-Driving preferences to AgentHub agents. System profiles are reserved; the scheduler profile is a future scheduling route and does not start a Scheduler Agent. Custom profile keys must be unique.</p>
       </div>
       ${settingsAgentProfilesSection(data)}
       ${settingsAgentSaveBar()}
@@ -5667,7 +5667,7 @@ function bindAgentEvents() {
     event.preventDefault();
     event.stopPropagation();
     const run = currentAgentRun();
-    if (isAutoRunSessionCloseTarget(run) && !window.confirm("Close this AutoRun session? This will cancel the current AutoRun generation and close the Agent Session.")) return;
+    if (isSelfDrivingSessionCloseTarget(run) && !window.confirm("Close this Self-Driving session? This will cancel the current Self-Driving generation and close the Agent Session.")) return;
     stopAgentRun().catch((err) => toast(err.message));
   };
   const endTurnButton = $("agentEndTurnButton");
@@ -5680,24 +5680,24 @@ function bindAgentEvents() {
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
   };
-  const autoRunButton = $("autoRunStartButton");
-  if (autoRunButton) autoRunButton.onclick = (event) => {
+  const selfDrivingButton = $("selfDrivingStartButton");
+  if (selfDrivingButton) selfDrivingButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (state.agent.autoRunStarting) return;
+    if (state.agent.selfDrivingStarting) return;
     const selected = findResource(state.selectedId);
     const detail = selected ? (state.details[selected.id] || selected) : null;
-    if (autoRunNeedsConfiguration(detail)) {
-      openAutoRunConfigDialog();
+    if (selfDrivingNeedsConfiguration(detail)) {
+      openSelfDrivingConfigDialog();
       return;
     }
-    startChatAutoRun().catch((err) => toast(err.message));
+    startChatSelfDriving().catch((err) => toast(err.message));
   };
-  const autoRunCancelButton = $("autoRunCancelButton");
-  if (autoRunCancelButton) autoRunCancelButton.onclick = (event) => {
+  const selfDrivingCancelButton = $("selfDrivingCancelButton");
+  if (selfDrivingCancelButton) selfDrivingCancelButton.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    cancelSelectedAutoRun().catch((err) => toast(err.message));
+    cancelSelectedSelfDriving().catch((err) => toast(err.message));
   };
   const uploadButton = $("agentUploadButton");
   if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
@@ -5710,11 +5710,11 @@ function bindAgentEvents() {
     bindAgentEvents();
     refreshIcons();
   };
-  document.querySelectorAll("[data-autorun-toggle]").forEach((toggle) => {
+  document.querySelectorAll("[data-self-driving-toggle]").forEach((toggle) => {
     toggle.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      state.agent.autoRunExpanded = !state.agent.autoRunExpanded;
+      state.agent.selfDrivingExpanded = !state.agent.selfDrivingExpanded;
       renderAgent();
       bindAgentEvents();
       refreshIcons();
@@ -5823,25 +5823,25 @@ async function startAgentRun(agentName = "") {
   });
 }
 
-function agentInputAutoRunProjection(run) {
+function agentInputSelfDrivingProjection(run) {
   const selected = findResource(state.selectedId);
   const detail = selected ? (state.details[selected.id] || selected) : null;
   if (!selected || selected.type !== "task" || !run || run.resourceId !== selected.id) return null;
-  const autoRun = detail?.autoRun || null;
+  const selfDriving = detail?.selfDriving || null;
   return {
     resourceId: selected.id,
-    autoRunProjectionSet: true,
-    expectedAutoRunGeneration: Number(autoRun?.generation) || 0,
-    expectedAutoRunState: String(autoRun?.state || "").trim().toLowerCase(),
+    selfDrivingProjectionSet: true,
+    expectedSelfDrivingGeneration: Number(selfDriving?.generation) || 0,
+    expectedSelfDrivingState: String(selfDriving?.state || "").trim().toLowerCase(),
   };
 }
 
 function agentInputResumeIntent(run) {
-  const projection = agentInputAutoRunProjection(run);
-  if (!projection || projection.expectedAutoRunGeneration <= 0 || projection.expectedAutoRunState !== "suspended") return false;
+  const projection = agentInputSelfDrivingProjection(run);
+  if (!projection || projection.expectedSelfDrivingGeneration <= 0 || projection.expectedSelfDrivingState !== "suspended") return false;
   return isLiveAgentRun(run) && run.status === "idle" && !run.schedulerTurn &&
     String(run.agentHubSessionId || "").trim() &&
-    Number(run.autoRunGeneration) === projection.expectedAutoRunGeneration;
+    Number(run.selfDrivingGeneration) === projection.expectedSelfDrivingGeneration;
 }
 
 async function sendAgentInput(text) {
@@ -5850,14 +5850,14 @@ async function sendAgentInput(text) {
     throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
   }
   const run = currentAgentRun();
-  const projection = agentInputAutoRunProjection(run);
-  const resumeSuspendedAutoRun = agentInputResumeIntent(run);
+  const projection = agentInputSelfDrivingProjection(run);
+  const resumeSuspendedSelfDriving = agentInputResumeIntent(run);
   const body = { text };
   if (projection) {
     Object.assign(body, projection);
-    if (resumeSuspendedAutoRun) {
-      body.resumeSuspendedAutoRun = true;
-      body.autoRunGeneration = projection.expectedAutoRunGeneration;
+    if (resumeSuspendedSelfDriving) {
+      body.resumeSuspendedSelfDriving = true;
+      body.selfDrivingGeneration = projection.expectedSelfDrivingGeneration;
     }
   }
   return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
@@ -6109,7 +6109,7 @@ async function stopAgentRun() {
       const result = await closeAgentRun(runId);
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast(result?.autoRunCancelled ? "AutoRun cancelled and Agent session closed." : result?.autoRunPaused ? "AutoRun paused and Agent session closed." : "Agent session closed.");
+      toast(result?.selfDrivingCancelled ? "Self-Driving cancelled and Agent session closed." : result?.selfDrivingPaused ? "Self-Driving paused and Agent session closed." : "Agent session closed.");
     } catch (err) {
       // A failed or ambiguous close must re-read the run and tree before the
       // control becomes available again; never clear a draft as a side effect.
@@ -6130,34 +6130,34 @@ async function stopAgentRun() {
   });
 }
 
-async function cancelSelectedAutoRun() {
-  if (state.agent.autoRunCancelling) return;
+async function cancelSelectedSelfDriving() {
+  if (state.agent.selfDrivingCancelling) return;
   const selected = findResource(state.selectedId);
   const detail = selected ? (state.details[selected.id] || selected) : null;
-  const autoRun = detail?.autoRun;
-  if (!detail || detail.type !== "task" || !autoRun || !["queued", "running", "suspended", "paused"].includes(String(autoRun.state || "").toLowerCase())) return;
-  if (!window.confirm("Cancel this AutoRun generation? The generation will end and the Agent Session will remain open.")) return;
+  const selfDriving = detail?.selfDriving;
+  if (!detail || detail.type !== "task" || !selfDriving || !["queued", "running", "suspended", "paused"].includes(String(selfDriving.state || "").toLowerCase())) return;
+  if (!window.confirm("Cancel this Self-Driving generation? The generation will end and the Agent Session will remain open.")) return;
   return mutateAgentSession(async () => {
-    state.agent.autoRunCancelling = true;
+    state.agent.selfDrivingCancelling = true;
     renderAgent();
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
     try {
       const active = currentAgentRun();
-      await api(`/api/workspaces/${state.activeWorkspaceId}/autorun/cancel`, {
+      await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving/cancel`, {
         method: "POST",
         body: JSON.stringify({
           resourceId: detail.id,
           runId: active?.schedulerTurn && active.resourceId === detail.id ? active.id : "",
-          expectedGeneration: Number(autoRun.generation) || 0,
-          expectedState: autoRun.state,
-          reason: "AutoRun cancelled by user",
+          expectedGeneration: Number(selfDriving.generation) || 0,
+          expectedState: selfDriving.state,
+          reason: "Self-Driving cancelled by user",
         }),
       });
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast("AutoRun cancelled. The Agent Session remains open.");
+      toast("Self-Driving cancelled. The Agent Session remains open.");
     } catch (err) {
       // Cancellation is durable before interruption. Re-read projections even
       // when the interrupt response is ambiguous, so the UI exposes the
@@ -6170,7 +6170,7 @@ async function cancelSelectedAutoRun() {
       }
       throw err;
     } finally {
-      state.agent.autoRunCancelling = false;
+      state.agent.selfDrivingCancelling = false;
       renderAgent();
       renderTTYComposer();
       bindAgentEvents();
@@ -6277,15 +6277,15 @@ function isAgentTurnInterruptible(run) {
   return ["running", "waiting_approval"].includes(run?.status);
 }
 
-function isAutoRunSessionCloseTarget(run) {
+function isSelfDrivingSessionCloseTarget(run) {
   const resourceID = String(run?.resourceId || "").trim();
-  const generation = Number(run?.autoRunGeneration) || 0;
+  const generation = Number(run?.selfDrivingGeneration) || 0;
   if (!resourceID || generation <= 0) return false;
   const resource = findResource(resourceID);
-  const autoRun = resource?.autoRun;
-  if (!autoRun) return Boolean(run?.schedulerTurn);
-  if ((Number(autoRun.generation) || 0) !== generation) return false;
-  const stateName = String(autoRun.state || "").trim().toLowerCase();
+  const selfDriving = resource?.selfDriving;
+  if (!selfDriving) return Boolean(run?.schedulerTurn);
+  if ((Number(selfDriving.generation) || 0) !== generation) return false;
+  const stateName = String(selfDriving.state || "").trim().toLowerCase();
   return !["completed", "failed", "cancelled"].includes(stateName);
 }
 
@@ -6334,7 +6334,7 @@ async function submitTTYInput(event) {
         version: sendDraftVersion,
       });
       if (clearedDraft) {
-        // A suspended AutoRun refreshes the task, run, and session projections
+        // A suspended Self-Driving refreshes the task, run, and session projections
         // before this submit finishes. Do not let that render read the old
         // textarea value back into the accepted-and-cleared draft.
         state.agent.skipTTYDraftSync = true;
@@ -6344,7 +6344,7 @@ async function submitTTYInput(event) {
           if (typeof resizeTTYInput === "function") resizeTTYInput(currentInput);
         }
       }
-      if (result.autoRunResumed || resumeIntent) {
+      if (result.selfDrivingResumed || resumeIntent) {
         try {
           if (typeof refreshAgentInputProjection === "function") {
             await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
@@ -6445,7 +6445,7 @@ function openCreateDialog(type, projectId = "") {
     description: "",
     detail: "",
     slug: "",
-    autorun: false,
+    selfDriving: false,
     agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
@@ -6476,7 +6476,7 @@ function closeCreateDialog() {
     description: "",
     detail: "",
     slug: "",
-    autorun: false,
+    selfDriving: false,
     agentName: "",
     preferredAgentProfiles: [],
     prompt: "",
@@ -6505,7 +6505,7 @@ function renderCreateDialog() {
   const selectedTemplate = templates.find((item) => item.name === dialog.templateName);
   const generatedTitle = dialog.preview?.title || "";
   const shownTitle = dialog.titleOverride ? dialog.title : generatedTitle;
-  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.autorun}:${dialog.submitting}:${dialog.previewing}:${dialog.titleOverride}:${dialog.activeTab}:${dialog.previewError}:${JSON.stringify(dialog.templateFields)}:${dialog.templateDigest}:${JSON.stringify(dialog.preview)}`;
+  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.selfDriving}:${dialog.submitting}:${dialog.previewing}:${dialog.titleOverride}:${dialog.activeTab}:${dialog.previewError}:${JSON.stringify(dialog.templateFields)}:${dialog.templateDigest}:${JSON.stringify(dialog.preview)}`;
   if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
   root.dataset.createDialogKey = renderKey;
   const entering = state.modalEnter === "create";
@@ -6520,10 +6520,10 @@ function renderCreateDialog() {
             </label>`;
   const automationFields = `
             <label class="create-task-automation-toggle">
-              <input name="autorun" type="checkbox" ${dialog.autorun ? "checked" : ""} />
+              <input name="selfDriving" type="checkbox" ${dialog.selfDriving ? "checked" : ""} />
               <span><strong>Run automatically</strong><small>Queue a one-turn task for the GUI scheduler.</small></span>
             </label>
-            ${dialog.autorun ? `
+            ${dialog.selfDriving ? `
               <div class="create-task-automation-fields">
                 <label>
                   <span>Agent <small>(optional)</small></span>
@@ -6638,7 +6638,7 @@ function createTaskPreviewPane(dialog) {
           </div>
           <small data-preview-edit-hint ${edited ? "hidden" : ""}>Edit the content above to override the template output for this task.</small>
           ${dialog.preview.slug ? `<small>Slug: ${escapeHTML(dialog.preview.slug)}</small>` : ""}
-          <small>AutoRun: ${dialog.preview.autoRun ? `queued with ${escapeHTML(dialog.preview.autoRun.agentName || "workspace default")}` : "off"}</small>
+          <small>Self-Driving: ${dialog.preview.selfDriving ? `queued with ${escapeHTML(dialog.preview.selfDriving.agentName || "workspace default")}` : "off"}</small>
         </section>
       ` : dialog.previewing ? `<p class="create-task-preview-hint">Rendering preview...</p>` : ""}
     </div>
@@ -6698,8 +6698,8 @@ function bindCreateDialogEvents(entering = false) {
     if (target.name === "agentName") state.createDialog.agentName = target.value;
     if (target.name === "completionCriteria") state.createDialog.completionCriteria = target.value;
     if (target.name === "agentProfiles") state.createDialog.preferredAgentProfiles = parseAgentProfiles(target.value);
-    if (target.name === "autorun") {
-      state.createDialog.autorun = target.checked;
+    if (target.name === "selfDriving") {
+      state.createDialog.selfDriving = target.checked;
       renderCreateDialog();
     }
   });
@@ -6783,11 +6783,11 @@ function createTaskRequest(dialog) {
 			...(dialog.templateDigest ? { expectedTemplateDigest: dialog.templateDigest } : {}),
 		} : { detail: dialog.detail }),
 		slug: dialog.slug,
-		autorun: dialog.autorun,
-		agentName: dialog.autorun ? dialog.agentName : "",
-		preferredAgentProfiles: dialog.autorun ? dialog.preferredAgentProfiles : [],
-		prompt: dialog.autorun ? dialog.prompt : "",
-		completionCriteria: dialog.autorun ? dialog.completionCriteria : "",
+		selfDriving: dialog.selfDriving,
+		agentName: dialog.selfDriving ? dialog.agentName : "",
+		preferredAgentProfiles: dialog.selfDriving ? dialog.preferredAgentProfiles : [],
+		prompt: dialog.selfDriving ? dialog.prompt : "",
+		completionCriteria: dialog.selfDriving ? dialog.completionCriteria : "",
 	};
 }
 
@@ -6828,7 +6828,7 @@ async function submitCreateDialog(event) {
   if (form.has("detail")) dialog.detail = String(form.get("detail") || "");
   if (!previewTabActive) {
     dialog.slug = String(form.get("slug") || "");
-    dialog.autorun = form.get("autorun") === "on";
+    dialog.selfDriving = form.get("selfDriving") === "on";
     dialog.agentName = String(form.get("agentName") || "");
     dialog.preferredAgentProfiles = parseAgentProfiles(String(form.get("agentProfiles") || ""));
     dialog.prompt = String(form.get("prompt") || "");
@@ -6866,11 +6866,11 @@ async function submitCreateDialog(event) {
 					title: editedTitle,
 					taskMarkdown: editedMarkdown,
 					slug: dialog.slug,
-					autorun: dialog.autorun,
-					agentName: dialog.autorun ? dialog.agentName : "",
-					preferredAgentProfiles: dialog.autorun ? dialog.preferredAgentProfiles : [],
-					prompt: dialog.autorun ? dialog.prompt : "",
-					completionCriteria: dialog.autorun ? dialog.completionCriteria : "",
+					selfDriving: dialog.selfDriving,
+					agentName: dialog.selfDriving ? dialog.agentName : "",
+					preferredAgentProfiles: dialog.selfDriving ? dialog.preferredAgentProfiles : [],
+					prompt: dialog.selfDriving ? dialog.prompt : "",
+					completionCriteria: dialog.selfDriving ? dialog.completionCriteria : "",
 				};
 			} else {
 				if (dialog.templateName && !dialog.templateDigest) {
@@ -7662,14 +7662,14 @@ $("mobileImmersiveButton").onclick = () => setMobileImmersive(!state.mobile.imme
 setMobileImmersive(loadMobileImmersive());
 
 document.addEventListener("keydown", (event) => {
-  if (state.autoRunDialog.open) {
+  if (state.selfDrivingDialog.open) {
     if (event.key === "Escape") {
       event.preventDefault();
-      closeAutoRunConfigDialog();
+      closeSelfDrivingConfigDialog();
       return;
     }
     if (event.key === "Tab") {
-      const dialog = $("autoRunDialogRoot")?.querySelector('[role="dialog"]');
+      const dialog = $("selfDrivingDialogRoot")?.querySelector('[role="dialog"]');
       const focusable = dialog ? [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])")] : [];
       if (focusable.length) {
         const first = focusable[0];

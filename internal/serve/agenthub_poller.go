@@ -13,7 +13,7 @@ import (
 
 // This file reconciles local run projections with AgentHub session state by
 // polling one session list per interval instead of replaying event history.
-// Run status follows session state and turn terminal edges drive AutoRun
+// Run status follows session state and turn terminal edges drive Self-Driving
 // recovery. Forge session release is owned here and nowhere else: durable
 // stopped sessions release directly, while archived sessions require the
 // archived-after-stopped proof in agenthub_reconcile.go, which is the only
@@ -382,7 +382,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 
 	// A scheduler turn ends when the session leaves busy/waiting_approval for
 	// ready or stopped. The completion observer runs before the scheduler
-	// decision so an intermediate AutoRun turn cannot be mistaken for its final
+	// decision so an intermediate Self-Driving turn cannot be mistaken for its final
 	// outcome by a consumer of the run projection.
 	if turnFinished {
 		go func() {

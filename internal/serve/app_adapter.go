@@ -32,8 +32,8 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 
 func resourceSnapshotFromApp(resource app.ResourceTreeView) resourceSnapshot {
 	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived}
-	if resource.AutoRun != nil {
-		result.AutoRun = &autoRunSnapshot{Generation: resource.AutoRun.Generation, State: resource.AutoRun.State}
+	if resource.SelfDriving != nil {
+		result.SelfDriving = &selfDrivingSnapshot{Generation: resource.SelfDriving.Generation, State: resource.SelfDriving.State}
 	}
 	for _, child := range resource.Children {
 		result.Children = append(result.Children, resourceSnapshotFromApp(child))

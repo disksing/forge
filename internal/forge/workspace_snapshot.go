@@ -26,16 +26,16 @@ type WorkspaceWikiView struct {
 }
 
 type ResourceTreeView struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Title    string             `json:"title"`
-	Path     string             `json:"path"`
-	Archived bool               `json:"archived"`
-	AutoRun  *AutoRunTreeView   `json:"autoRun,omitempty"`
-	Children []ResourceTreeView `json:"children,omitempty"`
+	ID          string               `json:"id"`
+	Type        string               `json:"type"`
+	Title       string               `json:"title"`
+	Path        string               `json:"path"`
+	Archived    bool                 `json:"archived"`
+	SelfDriving *SelfDrivingTreeView `json:"selfDriving,omitempty"`
+	Children    []ResourceTreeView   `json:"children,omitempty"`
 }
 
-type AutoRunTreeView struct {
+type SelfDrivingTreeView struct {
 	Generation int    `json:"generation"`
 	State      string `json:"state"`
 }
@@ -50,7 +50,7 @@ type ResourceDetailView struct {
 	Path        string                  `json:"path"`
 	Archived    bool                    `json:"archived"`
 	Repos       []TaskRepo              `json:"repos,omitempty"`
-	AutoRun     *AutoRun                `json:"autoRun,omitempty"`
+	SelfDriving *SelfDriving            `json:"selfDriving,omitempty"`
 	Logs        []LogEntry              `json:"logs,omitempty"`
 	Files       []ResourceFile          `json:"files,omitempty"`
 	Artifacts   []FileTreeEntry         `json:"artifacts"`
@@ -172,8 +172,8 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Path:     relPath(root, entry.Path),
 		Archived: isArchivedPath(root, entry.Path),
 	}
-	if task, ok := entry.Resource.(*Task); ok && task.AutoRun != nil {
-		item.AutoRun = &AutoRunTreeView{Generation: task.AutoRun.Generation, State: task.AutoRun.State}
+	if task, ok := entry.Resource.(*Task); ok && task.SelfDriving != nil {
+		item.SelfDriving = &SelfDrivingTreeView{Generation: task.SelfDriving.Generation, State: task.SelfDriving.State}
 	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
@@ -212,7 +212,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
-		detail.AutoRun = typed.AutoRun
+		detail.SelfDriving = typed.SelfDriving
 		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}

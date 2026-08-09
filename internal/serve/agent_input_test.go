@@ -16,7 +16,7 @@ func TestAgentInputFrontendMarksOnlyMatchingSuspendedRunForResume(t *testing.T) 
 		t.Fatal(err)
 	}
 	source := string(data)
-	start := strings.Index(source, "function agentInputAutoRunProjection(")
+	start := strings.Index(source, "function agentInputSelfDrivingProjection(")
 	end := -1
 	if start >= 0 {
 		if offset := strings.Index(source[start:], "function openAgentUploadDialog"); offset >= 0 {
@@ -30,13 +30,13 @@ func TestAgentInputFrontendMarksOnlyMatchingSuspendedRunForResume(t *testing.T) 
 const fs = require("node:fs");
 const vm = require("node:vm");
 const source = fs.readFileSync(process.argv[1], "utf8");
-const start = source.indexOf("function agentInputAutoRunProjection(");
+const start = source.indexOf("function agentInputSelfDrivingProjection(");
 const end = source.indexOf("function openAgentUploadDialog", start);
 if (start < 0 || end < 0) throw new Error("Agent input frontend helpers are missing");
-const task = { id: "project1.task1", type: "task", autoRun: { generation: 7, state: "suspended" } };
+const task = { id: "project1.task1", type: "task", selfDriving: { generation: 7, state: "suspended" } };
 const run = {
   id: "run-1", resourceId: task.id, status: "idle", schedulerTurn: false,
-  agentHubSessionId: "session-1", autoRunGeneration: 7,
+  agentHubSessionId: "session-1", selfDrivingGeneration: 7,
 };
 const state = {
   activeWorkspaceId: "workspace-1", selectedId: task.id,
@@ -58,15 +58,15 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
   assert(context.agentInputResumeIntent(run) === true, "matching suspended run should be resumable");
   await context.sendAgentInput("human instruction");
   const resumed = calls.pop().body;
-  assert(resumed.resourceId === task.id && resumed.autoRunProjectionSet === true, "resume request lacks resource projection");
-  assert(resumed.expectedAutoRunGeneration === 7 && resumed.expectedAutoRunState === "suspended", "resume request lacks generation/state CAS");
-  assert(resumed.resumeSuspendedAutoRun === true && resumed.autoRunGeneration === 7, "resume intent was not sent");
+  assert(resumed.resourceId === task.id && resumed.selfDrivingProjectionSet === true, "resume request lacks resource projection");
+  assert(resumed.expectedSelfDrivingGeneration === 7 && resumed.expectedSelfDrivingState === "suspended", "resume request lacks generation/state CAS");
+  assert(resumed.resumeSuspendedSelfDriving === true && resumed.selfDrivingGeneration === 7, "resume intent was not sent");
 
-  task.autoRun.state = "paused";
+  task.selfDriving.state = "paused";
   await context.sendAgentInput("ordinary paused chat");
   const ordinary = calls.pop().body;
-  assert(ordinary.expectedAutoRunState === "paused", "paused projection was not sent");
-  assert(!ordinary.resumeSuspendedAutoRun, "paused chat must not request implicit resume");
+  assert(ordinary.expectedSelfDrivingState === "paused", "paused projection was not sent");
+  assert(!ordinary.resumeSuspendedSelfDriving, "paused chat must not request implicit resume");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
 	appPath := frontendAssetPath("app.js")
@@ -124,12 +124,12 @@ const storage = {
 };
 const run = {
   id: "run-suspended", resourceId: "project1.task1", status: "idle",
-  schedulerTurn: false, agentHubSessionId: "session-suspended", autoRunGeneration: 7,
+  schedulerTurn: false, agentHubSessionId: "session-suspended", selfDrivingGeneration: 7,
 };
 const state = {
   activeWorkspaceId: "workspace-one",
   selectedId: run.resourceId,
-  details: { [run.resourceId]: { id: run.resourceId, type: "task", autoRun: { generation: 7, state: "suspended" } } },
+  details: { [run.resourceId]: { id: run.resourceId, type: "task", selfDriving: { generation: 7, state: "suspended" } } },
   agent: {
     runs: [run], activeRunId: run.id, ttyDraft: "", ttyMultiline: false,
     ttyDraftKey: "", ttyDraftWorkspaceId: "", ttyDraftResourceId: "", ttyDraftRunId: "",
@@ -172,7 +172,7 @@ context.resizeTTYInput = () => {};
 
 (async () => {
   ttyInput.value = "resume message";
-  context.__sendAgentInput = async () => ({ status: "accepted", autoRunResumed: true });
+  context.__sendAgentInput = async () => ({ status: "accepted", selfDrivingResumed: true });
   let resolveProjection;
   let projectionStartedResolve;
   const projectionStarted = new Promise((resolve) => { projectionStartedResolve = resolve; });
@@ -202,7 +202,7 @@ context.resizeTTYInput = () => {};
   assert(resolveSend, "suspended send request did not start");
   context.updateAgentDraft("next message");
   ttyInput.value = "next message";
-  resolveSend({ status: "accepted", autoRunResumed: true });
+  resolveSend({ status: "accepted", selfDrivingResumed: true });
   await pendingSend;
   assert(state.agent.ttyDraft === "next message" && data.has(key), "accepted suspended send must not clear a newer draft");
 })().catch((error) => {

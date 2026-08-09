@@ -494,7 +494,7 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test", AutoRun: true}); err != nil {
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test", SelfDriving: true}); err != nil {
 		t.Fatal(err)
 	}
 	workspace := guiWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
@@ -531,16 +531,16 @@ func seedSuspendedChatInputRun(t *testing.T, manager *agentManager, fake *runtim
 	}
 	resource, err := forgeWorkspace.ResourceValue("project1.task1")
 	if err != nil || resource.Task == nil {
-		t.Fatalf("load AutoRun task: resource=%+v err=%v", resource, err)
+		t.Fatalf("load Self-Driving task: resource=%+v err=%v", resource, err)
 	}
-	if _, err := forgeWorkspace.StartAutoRun(resource.Task.ID); err != nil {
+	if _, err := forgeWorkspace.StartSelfDriving(resource.Task.ID); err != nil {
 		t.Fatal(err)
 	}
-	suspended, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{
+	suspended, err := forgeWorkspace.SuspendSelfDriving(app.SelfDrivingActionInput{
 		TaskID: resource.Task.ID, Summary: "waiting for human input", WakeCondition: "the user sends a message",
 		ExpectedGeneration: 1, ExpectedState: "running",
 	})
-	if err != nil || suspended.AutoRun == nil || suspended.AutoRun.State != "suspended" {
+	if err != nil || suspended.SelfDriving == nil || suspended.SelfDriving.State != "suspended" {
 		t.Fatalf("seed suspended task: task=%+v err=%v", suspended, err)
 	}
 
@@ -548,7 +548,7 @@ func seedSuspendedChatInputRun(t *testing.T, manager *agentManager, fake *runtim
 		ID: "run-chat-resume", WorkspaceID: workspace.ID, ResourceID: resource.Task.ID,
 		AgentHubSessionID: "ses_chat_resume", AgentHubAgentName: "fake-agent",
 		SourceExternalID: workspace.ID + "/run-chat-resume", Cwd: workspace.Path, Status: "idle",
-		AutoRunGeneration: 1, CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
+		SelfDrivingGeneration: 1, CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
 	}
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		t.Fatal(err)
@@ -577,14 +577,14 @@ func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWor
 	return recorder
 }
 
-func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
+func TestAgentHubChatInputResumesExactSuspendedSelfDrivingGeneration(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	rt, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
 
-	recorder := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"resume manually","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	recorder := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"resume manually","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended"}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("suspended Chat input failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -592,17 +592,17 @@ func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode accepted input: %v (%s)", err, recorder.Body.String())
 	}
-	if response["status"] != "accepted" || response["autoRunResumed"] != true {
-		t.Fatalf("input did not report an AutoRun resume: %#v", response)
+	if response["status"] != "accepted" || response["selfDrivingResumed"] != true {
+		t.Fatalf("input did not report a Self-Driving resume: %#v", response)
 	}
 
 	reloaded := reloadTestTask(t, workspace.Path, seeded.ID)
-	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "running" || reloaded.AutoRun.Generation != 1 ||
-		reloaded.AutoRun.SuspensionSummary != "waiting for human input" || reloaded.AutoRun.WakeCondition != "the user sends a message" {
-		t.Fatalf("Chat resume lost the suspended generation context: %+v", reloaded.AutoRun)
+	if reloaded.SelfDriving == nil || reloaded.SelfDriving.State != "running" || reloaded.SelfDriving.Generation != 1 ||
+		reloaded.SelfDriving.SuspensionSummary != "waiting for human input" || reloaded.SelfDriving.WakeCondition != "the user sends a message" {
+		t.Fatalf("Chat resume lost the suspended generation context: %+v", reloaded.SelfDriving)
 	}
 	projected := pollerRunState(rt)
-	if projected.Status != "running" || !projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+	if projected.Status != "running" || !projected.SchedulerTurn || projected.SelfDrivingGeneration != 1 {
 		t.Fatalf("Chat resume did not restore the scheduler-turn projection: %#v", projected)
 	}
 
@@ -624,19 +624,19 @@ func TestAgentHubChatInputResumesExactSuspendedAutoRunGeneration(t *testing.T) {
 	}
 }
 
-func TestAgentHubManualAutoRunResumeRequiresExplicitAgent(t *testing.T) {
+func TestAgentHubManualSelfDrivingResumeRequiresExplicitAgent(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	_, seeded := seedSuspendedChatInputRun(t, manager, fake, workspace)
 
-	recorder, _ := startRuntimeTestRun(t, manager, workspace, fmt.Sprintf(`{"resourceId":%q,"schedulerTurn":true,"queueAutoRun":true,"manualAutoRun":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended","prompt":"must not start"}`, seeded.ID))
+	recorder, _ := startRuntimeTestRun(t, manager, workspace, fmt.Sprintf(`{"resourceId":%q,"schedulerTurn":true,"queueSelfDriving":true,"manualSelfDriving":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended","prompt":"must not start"}`, seeded.ID))
 	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "explicitly selected agent") {
 		t.Fatalf("manual recovery without an Agent should be rejected, got %d %s", recorder.Code, recorder.Body.String())
 	}
-	if reloaded := reloadTestTask(t, workspace.Path, seeded.ID); reloaded.AutoRun == nil || reloaded.AutoRun.State != "suspended" || reloaded.AutoRun.Generation != 1 {
-		t.Fatalf("rejected manual recovery changed AutoRun state: %+v", reloaded.AutoRun)
+	if reloaded := reloadTestTask(t, workspace.Path, seeded.ID); reloaded.SelfDriving == nil || reloaded.SelfDriving.State != "suspended" || reloaded.SelfDriving.Generation != 1 {
+		t.Fatalf("rejected manual recovery changed Self-Driving state: %+v", reloaded.SelfDriving)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -645,7 +645,7 @@ func TestAgentHubManualAutoRunResumeRequiresExplicitAgent(t *testing.T) {
 	}
 }
 
-func TestAgentHubChatInputDoesNotImplicitlyResumePausedAutoRun(t *testing.T) {
+func TestAgentHubChatInputDoesNotImplicitlyResumePausedSelfDriving(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -655,18 +655,18 @@ func TestAgentHubChatInputDoesNotImplicitlyResumePausedAutoRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.ResumeAutoRun(seeded.ID); err != nil {
+	if _, err := forgeWorkspace.ResumeSelfDriving(seeded.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.StartAutoRun(seeded.ID); err != nil {
+	if _, err := forgeWorkspace.StartSelfDriving(seeded.ID); err != nil {
 		t.Fatal(err)
 	}
-	paused, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: seeded.ID, ExpectedGeneration: 1, ExpectedState: "running"})
-	if err != nil || paused.AutoRun == nil || paused.AutoRun.State != "paused" {
+	paused, err := forgeWorkspace.PauseSelfDriving(app.SelfDrivingActionInput{TaskID: seeded.ID, ExpectedGeneration: 1, ExpectedState: "running"})
+	if err != nil || paused.SelfDriving == nil || paused.SelfDriving.State != "paused" {
 		t.Fatalf("pause setup failed: task=%+v err=%v", paused, err)
 	}
 
-	conflict := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"must not resume","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"paused"}`)
+	conflict := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"must not resume","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"paused"}`)
 	if conflict.Code != http.StatusConflict {
 		t.Fatalf("paused resume intent should conflict, got %d %s", conflict.Code, conflict.Body.String())
 	}
@@ -674,16 +674,16 @@ func TestAgentHubChatInputDoesNotImplicitlyResumePausedAutoRun(t *testing.T) {
 		t.Fatal("paused resume intent sent a message")
 	}
 
-	ordinary := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"ordinary paused chat","resourceId":"project1.task1","autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"paused"}`)
+	ordinary := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"ordinary paused chat","resourceId":"project1.task1","selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"paused"}`)
 	if ordinary.Code != http.StatusOK {
 		t.Fatalf("ordinary paused Chat input failed: %d %s", ordinary.Code, ordinary.Body.String())
 	}
 	reloaded := reloadTestTask(t, workspace.Path, seeded.ID)
-	if reloaded.AutoRun == nil || reloaded.AutoRun.State != "paused" {
-		t.Fatalf("ordinary Chat input implicitly changed paused AutoRun: %+v", reloaded.AutoRun)
+	if reloaded.SelfDriving == nil || reloaded.SelfDriving.State != "paused" {
+		t.Fatalf("ordinary Chat input implicitly changed paused Self-Driving: %+v", reloaded.SelfDriving)
 	}
 	projected := pollerRunState(rt)
-	if projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+	if projected.SchedulerTurn || projected.SelfDrivingGeneration != 1 {
 		t.Fatalf("ordinary paused Chat input changed scheduler metadata: %#v", projected)
 	}
 	if countFakeUserMessages(fake) != 1 {
@@ -703,7 +703,7 @@ func TestAgentHubChatInputRejectsStaleGenerationAndAmbiguousMessageWithoutRetry(
 	session.Source.ExternalID = "another-run"
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
-	wrongSource := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"wrong session","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	wrongSource := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"wrong session","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended"}`)
 	if wrongSource.Code != http.StatusConflict {
 		t.Fatalf("session with a mismatched source should conflict, got %d %s", wrongSource.Code, wrongSource.Body.String())
 	}
@@ -715,36 +715,36 @@ func TestAgentHubChatInputRejectsStaleGenerationAndAmbiguousMessageWithoutRetry(
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
 
-	stale := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"stale generation","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":2,"expectedAutoRunState":"suspended"}`)
+	stale := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"stale generation","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":2,"expectedSelfDrivingState":"suspended"}`)
 	if stale.Code != http.StatusConflict {
 		t.Fatalf("stale generation should conflict, got %d %s", stale.Code, stale.Body.String())
 	}
 	if countFakeUserMessages(fake) != 0 {
 		t.Fatal("stale generation sent a message")
 	}
-	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.AutoRun == nil || task.AutoRun.State != "suspended" || task.AutoRun.Generation != 1 {
-		t.Fatalf("stale generation changed task state: %+v", task.AutoRun)
+	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.SelfDriving == nil || task.SelfDriving.State != "suspended" || task.SelfDriving.Generation != 1 {
+		t.Fatalf("stale generation changed task state: %+v", task.SelfDriving)
 	}
 
 	fake.mu.Lock()
 	fake.failNextMessage = true
 	fake.mu.Unlock()
-	ambiguous := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"possibly delivered","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	ambiguous := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"possibly delivered","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended"}`)
 	if ambiguous.Code != http.StatusBadGateway || !strings.Contains(ambiguous.Body.String(), "not retried") {
 		t.Fatalf("ambiguous message should fail closed without retry, got %d %s", ambiguous.Code, ambiguous.Body.String())
 	}
 	projected := pollerRunState(rt)
-	if projected.Status != "recovering" || !projected.SchedulerTurn || projected.AutoRunGeneration != 1 {
+	if projected.Status != "recovering" || !projected.SchedulerTurn || projected.SelfDrivingGeneration != 1 {
 		t.Fatalf("ambiguous message lost the durable scheduler projection: %#v", projected)
 	}
-	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.AutoRun == nil || task.AutoRun.State != "running" {
-		t.Fatalf("ambiguous message rolled back a durable AutoRun resume: %+v", task.AutoRun)
+	if task := reloadTestTask(t, workspace.Path, seeded.ID); task.SelfDriving == nil || task.SelfDriving.State != "running" {
+		t.Fatalf("ambiguous message rolled back a durable Self-Driving resume: %+v", task.SelfDriving)
 	}
 	if countFakeUserMessages(fake) != 1 {
 		t.Fatalf("ambiguous message was retried or dropped: count=%d", countFakeUserMessages(fake))
 	}
 
-	second := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"duplicate retry","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`)
+	second := sendRuntimeAgentInput(t, manager, workspace, rt.run.ID, `{"text":"duplicate retry","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended"}`)
 	if second.Code != http.StatusConflict {
 		t.Fatalf("duplicate submission after ambiguous result should conflict, got %d %s", second.Code, second.Body.String())
 	}
@@ -759,7 +759,7 @@ func TestAgentHubChatInputDuplicateResumeSubmissionHasOneWinner(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	rt, _ := seedSuspendedChatInputRun(t, manager, fake, workspace)
-	body := `{"text":"race resume","resourceId":"project1.task1","resumeSuspendedAutoRun":true,"autoRunProjectionSet":true,"expectedAutoRunGeneration":1,"expectedAutoRunState":"suspended"}`
+	body := `{"text":"race resume","resourceId":"project1.task1","resumeSuspendedSelfDriving":true,"selfDrivingProjectionSet":true,"expectedSelfDrivingGeneration":1,"expectedSelfDrivingState":"suspended"}`
 	results := make(chan int, 2)
 	var group sync.WaitGroup
 	for i := 0; i < 2; i++ {
@@ -1124,14 +1124,14 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 func decodeAgentHubStopResponse(t *testing.T, response *httptest.ResponseRecorder) (string, bool, bool) {
 	t.Helper()
 	var payload struct {
-		Status           string `json:"status"`
-		AutoRunPaused    bool   `json:"autoRunPaused"`
-		AutoRunCancelled bool   `json:"autoRunCancelled"`
+		Status               string `json:"status"`
+		SelfDrivingPaused    bool   `json:"selfDrivingPaused"`
+		SelfDrivingCancelled bool   `json:"selfDrivingCancelled"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode stop response: %v; body=%s", err, response.Body.String())
 	}
-	return payload.Status, payload.AutoRunPaused, payload.AutoRunCancelled
+	return payload.Status, payload.SelfDrivingPaused, payload.SelfDrivingCancelled
 }
 
 func TestAgentHubCloseResponseReleasesForgeProjectionBeforeReturn(t *testing.T) {
@@ -1215,7 +1215,7 @@ func TestAgentHubCloseFailsClosedWhenForgeReleaseFails(t *testing.T) {
 	}
 }
 
-func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
+func TestAgentHubCloseCancelsRunningSelfDrivingBeforeStop(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -1228,13 +1228,13 @@ func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
 			return
 		}
 		resource, err := forgeWorkspace.Resource("project1.task1")
-		if err != nil || resource.AutoRun == nil {
+		if err != nil || resource.SelfDriving == nil {
 			observedState <- fmt.Sprintf("error: resource=%#v err=%v", resource, err)
 			return
 		}
-		observedState <- resource.AutoRun.State
+		observedState <- resource.SelfDriving.State
 	}
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1242,12 +1242,12 @@ func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	status, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
-	if status != "stopped" || autoRunPaused || !autoRunCancelled {
-		t.Fatalf("close response = status %q autoRunPaused=%v autoRunCancelled=%v; body=%s", status, autoRunPaused, autoRunCancelled, response.Body.String())
+	status, selfDrivingPaused, selfDrivingCancelled := decodeAgentHubStopResponse(t, response)
+	if status != "stopped" || selfDrivingPaused || !selfDrivingCancelled {
+		t.Fatalf("close response = status %q selfDrivingPaused=%v selfDrivingCancelled=%v; body=%s", status, selfDrivingPaused, selfDrivingCancelled, response.Body.String())
 	}
 	if state := <-observedState; state != "cancelled" {
-		t.Fatalf("AgentHub Stop observed AutoRun state %q; want cancelled", state)
+		t.Fatalf("AgentHub Stop observed Self-Driving state %q; want cancelled", state)
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
@@ -1257,10 +1257,10 @@ func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" {
-		t.Fatalf("close did not persist the AutoRun cancellation: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "cancelled" {
+		t.Fatalf("close did not persist the Self-Driving cancellation: %#v", resource.SelfDriving)
 	}
-	if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+	if !hasSelfDrivingLog(resource.Logs, "Self-Driving cancelled", userClosedSelfDrivingSessionReason) {
 		t.Fatalf("close cancellation was not recorded: %#v", resource.Logs)
 	}
 	fake.mu.Lock()
@@ -1272,12 +1272,12 @@ func TestAgentHubCloseCancelsRunningAutoRunBeforeStop(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubCloseCancelsSuspendedAutoRun(t *testing.T) {
+func TestAgentHubCloseCancelsSuspendedSelfDriving(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1285,7 +1285,7 @@ func TestAgentHubCloseCancelsSuspendedAutoRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: "waiting for an external event"}); err != nil {
+	if _, err := forgeWorkspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: "waiting for an external event"}); err != nil {
 		t.Fatal(err)
 	}
 	rt := manager.runtimeByID(detail.Run.ID)
@@ -1303,31 +1303,31 @@ func TestAgentHubCloseCancelsSuspendedAutoRun(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
-	if autoRunPaused || !autoRunCancelled {
-		t.Fatal("closing a suspended AutoRun session must report the cancellation transition")
+	_, selfDrivingPaused, selfDrivingCancelled := decodeAgentHubStopResponse(t, response)
+	if selfDrivingPaused || !selfDrivingCancelled {
+		t.Fatal("closing a suspended Self-Driving session must report the cancellation transition")
 	}
 	resource, err := forgeWorkspace.Resource("project1.task1")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" || resource.AutoRun.SuspensionSummary != "waiting for an external event" {
-		t.Fatalf("suspended AutoRun was not cancelled: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "cancelled" || resource.SelfDriving.SuspensionSummary != "waiting for an external event" {
+		t.Fatalf("suspended Self-Driving was not cancelled: %#v", resource.SelfDriving)
 	}
-	if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
-		t.Fatalf("suspended AutoRun cancellation was not logged: %#v", resource.Logs)
+	if !hasSelfDrivingLog(resource.Logs, "Self-Driving cancelled", userClosedSelfDrivingSessionReason) {
+		t.Fatalf("suspended Self-Driving cancellation was not logged: %#v", resource.Logs)
 	}
 	ready, err := forgeWorkspace.Tasks(app.TaskListOptions{ProjectID: "project1", Runnable: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(ready.Runnable) != 0 {
-		t.Fatalf("closed suspended AutoRun remained runnable: %#v", ready.Runnable)
+		t.Fatalf("closed suspended Self-Driving remained runnable: %#v", ready.Runnable)
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubCloseLeavesOrdinaryChatAutoRunUnchanged(t *testing.T) {
+func TestAgentHubCloseLeavesOrdinaryChatSelfDrivingUnchanged(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -1340,9 +1340,9 @@ func TestAgentHubCloseLeavesOrdinaryChatAutoRunUnchanged(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
-	if autoRunPaused || autoRunCancelled {
-		t.Fatal("ordinary Chat Session close must not report an AutoRun transition")
+	_, selfDrivingPaused, selfDrivingCancelled := decodeAgentHubStopResponse(t, response)
+	if selfDrivingPaused || selfDrivingCancelled {
+		t.Fatal("ordinary Chat Session close must not report a Self-Driving transition")
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
@@ -1352,16 +1352,16 @@ func TestAgentHubCloseLeavesOrdinaryChatAutoRunUnchanged(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "queued" {
-		t.Fatalf("ordinary Chat Session changed the task AutoRun state: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "queued" {
+		t.Fatalf("ordinary Chat Session changed the task Self-Driving state: %#v", resource.SelfDriving)
 	}
-	if hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
-		t.Fatal("ordinary Chat Session close recorded an AutoRun cancellation")
+	if hasSelfDrivingLog(resource.Logs, "Self-Driving cancelled", userClosedSelfDrivingSessionReason) {
+		t.Fatal("ordinary Chat Session close recorded a Self-Driving cancellation")
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
+func TestAgentHubClosePreservesTerminalAndHistoricalSelfDriving(t *testing.T) {
 	tests := []struct {
 		name      string
 		setup     func(*app.Workspace) error
@@ -1370,22 +1370,22 @@ func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 		cancelled bool
 	}{
 		{name: "paused", state: "cancelled", gen: 1, cancelled: true, setup: func(workspace *app.Workspace) error {
-			_, err := workspace.PauseAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: "already paused"})
+			_, err := workspace.PauseSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: "already paused"})
 			return err
 		}},
 		{name: "completed", state: "completed", gen: 1, setup: func(workspace *app.Workspace) error {
-			_, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1"})
+			_, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1"})
 			return err
 		}},
 		{name: "failed", state: "failed", gen: 1, setup: func(workspace *app.Workspace) error {
-			_, err := workspace.FailAutoRun(app.AutoRunActionInput{TaskID: "project1.task1"})
+			_, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1"})
 			return err
 		}},
 		{name: "historical generation", state: "queued", gen: 2, setup: func(workspace *app.Workspace) error {
-			if _, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1"}); err != nil {
+			if _, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1"}); err != nil {
 				return err
 			}
-			_, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: "project1.task1"})
+			_, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{TaskID: "project1.task1"})
 			return err
 		}},
 	}
@@ -1395,7 +1395,7 @@ func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 			hub := httptest.NewServer(fake)
 			defer hub.Close()
 			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-			recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+			recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 			if recorder.Code != http.StatusOK {
 				t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 			}
@@ -1410,22 +1410,22 @@ func TestAgentHubClosePreservesTerminalAndHistoricalAutoRun(t *testing.T) {
 			if response.Code != http.StatusOK {
 				t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 			}
-			_, autoRunPaused, autoRunCancelled := decodeAgentHubStopResponse(t, response)
-			if autoRunPaused || autoRunCancelled != test.cancelled {
-				t.Fatalf("unexpected close transition: paused=%v cancelled=%v want cancelled=%v", autoRunPaused, autoRunCancelled, test.cancelled)
+			_, selfDrivingPaused, selfDrivingCancelled := decodeAgentHubStopResponse(t, response)
+			if selfDrivingPaused || selfDrivingCancelled != test.cancelled {
+				t.Fatalf("unexpected close transition: paused=%v cancelled=%v want cancelled=%v", selfDrivingPaused, selfDrivingCancelled, test.cancelled)
 			}
 			resource, err := forgeWorkspace.Resource("project1.task1")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if resource.AutoRun == nil || resource.AutoRun.State != test.state || resource.AutoRun.Generation != test.gen {
-				t.Fatalf("close changed the current AutoRun generation: %#v", resource.AutoRun)
+			if resource.SelfDriving == nil || resource.SelfDriving.State != test.state || resource.SelfDriving.Generation != test.gen {
+				t.Fatalf("close changed the current Self-Driving generation: %#v", resource.SelfDriving)
 			}
 			if test.cancelled {
-				if !hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+				if !hasSelfDrivingLog(resource.Logs, "Self-Driving cancelled", userClosedSelfDrivingSessionReason) {
 					t.Fatal("close did not record cancellation for the paused generation")
 				}
-			} else if hasAutoRunLog(resource.Logs, "Auto Run cancelled", userClosedAutoRunSessionReason) {
+			} else if hasSelfDrivingLog(resource.Logs, "Self-Driving cancelled", userClosedSelfDrivingSessionReason) {
 				t.Fatal("close recorded a cancellation for a terminal or historical generation")
 			}
 			waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
@@ -1438,7 +1438,7 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1450,7 +1450,7 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockPath := filepath.Join(workspace.Path, filepath.FromSlash(resource.Path), ".forge", "autorun.lock")
+	lockPath := filepath.Join(workspace.Path, filepath.FromSlash(resource.Path), ".forge", "self-driving.lock")
 	if err := os.Remove(lockPath); err != nil {
 		t.Fatal(err)
 	}
@@ -1458,14 +1458,14 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "cancel AutoRun before closing session") {
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "cancel Self-Driving before closing session") {
 		t.Fatalf("cancel failure should block close, got %d %s", response.Code, response.Body.String())
 	}
 	fake.mu.Lock()
 	actions := append([]string(nil), fake.actions...)
 	fake.mu.Unlock()
 	if strings.Contains(strings.Join(actions, ","), "stop") {
-		t.Fatalf("AgentHub Stop was sent after AutoRun cancellation failure: %v", actions)
+		t.Fatalf("AgentHub Stop was sent after Self-Driving cancellation failure: %v", actions)
 	}
 	if run := pollerRunState(manager.runtimeByID(detail.Run.ID)); run.Status == "stopping" || run.Status == "stopped" {
 		t.Fatalf("cancel failure changed the run to a stopping/terminal state: %#v", run)
@@ -1479,7 +1479,7 @@ func TestAgentHubClosePauseFailureDoesNotStopSession(t *testing.T) {
 		file.Close()
 	}
 	if response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID); response.Code != http.StatusOK {
-		t.Fatalf("cleanup close failed after restoring AutoRun lock: %d %s", response.Code, response.Body.String())
+		t.Fatalf("cleanup close failed after restoring Self-Driving lock: %d %s", response.Code, response.Body.String())
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 	waitForRuntimeTest(t, func() bool {
@@ -1499,12 +1499,12 @@ func TestAgentHubCloseAmbiguousStopCancelsOnceAndDoesNotRetry(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
 	response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "AutoRun was cancelled") {
+	if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), "Self-Driving was cancelled") {
 		t.Fatalf("ambiguous close should retain cancelled recovery state, got %d %s", response.Code, response.Body.String())
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -1515,8 +1515,8 @@ func TestAgentHubCloseAmbiguousStopCancelsOnceAndDoesNotRetry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "cancelled" {
-		t.Fatalf("ambiguous close did not durably cancel AutoRun: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "cancelled" {
+		t.Fatalf("ambiguous close did not durably cancel Self-Driving: %#v", resource.SelfDriving)
 	}
 	retry := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
 	if retry.Code != http.StatusConflict || !strings.Contains(retry.Body.String(), "was not retried") {
@@ -1546,7 +1546,7 @@ func TestAgentHubCloseDuplicateClicksSendOneStop(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1582,12 +1582,12 @@ func TestAgentHubCloseDuplicateClicksSendOneStop(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
+func TestAgentHubInterruptPausesSelfDrivingAndRetainsSession(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1615,10 +1615,10 @@ func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "paused" || resource.AutoRun.SuspensionSummary != "" {
-		t.Fatalf("Stop Turn did not pause the active AutoRun generation: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "paused" || resource.SelfDriving.SuspensionSummary != "" {
+		t.Fatalf("Stop Turn did not pause the active Self-Driving generation: %#v", resource.SelfDriving)
 	}
-	if !hasAutoRunLog(resource.Logs, "Auto Run paused", userStoppedActiveTurnReason) {
+	if !hasSelfDrivingLog(resource.Logs, "Self-Driving paused", userStoppedActiveTurnReason) {
 		t.Fatalf("Stop Turn pause was not recorded: %#v", resource.Logs)
 	}
 	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 || len(sessions[0].Controls) != 1 {
@@ -1638,7 +1638,7 @@ func TestAgentHubInterruptPausesAutoRunAndRetainsSession(t *testing.T) {
 		}
 	}
 	if messageCount != 1 {
-		t.Fatalf("paused AutoRun was immediately continued: %d user messages in %#v", messageCount, events)
+		t.Fatalf("paused Self-Driving was immediately continued: %d user messages in %#v", messageCount, events)
 	}
 }
 
@@ -1678,7 +1678,7 @@ func TestAgentHubInterruptAllowsWaitingApproval(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubInterruptDoesNotChangeAutoRunForChatTurn(t *testing.T) {
+func TestAgentHubInterruptDoesNotChangeSelfDrivingForChatTurn(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -1687,7 +1687,7 @@ func TestAgentHubInterruptDoesNotChangeAutoRunForChatTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.StartAutoRun("project1.task1"); err != nil {
+	if _, err := forgeWorkspace.StartSelfDriving("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
 	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"ordinary turn"}`)
@@ -1707,11 +1707,11 @@ func TestAgentHubInterruptDoesNotChangeAutoRunForChatTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.State != "running" {
-		t.Fatalf("ordinary Chat Stop Turn changed AutoRun state: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.State != "running" {
+		t.Fatalf("ordinary Chat Stop Turn changed Self-Driving state: %#v", resource.SelfDriving)
 	}
-	if hasAutoRunLog(resource.Logs, "Auto Run paused", userStoppedActiveTurnReason) {
-		t.Fatal("ordinary Chat Stop Turn recorded an AutoRun pause")
+	if hasSelfDrivingLog(resource.Logs, "Self-Driving paused", userStoppedActiveTurnReason) {
+		t.Fatal("ordinary Chat Stop Turn recorded a Self-Driving pause")
 	}
 }
 
@@ -1840,7 +1840,7 @@ func TestAgentHubInterruptRejectsMismatchedSource(t *testing.T) {
 	}
 }
 
-func hasAutoRunLog(logs []app.LogEntry, title, details string) bool {
+func hasSelfDrivingLog(logs []app.LogEntry, title, details string) bool {
 	for _, entry := range logs {
 		if entry.Title == title && entry.Details == details {
 			return true
@@ -1849,12 +1849,12 @@ func hasAutoRunLog(logs []app.LogEntry, title, details string) bool {
 	return false
 }
 
-func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
+func TestAgentHubSelfDrivingRetryUsesMissingStateReason(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+	rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("start failed: %s", rec.Body.String())
 	}
@@ -1874,11 +1874,11 @@ func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
 			return false
 		}
 		resource, err := forgeWorkspace.Resource("project1.task1")
-		if err != nil || resource.AutoRun == nil {
+		if err != nil || resource.SelfDriving == nil {
 			return false
 		}
 		for _, entry := range resource.Logs {
-			if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+			if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
 				return true
 			}
 		}
@@ -1894,26 +1894,26 @@ func TestAgentHubAutoRunRetryUsesMissingStateReason(t *testing.T) {
 	}
 	foundReason := false
 	for _, entry := range resource.Logs {
-		if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+		if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
 			foundReason = true
 		}
 		if strings.Contains(entry.Details, "stale turn summary") {
-			t.Fatalf("AutoRun retry reused the previous turn summary: %#v", entry)
+			t.Fatalf("Self-Driving retry reused the previous turn summary: %#v", entry)
 		}
 	}
 	if !foundReason {
-		t.Fatalf("AutoRun retry reason was not persisted: %#v", resource.Logs)
+		t.Fatalf("Self-Driving retry reason was not persisted: %#v", resource.Logs)
 	}
 }
 
-func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
+func TestAgentHubSelfDrivingTerminalRetainsSession(t *testing.T) {
 	for _, terminalState := range []string{"completed", "failed"} {
 		t.Run(terminalState, func(t *testing.T) {
 			fake := newRuntimeFakeAgentHub()
 			hub := httptest.NewServer(fake)
 			defer hub.Close()
 			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"autoRunGeneration":1}`)
+			rec, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"generation one","schedulerTurn":true,"selfDrivingGeneration":1}`)
 			if rec.Code != http.StatusOK {
 				t.Fatalf("start failed: %s", rec.Body.String())
 			}
@@ -1923,7 +1923,7 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Reason: "wait for the next turn"}); err != nil {
+			if _, err := forgeWorkspace.PauseSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Reason: "wait for the next turn"}); err != nil {
 				t.Fatal(err)
 			}
 			fake.mu.Lock()
@@ -1941,13 +1941,13 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 				return rt.run.Status == "idle" && !rt.run.SchedulerTurn
 			})
 
-			if _, err := forgeWorkspace.ResumeAutoRun("project1.task1"); err != nil {
+			if _, err := forgeWorkspace.ResumeSelfDriving("project1.task1"); err != nil {
 				t.Fatal(err)
 			}
-			inputReq := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"resume generation","schedulerTurn":true,"autoRunGeneration":1}`))
+			inputReq := httptest.NewRequest(http.MethodPost, "/input", strings.NewReader(`{"text":"resume generation","schedulerTurn":true,"selfDrivingGeneration":1}`))
 			inputRec := httptest.NewRecorder()
 			manager.sendAgentHubInput(inputRec, inputReq, rt, agentInputRequest{
-				Text: "resume generation", SchedulerTurn: true, AutoRunGeneration: 1,
+				Text: "resume generation", SchedulerTurn: true, SelfDrivingGeneration: 1,
 			}, "resume generation")
 			if inputRec.Code != http.StatusOK {
 				t.Fatalf("resume failed: %d %s", inputRec.Code, inputRec.Body.String())
@@ -1957,10 +1957,10 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 				t.Fatal(err)
 			}
 			if terminalState == "completed" {
-				if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
+				if _, err := forgeWorkspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
 					t.Fatal(err)
 				}
-			} else if _, err := forgeWorkspace.FailAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
+			} else if _, err := forgeWorkspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: terminalState}); err != nil {
 				t.Fatal(err)
 			}
 			fake.mu.Lock()
@@ -1985,7 +1985,7 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			forgeSessionID := rt.run.ForgeSessionID
 			rt.mu.Unlock()
 			if forgeSessionID == "" {
-				t.Fatalf("terminal AutoRun changed Forge session id: %q", forgeSessionID)
+				t.Fatalf("terminal Self-Driving changed Forge session id: %q", forgeSessionID)
 			}
 			fake.mu.Lock()
 			created := fake.nextSession
@@ -1993,13 +1993,13 @@ func TestAgentHubAutoRunTerminalRetainsSession(t *testing.T) {
 			actions := strings.Join(fake.actions, ",")
 			fake.mu.Unlock()
 			if created != 1 || launchID != forgeSessionID {
-				t.Fatalf("terminal AutoRun changed session identity: created=%d launch=%q forge=%q", created, launchID, forgeSessionID)
+				t.Fatalf("terminal Self-Driving changed session identity: created=%d launch=%q forge=%q", created, launchID, forgeSessionID)
 			}
 			if strings.Contains(actions, "stop") {
-				t.Fatalf("terminal AutoRun stopped AgentHub: %s", actions)
+				t.Fatalf("terminal Self-Driving stopped AgentHub: %s", actions)
 			}
 			if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
-				t.Fatalf("terminal AutoRun released the Forge session: %#v", sessions)
+				t.Fatalf("terminal Self-Driving released the Forge session: %#v", sessions)
 			}
 		})
 	}
@@ -2018,8 +2018,8 @@ func TestAgentHubCrashRecoveryAndRepeatedDispatchCreateExactlyOnce(t *testing.T)
 		ID: "run-crashed", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubAgentName: "fake-agent",
 		SourceExternalID:  workspace.ID + "/run-crashed", ForgeSessionID: "session-test",
-		Title: "Recovered AutoRun", Cwd: workspace.Path, Status: "starting",
-		SchedulerTurn: true, AutoRunGeneration: 4, PendingInitialMessage: "recover after SIGKILL",
+		Title: "Recovered Self-Driving", Cwd: workspace.Path, Status: "starting",
+		SchedulerTurn: true, SelfDrivingGeneration: 4, PendingInitialMessage: "recover after SIGKILL",
 		CreatedAt: time.Now().Format(time.RFC3339), UpdatedAt: time.Now().Format(time.RFC3339),
 	}
 	run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)

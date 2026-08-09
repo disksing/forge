@@ -283,17 +283,17 @@ func TestWorkspaceAPILogMutationLockPreservesConcurrentEntries(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) {
+func TestWorkspaceAPISelfDrivingFileLockPreservesConcurrentLogUpdates(t *testing.T) {
 	workspace := openTestWorkspace(t)
-	project, err := workspace.CreateProject("AutoRun project", "autorun")
+	project, err := workspace.CreateProject("Self-Driving project", "self-driving")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "AutoRun task", Slug: "autorun", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Self-Driving task", Slug: "self-driving", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
 	const workers = 10
@@ -303,7 +303,7 @@ func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) 
 		group.Add(1)
 		go func(index int) {
 			defer group.Done()
-			_, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: fmt.Sprintf("completion %d", index)})
+			_, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: fmt.Sprintf("completion %d", index)})
 			if err != nil {
 				errorsCh <- err
 			}
@@ -312,7 +312,7 @@ func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) 
 	group.Wait()
 	close(errorsCh)
 	for err := range errorsCh {
-		t.Errorf("concurrent AutoRun update: %v", err)
+		t.Errorf("concurrent Self-Driving update: %v", err)
 	}
 	entries, err := workspace.Logs(task.ID)
 	if err != nil {
@@ -320,16 +320,16 @@ func TestWorkspaceAPIAutoRunFileLockPreservesConcurrentLogUpdates(t *testing.T) 
 	}
 	completed := 0
 	for _, entry := range entries {
-		if entry.Title == "Auto Run completed" {
+		if entry.Title == "Self-Driving completed" {
 			completed++
 		}
 	}
 	if completed != workers {
-		t.Fatalf("AutoRun lock lost log updates: got %d completion entries, want %d", completed, workers)
+		t.Fatalf("Self-Driving lock lost log updates: got %d completion entries, want %d", completed, workers)
 	}
 }
 
-func TestWorkspaceAPIQueueAutoRunGenerationParameters(t *testing.T) {
+func TestWorkspaceAPIQueueSelfDrivingGenerationParameters(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("Parameter project", "parameters")
 	if err != nil {
@@ -339,152 +339,152 @@ func TestWorkspaceAPIQueueAutoRunGenerationParameters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued, err := workspace.QueueAutoRun(app.AutoRunQueueInput{
+	queued, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{
 		TaskID: task.ID, AgentName: "agent-one", AgentNameSet: true,
 		Prompt: "Inspect the change", PromptSet: true,
 		CompletionCriteria: "The focused tests pass.", CompletionCriteriaSet: true,
 	})
-	if err != nil || queued.AutoRun == nil {
+	if err != nil || queued.SelfDriving == nil {
 		t.Fatalf("queue with generation parameters failed: task=%+v err=%v", queued, err)
 	}
-	if queued.AutoRun.AgentName != "agent-one" || queued.AutoRun.Prompt != "Inspect the change" || queued.AutoRun.CompletionCriteria != "The focused tests pass." {
-		t.Fatalf("generation parameters were not persisted: %+v", queued.AutoRun)
+	if queued.SelfDriving.AgentName != "agent-one" || queued.SelfDriving.Prompt != "Inspect the change" || queued.SelfDriving.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("generation parameters were not persisted: %+v", queued.SelfDriving)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID}); err != nil {
+	if _, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID}); err != nil {
 		t.Fatal(err)
 	}
-	inherited, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
-	if err != nil || inherited.AutoRun == nil {
+	inherited, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{TaskID: task.ID})
+	if err != nil || inherited.SelfDriving == nil {
 		t.Fatalf("terminal queue failed: task=%+v err=%v", inherited, err)
 	}
-	if inherited.AutoRun.Generation != 2 || inherited.AutoRun.AgentName != "agent-one" || inherited.AutoRun.Prompt != "Inspect the change" || inherited.AutoRun.CompletionCriteria != "The focused tests pass." {
-		t.Fatalf("terminal generation did not inherit parameters: %+v", inherited.AutoRun)
+	if inherited.SelfDriving.Generation != 2 || inherited.SelfDriving.AgentName != "agent-one" || inherited.SelfDriving.Prompt != "Inspect the change" || inherited.SelfDriving.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("terminal generation did not inherit parameters: %+v", inherited.SelfDriving)
 	}
-	cleared, err := workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID})
+	cleared, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID})
 	if err != nil {
 		// The generation is queued after the previous assertion; move it through
 		// the state machine before testing explicit empty values.
-		if _, startErr := workspace.StartAutoRun(task.ID); startErr != nil {
+		if _, startErr := workspace.StartSelfDriving(task.ID); startErr != nil {
 			t.Fatal(startErr)
 		}
-		cleared, err = workspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: task.ID})
+		cleared, err = workspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID})
 	}
-	if err != nil || cleared.AutoRun == nil {
+	if err != nil || cleared.SelfDriving == nil {
 		t.Fatalf("prepare explicit clear failed: task=%+v err=%v", cleared, err)
 	}
-	cleared, err = workspace.QueueAutoRun(app.AutoRunQueueInput{
+	cleared, err = workspace.QueueSelfDriving(app.SelfDrivingQueueInput{
 		TaskID: task.ID, AgentName: "agent-two", AgentNameSet: true,
 		Prompt: "", PromptSet: true, CompletionCriteria: "", CompletionCriteriaSet: true,
 	})
-	if err != nil || cleared.AutoRun == nil {
+	if err != nil || cleared.SelfDriving == nil {
 		t.Fatalf("queue with explicit empty values failed: task=%+v err=%v", cleared, err)
 	}
-	if cleared.AutoRun.AgentName != "agent-two" || cleared.AutoRun.Prompt != "" || cleared.AutoRun.CompletionCriteria != "" {
-		t.Fatalf("explicit empty values were inherited unexpectedly: %+v", cleared.AutoRun)
+	if cleared.SelfDriving.AgentName != "agent-two" || cleared.SelfDriving.Prompt != "" || cleared.SelfDriving.CompletionCriteria != "" {
+		t.Fatalf("explicit empty values were inherited unexpectedly: %+v", cleared.SelfDriving)
 	}
 }
 
-func TestWorkspaceAPIAutoRunStateTransitionsNormalizeSuspensionMetadata(t *testing.T) {
+func TestWorkspaceAPISelfDrivingStateTransitionsNormalizeSuspensionMetadata(t *testing.T) {
 	workspace := openTestWorkspace(t)
-	project, err := workspace.CreateProject("AutoRun state project", "autorun-state")
+	project, err := workspace.CreateProject("Self-Driving state project", "self-driving-state")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "State task", Slug: "state", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "State task", Slug: "state", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	suspended, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for review"})
-	if err != nil || suspended.AutoRun == nil {
+	suspended, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "waiting for review"})
+	if err != nil || suspended.SelfDriving == nil {
 		t.Fatalf("suspend failed: task=%+v err=%v", suspended, err)
 	}
-	if suspended.AutoRun.State != "suspended" || suspended.AutoRun.SuspendedAt == "" || suspended.AutoRun.SuspensionSummary != "waiting for review" {
-		t.Fatalf("unexpected suspended metadata: %+v", suspended.AutoRun)
+	if suspended.SelfDriving.State != "suspended" || suspended.SelfDriving.SuspendedAt == "" || suspended.SelfDriving.SuspensionSummary != "waiting for review" {
+		t.Fatalf("unexpected suspended metadata: %+v", suspended.SelfDriving)
 	}
 
-	resumed, err := workspace.ResumeAutoRun(task.ID)
-	if err != nil || resumed.AutoRun == nil {
+	resumed, err := workspace.ResumeSelfDriving(task.ID)
+	if err != nil || resumed.SelfDriving == nil {
 		t.Fatalf("resume failed: task=%+v err=%v", resumed, err)
 	}
-	if resumed.AutoRun.State != "queued" || resumed.AutoRun.SuspendedAt != "" || resumed.AutoRun.SuspensionSummary != "waiting for review" {
-		t.Fatalf("resume must clear only suspended metadata, got: %+v", resumed.AutoRun)
+	if resumed.SelfDriving.State != "queued" || resumed.SelfDriving.SuspendedAt != "" || resumed.SelfDriving.SuspensionSummary != "waiting for review" {
+		t.Fatalf("resume must clear only suspended metadata, got: %+v", resumed.SelfDriving)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	completed, err := workspace.CompleteAutoRun(app.AutoRunActionInput{
+	completed, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running", Summary: "done",
 	})
-	if err != nil || completed.AutoRun == nil {
+	if err != nil || completed.SelfDriving == nil {
 		t.Fatalf("complete failed: task=%+v err=%v", completed, err)
 	}
-	if completed.AutoRun.State != "completed" || completed.AutoRun.SuspendedAt != "" || completed.AutoRun.SuspensionSummary != "waiting for review" {
-		t.Fatalf("completion must not resurrect or erase prompt context: %+v", completed.AutoRun)
+	if completed.SelfDriving.State != "completed" || completed.SelfDriving.SuspendedAt != "" || completed.SelfDriving.SuspensionSummary != "waiting for review" {
+		t.Fatalf("completion must not resurrect or erase prompt context: %+v", completed.SelfDriving)
 	}
 
-	generationTwo, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
-	if err != nil || generationTwo.AutoRun == nil {
+	generationTwo, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{TaskID: task.ID})
+	if err != nil || generationTwo.SelfDriving == nil {
 		t.Fatalf("queue generation 2 failed: task=%+v err=%v", generationTwo, err)
 	}
-	if generationTwo.AutoRun.Generation != 2 || generationTwo.AutoRun.State != "queued" || generationTwo.AutoRun.SuspensionSummary != "" || generationTwo.AutoRun.SuspendedAt != "" {
-		t.Fatalf("new generation inherited stale status metadata: %+v", generationTwo.AutoRun)
+	if generationTwo.SelfDriving.Generation != 2 || generationTwo.SelfDriving.State != "queued" || generationTwo.SelfDriving.SuspensionSummary != "" || generationTwo.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("new generation inherited stale status metadata: %+v", generationTwo.SelfDriving)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	suspendedAgain, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for dependency"})
-	if err != nil || suspendedAgain.AutoRun == nil || suspendedAgain.AutoRun.SuspendedAt == "" {
+	suspendedAgain, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "waiting for dependency"})
+	if err != nil || suspendedAgain.SelfDriving == nil || suspendedAgain.SelfDriving.SuspendedAt == "" {
 		t.Fatalf("second suspend failed: task=%+v err=%v", suspendedAgain, err)
 	}
-	completedFromSuspended, err := workspace.CompleteAutoRun(app.AutoRunActionInput{
+	completedFromSuspended, err := workspace.CompleteSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 2, ExpectedState: "suspended",
 	})
-	if err != nil || completedFromSuspended.AutoRun == nil {
+	if err != nil || completedFromSuspended.SelfDriving == nil {
 		t.Fatalf("completion from suspended state failed: task=%+v err=%v", completedFromSuspended, err)
 	}
-	if completedFromSuspended.AutoRun.State != "completed" || completedFromSuspended.AutoRun.SuspendedAt != "" {
-		t.Fatalf("terminal transition left suspendedAt behind: %+v", completedFromSuspended.AutoRun)
+	if completedFromSuspended.SelfDriving.State != "completed" || completedFromSuspended.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("terminal transition left suspendedAt behind: %+v", completedFromSuspended.SelfDriving)
 	}
 
-	generationThree, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
-	if err != nil || generationThree.AutoRun == nil {
+	generationThree, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{TaskID: task.ID})
+	if err != nil || generationThree.SelfDriving == nil {
 		t.Fatalf("queue generation 3 failed: task=%+v err=%v", generationThree, err)
 	}
-	if generationThree.AutoRun.Generation != 3 || generationThree.AutoRun.SuspensionSummary != "" || generationThree.AutoRun.SuspendedAt != "" {
-		t.Fatalf("generation 3 inherited generation 2 status metadata: %+v", generationThree.AutoRun)
+	if generationThree.SelfDriving.Generation != 3 || generationThree.SelfDriving.SuspensionSummary != "" || generationThree.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("generation 3 inherited generation 2 status metadata: %+v", generationThree.SelfDriving)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	paused, err := workspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "manual review"})
-	if err != nil || paused.AutoRun == nil {
+	paused, err := workspace.PauseSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "manual review"})
+	if err != nil || paused.SelfDriving == nil {
 		t.Fatalf("pause failed: task=%+v err=%v", paused, err)
 	}
-	if paused.AutoRun.State != "paused" || paused.AutoRun.SuspendedAt != "" || paused.AutoRun.SuspensionSummary != "" || paused.AutoRun.WakeCondition != "" {
-		t.Fatalf("pause metadata is incorrect: %+v", paused.AutoRun)
+	if paused.SelfDriving.State != "paused" || paused.SelfDriving.SuspendedAt != "" || paused.SelfDriving.SuspensionSummary != "" || paused.SelfDriving.WakeCondition != "" {
+		t.Fatalf("pause metadata is incorrect: %+v", paused.SelfDriving)
 	}
-	if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+	if _, err := workspace.ResumeSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	failed, err := workspace.FailAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "provider failed"})
-	if err != nil || failed.AutoRun == nil {
+	failed, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Reason: "provider failed"})
+	if err != nil || failed.SelfDriving == nil {
 		t.Fatalf("fail failed: task=%+v err=%v", failed, err)
 	}
-	if failed.AutoRun.State != "failed" || failed.AutoRun.SuspendedAt != "" {
-		t.Fatalf("failure left suspended metadata behind: %+v", failed.AutoRun)
+	if failed.SelfDriving.State != "failed" || failed.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("failure left suspended metadata behind: %+v", failed.SelfDriving)
 	}
 }
 
-func TestWorkspaceAPIResumeAutoRunWithAgentPersistsCurrentGenerationCAS(t *testing.T) {
+func TestWorkspaceAPIResumeSelfDrivingWithAgentPersistsCurrentGenerationCAS(t *testing.T) {
 	for _, state := range []string{"suspended", "paused"} {
 		t.Run(state, func(t *testing.T) {
 			workspace := openTestWorkspace(t)
@@ -493,44 +493,44 @@ func TestWorkspaceAPIResumeAutoRunWithAgentPersistsCurrentGenerationCAS(t *testi
 				t.Fatal(err)
 			}
 			task, err := workspace.CreateTask(app.CreateTaskInput{
-				ProjectID: project.ID, Title: "Resume Agent task", Slug: "resume-agent", AutoRun: true,
+				ProjectID: project.ID, Title: "Resume Agent task", Slug: "resume-agent", SelfDriving: true,
 				AgentName: "saved-agent", PreferredAgentProfiles: []string{"preferred"},
 				Prompt: "Keep these instructions", CompletionCriteria: "Keep this completion rule",
 			})
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := workspace.StartAutoRun(task.ID); err != nil {
+			if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+			if _, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{
 				TaskID: task.ID, Summary: "waiting for a reviewer", WakeCondition: "reviewer approves",
 				ExpectedGeneration: 1, ExpectedState: "running",
 			}); err != nil {
 				t.Fatal(err)
 			}
 			if state == "paused" {
-				if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+				if _, err := workspace.ResumeSelfDriving(task.ID); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := workspace.StartAutoRun(task.ID); err != nil {
+				if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 					t.Fatal(err)
 				}
-				if _, err := workspace.PauseAutoRun(app.AutoRunActionInput{
+				if _, err := workspace.PauseSelfDriving(app.SelfDrivingActionInput{
 					TaskID: task.ID, Reason: "manual review", ExpectedGeneration: 1, ExpectedState: "running",
 				}); err != nil {
 					t.Fatal(err)
 				}
 			}
 
-			resumed, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+			resumed, err := workspace.ResumeSelfDrivingWithAgent(app.SelfDrivingResumeInput{
 				TaskID: task.ID, AgentName: "explicit-agent", AgentNameSet: true,
 				ExpectedGeneration: 1, ExpectedState: state,
 			})
-			if err != nil || resumed.AutoRun == nil {
+			if err != nil || resumed.SelfDriving == nil {
 				t.Fatalf("resume with explicit Agent failed: task=%+v err=%v", resumed, err)
 			}
-			got := resumed.AutoRun
+			got := resumed.SelfDriving
 			if got.Generation != 1 || got.State != "queued" || got.AgentName != "explicit-agent" || got.SuspendedAt != "" ||
 				got.PreferredAgentProfiles[0] != "preferred" || got.Prompt != "Keep these instructions" ||
 				got.CompletionCriteria != "Keep this completion rule" || got.SuspensionSummary != "waiting for a reviewer" ||
@@ -539,50 +539,50 @@ func TestWorkspaceAPIResumeAutoRunWithAgentPersistsCurrentGenerationCAS(t *testi
 			}
 
 			beforeStale, err := workspace.ResourceValue(task.ID)
-			if err != nil || beforeStale.Task == nil || beforeStale.Task.AutoRun == nil {
+			if err != nil || beforeStale.Task == nil || beforeStale.Task.SelfDriving == nil {
 				t.Fatalf("reload resumed task: resource=%+v err=%v", beforeStale, err)
 			}
-			if _, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+			if _, err := workspace.ResumeSelfDrivingWithAgent(app.SelfDrivingResumeInput{
 				TaskID: task.ID, AgentName: "stale-agent", AgentNameSet: true,
 				ExpectedGeneration: 1, ExpectedState: state,
 			}); err == nil {
 				t.Fatal("stale state CAS unexpectedly succeeded after resume")
 			}
 			afterStale, err := workspace.ResourceValue(task.ID)
-			if err != nil || afterStale.Task == nil || afterStale.Task.AutoRun == nil {
+			if err != nil || afterStale.Task == nil || afterStale.Task.SelfDriving == nil {
 				t.Fatalf("reload after stale resume: resource=%+v err=%v", afterStale, err)
 			}
-			if afterStale.Task.AutoRun.AgentName != "explicit-agent" || afterStale.Task.AutoRun.State != "queued" {
-				t.Fatalf("stale resume mutated the generation: %+v", afterStale.Task.AutoRun)
+			if afterStale.Task.SelfDriving.AgentName != "explicit-agent" || afterStale.Task.SelfDriving.State != "queued" {
+				t.Fatalf("stale resume mutated the generation: %+v", afterStale.Task.SelfDriving)
 			}
 
-			if _, err := workspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+			if _, err := workspace.ResumeSelfDrivingWithAgent(app.SelfDrivingResumeInput{
 				TaskID: task.ID, AgentNameSet: true, ExpectedGeneration: 1, ExpectedState: "queued",
 			}); err == nil {
 				t.Fatal("an explicit empty Agent unexpectedly succeeded")
 			}
 			final, err := workspace.ResourceValue(task.ID)
-			if err != nil || final.Task == nil || final.Task.AutoRun == nil || final.Task.AutoRun.AgentName != "explicit-agent" {
+			if err != nil || final.Task == nil || final.Task.SelfDriving == nil || final.Task.SelfDriving.AgentName != "explicit-agent" {
 				t.Fatalf("empty Agent attempt mutated persisted choice: resource=%+v err=%v", final, err)
 			}
 		})
 	}
 }
 
-func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
+func TestWorkspaceAPIResumeSelfDrivingConcurrentWakeIsIdempotent(t *testing.T) {
 	workspace := openTestWorkspace(t)
-	project, err := workspace.CreateProject("AutoRun wake project", "wake")
+	project, err := workspace.CreateProject("Self-Driving wake project", "wake")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Wake task", Slug: "wake", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Wake task", Slug: "wake", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "waiting for upstream"}); err != nil {
+	if _, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "waiting for upstream"}); err != nil {
 		t.Fatal(err)
 	}
 	const workers = 12
@@ -594,7 +594,7 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 			defer group.Done()
 			// Manual resume, timed wake-up, and scheduler scans race here; only
 			// one may transition and log the generation.
-			if _, err := workspace.ResumeAutoRun(task.ID); err != nil {
+			if _, err := workspace.ResumeSelfDriving(task.ID); err != nil {
 				errorsCh <- err
 			}
 		}()
@@ -605,11 +605,11 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 		t.Errorf("concurrent resume: %v", err)
 	}
 	resource, err := workspace.ResourceValue(task.ID)
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("load task: %v", err)
 	}
-	if resource.Task.AutoRun.State != "queued" {
-		t.Fatalf("expected queued after concurrent resume, got %s", resource.Task.AutoRun.State)
+	if resource.Task.SelfDriving.State != "queued" {
+		t.Fatalf("expected queued after concurrent resume, got %s", resource.Task.SelfDriving.State)
 	}
 	entries, err := workspace.Logs(task.ID)
 	if err != nil {
@@ -617,7 +617,7 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	}
 	resumes := 0
 	for _, entry := range entries {
-		if entry.AutoRun && entry.AutoRunGeneration == resource.Task.AutoRun.Generation && entry.Title == "Auto Run queued" && entry.Details == "resumed" {
+		if entry.SelfDriving && entry.SelfDrivingGeneration == resource.Task.SelfDriving.Generation && entry.Title == "Self-Driving queued" && entry.Details == "resumed" {
 			resumes++
 		}
 	}
@@ -626,45 +626,45 @@ func TestWorkspaceAPIResumeAutoRunConcurrentWakeIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestWorkspaceAPIResumeAndStartAutoRunUsesGenerationStateCAS(t *testing.T) {
+func TestWorkspaceAPIResumeAndStartSelfDrivingUsesGenerationStateCAS(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("Atomic resume project", "atomic-resume")
 	if err != nil {
 		t.Fatal(err)
 	}
 	task, err := workspace.CreateTask(app.CreateTaskInput{
-		ProjectID: project.ID, Title: "Atomic resume task", Slug: "atomic-resume", AutoRun: true,
+		ProjectID: project.ID, Title: "Atomic resume task", Slug: "atomic-resume", SelfDriving: true,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+	if _, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, Summary: "waiting for a human", WakeCondition: "human sends a message",
 		ExpectedGeneration: 1, ExpectedState: "running",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
-	resumed, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+	resumed, err := workspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
 	})
-	if err != nil || resumed.AutoRun == nil {
+	if err != nil || resumed.SelfDriving == nil {
 		t.Fatalf("atomic resume failed: task=%+v err=%v", resumed, err)
 	}
-	if resumed.AutoRun.State != "running" || resumed.AutoRun.Generation != 1 || resumed.AutoRun.SuspendedAt != "" ||
-		resumed.AutoRun.SuspensionSummary != "waiting for a human" || resumed.AutoRun.WakeCondition != "human sends a message" {
-		t.Fatalf("atomic resume changed the wrong projection: %+v", resumed.AutoRun)
+	if resumed.SelfDriving.State != "running" || resumed.SelfDriving.Generation != 1 || resumed.SelfDriving.SuspendedAt != "" ||
+		resumed.SelfDriving.SuspensionSummary != "waiting for a human" || resumed.SelfDriving.WakeCondition != "human sends a message" {
+		t.Fatalf("atomic resume changed the wrong projection: %+v", resumed.SelfDriving)
 	}
 
-	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+	if _, err := workspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
 	}); err == nil {
 		t.Fatal("stale suspended CAS unexpectedly succeeded after the generation became running")
 	}
-	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+	if _, err := workspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 2, ExpectedState: "suspended",
 	}); err == nil {
 		t.Fatal("stale generation CAS unexpectedly succeeded")
@@ -676,13 +676,13 @@ func TestWorkspaceAPIResumeAndStartAutoRunUsesGenerationStateCAS(t *testing.T) {
 	}
 	queued, started := 0, 0
 	for _, entry := range logs {
-		if !entry.AutoRun || entry.AutoRunGeneration != 1 {
+		if !entry.SelfDriving || entry.SelfDrivingGeneration != 1 {
 			continue
 		}
 		switch {
-		case entry.Title == "Auto Run queued" && entry.Details == "resumed":
+		case entry.Title == "Self-Driving queued" && entry.Details == "resumed":
 			queued++
-		case entry.Title == "Auto Run started":
+		case entry.Title == "Self-Driving started":
 			started++
 		}
 	}
@@ -690,33 +690,33 @@ func TestWorkspaceAPIResumeAndStartAutoRunUsesGenerationStateCAS(t *testing.T) {
 		t.Fatalf("atomic resume logged duplicate or incomplete transitions: queued=%d started=%d logs=%#v", queued, started, logs)
 	}
 
-	paused, err := workspace.PauseAutoRun(app.AutoRunActionInput{
+	paused, err := workspace.PauseSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running",
 	})
-	if err != nil || paused.AutoRun == nil || paused.AutoRun.State != "paused" {
+	if err != nil || paused.SelfDriving == nil || paused.SelfDriving.State != "paused" {
 		t.Fatalf("pause setup failed: task=%+v err=%v", paused, err)
 	}
-	if _, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+	if _, err := workspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
 	}); err == nil {
-		t.Fatal("paused AutoRun was implicitly accepted as suspended")
+		t.Fatal("paused Self-Driving was implicitly accepted as suspended")
 	}
 }
 
-func TestWorkspaceAPIResumeAndStartAutoRunConcurrentCASIsSingleWinner(t *testing.T) {
+func TestWorkspaceAPIResumeAndStartSelfDrivingConcurrentCASIsSingleWinner(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("Atomic race project", "atomic-race")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Atomic race task", Slug: "atomic-race", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Atomic race task", Slug: "atomic-race", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
+	if _, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -727,7 +727,7 @@ func TestWorkspaceAPIResumeAndStartAutoRunConcurrentCASIsSingleWinner(t *testing
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			_, err := workspace.ResumeAndStartAutoRun(app.AutoRunActionInput{
+			_, err := workspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
 				TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "suspended",
 			})
 			results <- err
@@ -745,47 +745,47 @@ func TestWorkspaceAPIResumeAndStartAutoRunConcurrentCASIsSingleWinner(t *testing
 		t.Fatalf("atomic resume had %d winners, want 1", winners)
 	}
 	resource, err := workspace.ResourceValue(task.ID)
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload resumed task: resource=%+v err=%v", resource, err)
 	}
-	if resource.Task.AutoRun.State != "running" || resource.Task.AutoRun.Generation != 1 {
-		t.Fatalf("concurrent resume final state: %+v", resource.Task.AutoRun)
+	if resource.Task.SelfDriving.State != "running" || resource.Task.SelfDriving.Generation != 1 {
+		t.Fatalf("concurrent resume final state: %+v", resource.Task.SelfDriving)
 	}
 }
 
-func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
+func TestWorkspaceAPISelfDrivingCancellationCASAndNewGeneration(t *testing.T) {
 	workspace := openTestWorkspace(t)
 	project, err := workspace.CreateProject("Cancellation project", "cancellation")
 	if err != nil {
 		t.Fatal(err)
 	}
 	task, err := workspace.CreateTask(app.CreateTaskInput{
-		ProjectID: project.ID, Title: "Cancellation task", Slug: "cancellation", AutoRun: true,
+		ProjectID: project.ID, Title: "Cancellation task", Slug: "cancellation", SelfDriving: true,
 		AgentName: "agent-one", PreferredAgentProfiles: []string{"codex"}, Prompt: "Inspect the change",
 		CompletionCriteria: "The focused tests pass.",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.StartAutoRun(task.ID); err != nil {
+	if _, err := workspace.StartSelfDriving(task.ID); err != nil {
 		t.Fatal(err)
 	}
-	suspended, err := workspace.SuspendAutoRun(app.AutoRunActionInput{
+	suspended, err := workspace.SuspendSelfDriving(app.SelfDrivingActionInput{
 		TaskID: task.ID, Summary: "waiting for the upstream merge", WakeCondition: "the merge is in origin/master",
 		ExpectedGeneration: 1, ExpectedState: "running",
 	})
-	if err != nil || suspended.AutoRun == nil || suspended.AutoRun.WakeCondition != "the merge is in origin/master" {
+	if err != nil || suspended.SelfDriving == nil || suspended.SelfDriving.WakeCondition != "the merge is in origin/master" {
 		t.Fatalf("suspend did not persist separate wake condition: task=%+v err=%v", suspended, err)
 	}
-	if _, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "queued"}); err == nil {
+	if _, err := workspace.CancelSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "queued"}); err == nil {
 		t.Fatal("expected stale-state cancellation CAS to fail")
 	}
-	cancelled, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "suspended"})
-	if err != nil || cancelled.AutoRun == nil || cancelled.AutoRun.State != "cancelled" {
+	cancelled, err := workspace.CancelSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Reason: "user cancelled this generation", ExpectedGeneration: 1, ExpectedState: "suspended"})
+	if err != nil || cancelled.SelfDriving == nil || cancelled.SelfDriving.State != "cancelled" {
 		t.Fatalf("cancel did not persist terminal state: task=%+v err=%v", cancelled, err)
 	}
-	if cancelled.AutoRun.WakeCondition != "the merge is in origin/master" || cancelled.AutoRun.SuspendedAt != "" {
-		t.Fatalf("cancellation changed retained suspension metadata unexpectedly: %+v", cancelled.AutoRun)
+	if cancelled.SelfDriving.WakeCondition != "the merge is in origin/master" || cancelled.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("cancellation changed retained suspension metadata unexpectedly: %+v", cancelled.SelfDriving)
 	}
 	logs, err := workspace.Logs(task.ID)
 	if err != nil {
@@ -793,7 +793,7 @@ func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
 	}
 	cancelLogs := 0
 	for _, entry := range logs {
-		if entry.Title == "Auto Run cancelled" {
+		if entry.Title == "Self-Driving cancelled" {
 			cancelLogs++
 			if entry.Details != "user cancelled this generation" || entry.Time == "" {
 				t.Fatalf("cancellation log did not retain reason/time: %+v", entry)
@@ -803,7 +803,7 @@ func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
 	if cancelLogs != 1 {
 		t.Fatalf("expected one cancellation log, got %d: %+v", cancelLogs, logs)
 	}
-	if _, err := workspace.CancelAutoRun(app.AutoRunActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
+	if _, err := workspace.CancelSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, ExpectedGeneration: 1, ExpectedState: "running"}); err != nil {
 		t.Fatalf("cancel should be idempotent: %v", err)
 	}
 	logs, err = workspace.Logs(task.ID)
@@ -812,25 +812,25 @@ func TestWorkspaceAPIAutoRunCancellationCASAndNewGeneration(t *testing.T) {
 	}
 	cancelLogs = 0
 	for _, entry := range logs {
-		if entry.Title == "Auto Run cancelled" {
+		if entry.Title == "Self-Driving cancelled" {
 			cancelLogs++
 		}
 	}
 	if cancelLogs != 1 {
 		t.Fatalf("idempotent cancellation appended a log: %+v", logs)
 	}
-	if _, err := workspace.ResumeAutoRun(task.ID); err == nil {
+	if _, err := workspace.ResumeSelfDriving(task.ID); err == nil {
 		t.Fatal("cancelled generation must not be resumable")
 	}
-	next, err := workspace.QueueAutoRun(app.AutoRunQueueInput{TaskID: task.ID})
-	if err != nil || next.AutoRun == nil {
+	next, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{TaskID: task.ID})
+	if err != nil || next.SelfDriving == nil {
 		t.Fatalf("cancelled generation could not start a new generation: task=%+v err=%v", next, err)
 	}
-	if next.AutoRun.Generation != 2 || next.AutoRun.State != "queued" || next.AutoRun.AgentName != "agent-one" || next.AutoRun.Prompt != "Inspect the change" || next.AutoRun.CompletionCriteria != "The focused tests pass." {
-		t.Fatalf("new generation did not inherit editable configuration: %+v", next.AutoRun)
+	if next.SelfDriving.Generation != 2 || next.SelfDriving.State != "queued" || next.SelfDriving.AgentName != "agent-one" || next.SelfDriving.Prompt != "Inspect the change" || next.SelfDriving.CompletionCriteria != "The focused tests pass." {
+		t.Fatalf("new generation did not inherit editable configuration: %+v", next.SelfDriving)
 	}
-	if next.AutoRun.SuspensionSummary != "" || next.AutoRun.WakeCondition != "" || next.AutoRun.SuspendedAt != "" {
-		t.Fatalf("new generation retained cancelled suspension metadata: %+v", next.AutoRun)
+	if next.SelfDriving.SuspensionSummary != "" || next.SelfDriving.WakeCondition != "" || next.SelfDriving.SuspendedAt != "" {
+		t.Fatalf("new generation retained cancelled suspension metadata: %+v", next.SelfDriving)
 	}
 }
 
@@ -844,7 +844,7 @@ func TestWorkspaceAPIMigratesSuspendedWakeConditionIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy suspended", Slug: "legacy-suspended", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy suspended", Slug: "legacy-suspended", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -861,7 +861,7 @@ func TestWorkspaceAPIMigratesSuspendedWakeConditionIdempotently(t *testing.T) {
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		t.Fatal(err)
 	}
-	metadata["autoRun"] = map[string]any{"generation": 1, "state": "suspended"}
+	metadata["selfDriving"] = map[string]any{"generation": 1, "state": "suspended"}
 	data, err = json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -870,12 +870,12 @@ func TestWorkspaceAPIMigratesSuspendedWakeConditionIdempotently(t *testing.T) {
 		t.Fatal(err)
 	}
 	migrated, err := workspace.ResourceValue(task.ID)
-	if err != nil || migrated.Task == nil || migrated.Task.AutoRun == nil {
+	if err != nil || migrated.Task == nil || migrated.Task.SelfDriving == nil {
 		t.Fatalf("read suspended migration: %v", err)
 	}
-	autoRun := migrated.Task.AutoRun
-	if autoRun.State != "suspended" || autoRun.SuspendedAt == "" || autoRun.SuspensionSummary != "Re-check whether the blocking condition has changed" || autoRun.WakeCondition != autoRun.SuspensionSummary {
-		t.Fatalf("suspended wake migration did not fill safe fallback: %+v", autoRun)
+	selfDriving := migrated.Task.SelfDriving
+	if selfDriving.State != "suspended" || selfDriving.SuspendedAt == "" || selfDriving.SuspensionSummary != "Re-check whether the blocking condition has changed" || selfDriving.WakeCondition != selfDriving.SuspensionSummary {
+		t.Fatalf("suspended wake migration did not fill safe fallback: %+v", selfDriving)
 	}
 	logs, err := workspace.Logs(task.ID)
 	if err != nil {
@@ -883,24 +883,24 @@ func TestWorkspaceAPIMigratesSuspendedWakeConditionIdempotently(t *testing.T) {
 	}
 	migrationLogs := 0
 	for _, entry := range logs {
-		if entry.Title == "Auto Run wake condition migrated" && entry.AutoRunWakeConditionFallback {
+		if entry.Title == "Self-Driving wake condition migrated" && entry.SelfDrivingWakeConditionFallback {
 			migrationLogs++
 		}
 	}
 	if migrationLogs != 1 {
 		t.Fatalf("wake migration did not record one compatibility fallback: %+v", logs)
 	}
-	stableAt := autoRun.SuspendedAt
+	stableAt := selfDriving.SuspendedAt
 	second, err := workspace.ResourceValue(task.ID)
-	if err != nil || second.Task == nil || second.Task.AutoRun == nil {
+	if err != nil || second.Task == nil || second.Task.SelfDriving == nil {
 		t.Fatalf("second migration read: %v", err)
 	}
-	if second.Task.AutoRun.SuspendedAt != stableAt || second.Task.AutoRun.WakeCondition != autoRun.WakeCondition {
-		t.Fatalf("suspended wake migration is not idempotent: first=%+v second=%+v", autoRun, second.Task.AutoRun)
+	if second.Task.SelfDriving.SuspendedAt != stableAt || second.Task.SelfDriving.WakeCondition != selfDriving.WakeCondition {
+		t.Fatalf("suspended wake migration is not idempotent: first=%+v second=%+v", selfDriving, second.Task.SelfDriving)
 	}
 }
 
-func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
+func TestWorkspaceAPIMigratesLegacyWaitingSelfDriving(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := app.Initialize(root, "en")
 	if err != nil {
@@ -910,12 +910,12 @@ func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy waiting", Slug: "legacy-waiting", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Legacy waiting", Slug: "legacy-waiting", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	resource, err := workspace.ResourceValue(task.ID)
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("load task: %v", err)
 	}
 	// Rewrite task.json with the pre-simplification waiting + after shape.
@@ -930,7 +930,7 @@ func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
 		Parent        string `json:"parent"`
 		Description   string `json:"description,omitempty"`
 		Repos         []any  `json:"repos,omitempty"`
-		AutoRun       struct {
+		SelfDriving   struct {
 			Generation int    `json:"generation"`
 			State      string `json:"state"`
 			Prompt     string `json:"prompt,omitempty"`
@@ -938,15 +938,15 @@ func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
 				TaskID     string `json:"taskId"`
 				Generation int    `json:"generation"`
 			} `json:"after,omitempty"`
-		} `json:"autoRun,omitempty"`
+		} `json:"selfDriving,omitempty"`
 	}{
 		SchemaVersion: 1, ID: resource.Task.ID, Type: "task", Title: resource.Task.Title,
 		CreatedAt: resource.Task.CreatedAt, UpdatedAt: resource.Task.UpdatedAt, Parent: resource.Task.Parent,
 	}
-	legacy.AutoRun.Generation = 1
-	legacy.AutoRun.State = "waiting"
-	legacy.AutoRun.Prompt = "integrate the prerequisite"
-	legacy.AutoRun.After = []struct {
+	legacy.SelfDriving.Generation = 1
+	legacy.SelfDriving.State = "waiting"
+	legacy.SelfDriving.Prompt = "integrate the prerequisite"
+	legacy.SelfDriving.After = []struct {
 		TaskID     string `json:"taskId"`
 		Generation int    `json:"generation"`
 	}{{TaskID: "project1.task7", Generation: 2}, {TaskID: "project1.task9", Generation: 1}}
@@ -959,25 +959,164 @@ func TestWorkspaceAPIMigratesLegacyWaitingAutoRun(t *testing.T) {
 	}
 
 	resource, err = workspace.ResourceValue(task.ID)
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload migrated task: %v", err)
 	}
-	autoRun := resource.Task.AutoRun
-	if autoRun.State != "suspended" {
-		t.Fatalf("expected waiting to migrate to suspended, got %s", autoRun.State)
+	selfDriving := resource.Task.SelfDriving
+	if selfDriving.State != "suspended" {
+		t.Fatalf("expected waiting to migrate to suspended, got %s", selfDriving.State)
 	}
-	if autoRun.SuspendedAt == "" {
+	if selfDriving.SuspendedAt == "" {
 		t.Fatalf("migrated task must have a suspendedAt timestamp")
 	}
-	if !strings.Contains(autoRun.SuspensionSummary, "project1.task7@2") || !strings.Contains(autoRun.SuspensionSummary, "project1.task9@1") {
-		t.Fatalf("migrated summary must flatten dependencies, got %q", autoRun.SuspensionSummary)
+	if !strings.Contains(selfDriving.SuspensionSummary, "project1.task7@2") || !strings.Contains(selfDriving.SuspensionSummary, "project1.task9@1") {
+		t.Fatalf("migrated summary must flatten dependencies, got %q", selfDriving.SuspensionSummary)
 	}
 	// Migration is idempotent: reading again keeps the same state.
 	resource, err = workspace.ResourceValue(task.ID)
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload migrated task again: %v", err)
 	}
-	if resource.Task.AutoRun.State != "suspended" || resource.Task.AutoRun.SuspendedAt != autoRun.SuspendedAt {
-		t.Fatalf("migration is not idempotent: %+v", resource.Task.AutoRun)
+	if resource.Task.SelfDriving.State != "suspended" || resource.Task.SelfDriving.SuspendedAt != selfDriving.SuspendedAt {
+		t.Fatalf("migration is not idempotent: %+v", resource.Task.SelfDriving)
 	}
+}
+
+func TestWorkspaceAPIMigratesLegacySelfDrivingStateMatrixWithoutLoss(t *testing.T) {
+	workspace := openTestWorkspace(t)
+	project, err := workspace.CreateProject("Legacy state matrix", "legacy-state-matrix")
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := []string{"queued", "running", "suspended", "paused", "completed", "failed", "cancelled"}
+	paths := make(map[string]string, len(states))
+	for i, state := range states {
+		task, err := workspace.CreateTask(app.CreateTaskInput{
+			ProjectID: project.ID, Title: "Legacy " + state, Slug: "legacy-" + state, SelfDriving: true,
+			AgentName: "agent-one", Prompt: "keep prompt", CompletionCriteria: "keep criteria",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var resourcePath string
+		if state == "cancelled" {
+			archived, err := workspace.ArchiveResource(task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resourcePath = archived.Path
+		} else {
+			resource, err := workspace.ResourceValue(task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			resourcePath = resource.Path
+		}
+		dir := filepath.Join(workspace.Root(), filepath.FromSlash(resourcePath))
+		paths[task.ID] = dir
+		taskPath := filepath.Join(dir, "task.json")
+		var metadata map[string]any
+		if err := json.Unmarshal(mustReadAppFile(t, taskPath), &metadata); err != nil {
+			t.Fatal(err)
+		}
+		projection := metadata["selfDriving"].(map[string]any)
+		projection["generation"] = i + 3
+		projection["state"] = state
+		projection["wakeCondition"] = "external signal"
+		projection["suspendedAt"] = "2026-08-01T00:00:00Z"
+		projection["suspensionSummary"] = "preserved context"
+		projection["statusReason"] = "preserved reason"
+		projection["wakeConditionFallback"] = true
+		projection["preferredAgentProfiles"] = []string{"codex", "kimi"}
+		metadata["autoRun"] = projection
+		delete(metadata, "selfDriving")
+		encoded, _ := json.MarshalIndent(metadata, "", "  ")
+		if err := os.WriteFile(taskPath, append(encoded, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		logPath := filepath.Join(dir, "log.jsonl")
+		legacyLog := fmt.Sprintf("{\"id\":\"legacy-%s\",\"time\":\"2026-08-01T00:00:01Z\",\"title\":\"Auto Run %s\",\"details\":\"preserved log\",\"autoRun\":true,\"autoRunGeneration\":%d,\"autoRunWakeCondition\":\"external signal\",\"autoRunWakeConditionFallback\":true}\n", state, state, i+3)
+		if err := os.WriteFile(logPath, []byte(legacyLog), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		lockDir := filepath.Join(dir, ".forge")
+		if err := os.MkdirAll(lockDir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(lockDir, "autorun.lock"), nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Ordinary readers can arrive concurrently during an upgrade. They must
+	// converge on the same one-way rewrite instead of failing after another
+	// reader wins an atomic rename.
+	var migrationReaders sync.WaitGroup
+	migrationErrors := make(chan error, 12)
+	for range 12 {
+		migrationReaders.Add(1)
+		go func() {
+			defer migrationReaders.Done()
+			_, err := workspace.ResourceValue(project.ID + ".task1")
+			migrationErrors <- err
+		}()
+	}
+	migrationReaders.Wait()
+	close(migrationErrors)
+	for err := range migrationErrors {
+		if err != nil {
+			t.Fatalf("concurrent legacy migration: %v", err)
+		}
+	}
+
+	if _, err := workspace.Tree(); err != nil {
+		t.Fatalf("migrate legacy state matrix: %v", err)
+	}
+	for i, state := range states {
+		taskID := fmt.Sprintf("%s.task%d", project.ID, i+1)
+		resource, err := workspace.ResourceValue(taskID)
+		if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
+			t.Fatalf("load migrated %s: resource=%+v err=%v", state, resource, err)
+		}
+		projection := resource.Task.SelfDriving
+		if projection.Generation != i+3 || projection.State != state || projection.AgentName != "agent-one" || strings.Join(projection.PreferredAgentProfiles, ",") != "codex,kimi" || projection.Prompt != "keep prompt" || projection.CompletionCriteria != "keep criteria" || projection.WakeCondition != "external signal" || projection.SuspendedAt != "2026-08-01T00:00:00Z" || projection.SuspensionSummary != "preserved context" || projection.StatusReason != "preserved reason" || !projection.WakeConditionFallback {
+			t.Fatalf("%s migration lost state: %+v", state, projection)
+		}
+		detail, err := workspace.Resource(taskID)
+		if err != nil || len(detail.Logs) != 1 {
+			t.Fatalf("load migrated %s log: logs=%+v err=%v", state, detail.Logs, err)
+		}
+		entry := detail.Logs[0]
+		if entry.Title != "Self-Driving "+state || entry.Details != "preserved log" || !entry.SelfDriving || entry.SelfDrivingGeneration != i+3 || entry.SelfDrivingWakeCondition != "external signal" || !entry.SelfDrivingWakeConditionFallback {
+			t.Fatalf("%s migration lost log recovery data: %+v", state, entry)
+		}
+		dir := paths[taskID]
+		combined := string(mustReadAppFile(t, filepath.Join(dir, "task.json"))) + string(mustReadAppFile(t, filepath.Join(dir, "log.jsonl")))
+		if strings.Contains(strings.ToLower(combined), "autorun") || strings.Contains(combined, "Auto Run") {
+			t.Fatalf("%s migration retained legacy data: %s", state, combined)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".forge", "self-driving.lock")); err != nil {
+			t.Fatalf("%s lock was not migrated: %v", state, err)
+		}
+		if _, err := os.Stat(filepath.Join(dir, ".forge", "autorun.lock")); !os.IsNotExist(err) {
+			t.Fatalf("%s legacy lock remains: %v", state, err)
+		}
+		before := combined
+		if _, err := workspace.ResourceValue(taskID); err != nil {
+			t.Fatal(err)
+		}
+		after := string(mustReadAppFile(t, filepath.Join(dir, "task.json"))) + string(mustReadAppFile(t, filepath.Join(dir, "log.jsonl")))
+		if before != after {
+			t.Fatalf("%s migration was not idempotent", state)
+		}
+	}
+}
+
+func mustReadAppFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

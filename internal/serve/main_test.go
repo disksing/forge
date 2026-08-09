@@ -369,7 +369,7 @@ func TestWorkspaceWikiUIReusesTreePreviewAndStates(t *testing.T) {
 	}
 }
 
-func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
+func TestCreateTaskMapsSelfDrivingOptions(t *testing.T) {
 	workspace := t.TempDir()
 	forgeWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
@@ -385,7 +385,7 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","autorun":true,"agentName":"codex-one","preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work","completionCriteria":"The work is verified"}`
+	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","selfDriving":true,"agentName":"codex-one","preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work","completionCriteria":"The work is verified"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
@@ -396,15 +396,15 @@ func TestCreateTaskMapsAutoRunOptions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resource.AutoRun == nil || resource.AutoRun.AgentName != "codex-one" || strings.Join(resource.AutoRun.PreferredAgentProfiles, ",") != "kimi,codex" || resource.AutoRun.Prompt != "Do the work" || resource.AutoRun.CompletionCriteria != "The work is verified" {
-		t.Fatalf("unexpected typed AutoRun result: %#v", resource.AutoRun)
+	if resource.SelfDriving == nil || resource.SelfDriving.AgentName != "codex-one" || strings.Join(resource.SelfDriving.PreferredAgentProfiles, ",") != "kimi,codex" || resource.SelfDriving.Prompt != "Do the work" || resource.SelfDriving.CompletionCriteria != "The work is verified" {
+		t.Fatalf("unexpected typed Self-Driving result: %#v", resource.SelfDriving)
 	}
 	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
 	if err != nil || !strings.Contains(string(markdown), "Durable brief") {
 		t.Fatalf("task detail was not persisted by the application API: err=%v content=%q", err, markdown)
 	}
 
-	body = `{"project":"project1","title":"Removed task","autorun":true,"agentId":"codex-one"}`
+	body = `{"project":"project1","title":"Removed task","selfDriving":true,"agentId":"codex-one"}`
 	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
 	rec = httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
@@ -478,12 +478,12 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	}
 }
 
-func TestCreateTaskRejectsRunOptionsWithoutAutoRun(t *testing.T) {
+func TestCreateTaskRejectsRunOptionsWithoutSelfDriving(t *testing.T) {
 	s := &server{}
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","prompt":"Do the work"}`))
 	rec := httptest.NewRecorder()
 	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require autorun") {
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require selfDriving") {
 		t.Fatalf("expected validation error, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
@@ -494,14 +494,14 @@ func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	for _, want := range []string{`name="autorun"`, `name="agentName"`, `name="prompt"`, `name="agentProfiles"`, `name="completionCriteria"`, `preferredAgentProfiles: dialog.autorun`} {
+	for _, want := range []string{`name="selfDriving"`, `name="agentName"`, `name="prompt"`, `name="agentProfiles"`, `name="completionCriteria"`, `preferredAgentProfiles: dialog.selfDriving`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("create task dialog is missing %q", want)
 		}
 	}
 }
 
-func TestREADMEDocumentsAutoRunSuspendProtocol(t *testing.T) {
+func TestREADMEDocumentsSelfDrivingSuspendProtocol(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
 	if err != nil {
 		t.Fatal(err)
@@ -519,12 +519,12 @@ func TestREADMEDocumentsAutoRunSuspendProtocol(t *testing.T) {
 		"future Scheduler may observe the condition and wake the task proactively",
 	} {
 		if !strings.Contains(readme, want) {
-			t.Fatalf("README is missing AutoRun protocol guidance %q", want)
+			t.Fatalf("README is missing Self-Driving protocol guidance %q", want)
 		}
 	}
 }
 
-func TestAgentProfileSettingsAndAutoRunStatusUI(t *testing.T) {
+func TestAgentProfileSettingsAndSelfDrivingStatusUI(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -683,7 +683,7 @@ func TestAgentUploadUIIncludesSelectionPasteProgressAndDraftBackfill(t *testing.
 	}
 }
 
-func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
+func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -691,10 +691,10 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 	app := string(appData)
 	for _, want := range []string{
 		`function taskOperationalState(item)`,
-		`function deriveTaskAutoRunState(autoRun, sessions)`,
+		`function deriveTaskSelfDrivingState(selfDriving, sessions)`,
 		`function deriveTaskSessionState(sessions)`,
 		`function sessionStatusPresentation(session)`,
-		`session.schedulerTurn && session.autoRunGeneration === autoRun.generation`,
+		`session.schedulerTurn && session.selfDrivingGeneration === selfDriving.generation`,
 		`function taskAgentSessions(resourceId)`,
 		`session.resourceId === resourceId`,
 		`function resourceLocks(resourceId)`,
@@ -706,7 +706,7 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 		`task-status-single`,
 		`task-status-dual`,
 		`${taskStatusMarkup}`,
-		`operationalStatusPresentation([autoRun, session], lock)`,
+		`operationalStatusPresentation([selfDriving, session], lock)`,
 		`presentation.statuses.map((status) =>`,
 		`task-lock-indicator`,
 		`button.setAttribute("aria-label"`,
@@ -728,7 +728,7 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 		`.tree-item.has-task-status-dual`,
 		`grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;`,
 		`.task-status-slot.task-status-single .task-lock-indicator`,
-		`.task-status-indicator.task-status-auto-running`,
+		`.task-status-indicator.task-status-self-driving-running`,
 		`.task-status-indicator.task-status-session-running`,
 		`animation: task-status-spin 1.8s linear infinite;`,
 		`.task-lock-external`,
@@ -739,10 +739,10 @@ func TestTreeTaskStatusSeparatesAutoRunSessionsAndLocks(t *testing.T) {
 			t.Fatalf("combined task tree status styles are missing %q", want)
 		}
 	}
-	if strings.Contains(styles, `.task-status-indicator.task-status-auto-running {
+	if strings.Contains(styles, `.task-status-indicator.task-status-self-driving-running {
 	  color: var(--green);
   animation:`) {
-		t.Fatal("AutoRun running indicator should remain static")
+		t.Fatal("Self-Driving running indicator should remain static")
 	}
 }
 
@@ -841,7 +841,7 @@ function assert(condition, message) {
 const project = {
   id: "project1",
   children: [
-    { id: "project1.task1", autoRun: { state: "running" } },
+    { id: "project1.task1", selfDriving: { state: "running" } },
     { id: "project1.task2" },
     { id: "project1.task3" },
     { id: "project1.task4" },
@@ -852,12 +852,12 @@ const project = {
     { id: "project1.task9" },
     { id: "project1.task10" },
     { id: "project1.task11" },
-    { id: "project1.task12", archived: true, autoRun: { state: "running" } },
+    { id: "project1.task12", archived: true, selfDriving: { state: "running" } },
   ],
 };
 const summary = context.projectTaskSummary(project);
 assert(summary.taskCount === 11, "archived children must not contribute to the open task count");
-assert(summary.runningCount === 6, "running tasks must include AutoRun/internal active sessions once each");
+assert(summary.runningCount === 6, "running tasks must include Self-Driving/internal active sessions once each");
 assert(summary.text === "11 tasks · 6 running", "summary text has the wrong pluralization or counts: " + summary.text);
 assert(summary.ariaLabel === "Open tasks: 11 tasks; 6 running", "summary aria label has the wrong counts: " + summary.ariaLabel);
 const markup = context.projectTaskSummaryMarkup(summary);
@@ -1719,10 +1719,10 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 		`if (taskState.label)`,
 		`const sessions = taskAgentSessions(item.id);`,
 		`const locks = resourceLocks(item.id);`,
-		`const autoRun = deriveTaskAutoRunState(item.autoRun, sessions);`,
+		`const selfDriving = deriveTaskSelfDrivingState(item.selfDriving, sessions);`,
 		`const session = deriveTaskSessionState(sessions);`,
 		`const projectState = taskOperationalState(project);`,
-		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.autoRun)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);",
+		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.selfDriving)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);",
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("project tree session and lock status is missing %q", want)
@@ -1749,7 +1749,7 @@ func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
 		`operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })`,
 		`const taskResource = sessionTaskResource(session);`,
 		`const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();`,
-		`isInternal && taskState.autoRun ? [taskState.autoRun, status] : [status]`,
+		`isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status]`,
 		`row.title = accessibleStatusLabel;`,
 		`bindTaskStatusTooltip(row, accessibleStatusLabel);`,
 		`row.setAttribute("aria-label"`,
@@ -1792,7 +1792,7 @@ func TestSessionListSharesTaskOperationalStatusAndTaskAssociation(t *testing.T) 
 	app := string(appData)
 	for _, marker := range []string{
 		`function sessionTaskResource(session)`,
-		`if (explicitResourceId) return taskResourceForAutoRun(explicitResourceId);`,
+		`if (explicitResourceId) return taskResourceForSelfDriving(explicitResourceId);`,
 		`if (controls.length !== 1) return null;`,
 		`resource.type === "task" && !resource.archived`,
 		`if (!session || session.source !== "internal") return null;`,
@@ -1831,9 +1831,9 @@ function assertEqual(actual, expected, message) {
 }
 const resources = new Map([
   ["project1", { id: "project1", type: "project", archived: false }],
-  ["project1.task1", { id: "project1.task1", type: "task", archived: false, autoRun: { generation: 7, state: "queued" } }],
-  ["project1.task2", { id: "project1.task2", type: "task", archived: false, autoRun: { generation: 3, state: "failed" } }],
-  ["project1.archived", { id: "project1.archived", type: "task", archived: true, autoRun: { generation: 8, state: "completed" } }],
+  ["project1.task1", { id: "project1.task1", type: "task", archived: false, selfDriving: { generation: 7, state: "queued" } }],
+  ["project1.task2", { id: "project1.task2", type: "task", archived: false, selfDriving: { generation: 3, state: "failed" } }],
+  ["project1.archived", { id: "project1.archived", type: "task", archived: true, selfDriving: { generation: 8, state: "completed" } }],
 ]);
 const context = {
   findResource: (id) => resources.get(id) || null,
@@ -1846,19 +1846,19 @@ vm.runInContext([
   extract("operationalStatusPresentation"),
   extract("operationalStatusMarkup"),
   extract("sessionStatusPresentation"),
-  extract("deriveTaskAutoRunState"),
+  extract("deriveTaskSelfDrivingState"),
   extract("sessionControls"),
-  extract("taskResourceForAutoRun"),
+  extract("taskResourceForSelfDriving"),
   extract("sessionTaskResource"),
   extract("sessionOperationalLabel"),
 ].join("\n"), context);
 
-const scheduler = { schedulerTurn: true, autoRunGeneration: 7, agentRunStatus: "running" };
+const scheduler = { schedulerTurn: true, selfDrivingGeneration: 7, agentRunStatus: "running" };
 const sessionStatus = context.sessionStatusPresentation({ agentRunStatus: "idle" });
-const running = context.deriveTaskAutoRunState({ generation: 7, state: "running" }, [scheduler]);
-const recovery = context.deriveTaskAutoRunState({ generation: 7, state: "running" }, []);
-const expectedAutoRun = {
-  running: ["auto-running", "workflow"],
+const running = context.deriveTaskSelfDrivingState({ generation: 7, state: "running" }, [scheduler]);
+const recovery = context.deriveTaskSelfDrivingState({ generation: 7, state: "running" }, []);
+const expectedSelfDriving = {
+  running: ["self-driving-running", "workflow"],
   recovery: ["auto-recovering", "rotate-ccw"],
   queued: ["queued", "clock"],
   suspended: ["suspended", "pause"],
@@ -1867,44 +1867,44 @@ const expectedAutoRun = {
   failed: ["failed", "triangle-alert"],
   cancelled: ["cancelled", "ban"],
 };
-for (const [state, [kind, iconName]] of Object.entries(expectedAutoRun)) {
+for (const [state, [kind, iconName]] of Object.entries(expectedSelfDriving)) {
   const sessions = state === "running" ? [scheduler] : [];
-  const autoRunState = state === "recovery" ? "running" : state;
-  const presentation = context.deriveTaskAutoRunState({ generation: 7, state: autoRunState }, sessions);
-  assertEqual(presentation.kind, kind, "AutoRun " + state + " kind");
-  assertEqual(presentation.iconName, iconName, "AutoRun " + state + " icon");
+  const selfDrivingState = state === "recovery" ? "running" : state;
+  const presentation = context.deriveTaskSelfDrivingState({ generation: 7, state: selfDrivingState }, sessions);
+  assertEqual(presentation.kind, kind, "Self-Driving " + state + " kind");
+  assertEqual(presentation.iconName, iconName, "Self-Driving " + state + " icon");
 }
-assertEqual(running.kind, "auto-running", "matching scheduler should make AutoRun running");
-assertEqual(recovery.kind, "auto-recovering", "missing scheduler should make AutoRun recovering");
+assertEqual(running.kind, "self-driving-running", "matching scheduler should make Self-Driving running");
+assertEqual(recovery.kind, "auto-recovering", "missing scheduler should make Self-Driving recovering");
 
 const dual = context.operationalStatusPresentation([running, sessionStatus]);
 const treeMarkup = context.operationalStatusMarkup(dual);
 const sessionMarkup = context.operationalStatusMarkup(dual, { slotClassName: "session-status-icon" });
-assertEqual(dual.layoutClassName, "has-task-status-dual", "AutoRun plus Session should use dual layout");
-assertEqual(dual.slotClassName, "task-status-dual", "AutoRun plus Session should use dual slot");
+assertEqual(dual.layoutClassName, "has-task-status-dual", "Self-Driving plus Session should use dual layout");
+assertEqual(dual.slotClassName, "task-status-dual", "Self-Driving plus Session should use dual slot");
 assert(treeMarkup.includes("data-icon=\"workflow\"") && treeMarkup.includes("data-icon=\"message-square\""), "TreeView markup should contain both canonical icons");
 assert(sessionMarkup.includes("data-icon=\"workflow\"") && sessionMarkup.includes("data-icon=\"message-square\""), "Session markup should contain the same canonical icons");
-assert(sessionMarkup.indexOf("data-icon=\"workflow\"") < sessionMarkup.indexOf("data-icon=\"message-square\""), "AutoRun icon should precede Session icon");
+assert(sessionMarkup.indexOf("data-icon=\"workflow\"") < sessionMarkup.indexOf("data-icon=\"message-square\""), "Self-Driving icon should precede Session icon");
 const single = context.operationalStatusPresentation([sessionStatus]);
 assertEqual(single.layoutClassName, "has-task-status", "single Session status should use single layout");
 assertEqual(single.slotClassName, "task-status-single", "single Session status should use single slot");
 
 assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.task1", controls: [{ resourceId: "project1.task2" }] }).id, "project1.task1", "explicit Task resource should have priority");
 assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }] }).id, "project1.task1", "one Task control should be a fallback association");
-assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1.task2" }] }), null, "multiple Task controls must not guess AutoRun");
-assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1" }] }), null, "multiple resources must not guess a Task AutoRun");
+assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1.task2" }] }), null, "multiple Task controls must not guess Self-Driving");
+assertEqual(context.sessionTaskResource({ source: "internal", controls: [{ resourceId: "project1.task1" }, { resourceId: "project1" }] }), null, "multiple resources must not guess a Task Self-Driving");
 assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1", controls: [{ resourceId: "project1.task1" }] }), null, "Project resource must not fall back to a Task control");
 assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.missing", controls: [{ resourceId: "project1.task1" }] }), null, "unknown resource must not fall back to a Task control");
-assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.archived" }), null, "archived Task must not provide AutoRun");
-assertEqual(context.sessionTaskResource({ source: "external", resourceId: "project1.task1", controls: [{ resourceId: "project1.task1" }] }), null, "external Session must not borrow Task AutoRun");
+assertEqual(context.sessionTaskResource({ source: "internal", resourceId: "project1.archived" }), null, "archived Task must not provide Self-Driving");
+assertEqual(context.sessionTaskResource({ source: "external", resourceId: "project1.task1", controls: [{ resourceId: "project1.task1" }] }), null, "external Session must not borrow Task Self-Driving");
 
 const label = context.sessionOperationalLabel(
   { source: "internal" },
   resources.get("project1.task1"),
-  { autoRun: context.deriveTaskAutoRunState(resources.get("project1.task1").autoRun, []) },
+  { selfDriving: context.deriveTaskSelfDrivingState(resources.get("project1.task1").selfDriving, []) },
   sessionStatus,
 );
-assert(label.includes("AutoRun queued, generation 7"), "Session label should include AutoRun generation and state: " + label);
+assert(label.includes("Self-Driving queued, generation 7"), "Session label should include Self-Driving generation and state: " + label);
 assert(label.includes("Session waiting for input"), "Session label should include its own Session state: " + label);
 `
 
@@ -1928,7 +1928,7 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 			t.Fatalf("task template UI is missing %q", want)
 		}
 	}
-	for _, forbidden := range []string{`dialog.autorun = Boolean(template.autorun)`, `dialog.agentName = template.agentName`, `{ taskMarkdown: dialog.detail }`} {
+	for _, forbidden := range []string{`dialog.selfDriving = Boolean(template.selfDriving)`, `dialog.agentName = template.agentName`, `{ taskMarkdown: dialog.detail }`} {
 		if strings.Contains(source, forbidden) {
 			t.Fatalf("content template still controls execution or copies Markdown with %q", forbidden)
 		}
@@ -1961,13 +1961,13 @@ vm.runInContext(extract("createTaskRequest"), context);
 const template = context.createTaskRequest({
   projectId: "project1", templateName: "request", templateFields: { summary: "One" },
   templateDigest: "sha256:abc", titleOverride: false, title: "Generated", detail: "must not leak",
-  slug: "one", autorun: true, agentName: "codex", preferredAgentProfiles: ["fast"],
+  slug: "one", selfDriving: true, agentName: "codex", preferredAgentProfiles: ["fast"],
   prompt: "Run it", completionCriteria: "Verified",
 });
 if (template.title !== "" || template.taskMarkdown !== undefined || template.detail !== undefined) throw new Error("template request copied client Markdown or generated title");
 if (template.expectedTemplateDigest !== "sha256:abc" || template.templateFields.summary !== "One") throw new Error("template identity was lost");
-if (!template.autorun || template.agentName !== "codex" || template.prompt !== "Run it" || template.completionCriteria !== "Verified") throw new Error("explicit execution settings were lost");
-const blank = context.createTaskRequest({ projectId: "project1", templateName: "", title: "Blank", detail: "Only once", slug: "", autorun: false, preferredAgentProfiles: [] });
+if (!template.selfDriving || template.agentName !== "codex" || template.prompt !== "Run it" || template.completionCriteria !== "Verified") throw new Error("explicit execution settings were lost");
+const blank = context.createTaskRequest({ projectId: "project1", templateName: "", title: "Blank", detail: "Only once", slug: "", selfDriving: false, preferredAgentProfiles: [] });
 if (blank.detail !== "Only once" || blank.templateName !== undefined || blank.agentName !== "") throw new Error("blank request did not remain independent");
 `
 	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
@@ -2728,7 +2728,7 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
 	}
 }
 
-func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
+func TestSelfDrivingTTYComposerSupportsLiveIntervention(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -2743,7 +2743,7 @@ func TestAutoRunTTYComposerSupportsLiveIntervention(t *testing.T) {
 		`!previousRun.schedulerTurn`,
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("AutoRun live intervention UI is missing %q", want)
+			t.Fatalf("Self-Driving live intervention UI is missing %q", want)
 		}
 	}
 }
@@ -2848,7 +2848,7 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
 const resources = new Map();
 function findResource(id) { return resources.get(id) || null; }
 eval(extract("isAgentTurnInterruptible"));
-eval(extract("isAutoRunSessionCloseTarget"));
+eval(extract("isSelfDrivingSessionCloseTarget"));
 eval(extract("sessionControlComposerActions"));
 for (const status of ["running", "waiting_approval"]) {
   assert(isAgentTurnInterruptible({ status }), status + " must be interruptible");
@@ -2856,12 +2856,12 @@ for (const status of ["running", "waiting_approval"]) {
 for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) {
   assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
 }
-resources.set("project1.task1", { autoRun: { generation: 7, state: "running" } });
-assert(isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "current running AutoRun must be a close cancellation target");
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 6, schedulerTurn: true }), "historical AutoRun must not be a close cancellation target");
-resources.get("project1.task1").autoRun.state = "completed";
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "terminal AutoRun must not be a close cancellation target");
-assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close cancellation target");
+resources.set("project1.task1", { selfDriving: { generation: 7, state: "running" } });
+assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 7, schedulerTurn: true }), "current running Self-Driving must be a close cancellation target");
+assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 6, schedulerTurn: true }), "historical Self-Driving must not be a close cancellation target");
+resources.get("project1.task1").selfDriving.state = "completed";
+assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 7, schedulerTurn: true }), "terminal Self-Driving must not be a close cancellation target");
+assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close cancellation target");
 const idle = sessionControlComposerActions({ includeClose: true });
 assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
 assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
@@ -2871,9 +2871,9 @@ const running = sessionControlComposerActions({ includeEndTurn: true, includeClo
 assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
 assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
 assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
-const autoRunClose = sessionControlComposerActions({ includeClose: true, cancelAutoRunOnClose: true });
-assert(autoRunClose.includes('title="Cancel AutoRun and close the session."'), "AutoRun Close Session tooltip must explain the cancellation");
-assert(autoRunClose.includes('aria-label="Cancel AutoRun and close the session."'), "AutoRun Close Session aria-label must explain the cancellation");
+const selfDrivingClose = sessionControlComposerActions({ includeClose: true, cancelSelfDrivingOnClose: true });
+assert(selfDrivingClose.includes('title="Cancel Self-Driving and close the session."'), "Self-Driving Close Session tooltip must explain the cancellation");
+assert(selfDrivingClose.includes('aria-label="Cancel Self-Driving and close the session."'), "Self-Driving Close Session aria-label must explain the cancellation");
 const ending = sessionControlComposerActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
 assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
 assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");

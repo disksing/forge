@@ -97,8 +97,8 @@ for (const resourceId of ["project1.task1", "project1"]) {
     const html = composer();
     assert(!html.includes('id="agentStartButton"'), resourceId + " " + status + " internal lock must hide New Session");
     assert(!html.includes("ttyAgentMenu"), resourceId + " " + status + " internal lock must hide the open Agent chooser");
-    assert(!html.includes('id="autoRunStartButton"'), resourceId + " " + status + " bottom actions must not render AutoRun");
-    assert(!toolbar().includes('id="autoRunStartButton"'), resourceId + " " + status + " composer toolbar must not render AutoRun");
+    assert(!html.includes('id="selfDrivingStartButton"'), resourceId + " " + status + " bottom actions must not render Self-Driving");
+    assert(!toolbar().includes('id="selfDrivingStartButton"'), resourceId + " " + status + " composer toolbar must not render Self-Driving");
     assert(!html.includes('id="agentCloseSessionButton"'), resourceId + " " + status + " must not duplicate Close Session in bottom actions");
     assert(toolbar().includes('id="agentCloseSessionButton"'), resourceId + " " + status + " toolbar must preserve Close Session");
     assert(!state.agent.agentChooserOpen, resourceId + " " + status + " internal lock must close the chooser state");
@@ -119,7 +119,7 @@ closeNewSessionChooserForResourceLock();
 const externalHTML = composer();
 assert(!externalHTML.includes('id="agentStartButton"'), "external lock must keep New Session hidden");
 assert(externalHTML.includes("externalLockNotice"), "external lock must keep its dedicated notice");
-assert(!toolbar().includes('id="autoRunStartButton"'), "an external task lock must not render AutoRun in the composer toolbar");
+assert(!toolbar().includes('id="selfDrivingStartButton"'), "an external task lock must not render Self-Driving in the composer toolbar");
 assert(!state.agent.agentChooserOpen, "external lock must close the chooser state");
 
 state.tree.sessions = [lockedSession("internal", "internal", "idle"), lockedSession("external", "external", "running")];
@@ -140,7 +140,7 @@ closeNewSessionChooserForResourceLock();
 const projectInternalHTML = composer();
 assert(!projectInternalHTML.includes('id="agentStartButton"'), "an internal project lock must hide New Session");
 assert(!projectInternalHTML.includes("ttyAgentMenu"), "an internal project lock must hide the open Agent chooser");
-assert(!projectInternalHTML.includes('id="autoRunStartButton"'), "Project resources must not render AutoRun");
+assert(!projectInternalHTML.includes('id="selfDrivingStartButton"'), "Project resources must not render Self-Driving");
 assert(projectInternalHTML === "", "an internal project lock with no remaining actions must hide the bottom action container");
 assert(toolbar().includes('id="agentCloseSessionButton"'), "an internal project lock must preserve Close Session in the toolbar");
 assert(!state.agent.agentChooserOpen, "an internal project lock must close the chooser state");
@@ -153,7 +153,7 @@ assert(!projectExternalHTML.includes('id="agentStartButton"'), "an external proj
 assert(projectExternalHTML.includes("externalLockNotice"), "an external project lock must keep its dedicated notice");
 assert(!projectExternalHTML.includes('id="agentCloseSessionButton"'), "an external project lock must not duplicate Close Session in bottom actions");
 assert(toolbar().includes('id="agentCloseSessionButton"'), "an external project lock must preserve Close Session in the toolbar");
-assert(!toolbar().includes('id="autoRunStartButton"'), "an external project lock must not render AutoRun in the composer toolbar");
+assert(!toolbar().includes('id="selfDrivingStartButton"'), "an external project lock must not render Self-Driving in the composer toolbar");
 assert(!projectExternalHTML.includes("This task"), "an external project lock must not call the resource a task");
 assert(!state.agent.agentChooserOpen, "an external project lock must close the chooser state");
 

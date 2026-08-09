@@ -44,14 +44,14 @@ func validateResource(resource Resource) error {
 		if !projectTaskName(typed.Parent).MatchString(meta.ID) {
 			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
-		if typed.AutoRun != nil {
-			if typed.AutoRun.Generation <= 0 {
-				return fmt.Errorf("AutoRun generation must be positive")
+		if typed.SelfDriving != nil {
+			if typed.SelfDriving.Generation <= 0 {
+				return fmt.Errorf("Self-Driving generation must be positive")
 			}
-			switch typed.AutoRun.State {
-			case autoRunStateQueued, autoRunStateRunning, autoRunStateSuspended, autoRunStatePaused, autoRunStateCompleted, autoRunStateFailed, autoRunStateCancelled:
+			switch typed.SelfDriving.State {
+			case selfDrivingStateQueued, selfDrivingStateRunning, selfDrivingStateSuspended, selfDrivingStatePaused, selfDrivingStateCompleted, selfDrivingStateFailed, selfDrivingStateCancelled:
 			default:
-				return fmt.Errorf("invalid AutoRun state %q", typed.AutoRun.State)
+				return fmt.Errorf("invalid Self-Driving state %q", typed.SelfDriving.State)
 			}
 		}
 	default:

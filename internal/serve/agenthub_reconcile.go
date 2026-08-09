@@ -166,7 +166,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	_ = saveAgentRun(rt.workspace.Path, updated)
 	// The archived projection is the recovery equivalent of the observed
 	// ready/stopped edge. Inspect the durable terminal event before finishing
-	// an AutoRun turn or releasing the Forge session.
+	// a Self-Driving turn or releasing the Forge session.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
 	// The archived session provably stopped, which ends a scheduler turn the

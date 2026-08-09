@@ -34,7 +34,7 @@ type runnableTaskCandidate struct {
 	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
-type autoRunAgentSelection struct {
+type selfDrivingAgentSelection struct {
 	AgentName string
 	Profile   string
 	Reason    string
@@ -49,9 +49,9 @@ const (
 	runnableTaskDispatchFailed runnableTaskDispatchResult = "failed"
 )
 
-// autoRunSuspensionLimit is the fixed wake-up threshold for suspended AutoRun
+// selfDrivingSuspensionLimit is the fixed wake-up threshold for suspended Self-Driving
 // generations. Every new suspend resets the timer.
-const autoRunSuspensionLimit = 30 * time.Minute
+const selfDrivingSuspensionLimit = 30 * time.Minute
 
 func (s *server) runTaskScheduler(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
@@ -68,11 +68,11 @@ func (s *server) runTaskScheduler(ctx context.Context) {
 	}
 }
 
-// autoRunSuspendedDue reports whether a suspended generation has waited past
+// selfDrivingSuspendedDue reports whether a suspended generation has waited past
 // the fixed suspension limit. An unparsable timestamp is treated as due so a
 // suspended task can never stall forever after a schema or clock problem; the
 // agent may suspend again to reset the timer.
-func autoRunSuspendedDue(suspendedAt string) bool {
+func selfDrivingSuspendedDue(suspendedAt string) bool {
 	if strings.TrimSpace(suspendedAt) == "" {
 		return true
 	}
@@ -80,7 +80,7 @@ func autoRunSuspendedDue(suspendedAt string) bool {
 	if err != nil {
 		return true
 	}
-	return time.Since(t) >= autoRunSuspensionLimit
+	return time.Since(t) >= selfDrivingSuspensionLimit
 }
 
 func (s *server) scheduleRunnableTasks(ctx context.Context) error {
@@ -118,8 +118,8 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 					// Timed wake-up: dispatch a suspended generation whose
 					// suspension limit elapsed. The state transition is deferred
 					// until a new session owns the task lock, so an external lock
-					// cannot race this scan into advancing AutoRun.
-					if !autoRunSuspendedDue(task.SuspendedAt) {
+					// cannot race this scan into advancing Self-Driving.
+					if !selfDrivingSuspendedDue(task.SuspendedAt) {
 						continue
 					}
 				}
@@ -148,8 +148,8 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) (runnableTaskDispatchResult, error) {
 	// Serialize with the unified Chat start endpoint: a manual start and a
 	// background scan must never dispatch the same generation twice.
-	s.autoRunDispatchMu.Lock()
-	defer s.autoRunDispatchMu.Unlock()
+	s.selfDrivingDispatchMu.Lock()
+	defer s.selfDrivingDispatchMu.Unlock()
 	switch task.State {
 	case "queued", "running", "suspended":
 	default:
@@ -162,7 +162,7 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskDispatchFailed, err
 	}
 	resumingSuspended := task.State == "suspended"
-	prompt := buildAutoRunPrompt(workspace.Path, task)
+	prompt := buildSelfDrivingPrompt(workspace.Path, task)
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {
 		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)
@@ -175,10 +175,10 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			(strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != "") {
 			cfg, client, recoverErr := s.agents.agentHubRuntimeConfig()
 			if recoverErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
+				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub Self-Driving %s: %w", run.ID, recoverErr)
 			}
 			if recoverErr = s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run, nil); recoverErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub AutoRun %s: %w", run.ID, recoverErr)
+				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub Self-Driving %s: %w", run.ID, recoverErr)
 			}
 			if recovered := s.agents.runtimeByID(run.ID); recovered != nil {
 				recovered.mu.Lock()
@@ -200,17 +200,17 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 			if openErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("open workspace to resume task %s: %w", task.ID, openErr)
 			}
-			if _, resumeErr := forgeWorkspace.ResumeAutoRunWithAgent(app.AutoRunResumeInput{
+			if _, resumeErr := forgeWorkspace.ResumeSelfDrivingWithAgent(app.SelfDrivingResumeInput{
 				TaskID: task.ID, AgentName: run.AgentHubAgentName, AgentNameSet: strings.TrimSpace(run.AgentHubAgentName) != "",
 				ExpectedGeneration: task.Generation, ExpectedState: "suspended",
 			}); resumeErr != nil {
 				return runnableTaskDispatchFailed, fmt.Errorf("resume suspended task %s: %w", task.ID, resumeErr)
 			}
 			task.State = "queued"
-			prompt = buildAutoRunPrompt(workspace.Path, task)
+			prompt = buildSelfDrivingPrompt(workspace.Path, task)
 		}
-		if err := s.startAutoRunInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
-			if errors.Is(err, errAutoRunSessionBusy) {
+		if err := s.startSelfDrivingInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
+			if errors.Is(err, errSelfDrivingSessionBusy) {
 				// Lost the race against a manual start or a user message; the
 				// generation stays queued for the next scan.
 				return runnableTaskSkippedActive, nil
@@ -223,34 +223,34 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	if err != nil {
 		return runnableTaskDispatchFailed, fmt.Errorf("load Agent Profile configuration: %w", err)
 	}
-	selection, err := resolveAutoRunAgent(cfg, task)
+	selection, err := resolveSelfDrivingAgent(cfg, task)
 	if err != nil {
 		return runnableTaskDispatchFailed, err
 	}
 	req := startAgentRequest{
-		AgentName:            selection.AgentName,
-		AgentProfile:         selection.Profile,
-		AgentSelectionReason: selection.Reason,
-		ResourceID:           task.ID,
-		Title:                task.Title,
-		Prompt:               prompt,
-		SchedulerTurn:        true,
-		AutoRunGeneration:    task.Generation,
-		QueueAutoRun:         resumingSuspended,
-		ExpectedAutoRunGeneration: func() int {
+		AgentName:             selection.AgentName,
+		AgentProfile:          selection.Profile,
+		AgentSelectionReason:  selection.Reason,
+		ResourceID:            task.ID,
+		Title:                 task.Title,
+		Prompt:                prompt,
+		SchedulerTurn:         true,
+		SelfDrivingGeneration: task.Generation,
+		QueueSelfDriving:      resumingSuspended,
+		ExpectedSelfDrivingGeneration: func() int {
 			if resumingSuspended {
 				return task.Generation
 			}
 			return 0
 		}(),
-		ExpectedAutoRunState: func() string {
+		ExpectedSelfDrivingState: func() string {
 			if resumingSuspended {
 				return "suspended"
 			}
 			return ""
 		}(),
-		AutoRunAgentName:    selection.AgentName,
-		AutoRunAgentNameSet: resumingSuspended,
+		SelfDrivingAgentName:    selection.AgentName,
+		SelfDrivingAgentNameSet: resumingSuspended,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -274,17 +274,17 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	return runnableTaskStarted, nil
 }
 
-func resolveAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+func resolveSelfDrivingAgent(cfg config, task runnableTaskCandidate) (selfDrivingAgentSelection, error) {
 	if cfg.Version < agentHubConfigVersion {
-		return autoRunAgentSelection{}, errors.New("AutoRun requires current AgentHub settings; save AgentHub settings before dispatching this task")
+		return selfDrivingAgentSelection{}, errors.New("Self-Driving requires current AgentHub settings; save AgentHub settings before dispatching this task")
 	}
-	return resolveAgentHubAutoRunAgent(cfg, task)
+	return resolveAgentHubSelfDrivingAgent(cfg, task)
 }
 
-func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRunAgentSelection, error) {
+func resolveAgentHubSelfDrivingAgent(cfg config, task runnableTaskCandidate) (selfDrivingAgentSelection, error) {
 	if agentName := strings.TrimSpace(task.AgentName); agentName != "" {
-		return autoRunAgentSelection{
-			AgentName: agentName, Reason: "using the AgentHub agent selected for this AutoRun generation",
+		return selfDrivingAgentSelection{
+			AgentName: agentName, Reason: "using the AgentHub agent selected for this Self-Driving generation",
 		}, nil
 	}
 	if len(task.PreferredAgentProfiles) > 0 {
@@ -297,24 +297,24 @@ func resolveAgentHubAutoRunAgent(cfg config, task runnableTaskCandidate) (autoRu
 			seen[profile] = true
 			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
 			if ok && strings.TrimSpace(route.AgentName) != "" {
-				return autoRunAgentSelection{
+				return selfDrivingAgentSelection{
 					AgentName: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile,
 				}, nil
 			}
 		}
 		fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 		if fallback == "" {
-			return autoRunAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
+			return selfDrivingAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
 		}
-		return autoRunAgentSelection{
+		return selfDrivingAgentSelection{
 			AgentName: fallback, Reason: "preferred Agent Profiles unavailable; using default AgentHub agent " + fallback,
 		}, nil
 	}
 	fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 	if fallback == "" {
-		return autoRunAgentSelection{}, errors.New("no default AgentHub agent is configured for AutoRun")
+		return selfDrivingAgentSelection{}, errors.New("no default AgentHub agent is configured for Self-Driving")
 	}
-	return autoRunAgentSelection{AgentName: fallback, Reason: "using default AgentHub agent"}, nil
+	return selfDrivingAgentSelection{AgentName: fallback, Reason: "using default AgentHub agent"}, nil
 }
 
 func (s *server) agentRunActive(runID string) bool {
@@ -333,13 +333,13 @@ func (s *server) agentRunActive(runID string) bool {
 	return active
 }
 
-// errAutoRunSessionBusy marks the race where a session turned busy between
+// errSelfDrivingSessionBusy marks the race where a session turned busy between
 // the reuse check and the scheduler-turn send. The caller keeps the
 // generation queued instead of retrying, so no duplicate message is sent.
-var errAutoRunSessionBusy = errors.New("session became busy")
+var errSelfDrivingSessionBusy = errors.New("session became busy")
 
-func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, generation int, prompt string) error {
-	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, AutoRunGeneration: generation})
+func (s *server) startSelfDrivingInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, generation int, prompt string) error {
+	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, SelfDrivingGeneration: generation})
 	if err != nil {
 		return err
 	}
@@ -359,7 +359,7 @@ func (s *server) startAutoRunInOpenSession(ctx context.Context, workspace guiWor
 		if strings.Contains(string(responseBody), externalResourceLockMessage) {
 			return &externalResourceLockError{}
 		}
-		return errAutoRunSessionBusy
+		return errSelfDrivingSessionBusy
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("agent input returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))

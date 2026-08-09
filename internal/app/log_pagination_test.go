@@ -272,20 +272,20 @@ func readTestLogFile(t *testing.T, path string) string {
 	return string(data)
 }
 
-func TestResourcePageCarriesCurrentAutoRunReasonOutsideLogPage(t *testing.T) {
+func TestResourcePageCarriesCurrentSelfDrivingReasonOutsideLogPage(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := workspace.CreateProject("AutoRun project", "autorun")
+	project, err := workspace.CreateProject("Self-Driving project", "self-driving")
 	if err != nil {
 		t.Fatal(err)
 	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "AutoRun task", Slug: "autorun", AutoRun: true})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Self-Driving task", Slug: "self-driving", SelfDriving: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.FailAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: "provider failed permanently"}); err != nil {
+	if _, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "provider failed permanently"}); err != nil {
 		t.Fatal(err)
 	}
 	for index := 0; index < 15; index++ {
@@ -297,11 +297,11 @@ func TestResourcePageCarriesCurrentAutoRunReasonOutsideLogPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.AutoRun == nil || detail.AutoRun.State != "failed" || detail.AutoRun.StatusReason != "provider failed permanently" {
-		t.Fatalf("current AutoRun reason was not projected in metadata: %+v", detail.AutoRun)
+	if detail.SelfDriving == nil || detail.SelfDriving.State != "failed" || detail.SelfDriving.StatusReason != "provider failed permanently" {
+		t.Fatalf("current Self-Driving reason was not projected in metadata: %+v", detail.SelfDriving)
 	}
 	for _, entry := range detail.Logs {
-		if entry.Title == "Auto Run failed" {
+		if entry.Title == "Self-Driving failed" {
 			t.Fatal("initial page unexpectedly needed the historical failure log")
 		}
 	}

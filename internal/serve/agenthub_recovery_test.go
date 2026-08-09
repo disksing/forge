@@ -77,8 +77,8 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "running", SchedulerTurn: true,
-		AutoRunGeneration: 1,
-		CreatedAt:         "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingGeneration: 1,
+		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	// The turn ended while the GUI was down: busy on disk, ready upstream.
@@ -91,11 +91,11 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 			return false
 		}
 		resource, err := forgeWorkspace.Resource("project1.task1")
-		if err != nil || resource.AutoRun == nil {
+		if err != nil || resource.SelfDriving == nil {
 			return false
 		}
 		for _, entry := range resource.Logs {
-			if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+			if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
 				return true
 			}
 		}

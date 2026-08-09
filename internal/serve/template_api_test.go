@@ -74,7 +74,7 @@ func TestTemplateHTTPListRenderPreviewAndCreate(t *testing.T) {
 		t.Fatalf("unexpected template render: %d %s", recorder.Code, recorder.Body.String())
 	}
 
-	request := map[string]any{"project": "project1", "templateName": "api", "templateFields": map[string]any{"summary": "Created"}, "autorun": false}
+	request := map[string]any{"project": "project1", "templateName": "api", "templateFields": map[string]any{"summary": "Created"}, "selfDriving": false}
 	data, _ := json.Marshal(request)
 	recorder = httptest.NewRecorder()
 	s.handleWorkspace(recorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks/preview", bytes.NewReader(data)))
@@ -85,7 +85,7 @@ func TestTemplateHTTPListRenderPreviewAndCreate(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &preview); err != nil {
 		t.Fatal(err)
 	}
-	if preview.Template == nil || preview.AutoRun != nil || preview.Title != "Created" {
+	if preview.Template == nil || preview.SelfDriving != nil || preview.Title != "Created" {
 		t.Fatalf("unexpected preview: %#v", preview)
 	}
 	request["expectedTemplateDigest"] = preview.Template.Digest

@@ -102,7 +102,7 @@ func TestScheduleRunnableTasksUsesSavedGenerationAgentWithoutProfileFallback(t *
 	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
 		t.Fatalf("saved generation Agent should remain schedulable without profiles: %v", err)
 	}
-	if request.ResourceID != "project1.task1" || request.AgentName != "saved-agent" || request.AutoRunAgentName != "saved-agent" || request.AutoRunAgentNameSet {
+	if request.ResourceID != "project1.task1" || request.AgentName != "saved-agent" || request.SelfDrivingAgentName != "saved-agent" || request.SelfDrivingAgentNameSet {
 		t.Fatalf("scheduler silently changed or duplicated the saved Agent selection: %#v", request)
 	}
 }
@@ -172,7 +172,7 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected orphaned task recovery to start, got result=%q err=%v", result, err)
 	}
-	if request.ResourceID != "project1.task1" || request.AutoRunGeneration != 3 {
+	if request.ResourceID != "project1.task1" || request.SelfDrivingGeneration != 3 {
 		t.Fatalf("unexpected recovery request: %#v", request)
 	}
 	if request.AgentName != "agent-one" || request.AgentProfile != "codex" || !strings.Contains(request.AgentSelectionReason, "matched") {
@@ -183,7 +183,7 @@ func TestStartRunnableTaskCreatesFreshSessionAfterDurableStopped(t *testing.T) {
 	}
 }
 
-func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
+func TestBuildSelfDrivingPromptUsesWorkspaceLanguage(t *testing.T) {
 	task := runnableTaskCandidate{
 		State:              "running",
 		Prompt:             "保留用户 prompt",
@@ -197,16 +197,16 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{"language":"zh-CN"}`), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		got := buildAutoRunPrompt(workspace, task)
+		got := buildSelfDrivingPrompt(workspace, task)
 		for _, want := range []string{
-			"恢复并继续当前 AutoRun generation",
+			"恢复并继续当前 Self-Driving generation",
 			"保留用户 prompt",
 			"验证 focused tests 全部通过",
-			"此 AutoRun generation 之前被挂起。请先检查唤醒条件",
+			"此 Self-Driving generation 之前被挂起。请先检查唤醒条件",
 			"挂起上下文：\n等待 task197 合入并安装",
 			"唤醒条件：\ntask197 已合入并安装",
-			"这是一个 AutoRun 调度器回合",
-			"最后一个有副作用的命令必须且只能是 forge task autorun complete、suspend、pause 或 fail 之一",
+			"这是一个 Self-Driving 调度器回合",
+			"最后一个有副作用的命令必须且只能是 forge task self-driving complete、suspend、pause 或 fail 之一",
 			"只有在任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件时，才可以使用 suspend",
 			"只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做，就必须在当前回合继续",
 			"--summary=<上下文>",
@@ -217,7 +217,7 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 				t.Fatalf("Chinese prompt does not contain %q:\n%s", want, got)
 			}
 		}
-		if strings.Contains(got, "This is an AutoRun scheduler turn") {
+		if strings.Contains(got, "This is a Self-Driving scheduler turn") {
 			t.Fatalf("Chinese prompt retained an English scheduler instruction:\n%s", got)
 		}
 	})
@@ -237,15 +237,15 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			got := buildAutoRunPrompt(workspace, task)
+			got := buildSelfDrivingPrompt(workspace, task)
 			for _, want := range []string{
-				"Recover and continue the current AutoRun generation",
+				"Recover and continue the current Self-Driving generation",
 				"保留用户 prompt",
 				"验证 focused tests 全部通过",
-				"This AutoRun generation was previously suspended. Check the wake condition first.",
+				"This Self-Driving generation was previously suspended. Check the wake condition first.",
 				"Suspension context:\n等待 task197 合入并安装",
 				"Wake condition:\ntask197 已合入并安装",
-				"This is an AutoRun scheduler turn",
+				"This is a Self-Driving scheduler turn",
 				"Use suspend only when the task cannot make meaningful progress and the only remaining action would be repeated polling of a specific, observable external condition",
 				"If any in-scope implementation, testing, investigation, review, documentation, repair, or verification remains, continue this turn.",
 				"In --summary=<context>, record completed work, current status, and blocking context",
@@ -260,16 +260,16 @@ func TestBuildAutoRunPromptUsesWorkspaceLanguage(t *testing.T) {
 	})
 }
 
-func TestAutoRunPromptDoesNotCarryTerminalGenerationSummary(t *testing.T) {
+func TestSelfDrivingPromptDoesNotCarryTerminalGenerationSummary(t *testing.T) {
 	workspace := t.TempDir()
 	completed := app.Task{
 		ResourceMeta: app.ResourceMeta{ID: "project1.task1", Title: "Terminal generation"},
-		AutoRun: &app.AutoRun{
+		SelfDriving: &app.SelfDriving{
 			Generation: 4, State: "completed", Prompt: "old instructions",
 			SuspensionSummary: "old generation suspension",
 		},
 	}
-	candidate, expectedState, err := chatAutoRunCandidate(completed.ID, completed, app.AutoRunQueueInput{
+	candidate, expectedState, err := chatSelfDrivingCandidate(completed.ID, completed, app.SelfDrivingQueueInput{
 		Prompt: "fresh instructions", PromptSet: true,
 	})
 	if err != nil {
@@ -278,16 +278,16 @@ func TestAutoRunPromptDoesNotCarryTerminalGenerationSummary(t *testing.T) {
 	if expectedState != "completed" || candidate.Generation != 5 || candidate.SuspensionSummary != "" {
 		t.Fatalf("terminal generation carried stale suspension context: state=%q candidate=%+v", expectedState, candidate)
 	}
-	prompt := buildAutoRunPrompt(workspace, candidate)
+	prompt := buildSelfDrivingPrompt(workspace, candidate)
 	if strings.Contains(prompt, "old generation suspension") || !strings.Contains(prompt, "fresh instructions") {
 		t.Fatalf("new generation prompt contains stale suspension context or lost instructions:\n%s", prompt)
 	}
 	failed := completed
-	failed.AutoRun = &app.AutoRun{
+	failed.SelfDriving = &app.SelfDriving{
 		Generation: 4, State: "failed", Prompt: "failed generation instructions",
 		SuspensionSummary: "failed generation suspension",
 	}
-	failedCandidate, expectedState, err := chatAutoRunCandidate(failed.ID, failed)
+	failedCandidate, expectedState, err := chatSelfDrivingCandidate(failed.ID, failed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,40 +297,40 @@ func TestAutoRunPromptDoesNotCarryTerminalGenerationSummary(t *testing.T) {
 
 	suspended := app.Task{
 		ResourceMeta: app.ResourceMeta{ID: "project1.task2", Title: "Resumed generation"},
-		AutoRun: &app.AutoRun{
+		SelfDriving: &app.SelfDriving{
 			Generation: 2, State: "suspended", Prompt: "continue instructions",
 			SuspensionSummary: "current generation suspension",
 		},
 	}
-	resumedCandidate, expectedState, err := chatAutoRunCandidate(suspended.ID, suspended)
+	resumedCandidate, expectedState, err := chatSelfDrivingCandidate(suspended.ID, suspended)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if expectedState != "suspended" || resumedCandidate.SuspensionSummary != "current generation suspension" {
 		t.Fatalf("resumed generation lost its prompt recovery context: state=%q candidate=%+v", expectedState, resumedCandidate)
 	}
-	if prompt := buildAutoRunPrompt(workspace, resumedCandidate); !strings.Contains(prompt, "current generation suspension") {
+	if prompt := buildSelfDrivingPrompt(workspace, resumedCandidate); !strings.Contains(prompt, "current generation suspension") {
 		t.Fatalf("resumed generation prompt omitted suspension context:\n%s", prompt)
 	}
 }
 
-func TestAutoRunLocalizedDefaultAndContinuePrompts(t *testing.T) {
+func TestSelfDrivingLocalizedDefaultAndContinuePrompts(t *testing.T) {
 	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "forge.json"), []byte(`{"language":"zh_CN"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got := buildAutoRunPrompt(workspace, runnableTaskCandidate{State: "queued"})
+	got := buildSelfDrivingPrompt(workspace, runnableTaskCandidate{State: "queued"})
 	if !strings.Contains(got, "读取 task.md 并完成任务。") {
 		t.Fatalf("Chinese default task prompt is missing:\n%s", got)
 	}
-	continuePrompt := autoRunContinuePrompt(workspace)
-	if !strings.Contains(continuePrompt, "继续当前 AutoRun") ||
-		!strings.Contains(continuePrompt, "forge task autorun complete、suspend、pause 或 fail") {
+	continuePrompt := selfDrivingContinuePrompt(workspace)
+	if !strings.Contains(continuePrompt, "继续当前 Self-Driving") ||
+		!strings.Contains(continuePrompt, "forge task self-driving complete、suspend、pause 或 fail") {
 		t.Fatalf("unexpected Chinese continuation prompt: %q", continuePrompt)
 	}
 }
 
-func TestAutoRunContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
+func TestSelfDrivingContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
 	cases := []struct {
 		name      string
 		language  string
@@ -343,7 +343,7 @@ func TestAutoRunContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
 			name:      "English",
 			language:  "en",
 			strict:    "Use suspend only when the task cannot make meaningful progress",
-			suspended: "This AutoRun generation was previously suspended. Check the wake condition first.",
+			suspended: "This Self-Driving generation was previously suspended. Check the wake condition first.",
 			summary:   "waiting for external review",
 			wake:      "the review is approved",
 		},
@@ -351,7 +351,7 @@ func TestAutoRunContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
 			name:      "Simplified Chinese",
 			language:  "zh-CN",
 			strict:    "只有在任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件时，才可以使用 suspend",
-			suspended: "此 AutoRun generation 之前被挂起。请先检查唤醒条件",
+			suspended: "此 Self-Driving generation 之前被挂起。请先检查唤醒条件",
 			summary:   "等待外部评审",
 			wake:      "评审已通过",
 		},
@@ -370,14 +370,14 @@ func TestAutoRunContinuePromptsUseStrictSuspendGuidance(t *testing.T) {
 				WakeCondition:      tc.wake,
 			}
 			for name, prompt := range map[string]string{
-				"retry":          autoRunContinuePrompt(workspace),
-				"suspended wake": autoRunContinuePrompt(workspace, candidate),
+				"retry":          selfDrivingContinuePrompt(workspace),
+				"suspended wake": selfDrivingContinuePrompt(workspace, candidate),
 			} {
 				if !strings.Contains(prompt, tc.strict) {
 					t.Fatalf("%s prompt is missing strict suspend guidance %q:\n%s", name, tc.strict, prompt)
 				}
 			}
-			wakePrompt := autoRunContinuePrompt(workspace, candidate)
+			wakePrompt := selfDrivingContinuePrompt(workspace, candidate)
 			for _, want := range []string{tc.suspended, tc.summary, tc.wake} {
 				if !strings.Contains(wakePrompt, want) {
 					t.Fatalf("suspended wake prompt is missing %q:\n%s", want, wakePrompt)
@@ -414,7 +414,7 @@ func TestStartRunnableTaskReusesIdleSession(t *testing.T) {
 	if err != nil || result != runnableTaskStarted {
 		t.Fatalf("expected idle session reuse to start, got result=%q err=%v", result, err)
 	}
-	if path != "/api/workspaces/workspace-one/agent/runs/run-idle/input" || !input.SchedulerTurn || input.AutoRunGeneration != 5 {
+	if path != "/api/workspaces/workspace-one/agent/runs/run-idle/input" || !input.SchedulerTurn || input.SelfDrivingGeneration != 5 {
 		t.Fatalf("unexpected idle-session input: path=%q request=%#v", path, input)
 	}
 }
@@ -477,7 +477,7 @@ func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTask
 		}
 		task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{
 			ProjectID: project.ID, Title: title, Slug: "task" + strconv.Itoa(number),
-			AutoRun: true, AgentName: candidate.AgentName, PreferredAgentProfiles: candidate.PreferredAgentProfiles,
+			SelfDriving: true, AgentName: candidate.AgentName, PreferredAgentProfiles: candidate.PreferredAgentProfiles,
 			Prompt: candidate.Prompt,
 		})
 		if err != nil {
@@ -485,21 +485,21 @@ func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTask
 		}
 		switch candidate.State {
 		case "running":
-			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			if _, err := forgeWorkspace.StartSelfDriving(task.ID); err != nil {
 				t.Fatal(err)
 			}
 		case "paused":
-			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			if _, err := forgeWorkspace.StartSelfDriving(task.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := forgeWorkspace.PauseAutoRun(app.AutoRunActionInput{TaskID: task.ID, Reason: "test"}); err != nil {
+			if _, err := forgeWorkspace.PauseSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Reason: "test"}); err != nil {
 				t.Fatal(err)
 			}
 		case "suspended":
-			if _, err := forgeWorkspace.StartAutoRun(task.ID); err != nil {
+			if _, err := forgeWorkspace.StartSelfDriving(task.ID); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := forgeWorkspace.SuspendAutoRun(app.AutoRunActionInput{TaskID: task.ID, Summary: candidate.SuspensionSummary}); err != nil {
+			if _, err := forgeWorkspace.SuspendSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: candidate.SuspensionSummary}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -525,14 +525,14 @@ func newSchedulerTestServer(t *testing.T, workspace string, tasks []runnableTask
 	return s
 }
 
-func TestResolveAutoRunAgentRejectsOutdatedConfiguration(t *testing.T) {
+func TestResolveSelfDrivingAgentRejectsOutdatedConfiguration(t *testing.T) {
 	cfg := config{Version: 1}
-	if _, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}}); err == nil || !strings.Contains(err.Error(), "AgentHub settings") {
+	if _, err := resolveSelfDrivingAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"kimi", "review"}}); err == nil || !strings.Contains(err.Error(), "AgentHub settings") {
 		t.Fatalf("expected outdated configuration error, got %v", err)
 	}
 }
 
-func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
+func TestResolveSelfDrivingAgentUsesAgentHubProfileNames(t *testing.T) {
 	cfg := config{
 		Version: agentHubConfigVersion,
 		AgentProfiles: []agentProfileRoute{
@@ -541,11 +541,11 @@ func TestResolveAutoRunAgentUsesAgentHubProfileNames(t *testing.T) {
 			{Key: "fast", AgentName: "gpt-5.3-codex-spark"},
 		},
 	}
-	selection, err := resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing", "deep"}})
+	selection, err := resolveSelfDrivingAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing", "deep"}})
 	if err != nil || selection.AgentName != "gpt-5.6-sol" || selection.Profile != "deep" {
 		t.Fatalf("expected AgentHub Profile route, got selection=%+v err=%v", selection, err)
 	}
-	selection, err = resolveAutoRunAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
+	selection, err = resolveSelfDrivingAgent(cfg, runnableTaskCandidate{PreferredAgentProfiles: []string{"missing"}})
 	if err != nil || selection.AgentName != "kimi-k3" || selection.Profile != "" {
 		t.Fatalf("expected AgentHub default fallback, got selection=%+v err=%v", selection, err)
 	}
@@ -564,26 +564,26 @@ func registerSchedulerRun(t *testing.T, s *server, workspace string, run agentRu
 	}
 }
 
-func TestAutoRunSuspendedDue(t *testing.T) {
+func TestSelfDrivingSuspendedDue(t *testing.T) {
 	recent := time.Now().Add(-10 * time.Minute).Format(time.RFC3339)
-	if autoRunSuspendedDue(recent) {
+	if selfDrivingSuspendedDue(recent) {
 		t.Fatalf("suspended 10 minutes ago should not be due, but driver woke it")
 	}
 	overdue := time.Now().Add(-31 * time.Minute).Format(time.RFC3339)
-	if !autoRunSuspendedDue(overdue) {
+	if !selfDrivingSuspendedDue(overdue) {
 		t.Fatalf("suspended 31 minutes ago should be due, but driver left it suspended")
 	}
-	if !autoRunSuspendedDue("") {
+	if !selfDrivingSuspendedDue("") {
 		t.Fatalf("empty suspendedAt must be treated as due so tasks never stall")
 	}
-	if !autoRunSuspendedDue("not-a-time") {
+	if !selfDrivingSuspendedDue("not-a-time") {
 		t.Fatalf("unparsable suspendedAt must be treated as due so tasks never stall")
 	}
 }
 
 func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
 	workspace := t.TempDir()
-	overdue := time.Now().Add(-autoRunSuspensionLimit - time.Minute).Format(time.RFC3339)
+	overdue := time.Now().Add(-selfDrivingSuspensionLimit - time.Minute).Format(time.RFC3339)
 	var started []string
 	s := newSchedulerTestServer(t, workspace, []runnableTaskCandidate{
 		{ID: "project1.task1", Title: "Overdue suspended", Generation: 1, State: "suspended", SuspensionSummary: "waiting for merge"},
@@ -596,14 +596,14 @@ func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
 			return
 		}
 		started = append(started, req.ResourceID)
-		if req.QueueAutoRun {
+		if req.QueueSelfDriving {
 			forgeWorkspace, openErr := app.OpenWorkspace(workspace)
 			if openErr != nil {
 				t.Errorf("open workspace for queued scheduler request: %v", openErr)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
-			if _, resumeErr := forgeWorkspace.ResumeAutoRun(req.ResourceID); resumeErr != nil {
+			if _, resumeErr := forgeWorkspace.ResumeSelfDriving(req.ResourceID); resumeErr != nil {
 				t.Errorf("resume queued scheduler request: %v", resumeErr)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -620,10 +620,10 @@ func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
 		t.Fatal(err)
 	}
 	resource, err := forgeWorkspace.ResourceValue("project1.task1")
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("load task1: %v", err)
 	}
-	resource.Task.AutoRun.SuspendedAt = overdue
+	resource.Task.SelfDriving.SuspendedAt = overdue
 	if err := rewriteTaskForTest(t, workspace, resource.Task); err != nil {
 		t.Fatal(err)
 	}
@@ -639,14 +639,14 @@ func TestScheduleRunnableTasksWakesOverdueSuspended(t *testing.T) {
 	// The woken generation is now queued and carries the suspension summary so
 	// the agent can re-check its condition.
 	resource, err = forgeWorkspace.ResourceValue("project1.task1")
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload task1: %v", err)
 	}
-	if resource.Task.AutoRun.State != "queued" {
-		t.Fatalf("expected woken task to be queued, got %s", resource.Task.AutoRun.State)
+	if resource.Task.SelfDriving.State != "queued" {
+		t.Fatalf("expected woken task to be queued, got %s", resource.Task.SelfDriving.State)
 	}
-	if resource.Task.AutoRun.SuspensionSummary != "waiting for merge" {
-		t.Fatalf("expected suspension summary to be preserved for the agent, got %q", resource.Task.AutoRun.SuspensionSummary)
+	if resource.Task.SelfDriving.SuspensionSummary != "waiting for merge" {
+		t.Fatalf("expected suspension summary to be preserved for the agent, got %q", resource.Task.SelfDriving.SuspensionSummary)
 	}
 }
 

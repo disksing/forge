@@ -32,7 +32,7 @@ type Task struct {
 	Parent      string              `json:"parent"`
 	Description string              `json:"description,omitempty"`
 	Repos       []TaskRepo          `json:"repos,omitempty"`
-	AutoRun     *AutoRun            `json:"autoRun,omitempty"`
+	SelfDriving *SelfDriving        `json:"selfDriving,omitempty"`
 	Template    *TaskTemplateSource `json:"template,omitempty"`
 	// Path is populated on create responses but is not persisted in task.json.
 	Path string `json:"path,omitempty"`
@@ -78,7 +78,7 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-type AutoRun struct {
+type SelfDriving struct {
 	Generation             int      `json:"generation"`
 	State                  string   `json:"state"`
 	AgentName              string   `json:"agentName,omitempty"`
@@ -88,7 +88,7 @@ type AutoRun struct {
 	WakeCondition          string   `json:"wakeCondition,omitempty"`
 	// SuspendedAt is the wall-clock time the current generation was last
 	// suspended. The server driver uses it (not task.updatedAt) to decide when
-	// a suspended AutoRun should be re-queued.
+	// a suspended Self-Driving should be re-queued.
 	SuspendedAt string `json:"suspendedAt,omitempty"`
 	// SuspensionSummary is the natural-language context recorded for the
 	// current suspended generation. It is intentionally separate from the
@@ -96,7 +96,7 @@ type AutoRun struct {
 	SuspensionSummary string `json:"suspensionSummary,omitempty"`
 	// StatusReason is the current generation's state reason. Keeping this
 	// projection in task metadata lets resource detail pages render the
-	// current AutoRun status without loading an arbitrary historical log page.
+	// current Self-Driving status without loading an arbitrary historical log page.
 	StatusReason string `json:"statusReason,omitempty"`
 	// WakeConditionFallback records that WakeCondition was filled from the
 	// suspension summary for compatibility. The corresponding log entry is

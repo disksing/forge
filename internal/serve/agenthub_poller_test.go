@@ -34,7 +34,7 @@ func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspa
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := forgeWorkspace.StartAutoRun(run.ResourceID); err != nil {
+		if _, err := forgeWorkspace.StartSelfDriving(run.ResourceID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -318,7 +318,7 @@ func TestAgentHubPollerDoesNotRetryAmbiguousArchivedTaskStop(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
+func TestAgentHubPollerBusyToReadyTriggersSelfDrivingRetry(t *testing.T) {
 	for _, previousStatus := range []string{"running", "waiting_approval"} {
 		t.Run(previousStatus, func(t *testing.T) {
 			fake := newRuntimeFakeAgentHub()
@@ -329,8 +329,8 @@ func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 				ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 				AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 				ForgeSessionID: "session-test", Status: previousStatus, SchedulerTurn: true,
-				AutoRunGeneration: 1,
-				CreatedAt:         "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+				SelfDrivingGeneration: 1,
+				CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 			}, agentHubSession{ID: "ses_sched", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 			if err := manager.pollAgentHubSessions(context.Background()); err != nil {
@@ -343,12 +343,12 @@ func TestAgentHubPollerBusyToReadyTriggersAutoRunRetry(t *testing.T) {
 					return false
 				}
 				resource, err := forgeWorkspace.Resource("project1.task1")
-				if err != nil || resource.AutoRun == nil {
+				if err != nil || resource.SelfDriving == nil {
 					return false
 				}
 				hasRetry := false
 				for _, entry := range resource.Logs {
-					if entry.Title == "Auto Run retry" && entry.Details == "agent did not set AutoRun state" {
+					if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
 						hasRetry = true
 						break
 					}
@@ -370,20 +370,20 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	// A terminal AutoRun state keeps the turn finish deterministic: the turn is
+	// A terminal Self-Driving state keeps the turn finish deterministic: the turn is
 	// reclaimed without sending a continue prompt into the stopped session.
 	seedPollerRun(t, fake, workspace, agentRun{
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "running", SchedulerTurn: true,
-		AutoRunGeneration: 1,
-		CreatedAt:         "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingGeneration: 1,
+		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z"})
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CompleteAutoRun(app.AutoRunActionInput{TaskID: "project1.task1", Summary: "completed before stop"}); err != nil {
+	if _, err := forgeWorkspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: "completed before stop"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -416,8 +416,8 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "waiting_approval", SchedulerTurn: true,
-		AutoRunGeneration: 1,
-		CreatedAt:         "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingGeneration: 1,
+		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "busy", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
@@ -427,7 +427,7 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 	if run.Status != "running" || !run.SchedulerTurn {
 		t.Fatalf("waiting_approval to busy projection mismatch: %#v", run)
 	}
-	// The turn is still running: no AutoRun retry may be issued. Give any stray
+	// The turn is still running: no Self-Driving retry may be issued. Give any stray
 	// goroutine a chance to run before checking the forge log.
 	time.Sleep(200 * time.Millisecond)
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -439,7 +439,7 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, entry := range resource.Logs {
-		if entry.Title == "Auto Run retry" {
+		if entry.Title == "Self-Driving retry" {
 			t.Fatalf("waiting_approval to busy must not finish the scheduler turn: %#v", entry)
 		}
 	}

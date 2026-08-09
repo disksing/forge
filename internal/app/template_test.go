@@ -200,7 +200,7 @@ func TestTemplateRenderRejectsMissingUnknownAndTypedFields(t *testing.T) {
 	}
 }
 
-func TestCreateTaskFromTemplateRecordsSourceAndKeepsAutoRunExplicit(t *testing.T) {
+func TestCreateTaskFromTemplateRecordsSourceAndKeepsSelfDrivingExplicit(t *testing.T) {
 	workspace, root, project := templateWorkspace(t)
 	writeTemplate(t, root, project, "request", v2Template)
 	fields := map[string]any{"summary": "Structured task", "behavior": "Create it safely"}
@@ -208,15 +208,15 @@ func TestCreateTaskFromTemplateRecordsSourceAndKeepsAutoRunExplicit(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.AutoRun != nil || preview.Template == nil {
+	if preview.SelfDriving != nil || preview.Template == nil {
 		t.Fatalf("template enabled execution implicitly: %#v", preview)
 	}
 	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, TemplateName: "request", TemplateFields: fields, ExpectedTemplateDigest: preview.Template.Digest})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.AutoRun != nil || task.Template == nil || task.Template.Name != "request" || task.Template.SchemaVersion != 2 || task.Template.Digest != preview.Template.Digest {
-		t.Fatalf("unexpected template source or AutoRun: %#v", task)
+	if task.SelfDriving != nil || task.Template == nil || task.Template.Name != "request" || task.Template.SchemaVersion != 2 || task.Template.Digest != preview.Template.Digest {
+		t.Fatalf("unexpected template source or Self-Driving: %#v", task)
 	}
 	detail, err := workspace.Resource(task.ID)
 	if err != nil {
@@ -233,12 +233,12 @@ func TestCreateTaskFromTemplateRecordsSourceAndKeepsAutoRunExplicit(t *testing.T
 	if err != nil || strings.Contains(string(metadata), `"path"`) || !strings.Contains(string(metadata), `"template"`) {
 		t.Fatalf("task source persistence is incorrect: %v %s", err, metadata)
 	}
-	automatic, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Override title", TemplateName: "request", TemplateFields: fields, AutoRun: true, AgentName: "codex"})
+	automatic, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Override title", TemplateName: "request", TemplateFields: fields, SelfDriving: true, AgentName: "codex"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if automatic.Title != "Override title" || automatic.AutoRun == nil || automatic.AutoRun.AgentName != "codex" {
-		t.Fatalf("explicit override or AutoRun was lost: %#v", automatic)
+	if automatic.Title != "Override title" || automatic.SelfDriving == nil || automatic.SelfDriving.AgentName != "codex" {
+		t.Fatalf("explicit override or Self-Driving was lost: %#v", automatic)
 	}
 }
 

@@ -12,18 +12,18 @@ import (
 )
 
 const (
-	autoRunStateQueued        = "queued"
-	autoRunStateRunning       = "running"
-	autoRunStateSuspended     = "suspended"
-	autoRunStatePaused        = "paused"
-	autoRunStateCompleted     = "completed"
-	autoRunStateFailed        = "failed"
-	autoRunStateCancelled     = "cancelled"
-	autoRunSuspensionLimit    = 30 * time.Minute
-	autoRunSuspensionFallback = "Re-check whether the blocking condition has changed"
+	selfDrivingStateQueued        = "queued"
+	selfDrivingStateRunning       = "running"
+	selfDrivingStateSuspended     = "suspended"
+	selfDrivingStatePaused        = "paused"
+	selfDrivingStateCompleted     = "completed"
+	selfDrivingStateFailed        = "failed"
+	selfDrivingStateCancelled     = "cancelled"
+	selfDrivingSuspensionLimit    = 30 * time.Minute
+	selfDrivingSuspensionFallback = "Re-check whether the blocking condition has changed"
 )
 
-type autoRunCommandOptions struct {
+type selfDrivingCommandOptions struct {
 	TaskID                 string
 	AgentName              string
 	AgentNameSet           bool
@@ -56,33 +56,33 @@ type runnableTask struct {
 	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
-func runTaskAutoRun(args []string) error {
+func runTaskSelfDriving(args []string) error {
 	if len(args) == 0 {
-		return errors.New(autoRunUsage(""))
+		return errors.New(selfDrivingUsage(""))
 	}
 	command := args[0]
-	opts, err := parseAutoRunCommandArgs(command, args[1:])
+	opts, err := parseSelfDrivingCommandArgs(command, args[1:])
 	if err != nil {
 		return err
 	}
 	switch command {
 	case "queue":
-		return autoRunQueue(opts)
+		return selfDrivingQueue(opts)
 	case "start":
-		return autoRunStart(opts)
+		return selfDrivingStart(opts)
 	case "retry":
-		return autoRunRetry(opts)
+		return selfDrivingRetry(opts)
 	case "resume":
-		return autoRunResume(opts)
+		return selfDrivingResume(opts)
 	case "complete", "suspend", "pause", "fail", "cancel":
-		return autoRunAction(command, opts)
+		return selfDrivingAction(command, opts)
 	default:
-		return fmt.Errorf("unknown task autorun subcommand %q", command)
+		return fmt.Errorf("unknown task self-driving subcommand %q", command)
 	}
 }
 
-func autoRunUsage(command string) string {
-	base := "usage: forge task autorun "
+func selfDrivingUsage(command string) string {
+	base := "usage: forge task self-driving "
 	switch command {
 	case "queue":
 		return base + "queue [--project=<project>] [--task=<task>] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
@@ -103,10 +103,10 @@ func autoRunUsage(command string) string {
 	}
 }
 
-func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptions, error) {
-	var opts autoRunCommandOptions
+func parseSelfDrivingCommandArgs(command string, args []string) (selfDrivingCommandOptions, error) {
+	var opts selfDrivingCommandOptions
 	var project, task string
-	usage := autoRunUsage(command)
+	usage := selfDrivingUsage(command)
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "--") {
@@ -157,7 +157,7 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 	}
 	var err error
 	if task == "" {
-		opts.TaskID, err = resolveTaskArg(nil, "autorun "+command)
+		opts.TaskID, err = resolveTaskArg(nil, "self-driving "+command)
 	} else {
 		projectID, normalizeErr := normalizeProjectArg(project)
 		if normalizeErr != nil {
@@ -168,8 +168,8 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 	return opts, err
 }
 
-func autoRunQueue(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
+func selfDrivingQueue(opts selfDrivingCommandOptions) error {
+	return updateSelfDriving(opts.TaskID, func(_ string, dir string, task *Task) error {
 		generation := 1
 		prompt := opts.Prompt
 		agentName := opts.AgentName
@@ -178,30 +178,30 @@ func autoRunQueue(opts autoRunCommandOptions) error {
 		if err != nil {
 			return err
 		}
-		if task.AutoRun != nil {
-			if task.AutoRun.State != autoRunStateCompleted && task.AutoRun.State != autoRunStateFailed && task.AutoRun.State != autoRunStateCancelled {
-				return fmt.Errorf("cannot queue AutoRun in %s state", task.AutoRun.State)
+		if task.SelfDriving != nil {
+			if task.SelfDriving.State != selfDrivingStateCompleted && task.SelfDriving.State != selfDrivingStateFailed && task.SelfDriving.State != selfDrivingStateCancelled {
+				return fmt.Errorf("cannot queue Self-Driving in %s state", task.SelfDriving.State)
 			}
-			generation = task.AutoRun.Generation + 1
+			generation = task.SelfDriving.Generation + 1
 			if len(preferredAgentProfiles) == 0 {
-				preferredAgentProfiles = append([]string(nil), task.AutoRun.PreferredAgentProfiles...)
+				preferredAgentProfiles = append([]string(nil), task.SelfDriving.PreferredAgentProfiles...)
 			}
 			if !opts.AgentNameSet && agentName == "" {
-				agentName = task.AutoRun.AgentName
+				agentName = task.SelfDriving.AgentName
 			}
 			if !opts.PromptSet && prompt == "" {
-				prompt = task.AutoRun.Prompt
+				prompt = task.SelfDriving.Prompt
 			}
 			if !opts.CompletionCriteriaSet && completionCriteria == "" {
-				completionCriteria = task.AutoRun.CompletionCriteria
+				completionCriteria = task.SelfDriving.CompletionCriteria
 			}
 		}
-		task.AutoRun = &AutoRun{
-			Generation: generation, State: autoRunStateQueued, AgentName: strings.TrimSpace(agentName),
+		task.SelfDriving = &SelfDriving{
+			Generation: generation, State: selfDrivingStateQueued, AgentName: strings.TrimSpace(agentName),
 			PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt),
 			CompletionCriteria: strings.TrimSpace(completionCriteria),
 		}
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "", generation))
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving queued", "", generation))
 	})
 }
 
@@ -228,89 +228,89 @@ func normalizeAgentProfiles(values []string) ([]string, error) {
 	return normalized, nil
 }
 
-func autoRunStart(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
-		if task.AutoRun != nil && task.AutoRun.State == autoRunStateRunning {
-			task.AutoRun.SuspendedAt = ""
+func selfDrivingStart(opts selfDrivingCommandOptions) error {
+	return updateSelfDriving(opts.TaskID, func(_ string, dir string, task *Task) error {
+		if task.SelfDriving != nil && task.SelfDriving.State == selfDrivingStateRunning {
+			task.SelfDriving.SuspendedAt = ""
 			return nil
 		}
-		if task.AutoRun == nil || task.AutoRun.State != autoRunStateQueued {
-			return errors.New("AutoRun is not queued")
+		if task.SelfDriving == nil || task.SelfDriving.State != selfDrivingStateQueued {
+			return errors.New("Self-Driving is not queued")
 		}
-		task.AutoRun.SuspendedAt = ""
-		task.AutoRun.State = autoRunStateRunning
-		task.AutoRun.StatusReason = ""
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run started", "", task.AutoRun.Generation))
+		task.SelfDriving.SuspendedAt = ""
+		task.SelfDriving.State = selfDrivingStateRunning
+		task.SelfDriving.StatusReason = ""
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving started", "", task.SelfDriving.Generation))
 	})
 }
 
-func autoRunRetry(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
-		if task.AutoRun == nil || task.AutoRun.State != autoRunStateRunning {
-			return errors.New("AutoRun is not running")
+func selfDrivingRetry(opts selfDrivingCommandOptions) error {
+	return updateSelfDriving(opts.TaskID, func(_ string, dir string, task *Task) error {
+		if task.SelfDriving == nil || task.SelfDriving.State != selfDrivingStateRunning {
+			return errors.New("Self-Driving is not running")
 		}
-		task.AutoRun.SuspendedAt = ""
-		generation := task.AutoRun.Generation
+		task.SelfDriving.SuspendedAt = ""
+		generation := task.SelfDriving.Generation
 		entries, err := readLogEntries(dir)
 		if err != nil {
 			return err
 		}
 		retries := 0
 		for _, entry := range entries {
-			if !entry.AutoRun || entry.AutoRunGeneration != generation {
+			if !entry.SelfDriving || entry.SelfDrivingGeneration != generation {
 				continue
 			}
-			if entry.Title == "Auto Run started" {
+			if entry.Title == "Self-Driving started" {
 				break
 			}
-			if entry.Title == "Auto Run retry" {
+			if entry.Title == "Self-Driving retry" {
 				retries++
 			}
 		}
 		details := strings.TrimSpace(opts.Reason)
-		task.AutoRun.StatusReason = details
-		if err := prependLogEntry(dir, newAutoRunLogEntry("Auto Run retry", details, generation)); err != nil {
+		task.SelfDriving.StatusReason = details
+		if err := prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving retry", details, generation)); err != nil {
 			return err
 		}
 		if retries+1 >= 3 {
-			task.AutoRun.State = autoRunStatePaused
-			task.AutoRun.StatusReason = "retry limit reached"
-			return prependLogEntry(dir, newAutoRunLogEntry("Auto Run paused", "retry limit reached", generation))
+			task.SelfDriving.State = selfDrivingStatePaused
+			task.SelfDriving.StatusReason = "retry limit reached"
+			return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving paused", "retry limit reached", generation))
 		}
 		return nil
 	})
 }
 
-func autoRunResume(opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
-		if task.AutoRun == nil || (task.AutoRun.State != autoRunStatePaused && task.AutoRun.State != autoRunStateSuspended) {
-			return errors.New("AutoRun is not paused or suspended")
+func selfDrivingResume(opts selfDrivingCommandOptions) error {
+	return updateSelfDriving(opts.TaskID, func(_ string, dir string, task *Task) error {
+		if task.SelfDriving == nil || (task.SelfDriving.State != selfDrivingStatePaused && task.SelfDriving.State != selfDrivingStateSuspended) {
+			return errors.New("Self-Driving is not paused or suspended")
 		}
-		task.AutoRun.State = autoRunStateQueued
-		task.AutoRun.SuspendedAt = ""
-		task.AutoRun.StatusReason = ""
+		task.SelfDriving.State = selfDrivingStateQueued
+		task.SelfDriving.SuspendedAt = ""
+		task.SelfDriving.StatusReason = ""
 		// SuspensionSummary is intentionally preserved so a woken agent can
 		// re-check the recorded reason before continuing or suspending again.
-		return prependLogEntry(dir, newAutoRunLogEntry("Auto Run queued", "resumed", task.AutoRun.Generation))
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving queued", "resumed", task.SelfDriving.Generation))
 	})
 }
 
-func autoRunAction(action string, opts autoRunCommandOptions) error {
-	return updateAutoRun(opts.TaskID, func(_ string, dir string, task *Task) error {
-		if task.AutoRun == nil {
-			return errors.New("task has no AutoRun")
+func selfDrivingAction(action string, opts selfDrivingCommandOptions) error {
+	return updateSelfDriving(opts.TaskID, func(_ string, dir string, task *Task) error {
+		if task.SelfDriving == nil {
+			return errors.New("task has no Self-Driving")
 		}
-		if opts.ExpectedGeneration > 0 && task.AutoRun.Generation != opts.ExpectedGeneration {
-			return fmt.Errorf("AutoRun generation changed from %d to %d", opts.ExpectedGeneration, task.AutoRun.Generation)
+		if opts.ExpectedGeneration > 0 && task.SelfDriving.Generation != opts.ExpectedGeneration {
+			return fmt.Errorf("Self-Driving generation changed from %d to %d", opts.ExpectedGeneration, task.SelfDriving.Generation)
 		}
-		if action == "cancel" && task.AutoRun.State == autoRunStateCancelled {
+		if action == "cancel" && task.SelfDriving.State == selfDrivingStateCancelled {
 			return nil
 		}
-		if expectedState := strings.TrimSpace(opts.ExpectedState); expectedState != "" && task.AutoRun.State != expectedState {
-			return fmt.Errorf("AutoRun state changed from %q to %q", expectedState, task.AutoRun.State)
+		if expectedState := strings.TrimSpace(opts.ExpectedState); expectedState != "" && task.SelfDriving.State != expectedState {
+			return fmt.Errorf("Self-Driving state changed from %q to %q", expectedState, task.SelfDriving.State)
 		}
-		if action == "cancel" && (task.AutoRun.State == autoRunStateCompleted || task.AutoRun.State == autoRunStateFailed) {
-			return fmt.Errorf("cannot cancel AutoRun in %s state", task.AutoRun.State)
+		if action == "cancel" && (task.SelfDriving.State == selfDrivingStateCompleted || task.SelfDriving.State == selfDrivingStateFailed) {
+			return fmt.Errorf("cannot cancel Self-Driving in %s state", task.SelfDriving.State)
 		}
 		details := strings.TrimSpace(opts.Summary)
 		if details == "" {
@@ -319,50 +319,50 @@ func autoRunAction(action string, opts autoRunCommandOptions) error {
 		title := ""
 		switch action {
 		case "complete":
-			task.AutoRun.State = autoRunStateCompleted
-			task.AutoRun.SuspendedAt = ""
-			task.AutoRun.StatusReason = ""
-			title = "Auto Run completed"
+			task.SelfDriving.State = selfDrivingStateCompleted
+			task.SelfDriving.SuspendedAt = ""
+			task.SelfDriving.StatusReason = ""
+			title = "Self-Driving completed"
 		case "fail":
-			task.AutoRun.State = autoRunStateFailed
-			task.AutoRun.SuspendedAt = ""
-			task.AutoRun.StatusReason = details
-			title = "Auto Run failed"
+			task.SelfDriving.State = selfDrivingStateFailed
+			task.SelfDriving.SuspendedAt = ""
+			task.SelfDriving.StatusReason = details
+			title = "Self-Driving failed"
 		case "pause":
-			task.AutoRun.State = autoRunStatePaused
-			task.AutoRun.SuspendedAt = ""
-			task.AutoRun.StatusReason = details
-			title = "Auto Run paused"
+			task.SelfDriving.State = selfDrivingStatePaused
+			task.SelfDriving.SuspendedAt = ""
+			task.SelfDriving.StatusReason = details
+			title = "Self-Driving paused"
 		case "suspend":
-			task.AutoRun.State = autoRunStateSuspended
-			task.AutoRun.SuspendedAt = time.Now().Format(time.RFC3339)
+			task.SelfDriving.State = selfDrivingStateSuspended
+			task.SelfDriving.SuspendedAt = time.Now().Format(time.RFC3339)
 			if details == "" {
-				details = autoRunSuspensionFallback
+				details = selfDrivingSuspensionFallback
 			}
-			task.AutoRun.SuspensionSummary = details
-			task.AutoRun.WakeCondition = strings.TrimSpace(opts.WakeCondition)
-			fallback := task.AutoRun.WakeCondition == ""
+			task.SelfDriving.SuspensionSummary = details
+			task.SelfDriving.WakeCondition = strings.TrimSpace(opts.WakeCondition)
+			fallback := task.SelfDriving.WakeCondition == ""
 			if fallback {
-				task.AutoRun.WakeCondition = details
+				task.SelfDriving.WakeCondition = details
 			}
-			task.AutoRun.StatusReason = details
-			task.AutoRun.WakeConditionFallback = fallback
-			title = "Auto Run suspended"
-			return prependLogEntry(dir, newAutoRunSuspensionLogEntry(title, details, task.AutoRun.WakeCondition, fallback, task.AutoRun.Generation))
+			task.SelfDriving.StatusReason = details
+			task.SelfDriving.WakeConditionFallback = fallback
+			title = "Self-Driving suspended"
+			return prependLogEntry(dir, newSelfDrivingSuspensionLogEntry(title, details, task.SelfDriving.WakeCondition, fallback, task.SelfDriving.Generation))
 		case "cancel":
-			task.AutoRun.State = autoRunStateCancelled
-			task.AutoRun.SuspendedAt = ""
+			task.SelfDriving.State = selfDrivingStateCancelled
+			task.SelfDriving.SuspendedAt = ""
 			if details == "" {
-				details = "AutoRun cancelled by user"
+				details = "Self-Driving cancelled by user"
 			}
-			task.AutoRun.StatusReason = details
-			title = "Auto Run cancelled"
+			task.SelfDriving.StatusReason = details
+			title = "Self-Driving cancelled"
 		}
-		return prependLogEntry(dir, newAutoRunLogEntry(title, details, task.AutoRun.Generation))
+		return prependLogEntry(dir, newSelfDrivingLogEntry(title, details, task.SelfDriving.Generation))
 	})
 }
 
-func updateAutoRun(taskID string, update func(root, dir string, task *Task) error) error {
+func updateSelfDriving(taskID string, update func(root, dir string, task *Task) error) error {
 	root, err := findWorkspaceRoot()
 	if err != nil {
 		return err
@@ -375,7 +375,7 @@ func updateAutoRun(taskID string, update func(root, dir string, task *Task) erro
 	if err := os.MkdirAll(lockDir, 0755); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(lockDir, "autorun.lock"), os.O_CREATE|os.O_RDWR, 0644)
+	lock, err := os.OpenFile(filepath.Join(lockDir, "self-driving.lock"), os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return err
 	}

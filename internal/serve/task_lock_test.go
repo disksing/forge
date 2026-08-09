@@ -105,25 +105,25 @@ func TestExternalProjectLockBlocksNewAgentRunBeforeForgeOrAgentHubSession(t *tes
 	}
 }
 
-func TestExternalResourceLockBlocksChatAutoRunWithoutAdvancingGeneration(t *testing.T) {
+func TestExternalResourceLockBlocksChatSelfDrivingWithoutAdvancingGeneration(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-	server, workspace, task := newChatAutoRunTestServer(t, hub.URL)
+	server, workspace, task := newChatSelfDrivingTestServer(t, hub.URL)
 	externalSession := createExternalResourceLockForTest(t, workspace.Path, task.ID)
 
-	recorder := chatAutoRunStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+	recorder := chatSelfDrivingStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
 	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), externalResourceLockMessage) {
-		t.Fatalf("expected Chat AutoRun lock conflict, got %d %s", recorder.Code, recorder.Body.String())
+		t.Fatalf("expected Chat Self-Driving lock conflict, got %d %s", recorder.Code, recorder.Body.String())
 	}
 	reloaded := reloadTestTask(t, workspace.Path, task.ID)
-	if reloaded.AutoRun != nil {
-		t.Fatalf("blocked Chat AutoRun advanced the task generation: %#v", reloaded.AutoRun)
+	if reloaded.SelfDriving != nil {
+		t.Fatalf("blocked Chat Self-Driving advanced the task generation: %#v", reloaded.SelfDriving)
 	}
 	fake.mu.Lock()
 	if len(fake.sessions) != 0 {
 		fake.mu.Unlock()
-		t.Fatalf("blocked Chat AutoRun contacted AgentHub: %d sessions", len(fake.sessions))
+		t.Fatalf("blocked Chat Self-Driving contacted AgentHub: %d sessions", len(fake.sessions))
 	}
 	fake.mu.Unlock()
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -133,9 +133,9 @@ func TestExternalResourceLockBlocksChatAutoRunWithoutAdvancingGeneration(t *test
 	if _, err := forgeWorkspace.EndSession(externalSession.ID); err != nil {
 		t.Fatal(err)
 	}
-	restarted := chatAutoRunStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
+	restarted := chatSelfDrivingStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
 	if restarted.Code != http.StatusOK {
-		t.Fatalf("AutoRun did not recover after external lock release: %d %s", restarted.Code, restarted.Body.String())
+		t.Fatalf("Self-Driving did not recover after external lock release: %d %s", restarted.Code, restarted.Body.String())
 	}
 }
 
@@ -162,11 +162,11 @@ func TestExternalResourceLockStopsSchedulerDispatchWithoutStateChange(t *testing
 		t.Fatal(err)
 	}
 	resource, err := forgeWorkspace.ResourceValue("project1.task1")
-	if err != nil || resource.Task == nil || resource.Task.AutoRun == nil {
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload locked scheduler task: %v", err)
 	}
-	if resource.Task.AutoRun.State != "queued" || resource.Task.AutoRun.Generation != 1 {
-		t.Fatalf("external lock changed scheduler AutoRun state: %#v", resource.Task.AutoRun)
+	if resource.Task.SelfDriving.State != "queued" || resource.Task.SelfDriving.Generation != 1 {
+		t.Fatalf("external lock changed scheduler Self-Driving state: %#v", resource.Task.SelfDriving)
 	}
 }
 
@@ -253,12 +253,12 @@ func TestExternalResourceLockComposerProtection(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		`const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and AutoRun are unavailable until the lock is released.";`,
+		`const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and Self-Driving are unavailable until the lock is released.";`,
 		`function selectedResourceHasExternalLock()`,
 		`session.source === "external"`,
 		`function externalResourceLockNotice()`,
 		`function agentComposerActions(options = {})`,
-		`function autoRunBarActions(detail) {`,
+		`function selfDrivingBarActions(detail) {`,
 		`if (externalResourceLocked)`,
 		`id="agentCloseSessionButton"`,
 		`Close session; end the entire AgentHub Session.`,

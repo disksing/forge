@@ -8,17 +8,17 @@ import (
 )
 
 const (
-	autoRunStateQueued        = "queued"
-	autoRunStateRunning       = "running"
-	autoRunStateSuspended     = "suspended"
-	autoRunStatePaused        = "paused"
-	autoRunStateCompleted     = "completed"
-	autoRunStateFailed        = "failed"
-	autoRunStateCancelled     = "cancelled"
-	autoRunSuspensionFallback = "Re-check whether the blocking condition has changed"
+	selfDrivingStateQueued        = "queued"
+	selfDrivingStateRunning       = "running"
+	selfDrivingStateSuspended     = "suspended"
+	selfDrivingStatePaused        = "paused"
+	selfDrivingStateCompleted     = "completed"
+	selfDrivingStateFailed        = "failed"
+	selfDrivingStateCancelled     = "cancelled"
+	selfDrivingSuspensionFallback = "Re-check whether the blocking condition has changed"
 )
 
-type autoRunCommandOptions struct {
+type selfDrivingCommandOptions struct {
 	TaskID                 string
 	AgentName              string
 	AgentNameSet           bool
@@ -51,33 +51,33 @@ type runnableTask struct {
 	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
 }
 
-func runTaskAutoRun(args []string) error {
+func runTaskSelfDriving(args []string) error {
 	if len(args) == 0 {
-		return errors.New(autoRunUsage(""))
+		return errors.New(selfDrivingUsage(""))
 	}
 	command := args[0]
-	opts, err := parseAutoRunCommandArgs(command, args[1:])
+	opts, err := parseSelfDrivingCommandArgs(command, args[1:])
 	if err != nil {
 		return err
 	}
 	switch command {
 	case "queue":
-		return autoRunQueue(opts)
+		return selfDrivingQueue(opts)
 	case "start":
-		return autoRunStart(opts)
+		return selfDrivingStart(opts)
 	case "retry":
-		return autoRunRetry(opts)
+		return selfDrivingRetry(opts)
 	case "resume":
-		return autoRunResume(opts)
+		return selfDrivingResume(opts)
 	case "complete", "suspend", "pause", "fail", "cancel":
-		return autoRunAction(command, opts)
+		return selfDrivingAction(command, opts)
 	default:
-		return fmt.Errorf("unknown task autorun subcommand %q", command)
+		return fmt.Errorf("unknown task self-driving subcommand %q", command)
 	}
 }
 
-func autoRunUsage(command string) string {
-	base := "usage: forge task autorun "
+func selfDrivingUsage(command string) string {
+	base := "usage: forge task self-driving "
 	switch command {
 	case "queue":
 		return base + "queue [--project=<project>] [--task=<task>] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
@@ -98,10 +98,10 @@ func autoRunUsage(command string) string {
 	}
 }
 
-func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptions, error) {
-	var opts autoRunCommandOptions
+func parseSelfDrivingCommandArgs(command string, args []string) (selfDrivingCommandOptions, error) {
+	var opts selfDrivingCommandOptions
 	var project, task string
-	usage := autoRunUsage(command)
+	usage := selfDrivingUsage(command)
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		if !strings.HasPrefix(arg, "--") {
@@ -152,7 +152,7 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 	}
 	var err error
 	if task == "" {
-		opts.TaskID, err = resolveTaskArg(nil, "autorun "+command)
+		opts.TaskID, err = resolveTaskArg(nil, "self-driving "+command)
 	} else {
 		projectID, normalizeErr := normalizeProjectArg(project)
 		if normalizeErr != nil {
@@ -163,8 +163,8 @@ func parseAutoRunCommandArgs(command string, args []string) (autoRunCommandOptio
 	return opts, err
 }
 
-func autoRunQueue(opts autoRunCommandOptions) error {
-	return applicationAutoRunQueue(opts)
+func selfDrivingQueue(opts selfDrivingCommandOptions) error {
+	return applicationSelfDrivingQueue(opts)
 }
 
 func normalizeAgentProfiles(values []string) ([]string, error) {
@@ -190,18 +190,18 @@ func normalizeAgentProfiles(values []string) ([]string, error) {
 	return normalized, nil
 }
 
-func autoRunStart(opts autoRunCommandOptions) error {
-	return applicationAutoRunStart(opts)
+func selfDrivingStart(opts selfDrivingCommandOptions) error {
+	return applicationSelfDrivingStart(opts)
 }
 
-func autoRunRetry(opts autoRunCommandOptions) error {
-	return applicationAutoRunRetry(opts)
+func selfDrivingRetry(opts selfDrivingCommandOptions) error {
+	return applicationSelfDrivingRetry(opts)
 }
 
-func autoRunResume(opts autoRunCommandOptions) error {
-	return applicationAutoRunResume(opts)
+func selfDrivingResume(opts selfDrivingCommandOptions) error {
+	return applicationSelfDrivingResume(opts)
 }
 
-func autoRunAction(action string, opts autoRunCommandOptions) error {
-	return applicationAutoRunAction(action, opts)
+func selfDrivingAction(action string, opts selfDrivingCommandOptions) error {
+	return applicationSelfDrivingAction(action, opts)
 }

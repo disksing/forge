@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// autoRunBarTestExtractHelper is shared by the AutoRun top bar frontend tests.
-const autoRunBarTestExtractHelper = `
+// selfDrivingBarTestExtractHelper is shared by the Self-Driving top bar frontend tests.
+const selfDrivingBarTestExtractHelper = `
 const fs = require("node:fs");
 const source = fs.readFileSync(process.argv[1], "utf8");
 function extract(name) {
@@ -37,18 +37,18 @@ function icon(name) { return '<svg data-icon="' + name + '"></svg>'; }
 function assert(condition, message) { if (!condition) throw new Error(message); }
 `
 
-func TestAutoRunTopBarStateMatrix(t *testing.T) {
+func TestSelfDrivingTopBarStateMatrix(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is required for the AutoRun top bar state matrix test")
+		t.Skip("node is required for the Self-Driving top bar state matrix test")
 	}
-	script := autoRunBarTestExtractHelper + `
+	script := selfDrivingBarTestExtractHelper + `
 const task = { id: "project1.task1", type: "task", title: "Task One" };
 const state = {
   selectedId: task.id,
   details: { [task.id]: task },
   externalLock: false,
-  agent: { runs: [], autoRunStarting: false, autoRunCancelling: false, autoRunExpanded: false },
+  agent: { runs: [], selfDrivingStarting: false, selfDrivingCancelling: false, selfDrivingExpanded: false },
 };
 function findResource(id) { return id === task.id ? task : id === "project1" ? { id, type: "project" } : null; }
 function selectedResourceHasExternalLock() { return state.externalLock; }
@@ -56,25 +56,25 @@ function isLiveAgentRun(run) {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status);
 }
 function currentAgentRun() { return state.agent.runs.find((run) => run.id === state.agent.activeRunId) || null; }
-eval(extract("autoRunStatusReason"));
-eval(extract("autoRunTopBar"));
-eval(extract("autoRunBarSummary"));
-eval(extract("autoRunBarDetails"));
-eval(extract("autoRunPresentation"));
-eval(extract("autoRunActionIcon"));
-eval(extract("autoRunBarActions"));
+eval(extract("selfDrivingStatusReason"));
+eval(extract("selfDrivingTopBar"));
+eval(extract("selfDrivingBarSummary"));
+eval(extract("selfDrivingBarDetails"));
+eval(extract("selfDrivingPresentation"));
+eval(extract("selfDrivingActionIcon"));
+eval(extract("selfDrivingBarActions"));
 
 function render(stateName, runs = [], externalLock = false) {
   state.externalLock = externalLock;
   state.agent.runs = runs;
-  state.agent.autoRunStarting = false;
-  state.agent.autoRunCancelling = false;
-  state.agent.autoRunExpanded = false;
+  state.agent.selfDrivingStarting = false;
+  state.agent.selfDrivingCancelling = false;
+  state.agent.selfDrivingExpanded = false;
   state.details[task.id] = {
     ...task,
-    ...(stateName === null ? {} : { autoRun: { generation: 7, state: stateName } }),
+    ...(stateName === null ? {} : { selfDriving: { generation: 7, state: stateName } }),
   };
-  return autoRunTopBar(state.details[task.id]);
+  return selfDrivingTopBar(state.details[task.id]);
 }
 function assertLabeled(html, message) {
   assert(html.includes("<span>"), message + " must keep a visible label, not icon-only");
@@ -83,64 +83,64 @@ function assertLabeled(html, message) {
 }
 function count(html, needle) { return html.split(needle).length - 1; }
 
-// Tasks without AutoRun data always get the compact not-started bar.
+// Tasks without Self-Driving data always get the compact not-started bar.
 let html = render(null);
-assert(html.includes("autorun-bar autorun-bar-none"), "no AutoRun must render the not-started bar");
-assert(html.includes(">Not started</span>"), "no AutoRun must label the Not started chip");
-assert(html.includes("No AutoRun generation yet."), "no AutoRun must explain itself in the summary");
-assert(html.includes('data-autorun-action="start"'), "no AutoRun must offer Start AutoRun");
-assert(html.includes("<span>Start AutoRun</span>"), "no AutoRun Start must be labeled");
-assert(!html.includes("autorun-bar-details"), "no AutoRun must not render a details region");
-assert(!html.includes("data-autorun-toggle"), "no AutoRun must not render the details toggle");
-assert(!html.includes('id="autoRunCancelButton"'), "no AutoRun must not offer Cancel");
-assertLabeled(html, "Start AutoRun");
+assert(html.includes("self-driving-bar self-driving-bar-none"), "no Self-Driving must render the not-started bar");
+assert(html.includes(">Not started</span>"), "no Self-Driving must label the Not started chip");
+assert(html.includes("No Self-Driving generation yet."), "no Self-Driving must explain itself in the summary");
+assert(html.includes('data-self-driving-action="start"'), "no Self-Driving must offer Start Self-Driving");
+assert(html.includes("<span>Start Self-Driving</span>"), "no Self-Driving Start must be labeled");
+assert(!html.includes("self-driving-bar-details"), "no Self-Driving must not render a details region");
+assert(!html.includes("data-self-driving-toggle"), "no Self-Driving must not render the details toggle");
+assert(!html.includes('id="selfDrivingCancelButton"'), "no Self-Driving must not offer Cancel");
+assertLabeled(html, "Start Self-Driving");
 
 // Projects never render the bar.
 state.selectedId = "project1";
-assert(autoRunTopBar({ id: "project1", type: "project" }) === "", "projects must not render the AutoRun bar");
+assert(selfDrivingTopBar({ id: "project1", type: "project" }) === "", "projects must not render the Self-Driving bar");
 state.selectedId = task.id;
 
 for (const stateName of ["completed", "failed", "cancelled"]) {
   html = render(stateName);
-  assert(html.includes("<span>Start New AutoRun</span>"), stateName + " must offer Start New AutoRun");
-  assert(!html.includes('id="autoRunCancelButton"'), stateName + " must not offer Cancel");
-  assert(html.includes("data-autorun-toggle"), stateName + " must offer the details toggle");
-  assert(html.includes("autorun-bar-details"), stateName + " must render its details region");
-  assert(html.includes('id="autoRunBarDetails" hidden'), stateName + " must collapse details by default");
+  assert(html.includes("<span>Start New Self-Driving</span>"), stateName + " must offer Start New Self-Driving");
+  assert(!html.includes('id="selfDrivingCancelButton"'), stateName + " must not offer Cancel");
+  assert(html.includes("data-self-driving-toggle"), stateName + " must offer the details toggle");
+  assert(html.includes("self-driving-bar-details"), stateName + " must render its details region");
+  assert(html.includes('id="selfDrivingBarDetails" hidden'), stateName + " must collapse details by default");
   assert(html.includes('aria-expanded="false"'), stateName + " toggle must report the collapsed state");
   assert(html.includes("Generation 7"), stateName + " must keep the generation in the summary");
-  assertLabeled(html, stateName + " Start New AutoRun");
+  assertLabeled(html, stateName + " Start New Self-Driving");
 }
 
 for (const stateName of ["queued", "running"]) {
   html = render(stateName);
-  assert(!html.includes('id="autoRunStartButton"'), stateName + " must not offer a duplicate start action");
-  assert(html.includes('id="autoRunCancelButton"'), stateName + " must offer Cancel AutoRun");
-  assert(html.includes('aria-label="Cancel AutoRun"'), stateName + " Cancel needs its accessible name");
+  assert(!html.includes('id="selfDrivingStartButton"'), stateName + " must not offer a duplicate start action");
+  assert(html.includes('id="selfDrivingCancelButton"'), stateName + " must offer Cancel Self-Driving");
+  assert(html.includes('aria-label="Cancel Self-Driving"'), stateName + " Cancel needs its accessible name");
   assert(html.includes('fill="#b91c1c"'), stateName + " Cancel must use the red workflow family badge");
-  assertLabeled(html, stateName + " Cancel AutoRun");
+  assertLabeled(html, stateName + " Cancel Self-Driving");
 }
 
 html = render("suspended");
-assert(html.indexOf('id="autoRunStartButton"') < html.indexOf('id="autoRunCancelButton"'), "suspended actions must offer Resume before Cancel");
-assert(html.includes('title="Resume AutoRun now"'), "suspended must offer Resume AutoRun now");
-assert(html.includes('aria-label="Cancel AutoRun"'), "suspended must keep Cancel alongside Resume");
-assert(html.includes("autorun-bar-suspended"), "suspended must use its tone class");
+assert(html.indexOf('id="selfDrivingStartButton"') < html.indexOf('id="selfDrivingCancelButton"'), "suspended actions must offer Resume before Cancel");
+assert(html.includes('title="Resume Self-Driving now"'), "suspended must offer Resume Self-Driving now");
+assert(html.includes('aria-label="Cancel Self-Driving"'), "suspended must keep Cancel alongside Resume");
+assert(html.includes("self-driving-bar-suspended"), "suspended must use its tone class");
 
 html = render("paused");
-assert(html.includes('title="Resume AutoRun"'), "paused must offer Resume AutoRun");
-assert(html.includes('id="autoRunCancelButton"'), "paused must keep Cancel alongside Resume");
+assert(html.includes('title="Resume Self-Driving"'), "paused must offer Resume Self-Driving");
+assert(html.includes('id="selfDrivingCancelButton"'), "paused must keep Cancel alongside Resume");
 
 html = render("mystery");
-assert(html.includes("autorun-bar-unknown"), "unknown states must use the unknown tone class");
+assert(html.includes("self-driving-bar-unknown"), "unknown states must use the unknown tone class");
 assert(html.includes(">mystery</span>"), "unknown states must label the raw state");
-assert(!html.includes('id="autoRunStartButton"') && !html.includes('id="autoRunCancelButton"'), "unknown states must not expose actions");
-assert(html.includes("data-autorun-toggle"), "unknown states must still allow inspecting details");
+assert(!html.includes('id="selfDrivingStartButton"') && !html.includes('id="selfDrivingCancelButton"'), "unknown states must not expose actions");
+assert(html.includes("data-self-driving-toggle"), "unknown states must still allow inspecting details");
 
 html = render("suspended", [], true);
-assert(!html.includes('id="autoRunStartButton"') && !html.includes('id="autoRunCancelButton"'), "external locks must hide every AutoRun action");
+assert(!html.includes('id="selfDrivingStartButton"') && !html.includes('id="selfDrivingCancelButton"'), "external locks must hide every Self-Driving action");
 assert(html.includes("Locked by an external session"), "external locks must explain the missing actions");
-assert(html.includes("autorun-bar-suspended"), "external locks must keep the state visible");
+assert(html.includes("self-driving-bar-suspended"), "external locks must keep the state visible");
 
 html = render(null, [{ resourceId: task.id, status: "idle", schedulerTurn: false, agentHubSessionId: "session-1" }]);
 assert(!html.includes(" disabled"), "an idle live Session must keep Start enabled");
@@ -148,92 +148,92 @@ assert(html.includes("reuse the current idle session"), "an idle live Session mu
 
 for (const status of ["starting", "running", "waiting_approval", "stopping", "recovering"]) {
   html = render(null, [{ resourceId: task.id, status, schedulerTurn: false }]);
-  assert(html.includes('id="autoRunStartButton"') && html.includes(" disabled"), status + " must disable Start");
+  assert(html.includes('id="selfDrivingStartButton"') && html.includes(" disabled"), status + " must disable Start");
   assert(html.includes((status === "waiting_approval"
-    ? "Resolve the pending approval before starting AutoRun in this session."
-    : "The current session is busy; wait until it is idle to start AutoRun.")), status + " must explain its disabled reason");
+    ? "Resolve the pending approval before starting Self-Driving in this session."
+    : "The current session is busy; wait until it is idle to start Self-Driving.")), status + " must explain its disabled reason");
 }
 html = render(null, [{ resourceId: "project1.task2", status: "running", schedulerTurn: false }]);
 assert(!html.includes(" disabled"), "a busy Session for another task must not disable this task");
 
 // Pending start/cancel feedback disables actions and exposes aria-busy.
 render(null);
-state.agent.autoRunStarting = true;
-html = autoRunTopBar(state.details[task.id]);
-assert(html.includes('id="autoRunStartButton"') && html.includes(" disabled") && html.includes('aria-busy="true"'), "starting must disable Start while pending");
+state.agent.selfDrivingStarting = true;
+html = selfDrivingTopBar(state.details[task.id]);
+assert(html.includes('id="selfDrivingStartButton"') && html.includes(" disabled") && html.includes('aria-busy="true"'), "starting must disable Start while pending");
 assert(html.includes('data-icon="loader-circle"'), "starting must use the loading icon");
-assert(html.includes("<span>Starting AutoRun…</span>"), "starting must label the pending state");
+assert(html.includes("<span>Starting Self-Driving…</span>"), "starting must label the pending state");
 
-state.agent.autoRunStarting = false;
+state.agent.selfDrivingStarting = false;
 render("queued");
-state.agent.autoRunCancelling = true;
-html = autoRunTopBar(state.details[task.id]);
-assert(html.includes('id="autoRunCancelButton"') && html.includes(" disabled") && html.includes('aria-busy="true"'), "cancellation must disable Cancel while pending");
+state.agent.selfDrivingCancelling = true;
+html = selfDrivingTopBar(state.details[task.id]);
+assert(html.includes('id="selfDrivingCancelButton"') && html.includes(" disabled") && html.includes('aria-busy="true"'), "cancellation must disable Cancel while pending");
 render("paused");
-state.agent.autoRunCancelling = true;
-html = autoRunTopBar(state.details[task.id]);
-assert(html.includes('id="autoRunStartButton"') && html.includes('disabled') && html.includes('aria-busy="true"'), "cancellation must disable Resume while pending");
+state.agent.selfDrivingCancelling = true;
+html = selfDrivingTopBar(state.details[task.id]);
+assert(html.includes('id="selfDrivingStartButton"') && html.includes('disabled') && html.includes('aria-busy="true"'), "cancellation must disable Resume while pending");
 
 // Expanded details expose the full context and report aria-expanded.
-state.agent.autoRunCancelling = false;
-state.agent.autoRunExpanded = true;
-state.details[task.id] = { ...task, autoRun: { generation: 7, state: "running" }, logs: [] };
-html = autoRunTopBar(state.details[task.id]);
-assert(!html.includes('id="autoRunBarDetails" hidden'), "expanded bars must show the details region");
+state.agent.selfDrivingCancelling = false;
+state.agent.selfDrivingExpanded = true;
+state.details[task.id] = { ...task, selfDriving: { generation: 7, state: "running" }, logs: [] };
+html = selfDrivingTopBar(state.details[task.id]);
+assert(!html.includes('id="selfDrivingBarDetails" hidden'), "expanded bars must show the details region");
 assert(html.includes('aria-expanded="true"'), "expanded bars must report the toggle state");
-assert(html.includes('aria-controls="autoRunBarDetails"'), "the toggle must point at the details region");
+assert(html.includes('aria-controls="selfDrivingBarDetails"'), "the toggle must point at the details region");
 assert(html.includes("Generation 7"), "expanded details must keep the generation");
 assert(html.includes("Workspace default"), "expanded details must note the default Agent preference");
 
 // The bar renders exactly one control entry per state.
 html = render("suspended");
-assert(count(html, 'id="autoRunStartButton"') === 1 && count(html, 'id="autoRunCancelButton"') === 1, "suspended must render exactly one Resume and one Cancel");
-assert(count(html, '<section class="autorun-bar ') === 1, "a single bar section must wrap the controls");
+assert(count(html, 'id="selfDrivingStartButton"') === 1 && count(html, 'id="selfDrivingCancelButton"') === 1, "suspended must render exactly one Resume and one Cancel");
+assert(count(html, '<section class="self-driving-bar ') === 1, "a single bar section must wrap the controls");
 `
 	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
-		t.Fatalf("AutoRun top bar state matrix test failed: %v\n%s", err, output)
+		t.Fatalf("Self-Driving top bar state matrix test failed: %v\n%s", err, output)
 	}
 }
 
-func TestAutoRunTopBarSummaryAndDetailsContent(t *testing.T) {
+func TestSelfDrivingTopBarSummaryAndDetailsContent(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
-		t.Skip("node is required for the AutoRun top bar content test")
+		t.Skip("node is required for the Self-Driving top bar content test")
 	}
-	script := autoRunBarTestExtractHelper + `
+	script := selfDrivingBarTestExtractHelper + `
 const task = { id: "project1.task1", type: "task", title: "Task One" };
 const state = {
   selectedId: task.id,
   details: {},
-  agent: { runs: [], autoRunStarting: false, autoRunCancelling: false, autoRunExpanded: false, activeRunId: "" },
+  agent: { runs: [], selfDrivingStarting: false, selfDrivingCancelling: false, selfDrivingExpanded: false, activeRunId: "" },
 };
 function findResource(id) { return id === task.id ? task : null; }
 function selectedResourceHasExternalLock() { return false; }
 function isLiveAgentRun(run) { return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(run?.status); }
 function currentAgentRun() { return state.agent.runs.find((run) => run.id === state.agent.activeRunId) || null; }
-eval(extract("autoRunStatusReason"));
-eval(extract("autoRunTopBar"));
-eval(extract("autoRunBarSummary"));
-eval(extract("autoRunBarDetails"));
-eval(extract("autoRunPresentation"));
-eval(extract("autoRunActionIcon"));
-eval(extract("autoRunBarActions"));
+eval(extract("selfDrivingStatusReason"));
+eval(extract("selfDrivingTopBar"));
+eval(extract("selfDrivingBarSummary"));
+eval(extract("selfDrivingBarDetails"));
+eval(extract("selfDrivingPresentation"));
+eval(extract("selfDrivingActionIcon"));
+eval(extract("selfDrivingBarActions"));
 
 const logs = [
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run failed", details: "failed now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run paused", details: "paused now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run retry", details: "retry now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run suspended", details: "wait for review" },
-  { autoRun: true, autoRunGeneration: 6, title: "Auto Run failed", details: "old generation failure" },
+  { selfDriving: true, selfDrivingGeneration: 7, title: "Self-Driving failed", details: "failed now" },
+  { selfDriving: true, selfDrivingGeneration: 7, title: "Self-Driving paused", details: "paused now" },
+  { selfDriving: true, selfDrivingGeneration: 7, title: "Self-Driving retry", details: "retry now" },
+  { selfDriving: true, selfDrivingGeneration: 7, title: "Self-Driving suspended", details: "wait for review" },
+  { selfDriving: true, selfDrivingGeneration: 6, title: "Self-Driving failed", details: "old generation failure" },
 ];
 function render(stateName, generation = 7, extra = {}) {
   state.details[task.id] = {
     ...task,
-    autoRun: { generation, state: stateName, suspensionSummary: "wait for review", ...extra },
+    selfDriving: { generation, state: stateName, suspensionSummary: "wait for review", ...extra },
     logs,
   };
-  return autoRunTopBar(state.details[task.id]);
+  return selfDrivingTopBar(state.details[task.id]);
 }
 const suspended = render("suspended");
 assert(suspended.includes("Suspend reason: wait for review"), "suspended state should show its current summary");
@@ -279,11 +279,11 @@ state.agent.activeRunId = "";
 `
 	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
-		t.Fatalf("AutoRun top bar content test failed: %v\n%s", err, output)
+		t.Fatalf("Self-Driving top bar content test failed: %v\n%s", err, output)
 	}
 }
 
-func TestAutoRunTopBarIsTheSingleControlEntry(t *testing.T) {
+func TestSelfDrivingTopBarIsTheSingleControlEntry(t *testing.T) {
 	appData, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
@@ -292,44 +292,44 @@ func TestAutoRunTopBarIsTheSingleControlEntry(t *testing.T) {
 
 	// The bar markup lives in exactly one renderer mounted in its own container.
 	for _, want := range []string{
-		`function autoRunTopBar(detail) {`,
-		`function autoRunBarActions(detail) {`,
-		`barWrap.innerHTML = autoRunTopBar(detail);`,
-		`$("autoRunBarWrap")`,
-		`id="autoRunStartButton"`,
-		`id="autoRunCancelButton"`,
-		`data-autorun-action="`,
-		`const autoRunButton = $("autoRunStartButton");`,
-		`const autoRunCancelButton = $("autoRunCancelButton");`,
-		`document.querySelectorAll("[data-autorun-toggle]").forEach((toggle) => {`,
-		`openAutoRunConfigDialog();`,
-		`startChatAutoRun().catch((err) => toast(err.message));`,
-		`cancelSelectedAutoRun().catch((err) => toast(err.message));`,
+		`function selfDrivingTopBar(detail) {`,
+		`function selfDrivingBarActions(detail) {`,
+		`barWrap.innerHTML = selfDrivingTopBar(detail);`,
+		`$("selfDrivingBarWrap")`,
+		`id="selfDrivingStartButton"`,
+		`id="selfDrivingCancelButton"`,
+		`data-self-driving-action="`,
+		`const selfDrivingButton = $("selfDrivingStartButton");`,
+		`const selfDrivingCancelButton = $("selfDrivingCancelButton");`,
+		`document.querySelectorAll("[data-self-driving-toggle]").forEach((toggle) => {`,
+		`openSelfDrivingConfigDialog();`,
+		`startChatSelfDriving().catch((err) => toast(err.message));`,
+		`cancelSelectedSelfDriving().catch((err) => toast(err.message));`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("AutoRun top bar wiring is missing %q", want)
+			t.Fatalf("Self-Driving top bar wiring is missing %q", want)
 		}
 	}
 
 	// Removed composer/standalone entry points must not come back.
 	for _, removed := range []string{
-		`autoRunComposerAction`,
-		`autoRunComposerKey`,
+		`selfDrivingComposerAction`,
+		`selfDrivingComposerKey`,
 		`agentComposerToolbarActions`,
-		`includeAutoRun`,
-		`tty-autorun-action`,
-		`tty-autorun-labeled-action`,
-		`autorun-collapsible`,
-		`autorun-status-heading`,
-		`function autoRunStatus(`,
+		`includeSelfDriving`,
+		`tty-self-driving-action`,
+		`tty-self-driving-labeled-action`,
+		`self-driving-collapsible`,
+		`self-driving-status-heading`,
+		`function selfDrivingStatus(`,
 	} {
 		if strings.Contains(app, removed) {
-			t.Fatalf("removed AutoRun composer entry point is still present: %q", removed)
+			t.Fatalf("removed Self-Driving composer entry point is still present: %q", removed)
 		}
 	}
 
 	// Neither the live composer nor the standalone action row may render
-	// AutoRun controls anymore.
+	// Self-Driving controls anymore.
 	for _, fn := range []string{"renderTTYComposer", "agentComposerActions"} {
 		start := strings.Index(app, "function "+fn+"(")
 		if start < 0 {
@@ -354,23 +354,23 @@ func TestAutoRunTopBarIsTheSingleControlEntry(t *testing.T) {
 			t.Fatalf("unterminated %s", fn)
 		}
 		body := app[start:end]
-		for _, forbidden := range []string{`autoRunStartButton`, `autoRunCancelButton`, `autoRunBarActions`, `data-autorun-action`} {
+		for _, forbidden := range []string{`selfDrivingStartButton`, `selfDrivingCancelButton`, `selfDrivingBarActions`, `data-self-driving-action`} {
 			if strings.Contains(body, forbidden) {
-				t.Fatalf("%s still renders the AutoRun control %q", fn, forbidden)
+				t.Fatalf("%s still renders the Self-Driving control %q", fn, forbidden)
 			}
 		}
 	}
 
 	// Pending start/cancel transitions must re-render the bar, not only the
 	// composer, so its disabled/aria-busy state stays accurate.
-	startFn := strings.Index(app, `async function startChatAutoRun(options = {}) {`)
-	endFn := strings.Index(app[startFn:], `function autoRunDialogInitialState()`)
+	startFn := strings.Index(app, `async function startChatSelfDriving(options = {}) {`)
+	endFn := strings.Index(app[startFn:], `function selfDrivingDialogInitialState()`)
 	if startFn < 0 || endFn < 0 {
-		t.Fatal("startChatAutoRun boundary is missing")
+		t.Fatal("startChatSelfDriving boundary is missing")
 	}
 	startBody := app[startFn : startFn+endFn]
 	if strings.Count(startBody, "renderAgent();") < 2 {
-		t.Fatal("startChatAutoRun must re-render the AutoRun bar when the pending state toggles")
+		t.Fatal("startChatSelfDriving must re-render the Self-Driving bar when the pending state toggles")
 	}
 
 	// The container is mounted above the session switcher in the chat panel.
@@ -379,68 +379,68 @@ func TestAutoRunTopBarIsTheSingleControlEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	bar := strings.Index(index, `id="autoRunBarWrap"`)
+	bar := strings.Index(index, `id="selfDrivingBarWrap"`)
 	sessions := strings.Index(index, `id="agentSessionsWrap"`)
 	composer := strings.Index(index, `id="ttyComposer"`)
 	if bar < 0 || sessions < 0 || composer < 0 || bar > sessions || sessions > composer {
-		t.Fatal("the AutoRun bar container must sit above the session switcher and the composer")
+		t.Fatal("the Self-Driving bar container must sit above the session switcher and the composer")
 	}
 }
 
-func TestAutoRunTopBarIsResponsiveAndAccessible(t *testing.T) {
+func TestSelfDrivingTopBarIsResponsiveAndAccessible(t *testing.T) {
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
 		t.Fatal(err)
 	}
 	styles := string(stylesData)
 	for _, want := range []string{
-		`.autorun-bar-wrap`,
-		`.autorun-bar-wrap:empty`,
-		`.autorun-bar {`,
-		`.autorun-bar-none`,
-		`.autorun-bar-queued`,
-		`.autorun-bar-running`,
-		`.autorun-bar-suspended`,
-		`.autorun-bar-paused`,
-		`.autorun-bar-completed`,
-		`.autorun-bar-failed`,
-		`.autorun-bar-cancelled`,
-		`.autorun-bar-row`,
-		`.autorun-bar-summary`,
+		`.self-driving-bar-wrap`,
+		`.self-driving-bar-wrap:empty`,
+		`.self-driving-bar {`,
+		`.self-driving-bar-none`,
+		`.self-driving-bar-queued`,
+		`.self-driving-bar-running`,
+		`.self-driving-bar-suspended`,
+		`.self-driving-bar-paused`,
+		`.self-driving-bar-completed`,
+		`.self-driving-bar-failed`,
+		`.self-driving-bar-cancelled`,
+		`.self-driving-bar-row`,
+		`.self-driving-bar-summary`,
 		`text-overflow: ellipsis;`,
 		`white-space: nowrap;`,
-		`.autorun-bar-button`,
-		`.autorun-bar-start-action`,
-		`.autorun-bar-resume-action`,
-		`.autorun-bar-cancel-action`,
-		`.autorun-bar-button:disabled`,
-		`.autorun-bar-button:focus-visible`,
-		`.autorun-bar-toggle`,
-		`.autorun-bar-details`,
-		`.autorun-bar-lock`,
-		`animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;`,
+		`.self-driving-bar-button`,
+		`.self-driving-bar-start-action`,
+		`.self-driving-bar-resume-action`,
+		`.self-driving-bar-cancel-action`,
+		`.self-driving-bar-button:disabled`,
+		`.self-driving-bar-button:focus-visible`,
+		`.self-driving-bar-toggle`,
+		`.self-driving-bar-details`,
+		`.self-driving-bar-lock`,
+		`animation: self-driving-running-border 3.6s linear infinite, self-driving-running-pulse 2.6s ease-in-out infinite;`,
 		`@media (prefers-reduced-motion: reduce)`,
-		`.autorun-bar-running .autorun-state-icon`,
+		`.self-driving-bar-running .self-driving-state-icon`,
 		`animation: none;`,
 		`@media (forced-colors: active)`,
 		`@media (max-width: 420px)`,
 		`flex-wrap: wrap;`,
 		`overflow-wrap: anywhere;`,
-		`--autorun-surface: color-mix(in srgb, var(--autorun-tone) 7%, var(--panel));`,
-		`background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));`,
+		`--self-driving-surface: color-mix(in srgb, var(--self-driving-tone) 7%, var(--panel));`,
+		`background: color-mix(in srgb, var(--self-driving-tone) 12%, var(--bg));`,
 	} {
 		if !strings.Contains(styles, want) {
-			t.Fatalf("responsive AutoRun bar styles are missing %q", want)
+			t.Fatalf("responsive Self-Driving bar styles are missing %q", want)
 		}
 	}
 	for _, removed := range []string{
-		`.autorun-status`,
-		`.tty-autorun-action`,
-		`.tty-autorun-labeled-action`,
-		`.autorun-collapsible`,
+		`.self-driving-status`,
+		`.tty-self-driving-action`,
+		`.tty-self-driving-labeled-action`,
+		`.self-driving-collapsible`,
 	} {
 		if strings.Contains(styles, removed) {
-			t.Fatalf("removed AutoRun card styles are still present: %q", removed)
+			t.Fatalf("removed Self-Driving card styles are still present: %q", removed)
 		}
 	}
 
@@ -451,11 +451,11 @@ func TestAutoRunTopBarIsResponsiveAndAccessible(t *testing.T) {
 	app := string(appData)
 	// The config dialog keeps its start/resume mode mapping.
 	for _, want := range []string{
-		`const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state)`,
+		`const mode = ["completed", "failed", "cancelled"].includes(selfDriving?.state)`,
 		`resumable && !reuseRun ? "resume" : "configure";`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("AutoRun dialog mode mapping is missing %q", want)
+			t.Fatalf("Self-Driving dialog mode mapping is missing %q", want)
 		}
 	}
 	// State is never color-only: the chip always carries an icon and text.
@@ -468,13 +468,13 @@ func TestAutoRunTopBarIsResponsiveAndAccessible(t *testing.T) {
 		`completed: { label: "Completed", icon: "circle-check" }`,
 		`failed: { label: "Failed", icon: "circle-x" }`,
 		`cancelled: { label: "Cancelled", icon: "ban" }`,
-		`class="autorun-state autorun-state-${presentation.key}"`,
-		`<i data-lucide="${presentation.icon}" class="autorun-state-icon" aria-hidden="true"></i>`,
-		`role="status" aria-label="AutoRun: ${escapeHTML(presentation.label)}"`,
+		`class="self-driving-state self-driving-state-${presentation.key}"`,
+		`<i data-lucide="${presentation.icon}" class="self-driving-state-icon" aria-hidden="true"></i>`,
+		`role="status" aria-label="Self-Driving: ${escapeHTML(presentation.label)}"`,
 		`title="${escapeHTML(summary)}"`,
 	} {
 		if !strings.Contains(app, want) {
-			t.Fatalf("accessible AutoRun bar markup is missing %q", want)
+			t.Fatalf("accessible Self-Driving bar markup is missing %q", want)
 		}
 	}
 }

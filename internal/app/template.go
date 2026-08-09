@@ -262,50 +262,11 @@ func parseTaskTemplate(name, path, content string) TaskTemplate {
 	return template
 }
 
-func parseLegacyTemplate(template *TaskTemplate, root *yaml.Node) {
-	template.Legacy = true
-	template.SchemaVersion = 1
-	allowed := map[string]bool{"title": true, "autorun": true, "agent": true, "agent-name": true, "agent-profiles": true, "prompt": true, "completion-criteria": true}
-	validateKnownKeys(root, allowed, "", &template.Errors)
-	_, titleNode := mappingValue(root, "title")
-	template.Title = decodeString(titleNode, "title", true, &template.Errors)
-	template.TaskTitle = template.Title
-	_, valueNode := mappingValue(root, "autorun")
-	template.AutoRun = decodeBool(valueNode, "autorun", &template.Errors)
-	_, valueNode = mappingValue(root, "agent")
-	if valueNode == nil {
-		_, valueNode = mappingValue(root, "agent-name")
-	}
-	template.AgentName = decodeString(valueNode, "agent", false, &template.Errors)
-	_, valueNode = mappingValue(root, "prompt")
-	template.Prompt = decodeString(valueNode, "prompt", false, &template.Errors)
-	_, valueNode = mappingValue(root, "completion-criteria")
-	template.CompletionCriteria = decodeString(valueNode, "completion-criteria", false, &template.Errors)
-	_, valueNode = mappingValue(root, "agent-profiles")
-	if valueNode != nil {
-		if valueNode.Kind != yaml.SequenceNode {
-			template.Errors = append(template.Errors, templateProblem("invalid_property_type", "agent-profiles must be an array", "agent-profiles", valueNode))
-		} else {
-			for index, profileNode := range valueNode.Content {
-				template.PreferredAgentProfiles = append(template.PreferredAgentProfiles, decodeString(profileNode, fmt.Sprintf("agent-profiles[%d]", index), true, &template.Errors))
-			}
-		}
-	}
-	template.Warnings = append(template.Warnings, templateWarning("legacy_schema", "legacy V1 template; migrate to schema-version: 2", "schema-version", nil))
-	for _, key := range []string{"autorun", "agent", "agent-name", "agent-profiles", "prompt", "completion-criteria"} {
-		keyNode, valueNode := mappingValue(root, key)
-		if valueNode != nil {
-			template.Warnings = append(template.Warnings, templateWarning("legacy_run_property_ignored", fmt.Sprintf("legacy execution property %q is ignored", key), key, keyNode))
-		}
-	}
-}
-
 func parseV2Template(template *TaskTemplate, root, versionNode *yaml.Node) {
 	allowed := map[string]bool{"schema-version": true, "title": true, "description": true, "task-title": true, "fields": true}
-	forbidden := map[string]bool{"autorun": true, "agent": true, "agent-name": true, "agent-profiles": true, "prompt": true, "completion-criteria": true}
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key := root.Content[i]
-		if forbidden[key.Value] {
+		if legacyTemplateExecutionProperties[key.Value] {
 			template.Errors = append(template.Errors, templateProblem("execution_property_forbidden", fmt.Sprintf("execution property %q is not allowed in content templates", key.Value), key.Value, key))
 		} else if !allowed[key.Value] {
 			template.Errors = append(template.Errors, templateProblem("unknown_property", fmt.Sprintf("unknown property %q", key.Value), key.Value, key))

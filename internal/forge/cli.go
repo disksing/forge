@@ -11,7 +11,7 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json] [--autorun] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
+	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json] [--self-driving] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--json]]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -198,7 +198,7 @@ func runTask(args []string) error {
 				return err
 			}
 		}
-		input := appCreateTaskInput(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.AutoRun, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
+		input := appCreateTaskInput(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.SelfDriving, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
 		input.TemplateName, input.TemplateFields = options.TemplateName, fields
 		if options.DryRun {
 			preview, err := workspace.PreviewTask(input)
@@ -230,8 +230,8 @@ func runTask(args []string) error {
 		return runTaskRepo(args[1:])
 	case "log":
 		return runResourceLog("task", args[1:])
-	case "autorun":
-		return runTaskAutoRun(args[1:])
+	case "self-driving":
+		return runTaskSelfDriving(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -293,7 +293,7 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--autorun] ...
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--self-driving] ...
   forge task list [--project=<project>] [--all] [--runnable [--json]]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -302,7 +302,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+  forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
@@ -357,7 +357,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--autorun] ...
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--self-driving] ...
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -369,7 +369,7 @@ Commands:
 
   forge template list|show|validate|render|create|migrate ...
     Manage project-local schema V2 content templates. Templates declare typed
-    fields and deterministic title/Markdown rendering but never AutoRun or
+    fields and deterministic title/Markdown rendering but never Self-Driving or
     agent settings. list and validate include invalid templates. show defaults
     to metadata, field requirements, diagnostics, and the complete Markdown
     body; use --raw for the original file, --json for structured template data,
@@ -424,8 +424,8 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge task autorun queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
-    Run or report an AutoRun generation. suspend is only for a task that
+  forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+    Run or report a Self-Driving generation. suspend is only for a task that
     cannot progress and has no meaningful remaining work except polling one
     specific observable external condition; --summary records progress and
     blocking context, while --wake-condition records the verifiable signal.
@@ -483,7 +483,7 @@ Commands:
     when the command exits.
 
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
-    Start the Forge web service: Workspace API, AutoRun scheduler, AgentHub
+    Start the Forge web service: Workspace API, Self-Driving scheduler, AgentHub
     session orchestration and recovery, and the static web UI. Workspace
     operations use the in-process application API; FORGE_AGENTHUB_URL
     overrides the persisted AgentHub endpoint; FORGE_GUI_CONFIG selects the
@@ -531,7 +531,7 @@ type taskCreateOptions struct {
 	TaskMarkdown           string
 	TaskMarkdownSet        bool
 	Slug                   string
-	AutoRun                bool
+	SelfDriving            bool
 	AgentName              string
 	PreferredAgentProfiles []string
 	Prompt                 string
@@ -703,8 +703,8 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			i++
 			continue
 		}
-		if arg == "--autorun" {
-			options.AutoRun = true
+		if arg == "--self-driving" {
+			options.SelfDriving = true
 			continue
 		}
 		if strings.HasPrefix(arg, "--agent=") {

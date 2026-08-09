@@ -9,7 +9,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
+func TestGeneratedAgentCardsUseStrictSelfDrivingSuspendGuidance(t *testing.T) {
 	cases := []struct {
 		name     string
 		language string
@@ -19,7 +19,7 @@ func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
 			name:     "English",
 			language: "en",
 			anchors: []string{
-				"AutoRun suspend is allowed only when the task cannot make meaningful progress",
+				"Self-Driving suspend is allowed only when the task cannot make meaningful progress",
 				"repeated polling of a specific, observable external condition",
 				"implementation, testing, investigation, review, documentation, repair, or verification remains",
 				"do not use suspend for a finished phase, a checkpoint or save-progress step, shortening a turn, or yielding early",
@@ -50,7 +50,7 @@ func TestGeneratedAgentCardsUseStrictAutoRunSuspendGuidance(t *testing.T) {
 			name:     "Simplified Chinese",
 			language: "zh-CN",
 			anchors: []string{
-				"AutoRun suspend 仅适用于任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件",
+				"Self-Driving suspend 仅适用于任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件",
 				"实现、测试、调查、评审、文档、修复或验证工作可做",
 				"不得把 suspend 用于阶段完成、checkpoint 或保存进度、缩短回合或主动让出执行权",
 				"--summary=<text>",

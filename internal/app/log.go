@@ -31,14 +31,14 @@ const (
 var ErrInvalidLogCursor = errors.New("invalid log cursor")
 
 type LogEntry struct {
-	ID                           string `json:"id"`
-	Time                         string `json:"time"`
-	Title                        string `json:"title"`
-	Details                      string `json:"details,omitempty"`
-	AutoRun                      bool   `json:"autoRun,omitempty"`
-	AutoRunGeneration            int    `json:"autoRunGeneration,omitempty"`
-	AutoRunWakeCondition         string `json:"autoRunWakeCondition,omitempty"`
-	AutoRunWakeConditionFallback bool   `json:"autoRunWakeConditionFallback,omitempty"`
+	ID                               string `json:"id"`
+	Time                             string `json:"time"`
+	Title                            string `json:"title"`
+	Details                          string `json:"details,omitempty"`
+	SelfDriving                      bool   `json:"selfDriving,omitempty"`
+	SelfDrivingGeneration            int    `json:"selfDrivingGeneration,omitempty"`
+	SelfDrivingWakeCondition         string `json:"selfDrivingWakeCondition,omitempty"`
+	SelfDrivingWakeConditionFallback bool   `json:"selfDrivingWakeConditionFallback,omitempty"`
 }
 
 // LogPage is the bounded, newest-first result used by GUI resource detail
@@ -50,17 +50,17 @@ type LogPage struct {
 	NextCursor string     `json:"nextCursor,omitempty"`
 }
 
-func newAutoRunLogEntry(title, details string, generation int) LogEntry {
+func newSelfDrivingLogEntry(title, details string, generation int) LogEntry {
 	entry := newLogEntry(title, details)
-	entry.AutoRun = true
-	entry.AutoRunGeneration = generation
+	entry.SelfDriving = true
+	entry.SelfDrivingGeneration = generation
 	return entry
 }
 
-func newAutoRunSuspensionLogEntry(title, summary, wakeCondition string, fallback bool, generation int) LogEntry {
-	entry := newAutoRunLogEntry(title, summary, generation)
-	entry.AutoRunWakeCondition = strings.TrimSpace(wakeCondition)
-	entry.AutoRunWakeConditionFallback = fallback
+func newSelfDrivingSuspensionLogEntry(title, summary, wakeCondition string, fallback bool, generation int) LogEntry {
+	entry := newSelfDrivingLogEntry(title, summary, generation)
+	entry.SelfDrivingWakeCondition = strings.TrimSpace(wakeCondition)
+	entry.SelfDrivingWakeConditionFallback = fallback
 	return entry
 }
 

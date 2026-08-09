@@ -73,7 +73,7 @@ eval(extract("applyResourceDetail"));
 eval(extract("loadMoreLogs", true));
 eval(extract("captureLogRegionState"));
 eval(extract("restoreLogRegionState"));
-eval(extract("autoRunStatusReason"));
+eval(extract("selfDrivingStatusReason"));
 
 (async function run() {
   applyResourceDetail({
@@ -126,7 +126,7 @@ eval(extract("autoRunStatusReason"));
   assert(!state.resourceLogPages.project1.hasMore, "head refresh must retain the loaded older-page terminal state");
 
   resetResourceLogState("project1");
-  applyResourceDetail({ id: "project1", autoRun: { state: "failed", statusReason: "fresh status" }, logs: logEntries(0, 10), logPage: { hasMore: true, nextCursor: "log-9" } }, "replace");
+  applyResourceDetail({ id: "project1", selfDriving: { state: "failed", statusReason: "fresh status" }, logs: logEntries(0, 10), logPage: { hasMore: true, nextCursor: "log-9" } }, "replace");
   const failingLoad = loadMoreLogs("project1");
   latestRequest().reject(new Error("temporary failure"));
   await failingLoad;
@@ -134,10 +134,10 @@ eval(extract("autoRunStatusReason"));
   assert(state.details.project1.logs.length === 10, "a failed request must retain the loaded logs");
   const retryLoad = loadMoreLogs("project1");
   assert(latestRequest().options.logsCursor === "log-9", "retry must use the unchanged cursor");
-  latestRequest().resolve({ id: "project1", autoRun: { state: "failed", statusReason: "stale status" }, logs: [logEntry(10)], logPage: { hasMore: false, nextCursor: "log-10" } });
+  latestRequest().resolve({ id: "project1", selfDriving: { state: "failed", statusReason: "stale status" }, logs: [logEntry(10)], logPage: { hasMore: false, nextCursor: "log-10" } });
   await retryLoad;
   assert(!state.resourceLogPages.project1.error && state.details.project1.logs.length === 11, "a retry must clear the error and merge the page");
-  assert(state.details.project1.autoRun.statusReason === "fresh status", "older page response must not overwrite fresher detail metadata");
+  assert(state.details.project1.selfDriving.statusReason === "fresh status", "older page response must not overwrite fresher detail metadata");
 
   resetResourceLogState("project1");
   applyResourceDetail({ id: "project1", logs: logEntries(0, 10), logPage: { hasMore: true, nextCursor: "log-9" } }, "replace");
@@ -166,8 +166,8 @@ eval(extract("autoRunStatusReason"));
   assert(logNodes[0].open && logNodes[2].open, "expanded log IDs must be restored");
   assert(panel.scrollTop === 97, "log scroll position must follow the visible anchor after refresh");
 
-  const structuredReason = autoRunStatusReason({ state: "failed", generation: 4, statusReason: "server-side failure" }, []);
-  assert(structuredReason && structuredReason.text === "server-side failure", "AutoRun status reason must survive outside the first log page");
+  const structuredReason = selfDrivingStatusReason({ state: "failed", generation: 4, statusReason: "server-side failure" }, []);
+  assert(structuredReason && structuredReason.text === "server-side failure", "Self-Driving status reason must survive outside the first log page");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
 `
 	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
