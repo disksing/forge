@@ -1218,51 +1218,179 @@ body.resizing-y {
   gap: 8px;
 }
 
-.autorun-status {
+.autorun-bar {
   --autorun-tone: var(--muted);
   --autorun-surface: color-mix(in srgb, var(--autorun-tone) 7%, var(--panel));
   --autorun-border: color-mix(in srgb, var(--autorun-tone) 38%, var(--line));
   position: relative;
-  margin: 0 0 10px;
-  padding: 13px 14px;
-  overflow: hidden;
+  margin: 0;
+  padding: 7px 10px;
   border: 1px solid var(--autorun-border);
-  border-left-width: 4px;
-  border-radius: 12px;
+  border-left-width: 3px;
+  border-radius: 10px;
   background: var(--autorun-surface);
-  box-shadow: 0 5px 16px color-mix(in srgb, var(--autorun-tone) 10%, transparent);
   transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
-.autorun-status-heading {
+.autorun-bar-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px 8px;
+  min-width: 0;
 }
 
-.autorun-status-title {
-  min-width: 0;
+.autorun-bar-title {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
+  flex: 0 0 auto;
   color: var(--text);
 }
 
 .autorun-title-icon {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   color: var(--autorun-tone);
 }
 
-.autorun-status-title strong {
-  font-size: 13px;
+.autorun-bar-title strong {
+  font-size: 12.5px;
   letter-spacing: 0.01em;
 }
 
-.autorun-status small,
-.autorun-status p {
+.autorun-bar-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.autorun-bar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.autorun-bar-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
+}
+
+.autorun-bar-button svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+
+.autorun-bar-start-action,
+.autorun-bar-resume-action {
+  border-color: #ddd6fe;
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.autorun-bar-start-action:hover:not(:disabled),
+.autorun-bar-resume-action:hover:not(:disabled) {
+  border-color: #c4b5fd;
+  background: #ede9fe;
+  color: #5b21b6;
+}
+
+.autorun-bar-cancel-action {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.autorun-bar-cancel-action:hover:not(:disabled) {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.autorun-bar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.autorun-bar-button:focus-visible,
+.autorun-bar-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.autorun-bar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.autorun-bar-toggle:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--autorun-tone) 42%, var(--line));
+}
+
+.autorun-expand-icon {
+  display: block;
+  width: 14px;
+  height: 14px;
+}
+
+.autorun-bar-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.autorun-lock-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+.autorun-bar-details {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--autorun-tone) 22%, var(--line));
+}
+
+.autorun-bar-details[hidden] {
+  display: none;
+}
+
+.autorun-bar-details small,
+.autorun-bar-details p {
   display: block;
   margin: 4px 0 0;
   color: var(--muted);
@@ -1275,7 +1403,8 @@ body.resizing-y {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px;
+  flex: 0 0 auto;
+  padding: 2px 8px;
   border: 1px solid color-mix(in srgb, var(--autorun-tone) 42%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));
@@ -1283,6 +1412,7 @@ body.resizing-y {
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .autorun-state-icon {
@@ -1291,11 +1421,16 @@ body.resizing-y {
   flex: 0 0 auto;
 }
 
-.autorun-status-queued {
+.autorun-bar-none {
+  --autorun-tone: var(--muted);
+  background: var(--panel);
+}
+
+.autorun-bar-queued {
   --autorun-tone: var(--accent);
 }
 
-.autorun-status-running {
+.autorun-bar-running {
   --autorun-tone: var(--accent);
   border-color: transparent;
   background:
@@ -1311,28 +1446,28 @@ body.resizing-y {
   animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;
 }
 
-.autorun-status-running .autorun-state-icon {
+.autorun-bar-running .autorun-state-icon {
   transform-origin: center;
   animation: autorun-running-icon 2.6s ease-in-out infinite;
 }
 
-.autorun-status-suspended {
+.autorun-bar-suspended {
   --autorun-tone: var(--amber);
 }
 
-.autorun-status-paused {
+.autorun-bar-paused {
   --autorun-tone: var(--muted);
 }
 
-.autorun-status-completed {
+.autorun-bar-completed {
   --autorun-tone: var(--green);
 }
 
-.autorun-status-failed {
+.autorun-bar-failed {
   --autorun-tone: var(--red);
 }
 
-.autorun-status-cancelled {
+.autorun-bar-cancelled {
   --autorun-tone: var(--muted);
 }
 
@@ -1347,10 +1482,10 @@ body.resizing-y {
 
 @keyframes autorun-running-pulse {
   0%, 100% {
-    box-shadow: 0 5px 16px color-mix(in srgb, var(--autorun-tone) 10%, transparent);
+    box-shadow: 0 3px 10px color-mix(in srgb, var(--autorun-tone) 10%, transparent);
   }
   50% {
-    box-shadow: 0 6px 20px color-mix(in srgb, var(--autorun-tone) 22%, transparent);
+    box-shadow: 0 4px 16px color-mix(in srgb, var(--autorun-tone) 22%, transparent);
   }
 }
 
@@ -1366,45 +1501,50 @@ body.resizing-y {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .autorun-status {
+  .autorun-bar,
+  .autorun-bar-button,
+  .autorun-bar-toggle {
     transition: none;
   }
 
-  .autorun-status-running,
-  .autorun-status-running .autorun-state-icon {
+  .autorun-bar-running,
+  .autorun-bar-running .autorun-state-icon {
     animation: none;
   }
 
-  .autorun-status-running {
+  .autorun-bar-running {
     border-color: var(--autorun-border);
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--autorun-tone) 24%, transparent);
   }
 }
 
 @media (forced-colors: active) {
-  .autorun-status,
-  .autorun-state {
+  .autorun-bar,
+  .autorun-state,
+  .autorun-bar-button,
+  .autorun-bar-toggle {
     border-color: CanvasText;
   }
 
-  .autorun-status-running,
-  .autorun-status-running .autorun-state-icon {
+  .autorun-bar-running,
+  .autorun-bar-running .autorun-state-icon {
     animation: none;
   }
 
-  .autorun-status-running {
+  .autorun-bar-running {
     outline: 2px solid Highlight;
     outline-offset: -4px;
   }
 }
 
 @media (max-width: 420px) {
-  .autorun-status {
-    padding: 11px 12px;
+  .autorun-bar {
+    padding: 6px 8px;
   }
 
-  .autorun-status-heading {
-    align-items: flex-start;
+  .autorun-bar-summary {
+    order: 3;
+    flex-basis: 100%;
   }
 }
 
@@ -2190,32 +2330,6 @@ body.resizing-y {
   color: #991b1b;
 }
 
-.tty-autorun-start-action,
-.tty-autorun-resume-action {
-  border-color: #ddd6fe;
-  background: #f5f3ff;
-  color: #6d28d9;
-}
-
-.tty-autorun-start-action:hover:not(:disabled),
-.tty-autorun-resume-action:hover:not(:disabled) {
-  border-color: #c4b5fd;
-  background: #ede9fe;
-  color: #5b21b6;
-}
-
-.tty-autorun-cancel-action {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
-}
-
-.tty-autorun-cancel-action:hover:not(:disabled) {
-  border-color: #fca5a5;
-  background: #fee2e2;
-  color: #991b1b;
-}
-
 .tty-composer-action:disabled {
   cursor: not-allowed;
   opacity: 0.58;
@@ -2252,10 +2366,6 @@ body.resizing-y {
 .tty-composer-toolbar svg {
   width: 16px;
   height: 16px;
-}
-
-.autorun-expand-icon {
-  display: none;
 }
 
 .upload-dialog-layer {
@@ -2592,15 +2702,13 @@ body.resizing-y {
 }
 
 .tty-standalone-actions > .tty-primary-action,
-.tty-standalone-actions > .tty-new-session-control,
-.tty-standalone-actions > .tty-autorun-labeled-action {
+.tty-standalone-actions > .tty-new-session-control {
   flex: 1 1 150px;
   width: auto;
   min-width: 0;
 }
 
-.tty-standalone-actions > .tty-primary-action,
-.tty-standalone-actions > .tty-autorun-labeled-action {
+.tty-standalone-actions > .tty-primary-action {
   min-height: 32px;
   padding-right: 11px;
   padding-left: 11px;
@@ -4502,6 +4610,15 @@ i[data-lucide] {
   padding: 0 12px;
 }
 
+.autorun-bar-wrap {
+  padding: 8px 12px;
+  background: #fff;
+}
+
+.autorun-bar-wrap:empty {
+  display: none;
+}
+
 .agent-sessions {
   padding: 8px 12px;
 }
@@ -5525,34 +5642,6 @@ i[data-lucide] {
   }
 
   .tty-session-actions.collapsible:not(.open) {
-    display: none;
-  }
-
-  .autorun-collapsible .autorun-status-heading {
-    cursor: pointer;
-    justify-content: flex-start;
-  }
-
-  .autorun-collapsible .autorun-state {
-    margin-left: auto;
-  }
-
-  .autorun-expand-icon {
-    display: block;
-    width: 15px;
-    height: 15px;
-    flex: 0 0 auto;
-    color: var(--muted);
-  }
-
-  .autorun-collapsible:not(.expanded) {
-    margin-bottom: 8px;
-    padding: 8px 12px;
-    border-radius: 9px;
-  }
-
-  .autorun-collapsible:not(.expanded) small,
-  .autorun-collapsible:not(.expanded) p {
     display: none;
   }
 

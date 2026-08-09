@@ -852,18 +852,16 @@ func TestChatAutoRunStartRejectsAgentHubBusyProjectionEvenWhenLocalRunIsIdle(t *
 	}
 }
 
-func TestChatAutoRunComposerUI(t *testing.T) {
+func TestChatAutoRunTopBarUI(t *testing.T) {
 	data, err := staticFiles.ReadFile("static/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := string(data)
 	for _, want := range []string{
-		`function autoRunComposerAction(options = {}) {`,
-		`function agentComposerActions(options = {}) {`,
-		`includeAutoRun: true`,
-		`standalone: true`,
-		`variant: "labeled"`,
+		`function autoRunTopBar(detail) {`,
+		`function autoRunBarActions(detail) {`,
+		`barWrap.innerHTML = autoRunTopBar(detail);`,
 		`id="autoRunStartButton"`,
 		`id="autoRunCancelButton"`,
 		`data-autorun-action=`,
@@ -878,7 +876,7 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		`const cancellableStates = ["queued", "running", "suspended", "paused"];`,
 		`"The current session is busy; wait until it is idle to start AutoRun."`,
 		`"Resolve the pending approval before starting AutoRun in this session."`,
-		`run.resourceId === selected.id && isLiveAgentRun(run)`,
+		`run.resourceId === detail.id && isLiveAgentRun(run)`,
 		`/api/workspaces/${state.activeWorkspaceId}/autorun/start`,
 		`body.runInstructions = String(options.runInstructions || "");`,
 		`body.completionCriteria = String(options.completionCriteria || "");`,
@@ -897,17 +895,17 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 		`if (event.key === "Tab")`,
 		`if (state.agent.autoRunStarting) return;`,
 		`state.agent.autoRunStarting = true;`,
-		`function autoRunComposerKey() {`,
-		"${autoRunComposerKey()}",
+		`function selectedResourceLockComposerKey() {`,
+		"${selectedResourceLockComposerKey()}",
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("Chat AutoRun composer is missing %q", want)
+			t.Fatalf("Chat AutoRun top bar is missing %q", want)
 		}
 	}
-	// The AutoRun action must participate in every composer render-cache key.
-	keys := strings.Count(source, "${autoRunComposerKey()}`")
+	// The lock key must participate in every composer render-cache key.
+	keys := strings.Count(source, "${selectedResourceLockComposerKey()}`")
 	if keys != 3 {
-		t.Fatalf("expected autoRunComposerKey in all three composer keys, got %d", keys)
+		t.Fatalf("expected selectedResourceLockComposerKey in all three composer keys, got %d", keys)
 	}
 	styles, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
@@ -915,47 +913,49 @@ func TestChatAutoRunComposerUI(t *testing.T) {
 	}
 	for _, want := range []string{
 		`.tty-standalone-actions`,
-		`.tty-autorun-labeled-action`,
-		`.tty-autorun-start-action`,
-		`.tty-autorun-resume-action`,
-		`.tty-autorun-cancel-action`,
-		`.tty-composer-action:focus-visible`,
+		`.autorun-bar-button`,
+		`.autorun-bar-start-action`,
+		`.autorun-bar-resume-action`,
+		`.autorun-bar-cancel-action`,
+		`.autorun-bar-button:focus-visible`,
 		`flex-wrap: wrap;`,
 		`.tty-standalone-actions {`,
 		`@media (max-width: 420px)`,
 	} {
 		if !strings.Contains(string(styles), want) {
-			t.Fatalf("Chat AutoRun action styling is missing %q", want)
+			t.Fatalf("Chat AutoRun top bar styling is missing %q", want)
 		}
 	}
 
-	statusStart := strings.Index(source, `function autoRunStatus(detail) {`)
-	statusEnd := -1
-	if statusStart >= 0 {
-		statusEnd = strings.Index(source[statusStart:], `function autoRunPresentation(state) {`)
+	// The composer and the standalone action row must not render duplicate
+	// AutoRun controls; the top bar is the only entry.
+	composerStart := strings.Index(source, `function renderTTYComposer(options = {}) {`)
+	composerEnd := -1
+	if composerStart >= 0 {
+		composerEnd = strings.Index(source[composerStart:], `function isAgentSessionReady(run) {`)
 	}
-	if statusStart < 0 || statusEnd < 0 {
-		t.Fatal("AutoRun status renderer boundary is missing")
+	if composerStart < 0 || composerEnd < 0 {
+		t.Fatal("TTY composer renderer boundary is missing")
 	}
-	if strings.Contains(source[statusStart:statusStart+statusEnd], `id="autoRunCancelButton"`) {
-		t.Fatal("AutoRun status card still renders a duplicate Cancel button")
+	composer := source[composerStart : composerStart+composerEnd]
+	for _, removed := range []string{`autoRunActionsMarkup`, `autoRunBarActions`, `id="autoRunStartButton"`, `id="autoRunCancelButton"`} {
+		if strings.Contains(composer, removed) {
+			t.Fatalf("TTY composer still renders the moved AutoRun control %q", removed)
+		}
 	}
 
 	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
 	actionsEnd := -1
 	if actionsStart >= 0 {
-		actionsEnd = strings.Index(source[actionsStart:], `function agentComposerToolbarActions(options = {}) {`)
+		actionsEnd = strings.Index(source[actionsStart:], `function sessionControlComposerActions(options = {}) {`)
 	}
 	if actionsStart < 0 || actionsEnd < 0 {
 		t.Fatal("Session actions renderer boundary is missing")
 	}
 	actions := source[actionsStart : actionsStart+actionsEnd]
-	if !strings.Contains(actions, `autoRunComposerAction({ variant: "labeled" })`) {
-		t.Fatal("standalone Session actions must render labeled AutoRun controls in the shared action row")
-	}
-	uploadIndex := strings.Index(source, `id="agentUploadButton" class="tty-upload-button"`)
-	autoRunIndex := strings.Index(source, "${autoRunActionsMarkup ?")
-	if uploadIndex < 0 || autoRunIndex < 0 || uploadIndex > autoRunIndex {
-		t.Fatal("AutoRun actions must be rendered after Upload files in the live composer")
+	for _, removed := range []string{`autoRunBarActions`, `includeAutoRun`, `id="autoRunStartButton"`, `id="autoRunCancelButton"`} {
+		if strings.Contains(actions, removed) {
+			t.Fatalf("standalone Session actions still render the moved AutoRun control %q", removed)
+		}
 	}
 }

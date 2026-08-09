@@ -65,6 +65,7 @@ function enabledAgentConfigs() { return state.config.agents.filter((agent) => ag
 function selectedAgentConfig() { return { id: state.agent.agentName }; }
 function mutateAgentSession(action) { return action(); }
 function renderAutoRunConfigDialog() { renderCount++; }
+function renderAgent() {}
 function renderTTYComposer() {}
 function bindAgentEvents() {}
 function refreshIcons() {}

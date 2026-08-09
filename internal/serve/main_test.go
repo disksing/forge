@@ -2488,86 +2488,6 @@ func TestTTYRenderDefersWhileTextSelected(t *testing.T) {
 	}
 }
 
-func TestAutoRunStatusReasonRendering(t *testing.T) {
-	node, err := exec.LookPath("node")
-	if err != nil {
-		t.Skip("node is required for AutoRun status rendering tests")
-	}
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	reasonStart := strings.Index(source, "function autoRunStatusReason(")
-	statusStart := strings.Index(source, "function autoRunStatus(detail)")
-	presentationStart := strings.Index(source, "function autoRunPresentation(state)")
-	if reasonStart < 0 || statusStart < 0 || presentationStart < 0 || reasonStart > statusStart || statusStart > presentationStart {
-		t.Fatal("could not isolate AutoRun status rendering functions")
-	}
-	reasonSource := source[reasonStart:statusStart]
-	statusSource := source[statusStart:presentationStart]
-	presentationEnd := strings.Index(source[presentationStart:], "function agentSelectOptions")
-	if presentationEnd < 0 {
-		t.Fatal("could not isolate AutoRun presentation function")
-	}
-	presentationSource := source[presentationStart : presentationStart+presentationEnd]
-	script := `
-const fs = require("node:fs");
-const vm = require("node:vm");
-const source = fs.readFileSync(process.argv[1], "utf8");
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-const state = { agent: { autoRunExpanded: false } };
-function escapeHTML(value) { return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;"); }
-function currentAgentRun() { return null; }
-function icon() { return ""; }
-` + reasonSource + statusSource + presentationSource + `
-
-const logs = [
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run failed", details: "failed now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run paused", details: "paused now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run retry", details: "retry now" },
-  { autoRun: true, autoRunGeneration: 7, title: "Auto Run suspended", details: "wait for review" },
-  { autoRun: true, autoRunGeneration: 6, title: "Auto Run failed", details: "old generation failure" },
-];
-function render(stateName, generation = 7, suspensionSummary = "wait for review") {
-  return autoRunStatus({
-    id: "project1.task1",
-    autoRun: { generation, state: stateName, suspensionSummary },
-    logs,
-  });
-}
-const suspended = render("suspended");
-assert(suspended.includes("Suspend reason: wait for review"), "suspended state should show its current summary");
-assert(!suspended.includes("paused now") && !suspended.includes("old generation failure"), "suspended state leaked an unrelated event");
-
-const queued = render("queued");
-assert(!queued.includes("wait for review") && !queued.includes("paused now") && !queued.includes("retry now"), "queued state leaked historical reasons");
-
-const running = render("running");
-assert(running.includes("Retry reason: retry now"), "running state should show the current-generation retry reason");
-assert(!running.includes("wait for review") && !running.includes("paused now"), "running state leaked a non-matching reason");
-
-const paused = render("paused");
-assert(paused.includes("Pause reason: paused now"), "paused state should show the current pause event");
-assert(!paused.includes("wait for review") && !paused.includes("retry now"), "paused state leaked a suspension or retry reason");
-
-const failed = render("failed");
-assert(failed.includes("Failure reason: failed now"), "failed state should show the current failure event");
-assert(!failed.includes("wait for review") && !failed.includes("paused now") && !failed.includes("retry now"), "failed state leaked a historical reason");
-
-const completed = render("completed");
-assert(!completed.includes("wait for review") && !completed.includes("failed now") && !completed.includes("paused now"), "completed state leaked a historical reason");
-
-const newGeneration = render("queued", 8, "new generation summary");
-assert(!newGeneration.includes("new generation summary") && !newGeneration.includes("wait for review"), "new generation displayed a prior status reason");
-`
-	if output, err := exec.Command(node, "-e", script, frontendAssetPath("app.js")).CombinedOutput(); err != nil {
-		t.Fatalf("AutoRun status rendering test failed: %v\n%s", err, output)
-	}
-}
-
 func TestTTYLogActiveSelectionDetection(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
@@ -2862,7 +2782,7 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 		`function isAgentTurnInterruptible(run)`,
 		`["running", "waiting_approval"].includes(run?.status)`,
 		`includeEndTurn: stopTurnAvailable`,
-		`function agentComposerToolbarActions(options = {})`,
+		`function sessionControlComposerActions(options = {})`,
 		`id="agentEndTurnButton"`,
 		`icon(endTurnPending ? "loader-circle" : "pause")`,
 		`End current turn; keep the Session open.`,
@@ -2882,7 +2802,7 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
 	actionsEnd := -1
 	if actionsStart >= 0 {
-		actionsEnd = strings.Index(source[actionsStart:], `function agentComposerToolbarActions(options = {}) {`)
+		actionsEnd = strings.Index(source[actionsStart:], `function sessionControlComposerActions(options = {}) {`)
 	}
 	if actionsStart < 0 || actionsEnd < 0 {
 		t.Fatal("Session actions composer boundary is missing")
@@ -2893,7 +2813,7 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 			t.Fatalf("bottom Session actions still render the moved control %q", removed)
 		}
 	}
-	toolbarStart := strings.Index(source, `function agentComposerToolbarActions(options = {}) {`)
+	toolbarStart := strings.Index(source, `function sessionControlComposerActions(options = {}) {`)
 	toolbarEnd := strings.Index(source[toolbarStart:], `function agentDisplayName(agent) {`)
 	if toolbarStart < 0 || toolbarEnd < 0 {
 		t.Fatal("composer toolbar boundary is missing")
@@ -2954,7 +2874,6 @@ function findResource(id) { return resources.get(id) || null; }
 eval(extract("isAgentTurnInterruptible"));
 eval(extract("isAutoRunSessionCloseTarget"));
 eval(extract("sessionControlComposerActions"));
-eval(extract("agentComposerToolbarActions"));
 for (const status of ["running", "waiting_approval"]) {
   assert(isAgentTurnInterruptible({ status }), status + " must be interruptible");
 }
@@ -2967,87 +2886,30 @@ assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGener
 resources.get("project1.task1").autoRun.state = "completed";
 assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 7, schedulerTurn: true }), "terminal AutoRun must not be a close cancellation target");
 assert(!isAutoRunSessionCloseTarget({ resourceId: "project1.task1", autoRunGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close cancellation target");
-const idle = agentComposerToolbarActions({ includeClose: true });
+const idle = sessionControlComposerActions({ includeClose: true });
 assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
 assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
 assert(idle.includes('data-icon="square"'), "Close Session must use the square icon");
 assert(!idle.includes("<span>"), "toolbar controls must be icon-only");
-const running = agentComposerToolbarActions({ includeEndTurn: true, includeClose: true });
+const running = sessionControlComposerActions({ includeEndTurn: true, includeClose: true });
 assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
 assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
 assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
-const autoRunClose = agentComposerToolbarActions({ includeClose: true, cancelAutoRunOnClose: true });
+const autoRunClose = sessionControlComposerActions({ includeClose: true, cancelAutoRunOnClose: true });
 assert(autoRunClose.includes('title="Cancel AutoRun and close the session."'), "AutoRun Close Session tooltip must explain the cancellation");
 assert(autoRunClose.includes('aria-label="Cancel AutoRun and close the session."'), "AutoRun Close Session aria-label must explain the cancellation");
-const ending = agentComposerToolbarActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
+const ending = sessionControlComposerActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
 assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
 assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");
 assert(ending.includes('title="Ending turn…"'), "ending turn must expose pending feedback");
 assert(!ending.includes("<span>"), "pending toolbar controls must remain icon-only");
-const closing = agentComposerToolbarActions({ includeEndTurn: true, closingSession: true, includeClose: true });
+const closing = sessionControlComposerActions({ includeEndTurn: true, closingSession: true, includeClose: true });
 assert(closing.includes('title="Closing session…"'), "closing session must expose pending feedback");
 assert(closing.includes('id="agentCloseSessionButton"') && closing.includes('disabled aria-busy="true"'), "closing session must disable duplicate close");
 `
 	appPath := frontendAssetPath("app.js")
 	if output, err := exec.Command(node, "-e", script, appPath).CombinedOutput(); err != nil {
 		t.Fatalf("composer toolbar state test failed: %v\n%s", err, output)
-	}
-}
-
-func TestAutoRunStatusIsDistinctResponsiveAndMotionSafe(t *testing.T) {
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
-	for _, want := range []string{
-		`function autoRunPresentation(state)`,
-		`queued: { label: "Queued", icon: "list-start" }`,
-		`running: { label: "Running", icon: "activity" }`,
-		`suspended: { label: "Suspended", icon: "pause" }`,
-		`paused: { label: "Paused", icon: "pause" }`,
-		`completed: { label: "Completed", icon: "circle-check" }`,
-		`failed: { label: "Failed", icon: "circle-x" }`,
-		`cancelled: { label: "Cancelled", icon: "ban" }`,
-		`const mode = ["completed", "failed", "cancelled"].includes(autoRun?.state)`,
-		`resumable && !reuseRun ? "resume" : "configure";`,
-		`class="autorun-status autorun-status-${presentation.key} autorun-collapsible${state.agent.autoRunExpanded ? " expanded" : ""}" role="status"`,
-		`aria-label="AutoRun: ${escapeHTML(presentation.label)}"`,
-		`class="autorun-title-icon" aria-hidden="true"`,
-		`class="autorun-state autorun-state-${presentation.key}"`,
-	} {
-		if !strings.Contains(app, want) {
-			t.Fatalf("accessible AutoRun status markup is missing %q", want)
-		}
-	}
-
-	stylesData, err := staticFiles.ReadFile("static/styles.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	styles := string(stylesData)
-	for _, want := range []string{
-		`.autorun-status-queued`,
-		`.autorun-status-running`,
-		`.autorun-status-suspended`,
-		`.autorun-status-paused`,
-		`.autorun-status-completed`,
-		`.autorun-status-failed`,
-		`.autorun-status-cancelled`,
-		`animation: autorun-running-border 3.6s linear infinite, autorun-running-pulse 2.6s ease-in-out infinite;`,
-		`@media (prefers-reduced-motion: reduce)`,
-		`.autorun-status-running .autorun-state-icon`,
-		`animation: none;`,
-		`@media (forced-colors: active)`,
-		`@media (max-width: 420px)`,
-		`--autorun-surface: color-mix(in srgb, var(--autorun-tone) 7%, var(--panel));`,
-		`background: color-mix(in srgb, var(--autorun-tone) 12%, var(--bg));`,
-		`flex-wrap: wrap;`,
-		`overflow-wrap: anywhere;`,
-	} {
-		if !strings.Contains(styles, want) {
-			t.Fatalf("responsive AutoRun status styles are missing %q", want)
-		}
 	}
 }
 
