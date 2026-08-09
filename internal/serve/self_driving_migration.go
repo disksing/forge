@@ -18,18 +18,14 @@ func decodeAndMigrateAgentRuns(workspacePath string, data []byte) ([]agentRun, e
 		return nil, err
 	}
 	runs := make([]agentRun, 0, len(rawRuns))
+	contextMigrations := make([]runContextMigration, 0, len(rawRuns))
 	changed := false
 	for _, raw := range rawRuns {
-		legacy, hasLegacy := raw["autoRunGeneration"]
-		_, hasCurrent := raw["selfDrivingGeneration"]
-		if hasLegacy && hasCurrent {
-			return nil, errorsForConflictingRunSchema(agentIndexPath(workspacePath))
+		migrated, err := migrateRevisionField(raw, agentIndexPath(workspacePath))
+		if err != nil {
+			return nil, err
 		}
-		if hasLegacy {
-			raw["selfDrivingGeneration"] = legacy
-			delete(raw, "autoRunGeneration")
-			changed = true
-		}
+		changed = changed || migrated
 		encoded, err := json.Marshal(raw)
 		if err != nil {
 			return nil, err
@@ -38,10 +34,21 @@ func decodeAndMigrateAgentRuns(workspacePath string, data []byte) ([]agentRun, e
 		if err := json.Unmarshal(encoded, &run); err != nil {
 			return nil, err
 		}
-		if err := migrateLegacyForgeSessionContext(run.ForgeSessionContextPath); err != nil {
+		contextMigration, err := prepareLegacyForgeSessionContextMigration(run.ForgeSessionContextPath)
+		if err != nil {
 			return nil, err
 		}
+		if contextMigration != nil {
+			contextMigrations = append(contextMigrations, *contextMigration)
+		}
 		runs = append(runs, run)
+	}
+	// Validate every run and context before writing any file so conflicting or
+	// malformed legacy data cannot leave a partially migrated workspace.
+	for _, migration := range contextMigrations {
+		if err := writeAtomicRunMigrationFile(migration.path, migration.data, 0o600); err != nil {
+			return nil, err
+		}
 	}
 	if changed {
 		if err := writeAgentRunsIndexLocked(workspacePath, runs); err != nil {
@@ -51,42 +58,67 @@ func decodeAndMigrateAgentRuns(workspacePath string, data []byte) ([]agentRun, e
 	return runs, nil
 }
 
-func migrateLegacyForgeSessionContext(path string) error {
+type runContextMigration struct {
+	path string
+	data []byte
+}
+
+func prepareLegacyForgeSessionContextMigration(path string) (*runContextMigration, error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return nil
+		return nil, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return err
+		return nil, err
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return nil, err
 	}
-	legacy, hasLegacy := raw["autoRunGeneration"]
-	_, hasCurrent := raw["selfDrivingGeneration"]
-	if !hasLegacy {
-		return nil
+	changed, err := migrateRevisionField(raw, path)
+	if err != nil {
+		return nil, err
 	}
-	if hasCurrent {
-		return errorsForConflictingRunSchema(path)
+	if !changed {
+		return nil, nil
 	}
-	raw["selfDrivingGeneration"] = legacy
-	delete(raw, "autoRunGeneration")
 	encoded, err := json.MarshalIndent(raw, "", "  ")
 	if err != nil {
-		return err
+		return nil, err
 	}
 	encoded = append(encoded, '\n')
-	return writeAtomicRunMigrationFile(path, encoded, 0o600)
+	return &runContextMigration{path: path, data: encoded}, nil
+}
+
+func migrateRevisionField(raw map[string]json.RawMessage, path string) (bool, error) {
+	keys := []string{"autoRunGeneration", "selfDrivingGeneration", "selfDrivingRevision"}
+	present := make([]string, 0, len(keys))
+	for _, key := range keys {
+		if _, ok := raw[key]; ok {
+			present = append(present, key)
+		}
+	}
+	if len(present) > 1 {
+		return false, errorsForConflictingRunSchema(path)
+	}
+	if len(present) == 0 || present[0] == "selfDrivingRevision" {
+		return false, nil
+	}
+	var revision int
+	if err := json.Unmarshal(raw[present[0]], &revision); err != nil || revision <= 0 {
+		return false, fmt.Errorf("invalid legacy Self-Driving generation in %s", path)
+	}
+	raw["selfDrivingRevision"] = raw[present[0]]
+	delete(raw, present[0])
+	return true, nil
 }
 
 func errorsForConflictingRunSchema(path string) error {
-	return fmt.Errorf("conflicting legacy and selfDriving generation fields in %s", path)
+	return fmt.Errorf("conflicting legacy generation and Self-Driving revision fields in %s", path)
 }
 
 func writeAtomicRunMigrationFile(path string, data []byte, mode os.FileMode) error {

@@ -302,7 +302,7 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+  forge task self-driving enable|disable ...
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
@@ -424,13 +424,9 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
-    Run or report a Self-Driving generation. suspend is only for a task that
-    cannot progress and has no meaningful remaining work except polling one
-    specific observable external condition; --summary records progress and
-    blocking context, while --wake-condition records the verifiable signal.
-    Use complete after requirements and verification, pause for user or
-    manual handling, and fail only when no feasible safe path remains.
+  forge task self-driving enable|disable ...
+    Persist the Task-level desired state. Enable/Disable is independent from
+    Agent Session and Turn lifecycle and is safe while the resource is locked.
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
     Create a session and print its unique id. Heartbeat liveness is the

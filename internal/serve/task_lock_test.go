@@ -105,20 +105,20 @@ func TestExternalProjectLockBlocksNewAgentRunBeforeForgeOrAgentHubSession(t *tes
 	}
 }
 
-func TestExternalResourceLockBlocksChatSelfDrivingWithoutAdvancingGeneration(t *testing.T) {
+func TestExternalResourceLockDoesNotBlockSelfDrivingSwitch(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	server, workspace, task := newChatSelfDrivingTestServer(t, hub.URL)
-	externalSession := createExternalResourceLockForTest(t, workspace.Path, task.ID)
+	createExternalResourceLockForTest(t, workspace.Path, task.ID)
 
 	recorder := chatSelfDrivingStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
-	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), externalResourceLockMessage) {
-		t.Fatalf("expected Chat Self-Driving lock conflict, got %d %s", recorder.Code, recorder.Body.String())
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("resource lock blocked Self-Driving persistence: %d %s", recorder.Code, recorder.Body.String())
 	}
 	reloaded := reloadTestTask(t, workspace.Path, task.ID)
-	if reloaded.SelfDriving != nil {
-		t.Fatalf("blocked Chat Self-Driving advanced the task generation: %#v", reloaded.SelfDriving)
+	if reloaded.SelfDriving == nil || !reloaded.SelfDriving.Enabled || reloaded.SelfDriving.Revision != 1 {
+		t.Fatalf("Self-Driving switch was not persisted under resource lock: %#v", reloaded.SelfDriving)
 	}
 	fake.mu.Lock()
 	if len(fake.sessions) != 0 {
@@ -126,36 +126,25 @@ func TestExternalResourceLockBlocksChatSelfDrivingWithoutAdvancingGeneration(t *
 		t.Fatalf("blocked Chat Self-Driving contacted AgentHub: %d sessions", len(fake.sessions))
 	}
 	fake.mu.Unlock()
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := forgeWorkspace.EndSession(externalSession.ID); err != nil {
-		t.Fatal(err)
-	}
-	restarted := chatSelfDrivingStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
-	if restarted.Code != http.StatusOK {
-		t.Fatalf("Self-Driving did not recover after external lock release: %d %s", restarted.Code, restarted.Body.String())
-	}
 }
 
-func TestExternalResourceLockStopsSchedulerDispatchWithoutStateChange(t *testing.T) {
+func TestExternalResourceLockMakesSchedulerWaitWithoutChangingSwitch(t *testing.T) {
 	workspace := t.TempDir()
 	requests := 0
 	server := newSchedulerTestServer(t, workspace, nil, func(w http.ResponseWriter, r *http.Request) {
 		requests++
-		w.WriteHeader(http.StatusOK)
+		http.Error(w, externalResourceLockMessage, http.StatusConflict)
 	})
 	createExternalResourceLockForTest(t, workspace, "project1.task1")
 
 	result, err := server.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Generation: 1, State: "queued",
+		ID: "project1.task1", Revision: 1, Condition: "ready", AgentName: "fake-agent",
 	})
-	if err != nil || result != runnableTaskNotRunnable {
-		t.Fatalf("external resource lock should stop scheduler dispatch, got result=%q err=%v", result, err)
+	if err != nil || result != runnableTaskSkippedActive {
+		t.Fatalf("external resource lock should defer scheduler dispatch, got result=%q err=%v", result, err)
 	}
-	if requests != 0 {
-		t.Fatalf("scheduler dispatched %d requests while an external lock was held", requests)
+	if requests != 1 {
+		t.Fatalf("scheduler made %d start attempts, want one reconciled conflict", requests)
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace)
 	if err != nil {
@@ -165,8 +154,8 @@ func TestExternalResourceLockStopsSchedulerDispatchWithoutStateChange(t *testing
 	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload locked scheduler task: %v", err)
 	}
-	if resource.Task.SelfDriving.State != "queued" || resource.Task.SelfDriving.Generation != 1 {
-		t.Fatalf("external lock changed scheduler Self-Driving state: %#v", resource.Task.SelfDriving)
+	if !resource.Task.SelfDriving.Enabled || resource.Task.SelfDriving.Revision != 1 || resource.Task.SelfDriving.Condition != "waiting" {
+		t.Fatalf("external lock changed desired state instead of condition: %#v", resource.Task.SelfDriving)
 	}
 }
 
@@ -253,7 +242,7 @@ func TestExternalResourceLockComposerProtection(t *testing.T) {
 	}
 	source := string(data)
 	for _, want := range []string{
-		`const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and Self-Driving are unavailable until the lock is released.";`,
+		`const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.";`,
 		`function selectedResourceHasExternalLock()`,
 		`session.source === "external"`,
 		`function externalResourceLockNotice()`,
@@ -262,7 +251,7 @@ func TestExternalResourceLockComposerProtection(t *testing.T) {
 		`if (externalResourceLocked)`,
 		`id="agentCloseSessionButton"`,
 		`Close session; end the entire AgentHub Session.`,
-		`if (selectedResourceHasExternalLock()) return "";`,
+		`role="switch"`,
 		`function selectedResourceLockComposerKey()`,
 		`const external = selectedResourceHasExternalLock() ? "external-lock" : "unlocked"`,
 	} {

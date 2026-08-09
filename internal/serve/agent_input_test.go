@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestAgentInputFrontendMarksOnlyMatchingSuspendedRunForResume(t *testing.T) {
+func TestAgentInputFrontendProjectsRevisionWithoutImplicitResume(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {
 		t.Skip("node is required for Agent input frontend tests")
@@ -33,10 +33,10 @@ const source = fs.readFileSync(process.argv[1], "utf8");
 const start = source.indexOf("function agentInputSelfDrivingProjection(");
 const end = source.indexOf("function openAgentUploadDialog", start);
 if (start < 0 || end < 0) throw new Error("Agent input frontend helpers are missing");
-const task = { id: "project1.task1", type: "task", selfDriving: { generation: 7, state: "suspended" } };
+const task = { id: "project1.task1", type: "task", selfDriving: { enabled: true, revision: 7, condition: "waiting" } };
 const run = {
   id: "run-1", resourceId: task.id, status: "idle", schedulerTurn: false,
-  agentHubSessionId: "session-1", selfDrivingGeneration: 7,
+  agentHubSessionId: "session-1", selfDrivingRevision: 7,
 };
 const state = {
   activeWorkspaceId: "workspace-1", selectedId: task.id,
@@ -56,18 +56,17 @@ vm.createContext(context);
 vm.runInContext(source.slice(start, end), context);
 function assert(condition, message) { if (!condition) throw new Error(message); }
 (async () => {
-  assert(context.agentInputResumeIntent(run) === true, "matching suspended run should be resumable");
-  await context.sendAgentInput("human instruction");
+	await context.sendAgentInput("human instruction");
   const resumed = calls.pop().body;
   assert(resumed.resourceId === task.id && resumed.selfDrivingProjectionSet === true, "resume request lacks resource projection");
-  assert(resumed.expectedSelfDrivingGeneration === 7 && resumed.expectedSelfDrivingState === "suspended", "resume request lacks generation/state CAS");
-  assert(resumed.resumeSuspendedSelfDriving === true && resumed.selfDrivingGeneration === 7, "resume intent was not sent");
-  assert(resumed.userName === "Ada Lovelace", "resume request lacks the browser-local user name");
+  assert(resumed.expectedSelfDrivingRevision === 7 && resumed.expectedSelfDrivingCondition === "waiting", "manual request lacks revision/condition projection");
+  assert(!resumed.resumeSuspendedSelfDriving && !resumed.selfDrivingRevision, "manual input sent retired resume authority");
+  assert(resumed.userName === "Ada Lovelace", "manual request lacks the browser-local user name");
 
-  task.selfDriving.state = "paused";
-  await context.sendAgentInput("ordinary paused chat");
-  const ordinary = calls.pop().body;
-  assert(ordinary.expectedSelfDrivingState === "paused", "paused projection was not sent");
+  task.selfDriving.condition = "blocked";
+	await context.sendAgentInput("ordinary paused chat");
+	const ordinary = calls.pop().body;
+	assert(ordinary.expectedSelfDrivingCondition === "blocked", "blocked projection was not sent");
   assert(!ordinary.resumeSuspendedSelfDriving, "paused chat must not request implicit resume");
   assert(ordinary.userName === "Ada Lovelace", "ordinary chat request lacks the browser-local user name");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
@@ -127,7 +126,7 @@ const storage = {
 };
 const run = {
   id: "run-suspended", resourceId: "project1.task1", status: "idle",
-  schedulerTurn: false, agentHubSessionId: "session-suspended", selfDrivingGeneration: 7,
+  schedulerTurn: false, agentHubSessionId: "session-suspended", selfDrivingRevision: 7,
 };
 const state = {
   activeWorkspaceId: "workspace-one",

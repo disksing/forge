@@ -819,7 +819,7 @@ func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 		`function deriveTaskSelfDrivingState(selfDriving, sessions)`,
 		`function deriveTaskSessionState(sessions)`,
 		`function sessionStatusPresentation(session)`,
-		`session.schedulerTurn && session.selfDrivingGeneration === selfDriving.generation`,
+		`session.schedulerTurn && session.selfDrivingRevision === selfDriving.revision`,
 		`function taskAgentSessions(resourceId)`,
 		`session.resourceId === resourceId`,
 		`function resourceLocks(resourceId)`,
@@ -966,7 +966,7 @@ function assert(condition, message) {
 const project = {
   id: "project1",
   children: [
-    { id: "project1.task1", selfDriving: { state: "running" } },
+    { id: "project1.task1", selfDriving: { enabled: true, revision: 1, condition: "reconciling" } },
     { id: "project1.task2" },
     { id: "project1.task3" },
     { id: "project1.task4" },
@@ -977,7 +977,7 @@ const project = {
     { id: "project1.task9" },
     { id: "project1.task10" },
     { id: "project1.task11" },
-    { id: "project1.task12", archived: true, selfDriving: { state: "running" } },
+    { id: "project1.task12", archived: true, selfDriving: { enabled: true, revision: 1, condition: "reconciling" } },
   ],
 };
 const summary = context.projectTaskSummary(project);
@@ -1958,9 +1958,9 @@ function assertEqual(actual, expected, message) {
 }
 const resources = new Map([
   ["project1", { id: "project1", type: "project", archived: false }],
-  ["project1.task1", { id: "project1.task1", type: "task", archived: false, selfDriving: { generation: 7, state: "queued" } }],
-  ["project1.task2", { id: "project1.task2", type: "task", archived: false, selfDriving: { generation: 3, state: "failed" } }],
-  ["project1.archived", { id: "project1.archived", type: "task", archived: true, selfDriving: { generation: 8, state: "completed" } }],
+  ["project1.task1", { id: "project1.task1", type: "task", archived: false, selfDriving: { enabled: true, revision: 7, condition: "ready" } }],
+  ["project1.task2", { id: "project1.task2", type: "task", archived: false, selfDriving: { enabled: true, revision: 3, condition: "error" } }],
+  ["project1.archived", { id: "project1.archived", type: "task", archived: true, selfDriving: { enabled: false, revision: 8, condition: "disabled" } }],
 ]);
 const context = {
   findResource: (id) => resources.get(id) || null,
@@ -1980,24 +1980,23 @@ vm.runInContext([
   extract("sessionOperationalLabel"),
 ].join("\n"), context);
 
-const scheduler = { schedulerTurn: true, selfDrivingGeneration: 7, agentRunStatus: "running" };
+const scheduler = { schedulerTurn: true, selfDrivingRevision: 7, agentRunStatus: "running" };
 const sessionStatus = context.sessionStatusPresentation({ agentRunStatus: "idle" });
-const running = context.deriveTaskSelfDrivingState({ generation: 7, state: "running" }, [scheduler]);
-const recovery = context.deriveTaskSelfDrivingState({ generation: 7, state: "running" }, []);
+const running = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: "reconciling" }, [scheduler]);
+const recovery = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: "reconciling" }, []);
 const expectedSelfDriving = {
-  running: ["self-driving-running", "workflow"],
+  reconciling: ["self-driving-running", "workflow"],
   recovery: ["auto-recovering", "rotate-ccw"],
-  queued: ["queued", "clock"],
-  suspended: ["suspended", "pause"],
-  paused: ["paused", "square"],
-  completed: ["completed", "check-circle-2"],
-  failed: ["failed", "triangle-alert"],
-  cancelled: ["cancelled", "ban"],
+  ready: ["ready", "clock"],
+  waiting: ["waiting", "pause"],
+  blocked: ["blocked", "square"],
+  error: ["error", "triangle-alert"],
+  needs_configuration: ["needs_configuration", "square"],
 };
 for (const [state, [kind, iconName]] of Object.entries(expectedSelfDriving)) {
-  const sessions = state === "running" ? [scheduler] : [];
-  const selfDrivingState = state === "recovery" ? "running" : state;
-  const presentation = context.deriveTaskSelfDrivingState({ generation: 7, state: selfDrivingState }, sessions);
+	const sessions = state === "reconciling" ? [scheduler] : [];
+	const selfDrivingState = state === "recovery" ? "reconciling" : state;
+	const presentation = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: selfDrivingState }, sessions);
   assertEqual(presentation.kind, kind, "Self-Driving " + state + " kind");
   assertEqual(presentation.iconName, iconName, "Self-Driving " + state + " icon");
 }
@@ -2031,7 +2030,7 @@ const label = context.sessionOperationalLabel(
   { selfDriving: context.deriveTaskSelfDrivingState(resources.get("project1.task1").selfDriving, []) },
   sessionStatus,
 );
-assert(label.includes("Self-Driving queued, generation 7"), "Session label should include Self-Driving generation and state: " + label);
+assert(label.includes("Self-Driving ready, revision 7"), "Session label should include Self-Driving revision and condition: " + label);
 assert(label.includes("Session waiting for input"), "Session label should include its own Session state: " + label);
 `
 
@@ -2899,6 +2898,7 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 		`Turn ended. The AgentHub Session remains open.`,
 		`state.agent.sessionStopping = true`,
 		`Closing session…`,
+		`state.agent.selfDrivingDisabling ? "disabling-self-driving" : "self-driving-stable"`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("End Turn/Close Session composer is missing %q", want)
@@ -2985,12 +2985,12 @@ for (const status of ["running", "waiting_approval"]) {
 for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) {
   assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
 }
-resources.set("project1.task1", { selfDriving: { generation: 7, state: "running" } });
-assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 7, schedulerTurn: true }), "current running Self-Driving must be a close cancellation target");
-assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 6, schedulerTurn: true }), "historical Self-Driving must not be a close cancellation target");
-resources.get("project1.task1").selfDriving.state = "completed";
-assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 7, schedulerTurn: true }), "terminal Self-Driving must not be a close cancellation target");
-assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingGeneration: 0, schedulerTurn: false }), "ordinary Chat Session must not be a close cancellation target");
+resources.set("project1.task1", { selfDriving: { enabled: true, revision: 7, condition: "reconciling" } });
+assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 7, schedulerTurn: true }), "enabled Self-Driving must warn before close");
+assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 6, schedulerTurn: true }), "close warning follows Task desired state, not historical Turn revision");
+assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 0, schedulerTurn: false }), "ordinary Chat Session for an enabled Task must also warn");
+resources.get("project1.task1").selfDriving = { enabled: false, revision: 8, condition: "disabled" };
+assert(!isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 7, schedulerTurn: true }), "disabled Self-Driving must not warn about replacement");
 const idle = sessionControlComposerActions({ includeClose: true });
 assert(!idle.includes('id="agentEndTurnButton"'), "idle must not render End Turn");
 assert(idle.includes('id="agentCloseSessionButton"'), "live idle must render Close Session");
@@ -3000,9 +3000,9 @@ const running = sessionControlComposerActions({ includeEndTurn: true, includeClo
 assert(running.indexOf('id="agentEndTurnButton"') < running.indexOf('id="agentCloseSessionButton"'), "End Turn must follow Upload and precede Close Session");
 assert(running.includes('title="End current turn; keep the Session open."'), "End Turn tooltip must explain Session retention");
 assert(running.includes('aria-label="Close session; end the entire AgentHub Session."'), "Close Session aria-label must explain full close");
-const selfDrivingClose = sessionControlComposerActions({ includeClose: true, cancelSelfDrivingOnClose: true });
-assert(selfDrivingClose.includes('title="Cancel Self-Driving and close the session."'), "Self-Driving Close Session tooltip must explain the cancellation");
-assert(selfDrivingClose.includes('aria-label="Cancel Self-Driving and close the session."'), "Self-Driving Close Session aria-label must explain the cancellation");
+const selfDrivingClose = sessionControlComposerActions({ includeClose: true, selfDrivingRemainsEnabled: true });
+assert(selfDrivingClose.includes('title="Close this Session; Self-Driving stays On and may create a replacement."'), "Self-Driving Close Session tooltip must explain replacement");
+assert(selfDrivingClose.includes('aria-label="Close this Session; Self-Driving stays On and may create a replacement."'), "Self-Driving Close Session aria-label must explain replacement");
 const ending = sessionControlComposerActions({ includeEndTurn: true, endingTurn: true, includeClose: true });
 assert(ending.includes('id="agentEndTurnButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable End Turn");
 assert(ending.includes('id="agentCloseSessionButton"') && ending.includes('disabled aria-busy="true"'), "ending turn must disable Close Session");

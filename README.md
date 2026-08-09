@@ -11,7 +11,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
 - **Interactive and autonomous agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
-- **Simplified Self-Driving.** Tasks can be queued with preferred Agent Profiles and run as a self-contained state machine. The GUI driver starts queued work, wakes suspended work after a fixed delay, records retries, and exposes queued, running, suspended, paused, completed, failed, and cancelled states.
+- **Task-level Self-Driving.** Every open Task has a persistent On/Off desired state, a monotonic revision authority boundary, and an independent controller condition. The Scheduler reuses or creates one AgentHub Session as needed without coupling the switch to Session or Turn lifecycle.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
 
 ## Design
@@ -166,7 +166,7 @@ The first resource locked by a session is its primary resource; later controls a
 
 ## Self-Driving
 
-Self-Driving adds a generation-numbered state machine to a task. `forge serve` runs a minimal driver: it starts queued work, re-queues suspended work whose suspension limit (30 minutes) elapsed, resolves preferred Agent Profiles to AgentHub catalog agents, starts or resumes an AgentHub session, and keeps the task's current state in `task.json` while writing state transitions and retries to `log.jsonl`. A cancelled generation is terminal: it is never dispatched, retried, or timed-woken, and a new generation must be started explicitly.
+Self-Driving is a persistent Task-level Enable/Disable switch. Its monotonic `revision` is the authority boundary for Scheduler Turns and late callbacks; controller conditions such as `ready`, `reconciling`, `waiting`, `blocked`, `error`, and `needs_configuration` are separate from both the desired state and AgentHub Session lifecycle. `forge serve` asynchronously reconciles enabled tasks, prefers one matching reusable Session, waits behind manual input, busy Turns, and approvals, and never fans a Task out to parallel autonomous Turns.
 
 Create an autonomous task:
 
@@ -182,7 +182,7 @@ forge task create \
   "Implement the change"
 ```
 
-`--agent` records the concrete AgentHub agent for this generation; preferred profiles remain an optional portable fallback. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names; if none are configured, the driver falls back to the `default` system Profile. The `scheduler` system Profile is reserved for a future Scheduler Agent and is not selected automatically by the current Self-Driving driver. Forge validates the selected AgentHub target before creating a session or changing Self-Driving state, so an unavailable target has no partial side effects.
+`--agent` records the concrete AgentHub agent for the Task; preferred profiles remain an optional portable fallback. The GUI maps keys such as `fast`, `reasoning`, `review`, or `codex` to AgentHub agent names and may fall back to the `default` Profile. Enabling without a resolvable Agent is still durable and reports `needs_configuration` without repeated scans.
 
 A scheduler-started turn must finish with exactly one result action:
 
@@ -193,28 +193,30 @@ Before suspending, the agent must exhaust work that does not depend on the exter
 When suspending, record completed work, current status, and blocking context in `suspensionSummary`, and record the separate, specific, observable, verifiable external signal in `wakeCondition`. Forge stores natural-language conditions without parsing them. The current server uses a fixed 30-minute fallback re-check; a future Scheduler may observe the condition and wake the task proactively.
 
 ```bash
-forge task self-driving complete --summary="Implemented and verified"
+forge task self-driving enable --agent=codex
+forge task self-driving disable
+forge task self-driving complete --revision=7 --summary="Implemented and verified"
 forge task self-driving suspend \
+	--revision=7 \
   --summary="Waiting for the upstream merge" \
   --wake-condition="The upstream merge is present in origin/master"
-forge task self-driving pause --reason="User decision required"
-forge task self-driving fail --reason="Verification cannot pass"
-forge task self-driving cancel --reason="User cancelled this generation"
+forge task self-driving pause --revision=7 --reason="User decision required"
+forge task self-driving fail --revision=7 --reason="Verification cannot pass"
 ```
 
-`suspend` records a natural-language `suspensionSummary` (the context) and separate `wakeCondition`, plus a `suspendedAt` timestamp. Forge stores the condition for the next agent but does not parse it; the prompt tells the agent to check it before continuing and to suspend again with both fields if it is unmet. Summary-only clients remain compatible by copying the summary into `wakeCondition` and recording a fallback marker. The server wakes the task after 30 minutes by re-queueing it; every new suspend resets the timer. `pause` is for human intervention and is never auto-woken. `cancel` durably ends the current generation, records the reason in `log.jsonl`, interrupts an active Scheduler turn, and leaves the Agent Session open when cancellation is requested from the UI. If a running turn exits without reporting a result, the driver records a retry and continues within a shared three-attempt budget before pausing the task. A completed, failed, or cancelled task can be started again as a new generation; cancelled generations inherit editable configuration but clear suspension metadata.
+Every result command carries the Scheduler-supplied revision; system-message provenance is descriptive and is not scheduling authority. `complete` atomically disables the switch and records the completed outcome. `suspend` keeps it enabled with a natural-language wake context and a 30-minute fallback re-check. `pause` and `fail` keep it enabled in `blocked` or `error` without automatic retry. A user message requests re-evaluation after the manual Turn finishes. Disable commits first, immediately blocks dispatch/continuation/wake, and may then send a best-effort system steer; it never interrupts the current Turn or stops/closes the Session, and notification failure does not roll the switch back.
 
 ### New Session and Manual Self-Driving from Chat
 
 The chat composer has one **New Session** button. Clicking it opens the enabled AgentHub agents with their name and model summary; choosing an agent immediately creates a new session for the selected resource. The button is disabled with an explanation when no enabled agent exists, shows a creating state while the request is in flight, ignores duplicate clicks, and keeps the chooser open when creation fails so the user can retry. The chooser also supports Escape and clicking outside the control.
 
-When the selected Project or Task is controlled by an active external Forge Session, the composer shows a clear resource lock notice and hides New Session, Self-Driving start/resume, and Resume Session controls; input and uploads are paused until a refresh observes that the lock has been released. The server repeats this check at execution time, including direct API and scheduler paths, and returns a conflict before creating an AgentHub session, advancing Self-Driving, or sending a message.
+When the selected Project or Task is controlled by an active external Forge Session, the composer shows a clear resource lock notice and hides New Session and Resume Session controls; input and uploads are paused until a refresh observes that the lock has been released. The Task-level Self-Driving switch remains available because its file lock/CAS path is independent from the Session resource lock. Scheduler Session creation still waits if it cannot safely acquire the resource.
 
 When the selected Project or Task is controlled by an active internal Forge GUI Session, the composer hides New Session and closes any open Agent chooser, even when the currently viewed Agent Run is historical. The current Session's input, approval, Close Session, and idle Task Self-Driving reuse actions remain available; the New Session action returns after the tree refresh observes that the internal lock has been released. Self-Driving remains a Task-only action.
 
-The task chat composer shows a stateful Self-Driving action: **Start Self-Driving** on tasks without Self-Driving, **Start New Self-Driving** after a completed, failed, or cancelled generation (creating the next generation), **Resume Now** while suspended, and **Resume Self-Driving** while paused. The first and next-generation actions open a minimal configuration dialog whose only editable fields are the Agent and the optional Run instructions (prompt); the generation's completion criteria are inherited from the previous generation and are no longer shown in the dialog. A suspended or paused generation resumes directly only when the server can re-validate a strictly idle AgentHub session for the same task; otherwise Resume opens an explicit Agent dialog. A valid Agent saved on the current generation may be preselected, but the user must confirm it, and another task's recent Agent is never used silently. Resume keeps the generation's saved instructions and completion criteria unchanged. Cancelled generations cannot be resumed; they offer Start New Self-Driving. Queued and running generations render as disabled states so they cannot be started twice. **Close Session** cancels an active Self-Driving generation before closing that AgentHub Session, while **End Turn** pauses only the current generation and keeps the Session open.
+Every open Task chat shows an On/Off switch plus an independent controller condition. The switch is available with no Session and while a Session is starting, idle, busy, waiting for approval, recovering, or stopped; only the switch persistence request itself temporarily disables the control. **End Turn** only interrupts the current AgentHub Turn. **Close Session** never changes the switch: when Self-Driving is On, the UI warns that the Scheduler may create a replacement and offers a separate “Disable and Close” combination.
 
-The action calls one unified server operation (`POST /api/workspaces/<id>/self-driving/start`) that accepts the selected Agent and generation/state expectations, queues or resumes the generation, then either reuses the task's current session or creates a new one, and finally sends the standard Self-Driving start message — the frontend never stitches these steps together. A session is reused only when the server re-validates at execution time that it belongs to the task, is attached to AgentHub, and is strictly idle (no pending approval, active turn, or unfinished scheduler turn); a reused session keeps its own agent. Without a reusable session the dialog selects the agent for the new session, and the request fails without changing task state if none is explicitly selected. If the session is busy, the operation rejects before creating another session. The server serializes this operation with the driver scan, so manual clicks, timed wake-ups, and scheduler passes can never start the same generation twice or send duplicate AgentHub messages.
+The UI calls the idempotent `PUT /api/workspaces/<id>/self-driving` desired-state endpoint. Persistence happens before asynchronous reconcile or Disable notification. Reconcile revalidates `(enabled, revision)` under the dispatch boundary, recovers the newest matching live Session when possible, reuses it only when strictly idle, waits instead of fanning out when it is busy, and creates one replacement Session only when none is reusable. Restart recovery and duplicate/late terminal events use the same revision gate.
 
 ## Task Templates
 
@@ -336,7 +338,9 @@ forge task list [--project=<project>] [--all]
 forge task show|archive ...
 forge task log add|list ...
 forge task repo add|list|remove ...
-forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+forge task self-driving enable|disable ...
+# Scheduler-internal result protocol:
+forge task self-driving complete|suspend|pause|fail --revision=<revision> ...
 
 forge session new|heartbeat|lock|unlock|end|list|show ...
 

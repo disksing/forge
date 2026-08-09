@@ -68,7 +68,7 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
-func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
+func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDownWithoutContinuation(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -77,8 +77,8 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "running", SchedulerTurn: true,
-		SelfDrivingGeneration: 1,
-		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingRevision: 1,
+		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	// The turn ended while the GUI was down: busy on disk, ready upstream.
@@ -90,34 +90,29 @@ func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDown(t *testing.T) {
 		if err != nil {
 			return false
 		}
-		resource, err := forgeWorkspace.Resource("project1.task1")
-		if err != nil || resource.SelfDriving == nil {
+		resource, err := forgeWorkspace.ResourceValue("project1.task1")
+		if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 			return false
 		}
-		for _, entry := range resource.Logs {
-			if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
-				return true
-			}
-		}
-		return false
+		return resource.Task.SelfDriving.Condition == "error"
 	})
 	rt := manager.runtimeByID("run-sched")
 	if rt == nil {
 		t.Fatal("scheduler run was not recovered")
 	}
-	// The recovery branch immediately sends the continuation prompt. Wait for
-	// that asynchronous finish to complete before TempDir cleanup removes the
-	// workspace underneath it.
-	waitForRuntimeTest(t, func() bool {
-		fake.mu.Lock()
-		defer fake.mu.Unlock()
-		return len(fake.messageSteers) == 1
-	})
+	// Recovery closes the old autonomous turn but retains the Session; it never
+	// sends an automatic continuation without a reported outcome.
 	waitForRuntimeTest(t, func() bool {
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
 		return !rt.schedulerTurnFinishing
 	})
+	fake.mu.Lock()
+	messageCount := len(fake.messageSteers)
+	fake.mu.Unlock()
+	if messageCount != 0 {
+		t.Fatalf("recovery sent %d continuation messages", messageCount)
+	}
 }
 
 func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {

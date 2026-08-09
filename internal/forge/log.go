@@ -21,20 +21,20 @@ type LogEntry struct {
 	Title                            string `json:"title"`
 	Details                          string `json:"details,omitempty"`
 	SelfDriving                      bool   `json:"selfDriving,omitempty"`
-	SelfDrivingGeneration            int    `json:"selfDrivingGeneration,omitempty"`
+	SelfDrivingRevision              int    `json:"selfDrivingRevision,omitempty"`
 	SelfDrivingWakeCondition         string `json:"selfDrivingWakeCondition,omitempty"`
 	SelfDrivingWakeConditionFallback bool   `json:"selfDrivingWakeConditionFallback,omitempty"`
 }
 
-func newSelfDrivingLogEntry(title, details string, generation int) LogEntry {
+func newSelfDrivingLogEntry(title, details string, revision int) LogEntry {
 	entry := newLogEntry(title, details)
 	entry.SelfDriving = true
-	entry.SelfDrivingGeneration = generation
+	entry.SelfDrivingRevision = revision
 	return entry
 }
 
-func newSelfDrivingSuspensionLogEntry(title, details, wakeCondition string, fallback bool, generation int) LogEntry {
-	entry := newSelfDrivingLogEntry(title, details, generation)
+func newSelfDrivingSuspensionLogEntry(title, details, wakeCondition string, fallback bool, revision int) LogEntry {
+	entry := newSelfDrivingLogEntry(title, details, revision)
 	entry.SelfDrivingWakeCondition = strings.TrimSpace(wakeCondition)
 	entry.SelfDrivingWakeConditionFallback = fallback
 	return entry

@@ -33,7 +33,7 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 func resourceSnapshotFromApp(resource app.ResourceTreeView) resourceSnapshot {
 	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived}
 	if resource.SelfDriving != nil {
-		result.SelfDriving = &selfDrivingSnapshot{Generation: resource.SelfDriving.Generation, State: resource.SelfDriving.State}
+		result.SelfDriving = &selfDrivingSnapshot{Enabled: resource.SelfDriving.Enabled, Revision: resource.SelfDriving.Revision, Condition: resource.SelfDriving.Condition}
 	}
 	for _, child := range resource.Children {
 		result.Children = append(result.Children, resourceSnapshotFromApp(child))
@@ -55,13 +55,11 @@ func runnableTaskCandidatesFromApp(tasks []app.RunnableTask) []runnableTaskCandi
 	result := make([]runnableTaskCandidate, 0, len(tasks))
 	for _, task := range tasks {
 		candidate := runnableTaskCandidate{
-			ID: task.ID, Path: task.Path, Title: task.Title, Generation: task.Generation,
-			State: task.State, AgentName: task.AgentName, Prompt: task.Prompt,
+			ID: task.ID, Path: task.Path, Title: task.Title, Revision: task.Revision,
+			Condition: task.Condition, AgentName: task.AgentName, Prompt: task.Prompt,
 			PreferredAgentProfiles: append([]string(nil), task.PreferredAgentProfiles...),
 			CompletionCriteria:     task.CompletionCriteria,
-			WakeCondition:          task.WakeCondition,
-			SuspendedAt:            task.SuspendedAt,
-			SuspensionSummary:      task.SuspensionSummary,
+			WakeContext:            task.WakeContext,
 		}
 		result = append(result, candidate)
 	}

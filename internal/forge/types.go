@@ -73,20 +73,17 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 }
 
 type SelfDriving struct {
-	Generation             int      `json:"generation"`
-	State                  string   `json:"state"`
-	AgentName              string   `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string   `json:"prompt,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
-	WakeCondition          string   `json:"wakeCondition,omitempty"`
-	// SuspendedAt is the wall-clock time the current generation was last
-	// suspended. The server driver uses it (not task.updatedAt) to decide when
-	// a suspended Self-Driving should be re-queued.
-	SuspendedAt string `json:"suspendedAt,omitempty"`
-	// SuspensionSummary is a natural-language reason recorded by the agent when
-	// it suspends itself. It is not structured waiting data.
-	SuspensionSummary string `json:"suspensionSummary,omitempty"`
+	Enabled                bool                              `json:"enabled"`
+	Revision               int                               `json:"revision"`
+	Condition              string                            `json:"condition"`
+	ConditionReason        string                            `json:"conditionReason,omitempty"`
+	AgentName              string                            `json:"agentName,omitempty"`
+	PreferredAgentProfiles []string                          `json:"preferredAgentProfiles,omitempty"`
+	Prompt                 string                            `json:"prompt,omitempty"`
+	CompletionCriteria     string                            `json:"completionCriteria,omitempty"`
+	WakeContext            *app.SelfDrivingWakeContext       `json:"wakeContext,omitempty"`
+	LastOutcome            *app.SelfDrivingOutcome           `json:"lastOutcome,omitempty"`
+	NotificationError      *app.SelfDrivingNotificationError `json:"notificationError,omitempty"`
 }
 
 type TaskRepo struct {

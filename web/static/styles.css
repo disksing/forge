@@ -1302,6 +1302,50 @@ body.resizing-y {
   margin-left: auto;
 }
 
+.self-driving-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.self-driving-switch-track {
+  width: 2.35rem;
+  height: 1.3rem;
+  padding: 0.14rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 55%, var(--line));
+  transition: background 140ms ease;
+}
+
+.self-driving-switch-thumb {
+  display: block;
+  width: 1.02rem;
+  height: 1.02rem;
+  border-radius: 50%;
+  background: var(--panel);
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 30%, transparent);
+  transition: transform 140ms ease;
+}
+
+.self-driving-switch[aria-checked="true"] .self-driving-switch-track {
+  background: var(--accent);
+}
+
+.self-driving-switch[aria-checked="true"] .self-driving-switch-thumb {
+  transform: translateX(1.05rem);
+}
+
+.self-driving-switch:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .self-driving-bar-button {
   display: inline-flex;
   align-items: center;
@@ -1454,7 +1498,8 @@ body.resizing-y {
   --self-driving-tone: var(--accent);
 }
 
-.self-driving-bar-running {
+.self-driving-bar-running,
+.self-driving-bar-reconciling {
   --self-driving-tone: var(--accent);
   border-color: transparent;
   background:
@@ -1470,12 +1515,16 @@ body.resizing-y {
   animation: self-driving-running-border 3.6s linear infinite, self-driving-running-pulse 2.6s ease-in-out infinite;
 }
 
-.self-driving-bar-running .self-driving-state-icon {
+.self-driving-bar-running .self-driving-state-icon,
+.self-driving-bar-reconciling .self-driving-state-icon {
   transform-origin: center;
   animation: self-driving-running-icon 2.6s ease-in-out infinite;
 }
 
-.self-driving-bar-suspended {
+.self-driving-bar-suspended,
+.self-driving-bar-waiting,
+.self-driving-bar-blocked,
+.self-driving-bar-needs_configuration {
   --self-driving-tone: var(--amber);
 }
 
@@ -1487,7 +1536,8 @@ body.resizing-y {
   --self-driving-tone: var(--green);
 }
 
-.self-driving-bar-failed {
+.self-driving-bar-failed,
+.self-driving-bar-error {
   --self-driving-tone: var(--red);
 }
 

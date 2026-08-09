@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -265,17 +266,15 @@ type RunnableTask struct {
 	ID                     string
 	Path                   string
 	Title                  string
-	Generation             int
-	State                  string
+	Revision               int
+	Condition              string
 	Ready                  bool
 	Reason                 string
 	AgentName              string
 	Prompt                 string
 	PreferredAgentProfiles []string
 	CompletionCriteria     string
-	SuspendedAt            string
-	SuspensionSummary      string
-	WakeCondition          string
+	WakeContext            *SelfDrivingWakeContext
 }
 
 // TaskListOptions controls project task listing.
@@ -465,14 +464,12 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 		}
 		runnable := RunnableTask{
 			ID: entry.Task.ID, Path: relPath(w.root, entry.Path), Title: entry.Task.Title,
-			Ready: ready, Reason: reason, Generation: entry.Task.SelfDriving.Generation,
-			State: entry.Task.SelfDriving.State, AgentName: entry.Task.SelfDriving.AgentName,
+			Ready: ready, Reason: reason, Revision: entry.Task.SelfDriving.Revision,
+			Condition: entry.Task.SelfDriving.Condition, AgentName: entry.Task.SelfDriving.AgentName,
 			Prompt:                 entry.Task.SelfDriving.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.Task.SelfDriving.PreferredAgentProfiles...),
 			CompletionCriteria:     entry.Task.SelfDriving.CompletionCriteria,
-			SuspendedAt:            entry.Task.SelfDriving.SuspendedAt,
-			SuspensionSummary:      entry.Task.SelfDriving.SuspensionSummary,
-			WakeCondition:          entry.Task.SelfDriving.WakeCondition,
+			WakeContext:            entry.Task.SelfDriving.WakeContext,
 		}
 		result.Runnable = append(result.Runnable, runnable)
 	}
@@ -592,7 +589,7 @@ func resolvedTaskSelfDriving(input CreateTaskInput) (*SelfDriving, error) {
 			return nil, err
 		}
 		return &SelfDriving{
-			Generation: 1, State: selfDrivingStateQueued, AgentName: strings.TrimSpace(input.AgentName),
+			Enabled: true, Revision: 1, Condition: selfDrivingConditionReady, AgentName: strings.TrimSpace(input.AgentName),
 			PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt),
 			CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
 		}, nil
@@ -687,7 +684,7 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
 	if task.SelfDriving != nil {
-		if err := prependLogEntry(staging, newSelfDrivingLogEntry("Self-Driving queued", "", task.SelfDriving.Generation)); err != nil {
+		if err := prependLogEntry(staging, newSelfDrivingLogEntry("Self-Driving enabled", "", task.SelfDriving.Revision)); err != nil {
 			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
 		}
 	}
@@ -745,6 +742,16 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 		if err := ensureTaskRepoWorktreesMerged(w.root, *task); err != nil {
 			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 		}
+		selfDrivingLock, lockErr := acquireSelfDrivingTaskLock(src)
+		if lockErr != nil {
+			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: lockErr}
+		}
+		defer selfDrivingLock.Close()
+		defer syscall.Flock(int(selfDrivingLock.Fd()), syscall.LOCK_UN)
+		if err := disableSelfDrivingForArchive(src, task); err != nil {
+			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
+		}
+		resource = task
 	}
 	if err := releaseSessionsControllingPath(w.root, relPath(w.root, src)); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}

@@ -7,7 +7,7 @@ Forge GUI 只通过 AgentHub 执行 agent 和维护会话。Forge 自身不再�
 Forge 保留以下控制面：
 
 - AgentWorkspace、project、task、artifact、Wiki 与 Git worktree 展示；
-- Forge session、资源锁和 Self-Driving generation；
+- Forge session、资源锁和 Task 级 Self-Driving revision；
 - 系统和用户 Profile 到 AgentHub `agentName` 的路由；
 - AgentHub durable session 的创建、消息、审批、恢复、停止和 canonical event 投影。
 
@@ -35,19 +35,19 @@ GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 �
 
 ## 会话与锁
 
-新 chat 和 Self-Driving 都创建或恢复 AgentHub session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。手动首次启动和新 generation 通过单个 `POST /api/workspaces/<id>/self-driving/start` 收集并持久化 `agentName`、`runInstructions` 和 `completionCriteria`；暂停或挂起恢复保留当前 generation 参数。若当前 Task 没有严格 idle 的可复用 AgentHub session，GUI Resume 必须打开明确的 Agent 选择框；当前 generation 保存且仍可用的 Agent 只能作为预选，用户确认后才恢复，不能读取其他 Task 的最近选择。Forge 在创建 Forge session 或推进 generation 前查询 AgentHub catalog，目标不可用时保持任务、session 和锁不变。
+新 chat 和 Self-Driving 都可创建或恢复 AgentHub Session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。`PUT /api/workspaces/<id>/self-driving` 只持久化 Task 级期望状态；Scheduler 随后按 revision 异步 reconcile，优先粘性复用同一 Task、Agent 匹配的最近 Session，busy、审批、恢复中或已有 Turn 时等待，且不会 fan-out。缺少 Agent 配置时保持 Enabled 并进入 `needs_configuration`，不忙循环。
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
 
 浏览器在新 Session 的初始消息和后续 Chat 输入中都提交当前用户名。Forge 转发为 AgentHub provenance `role=user` 和 `sender.name=<用户名>`，timeline 使用该名字并附加 `USER` 标签；字段只描述消息来源，不参与认证或授权。Self-Driving 调度、定时唤醒和 continuation prompt 继续使用 `role=system`、`sender.name=Forge Scheduler`，不会继承浏览器用户名。
 
-当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New Session、Start/Resume Self-Driving 和 Resume Session 入口，并暂停输入与上传。外部锁释放后，下一次 tree 刷新恢复正常操作。服务端在创建/恢复 Session、发送输入和手动或调度 Self-Driving 的执行路径再次读取同一锁投影；页面过期或直接调用 API 只返回 conflict，不创建 AgentHub session、不推进 Self-Driving generation，也不发送消息。
+当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New/Resume Session，并暂停输入与上传。Self-Driving 开关仍可使用：它通过独立 Task 文件锁和原子读改写持久化，不依赖资源锁；Scheduler 若无法获得创建 Session 所需资源则进入 waiting。
 
 当当前选中的 Project 或 Task 存在 `source=internal` 的有效 Forge GUI Session 锁时，composer 隐藏 New Session 并关闭已展开的 Agent 选择列表；判定依据是该 Resource 的所有 `sessionControls` 锁投影，不依赖当前查看的 Agent Run 或其状态。当前 Session 的输入、审批、Close Session 和 idle Task Self-Driving 复用入口保持可用；下一次 tree 刷新观察到锁释放后恢复 New Session。Self-Driving 仍只适用于 Task。
 
-Self-Driving 进入 `completed`、`failed` 或 `cancelled` 只结束调度回合，不关闭 AgentHub session；session、Forge session 和资源锁会保留到用户明确点击 Close Session。已关闭并释放原 Forge session 的历史 run 不可 resume，因为 AgentHub launch environment 中的原始 `FORGE_SESSION_ID` 已失效，此时应启动新 session。
+Self-Driving `complete` 会自动关闭 Task 开关；`waiting`、`blocked` 和 `error` 只结束当前调度 Turn，保留 Enabled 期望和 AgentHub Session 的普通聊天能力。Session、Forge session 和资源锁会保留到用户明确点击 Close Session；已关闭并释放原 Forge session 的历史 run 由 Scheduler 按当前 revision 决定是否创建替代 Session。
 
-当前 turn 处于 AgentHub `busy` 或 `waiting_approval` 时，Chat composer 在输入框工具栏提供 End Turn 和 Close Session 两个独立图标操作。End Turn 只调用 AgentHub interrupt，保留 AgentHub session、Forge session 和 Task 锁；服务端会在发送非幂等 interrupt 前重新读取并校验 source、session ID 和当前状态，状态冲突不执行操作。Self-Driving/SchedulerTurn 会先以 `user stopped the active turn` 将同一 generation 原子地置为 paused，普通 Chat turn 不修改 Self-Driving；interrupt 结果不明确时保守保留 session 并等待对账。Close Session 对当前关联且可取消的 Self-Driving generation 先以 `user closed the Self-Driving session` 做同一 generation/state 校验并持久化为 cancelled，再调用 AgentHub stop；取消失败不会发送 stop，stop 结果不明确时保持 cancelled 且不重试。已完成、失败、取消或历史 generation 不会误覆盖，普通 Chat Session 行为不变；只有 durable stopped 后才释放锁。取消 generation 时 UI 默认关闭 Session，显式 Cancel Self-Driving 则保留 Session。
+当前 Turn 处于 AgentHub `busy` 或 `waiting_approval` 时，Chat composer 提供 End Turn 和 Close Session 两个正交操作。End Turn 只调用 AgentHub interrupt；Close Session 只调用 stop，并在 durable stopped 后释放 Forge 锁。两者都不改变 Task 级开关。Enabled Task 的 Session 被关闭后，Scheduler 可创建替代 Session；UI 会明确提示并另行提供 Disable and Close。Disable 先持久化并推进 revision，再 best-effort 发送 Forge Scheduler 来源的 system steer；它不调用 interrupt/stop/close，steer 失败只记录为 `notificationError`。
 
 只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁；服务错过 stopped 边沿、只看到 archived 时，必须依据连续 durable event history 证明该 session 先经过 stopped 才可释放。AgentHub 不可达、状态未知、event cursor gap、重复或冲突 source、未证明先经过 stopped 的 archived 状态都保守持锁。
 

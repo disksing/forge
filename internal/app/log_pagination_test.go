@@ -285,7 +285,7 @@ func TestResourcePageCarriesCurrentSelfDrivingReasonOutsideLogPage(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "provider failed permanently"}); err != nil {
+	if _, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "provider failed permanently", ExpectedRevision: task.SelfDriving.Revision}); err != nil {
 		t.Fatal(err)
 	}
 	for index := 0; index < 15; index++ {
@@ -297,7 +297,7 @@ func TestResourcePageCarriesCurrentSelfDrivingReasonOutsideLogPage(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.SelfDriving == nil || detail.SelfDriving.State != "failed" || detail.SelfDriving.StatusReason != "provider failed permanently" {
+	if detail.SelfDriving == nil || detail.SelfDriving.Condition != "error" || detail.SelfDriving.ConditionReason != "provider failed permanently" {
 		t.Fatalf("current Self-Driving reason was not projected in metadata: %+v", detail.SelfDriving)
 	}
 	for _, entry := range detail.Logs {

@@ -13,10 +13,12 @@ const (
 
 const selfDrivingAgentGuidanceEnglish = `- Self-Driving suspend is allowed only when the task cannot make meaningful progress and the only remaining action would be repeated polling of a specific, observable external condition. If any in-scope implementation, testing, investigation, review, documentation, repair, or verification remains, continue; do not use suspend for a finished phase, a checkpoint or save-progress step, shortening a turn, or yielding early.
 - Before suspending, exhaust work that does not depend on the external condition. Put completed work, current status, and blocking context in --summary=<text>; put the separate, specific, observable, verifiable wake signal in --wake-condition=<text>. Use complete only after task requirements and appropriate verification, pause for a user decision, authorization, or manual handling, and fail only when no feasible safe path remains. Forge currently stores natural-language conditions without parsing them and uses a 30-minute fallback wake; a future Scheduler may use the condition for proactive wake-up.
+- Every Self-Driving result command must include the revision supplied by the Scheduler. That revision gate, not system-message provenance, is the authority boundary. complete disables Self-Driving; suspend keeps it enabled and waiting; pause and fail keep it enabled but blocked or errored without automatic retry.
 `
 
 const selfDrivingAgentGuidanceChinese = `- Self-Driving suspend 仅适用于任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件的情况。只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做，就必须继续；不得把 suspend 用于阶段完成、checkpoint 或保存进度、缩短回合或主动让出执行权。
 - 挂起前先穷尽不依赖该外部条件的工作。使用 --summary=<text> 记录已完成工作、当前状态和阻塞上下文；使用 --wake-condition=<text> 单独记录具体、可观察、可验证的外部唤醒信号。只有需求和适当验证完成后才使用 complete；需要用户决定、授权或人工处理时使用 pause；当前约束下没有可行安全路径时才使用 fail。Forge 当前只保存自然语言条件、不解析其含义，并使用 30 分钟 fallback 唤醒；未来 Scheduler 可以据此主动唤醒。
+- 每个 Self-Driving 结果命令都必须携带 Scheduler 提供的 revision；权限边界是 revision gate，而不是系统消息 provenance。complete 会关闭 Self-Driving；suspend 保持开启并等待；pause 和 fail 保持开启但进入 blocked 或 error，且不自动重试。
 `
 
 const crossResourceReadGuidanceEnglish = `- Read-only inspection of other project/task resources does not change them and needs no additional Forge lock. Only when writing to a project/task outside the resource already locked for this session, acquire a temporary lock with explicit ` + "`--project`" + `/` + "`--task`" + ` selectors by running ` + "`forge session lock --id=$FORGE_SESSION_ID`" + `, then release it with ` + "`forge session unlock --id=$FORGE_SESSION_ID`" + ` when finished.
@@ -288,7 +290,7 @@ func taskAgentsPromptZH(resource Resource) string {
 - %s
 - %s
 - Forge session 所有权：如果环境变量或注入的 Forge session 上下文中存在 `+"`FORGE_SESSION_ID`"+`，请复用它；外层启动器已注册 session 并锁定此目录对应的资源，因此不要创建新 session，不要锁定/解锁当前资源，也不要自行结束外层 session。
-- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是 `+"`forge task self-driving complete`"+`、`+"`forge task self-driving suspend`"+`、`+"`forge task self-driving pause`"+` 或 `+"`forge task self-driving fail`"+` 之一。`+"`cancel`"+` 是结束 generation 的控制面操作，不是调度器回合结果。
+- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是携带所提供 revision 的 complete、suspend、pause 或 fail 之一。Enable/Disable 属于用户控制面，不能替代回合结果。
 - 如需委派 Self-Driving 工作，使用 `+"`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+` 创建子任务；使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 Self-Driving 时，使用 `+"`--summary=<text>`"+` 记录自然语言上下文，并使用 `+"`--wake-condition=<text>`"+` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
 `+selfDrivingAgentGuidanceChinese+`- 如果环境变量和注入的 session 上下文都没有 `+"`FORGE_SESSION_ID`"+`，请检测当前 agent PID，运行 `+"`forge session new --pid <pid>`"+`，导出返回的 ID 为 `+"`FORGE_SESSION_ID`"+`，并在更新项目/任务数据前只锁定一次当前目录对应的资源。
 `+crossResourceReadGuidanceChinese+`- %s
@@ -348,7 +350,7 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 可能改变范围、验收标准或稳定约束的问题应保存在相应 brief 中。短期执行问题放在 ` + "`work.md`" + `；形成长期答案后，将其提升到 brief 并删除临时说明。
 - 使用 ` + "`forge task log add <title> --details <details>`" + ` 或 ` + "`forge project log add <title> --details <details>`" + ` 记录重要执行事件。
 - 创建、列出和归档任务时优先使用 Forge 命令。
-` + selfDrivingAgentGuidanceChinese + `- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是 ` + "`forge task self-driving complete`" + `、` + "`forge task self-driving suspend`" + `、` + "`forge task self-driving pause`" + ` 或 ` + "`forge task self-driving fail`" + ` 之一。` + "`cancel`" + ` 是结束 generation 的控制面操作，不是调度器回合结果。
+` + selfDrivingAgentGuidanceChinese + `- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是携带所提供 revision 的 complete、suspend、pause 或 fail 之一。Enable/Disable 属于用户控制面，不能替代回合结果。
 - 委派 Self-Driving 工作时，使用 ` + "`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + ` 创建子任务。使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 Self-Driving 时，使用 ` + "`--summary=<text>`" + ` 记录自然语言上下文，并使用 ` + "`--wake-condition=<text>`" + ` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
 - 项目和任务的 ` + "`AGENTS.md`" + ` 是简短的启动卡片。全局操作规则放在这里，背景放在 ` + "`project.md`" + `/` + "`task.md`" + `，任务恢复状态放在任务 ` + "`work.md`" + `，时间线历史放在 ` + "`log.jsonl`" + `。
 
@@ -381,7 +383,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+forge task self-driving enable|disable ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

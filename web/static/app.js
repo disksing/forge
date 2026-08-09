@@ -89,8 +89,8 @@ const state = {
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
-    expectedGeneration: 0,
-    expectedState: "",
+    expectedRevision: 0,
+    expectedCondition: "",
     runInstructions: "",
     completionCriteria: "",
     submitting: false,
@@ -143,8 +143,8 @@ const state = {
     agentChooserOpen: false,
     historyOpen: false,
     selfDrivingExpanded: false,
-    selfDrivingStarting: false,
-    selfDrivingCancelling: false,
+    selfDrivingSaving: false,
+    selfDrivingDisabling: false,
     newSessionStarting: false,
     sessionActionsOpen: false,
     eventsHasMore: false,
@@ -177,10 +177,10 @@ const AGENT_OLDER_RAW_PAGE_LIMIT = 250;
 const AGENT_MANUAL_VISIBLE_EVENT_COUNT = 5;
 const AGENT_MANUAL_RAW_PAGE_LIMIT = 500;
 const AGENT_MANUAL_AUTO_PAGE_LIMIT = 8;
-const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and Self-Driving are unavailable until the lock is released.";
+const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.";
 const SELF_DRIVING_FINISH_NOTICE_KIND = "self-driving-finish";
-const SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE = "until-resume";
-const SELF_DRIVING_RESUMABLE_STATES = new Set(["suspended", "paused"]);
+const SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE = "until-reconcile";
+const SELF_DRIVING_RESUMABLE_STATES = new Set(["waiting", "blocked", "error"]);
 const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
 const AGENT_DRAFT_STORAGE_VERSION = 1;
 const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
@@ -537,15 +537,17 @@ function notificationEventState(event) {
 }
 
 function notificationSelfDrivingContext(item, resourceId) {
-  const generation = Number(item?.selfDrivingGeneration) || 0;
-  const isSelfDriving = Boolean(item?.schedulerTurn) || generation > 0;
+  const revision = Number(item?.selfDrivingRevision) || 0;
+  const isSelfDriving = Boolean(item?.schedulerTurn) || revision > 0;
   if (!isSelfDriving) return { isSelfDriving: false, state: "", final: false, suppressed: false };
   const resource = findResource(resourceId);
   const selfDriving = resource?.selfDriving;
-  const stateName = String(selfDriving?.state || "").trim().toLowerCase();
-  const final = ["completed", "failed", "paused", "cancelled"].includes(stateName);
-  const suppressed = stateName === "suspended" || stateName === "queued" || stateName === "running" || !final;
-  return { isSelfDriving: true, state: stateName, final, suppressed, cancelled: stateName === "cancelled" };
+  const stateName = String(selfDriving?.condition || "disabled").trim().toLowerCase();
+	const completed = !selfDriving?.enabled && selfDriving?.lastOutcome?.status === "completed";
+	const requiresAttention = Boolean(selfDriving?.enabled) && ["blocked", "error", "needs_configuration"].includes(stateName);
+	const disabledControl = !selfDriving?.enabled && !completed;
+	const final = completed || requiresAttention;
+	return { isSelfDriving: true, state: stateName, final, suppressed: !final, disabledControl };
 }
 
 function notificationRecordFor(item, marker, completionState = "") {
@@ -730,15 +732,15 @@ function observeCompletion(item, completionState = "") {
     return false;
   }
   if (seen && pendingIndex < 0) return false;
-  if (selfDriving.isSelfDriving && selfDriving.state === "suspended") {
+  if (selfDriving.isSelfDriving && selfDriving.state === "waiting") {
     if (!seen) store.seen.push({ marker, at: Date.now() });
     store.pending = store.pending.filter((entry) => entry.marker !== marker);
     state.notifications.store = store;
     writeNotificationStore();
     return false;
   }
-  if (selfDriving.isSelfDriving && selfDriving.cancelled) {
-    // Cancelling a Self-Driving generation is a control-plane action, not a
+  if (selfDriving.isSelfDriving && selfDriving.disabledControl) {
+    // Disabling Self-Driving is a control-plane action, not a
     // completed/failed turn. Mark any projection as handled without adding
     // unread state or triggering browser/sound effects.
     if (!seen) store.seen.push({ marker, at: Date.now() });
@@ -1767,7 +1769,7 @@ function projectTaskSummary(project) {
     .filter((task) => task && task.archived !== true);
   const runningTaskIds = new Set();
   for (const task of tasks) {
-    if (task.selfDriving?.state === "running" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+    if (task.selfDriving?.condition === "reconciling" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
       runningTaskIds.add(task.id);
     }
   }
@@ -1986,31 +1988,26 @@ function operationalStatusMarkup(presentation, options = {}) {
 
 function deriveTaskSelfDrivingState(selfDriving, sessions) {
   if (!selfDriving) return null;
-  const selfDrivingState = selfDriving?.state || "";
-  if (selfDrivingState === "running") {
-    const scheduler = sessions.find((session) => session.schedulerTurn && session.selfDrivingGeneration === selfDriving.generation && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
+  if (!selfDriving.enabled) return null;
+  const selfDrivingState = selfDriving?.condition || "ready";
+  if (selfDrivingState === "reconciling") {
+    const scheduler = sessions.find((session) => session.schedulerTurn && session.selfDrivingRevision === selfDriving.revision && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
     if (scheduler) {
       return taskStatusState("self-driving-running", "task-status-self-driving-running", "workflow", "Self-Driving running", "self-driving");
     }
     return taskStatusState("auto-recovering", "task-status-attention", "rotate-ccw", "Self-Driving waiting for scheduler recovery", "self-driving");
   }
-  if (selfDrivingState === "failed") {
-    return taskStatusState("failed", "task-status-danger", "triangle-alert", "Self-Driving failed", "self-driving");
+  if (selfDrivingState === "error") {
+    return taskStatusState("error", "task-status-danger", "triangle-alert", "Self-Driving error", "self-driving");
   }
-  if (selfDrivingState === "paused") {
-    return taskStatusState("paused", "task-status-attention", "square", "Self-Driving paused", "self-driving");
+  if (selfDrivingState === "blocked" || selfDrivingState === "needs_configuration") {
+    return taskStatusState(selfDrivingState, "task-status-attention", "square", `Self-Driving ${selfDrivingState.replace(/_/g, " ")}`, "self-driving");
   }
-  if (selfDrivingState === "suspended") {
-    return taskStatusState("suspended", "task-status-attention", "pause", "Self-Driving suspended, waiting for timed wake-up", "self-driving");
+  if (selfDrivingState === "waiting") {
+    return taskStatusState("waiting", "task-status-attention", "pause", "Self-Driving waiting", "self-driving");
   }
-  if (selfDrivingState === "queued") {
-    return taskStatusState("queued", "task-status-queued", "clock", "Self-Driving queued", "self-driving");
-  }
-  if (selfDrivingState === "completed") {
-    return taskStatusState("completed", "task-status-completed", "check-circle-2", "Self-Driving completed", "self-driving");
-  }
-  if (selfDrivingState === "cancelled") {
-    return taskStatusState("cancelled", "task-status-cancelled", "ban", "Self-Driving cancelled", "self-driving");
+  if (selfDrivingState === "ready") {
+    return taskStatusState("ready", "task-status-queued", "clock", "Self-Driving ready", "self-driving");
   }
   return taskStatusState("unknown", "task-status-neutral", "circle-help", `Self-Driving ${selfDrivingState || "unknown"}`, "self-driving");
 }
@@ -2127,7 +2124,7 @@ function taskLockOwnerLabel(session) {
 function taskOperationalLabel(selfDriving, sessions, lock, statuses) {
   const parts = [];
   if (selfDriving) {
-    parts.push(`Self-Driving ${selfDriving.state}, generation ${selfDriving.generation}`);
+    parts.push(`Self-Driving ${selfDriving.enabled ? "on" : "off"}, ${selfDriving.condition}, revision ${selfDriving.revision}`);
   }
   if (sessions.length === 1) {
     parts.push(taskAgentSessionLabel(sessions[0]));
@@ -2473,12 +2470,12 @@ function taskResourceForSelfDriving(resourceId) {
 function sessionOperationalLabel(session, taskResource, taskState, sessionStatus) {
   const parts = [];
   if (taskResource?.selfDriving && taskState?.selfDriving) {
-    const rawState = taskResource.selfDriving.state || "unknown";
+    const rawState = taskResource.selfDriving.condition || "unknown";
     const stateLabel = taskState.selfDriving.kind === "auto-recovering"
       ? `${taskState.selfDriving.label} (${rawState})`
       : `Self-Driving ${rawState}`;
-    const generation = Number.isFinite(taskResource.selfDriving.generation) ? taskResource.selfDriving.generation : "unknown";
-    parts.push(`${stateLabel}, generation ${generation}`);
+    const revision = Number.isFinite(taskResource.selfDriving.revision) ? taskResource.selfDriving.revision : "unknown";
+    parts.push(`${stateLabel}, revision ${revision}`);
   }
   if (sessionStatus) parts.push(sessionStatus.label);
   if (parts.length > 0) return parts.join(" · ");
@@ -3751,12 +3748,12 @@ function isSelfDrivingWaitingFinishNotice(notice) {
     data?.level !== "error" &&
     String(data.runId || "").trim() !== "" &&
     String(data.resourceId || "").trim() !== "" &&
-    Number(data.selfDrivingGeneration) > 0;
+    Number(data.selfDrivingRevision) > 0;
 }
 
 function selfDrivingWaitingNoticeKey(notice) {
   const data = notice?.data || {};
-  return `${String(data.runId || "").trim()}:${String(data.resourceId || "").trim()}:${Number(data.selfDrivingGeneration) || 0}`;
+  return `${String(data.runId || "").trim()}:${String(data.resourceId || "").trim()}:${Number(data.selfDrivingRevision) || 0}`;
 }
 
 function selfDrivingWaitingNoticeSequence(notice) {
@@ -3770,12 +3767,12 @@ function selfDrivingProjectionForRun(run) {
     state.details?.[resourceId],
     findResource(resourceId),
   ].map((resource) => resource?.selfDriving).filter(Boolean).map((selfDriving) => ({
-    generation: Number(selfDriving.generation) || 0,
-    state: String(selfDriving.state || "").trim().toLowerCase(),
+    revision: Number(selfDriving.revision) || 0,
+    state: String(selfDriving.condition || "").trim().toLowerCase(),
   }));
   if (!candidates.length) return null;
   const statePriority = (stateName) => SELF_DRIVING_RESUMABLE_STATES.has(stateName) ? 0 : 1;
-  candidates.sort((left, right) => right.generation - left.generation || statePriority(right.state) - statePriority(left.state));
+  candidates.sort((left, right) => right.revision - left.revision || statePriority(right.state) - statePriority(left.state));
   return candidates[0];
 }
 
@@ -3785,7 +3782,7 @@ function currentSelfDrivingWaitingNotice(notice, runs = state.agent.runs) {
   if (!state.agent.activeRunId || String(data.runId).trim() !== state.agent.activeRunId) return false;
   const run = (runs || []).find((candidate) => candidate.id === state.agent.activeRunId);
   if (!run || String(run.resourceId || "").trim() !== String(data.resourceId).trim() ||
-      Number(run.selfDrivingGeneration) !== Number(data.selfDrivingGeneration)) return false;
+      Number(run.selfDrivingRevision) !== Number(data.selfDrivingRevision)) return false;
 
   const noticeSequence = selfDrivingWaitingNoticeSequence(notice);
   const runSequence = Number(run.schedulerTurnSequence) || 0;
@@ -3796,7 +3793,7 @@ function currentSelfDrivingWaitingNotice(notice, runs = state.agent.runs) {
 
   const projection = selfDrivingProjectionForRun(run);
   if (!projection) return true;
-  if (projection.generation !== Number(data.selfDrivingGeneration)) return false;
+  if (projection.revision !== Number(data.selfDrivingRevision)) return false;
   return SELF_DRIVING_RESUMABLE_STATES.has(projection.state);
 }
 
@@ -4341,49 +4338,24 @@ function renderAgent() {
 
 function selfDrivingStatusReason(run, logs = []) {
   if (!run) return null;
-  if (run.state === "suspended") {
-    const summary = String(run.suspensionSummary || "").trim();
-    return summary ? { label: "Suspend reason", text: summary } : null;
-  }
-
-  const titlesByState = {
-    running: ["Self-Driving retry"],
-    paused: ["Self-Driving paused"],
-    failed: ["Self-Driving failed"],
-  };
-  const titles = titlesByState[run.state];
-  if (!titles) return null;
-  const labelsByState = { running: "Retry reason", paused: "Pause reason", failed: "Failure reason" };
-  const structuredReason = String(run.statusReason || "").trim();
-  if (structuredReason) {
-    return { label: labelsByState[run.state], text: structuredReason };
-  }
-  const generation = Number(run.generation);
-  const entry = (logs || []).find((candidate) => candidate?.selfDriving === true
-    && Number(candidate.selfDrivingGeneration) === generation
-    && titles.includes(candidate.title)
-    && String(candidate.details || "").trim());
-  if (!entry) return null;
-  return { label: labelsByState[run.state], text: String(entry.details).trim() };
+  const text = String(run.conditionReason || run.notificationError?.message || "").trim();
+  return text ? { label: "Status", text } : null;
 }
 
 // selfDrivingTopBar renders the single, always-visible Self-Driving status and control
-// entry at the top of a Task chat. Tasks without a Self-Driving generation get a
-// compact not-started bar with Start Self-Driving; every real state shows its state
+// entry at the top of a Task chat. Every open Task gets a persistent On/Off
+// switch plus a controller condition that is independent from Session state.
 // chip, a one-line truncated summary and the currently legal actions. Longer
-// context (generation, profiles, actual Agent, reasons, wake condition) stays
+// context (revision, profiles, actual Agent, reasons, wake condition) stays
 // behind the details toggle so the bar never crowds the chat.
 function selfDrivingTopBar(detail) {
   const selected = findResource(state.selectedId);
   if (!selected || selected.type !== "task" || !detail) return "";
   const run = detail.selfDriving || null;
-  const presentation = selfDrivingPresentation(run ? run.state : "");
+  const presentation = selfDrivingPresentation(run?.condition || "disabled", Boolean(run?.enabled));
   const expanded = Boolean(run && state.agent.selfDrivingExpanded);
-  const externalLocked = selectedResourceHasExternalLock();
   const summary = selfDrivingBarSummary(run, detail);
-  const actions = externalLocked
-    ? `<span class="self-driving-bar-lock"><i data-lucide="lock" class="self-driving-lock-icon" aria-hidden="true"></i><span>Locked by an external session</span></span>`
-    : selfDrivingBarActions(detail);
+  const actions = selfDrivingBarActions(detail);
   const toggleLabel = expanded ? "Hide Self-Driving details" : "Show Self-Driving details";
   return `
     <section class="self-driving-bar self-driving-bar-${presentation.key}${expanded ? " expanded" : ""}" role="status" aria-label="Self-Driving: ${escapeHTML(presentation.label)}">
@@ -4408,51 +4380,49 @@ function selfDrivingTopBar(detail) {
 // collapsed bar; CSS truncates it with an ellipsis and the full text stays
 // available via the title attribute and the expanded details.
 function selfDrivingBarSummary(run, detail) {
-  if (!run) return "No Self-Driving generation yet.";
+  if (!run) return "Self-Driving is off.";
   const reason = selfDrivingStatusReason(run, detail?.logs);
   if (reason) return `${reason.label}: ${reason.text}`;
-  const stateName = String(run.state || "").trim().toLowerCase();
-  if (stateName === "suspended" && run.wakeCondition) return `Wake condition: ${run.wakeCondition}`;
+  if (run.wakeContext?.condition) return `Wake condition: ${run.wakeContext.condition}`;
   const actual = currentAgentRun();
   if (actual?.schedulerTurn && actual.resourceId === detail.id) {
     const selection = `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentHubAgentName || ""}`.trim();
     if (selection) return `Agent: ${selection}`;
   }
-  return `Generation ${Number(run.generation) || 0}`;
+  return `Revision ${Number(run.revision) || 0}`;
 }
 
 function selfDrivingBarDetails(detail) {
   const run = detail?.selfDriving;
   if (!run) return "";
   const reason = selfDrivingStatusReason(run, detail?.logs);
-  const latestSuspension = (detail.logs || []).find((entry) => entry.selfDriving && entry.selfDrivingGeneration === run.generation && ["Self-Driving suspended", "Self-Driving wake condition migrated"].includes(entry.title));
   const profiles = run.preferredAgentProfiles || [];
   const actual = currentAgentRun();
   const actualSelection = actual?.schedulerTurn && actual.resourceId === detail.id
     ? `${actual.agentProfile ? `${actual.agentProfile} → ` : ""}${actual.agentHubAgentName || ""}`
     : "";
   return `
-    <small>Generation ${escapeHTML(String(run.generation))}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
+    <small>Revision ${escapeHTML(String(run.revision))} · Desired state: ${run.enabled ? "On" : "Off"}${profiles.length ? ` · Preferred: ${escapeHTML(profiles.join(" → "))}` : " · Workspace default"}</small>
     ${actualSelection ? `<p>Actual Agent: ${escapeHTML(actualSelection)}${actual.agentSelectionReason ? ` · ${escapeHTML(actual.agentSelectionReason)}` : ""}</p>` : ""}
-    ${run.state === "suspended" && run.suspensionSummary && !reason ? `<p>Suspension context: ${escapeHTML(run.suspensionSummary)}</p>` : ""}
-    ${run.state === "suspended" && run.wakeCondition ? `<p>Wake condition: ${escapeHTML(run.wakeCondition)}${run.wakeConditionFallback || latestSuspension?.selfDrivingWakeConditionFallback ? " (compatibility fallback)" : ""}</p>` : ""}
+    ${run.wakeContext?.summary ? `<p>Waiting context: ${escapeHTML(run.wakeContext.summary)}</p>` : ""}
+    ${run.wakeContext?.condition ? `<p>Wake condition: ${escapeHTML(run.wakeContext.condition)}${run.wakeContext.fallback ? " (compatibility fallback)" : ""}</p>` : ""}
+    ${run.lastOutcome ? `<p>Last outcome: ${escapeHTML(run.lastOutcome.status)}${run.lastOutcome.reason ? ` · ${escapeHTML(run.lastOutcome.reason)}` : ""}</p>` : ""}
     ${reason ? `<p>${escapeHTML(reason.label)}: ${escapeHTML(reason.text)}</p>` : ""}
   `;
 }
 
-function selfDrivingPresentation(state) {
+function selfDrivingPresentation(condition, enabled = false) {
   const presentations = {
-    none: { label: "Not started", icon: "circle-dashed" },
-    queued: { label: "Queued", icon: "list-start" },
-    running: { label: "Running", icon: "activity" },
-    suspended: { label: "Suspended", icon: "pause" },
-    paused: { label: "Paused", icon: "pause" },
-    completed: { label: "Completed", icon: "circle-check" },
-    failed: { label: "Failed", icon: "circle-x" },
-    cancelled: { label: "Cancelled", icon: "ban" },
+    disabled: { label: "Off", icon: "circle-dashed" },
+    ready: { label: "Ready", icon: "list-start" },
+    reconciling: { label: "Running", icon: "activity" },
+    waiting: { label: "Waiting", icon: "pause" },
+    blocked: { label: "Blocked", icon: "octagon-alert" },
+    error: { label: "Error", icon: "circle-x" },
+    needs_configuration: { label: "Needs configuration", icon: "settings" },
   };
-  const stateName = String(state || "").trim().toLowerCase();
-  const key = stateName === "" ? "none" : Object.hasOwn(presentations, stateName) ? stateName : "unknown";
+  const stateName = enabled ? String(condition || "ready").trim().toLowerCase() : "disabled";
+  const key = Object.hasOwn(presentations, stateName) ? stateName : "unknown";
   return { key, ...(presentations[key] || { label: stateName || "Unknown", icon: "circle-help" }) };
 }
 
@@ -4621,17 +4591,17 @@ function renderTTYComposer(options = {}) {
     const stopTurnPending = isAgentTurnStopping(activeRun);
     const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
     const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
-    const closeCancelsSelfDriving = isSelfDrivingSessionCloseTarget(activeRun);
+    const selfDrivingRemainsEnabled = isSelfDrivingSessionCloseTarget(activeRun);
     const sessionActionsMarkup = agentComposerActions({ collapsible: true });
     const sessionControlsMarkup = sessionControlComposerActions({
       includeEndTurn: stopTurnAvailable,
       endingTurn: stopTurnPending,
       includeClose: true,
       closingSession: sessionStopping,
-      cancelSelfDrivingOnClose: closeCancelsSelfDriving,
-      selfDrivingCancelling: state.agent.selfDrivingCancelling,
+      selfDrivingRemainsEnabled,
+      selfDrivingDisabling: state.agent.selfDrivingDisabling,
     });
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${closeCancelsSelfDriving ? "cancel-selfDriving" : "close-session"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
+    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${selfDrivingRemainsEnabled ? "self-driving-remains-enabled" : "close-session"}:${state.agent.selfDrivingDisabling ? "disabling-self-driving" : "self-driving-stable"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
     if (composer.dataset.composerKey === key && $("ttyInput")) return;
     composer.dataset.composerKey = key;
     const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
@@ -4763,25 +4733,25 @@ function sessionControlComposerActions(options = {}) {
   const endingTurn = Boolean(options.endingTurn);
   const includeClose = Boolean(options.includeClose);
   const closingSession = Boolean(options.closingSession);
-  const cancelSelfDrivingOnClose = Boolean(options.cancelSelfDrivingOnClose);
-  const selfDrivingCancelling = Boolean(options.selfDrivingCancelling);
-  const endTurnPending = endingTurn || closingSession || selfDrivingCancelling;
+  const selfDrivingRemainsEnabled = Boolean(options.selfDrivingRemainsEnabled);
+  const selfDrivingDisabling = Boolean(options.selfDrivingDisabling);
+  const endTurnPending = endingTurn || closingSession || selfDrivingDisabling;
   const endTurnLabel = endingTurn
     ? "Ending turn…"
     : closingSession
       ? "Closing session…"
-      : selfDrivingCancelling
-        ? "Cancelling Self-Driving…"
+      : selfDrivingDisabling
+        ? "Disabling Self-Driving…"
         : "End current turn; keep the Session open.";
-  const closePending = endingTurn || closingSession || selfDrivingCancelling;
+  const closePending = endingTurn || closingSession || selfDrivingDisabling;
   const closeLabel = closingSession
     ? "Closing session…"
     : endingTurn
       ? "Ending turn…"
-      : selfDrivingCancelling
-        ? "Cancelling Self-Driving…"
-        : cancelSelfDrivingOnClose
-          ? "Cancel Self-Driving and close the session."
+      : selfDrivingDisabling
+        ? "Disabling Self-Driving…"
+        : selfDrivingRemainsEnabled
+          ? "Close this Session; Self-Driving stays On and may create a replacement."
           : "Close session; end the entire AgentHub Session.";
   const endTurnMarkup = includeEndTurn ? `
     <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button"${endTurnPending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(endTurnLabel)}" aria-label="${escapeHTML(endTurnLabel)}">
@@ -4789,7 +4759,7 @@ function sessionControlComposerActions(options = {}) {
     </button>` : "";
   const closeSessionMarkup = includeClose ? `
     <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button"${closePending ? " disabled aria-busy=\"true\"" : ""} title="${escapeHTML(closeLabel)}" aria-label="${escapeHTML(closeLabel)}">
-      ${icon(closingSession || selfDrivingCancelling ? "loader-circle" : "square")}
+      ${icon(closingSession || selfDrivingDisabling ? "loader-circle" : "square")}
     </button>` : "";
   return `${endTurnMarkup}${closeSessionMarkup}`;
 }
@@ -4798,88 +4768,15 @@ function agentDisplayName(agent) {
   return agent?.name || agent?.id || "Agent";
 }
 
-// selfDrivingActionIcon renders the Self-Driving action family icon: a workflow
-// base glyph marking the automation family, plus a state badge in the
-// lower-right corner (play = start, resume arrow = resume, stop square =
-// cancel). kind is "start", "resume", or "cancel".
-function selfDrivingActionIcon(kind) {
-  const badgeFill = kind === "cancel" ? "#b91c1c" : "#6d28d9";
-  const badgeGlyph = kind === "cancel"
-    ? `<rect width="15" height="15" x="4.5" y="4.5" rx="2" fill="#fff" stroke="none"/>`
-    : kind === "resume"
-      ? `<g stroke="#fff" stroke-width="5.2" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></g>`
-      : `<polygon points="7 4 20 12 7 20 7 4" fill="#fff" stroke="none"/>`;
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g transform="translate(-0.8,-0.8) scale(0.9)" stroke-width="2.25"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect width="8" height="8" x="13" y="13" rx="2"/></g><circle cx="17.4" cy="17.4" r="6" fill="${badgeFill}" stroke="#fff" stroke-width="2.2"/><g transform="translate(17.4,17.4) scale(0.38) translate(-12,-12)">${badgeGlyph}</g></svg>`;
-}
-
-// selfDrivingBarActions renders the stateful Self-Driving flow controls. The top bar is
-// the only place Start/Resume/Cancel appear; every button keeps a visible
-// label next to its icon. The server re-validates every condition at
-// execution time.
+// selfDrivingBarActions renders the persistent desired-state switch. Session
+// state never disables it; only an in-flight persistence request does.
 function selfDrivingBarActions(detail) {
   if (!detail || detail.type !== "task") return "";
-  if (selectedResourceHasExternalLock()) return "";
   const selfDriving = detail.selfDriving || null;
-  const stateName = String(selfDriving?.state || "").trim().toLowerCase();
-  const startableStates = ["", "completed", "failed", "cancelled"];
-  const resumableStates = ["suspended", "paused"];
-  const cancellableStates = ["queued", "running", "suspended", "paused"];
-  if (!startableStates.includes(stateName) && !resumableStates.includes(stateName) && !cancellableStates.includes(stateName)) return "";
-
-  const liveRuns = state.agent.runs.filter((run) => run.resourceId === detail.id && isLiveAgentRun(run));
-  const liveSession = liveRuns.some((run) =>
-    run.status === "idle" && !run.schedulerTurn && String(run.agentHubSessionId || "").trim(),
-  );
-  const busyRun = liveRuns.find((run) => run.status !== "idle" || run.schedulerTurn);
-  const busyReason = busyRun?.status === "waiting_approval"
-    ? "Resolve the pending approval before starting Self-Driving in this session."
-    : busyRun
-      ? "The current session is busy; wait until it is idle to start Self-Driving."
-      : "";
-  const starting = state.agent.selfDrivingStarting;
-  const cancelling = state.agent.selfDrivingCancelling;
-  const actions = [];
-
-  if (startableStates.includes(stateName) || resumableStates.includes(stateName)) {
-    const isResume = resumableStates.includes(stateName);
-    const label = stateName === "suspended"
-      ? "Resume Self-Driving now"
-      : stateName === "paused"
-        ? "Resume Self-Driving"
-        : ["completed", "failed", "cancelled"].includes(stateName)
-          ? "Start New Self-Driving"
-          : "Start Self-Driving";
-    const pendingLabel = isResume ? "Resuming Self-Driving…" : "Starting Self-Driving…";
-    const title = cancelling
-      ? "Cancelling Self-Driving…"
-      : starting
-        ? pendingLabel
-        : busyReason
-          ? `${label}: ${busyReason}`
-          : liveSession
-            ? `${label}: reuse the current idle session.`
-            : label;
-    const disabled = starting || cancelling || Boolean(busyReason);
-    const actionKind = isResume ? "resume" : "start";
-    const visibleLabel = starting || cancelling ? pendingLabel : label;
-    actions.push(`
-      <button type="button" id="selfDrivingStartButton" class="self-driving-bar-button self-driving-bar-${actionKind}-action" data-self-driving-action="${actionKind}" title="${escapeHTML(title)}" aria-label="${escapeHTML(title)}" aria-disabled="${disabled ? "true" : "false"}"${disabled ? " disabled" : ""}${starting || cancelling ? " aria-busy=\"true\"" : ""}>
-        ${starting || cancelling ? icon("loader-circle") : selfDrivingActionIcon(actionKind)}<span>${escapeHTML(visibleLabel)}</span>
-      </button>
-    `);
-  }
-
-  if (cancellableStates.includes(stateName)) {
-    const pending = Boolean(state.agent.selfDrivingCancelling);
-    const label = pending ? "Cancelling Self-Driving…" : "Cancel Self-Driving";
-    const title = pending ? label : "Cancel Self-Driving and keep the Agent Session open.";
-    actions.push(`
-      <button type="button" id="selfDrivingCancelButton" class="self-driving-bar-button self-driving-bar-cancel-action" data-self-driving-action="cancel" title="${escapeHTML(title)}" aria-label="${escapeHTML(label)}"${pending ? " disabled aria-busy=\"true\"" : ""}>
-        ${pending ? icon("loader-circle") : selfDrivingActionIcon("cancel")}<span>${escapeHTML(label)}</span>
-      </button>
-    `);
-  }
-  return actions.join("");
+  const enabled = Boolean(selfDriving?.enabled);
+  const pending = Boolean(state.agent.selfDrivingSaving || state.agent.selfDrivingDisabling);
+  const label = enabled ? "Turn Self-Driving off" : "Turn Self-Driving on";
+  return `<button type="button" id="selfDrivingSwitch" class="self-driving-switch" role="switch" aria-checked="${enabled ? "true" : "false"}" aria-label="${label}" title="${label}"${pending ? " disabled aria-busy=\"true\"" : ""}><span class="self-driving-switch-track"><span class="self-driving-switch-thumb"></span></span><span>${enabled ? "On" : "Off"}</span></button>`;
 }
 
 function selectedResourceLockComposerKey() {
@@ -4891,37 +4788,16 @@ function selectedResourceLockComposerKey() {
 }
 
 function selfDrivingNeedsConfiguration(detail) {
-  const stateName = String(detail?.selfDriving?.state || "").trim().toLowerCase();
-  if (!stateName || ["completed", "failed", "cancelled"].includes(stateName)) return true;
-  if (!["suspended", "paused"].includes(stateName)) return false;
-  return !selfDrivingIdleSessionForResource(detail?.id);
+  return !detail?.selfDriving?.agentName && !(detail?.selfDriving?.preferredAgentProfiles || []).length;
 }
 
-async function startChatSelfDriving(options = {}) {
+async function setChatSelfDrivingDesiredState(options = {}) {
   return mutateAgentSession(async () => {
     const selected = findResource(state.selectedId);
     const detail = selected ? (state.details[selected.id] || selected) : null;
     if (!detail || detail.type !== "task") throw new Error("Select a task first.");
-    if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
-      throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
-    }
-    const configuration = Boolean(options.configured);
-    const stateName = String(detail.selfDriving?.state || "").trim().toLowerCase();
-    const expectedState = options.expectedState === undefined ? stateName : String(options.expectedState || "").trim().toLowerCase();
-    const expectedGeneration = options.expectedGeneration === undefined
-      ? Number(detail.selfDriving?.generation) || 0
-      : Number(options.expectedGeneration) || 0;
-    const directResume = ["paused", "suspended"].includes(expectedState);
-    if (!configuration && selfDrivingNeedsConfiguration(detail)) {
-      openSelfDrivingConfigDialog();
-      return null;
-    }
-    const reusableSession = selfDrivingIdleSessionForResource(selected.id);
-    let agentName = String(options.agentName || "").trim();
-    if (!reusableSession && !agentName) {
-      throw new Error("Select an agent to start or resume Self-Driving without an active session.");
-    }
-    state.agent.selfDrivingStarting = true;
+    const enabled = options.enabled === undefined ? true : Boolean(options.enabled);
+    state.agent.selfDrivingSaving = true;
     renderAgent();
     renderTTYComposer();
     bindAgentEvents();
@@ -4929,19 +4805,17 @@ async function startChatSelfDriving(options = {}) {
     try {
       const body = {
         resourceId: selected.id,
-        agentName: reusableSession ? "" : agentName,
-        expectedGeneration,
-        expectedState,
+        enabled,
       };
-      if (configuration && !directResume) {
-        body.runInstructions = String(options.runInstructions || "");
+      if (options.configured) {
+        body.agentName = String(options.agentName || "").trim();
+        body.prompt = String(options.runInstructions || "");
         body.completionCriteria = String(options.completionCriteria || "");
       }
-      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving/start`, {
-        method: "POST",
+      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving`, {
+        method: "PUT",
         body: JSON.stringify(body),
       });
-      if (response.run?.id) state.agent.activeRunId = response.run.id;
       await Promise.all([
         loadAgentRuns(),
         refreshTreeAfterAgentSessionMutation(),
@@ -4950,14 +4824,9 @@ async function startChatSelfDriving(options = {}) {
         }),
       ]);
       renderAll();
-      const agent = response.agentName ? ` with ${response.agentName}` : "";
-      if (response.action === "queued") {
-        toast(response.reason || `Self-Driving generation ${response.task?.selfDriving?.generation} is queued.`);
-      } else {
-        toast(`${response.reused ? "Self-Driving resumed in the current session" : "Self-Driving started"}${agent}.`);
-      }
+      toast(enabled ? "Self-Driving enabled. The Scheduler will reconcile asynchronously." : response.notificationError ? `Self-Driving disabled. ${response.notificationError}` : "Self-Driving disabled. The current Turn and Session were left open.");
     } finally {
-      state.agent.selfDrivingStarting = false;
+      state.agent.selfDrivingSaving = false;
       renderAgent();
       renderTTYComposer();
       bindAgentEvents();
@@ -4974,8 +4843,8 @@ function selfDrivingDialogInitialState() {
     reuseRunId: "",
     reuseCurrentSession: false,
     agentName: "",
-    expectedGeneration: 0,
-    expectedState: "",
+    expectedRevision: 0,
+    expectedCondition: "",
     runInstructions: "",
     completionCriteria: "",
     submitting: false,
@@ -4999,28 +4868,14 @@ function openSelfDrivingConfigDialog() {
     toast("Select a task first.");
     return;
   }
-  if (selectedResourceHasExternalLock()) {
-    toast(EXTERNAL_RESOURCE_LOCK_MESSAGE);
-    return;
-  }
-  const busyRun = state.agent.runs.find((run) => run.resourceId === selected.id && isLiveAgentRun(run) && (run.status !== "idle" || run.schedulerTurn));
-  if (busyRun) {
-    toast(busyRun.status === "waiting_approval"
-      ? "Resolve the pending approval before starting Self-Driving in this session."
-      : "The current session is busy; wait until it is idle to start Self-Driving.");
-    return;
-  }
   const reuseRun = selfDrivingIdleSessionForResource(selected.id);
   const selfDriving = detail.selfDriving || null;
-  const resumable = ["suspended", "paused"].includes(String(selfDriving?.state || "").trim().toLowerCase());
   const agents = enabledAgentConfigs();
   const savedAgentName = String(selfDriving?.agentName || "").trim();
   const savedAgent = agents.find((agent) => String(agent.id || "").trim().toLowerCase() === savedAgentName.toLowerCase());
-  const selectedAgent = resumable ? null : selectedAgentConfig();
-  const mode = ["completed", "failed", "cancelled"].includes(selfDriving?.state)
-    ? "new"
-    : resumable && !reuseRun ? "resume" : "configure";
-  const agentName = String(reuseRun?.agentHubAgentName || (resumable ? savedAgent?.id || "" : selectedAgent?.id || "")).trim();
+  const selectedAgent = selectedAgentConfig();
+  const mode = "configure";
+  const agentName = String(reuseRun?.agentHubAgentName || savedAgent?.id || selectedAgent?.id || "").trim();
   state.modalEnter = "selfDriving";
   state.selfDrivingDialog = {
     open: true,
@@ -5029,12 +4884,12 @@ function openSelfDrivingConfigDialog() {
     reuseRunId: reuseRun?.id || "",
     reuseCurrentSession: Boolean(reuseRun),
     agentName,
-    expectedGeneration: Number(selfDriving?.generation) || 0,
-    expectedState: String(selfDriving?.state || "").trim().toLowerCase(),
+    expectedRevision: Number(selfDriving?.revision) || 0,
+    expectedCondition: String(selfDriving?.condition || "").trim().toLowerCase(),
     runInstructions: String(selfDriving?.prompt || ""),
     completionCriteria: String(selfDriving?.completionCriteria || ""),
     submitting: false,
-    error: !reuseRun && agents.length === 0 ? "No enabled AgentHub agents are available. Configure an agent in Settings before starting Self-Driving." : "",
+    error: agents.length === 0 ? "No enabled AgentHub agents are available. Self-Driving can still be enabled and will report Needs configuration." : "",
     unknown: false,
     returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
   };
@@ -5059,9 +4914,9 @@ function renderSelfDrivingConfigDialog() {
     delete root.dataset.selfDrivingDialogKey;
     return;
   }
-  const resumeMode = dialog.mode === "resume";
-  const title = dialog.mode === "new" ? "Start New Self-Driving" : resumeMode ? "Resume Self-Driving" : "Configure Self-Driving";
-  const submitLabel = dialog.mode === "new" ? "Start New Self-Driving" : resumeMode ? "Resume Self-Driving" : "Start Self-Driving";
+  const resumeMode = false;
+  const title = "Configure Self-Driving";
+  const submitLabel = "Save and Enable";
   const agents = enabledAgentConfigs();
   const key = `${dialog.resourceId}:${dialog.mode}:${dialog.reuseRunId}:${dialog.agentName}:${dialog.submitting}:${dialog.error}:${dialog.unknown}`;
   if (root.dataset.selfDrivingDialogKey === key && root.querySelector("#selfDrivingConfigForm")) return;
@@ -5092,13 +4947,13 @@ function renderSelfDrivingConfigDialog() {
           ${resumeMode ? "" : `
             <label>
               <span>Run instructions <small>(optional)</small></span>
-              <textarea name="runInstructions" rows="4" placeholder="Additional instructions for this Self-Driving generation"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
+              <textarea name="runInstructions" rows="4" placeholder="Additional Self-Driving instructions"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
             </label>
           `}
           ${dialog.error ? `<p class="self-driving-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
           ${dialog.unknown ? `<p class="self-driving-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
           <div class="form-actions">
-            <button type="submit"${submitDisabled ? " disabled" : ""}${dialog.submitting ? " aria-busy=\"true\"" : ""}>${dialog.submitting ? "Starting…" : submitLabel}</button>
+            <button type="submit"${submitDisabled ? " disabled" : ""}${dialog.submitting ? " aria-busy=\"true\"" : ""}>${dialog.submitting ? "Enabling…" : submitLabel}</button>
             <button type="button" class="secondary" data-self-driving-dialog-close="true"${dialog.submitting ? " disabled" : ""}>Cancel</button>
           </div>
         </form>
@@ -5137,7 +4992,7 @@ async function submitSelfDrivingConfigDialog(event) {
   if (runInstructions !== null) dialog.runInstructions = String(runInstructions || "");
   if (completionCriteria !== null) dialog.completionCriteria = String(completionCriteria || "");
   if (!dialog.reuseCurrentSession && !dialog.agentName) {
-    dialog.error = "Select an Agent before starting Self-Driving.";
+    dialog.error = "Select an Agent before enabling Self-Driving.";
     renderSelfDrivingConfigDialog();
     return;
   }
@@ -5145,11 +5000,9 @@ async function submitSelfDrivingConfigDialog(event) {
   dialog.error = "";
   renderSelfDrivingConfigDialog();
   try {
-    await startChatSelfDriving({
+    await setChatSelfDrivingDesiredState({
       configured: true,
       agentName: dialog.agentName,
-      expectedGeneration: dialog.expectedGeneration,
-      expectedState: dialog.expectedState,
       runInstructions: dialog.runInstructions,
       completionCriteria: dialog.completionCriteria,
     });
@@ -5159,7 +5012,7 @@ async function submitSelfDrivingConfigDialog(event) {
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
   } catch (err) {
     dialog.submitting = false;
-    const message = String(err?.message || err || "Self-Driving could not be started.");
+    const message = String(err?.message || err || "Self-Driving could not be enabled.");
     dialog.error = message;
     dialog.unknown = !Number.isFinite(Number(err?.status)) || Number(err.status) >= 500 || message.includes("outcome may be unknown") || message.includes("was updated but the start message failed");
     renderSelfDrivingConfigDialog();
@@ -5756,8 +5609,17 @@ function bindAgentEvents() {
     event.preventDefault();
     event.stopPropagation();
     const run = currentAgentRun();
-    if (isSelfDrivingSessionCloseTarget(run) && !window.confirm("Close this Self-Driving session? This will cancel the current Self-Driving generation and close the Agent Session.")) return;
-    stopAgentRun().catch((err) => toast(err.message));
+    if (!isSelfDrivingSessionCloseTarget(run)) {
+      stopAgentRun().catch((err) => toast(err.message));
+      return;
+    }
+    if (window.confirm("Self-Driving is On. Close this Session while keeping Self-Driving On? The Scheduler may create a replacement Session.")) {
+      stopAgentRun().catch((err) => toast(err.message));
+      return;
+    }
+    if (window.confirm("Disable Self-Driving and close this Session instead?")) {
+      disableSelectedSelfDriving().then(() => stopAgentRun()).catch((err) => toast(err.message));
+    }
   };
   const endTurnButton = $("agentEndTurnButton");
   if (endTurnButton) endTurnButton.onclick = (event) => {
@@ -5769,24 +5631,16 @@ function bindAgentEvents() {
   if (resumeButton) resumeButton.onclick = () => {
     resumeAgentRun().catch((err) => toast(err.message));
   };
-  const selfDrivingButton = $("selfDrivingStartButton");
-  if (selfDrivingButton) selfDrivingButton.onclick = (event) => {
+  const selfDrivingSwitch = $("selfDrivingSwitch");
+  if (selfDrivingSwitch) selfDrivingSwitch.onclick = (event) => {
     event.preventDefault();
     event.stopPropagation();
-    if (state.agent.selfDrivingStarting) return;
+    if (state.agent.selfDrivingSaving || state.agent.selfDrivingDisabling) return;
     const selected = findResource(state.selectedId);
     const detail = selected ? (state.details[selected.id] || selected) : null;
-    if (selfDrivingNeedsConfiguration(detail)) {
-      openSelfDrivingConfigDialog();
-      return;
-    }
-    startChatSelfDriving().catch((err) => toast(err.message));
-  };
-  const selfDrivingCancelButton = $("selfDrivingCancelButton");
-  if (selfDrivingCancelButton) selfDrivingCancelButton.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    cancelSelectedSelfDriving().catch((err) => toast(err.message));
+    const enabled = Boolean(detail?.selfDriving?.enabled);
+    if (enabled) disableSelectedSelfDriving().catch((err) => toast(err.message));
+    else setChatSelfDrivingDesiredState({ enabled: true }).catch((err) => toast(err.message));
   };
   const uploadButton = $("agentUploadButton");
   if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
@@ -5921,17 +5775,9 @@ function agentInputSelfDrivingProjection(run) {
   return {
     resourceId: selected.id,
     selfDrivingProjectionSet: true,
-    expectedSelfDrivingGeneration: Number(selfDriving?.generation) || 0,
-    expectedSelfDrivingState: String(selfDriving?.state || "").trim().toLowerCase(),
+    expectedSelfDrivingRevision: Number(selfDriving?.revision) || 0,
+    expectedSelfDrivingCondition: String(selfDriving?.condition || "").trim().toLowerCase(),
   };
-}
-
-function agentInputResumeIntent(run) {
-  const projection = agentInputSelfDrivingProjection(run);
-  if (!projection || projection.expectedSelfDrivingGeneration <= 0 || projection.expectedSelfDrivingState !== "suspended") return false;
-  return isLiveAgentRun(run) && run.status === "idle" && !run.schedulerTurn &&
-    String(run.agentHubSessionId || "").trim() &&
-    Number(run.selfDrivingGeneration) === projection.expectedSelfDrivingGeneration;
 }
 
 async function sendAgentInput(text) {
@@ -5941,14 +5787,9 @@ async function sendAgentInput(text) {
   }
   const run = currentAgentRun();
   const projection = agentInputSelfDrivingProjection(run);
-  const resumeSuspendedSelfDriving = agentInputResumeIntent(run);
   const body = { text, userName: currentUserName() };
   if (projection) {
     Object.assign(body, projection);
-    if (resumeSuspendedSelfDriving) {
-      body.resumeSuspendedSelfDriving = true;
-      body.selfDrivingGeneration = projection.expectedSelfDrivingGeneration;
-    }
   }
   return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
     method: "POST",
@@ -6199,7 +6040,7 @@ async function stopAgentRun() {
       const result = await closeAgentRun(runId);
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast(result?.selfDrivingCancelled ? "Self-Driving cancelled and Agent session closed." : result?.selfDrivingPaused ? "Self-Driving paused and Agent session closed." : "Agent session closed.");
+      toast("Agent session closed. Self-Driving desired state was not changed.");
     } catch (err) {
       // A failed or ambiguous close must re-read the run and tree before the
       // control becomes available again; never clear a draft as a side effect.
@@ -6220,38 +6061,26 @@ async function stopAgentRun() {
   });
 }
 
-async function cancelSelectedSelfDriving() {
-  if (state.agent.selfDrivingCancelling) return;
+async function disableSelectedSelfDriving() {
+  if (state.agent.selfDrivingDisabling) return;
   const selected = findResource(state.selectedId);
   const detail = selected ? (state.details[selected.id] || selected) : null;
-  const selfDriving = detail?.selfDriving;
-  if (!detail || detail.type !== "task" || !selfDriving || !["queued", "running", "suspended", "paused"].includes(String(selfDriving.state || "").toLowerCase())) return;
-  if (!window.confirm("Cancel this Self-Driving generation? The generation will end and the Agent Session will remain open.")) return;
+  if (!detail || detail.type !== "task") return;
   return mutateAgentSession(async () => {
-    state.agent.selfDrivingCancelling = true;
+    state.agent.selfDrivingDisabling = true;
     renderAgent();
     renderTTYComposer();
     bindAgentEvents();
     refreshIcons();
     try {
-      const active = currentAgentRun();
-      await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving/cancel`, {
-        method: "POST",
-        body: JSON.stringify({
-          resourceId: detail.id,
-          runId: active?.schedulerTurn && active.resourceId === detail.id ? active.id : "",
-          expectedGeneration: Number(selfDriving.generation) || 0,
-          expectedState: selfDriving.state,
-          reason: "Self-Driving cancelled by user",
-        }),
+      const response = await api(`/api/workspaces/${state.activeWorkspaceId}/self-driving`, {
+        method: "PUT",
+        body: JSON.stringify({ resourceId: detail.id, enabled: false }),
       });
       await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
       renderAll();
-      toast("Self-Driving cancelled. The Agent Session remains open.");
+      toast(response.notificationError ? `Self-Driving disabled. ${response.notificationError}` : "Self-Driving disabled. The Agent Session remains open.");
     } catch (err) {
-      // Cancellation is durable before interruption. Re-read projections even
-      // when the interrupt response is ambiguous, so the UI exposes the
-      // cancelled state instead of inviting a retry.
       try {
         await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
         renderAll();
@@ -6260,7 +6089,7 @@ async function cancelSelectedSelfDriving() {
       }
       throw err;
     } finally {
-      state.agent.selfDrivingCancelling = false;
+      state.agent.selfDrivingDisabling = false;
       renderAgent();
       renderTTYComposer();
       bindAgentEvents();
@@ -6369,14 +6198,10 @@ function isAgentTurnInterruptible(run) {
 
 function isSelfDrivingSessionCloseTarget(run) {
   const resourceID = String(run?.resourceId || "").trim();
-  const generation = Number(run?.selfDrivingGeneration) || 0;
-  if (!resourceID || generation <= 0) return false;
+  if (!resourceID) return false;
   const resource = findResource(resourceID);
   const selfDriving = resource?.selfDriving;
-  if (!selfDriving) return Boolean(run?.schedulerTurn);
-  if ((Number(selfDriving.generation) || 0) !== generation) return false;
-  const stateName = String(selfDriving.state || "").trim().toLowerCase();
-  return !["completed", "failed", "cancelled"].includes(stateName);
+  return Boolean(selfDriving?.enabled);
 }
 
 function isAgentTurnStopping(run) {
@@ -6396,8 +6221,7 @@ async function submitTTYInput(event) {
   const sendingRun = currentAgentRun();
   if (!sendingRun) return;
   restoreAgentDraftForRun(sendingRun);
-  const resumeIntent = typeof agentInputResumeIntent === "function" && agentInputResumeIntent(sendingRun);
-  updateAgentDraft(rawText);
+	updateAgentDraft(rawText);
   const sendWorkspaceId = state.activeWorkspaceId;
   const sendRunId = state.agent.activeRunId;
   const sendResourceId = sendingRun.resourceId || "";
@@ -6424,7 +6248,7 @@ async function submitTTYInput(event) {
         version: sendDraftVersion,
       });
       if (clearedDraft) {
-        // A suspended Self-Driving refreshes the task, run, and session projections
+        // A user message can make Self-Driving eligible for re-evaluation and refresh
         // before this submit finishes. Do not let that render read the old
         // textarea value back into the accepted-and-cleared draft.
         state.agent.skipTTYDraftSync = true;
@@ -6434,25 +6258,16 @@ async function submitTTYInput(event) {
           if (typeof resizeTTYInput === "function") resizeTTYInput(currentInput);
         }
       }
-      if (result.selfDrivingResumed || resumeIntent) {
-        try {
-          if (typeof refreshAgentInputProjection === "function") {
-            await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
-          }
-        } catch (refreshError) {
-          toast(`Message accepted, but the view could not refresh: ${refreshError.message}`);
-        }
-      }
-    }
-  } catch (err) {
-    toast(err.message);
-    if (resumeIntent && typeof refreshAgentInputProjection === "function") {
-      try {
-        await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
-      } catch (_) {
-        // Preserve the original send error when a stale projection refresh also fails.
-      }
-    }
+			try {
+				if (typeof refreshAgentInputProjection === "function") {
+					await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
+				}
+			} catch (refreshError) {
+				toast(`Message accepted, but the view could not refresh: ${refreshError.message}`);
+			}
+		}
+	} catch (err) {
+		toast(err.message);
   } finally {
     document.removeEventListener("focusin", cancelInputFocusRestore, true);
     state.agent.sendingInput = false;
@@ -6611,7 +6426,7 @@ function renderCreateDialog() {
   const automationFields = `
             <label class="create-task-automation-toggle">
               <input name="selfDriving" type="checkbox" ${dialog.selfDriving ? "checked" : ""} />
-              <span><strong>Run automatically</strong><small>Queue a one-turn task for the GUI scheduler.</small></span>
+              <span><strong>Enable Self-Driving</strong><small>Persist the Task-level desired state and let the Scheduler reconcile one autonomous Turn at a time.</small></span>
             </label>
             ${dialog.selfDriving ? `
               <div class="create-task-automation-fields">
@@ -6728,7 +6543,7 @@ function createTaskPreviewPane(dialog) {
           </div>
           <small data-preview-edit-hint ${edited ? "hidden" : ""}>Edit the content above to override the template output for this task.</small>
           ${dialog.preview.slug ? `<small>Slug: ${escapeHTML(dialog.preview.slug)}</small>` : ""}
-          <small>Self-Driving: ${dialog.preview.selfDriving ? `queued with ${escapeHTML(dialog.preview.selfDriving.agentName || "workspace default")}` : "off"}</small>
+          <small>Self-Driving: ${dialog.preview.selfDriving ? `on with ${escapeHTML(dialog.preview.selfDriving.agentName || "workspace default")}` : "off"}</small>
         </section>
       ` : dialog.previewing ? `<p class="create-task-preview-hint">Rendering preview...</p>` : ""}
     </div>

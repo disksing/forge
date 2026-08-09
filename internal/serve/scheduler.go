@@ -15,23 +15,17 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-type runnableTaskResponse struct {
-	Tasks []runnableTaskCandidate `json:"tasks"`
-}
-
 type runnableTaskCandidate struct {
-	ID                     string   `json:"id"`
-	Path                   string   `json:"path"`
-	Title                  string   `json:"title"`
-	Generation             int      `json:"generation"`
-	State                  string   `json:"state"`
-	AgentName              string   `json:"agentName,omitempty"`
-	Prompt                 string   `json:"prompt"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
-	WakeCondition          string   `json:"wakeCondition,omitempty"`
-	SuspendedAt            string   `json:"suspendedAt,omitempty"`
-	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
+	ID                     string                      `json:"id"`
+	Path                   string                      `json:"path"`
+	Title                  string                      `json:"title"`
+	Revision               int                         `json:"revision"`
+	Condition              string                      `json:"condition"`
+	AgentName              string                      `json:"agentName,omitempty"`
+	Prompt                 string                      `json:"prompt"`
+	PreferredAgentProfiles []string                    `json:"preferredAgentProfiles,omitempty"`
+	CompletionCriteria     string                      `json:"completionCriteria,omitempty"`
+	WakeContext            *app.SelfDrivingWakeContext `json:"wakeContext,omitempty"`
 }
 
 type selfDrivingAgentSelection struct {
@@ -47,11 +41,8 @@ const (
 	runnableTaskSkippedActive  runnableTaskDispatchResult = "skipped_active"
 	runnableTaskNotRunnable    runnableTaskDispatchResult = "not_runnable"
 	runnableTaskDispatchFailed runnableTaskDispatchResult = "failed"
+	selfDrivingSuspensionLimit                            = 30 * time.Minute
 )
-
-// selfDrivingSuspensionLimit is the fixed wake-up threshold for suspended Self-Driving
-// generations. Every new suspend resets the timer.
-const selfDrivingSuspensionLimit = 30 * time.Minute
 
 func (s *server) runTaskScheduler(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
@@ -68,19 +59,12 @@ func (s *server) runTaskScheduler(ctx context.Context) {
 	}
 }
 
-// selfDrivingSuspendedDue reports whether a suspended generation has waited past
-// the fixed suspension limit. An unparsable timestamp is treated as due so a
-// suspended task can never stall forever after a schema or clock problem; the
-// agent may suspend again to reset the timer.
-func selfDrivingSuspendedDue(suspendedAt string) bool {
-	if strings.TrimSpace(suspendedAt) == "" {
+func selfDrivingWaitingDue(wake *app.SelfDrivingWakeContext) bool {
+	if wake == nil || strings.TrimSpace(wake.WaitingAt) == "" {
 		return true
 	}
-	t, err := time.Parse(time.RFC3339, strings.TrimSpace(suspendedAt))
-	if err != nil {
-		return true
-	}
-	return time.Since(t) >= selfDrivingSuspensionLimit
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(wake.WaitingAt))
+	return err != nil || time.Since(t) >= selfDrivingSuspensionLimit
 }
 
 func (s *server) scheduleRunnableTasks(ctx context.Context) error {
@@ -90,48 +74,44 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 	}
 	var failures []error
 	for _, workspace := range cfg.Workspaces {
-		// Only dispatch into Workspaces this serve instance owns; a workspace
-		// removed concurrently loses its lock and must stop being scheduled.
 		if !s.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))
+		forgeWorkspace, openErr := app.OpenWorkspace(workspace.Path)
+		if openErr != nil {
+			failures = append(failures, openErr)
 			continue
 		}
-		typedTree, err := forgeWorkspace.Tree()
-		if err != nil {
-			failures = append(failures, fmt.Errorf("list workspace %s: %w", workspace.ID, err))
+		tree, treeErr := forgeWorkspace.Tree()
+		if treeErr != nil {
+			failures = append(failures, treeErr)
 			continue
 		}
-		tree := workspaceTreeFromApp(typedTree)
 		started := false
 		for _, project := range tree.Projects {
-			ready, err := forgeWorkspace.Tasks(app.TaskListOptions{ProjectID: project.ID, Runnable: true})
-			if err != nil {
-				failures = append(failures, fmt.Errorf("list runnable tasks for %s: %w", project.ID, err))
+			ready, listErr := forgeWorkspace.Tasks(app.TaskListOptions{ProjectID: project.ID, Runnable: true})
+			if listErr != nil {
+				failures = append(failures, listErr)
 				continue
 			}
 			for _, task := range runnableTaskCandidatesFromApp(ready.Runnable) {
-				if task.State == "suspended" {
-					// Timed wake-up: dispatch a suspended generation whose
-					// suspension limit elapsed. The state transition is deferred
-					// until a new session owns the task lock, so an external lock
-					// cannot race this scan into advancing Self-Driving.
-					if !selfDrivingSuspendedDue(task.SuspendedAt) {
+				if task.Condition == "waiting" && task.WakeContext != nil {
+					if !selfDrivingWaitingDue(task.WakeContext) {
 						continue
 					}
-				}
-				result, err := s.startRunnableTask(ctx, workspace, task)
-				switch result {
-				case runnableTaskStarted:
-					started = true
-				case runnableTaskDispatchFailed:
-					if err == nil {
-						err = errors.New("dispatch failed without an error")
+					woken, wakeErr := forgeWorkspace.WakeSelfDriving(task.ID, task.Revision)
+					if wakeErr != nil {
+						failures = append(failures, fmt.Errorf("wake runnable task %s: %w", task.ID, wakeErr))
+						continue
 					}
-					failures = append(failures, fmt.Errorf("start runnable task %s: %w", task.ID, err))
+					task = runnableTaskCandidateFromTask(woken)
+				}
+				result, dispatchErr := s.startRunnableTask(ctx, workspace, task)
+				if result == runnableTaskStarted {
+					started = true
+				}
+				if result == runnableTaskDispatchFailed {
+					failures = append(failures, fmt.Errorf("start runnable task %s: %w", task.ID, dispatchErr))
 				}
 				if started {
 					break
@@ -146,111 +126,79 @@ func (s *server) scheduleRunnableTasks(ctx context.Context) error {
 }
 
 func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, task runnableTaskCandidate) (runnableTaskDispatchResult, error) {
-	// Serialize with the unified Chat start endpoint: a manual start and a
-	// background scan must never dispatch the same generation twice.
+	dispatchKey := workspace.ID + "/" + task.ID
 	s.selfDrivingDispatchMu.Lock()
-	defer s.selfDrivingDispatchMu.Unlock()
-	switch task.State {
-	case "queued", "running", "suspended":
-	default:
-		return runnableTaskNotRunnable, nil
+	if s.selfDrivingDispatches == nil {
+		s.selfDrivingDispatches = make(map[string]bool)
 	}
-	if err := s.requireResourceNotExternallyLocked(workspace, task.ID); err != nil {
-		if isExternalResourceLockError(err) {
-			return runnableTaskNotRunnable, nil
-		}
+	if s.selfDrivingDispatches[dispatchKey] {
+		s.selfDrivingDispatchMu.Unlock()
+		return runnableTaskSkippedActive, nil
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		s.selfDrivingDispatchMu.Unlock()
 		return runnableTaskDispatchFailed, err
 	}
-	resumingSuspended := task.State == "suspended"
-	prompt := buildSelfDrivingPrompt(workspace.Path, task)
-	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil {
-		return runnableTaskDispatchFailed, fmt.Errorf("load agent runs: %w", err)
+	resource, err := forgeWorkspace.ResourceValue(task.ID)
+	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
+		s.selfDrivingDispatchMu.Unlock()
+		return runnableTaskNotRunnable, err
 	}
-	for _, run := range runs {
-		if run.ResourceID != task.ID {
-			continue
-		}
-		if !s.agentRunActive(run.ID) && isLiveAgentStatus(run.Status) &&
-			(strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != "") {
-			cfg, client, recoverErr := s.agents.agentHubRuntimeConfig()
-			if recoverErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub Self-Driving %s: %w", run.ID, recoverErr)
-			}
-			if recoverErr = s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run, nil); recoverErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("recover AgentHub Self-Driving %s: %w", run.ID, recoverErr)
-			}
-			if recovered := s.agents.runtimeByID(run.ID); recovered != nil {
-				recovered.mu.Lock()
-				run = recovered.run
-				recovered.mu.Unlock()
-			}
-		}
-		if !s.agentRunActive(run.ID) {
-			continue
-		}
-		if strings.TrimSpace(run.AgentHubSessionID) == "" {
-			return runnableTaskDispatchFailed, fmt.Errorf("active run %s is not attached to AgentHub", run.ID)
-		}
-		if run.Status != "idle" {
-			return runnableTaskSkippedActive, nil
-		}
-		if resumingSuspended {
-			forgeWorkspace, openErr := app.OpenWorkspace(workspace.Path)
-			if openErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("open workspace to resume task %s: %w", task.ID, openErr)
-			}
-			if _, resumeErr := forgeWorkspace.ResumeSelfDrivingWithAgent(app.SelfDrivingResumeInput{
-				TaskID: task.ID, AgentName: run.AgentHubAgentName, AgentNameSet: strings.TrimSpace(run.AgentHubAgentName) != "",
-				ExpectedGeneration: task.Generation, ExpectedState: "suspended",
-			}); resumeErr != nil {
-				return runnableTaskDispatchFailed, fmt.Errorf("resume suspended task %s: %w", task.ID, resumeErr)
-			}
-			task.State = "queued"
-			prompt = buildSelfDrivingPrompt(workspace.Path, task)
-		}
-		if err := s.startSelfDrivingInOpenSession(ctx, workspace, run.ID, task.Generation, prompt); err != nil {
+	current := resource.Task.SelfDriving
+	if !current.Enabled || current.Revision != task.Revision {
+		s.selfDrivingDispatchMu.Unlock()
+		return runnableTaskNotRunnable, nil
+	}
+	task = runnableTaskCandidateFromTask(*resource.Task)
+	s.selfDrivingDispatches[dispatchKey] = true
+	s.selfDrivingDispatchMu.Unlock()
+	defer func() {
+		s.selfDrivingDispatchMu.Lock()
+		delete(s.selfDrivingDispatches, dispatchKey)
+		s.selfDrivingDispatchMu.Unlock()
+	}()
+
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return runnableTaskDispatchFailed, err
+	}
+	selection, err := resolveSelfDrivingAgent(cfg, task)
+	if err != nil {
+		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
+			TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "needs_configuration", Reason: err.Error(),
+		})
+		return runnableTaskNotRunnable, nil
+	}
+	if err := s.recoverSelfDrivingSessions(ctx, workspace, task.ID); err != nil {
+		return runnableTaskDispatchFailed, err
+	}
+	reusable, busy, err := s.findReusableSelfDrivingSession(ctx, workspace, task.ID, selection.AgentName)
+	if err != nil {
+		return runnableTaskDispatchFailed, err
+	}
+	if reusable != nil && busy {
+		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
+			TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting",
+			Reason: "the selected Session is busy; user messages and approvals have priority",
+		})
+		return runnableTaskSkippedActive, nil
+	}
+	prompt := buildSelfDrivingPrompt(workspace.Path, task)
+	if reusable != nil {
+		if err := s.startSelfDrivingInOpenSession(ctx, workspace, reusable.ID, task.Revision, prompt); err != nil {
 			if errors.Is(err, errSelfDrivingSessionBusy) {
-				// Lost the race against a manual start or a user message; the
-				// generation stays queued for the next scan.
+				_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting", Reason: "the Session became busy before dispatch"})
 				return runnableTaskSkippedActive, nil
 			}
 			return runnableTaskDispatchFailed, err
 		}
 		return runnableTaskStarted, nil
 	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		return runnableTaskDispatchFailed, fmt.Errorf("load Agent Profile configuration: %w", err)
-	}
-	selection, err := resolveSelfDrivingAgent(cfg, task)
-	if err != nil {
-		return runnableTaskDispatchFailed, err
-	}
+
 	req := startAgentRequest{
-		AgentName:             selection.AgentName,
-		AgentProfile:          selection.Profile,
-		AgentSelectionReason:  selection.Reason,
-		ResourceID:            task.ID,
-		Title:                 task.Title,
-		Prompt:                prompt,
-		SchedulerTurn:         true,
-		SelfDrivingGeneration: task.Generation,
-		QueueSelfDriving:      resumingSuspended,
-		ExpectedSelfDrivingGeneration: func() int {
-			if resumingSuspended {
-				return task.Generation
-			}
-			return 0
-		}(),
-		ExpectedSelfDrivingState: func() string {
-			if resumingSuspended {
-				return "suspended"
-			}
-			return ""
-		}(),
-		SelfDrivingAgentName:    selection.AgentName,
-		SelfDrivingAgentNameSet: resumingSuspended,
+		AgentName: selection.AgentName, AgentProfile: selection.Profile, AgentSelectionReason: selection.Reason,
+		ResourceID: task.ID, Title: task.Title, Prompt: prompt, SchedulerTurn: true, SelfDrivingRevision: task.Revision,
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -268,51 +216,68 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	}
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
+	if response.StatusCode == http.StatusConflict {
+		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting", Reason: strings.TrimSpace(string(responseBody))})
+		return runnableTaskSkippedActive, nil
+	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "error", Reason: strings.TrimSpace(string(responseBody))})
 		return runnableTaskDispatchFailed, fmt.Errorf("agent run start returned %d: %s", response.StatusCode, strings.TrimSpace(string(responseBody)))
 	}
 	return runnableTaskStarted, nil
 }
 
-func resolveSelfDrivingAgent(cfg config, task runnableTaskCandidate) (selfDrivingAgentSelection, error) {
-	if cfg.Version < agentHubConfigVersion {
-		return selfDrivingAgentSelection{}, errors.New("Self-Driving requires current AgentHub settings; save AgentHub settings before dispatching this task")
+func runnableTaskCandidateFromTask(task app.Task) runnableTaskCandidate {
+	current := task.SelfDriving
+	return runnableTaskCandidate{
+		ID: task.ID, Title: task.Title, Revision: current.Revision, Condition: current.Condition,
+		AgentName: current.AgentName, Prompt: current.Prompt,
+		PreferredAgentProfiles: append([]string(nil), current.PreferredAgentProfiles...),
+		CompletionCriteria:     current.CompletionCriteria, WakeContext: current.WakeContext,
 	}
-	return resolveAgentHubSelfDrivingAgent(cfg, task)
 }
 
-func resolveAgentHubSelfDrivingAgent(cfg config, task runnableTaskCandidate) (selfDrivingAgentSelection, error) {
-	if agentName := strings.TrimSpace(task.AgentName); agentName != "" {
-		return selfDrivingAgentSelection{
-			AgentName: agentName, Reason: "using the AgentHub agent selected for this Self-Driving generation",
-		}, nil
+func (s *server) recoverSelfDrivingSessions(ctx context.Context, workspace guiWorkspace, taskID string) error {
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil {
+		return err
 	}
-	if len(task.PreferredAgentProfiles) > 0 {
-		seen := make(map[string]bool, len(task.PreferredAgentProfiles))
-		for _, raw := range task.PreferredAgentProfiles {
-			profile := strings.ToLower(strings.TrimSpace(raw))
-			if profile == "" || seen[profile] {
-				continue
-			}
-			seen[profile] = true
-			route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile)
-			if ok && strings.TrimSpace(route.AgentName) != "" {
-				return selfDrivingAgentSelection{
-					AgentName: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile,
-				}, nil
-			}
+	for _, run := range runs {
+		if run.ResourceID != taskID || s.agentRunActive(run.ID) || !isLiveAgentStatus(run.Status) || (run.AgentHubSessionID == "" && run.SourceExternalID == "") {
+			continue
 		}
-		fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
-		if fallback == "" {
-			return selfDrivingAgentSelection{}, fmt.Errorf("no configured Agent Profile is available for %s and no default AgentHub agent exists", strings.Join(task.PreferredAgentProfiles, ", "))
+		cfg, client, configErr := s.agents.agentHubRuntimeConfig()
+		if configErr != nil {
+			return configErr
 		}
-		return selfDrivingAgentSelection{
-			AgentName: fallback, Reason: "preferred Agent Profiles unavailable; using default AgentHub agent " + fallback,
-		}, nil
+		if err := s.agents.recoverAgentHubRun(ctx, cfg, client, workspace, run, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func resolveSelfDrivingAgent(cfg config, task runnableTaskCandidate) (selfDrivingAgentSelection, error) {
+	if cfg.Version < agentHubConfigVersion {
+		return selfDrivingAgentSelection{}, errors.New("Self-Driving requires current AgentHub settings")
+	}
+	if agentName := strings.TrimSpace(task.AgentName); agentName != "" {
+		return selfDrivingAgentSelection{AgentName: agentName, Reason: "using the task's configured AgentHub agent"}, nil
+	}
+	seen := map[string]bool{}
+	for _, raw := range task.PreferredAgentProfiles {
+		profile := strings.ToLower(strings.TrimSpace(raw))
+		if profile == "" || seen[profile] {
+			continue
+		}
+		seen[profile] = true
+		if route, ok := findAgentProfileRoute(cfg.AgentProfiles, profile); ok && strings.TrimSpace(route.AgentName) != "" {
+			return selfDrivingAgentSelection{AgentName: route.AgentName, Profile: profile, Reason: "matched preferred Agent Profile " + profile}, nil
+		}
 	}
 	fallback := configuredAgentProfileName(cfg.AgentProfiles, "default")
 	if fallback == "" {
-		return selfDrivingAgentSelection{}, errors.New("no default AgentHub agent is configured for Self-Driving")
+		return selfDrivingAgentSelection{}, errors.New("no Agent or matching Agent Profile is configured for Self-Driving")
 	}
 	return selfDrivingAgentSelection{AgentName: fallback, Reason: "using default AgentHub agent"}, nil
 }
@@ -327,19 +292,13 @@ func (s *server) agentRunActive(runID string) bool {
 	if rt == nil {
 		return false
 	}
-	rt.mu.Lock()
-	active := isLiveAgentStatus(rt.run.Status)
-	rt.mu.Unlock()
-	return active
+	return isLiveAgentStatus(rt.snapshotRun().Status)
 }
 
-// errSelfDrivingSessionBusy marks the race where a session turned busy between
-// the reuse check and the scheduler-turn send. The caller keeps the
-// generation queued instead of retrying, so no duplicate message is sent.
 var errSelfDrivingSessionBusy = errors.New("session became busy")
 
-func (s *server) startSelfDrivingInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, generation int, prompt string) error {
-	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, SelfDrivingGeneration: generation})
+func (s *server) startSelfDrivingInOpenSession(ctx context.Context, workspace guiWorkspace, runID string, revision int, prompt string) error {
+	body, err := json.Marshal(agentInputRequest{Text: prompt, SchedulerTurn: true, SelfDrivingRevision: revision})
 	if err != nil {
 		return err
 	}
@@ -356,9 +315,6 @@ func (s *server) startSelfDrivingInOpenSession(ctx context.Context, workspace gu
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode == http.StatusConflict {
-		if strings.Contains(string(responseBody), externalResourceLockMessage) {
-			return &externalResourceLockError{}
-		}
 		return errSelfDrivingSessionBusy
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

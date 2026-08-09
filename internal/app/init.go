@@ -162,7 +162,7 @@ This directory is an AgentWorkspace managed by forge.
 - Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
-` + selfDrivingAgentGuidanceEnglish + `- When a GUI scheduler starts a Self-Driving turn, finish it by calling exactly one of ` + "`forge task self-driving complete`" + `, ` + "`forge task self-driving suspend`" + `, ` + "`forge task self-driving pause`" + `, or ` + "`forge task self-driving fail`" + ` as the turn's last side-effecting command. ` + "`cancel`" + ` is a control-plane action for ending a generation and is not a scheduler-turn result.
+` + selfDrivingAgentGuidanceEnglish + `- When a GUI scheduler starts a Self-Driving turn, finish it with exactly one of ` + "`forge task self-driving complete --revision=<n>`" + `, ` + "`forge task self-driving suspend --revision=<n>`" + `, ` + "`forge task self-driving pause --revision=<n>`" + `, or ` + "`forge task self-driving fail --revision=<n>`" + ` as the turn's last side-effecting command. Enable/Disable belongs to the user control plane and never substitutes for a result.
 - To delegate Self-Driving work, create a child with ` + "`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + `. Use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current Self-Driving, record a natural-language context with ` + "`--summary=<text>`" + ` and a separate wake condition with ` + "`--wake-condition=<text>`" + `; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
 - Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
 
@@ -195,7 +195,7 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task self-driving queue|start|retry|suspend|pause|resume|complete|fail|cancel ...
+forge task self-driving enable|disable ...
 
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>

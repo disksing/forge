@@ -34,8 +34,9 @@ type ResourceTreeView struct {
 }
 
 type SelfDrivingTreeView struct {
-	Generation int    `json:"generation"`
-	State      string `json:"state"`
+	Enabled   bool   `json:"enabled"`
+	Revision  int    `json:"revision"`
+	Condition string `json:"condition"`
 }
 
 type ResourceDetailView struct {
@@ -211,7 +212,7 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Archived: isArchivedPath(root, entry.Path),
 	}
 	if task, ok := entry.Resource.(*Task); ok && task.SelfDriving != nil {
-		item.SelfDriving = &SelfDrivingTreeView{Generation: task.SelfDriving.Generation, State: task.SelfDriving.State}
+		item.SelfDriving = &SelfDrivingTreeView{Enabled: task.SelfDriving.Enabled, Revision: task.SelfDriving.Revision, Condition: task.SelfDriving.Condition}
 	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)

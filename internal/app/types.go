@@ -79,29 +79,36 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 }
 
 type SelfDriving struct {
-	Generation             int      `json:"generation"`
-	State                  string   `json:"state"`
-	AgentName              string   `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string   `json:"prompt,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
-	WakeCondition          string   `json:"wakeCondition,omitempty"`
-	// SuspendedAt is the wall-clock time the current generation was last
-	// suspended. The server driver uses it (not task.updatedAt) to decide when
-	// a suspended Self-Driving should be re-queued.
-	SuspendedAt string `json:"suspendedAt,omitempty"`
-	// SuspensionSummary is the natural-language context recorded for the
-	// current suspended generation. It is intentionally separate from the
-	// condition that a future Scheduler Agent should evaluate.
-	SuspensionSummary string `json:"suspensionSummary,omitempty"`
-	// StatusReason is the current generation's state reason. Keeping this
-	// projection in task metadata lets resource detail pages render the
-	// current Self-Driving status without loading an arbitrary historical log page.
-	StatusReason string `json:"statusReason,omitempty"`
-	// WakeConditionFallback records that WakeCondition was filled from the
-	// suspension summary for compatibility. The corresponding log entry is
-	// historical and may not be present in a paged resource detail response.
-	WakeConditionFallback bool `json:"wakeConditionFallback,omitempty"`
+	Enabled                bool                          `json:"enabled"`
+	Revision               int                           `json:"revision"`
+	Condition              string                        `json:"condition"`
+	ConditionReason        string                        `json:"conditionReason,omitempty"`
+	AgentName              string                        `json:"agentName,omitempty"`
+	PreferredAgentProfiles []string                      `json:"preferredAgentProfiles,omitempty"`
+	Prompt                 string                        `json:"prompt,omitempty"`
+	CompletionCriteria     string                        `json:"completionCriteria,omitempty"`
+	WakeContext            *SelfDrivingWakeContext       `json:"wakeContext,omitempty"`
+	LastOutcome            *SelfDrivingOutcome           `json:"lastOutcome,omitempty"`
+	NotificationError      *SelfDrivingNotificationError `json:"notificationError,omitempty"`
+}
+
+type SelfDrivingWakeContext struct {
+	Summary   string `json:"summary"`
+	Condition string `json:"condition"`
+	WaitingAt string `json:"waitingAt"`
+	Fallback  bool   `json:"fallback,omitempty"`
+}
+
+type SelfDrivingOutcome struct {
+	Status   string `json:"status"`
+	Reason   string `json:"reason,omitempty"`
+	At       string `json:"at"`
+	Revision int    `json:"revision"`
+}
+
+type SelfDrivingNotificationError struct {
+	Message string `json:"message"`
+	At      string `json:"at"`
 }
 
 type TaskRepo struct {

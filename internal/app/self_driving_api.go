@@ -5,419 +5,366 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
 )
 
-// SelfDrivingQueueInput describes a new or next Self-Driving generation.
-type SelfDrivingQueueInput struct {
+type SelfDrivingDesiredStateInput struct {
 	TaskID                 string
+	Enabled                bool
 	AgentName              string
 	AgentNameSet           bool
 	PreferredAgentProfiles []string
+	ProfilesSet            bool
 	Prompt                 string
 	PromptSet              bool
 	CompletionCriteria     string
 	CompletionCriteriaSet  bool
 }
 
-// SelfDrivingResumeInput describes a manual or scheduled resume of the current
-// generation. AgentName is optional for existing callers that keep the
-// generation's persisted choice, but a caller that explicitly selected an
-// Agent must set AgentNameSet so the same generation can be updated atomically.
-type SelfDrivingResumeInput struct {
-	TaskID             string
-	AgentName          string
-	AgentNameSet       bool
-	ExpectedGeneration int
-	ExpectedState      string
-}
-
-// SelfDrivingActionInput describes a scheduler action.
 type SelfDrivingActionInput struct {
-	TaskID             string
-	Summary            string
-	WakeCondition      string
-	Reason             string
-	ExpectedGeneration int
-	ExpectedState      string
+	TaskID           string
+	Summary          string
+	WakeCondition    string
+	Reason           string
+	ExpectedRevision int
 }
 
-func (w *Workspace) updateSelfDrivingTask(taskID string, update func(root, dir string, task *Task) error) (Task, error) {
+type SelfDrivingConditionInput struct {
+	TaskID           string
+	ExpectedRevision int
+	Condition        string
+	Reason           string
+}
+
+func (w *Workspace) updateSelfDrivingTask(taskID string, update func(dir string, task *Task) error) (Task, error) {
 	if err := w.require(); err != nil {
 		return Task{}, err
 	}
+	var result Task
+	err := withWorkspaceMutationLock(w.root, func() error {
+		var updateErr error
+		result, updateErr = w.updateSelfDrivingTaskLocked(taskID, update)
+		return updateErr
+	})
+	return result, err
+}
+
+// updateSelfDrivingTaskLocked combines the Workspace mutation lock used by
+// ordinary task metadata/log writers with a per-Task lock used for revision
+// CAS and archive coordination. Forge resource-session locks are deliberately
+// independent and never participate in this control-plane path.
+func (w *Workspace) updateSelfDrivingTaskLocked(taskID string, update func(dir string, task *Task) error) (Task, error) {
 	dir, task, err := loadOpenTask(w.root, cleanID(taskID))
 	if err != nil {
 		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
 	}
-	lockDir := filepath.Join(dir, ".forge")
-	if err := os.MkdirAll(lockDir, 0o755); err != nil {
-		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
-	}
-	lock, err := os.OpenFile(filepath.Join(lockDir, "self-driving.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	lock, err := acquireSelfDrivingTaskLock(dir)
 	if err != nil {
-		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
+		return Task{}, err
 	}
 	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
-		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
-	}
 	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
 	if err := readTaskAtDir(dir, &task); err != nil {
-		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
+		return Task{}, err
 	}
-	if err := update(w.root, dir, &task); err != nil {
+	if err := update(dir, &task); err != nil {
 		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
 	}
 	task.UpdatedAt = time.Now().Format(time.RFC3339)
 	if err := writeResourceMetadata(dir, &task); err != nil {
-		return Task{}, &APIError{Operation: "update Self-Driving", Kind: "self-driving", Workspace: w.root, ResourceID: taskID, Err: err}
+		return Task{}, err
 	}
 	return task, nil
 }
 
-// QueueSelfDriving queues a new generation or requeues a terminal generation.
-func (w *Workspace) QueueSelfDriving(input SelfDrivingQueueInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		generation := 1
-		prompt := strings.TrimSpace(input.Prompt)
-		agentName := strings.TrimSpace(input.AgentName)
-		completionCriteria := strings.TrimSpace(input.CompletionCriteria)
+func acquireSelfDrivingTaskLock(dir string) (*os.File, error) {
+	lockDir := filepath.Join(dir, ".forge")
+	if err := os.MkdirAll(lockDir, 0o755); err != nil {
+		return nil, err
+	}
+	lock, err := os.OpenFile(filepath.Join(lockDir, "self-driving.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX); err != nil {
+		lock.Close()
+		return nil, err
+	}
+	return lock, nil
+}
+
+func disableSelfDrivingForArchive(dir string, task *Task) error {
+	if err := readTaskAtDir(dir, task); err != nil {
+		return err
+	}
+	if task.SelfDriving == nil || !task.SelfDriving.Enabled {
+		return nil
+	}
+	archivedRevision := task.SelfDriving.Revision
+	task.SelfDriving.Enabled = false
+	task.SelfDriving.Revision++
+	task.SelfDriving.Condition = selfDrivingConditionDisabled
+	task.SelfDriving.ConditionReason = ""
+	task.SelfDriving.WakeContext = nil
+	task.SelfDriving.LastOutcome = &SelfDrivingOutcome{
+		Status: "archived", Reason: "task archived", At: time.Now().Format(time.RFC3339), Revision: archivedRevision,
+	}
+	task.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving disabled by archive", "task archived", archivedRevision)); err != nil {
+		return err
+	}
+	return writeResourceMetadata(dir, task)
+}
+
+func (w *Workspace) SetSelfDrivingDesiredState(input SelfDrivingDesiredStateInput) (Task, error) {
+	return w.updateSelfDrivingTask(input.TaskID, func(dir string, task *Task) error {
 		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
 		if err != nil {
 			return err
 		}
-		if task.SelfDriving != nil {
-			if task.SelfDriving.State != selfDrivingStateCompleted && task.SelfDriving.State != selfDrivingStateFailed && task.SelfDriving.State != selfDrivingStateCancelled {
-				return fmt.Errorf("cannot queue Self-Driving in %s state", task.SelfDriving.State)
+		if task.SelfDriving == nil {
+			task.SelfDriving = &SelfDriving{Revision: 1, Enabled: input.Enabled, Condition: selfDrivingConditionDisabled}
+			if input.Enabled {
+				task.SelfDriving.Condition = selfDrivingConditionReady
 			}
-			generation = task.SelfDriving.Generation + 1
-			if len(profiles) == 0 {
-				profiles = append([]string(nil), task.SelfDriving.PreferredAgentProfiles...)
+			applySelfDrivingConfiguration(task.SelfDriving, input, profiles)
+			title := "Self-Driving disabled"
+			if input.Enabled {
+				title = "Self-Driving enabled"
 			}
-			if !input.AgentNameSet && agentName == "" {
-				agentName = task.SelfDriving.AgentName
-			}
-			if !input.PromptSet && prompt == "" {
-				prompt = task.SelfDriving.Prompt
-			}
-			if !input.CompletionCriteriaSet && completionCriteria == "" {
-				completionCriteria = task.SelfDriving.CompletionCriteria
-			}
+			return prependLogEntry(dir, newSelfDrivingLogEntry(title, "", task.SelfDriving.Revision))
 		}
-		task.SelfDriving = &SelfDriving{
-			Generation: generation, State: selfDrivingStateQueued, AgentName: agentName,
-			PreferredAgentProfiles: profiles, Prompt: prompt, CompletionCriteria: completionCriteria,
-		}
-		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving queued", "", generation))
-	})
-}
-
-// StartSelfDriving transitions a queued generation to running.
-func (w *Workspace) StartSelfDriving(taskID string) (Task, error) {
-	return w.updateSelfDrivingTask(taskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving != nil && task.SelfDriving.State == selfDrivingStateRunning {
-			task.SelfDriving.SuspendedAt = ""
+		configurationChanged := selfDrivingConfigurationChanged(task.SelfDriving, input, profiles)
+		stateChanged := task.SelfDriving.Enabled != input.Enabled
+		if !configurationChanged && !stateChanged {
 			return nil
 		}
-		if task.SelfDriving == nil || task.SelfDriving.State != selfDrivingStateQueued {
-			return errors.New("Self-Driving is not queued")
+		task.SelfDriving.Revision++
+		if task.SelfDriving.Revision <= 0 {
+			return errors.New("Self-Driving revision overflow")
 		}
-		// SuspendedAt only describes the suspended state. Keep the historical
-		// summary for prompt recovery, but never carry a stale wake-up timestamp
-		// into a running generation.
-		task.SelfDriving.SuspendedAt = ""
-		task.SelfDriving.State = selfDrivingStateRunning
-		task.SelfDriving.StatusReason = ""
-		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving started", "", task.SelfDriving.Generation))
+		applySelfDrivingConfiguration(task.SelfDriving, input, profiles)
+		task.SelfDriving.Enabled = input.Enabled
+		task.SelfDriving.ConditionReason = ""
+		task.SelfDriving.WakeContext = nil
+		task.SelfDriving.NotificationError = nil
+		if input.Enabled {
+			task.SelfDriving.Condition = selfDrivingConditionReady
+			return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving enabled", "", task.SelfDriving.Revision))
+		}
+		task.SelfDriving.Condition = selfDrivingConditionDisabled
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving disabled", "", task.SelfDriving.Revision))
 	})
 }
 
-// ResumeSelfDriving transitions a paused or suspended generation back to queued.
-// It is idempotent for an already queued generation so concurrent manual
-// resume, timed wake-up, and scheduler scans never double-transition or
-// double-log the same generation.
-func (w *Workspace) ResumeSelfDriving(taskID string) (Task, error) {
-	return w.ResumeSelfDrivingWithAgent(SelfDrivingResumeInput{TaskID: taskID})
+func applySelfDrivingConfiguration(current *SelfDriving, input SelfDrivingDesiredStateInput, profiles []string) {
+	if input.AgentNameSet {
+		current.AgentName = strings.TrimSpace(input.AgentName)
+	}
+	if input.ProfilesSet {
+		current.PreferredAgentProfiles = append([]string(nil), profiles...)
+	}
+	if input.PromptSet {
+		current.Prompt = strings.TrimSpace(input.Prompt)
+	}
+	if input.CompletionCriteriaSet {
+		current.CompletionCriteria = strings.TrimSpace(input.CompletionCriteria)
+	}
 }
 
-// ResumeSelfDrivingWithAgent resumes the current generation and, when requested,
-// persists the explicitly selected Agent without creating a new generation.
-// ExpectedGeneration and ExpectedState form a durable CAS for callers that
-// already validated a page, session, or scheduler snapshot.
-func (w *Workspace) ResumeSelfDrivingWithAgent(input SelfDrivingResumeInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil {
-			return errors.New("task has no Self-Driving")
+func selfDrivingConfigurationChanged(current *SelfDriving, input SelfDrivingDesiredStateInput, profiles []string) bool {
+	return input.AgentNameSet && current.AgentName != strings.TrimSpace(input.AgentName) ||
+		input.ProfilesSet && !slices.Equal(current.PreferredAgentProfiles, profiles) ||
+		input.PromptSet && current.Prompt != strings.TrimSpace(input.Prompt) ||
+		input.CompletionCriteriaSet && current.CompletionCriteria != strings.TrimSpace(input.CompletionCriteria)
+}
+
+func (w *Workspace) EnableSelfDriving(input SelfDrivingDesiredStateInput) (Task, error) {
+	input.Enabled = true
+	return w.SetSelfDrivingDesiredState(input)
+}
+
+func (w *Workspace) DisableSelfDriving(taskID string) (Task, error) {
+	return w.SetSelfDrivingDesiredState(SelfDrivingDesiredStateInput{TaskID: taskID, Enabled: false})
+}
+
+func (w *Workspace) SetSelfDrivingCondition(input SelfDrivingConditionInput) (Task, error) {
+	return w.updateSelfDrivingTask(input.TaskID, func(_ string, task *Task) error {
+		if task.SelfDriving == nil || !task.SelfDriving.Enabled {
+			return errors.New("Self-Driving is disabled")
 		}
-		if input.ExpectedGeneration > 0 && task.SelfDriving.Generation != input.ExpectedGeneration {
-			return fmt.Errorf("Self-Driving generation changed from %d to %d", input.ExpectedGeneration, task.SelfDriving.Generation)
+		if err := validateSelfDrivingRevision(task.SelfDriving, input.ExpectedRevision); err != nil {
+			return err
 		}
-		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.SelfDriving.State != expectedState {
-			return fmt.Errorf("Self-Driving state changed from %q to %q", expectedState, task.SelfDriving.State)
+		switch input.Condition {
+		case selfDrivingConditionReady, selfDrivingConditionReconciling, selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
+		default:
+			return fmt.Errorf("invalid Self-Driving condition %q", input.Condition)
 		}
-		if task.SelfDriving.State == selfDrivingStateQueued {
-			if input.AgentNameSet {
-				agentName := strings.TrimSpace(input.AgentName)
-				if agentName == "" {
-					return errors.New("Agent name cannot be empty when resuming Self-Driving")
-				}
-				task.SelfDriving.AgentName = agentName
-			}
-			task.SelfDriving.SuspendedAt = ""
+		task.SelfDriving.Condition = input.Condition
+		task.SelfDriving.ConditionReason = strings.TrimSpace(input.Reason)
+		return nil
+	})
+}
+
+// SignalSelfDrivingUserMessage makes a blocked/waiting controller eligible for
+// re-evaluation after the manual turn. The Session remains the priority gate,
+// so the Scheduler will wait while that user turn is active.
+func (w *Workspace) SignalSelfDrivingUserMessage(taskID string) (Task, error) {
+	return w.updateSelfDrivingTask(taskID, func(dir string, task *Task) error {
+		if task.SelfDriving == nil || !task.SelfDriving.Enabled {
 			return nil
 		}
-		if task.SelfDriving.State != selfDrivingStatePaused && task.SelfDriving.State != selfDrivingStateSuspended {
-			return errors.New("Self-Driving is not paused or suspended")
-		}
-		if input.AgentNameSet {
-			agentName := strings.TrimSpace(input.AgentName)
-			if agentName == "" {
-				return errors.New("Agent name cannot be empty when resuming Self-Driving")
+		switch task.SelfDriving.Condition {
+		case selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError:
+			if err := advanceSelfDrivingRevision(task.SelfDriving); err != nil {
+				return err
 			}
-			task.SelfDriving.AgentName = agentName
-		}
-		task.SelfDriving.State = selfDrivingStateQueued
-		task.SelfDriving.SuspendedAt = ""
-		task.SelfDriving.StatusReason = ""
-		// SuspensionSummary is intentionally preserved so a woken agent can
-		// re-check the recorded reason before continuing or suspending again.
-		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving queued", "resumed", task.SelfDriving.Generation))
-	})
-}
-
-// ResumeAndStartSelfDriving atomically resumes the expected suspended generation
-// and starts its scheduler turn. The queued and started log entries are
-// written together with the same task update, while suspension context is
-// retained for the resumed generation.
-func (w *Workspace) ResumeAndStartSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil {
-			return errors.New("task has no Self-Driving")
-		}
-		if input.ExpectedGeneration <= 0 {
-			return errors.New("expected Self-Driving generation is required")
-		}
-		if strings.TrimSpace(input.ExpectedState) != selfDrivingStateSuspended {
-			return errors.New("expected Self-Driving state must be suspended")
-		}
-		if err := validateSelfDrivingCAS(task.SelfDriving, input); err != nil {
-			return err
-		}
-		if task.SelfDriving.State != selfDrivingStateSuspended {
-			return fmt.Errorf("Self-Driving is not suspended: %s", task.SelfDriving.State)
-		}
-		generation := task.SelfDriving.Generation
-		task.SelfDriving.State = selfDrivingStateRunning
-		task.SelfDriving.SuspendedAt = ""
-		task.SelfDriving.StatusReason = ""
-		return prependLogEntries(dir,
-			newSelfDrivingLogEntry("Self-Driving started", "", generation),
-			newSelfDrivingLogEntry("Self-Driving queued", "resumed", generation),
-		)
-	})
-}
-
-// RetrySelfDriving records a retry and applies the existing retry budget.
-func (w *Workspace) RetrySelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil || task.SelfDriving.State != selfDrivingStateRunning {
-			return errors.New("Self-Driving is not running")
-		}
-		if err := validateSelfDrivingCAS(task.SelfDriving, input); err != nil {
-			return err
-		}
-		task.SelfDriving.SuspendedAt = ""
-		generation := task.SelfDriving.Generation
-		entries, err := readLogEntries(dir)
-		if err != nil {
-			return err
-		}
-		retries := 0
-		for _, entry := range entries {
-			if !entry.SelfDriving || entry.SelfDrivingGeneration != generation {
-				continue
-			}
-			if entry.Title == "Self-Driving started" {
-				break
-			}
-			if entry.Title == "Self-Driving retry" {
-				retries++
-			}
-		}
-		details := strings.TrimSpace(input.Reason)
-		task.SelfDriving.StatusReason = details
-		if err := prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving retry", details, generation)); err != nil {
-			return err
-		}
-		if retries+1 >= 3 {
-			task.SelfDriving.State = selfDrivingStatePaused
-			task.SelfDriving.StatusReason = "retry limit reached"
-			return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving paused", "retry limit reached", generation))
+			task.SelfDriving.Condition = selfDrivingConditionReady
+			task.SelfDriving.ConditionReason = "user message requested re-evaluation"
+			task.SelfDriving.WakeContext = nil
+			return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving re-evaluation requested", "user message", task.SelfDriving.Revision))
 		}
 		return nil
 	})
 }
 
-// CompleteSelfDriving, PauseSelfDriving and FailSelfDriving apply terminal scheduler
-// actions without formatting or printing their result.
+// WakeSelfDriving advances the authority epoch before a new autonomous Turn
+// is dispatched for a due external wait. A callback from the Turn that
+// established the wait can no longer mutate the reawakened controller.
+func (w *Workspace) WakeSelfDriving(taskID string, expectedRevision int) (Task, error) {
+	return w.updateSelfDrivingTask(taskID, func(dir string, task *Task) error {
+		if err := validateEnabledSelfDrivingRevision(task.SelfDriving, expectedRevision); err != nil {
+			return err
+		}
+		if task.SelfDriving.Condition != selfDrivingConditionWaiting || task.SelfDriving.WakeContext == nil {
+			return errors.New("Self-Driving is not waiting for an external wake condition")
+		}
+		if err := advanceSelfDrivingRevision(task.SelfDriving); err != nil {
+			return err
+		}
+		task.SelfDriving.Condition = selfDrivingConditionReady
+		task.SelfDriving.ConditionReason = "external wait is due for re-evaluation"
+		task.SelfDriving.WakeContext = nil
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving wake re-evaluation", "external wait became due", task.SelfDriving.Revision))
+	})
+}
+
+func (w *Workspace) RecordSelfDrivingNotificationError(taskID string, revision int, notificationErr error) (Task, error) {
+	return w.updateSelfDrivingTask(taskID, func(_ string, task *Task) error {
+		if task.SelfDriving == nil || task.SelfDriving.Revision != revision || task.SelfDriving.Enabled {
+			return nil
+		}
+		if notificationErr == nil {
+			task.SelfDriving.NotificationError = nil
+		} else {
+			task.SelfDriving.NotificationError = &SelfDrivingNotificationError{Message: notificationErr.Error(), At: time.Now().Format(time.RFC3339)}
+		}
+		return nil
+	})
+}
+
 func (w *Workspace) CompleteSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.finishSelfDriving(input, selfDrivingStateCompleted, "Self-Driving completed")
+	return w.updateSelfDrivingTask(input.TaskID, func(dir string, task *Task) error {
+		if duplicateSelfDrivingOutcome(task.SelfDriving, input.ExpectedRevision, "completed") {
+			return nil
+		}
+		if err := validateEnabledSelfDrivingRevision(task.SelfDriving, input.ExpectedRevision); err != nil {
+			return err
+		}
+		completedRevision := task.SelfDriving.Revision
+		task.SelfDriving.Enabled = false
+		task.SelfDriving.Revision++
+		task.SelfDriving.Condition = selfDrivingConditionDisabled
+		task.SelfDriving.ConditionReason = ""
+		task.SelfDriving.LastOutcome = &SelfDrivingOutcome{Status: "completed", Reason: strings.TrimSpace(input.Summary), At: time.Now().Format(time.RFC3339), Revision: completedRevision}
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving completed", input.Summary, completedRevision))
+	})
+}
+
+func (w *Workspace) SuspendSelfDriving(input SelfDrivingActionInput) (Task, error) {
+	return w.updateSelfDrivingTask(input.TaskID, func(dir string, task *Task) error {
+		if duplicateSelfDrivingOutcome(task.SelfDriving, input.ExpectedRevision, "waiting") {
+			return nil
+		}
+		if err := validateEnabledSelfDrivingRevision(task.SelfDriving, input.ExpectedRevision); err != nil {
+			return err
+		}
+		summary := strings.TrimSpace(input.Summary)
+		if summary == "" {
+			summary = strings.TrimSpace(input.Reason)
+		}
+		if summary == "" {
+			summary = selfDrivingSuspensionFallback
+		}
+		condition := strings.TrimSpace(input.WakeCondition)
+		fallback := condition == ""
+		if fallback {
+			condition = summary
+		}
+		task.SelfDriving.Condition = selfDrivingConditionWaiting
+		task.SelfDriving.ConditionReason = summary
+		task.SelfDriving.WakeContext = &SelfDrivingWakeContext{Summary: summary, Condition: condition, WaitingAt: time.Now().Format(time.RFC3339), Fallback: fallback}
+		task.SelfDriving.LastOutcome = &SelfDrivingOutcome{Status: "waiting", Reason: summary, At: time.Now().Format(time.RFC3339), Revision: task.SelfDriving.Revision}
+		return prependLogEntry(dir, newSelfDrivingSuspensionLogEntry("Self-Driving waiting", summary, condition, fallback, task.SelfDriving.Revision))
+	})
 }
 
 func (w *Workspace) PauseSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.finishSelfDriving(input, selfDrivingStatePaused, "Self-Driving paused")
+	return w.recordSelfDrivingNonTerminalOutcome(input, selfDrivingConditionBlocked, "blocked")
 }
 
 func (w *Workspace) FailSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.finishSelfDriving(input, selfDrivingStateFailed, "Self-Driving failed")
+	return w.recordSelfDrivingNonTerminalOutcome(input, selfDrivingConditionError, "error")
 }
 
-func (w *Workspace) finishSelfDriving(input SelfDrivingActionInput, state, title string) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil {
-			return errors.New("task has no Self-Driving")
-		}
-		if err := validateSelfDrivingCAS(task.SelfDriving, input); err != nil {
-			return err
-		}
-		if task.SelfDriving.State != state && isSelfDrivingTerminalState(task.SelfDriving.State) {
-			return fmt.Errorf("cannot transition Self-Driving from terminal state %s to %s", task.SelfDriving.State, state)
-		}
-		details := strings.TrimSpace(input.Summary)
-		if details == "" {
-			details = strings.TrimSpace(input.Reason)
-		}
-		task.SelfDriving.State = state
-		task.SelfDriving.SuspendedAt = ""
-		if state == selfDrivingStateCompleted {
-			task.SelfDriving.StatusReason = ""
-		} else {
-			task.SelfDriving.StatusReason = details
-		}
-		// Pause is a manual control-plane state, not a suspension context.
-		// Keep the last real suspension fields available for a later resume.
-		return prependLogEntry(dir, newSelfDrivingLogEntry(title, details, task.SelfDriving.Generation))
-	})
-}
-
-// SuspendSelfDriving puts the current generation into the suspended state with a
-// natural-language summary. The server driver wakes it after
-// selfDrivingSuspensionLimit, and every new suspend resets the timer.
-func (w *Workspace) SuspendSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil {
-			return errors.New("task has no Self-Driving")
-		}
-		if err := validateSelfDrivingCAS(task.SelfDriving, input); err != nil {
-			return err
-		}
-		if isSelfDrivingTerminalState(task.SelfDriving.State) {
-			return fmt.Errorf("cannot suspend Self-Driving in %s state", task.SelfDriving.State)
-		}
-		details := strings.TrimSpace(input.Summary)
-		if details == "" {
-			details = strings.TrimSpace(input.Reason)
-		}
-		if details == "" {
-			details = selfDrivingSuspensionFallback
-		}
-		wakeCondition := strings.TrimSpace(input.WakeCondition)
-		wakeConditionFallback := wakeCondition == ""
-		if wakeConditionFallback {
-			wakeCondition = details
-		}
-		if wakeCondition == "" {
-			wakeCondition = selfDrivingSuspensionFallback
-		}
-		task.SelfDriving.State = selfDrivingStateSuspended
-		task.SelfDriving.SuspendedAt = time.Now().Format(time.RFC3339)
-		task.SelfDriving.SuspensionSummary = details
-		task.SelfDriving.WakeCondition = wakeCondition
-		task.SelfDriving.StatusReason = details
-		task.SelfDriving.WakeConditionFallback = wakeConditionFallback
-		return prependLogEntry(dir, newSelfDrivingSuspensionLogEntry("Self-Driving suspended", details, wakeCondition, wakeConditionFallback, task.SelfDriving.Generation))
-	})
-}
-
-// CancelSelfDriving durably ends the current generation. It intentionally does
-// not know how to interrupt AgentHub; the serve control plane persists this
-// state first and then performs the best-effort non-idempotent interrupt.
-func (w *Workspace) CancelSelfDriving(input SelfDrivingActionInput) (Task, error) {
-	return w.updateSelfDrivingTask(input.TaskID, func(_ string, dir string, task *Task) error {
-		if task.SelfDriving == nil {
-			return errors.New("task has no Self-Driving")
-		}
-		if input.ExpectedGeneration > 0 && task.SelfDriving.Generation != input.ExpectedGeneration {
-			return fmt.Errorf("Self-Driving generation changed from %d to %d", input.ExpectedGeneration, task.SelfDriving.Generation)
-		}
-		// A duplicate cancel may carry the first request's stale expected state.
-		// Once this generation is durably cancelled, returning the current
-		// terminal record is safe and avoids a second cancellation log.
-		if task.SelfDriving.State == selfDrivingStateCancelled {
+func (w *Workspace) recordSelfDrivingNonTerminalOutcome(input SelfDrivingActionInput, condition, status string) (Task, error) {
+	return w.updateSelfDrivingTask(input.TaskID, func(dir string, task *Task) error {
+		if duplicateSelfDrivingOutcome(task.SelfDriving, input.ExpectedRevision, status) {
 			return nil
 		}
-		if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && task.SelfDriving.State != expectedState {
-			return fmt.Errorf("Self-Driving state changed from %q to %q", expectedState, task.SelfDriving.State)
+		if err := validateEnabledSelfDrivingRevision(task.SelfDriving, input.ExpectedRevision); err != nil {
+			return err
 		}
-		switch task.SelfDriving.State {
-		case selfDrivingStateCompleted, selfDrivingStateFailed:
-			return fmt.Errorf("cannot cancel Self-Driving in %s state", task.SelfDriving.State)
-		case selfDrivingStateQueued, selfDrivingStateRunning, selfDrivingStateSuspended, selfDrivingStatePaused:
-		default:
-			return fmt.Errorf("cannot cancel Self-Driving in %s state", task.SelfDriving.State)
+		reason := strings.TrimSpace(input.Reason)
+		if reason == "" {
+			reason = strings.TrimSpace(input.Summary)
 		}
-		details := strings.TrimSpace(input.Reason)
-		if details == "" {
-			details = strings.TrimSpace(input.Summary)
-		}
-		if details == "" {
-			details = "Self-Driving cancelled by user"
-		}
-		task.SelfDriving.State = selfDrivingStateCancelled
-		task.SelfDriving.SuspendedAt = ""
-		task.SelfDriving.StatusReason = details
-		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving cancelled", details, task.SelfDriving.Generation))
+		task.SelfDriving.Condition = condition
+		task.SelfDriving.ConditionReason = reason
+		task.SelfDriving.LastOutcome = &SelfDrivingOutcome{Status: status, Reason: reason, At: time.Now().Format(time.RFC3339), Revision: task.SelfDriving.Revision}
+		return prependLogEntry(dir, newSelfDrivingLogEntry("Self-Driving "+status, reason, task.SelfDriving.Revision))
 	})
 }
 
-func validateSelfDrivingCAS(selfDriving *SelfDriving, input SelfDrivingActionInput) error {
-	if input.ExpectedGeneration > 0 && selfDriving.Generation != input.ExpectedGeneration {
-		return fmt.Errorf("Self-Driving generation changed from %d to %d", input.ExpectedGeneration, selfDriving.Generation)
+func validateEnabledSelfDrivingRevision(current *SelfDriving, expected int) error {
+	if current == nil || !current.Enabled {
+		return errors.New("Self-Driving is disabled")
 	}
-	if expectedState := strings.TrimSpace(input.ExpectedState); expectedState != "" && selfDriving.State != expectedState {
-		return fmt.Errorf("Self-Driving state changed from %q to %q", expectedState, selfDriving.State)
+	return validateSelfDrivingRevision(current, expected)
+}
+
+func validateSelfDrivingRevision(current *SelfDriving, expected int) error {
+	if expected <= 0 {
+		return errors.New("expected Self-Driving revision is required")
+	}
+	if current.Revision != expected {
+		return fmt.Errorf("Self-Driving revision changed from %d to %d", expected, current.Revision)
 	}
 	return nil
 }
 
-func isSelfDrivingTerminalState(state string) bool {
-	switch state {
-	case selfDrivingStateCompleted, selfDrivingStateFailed, selfDrivingStateCancelled:
-		return true
-	default:
-		return false
+func advanceSelfDrivingRevision(current *SelfDriving) error {
+	current.Revision++
+	if current.Revision <= 0 {
+		return errors.New("Self-Driving revision overflow")
 	}
+	return nil
 }
 
-// selfDrivingReady reports whether the Self-Driving state should be surfaced to the
-// server driver: queued and running always are, suspended tasks are re-queued
-// by the driver once their suspension limit elapses, and paused or terminal
-// generations are never automatically started.
-func selfDrivingReady(task Task) (bool, string) {
-	if task.SelfDriving == nil {
-		return false, "no_self_driving"
-	}
-	switch task.SelfDriving.State {
-	case selfDrivingStateQueued:
-		return true, "queued"
-	case selfDrivingStateRunning:
-		return true, "running"
-	case selfDrivingStateSuspended:
-		return true, "suspended"
-	default:
-		return false, task.SelfDriving.State
-	}
+func duplicateSelfDrivingOutcome(current *SelfDriving, revision int, status string) bool {
+	return current != nil && current.LastOutcome != nil && current.LastOutcome.Revision == revision && current.LastOutcome.Status == status
 }

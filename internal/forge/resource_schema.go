@@ -45,13 +45,19 @@ func validateResource(resource Resource) error {
 			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
 		if typed.SelfDriving != nil {
-			if typed.SelfDriving.Generation <= 0 {
-				return fmt.Errorf("Self-Driving generation must be positive")
+			if typed.SelfDriving.Revision <= 0 {
+				return fmt.Errorf("Self-Driving revision must be positive")
 			}
-			switch typed.SelfDriving.State {
-			case selfDrivingStateQueued, selfDrivingStateRunning, selfDrivingStateSuspended, selfDrivingStatePaused, selfDrivingStateCompleted, selfDrivingStateFailed, selfDrivingStateCancelled:
+			switch typed.SelfDriving.Condition {
+			case "disabled", "ready", "reconciling", "waiting", "blocked", "error", "needs_configuration":
 			default:
-				return fmt.Errorf("invalid Self-Driving state %q", typed.SelfDriving.State)
+				return fmt.Errorf("invalid Self-Driving condition %q", typed.SelfDriving.Condition)
+			}
+			if !typed.SelfDriving.Enabled && typed.SelfDriving.Condition != "disabled" {
+				return fmt.Errorf("disabled Self-Driving must use condition %q", "disabled")
+			}
+			if typed.SelfDriving.Enabled && typed.SelfDriving.Condition == "disabled" {
+				return fmt.Errorf("enabled Self-Driving cannot use condition %q", "disabled")
 			}
 		}
 	default:

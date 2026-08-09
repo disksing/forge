@@ -140,20 +140,18 @@ func applicationTaskList(options taskListOptions) error {
 	runnable := make([]runnableTask, 0, len(result.Runnable))
 	for _, entry := range result.Runnable {
 		runnable = append(runnable, runnableTask{
-			ID: entry.ID, Path: entry.Path, Title: entry.Title, Generation: entry.Generation,
-			State: entry.State, Ready: entry.Ready, Reason: entry.Reason, AgentName: entry.AgentName, Prompt: entry.Prompt,
+			ID: entry.ID, Path: entry.Path, Title: entry.Title, Revision: entry.Revision,
+			Condition: entry.Condition, Ready: entry.Ready, Reason: entry.Reason, AgentName: entry.AgentName, Prompt: entry.Prompt,
 			PreferredAgentProfiles: append([]string(nil), entry.PreferredAgentProfiles...),
 			CompletionCriteria:     entry.CompletionCriteria,
-			WakeCondition:          entry.WakeCondition,
-			SuspendedAt:            entry.SuspendedAt,
-			SuspensionSummary:      entry.SuspensionSummary,
+			WakeContext:            entry.WakeContext,
 		})
 	}
 	if options.JSON {
 		return printJSON(map[string]any{"tasks": runnable})
 	}
 	for _, entry := range runnable {
-		fmt.Printf("%s\t%d\t%s\t%s\n", entry.ID, entry.Generation, entry.Reason, entry.Title)
+		fmt.Printf("%s\t%d\t%s\t%s\n", entry.ID, entry.Revision, entry.Reason, entry.Title)
 	}
 	return nil
 }
@@ -200,14 +198,14 @@ func applicationLogList(kind, projectID, taskID string, jsonOutput bool) error {
 	return nil
 }
 
-func applicationSelfDrivingQueue(opts selfDrivingCommandOptions) error {
+func applicationSelfDrivingEnable(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.QueueSelfDriving(app.SelfDrivingQueueInput{
+	task, err := workspace.EnableSelfDriving(app.SelfDrivingDesiredStateInput{
 		TaskID: opts.TaskID, AgentName: opts.AgentName, AgentNameSet: opts.AgentNameSet,
-		PreferredAgentProfiles: opts.PreferredAgentProfiles, Prompt: opts.Prompt, PromptSet: opts.PromptSet,
+		PreferredAgentProfiles: opts.PreferredAgentProfiles, ProfilesSet: opts.ProfilesSet, Prompt: opts.Prompt, PromptSet: opts.PromptSet,
 		CompletionCriteria: opts.CompletionCriteria, CompletionCriteriaSet: opts.CompletionCriteriaSet,
 	})
 	if err != nil {
@@ -216,39 +214,12 @@ func applicationSelfDrivingQueue(opts selfDrivingCommandOptions) error {
 	return printJSON(task)
 }
 
-func applicationSelfDrivingStart(opts selfDrivingCommandOptions) error {
+func applicationSelfDrivingDisable(opts selfDrivingCommandOptions) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	task, err := workspace.StartSelfDriving(opts.TaskID)
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
-func applicationSelfDrivingRetry(opts selfDrivingCommandOptions) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.RetrySelfDriving(app.SelfDrivingActionInput{
-		TaskID: opts.TaskID, Reason: opts.Reason,
-		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
-	})
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
-func applicationSelfDrivingResume(opts selfDrivingCommandOptions) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.ResumeSelfDriving(opts.TaskID)
+	task, err := workspace.DisableSelfDriving(opts.TaskID)
 	if err != nil {
 		return err
 	}
@@ -262,7 +233,7 @@ func applicationSelfDrivingAction(action string, opts selfDrivingCommandOptions)
 	}
 	input := app.SelfDrivingActionInput{
 		TaskID: opts.TaskID, Summary: opts.Summary, WakeCondition: opts.WakeCondition, Reason: opts.Reason,
-		ExpectedGeneration: opts.ExpectedGeneration, ExpectedState: opts.ExpectedState,
+		ExpectedRevision: opts.ExpectedRevision,
 	}
 	var task app.Task
 	switch action {
@@ -274,8 +245,6 @@ func applicationSelfDrivingAction(action string, opts selfDrivingCommandOptions)
 		task, err = workspace.PauseSelfDriving(input)
 	case "fail":
 		task, err = workspace.FailSelfDriving(input)
-	case "cancel":
-		task, err = workspace.CancelSelfDriving(input)
 	default:
 		return fmt.Errorf("unknown Self-Driving action %q", action)
 	}

@@ -34,7 +34,11 @@ func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspa
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := forgeWorkspace.StartSelfDriving(run.ResourceID); err != nil {
+		revision := run.SelfDrivingRevision
+		if revision <= 0 {
+			revision = 1
+		}
+		if _, err := forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: run.ResourceID, ExpectedRevision: revision, Condition: "reconciling"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -318,7 +322,7 @@ func TestAgentHubPollerDoesNotRetryAmbiguousArchivedTaskStop(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerBusyToReadyTriggersSelfDrivingRetry(t *testing.T) {
+func TestAgentHubPollerBusyToReadyRecordsMissingOutcomeWithoutContinuation(t *testing.T) {
 	for _, previousStatus := range []string{"running", "waiting_approval"} {
 		t.Run(previousStatus, func(t *testing.T) {
 			fake := newRuntimeFakeAgentHub()
@@ -329,8 +333,8 @@ func TestAgentHubPollerBusyToReadyTriggersSelfDrivingRetry(t *testing.T) {
 				ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 				AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 				ForgeSessionID: "session-test", Status: previousStatus, SchedulerTurn: true,
-				SelfDrivingGeneration: 1,
-				CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+				SelfDrivingRevision: 1,
+				CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 			}, agentHubSession{ID: "ses_sched", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 			if err := manager.pollAgentHubSessions(context.Background()); err != nil {
@@ -342,24 +346,17 @@ func TestAgentHubPollerBusyToReadyTriggersSelfDrivingRetry(t *testing.T) {
 				if err != nil {
 					return false
 				}
-				resource, err := forgeWorkspace.Resource("project1.task1")
-				if err != nil || resource.SelfDriving == nil {
+				resource, err := forgeWorkspace.ResourceValue("project1.task1")
+				if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 					return false
 				}
-				hasRetry := false
-				for _, entry := range resource.Logs {
-					if entry.Title == "Self-Driving retry" && entry.Details == "agent did not set Self-Driving state" {
-						hasRetry = true
-						break
-					}
-				}
-				if !hasRetry {
+				if resource.Task.SelfDriving.Condition != "error" {
 					return false
 				}
 				rt.mu.Lock()
-				finishing := rt.schedulerTurnFinishing
+				finishing, schedulerTurn := rt.schedulerTurnFinishing, rt.run.SchedulerTurn
 				rt.mu.Unlock()
-				return !finishing
+				return !finishing && !schedulerTurn
 			})
 		})
 	}
@@ -376,14 +373,14 @@ func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testi
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "running", SchedulerTurn: true,
-		SelfDrivingGeneration: 1,
-		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingRevision: 1,
+		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "stopped", UpdatedAt: "2026-08-01T00:00:10Z"})
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := forgeWorkspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", Summary: "completed before stop"}); err != nil {
+	if _, err := forgeWorkspace.CompleteSelfDriving(app.SelfDrivingActionInput{TaskID: "project1.task1", ExpectedRevision: 1, Summary: "completed before stop"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -416,8 +413,8 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "waiting_approval", SchedulerTurn: true,
-		SelfDrivingGeneration: 1,
-		CreatedAt:             "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+		SelfDrivingRevision: 1,
+		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_sched", State: "busy", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {

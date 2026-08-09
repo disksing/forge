@@ -109,6 +109,7 @@ func TestAcquireConfiguredWorkspaceLocksAllOrNothing(t *testing.T) {
 	wsB := t.TempDir()
 	// An external instance already owns wsB.
 	external := newWorkspaceLockManager("", "")
+	defer external.closeAll()
 	if _, err := external.acquire(wsB); err != nil {
 		t.Fatal(err)
 	}
@@ -135,6 +136,7 @@ func TestAcquireConfiguredWorkspaceLocksAllOrNothing(t *testing.T) {
 	}
 	// All or nothing: the lock taken for wsA during this round is released.
 	probe := newWorkspaceLockManager("", "")
+	defer probe.closeAll()
 	if _, err := probe.acquire(wsA); err != nil {
 		t.Fatalf("expected wsA lock to be released after abort, got %v", err)
 	}

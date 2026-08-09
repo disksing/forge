@@ -5,17 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-)
 
-const (
-	selfDrivingStateQueued        = "queued"
-	selfDrivingStateRunning       = "running"
-	selfDrivingStateSuspended     = "suspended"
-	selfDrivingStatePaused        = "paused"
-	selfDrivingStateCompleted     = "completed"
-	selfDrivingStateFailed        = "failed"
-	selfDrivingStateCancelled     = "cancelled"
-	selfDrivingSuspensionFallback = "Re-check whether the blocking condition has changed"
+	"github.com/disksing/forge/internal/app"
 )
 
 type selfDrivingCommandOptions struct {
@@ -23,6 +14,7 @@ type selfDrivingCommandOptions struct {
 	AgentName              string
 	AgentNameSet           bool
 	PreferredAgentProfiles []string
+	ProfilesSet            bool
 	Prompt                 string
 	PromptSet              bool
 	CompletionCriteria     string
@@ -30,25 +22,22 @@ type selfDrivingCommandOptions struct {
 	Summary                string
 	WakeCondition          string
 	Reason                 string
-	ExpectedGeneration     int
-	ExpectedState          string
+	ExpectedRevision       int
 }
 
 type runnableTask struct {
-	ID                     string   `json:"id"`
-	Path                   string   `json:"path"`
-	Title                  string   `json:"title"`
-	Generation             int      `json:"generation"`
-	State                  string   `json:"state"`
-	Ready                  bool     `json:"ready"`
-	Reason                 string   `json:"reason"`
-	AgentName              string   `json:"agentName,omitempty"`
-	Prompt                 string   `json:"prompt,omitempty"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
-	WakeCondition          string   `json:"wakeCondition,omitempty"`
-	SuspendedAt            string   `json:"suspendedAt,omitempty"`
-	SuspensionSummary      string   `json:"suspensionSummary,omitempty"`
+	ID                     string                      `json:"id"`
+	Path                   string                      `json:"path"`
+	Title                  string                      `json:"title"`
+	Revision               int                         `json:"revision"`
+	Condition              string                      `json:"condition"`
+	Ready                  bool                        `json:"ready"`
+	Reason                 string                      `json:"reason"`
+	AgentName              string                      `json:"agentName,omitempty"`
+	Prompt                 string                      `json:"prompt,omitempty"`
+	PreferredAgentProfiles []string                    `json:"preferredAgentProfiles,omitempty"`
+	CompletionCriteria     string                      `json:"completionCriteria,omitempty"`
+	WakeContext            *app.SelfDrivingWakeContext `json:"wakeContext,omitempty"`
 }
 
 func runTaskSelfDriving(args []string) error {
@@ -56,45 +45,41 @@ func runTaskSelfDriving(args []string) error {
 		return errors.New(selfDrivingUsage(""))
 	}
 	command := args[0]
+	switch command {
+	case "enable", "disable", "complete", "suspend", "pause", "fail":
+	default:
+		return fmt.Errorf("unknown task self-driving subcommand %q", command)
+	}
 	opts, err := parseSelfDrivingCommandArgs(command, args[1:])
 	if err != nil {
 		return err
 	}
 	switch command {
-	case "queue":
-		return selfDrivingQueue(opts)
-	case "start":
-		return selfDrivingStart(opts)
-	case "retry":
-		return selfDrivingRetry(opts)
-	case "resume":
-		return selfDrivingResume(opts)
-	case "complete", "suspend", "pause", "fail", "cancel":
-		return selfDrivingAction(command, opts)
-	default:
-		return fmt.Errorf("unknown task self-driving subcommand %q", command)
+	case "enable":
+		return applicationSelfDrivingEnable(opts)
+	case "disable":
+		return applicationSelfDrivingDisable(opts)
+	case "complete", "suspend", "pause", "fail":
+		return applicationSelfDrivingAction(command, opts)
 	}
+	return nil
 }
 
 func selfDrivingUsage(command string) string {
 	base := "usage: forge task self-driving "
 	switch command {
-	case "queue":
-		return base + "queue [--project=<project>] [--task=<task>] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
-	case "start", "resume":
-		return base + command + " [--project=<project>] [--task=<task>]"
+	case "enable":
+		return base + "enable [--project=<project>] [--task=<task>] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
+	case "disable":
+		return base + "disable [--project=<project>] [--task=<task>]"
 	case "complete":
-		return base + "complete [--project=<project>] [--task=<task>] [--summary=<text>]"
+		return base + "complete [--project=<project>] [--task=<task>] --revision=<n> [--summary=<text>]"
 	case "suspend":
-		return base + "suspend [--project=<project>] [--task=<task>] [--summary=<text>] [--wake-condition=<text>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
-	case "cancel":
-		return base + "cancel [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
+		return base + "suspend [--project=<project>] [--task=<task>] --revision=<n> [--summary=<text>] [--wake-condition=<text>] [--reason=<text>]"
 	case "pause", "fail":
-		return base + command + " [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
-	case "retry":
-		return base + "retry [--project=<project>] [--task=<task>] [--reason=<text>] [--expected-generation=<n>] [--expected-state=<state>]"
+		return base + command + " [--project=<project>] [--task=<task>] --revision=<n> [--reason=<text>]"
 	default:
-		return base + "<queue|start|retry|suspend|pause|resume|complete|fail|cancel>"
+		return base + "<enable|disable|complete|suspend|pause|fail>"
 	}
 }
 
@@ -122,33 +107,32 @@ func parseSelfDrivingCommandArgs(command string, args []string) (selfDrivingComm
 		case "task":
 			task = value
 		case "agent":
-			opts.AgentName = value
-			opts.AgentNameSet = true
+			opts.AgentName, opts.AgentNameSet = value, true
 		case "agent-profile":
 			opts.PreferredAgentProfiles = append(opts.PreferredAgentProfiles, value)
+			opts.ProfilesSet = true
 		case "prompt":
-			opts.Prompt = value
-			opts.PromptSet = true
+			opts.Prompt, opts.PromptSet = value, true
 		case "completion-criteria":
-			opts.CompletionCriteria = value
-			opts.CompletionCriteriaSet = true
+			opts.CompletionCriteria, opts.CompletionCriteriaSet = value, true
 		case "summary":
 			opts.Summary = value
-		case "wake-condition":
-			opts.WakeCondition = value
 		case "reason":
 			opts.Reason = value
-		case "expected-generation":
-			generation, parseErr := strconv.Atoi(value)
-			if parseErr != nil || generation <= 0 {
-				return opts, fmt.Errorf("expected generation must be a positive integer")
+		case "wake-condition":
+			opts.WakeCondition = value
+		case "revision":
+			revision, parseErr := strconv.Atoi(value)
+			if parseErr != nil || revision <= 0 {
+				return opts, errors.New("revision must be a positive integer")
 			}
-			opts.ExpectedGeneration = generation
-		case "expected-state":
-			opts.ExpectedState = value
+			opts.ExpectedRevision = revision
 		default:
 			return opts, errors.New(usage)
 		}
+	}
+	if command != "enable" && command != "disable" && opts.ExpectedRevision <= 0 {
+		return opts, errors.New(usage)
 	}
 	var err error
 	if task == "" {
@@ -161,47 +145,4 @@ func parseSelfDrivingCommandArgs(command string, args []string) (selfDrivingComm
 		opts.TaskID, err = normalizeTaskArg(projectID, task)
 	}
 	return opts, err
-}
-
-func selfDrivingQueue(opts selfDrivingCommandOptions) error {
-	return applicationSelfDrivingQueue(opts)
-}
-
-func normalizeAgentProfiles(values []string) ([]string, error) {
-	normalized := make([]string, 0, len(values))
-	seen := make(map[string]bool, len(values))
-	for _, value := range values {
-		profile := strings.ToLower(strings.TrimSpace(value))
-		if profile == "" {
-			return nil, errors.New("agent profile cannot be empty")
-		}
-		for _, r := range profile {
-			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
-				continue
-			}
-			return nil, fmt.Errorf("invalid agent profile %q: use lowercase letters, numbers, '.', '_', or '-'", value)
-		}
-		if seen[profile] {
-			continue
-		}
-		seen[profile] = true
-		normalized = append(normalized, profile)
-	}
-	return normalized, nil
-}
-
-func selfDrivingStart(opts selfDrivingCommandOptions) error {
-	return applicationSelfDrivingStart(opts)
-}
-
-func selfDrivingRetry(opts selfDrivingCommandOptions) error {
-	return applicationSelfDrivingRetry(opts)
-}
-
-func selfDrivingResume(opts selfDrivingCommandOptions) error {
-	return applicationSelfDrivingResume(opts)
-}
-
-func selfDrivingAction(action string, opts selfDrivingCommandOptions) error {
-	return applicationSelfDrivingAction(action, opts)
 }

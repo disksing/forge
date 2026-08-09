@@ -51,7 +51,7 @@ func resolveAgentHubRunAgent(cfg config, req startAgentRequest) (string, error) 
 // validateAgentHubRunAgent runs before Forge creates a session or changes the
 // task. AgentHub may reject an unavailable configured target during session
 // creation, but validating against the catalog first keeps a manual Self-Driving
-// start atomic: an unavailable selection cannot leave a queued generation or
+// start atomic: an unavailable selection cannot leave a claimed revision or
 // a Forge lock behind.
 func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
@@ -89,10 +89,6 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if req.ManualSelfDriving && req.SchedulerTurn && req.QueueSelfDriving && strings.TrimSpace(req.AgentName) == "" {
-		writeError(w, errors.New("manual Self-Driving start or resume requires an explicitly selected agent"), http.StatusBadRequest)
 		return
 	}
 	if err := m.server.requireResourceNotExternallyLocked(workspace, req.ResourceID); err != nil {
@@ -133,7 +129,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		CreatedAt:             now,
 		UpdatedAt:             now,
 		SchedulerTurn:         req.SchedulerTurn,
-		SelfDrivingGeneration: req.SelfDrivingGeneration,
+		SelfDrivingRevision:   req.SelfDrivingRevision,
 		PendingInitialMessage: strings.TrimSpace(req.Prompt),
 	}
 	if run.SchedulerTurn {
@@ -170,24 +166,6 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	if run.SchedulerTurn {
-		if req.QueueSelfDriving {
-			task, queueErr := m.server.queueChatSelfDrivingForSession(workspace, run.ResourceID, req.ExpectedSelfDrivingGeneration, req.ExpectedSelfDrivingState, app.SelfDrivingQueueInput{
-				TaskID:    run.ResourceID,
-				AgentName: req.SelfDrivingAgentName, AgentNameSet: req.SelfDrivingAgentNameSet,
-				Prompt: req.SelfDrivingPrompt, PromptSet: req.SelfDrivingPromptSet,
-				CompletionCriteria: req.SelfDrivingCompletionCriteria, CompletionCriteriaSet: req.SelfDrivingCompletionCriteriaSet,
-			})
-			if queueErr != nil {
-				writeResourceOperationError(w, queueErr, http.StatusConflict)
-				return
-			}
-			if task.SelfDriving == nil {
-				writeError(w, errors.New("Self-Driving state update did not produce a generation"), http.StatusInternalServerError)
-				return
-			}
-			run.SelfDrivingGeneration = task.SelfDriving.Generation
-			rt.setRun(run)
-		}
 		if err := m.startSelfDriving(r.Context(), workspace, run); err != nil {
 			writeResourceOperationError(w, err, http.StatusBadRequest)
 			return
@@ -454,7 +432,7 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 
 const (
 	selfDrivingFinishNoticeKind              = "self-driving-finish"
-	selfDrivingFinishNoticeWaitingLifecycle  = "until-resume"
+	selfDrivingFinishNoticeWaitingLifecycle  = "until-reconcile"
 	selfDrivingFinishNoticeTerminalLifecycle = "terminal"
 	selfDrivingFinishNoticeErrorLifecycle    = "error"
 )
@@ -478,7 +456,7 @@ func (rt *agentRuntime) addSelfDrivingFinishNotice(m *agentManager, level, lifec
 			Lifecycle:             lifecycle,
 			RunID:                 run.ID,
 			ResourceID:            run.ResourceID,
-			SelfDrivingGeneration: run.SelfDrivingGeneration,
+			SelfDrivingRevision:   run.SelfDrivingRevision,
 			SchedulerTurnID:       run.SchedulerTurnID,
 			SchedulerTurnSequence: run.SchedulerTurnSequence,
 		},
@@ -501,39 +479,13 @@ func agentInputConflict(err error) error {
 }
 
 func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentInputRequest, text string) {
-	// A direct suspended-generation resume shares the dispatch boundary with
-	// timed wake, explicit Resume, Cancel, End Turn, Close, and SchedulerTurn
-	// finish. Ordinary Chat input keeps its existing turn-only serialization and
-	// therefore cannot implicitly resume Self-Driving.
-	if req.ResumeSuspendedSelfDriving {
-		m.server.selfDrivingDispatchMu.Lock()
-		defer m.server.selfDrivingDispatchMu.Unlock()
-	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
 	run, state, client := rt.run, rt.agentHubState, rt.agentHub
 	rt.mu.Unlock()
 
-	resumed := false
-	if req.ResumeSuspendedSelfDriving {
-		if err := m.server.requireResourceNotExternallyLocked(rt.workspace, run.ResourceID); err != nil {
-			writeResourceOperationError(w, err, http.StatusConflict)
-			return
-		}
-		resumedRun, err := m.resumeSuspendedSelfDrivingForInput(r.Context(), rt, run, state, client, req)
-		if err != nil {
-			status := http.StatusBadGateway
-			var conflictErr *agentInputConflictError
-			if errors.As(err, &conflictErr) {
-				status = http.StatusConflict
-			}
-			writeError(w, err, status)
-			return
-		}
-		run = resumedRun
-		resumed = true
-	} else if err := m.validateAgentInputProjection(rt.workspace, run, req); err != nil {
+	if err := m.validateAgentInputProjection(rt.workspace, run, req); err != nil {
 		status := http.StatusBadGateway
 		var conflictErr *agentInputConflictError
 		if errors.As(err, &conflictErr) {
@@ -543,13 +495,13 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if req.SchedulerTurn && !resumed {
+	if req.SchedulerTurn {
 		if run.Status != "idle" {
 			writeError(w, errors.New("session is busy"), http.StatusConflict)
 			return
 		}
 		beginSchedulerTurn(&run)
-		run.SelfDrivingGeneration = req.SelfDrivingGeneration
+		run.SelfDrivingRevision = req.SelfDrivingRevision
 		if err := m.startSelfDriving(r.Context(), rt.workspace, run); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -558,9 +510,6 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 		_ = saveAgentRun(rt.workspace.Path, run)
 	}
 	steer := state == "busy" || state == "waiting_approval"
-	if resumed {
-		steer = false
-	}
 	role, sender := agentHubMessageProvenance(req.SchedulerTurn, req.UserName)
 	session, err := client.Message(r.Context(), run.AgentHubSessionID, agentHubInboundMessage{
 		Text: text, Steer: steer, Role: role, Sender: sender,
@@ -571,11 +520,21 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 		// dispatch cannot mistake the stale idle projection for a safe retry.
 		unknownErr := fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
 		rt.setRecoveryError(m, unknownErr)
+		if req.SchedulerTurn {
+			if forgeWorkspace, openErr := app.OpenWorkspace(rt.workspace.Path); openErr == nil {
+				_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: run.ResourceID, ExpectedRevision: run.SelfDrivingRevision, Condition: "error", Reason: unknownErr.Error()})
+			}
+		}
 		writeError(w, unknownErr, http.StatusBadGateway)
 		return
 	}
 	rt.applyAgentHubSessionState(m, session)
-	writeJSON(w, map[string]any{"status": "accepted", "selfDrivingResumed": resumed})
+	if !req.SchedulerTurn {
+		if forgeWorkspace, openErr := app.OpenWorkspace(rt.workspace.Path); openErr == nil {
+			_, _ = forgeWorkspace.SignalSelfDrivingUserMessage(run.ResourceID)
+		}
+	}
+	writeJSON(w, map[string]any{"status": "accepted"})
 }
 
 func (m *agentManager) validateAgentInputProjection(workspace guiWorkspace, run agentRun, req agentInputRequest) error {
@@ -594,128 +553,29 @@ func (m *agentManager) validateAgentInputProjection(workspace guiWorkspace, run 
 	if err != nil {
 		return err
 	}
-	expectedGeneration := req.ExpectedSelfDrivingGeneration
-	if expectedGeneration < 0 {
-		return agentInputConflict(errors.New("expected Self-Driving generation must not be negative"))
+	expectedRevision := req.ExpectedSelfDrivingRevision
+	if expectedRevision < 0 {
+		return agentInputConflict(errors.New("expected Self-Driving revision must not be negative"))
 	}
-	expectedState := strings.TrimSpace(req.ExpectedSelfDrivingState)
+	expectedCondition := strings.TrimSpace(req.ExpectedSelfDrivingCondition)
 	if resource.Task == nil {
-		if expectedGeneration != 0 || expectedState != "" {
+		if expectedRevision != 0 || expectedCondition != "" {
 			return agentInputConflict(errors.New("selected resource is not a task"))
 		}
 		return nil
 	}
 	if resource.Task.SelfDriving == nil {
-		if expectedGeneration != 0 || expectedState != "" {
+		if expectedRevision != 0 || expectedCondition != "" {
 			return agentInputConflict(errors.New("Self-Driving state changed; refresh the task before sending input"))
 		}
 		return nil
 	}
 	current := resource.Task.SelfDriving
-	if current.Generation != expectedGeneration || current.State != expectedState {
-		return agentInputConflict(fmt.Errorf("Self-Driving state changed from generation %d/%s to generation %d/%s; refresh the task before sending input",
-			expectedGeneration, expectedState, current.Generation, current.State))
+	if current.Revision != expectedRevision || current.Condition != expectedCondition {
+		return agentInputConflict(fmt.Errorf("Self-Driving state changed from revision %d/%s to revision %d/%s; refresh the task before sending input",
+			expectedRevision, expectedCondition, current.Revision, current.Condition))
 	}
 	return nil
-}
-
-func (m *agentManager) resumeSuspendedSelfDrivingForInput(ctx context.Context, rt *agentRuntime, run agentRun, projectedState string, client *agentHubClient, req agentInputRequest) (agentRun, error) {
-	resourceID := strings.TrimSpace(req.ResourceID)
-	if resourceID == "" || resourceID != strings.TrimSpace(run.ResourceID) {
-		return run, agentInputConflict(errors.New("selected resource does not match the Agent session"))
-	}
-	expectedGeneration := req.ExpectedSelfDrivingGeneration
-	if expectedGeneration <= 0 {
-		expectedGeneration = req.SelfDrivingGeneration
-	}
-	if expectedGeneration <= 0 {
-		return run, agentInputConflict(errors.New("expected Self-Driving generation is required to resume a suspended generation"))
-	}
-	expectedState := strings.TrimSpace(req.ExpectedSelfDrivingState)
-	if expectedState == "" {
-		expectedState = "suspended"
-	}
-	if expectedState != "suspended" {
-		return run, agentInputConflict(errors.New("only a suspended Self-Driving generation can be resumed by Chat input"))
-	}
-	rt.mu.Lock()
-	finishing := rt.schedulerTurnFinishing
-	rt.mu.Unlock()
-	if run.Status != "idle" || run.SchedulerTurn || finishing {
-		return run, agentInputConflict(errors.New("session is busy; suspended Self-Driving was not resumed"))
-	}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" || client == nil {
-		return run, agentInputConflict(errors.New("run is not attached to AgentHub"))
-	}
-	if run.SelfDrivingGeneration != expectedGeneration {
-		return run, agentInputConflict(fmt.Errorf("Agent session generation changed from %d to %d", expectedGeneration, run.SelfDrivingGeneration))
-	}
-	if projectedState != "" && projectedState != "ready" {
-		return run, agentInputConflict(errors.New("session is not idle; suspended Self-Driving was not resumed"))
-	}
-
-	// Re-read AgentHub immediately before the durable CAS. A stale local idle
-	// projection must never turn a pending approval or active turn into a
-	// scheduler message.
-	session, err := client.GetSession(ctx, run.AgentHubSessionID)
-	if err != nil {
-		return run, fmt.Errorf("AgentHub idle session state could not be confirmed; message was not sent: %w", err)
-	}
-	if session.ID != run.AgentHubSessionID || session.State != "ready" || session.CurrentTurnID != "" || len(session.PendingApprovalIDs) > 0 {
-		return run, agentInputConflict(errors.New("session is not idle; suspended Self-Driving was not resumed"))
-	}
-	cfg, _, err := m.agentHubRuntimeConfig()
-	if err != nil {
-		return run, fmt.Errorf("read AgentHub ownership configuration: %w", err)
-	}
-	source := session.Source
-	expectedExternalID := strings.TrimSpace(run.SourceExternalID)
-	if source == nil || source.App != agentHubSourceApp || source.InstanceID != cfg.AgentHubInstanceID ||
-		expectedExternalID == "" || strings.TrimSpace(source.ExternalID) != expectedExternalID {
-		return run, agentInputConflict(errors.New("AgentHub session is not associated with this Forge run"))
-	}
-
-	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
-	if err != nil {
-		return run, err
-	}
-	resource, err := forgeWorkspace.ResourceValue(resourceID)
-	if err != nil {
-		return run, err
-	}
-	if resource.Task == nil {
-		return run, agentInputConflict(errors.New("Self-Driving chat resume requires a task resource"))
-	}
-	previous := *resource.Task
-	if previous.SelfDriving == nil {
-		return run, agentInputConflict(errors.New("task has no Self-Driving generation to resume"))
-	}
-	resumed, err := forgeWorkspace.ResumeAndStartSelfDriving(app.SelfDrivingActionInput{
-		TaskID: resourceID, ExpectedGeneration: expectedGeneration, ExpectedState: expectedState,
-	})
-	if err != nil {
-		return run, agentInputConflict(err)
-	}
-	if resumed.SelfDriving == nil || resumed.SelfDriving.Generation != expectedGeneration || resumed.SelfDriving.State != "running" {
-		return run, errors.New("Self-Driving resume did not produce a running generation")
-	}
-
-	updated := run
-	beginSchedulerTurn(&updated)
-	updated.SelfDrivingGeneration = expectedGeneration
-	if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
-		_, rollbackErr := forgeWorkspace.SuspendSelfDriving(app.SelfDrivingActionInput{
-			TaskID: resourceID, Summary: previous.SelfDriving.SuspensionSummary,
-			WakeCondition:      previous.SelfDriving.WakeCondition,
-			ExpectedGeneration: expectedGeneration, ExpectedState: "running",
-		})
-		if rollbackErr != nil {
-			return run, fmt.Errorf("persist scheduler metadata after Self-Driving resume: %v; rollback also failed: %w", err, rollbackErr)
-		}
-		return run, fmt.Errorf("persist scheduler metadata after Self-Driving resume: %w", err)
-	}
-	rt.setRun(updated)
-	return updated, nil
 }
 
 func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
@@ -726,11 +586,6 @@ func (m *agentManager) stopAgentHubRun(w http.ResponseWriter, r *http.Request, r
 // holding both coordination locks. This prevents recovery/resume from
 // attaching a session between stopRun's classification and its cleanup.
 func (m *agentManager) stopAgentHubRuntime(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
-	// Self-Driving dispatch and manual start/resume use this mutex as their decision
-	// boundary. Acquire it before turnActionMu so a suspended generation cannot
-	// be resumed between the pause CAS and the AgentHub stop.
-	m.server.selfDrivingDispatchMu.Lock()
-	defer m.server.selfDrivingDispatchMu.Unlock()
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	m.stopAgentHubRunLocked(w, r, rt)
@@ -746,16 +601,11 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 	}
 	if run.Status == "stopped" && run.AgentHubStoppedObserved {
 		rt.mu.Unlock()
-		paused, err := pauseSelfDrivingBeforeStopping(rt.workspace, run, selfDrivingStopSession)
-		if err != nil {
-			writeError(w, fmt.Errorf("cancel Self-Driving before closing session: %w", err), http.StatusConflict)
-			return
-		}
 		if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"status": "stopped", "selfDrivingPaused": paused.Transitioned && !paused.Cancelled, "selfDrivingCancelled": paused.Cancelled})
+		writeJSON(w, map[string]any{"status": "stopped"})
 		return
 	}
 	if rt.agentHubStopRequested {
@@ -764,11 +614,6 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	rt.mu.Unlock()
-	paused, err := pauseSelfDrivingBeforeStopping(rt.workspace, run, selfDrivingStopSession)
-	if err != nil {
-		writeError(w, fmt.Errorf("cancel Self-Driving before closing session: %w", err), http.StatusConflict)
-		return
-	}
 	rt.mu.Lock()
 	if strings.TrimSpace(rt.run.AgentHubSessionID) == "" {
 		run = rt.run
@@ -784,7 +629,7 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 			writeError(w, err, http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, map[string]any{"status": "stopped", "selfDrivingPaused": paused.Transitioned && !paused.Cancelled, "selfDrivingCancelled": paused.Cancelled})
+		writeJSON(w, map[string]any{"status": "stopped"})
 		return
 	}
 	rt.run.Status = "stopping"
@@ -796,13 +641,6 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 	session, err := client.Stop(r.Context(), run.AgentHubSessionID)
 	if err != nil {
 		rt.setRecoveryError(m, err)
-		if paused.Transitioned {
-			if paused.Cancelled {
-				err = fmt.Errorf("Self-Driving was cancelled, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
-			} else {
-				err = fmt.Errorf("Self-Driving was paused, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
-			}
-		}
 		writeError(w, err, http.StatusBadGateway)
 		return
 	}
@@ -814,13 +652,6 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 		if !time.Now().Before(deadline) {
 			err := errors.New("AgentHub stop did not reach a durable stopped state within the confirmation window")
 			rt.setRecoveryError(m, err)
-			if paused.Transitioned {
-				if paused.Cancelled {
-					err = fmt.Errorf("Self-Driving was cancelled, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
-				} else {
-					err = fmt.Errorf("Self-Driving was paused, but AgentHub stop outcome may be unknown; it was not retried: %w", err)
-				}
-			}
 			writeError(w, err, http.StatusBadGateway)
 			return
 		}
@@ -847,7 +678,7 @@ func (m *agentManager) stopAgentHubRunLocked(w http.ResponseWriter, r *http.Requ
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]any{"status": "stopped", "selfDrivingPaused": paused.Transitioned && !paused.Cancelled, "selfDrivingCancelled": paused.Cancelled})
+	writeJSON(w, map[string]any{"status": "stopped"})
 }
 
 // stopUnattachedAgentHubRun is the escape hatch for runs that never attached
@@ -862,8 +693,6 @@ func (m *agentManager) stopUnattachedAgentHubRun(w http.ResponseWriter, r *http.
 		m.stopAgentHubRuntime(w, r, rt)
 		return
 	}
-	m.server.selfDrivingDispatchMu.Lock()
-	defer m.server.selfDrivingDispatchMu.Unlock()
 	m.stopUnattachedAgentHubRunLocked(w, r, workspace, run, nil)
 }
 
@@ -886,13 +715,8 @@ func (m *agentManager) stopUnattachedAgentHubRunLocked(w http.ResponseWriter, r 
 		}
 		run = latest
 	}
-	paused, err := pauseSelfDrivingBeforeStopping(workspace, run, selfDrivingStopSession)
-	if err != nil {
-		writeError(w, fmt.Errorf("cancel Self-Driving before closing session: %w", err), http.StatusConflict)
-		return
-	}
 	if !isLiveAgentStatus(run.Status) {
-		writeJSON(w, map[string]any{"status": run.Status, "selfDrivingPaused": paused.Transitioned && !paused.Cancelled, "selfDrivingCancelled": paused.Cancelled})
+		writeJSON(w, map[string]any{"status": run.Status})
 		return
 	}
 	if sessionID := strings.TrimSpace(run.ForgeSessionID); sessionID != "" {
@@ -924,7 +748,7 @@ func (m *agentManager) stopUnattachedAgentHubRunLocked(w http.ResponseWriter, r 
 	if rt != nil {
 		rt.setRun(run)
 	}
-	writeJSON(w, map[string]any{"status": "stopped", "selfDrivingPaused": paused.Transitioned && !paused.Cancelled, "selfDrivingCancelled": paused.Cancelled})
+	writeJSON(w, map[string]any{"status": "stopped"})
 }
 
 func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
@@ -933,10 +757,8 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
 		return
 	}
-	// Serialize End Turn with Self-Driving start, timed wake, explicit cancel, and
-	// Close Session so a stop action cannot race a generation transition.
-	m.server.selfDrivingDispatchMu.Lock()
-	defer m.server.selfDrivingDispatchMu.Unlock()
+	// Serialize End Turn with dispatch and Close Session on this Session only;
+	// Task desired-state persistence must remain independent.
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	if err := m.server.requireResourceNotExternallyLocked(workspace, rt.snapshotRun().ResourceID); err != nil {
@@ -969,16 +791,10 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 		writeError(w, recoveryErr, http.StatusBadGateway)
 		return
 	}
-	if run.SchedulerTurn {
-		if _, err := pauseSelfDrivingBeforeStopping(workspace, run, selfDrivingStopTurn); err != nil {
-			writeError(w, fmt.Errorf("pause Self-Driving before interrupt: %w", err), http.StatusConflict)
-			return
-		}
-	}
 	session, err := client.Interrupt(r.Context(), currentSession.ID)
 	if err != nil {
-		// The Self-Driving pause is durable, but the non-idempotent interrupt result
-		// is ambiguous. Keep the Session and let the poller reconcile its state;
+		// The non-idempotent interrupt result is ambiguous. Keep the Session and let
+		// the poller reconcile its state;
 		// never retry the interrupt from this path.
 		rt.setRecoveryError(m, fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err))
 		writeError(w, fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
@@ -988,8 +804,8 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 	if run.SchedulerTurn && (session.State == "ready" || session.State == "stopped") {
 		// The direct action response already carries the terminal turn state,
 		// so do not wait for the poller's previous-state edge to finish the
-		// paused SchedulerTurn. The runtime mutex keeps this behind the
-		// interrupt request and prevents a Self-Driving retry.
+		// SchedulerTurn. The runtime mutex keeps this behind the
+		// interrupt request and prevents a Self-Driving re-dispatch.
 		go rt.finishSchedulerTurn(m)
 	}
 	writeJSON(w, map[string]string{"status": "interrupted"})
@@ -1037,120 +853,6 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 		return agentHubSession{}, &agentHubTurnConflictError{message: fmt.Sprintf("AgentHub session is not interruptible in %s state", session.State)}
 	}
 	return session, nil
-}
-
-const (
-	userStoppedActiveTurnReason        = "user stopped the active turn"
-	userClosedSelfDrivingSessionReason = "user closed the Self-Driving session"
-)
-
-type selfDrivingStopAction string
-
-const (
-	selfDrivingStopTurn    selfDrivingStopAction = "turn"
-	selfDrivingStopSession selfDrivingStopAction = "session"
-)
-
-type selfDrivingPauseResult struct {
-	Transitioned bool
-	Cancelled    bool
-}
-
-// pauseSelfDrivingBeforeStopping is the single generation/state boundary shared
-// by End Turn and Close Session. The initial read is only a classification;
-// the selected pause/cancel operation repeats the generation and expected-state
-// CAS while holding the task Self-Driving file lock. A concurrent actor that already
-// moved the same generation to a safe state is accepted, but a still-runnable
-// CAS failure is returned and the AgentHub action is not sent.
-func pauseSelfDrivingBeforeStopping(workspace guiWorkspace, run agentRun, action selfDrivingStopAction) (selfDrivingPauseResult, error) {
-	var result selfDrivingPauseResult
-	if !run.SchedulerTurn && run.SelfDrivingGeneration <= 0 {
-		return result, nil
-	}
-	if strings.TrimSpace(run.ResourceID) == "" || run.SelfDrivingGeneration <= 0 {
-		if !run.SchedulerTurn {
-			return result, nil
-		}
-		return result, errors.New("SchedulerTurn has no valid Self-Driving resource or generation")
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return result, err
-	}
-	resource, err := forgeWorkspace.ResourceValue(run.ResourceID)
-	if err != nil {
-		return result, err
-	}
-	if resource.Task == nil || resource.Task.SelfDriving == nil {
-		if !run.SchedulerTurn {
-			return result, nil
-		}
-		return result, errors.New("SchedulerTurn has no matching Self-Driving generation")
-	}
-	selfDriving := resource.Task.SelfDriving
-	if selfDriving.Generation != run.SelfDrivingGeneration {
-		// The Session belongs to an older generation. Closing it must not pause
-		// a newer generation that may already be runnable.
-		return result, nil
-	}
-	if action == selfDrivingStopSession {
-		if selfDriving.State == "completed" || selfDriving.State == "failed" || selfDriving.State == "cancelled" {
-			return result, nil
-		}
-	} else if selfDriving.State == "paused" || selfDriving.State == "completed" || selfDriving.State == "failed" || selfDriving.State == "cancelled" {
-		return result, nil
-	}
-	if selfDriving.State == "suspended" && action == selfDrivingStopTurn {
-		// Preserve the End Turn behavior: a suspended generation is already
-		// outside an active turn. Close Session has different semantics and
-		// converts this runnable timed-wake state to paused below.
-		return result, nil
-	}
-	if selfDriving.State == "queued" && action == selfDrivingStopTurn {
-		return result, fmt.Errorf("Self-Driving generation %d is queued, not running", run.SelfDrivingGeneration)
-	}
-	if selfDriving.State != "queued" && selfDriving.State != "running" && selfDriving.State != "suspended" && !(action == selfDrivingStopSession && selfDriving.State == "paused") {
-		return result, fmt.Errorf("Self-Driving generation %d is %s, not safely stoppable", run.SelfDrivingGeneration, selfDriving.State)
-	}
-	reason := userStoppedActiveTurnReason
-	if action == selfDrivingStopSession {
-		reason = userClosedSelfDrivingSessionReason
-	}
-	input := app.SelfDrivingActionInput{
-		TaskID:             run.ResourceID,
-		Reason:             reason,
-		ExpectedGeneration: run.SelfDrivingGeneration,
-		ExpectedState:      selfDriving.State,
-	}
-	if action == selfDrivingStopSession {
-		_, err = forgeWorkspace.CancelSelfDriving(input)
-	} else {
-		_, err = forgeWorkspace.PauseSelfDriving(input)
-	}
-	if err == nil {
-		result.Transitioned = true
-		result.Cancelled = action == selfDrivingStopSession
-		return result, nil
-	}
-	actionVerb := "pause"
-	if action == selfDrivingStopSession {
-		actionVerb = "cancel"
-	}
-	// Natural completion, another pause, or a generation advance may have won
-	// the race. Re-read the durable state before deciding whether Close/End
-	// Turn can proceed; never overwrite a still-runnable state after a failed
-	// CAS or uncertain local persistence result.
-	latest, readErr := forgeWorkspace.ResourceValue(run.ResourceID)
-	if readErr == nil && latest.Task != nil && latest.Task.SelfDriving != nil {
-		latestSelfDriving := latest.Task.SelfDriving
-		if latestSelfDriving.Generation != run.SelfDrivingGeneration || latestSelfDriving.State == "completed" || latestSelfDriving.State == "failed" || latestSelfDriving.State == "cancelled" || (action == selfDrivingStopTurn && latestSelfDriving.State == "paused") {
-			return result, nil
-		}
-	}
-	if readErr != nil {
-		return result, fmt.Errorf("%s Self-Driving CAS failed (%v); could not re-read current state: %w", actionVerb, err, readErr)
-	}
-	return result, fmt.Errorf("%s Self-Driving CAS failed: %w", actionVerb, err)
 }
 
 func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentApprovalRequest) {

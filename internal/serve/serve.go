@@ -112,8 +112,9 @@ type resourceSnapshot struct {
 }
 
 type selfDrivingSnapshot struct {
-	Generation int    `json:"generation"`
-	State      string `json:"state"`
+	Enabled   bool   `json:"enabled"`
+	Revision  int    `json:"revision"`
+	Condition string `json:"condition"`
 }
 
 type filePreview struct {
@@ -160,7 +161,7 @@ type guiSession struct {
 	AgentRunUpdatedAt        string              `json:"agentRunUpdatedAt,omitempty"`
 	AgentRunLastOutputAt     string              `json:"agentRunLastOutputAt,omitempty"`
 	SchedulerTurn            bool                `json:"schedulerTurn,omitempty"`
-	SelfDrivingGeneration    int                 `json:"selfDrivingGeneration,omitempty"`
+	SelfDrivingRevision      int                 `json:"selfDrivingRevision,omitempty"`
 	ResourceID               string              `json:"resourceId,omitempty"`
 	AgentRunCompletionMarker string              `json:"agentRunCompletionMarker,omitempty"`
 	AgentRunCompletionState  string              `json:"agentRunCompletionState,omitempty"`
@@ -183,10 +184,11 @@ type server struct {
 	config string
 	agents *agentManager
 	locks  *workspaceLockManager
-	// selfDrivingDispatchMu serializes Self-Driving dispatch decisions between the
-	// background driver and the unified Chat start endpoint, so concurrent
-	// scans and manual clicks never start the same generation twice.
+	// selfDrivingDispatchMu protects short desired-state decisions and the
+	// in-memory per-Task dispatch claim. It is never held across AgentHub I/O,
+	// so Enable/Disable stays independent from Session lifecycle latency.
 	selfDrivingDispatchMu sync.Mutex
+	selfDrivingDispatches map[string]bool
 }
 
 const (
@@ -470,19 +472,15 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	case "ui-state":
 		s.handleUIState(w, r, id)
 	case "self-driving":
-		if len(parts) != 3 || (parts[2] != "start" && parts[2] != "cancel") {
+		if len(parts) != 2 {
 			http.NotFound(w, r)
 			return
 		}
-		if r.Method != http.MethodPost {
+		if r.Method != http.MethodPut {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		if parts[2] == "start" {
-			s.startChatSelfDriving(w, r, id)
-		} else {
-			s.cancelChatSelfDriving(w, r, id)
-		}
+		s.setSelfDrivingDesiredState(w, r, id)
 	case "agent":
 		s.agents.handle(w, r, id, parts[2:])
 	case "projects":
@@ -1299,7 +1297,7 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
 			tree.Sessions[i].AgentRunLastOutputAt = run.LastOutputAt
 			tree.Sessions[i].SchedulerTurn = run.SchedulerTurn
-			tree.Sessions[i].SelfDrivingGeneration = run.SelfDrivingGeneration
+			tree.Sessions[i].SelfDrivingRevision = run.SelfDrivingRevision
 			tree.Sessions[i].ResourceID = run.ResourceID
 			tree.Sessions[i].AgentRunCompletionMarker = run.CompletionMarker
 			tree.Sessions[i].AgentRunCompletionState = run.CompletionState

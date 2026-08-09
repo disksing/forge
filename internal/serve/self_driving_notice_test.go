@@ -10,7 +10,7 @@ import (
 )
 
 func TestBeginSchedulerTurnAssignsStableBoundaries(t *testing.T) {
-	run := agentRun{ResourceID: "project1.task1", SelfDrivingGeneration: 4}
+	run := agentRun{ResourceID: "project1.task1", SelfDrivingRevision: 4}
 	beginSchedulerTurn(&run)
 	if !run.SchedulerTurn || run.SchedulerTurnSequence != 1 || run.SchedulerTurnID == "" {
 		t.Fatalf("first SchedulerTurn boundary is incomplete: %+v", run)
@@ -34,7 +34,7 @@ func TestSelfDrivingFinishNoticeCarriesScopedLifecycle(t *testing.T) {
 	manager.subscribe(runID, channel)
 	defer manager.unsubscribe(runID, channel)
 	rt := &agentRuntime{run: agentRun{
-		ID: runID, ResourceID: "project1.task1", SelfDrivingGeneration: 7,
+		ID: runID, ResourceID: "project1.task1", SelfDrivingRevision: 7,
 		SchedulerTurnID: "turn-2", SchedulerTurnSequence: 2,
 	}}
 	rt.addSelfDrivingFinishNotice(manager, "info", selfDrivingFinishNoticeWaitingLifecycle, "waiting")
@@ -44,7 +44,7 @@ func TestSelfDrivingFinishNoticeCarriesScopedLifecycle(t *testing.T) {
 	}
 	data := message.Notice.Data
 	if data.Kind != selfDrivingFinishNoticeKind || data.Lifecycle != selfDrivingFinishNoticeWaitingLifecycle ||
-		data.RunID != runID || data.ResourceID != "project1.task1" || data.SelfDrivingGeneration != 7 ||
+		data.RunID != runID || data.ResourceID != "project1.task1" || data.SelfDrivingRevision != 7 ||
 		data.SchedulerTurnID != "turn-2" || data.SchedulerTurnSequence != 2 {
 		t.Fatalf("finish notice is missing lifecycle scope: %+v", data)
 	}
@@ -92,12 +92,12 @@ function assert(condition, message) { if (!condition) throw new Error(message); 
 const state = {
   activeWorkspaceId: "workspace-one",
   activeRunId: "run-a",
-  tree: { projects: [{ id: "project1", children: [{ id: "task1", selfDriving: { generation: 7, state: "suspended" } }] }] },
+  tree: { projects: [{ id: "project1", children: [{ id: "task1", selfDriving: { enabled: true, revision: 7, condition: "waiting" } }] }] },
   details: {},
   agentRunProjectionVersion: 0,
   agent: {
     activeRunId: "run-a",
-    runs: [{ id: "run-a", resourceId: "task1", selfDrivingGeneration: 7, schedulerTurn: false, schedulerTurnId: "turn-1", schedulerTurnSequence: 1 }],
+    runs: [{ id: "run-a", resourceId: "task1", selfDrivingRevision: 7, schedulerTurn: false, schedulerTurnId: "turn-1", schedulerTurnSequence: 1 }],
     notices: [],
     selfDrivingFinishNoticeWatermarks: new Map(),
     stream: null,
@@ -132,15 +132,15 @@ vm.createContext(context);
 vm.runInContext(` + string(embeddedSource) + `, context);
 const waiting = (sequence, turnId = "turn-" + sequence) => ({
   source: "forge", type: "forge.notice", data: {
-    level: "info", method: "forge/self-driving/finish", kind: "self-driving-finish", lifecycle: "until-resume",
-    runId: "run-a", resourceId: "task1", selfDrivingGeneration: 7,
+    level: "info", method: "forge/self-driving/finish", kind: "self-driving-finish", lifecycle: "until-reconcile",
+    runId: "run-a", resourceId: "task1", selfDrivingRevision: 7,
     schedulerTurnId: turnId, schedulerTurnSequence: sequence, text: "waiting",
   },
 });
 const unrelatedError = { source: "forge", type: "forge.notice", data: { level: "error", method: "agenthub/recovery", text: "keep me" } };
 const finishError = { source: "forge", type: "forge.notice", data: {
   level: "error", method: "forge/self-driving/finish", kind: "self-driving-finish", lifecycle: "error",
-  runId: "run-a", resourceId: "task1", selfDrivingGeneration: 7, text: "finish failed",
+  runId: "run-a", resourceId: "task1", selfDrivingRevision: 7, text: "finish failed",
 } };
 context.appendForgeNotice(waiting(1));
 assert(state.agent.notices.length === 1, "the first waiting notice should be visible");
@@ -152,23 +152,23 @@ context.appendForgeNotice(unrelatedError);
 assert(state.agent.notices.length === 3, "unrelated recovery errors must remain visible");
 
 state.agent.runs[0] = { ...state.agent.runs[0], schedulerTurn: true, schedulerTurnId: "turn-2", schedulerTurnSequence: 2 };
-state.tree.projects[0].children[0].selfDriving = { generation: 7, state: "running" };
+state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 7, condition: "reconciling" };
 context.reconcileAgentNotices(state.agent.runs);
-assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-resume"), "running projection must clear only the waiting notice");
+assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-reconcile"), "running projection must clear only the waiting notice");
 context.appendForgeNotice(waiting(1));
-assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-resume"), "a late old notice must not return while running");
+assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-reconcile"), "a late old notice must not return while running");
 
 state.agent.runs[0] = { ...state.agent.runs[0], schedulerTurn: false, schedulerTurnId: "turn-2", schedulerTurnSequence: 2 };
-state.tree.projects[0].children[0].selfDriving = { generation: 7, state: "suspended" };
+state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 7, condition: "waiting" };
 context.appendForgeNotice(waiting(2));
 assert(state.agent.notices.length === 3, "the latest suspension should show one new waiting notice");
 context.appendForgeNotice(waiting(1));
 assert(state.agent.notices.length === 3 && state.agent.notices.some((notice) => notice.data.schedulerTurnSequence === 2), "the first suspension must not revive");
 
-state.agent.runs[0] = { ...state.agent.runs[0], selfDrivingGeneration: 8, schedulerTurn: false, schedulerTurnId: "turn-3", schedulerTurnSequence: 3 };
-state.tree.projects[0].children[0].selfDriving = { generation: 8, state: "running" };
+state.agent.runs[0] = { ...state.agent.runs[0], selfDrivingRevision: 8, schedulerTurn: false, schedulerTurnId: "turn-3", schedulerTurnSequence: 3 };
+state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 8, condition: "reconciling" };
 context.reconcileAgentNotices(state.agent.runs);
-assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-resume"), "a new generation must clear the old waiting notice");
+assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-reconcile"), "a new revision must clear the old waiting notice");
 
 // An event delivered by a replaced EventSource must be ignored after run switching.
 context.connectAgentStream();
@@ -182,7 +182,7 @@ assert(state.agent.notices.length === 2, "a replaced SSE stream must not append 
   state.agent.activeRunId = "run-a";
   state.agent.notices = [];
   state.agentRunProjectionVersion = 0;
-  const oldRun = { id: "run-a", resourceId: "task1", selfDrivingGeneration: 7, schedulerTurn: false, schedulerTurnId: "turn-1", schedulerTurnSequence: 1 };
+  const oldRun = { id: "run-a", resourceId: "task1", selfDrivingRevision: 7, schedulerTurn: false, schedulerTurnId: "turn-1", schedulerTurnSequence: 1 };
   const newRun = { ...oldRun, schedulerTurn: true, schedulerTurnId: "turn-2", schedulerTurnSequence: 2 };
   let resolveOldRuns;
   runResponses.push(new Promise((resolve) => { resolveOldRuns = resolve; }));
@@ -210,7 +210,7 @@ assert(state.agent.notices.length === 2, "a replaced SSE stream must not append 
 		"refreshAgentRunMetadata({ refreshSelfDrivingProjection: true })",
 		"state.agent.stream !== stream || state.agent.activeRunId !== runId",
 		"async function resumeAgentRun()",
-		"async function startChatSelfDriving(options = {})",
+		"async function setChatSelfDrivingDesiredState(options = {})",
 		"async function refreshAgentInputProjection(workspaceId, resourceId)",
 	} {
 		if !strings.Contains(source, want) {

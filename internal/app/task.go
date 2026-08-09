@@ -288,7 +288,7 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 		if err != nil {
 			return err
 		}
-		task.SelfDriving = &SelfDriving{AgentName: strings.TrimSpace(agentName), PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), CompletionCriteria: strings.TrimSpace(completionCriteria), Generation: 1, State: selfDrivingStateQueued}
+		task.SelfDriving = &SelfDriving{AgentName: strings.TrimSpace(agentName), PreferredAgentProfiles: preferredAgentProfiles, Prompt: strings.TrimSpace(prompt), CompletionCriteria: strings.TrimSpace(completionCriteria), Enabled: true, Revision: 1, Condition: selfDrivingConditionReady}
 	} else if strings.TrimSpace(agentName) != "" || len(preferredAgentProfiles) > 0 || strings.TrimSpace(prompt) != "" || strings.TrimSpace(completionCriteria) != "" {
 		return errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --self-driving")
 	}
@@ -300,7 +300,7 @@ func projectTaskCreate(parentID, title string, detail string, completeMarkdown s
 		return err
 	}
 	if task.SelfDriving != nil {
-		if err := prependLogEntry(stagingPath, newSelfDrivingLogEntry("Self-Driving queued", "", task.SelfDriving.Generation)); err != nil {
+		if err := prependLogEntry(stagingPath, newSelfDrivingLogEntry("Self-Driving enabled", "", task.SelfDriving.Revision)); err != nil {
 			return err
 		}
 	}
@@ -348,15 +348,13 @@ func projectTaskList(options taskListOptions) error {
 		}
 		item := runnableTask{ID: entry.Task.ID, Path: relPath(root, entry.Path), Title: entry.Task.Title, Ready: ready, Reason: reason}
 		if entry.Task.SelfDriving != nil {
-			item.Generation = entry.Task.SelfDriving.Generation
-			item.State = entry.Task.SelfDriving.State
+			item.Revision = entry.Task.SelfDriving.Revision
+			item.Condition = entry.Task.SelfDriving.Condition
 			item.AgentName = entry.Task.SelfDriving.AgentName
 			item.Prompt = entry.Task.SelfDriving.Prompt
 			item.PreferredAgentProfiles = append([]string(nil), entry.Task.SelfDriving.PreferredAgentProfiles...)
 			item.CompletionCriteria = entry.Task.SelfDriving.CompletionCriteria
-			item.WakeCondition = entry.Task.SelfDriving.WakeCondition
-			item.SuspendedAt = entry.Task.SelfDriving.SuspendedAt
-			item.SuspensionSummary = entry.Task.SelfDriving.SuspensionSummary
+			item.WakeContext = entry.Task.SelfDriving.WakeContext
 		}
 		result = append(result, item)
 	}
@@ -492,11 +490,6 @@ func readResourceAtDir(dir string) (Resource, error) {
 	meta := resource.resourceMeta()
 	if meta.Type != expectedType {
 		return nil, fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, meta.Type)
-	}
-	if task, ok := resource.(*Task); ok {
-		if err := migrateSelfDrivingMetadata(dir, task); err != nil {
-			return nil, err
-		}
 	}
 	if err := validateResource(resource); err != nil {
 		return nil, fmt.Errorf("invalid resource metadata %s: %w", path, err)
@@ -1055,7 +1048,7 @@ You are working inside a %s.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- When a GUI scheduler starts a Self-Driving turn, finish it by calling exactly one of `+"`forge task self-driving complete`"+`, `+"`forge task self-driving suspend`"+`, `+"`forge task self-driving pause`"+`, or `+"`forge task self-driving fail`"+` as the turn's last side-effecting command. `+"`cancel`"+` is a control-plane action for ending a generation and is not a scheduler-turn result.
+- When a GUI scheduler starts a Self-Driving turn, finish it with exactly one of `+"`forge task self-driving complete --revision=<n>`"+`, `+"`forge task self-driving suspend --revision=<n>`"+`, `+"`forge task self-driving pause --revision=<n>`"+`, or `+"`forge task self-driving fail --revision=<n>`"+` as the turn's last side-effecting command. Enable/Disable belongs to the user control plane and never substitutes for a result.
 - To delegate Self-Driving work, create a child with `+"`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current Self-Driving, record a natural-language context with `+"`--summary=<text>`"+` and a separate wake condition with `+"`--wake-condition=<text>`"+`; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
 `+selfDrivingAgentGuidanceEnglish+`- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 `+crossResourceReadGuidanceEnglish+`- %s
