@@ -387,7 +387,6 @@ FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
 ## Companion Tools
 
 - [Forge serve AgentHub guide](internal/serve/README.md): the execution boundary, current settings, environment variables, and isolated testing.
-- [iTerm2 Toolbelt](contrib/iterm2/README.md): browse AgentWorkspace tasks and launch shells or Codex sessions from an iTerm2 Toolbelt panel.
 
 ## License
 
