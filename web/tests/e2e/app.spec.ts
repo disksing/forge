@@ -513,15 +513,13 @@ test("keeps the Svelte template editor stable and ignores an older preview respo
   await page.getByRole("button", { name: "New Task" }).click();
 
   const dialog = page.getByRole("dialog", { name: "Create task" });
-  await dialog.getByLabel("Template").selectOption("feature-a");
+  await dialog.getByRole("option", { name: /Feature A/ }).click();
   await dialog.getByLabel("Summary *").fill("older");
-  await dialog.getByRole("tab", { name: "Preview" }).click();
-  await expect.poll(() => harness.previewBodies.length).toBe(1);
+  await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-a" && (body.templateFields as Record<string, unknown>)?.summary === "older").length).toBe(1);
   page.once("dialog", (confirmation) => confirmation.accept());
-  await dialog.getByLabel("Template").selectOption("feature-b");
+  await dialog.getByRole("option", { name: /Feature B/ }).click();
   await dialog.getByLabel("Summary *").fill("newer");
-  await dialog.getByRole("tab", { name: "Preview" }).click();
-  await expect.poll(() => harness.previewBodies.length).toBe(2);
+  await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-b" && (body.templateFields as Record<string, unknown>)?.summary === "newer").length).toBe(1);
 
   await expect(dialog.getByRole("heading", { name: "feature-b:newer" })).toBeVisible();
   await page.waitForTimeout(450);
