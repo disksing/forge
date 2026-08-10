@@ -1,0 +1,43 @@
+:where([data-component-owner="event-timeline"]) .agent-tool-group {
+  width: 100%;
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid #e3e7ec;
+  border-radius: 0;
+  background: transparent;
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group>summary {
+  min-height: 36px;
+  padding: 8px 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group summary::-webkit-details-marker { display: none; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon,
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron { display: inline-flex; flex: 0 0 auto; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon svg,
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron svg { width: 14px; height: 14px; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon { color: #8a97a5; }
+:where([data-component-owner="event-timeline"]) .agent-tool-group-title { flex: 0 0 auto; color: #4a5560; font-weight: 700; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: #8a97a5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron { margin-left: auto; transition: transform 0.16s ease; }
+:where([data-component-owner="event-timeline"]) .agent-tool-group[open]>summary .agent-tool-group-chevron { transform: rotate(90deg); }
+:where([data-component-owner="event-timeline"]) .agent-tool-list { padding: 0 2px 8px 21px; }
