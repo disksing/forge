@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
 const components = [
+  "ApprovalCard",
   "AppShell",
   "AgentHubSettingsPanel",
   "ChatComposer",
@@ -12,9 +13,12 @@ const components = [
   "DetailPanel",
   "DiffModal",
   "EventTimeline",
+  "ErrorNotice",
   "FileBrowser",
   "FilePreviewModal",
+  "ForgeNotice",
   "LogTimeline",
+  "LifecycleNotice",
   "MarkdownDocument",
   "NotificationSettingsPanel",
   "ProfilesSettingsPanel",
@@ -23,7 +27,12 @@ const components = [
   "SessionSwitcher",
   "SettingsModal",
   "SettingsNavigation",
+  "ThinkingBlock",
+  "TimelineMessage",
   "Toast",
+  "ToolGroup",
+  "ToolItem",
+  "UnknownEvent",
   "UploadDialog",
   "UserSettingsPanel",
   "WorkspaceSettingsPanel",
@@ -31,6 +40,7 @@ const components = [
 ] as const;
 
 const owners: Record<(typeof components)[number], string> = {
+  ApprovalCard: "event-timeline",
   AppShell: "app-shell",
   AgentHubSettingsPanel: "agenthub-settings-panel",
   ChatComposer: "chat-composer",
@@ -38,9 +48,12 @@ const owners: Record<(typeof components)[number], string> = {
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
   EventTimeline: "event-timeline",
+  ErrorNotice: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
+  ForgeNotice: "event-timeline",
   LogTimeline: "log-timeline",
+  LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
   NotificationSettingsPanel: "notification-settings-panel",
   ProfilesSettingsPanel: "profiles-settings-panel",
@@ -49,7 +62,12 @@ const owners: Record<(typeof components)[number], string> = {
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
   SettingsNavigation: "settings-navigation",
+  ThinkingBlock: "event-timeline",
+  TimelineMessage: "event-timeline",
   Toast: "toast",
+  ToolGroup: "event-timeline",
+  ToolItem: "event-timeline",
+  UnknownEvent: "event-timeline",
   UploadDialog: "upload-dialog",
   UserSettingsPanel: "user-settings-panel",
   WorkspaceSettingsPanel: "workspace-settings-panel",
@@ -123,7 +141,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentHubSettingsPanel", "DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "NotificationSettingsPanel", "ProfilesSettingsPanel", "SettingsNavigation", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "NotificationSettingsPanel", "ProfilesSettingsPanel", "SettingsNavigation", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });
