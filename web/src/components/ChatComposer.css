@@ -1,5 +1,8 @@
 /* ChatComposer styles. Keep selectors within the documented ownership boundary. */
 
+/* Linear-minimal composer: no boxed input card, just a hairline top divider,
+   a red prompt, and ghost icon buttons. */
+
 :where([data-component-owner="chat-composer"]) .tty-primary-action {
   min-height: 34px;
   display: inline-flex;
@@ -34,25 +37,24 @@
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  margin: 10px 12px;
-  padding: 9px 10px;
-  border: 1px solid #c3c9d1;
-  border-radius: 6px;
-  background: #fff;
+  margin: 0;
+  padding: 10px 16px;
+  border: 0;
+  border-top: 1px solid #e3e7ec;
+  border-radius: 0;
+  background: transparent;
   transition: border-color 0.16s ease;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-input:focus-within {
-  border-color: var(--accent);
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  border-top-color: var(--accent);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-input span {
   min-height: 30px;
   display: inline-flex;
   align-items: center;
-  color: var(--accent);
+  color: var(--accent-deep);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
 }
@@ -82,7 +84,7 @@
   height: 20px;
   flex: 0 0 auto;
   margin: 0 5px;
-  background: #dcdfe4;
+  background: #e3e7ec;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-send-button {
@@ -92,15 +94,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid #e74c3c;
+  border: 1px solid transparent;
   border-radius: 6px;
-  background: #e74c3c;
-  color: #fff;
+  background: transparent;
+  color: var(--accent-deep);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-send-button:hover {
-  background: #c0392b;
-  border-color: #c0392b;
+  background: var(--accent-soft);
+  color: var(--accent-pressed);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-send-button:disabled {
@@ -109,8 +111,8 @@
 }
 
 :where([data-component-owner="chat-composer"]) .tty-send-button:disabled:hover {
-  background: #e74c3c;
-  border-color: #e74c3c;
+  background: transparent;
+  color: var(--accent-deep);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-upload-button {
@@ -123,11 +125,11 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: #5c6b7a;
+  color: #8a97a5;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-upload-button:hover {
-  background: #e8eaee;
+  background: #eef1f4;
   color: #2b3440;
 }
 
@@ -145,27 +147,21 @@
 }
 
 :where([data-component-owner="chat-composer"]) .tty-end-turn-button {
-  border-color: var(--amber);
-  background: #fff;
   color: var(--amber-deep);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-end-turn-button:hover:not(:disabled) {
-  border-color: var(--amber);
-  background: var(--amber);
-  color: #fff;
+  background: #fdf3e7;
+  color: var(--amber-deep);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-close-session-button {
-  border-color: var(--red);
-  background: #fff;
   color: var(--accent-deep);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-close-session-button:hover:not(:disabled) {
-  border-color: var(--red);
-  background: var(--red);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent-pressed);
 }
 
 :where([data-component-owner="chat-composer"]) .tty-composer-action:disabled {
@@ -188,12 +184,12 @@
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
-  color: #5c6b7a;
+  color: #8a97a5;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-actions-toggle:hover,
 :where([data-component-owner="chat-composer"]) .tty-actions-toggle[aria-expanded="true"] {
-  background: #e8eaee;
+  background: #eef1f4;
   color: #2b3440;
 }
 
@@ -220,9 +216,9 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 12px;
-  border-top: 1px solid var(--line);
-  background: #fff;
+  padding: 8px 16px;
+  border-top: 1px solid #e3e7ec;
+  background: transparent;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-session-actions button {

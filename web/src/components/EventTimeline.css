@@ -1,5 +1,9 @@
 /* EventTimeline styles. Keep selectors within the documented ownership boundary. */
 
+/* Linear-minimal conversation design: no bubbles or bordered cards. Roles are
+   marked by a 2px left rail, tool/thinking blocks are separated by hairlines,
+   and events carry a colored left strip. */
+
 :where([data-component-owner="event-timeline"]) .approval-actions button,
 :where([data-component-owner="event-timeline"]) .approval-options button,
 :where([data-component-owner="event-timeline"]) .approval-reply button {
@@ -7,9 +11,9 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #e74c3c;
-  border-radius: 6px;
-  background: #e74c3c;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--ink);
   color: #fff;
   padding: 0 11px;
   font-size: 13px;
@@ -28,17 +32,17 @@
   justify-content: center;
   gap: 6px;
   margin-bottom: 12px;
-  border: 1px solid #c3c9d1;
+  border: 0;
   border-radius: 6px;
-  background: #f4f5f7;
-  color: #4a5560;
+  background: transparent;
+  color: #8a97a5;
   font-size: 12px;
   font-weight: 700;
 }
 
 :where([data-component-owner="event-timeline"]) .load-older-events:hover {
-  background: #dcdfe4;
-  color: #2c3e50;
+  background: transparent;
+  color: #2b3440;
 }
 
 :where([data-component-owner="event-timeline"]) .load-older-events svg {
@@ -48,7 +52,22 @@
 
 :where([data-component-owner="event-timeline"]) .agent-message-row {
   display: flex;
-  margin: 12px 0;
+  margin: 16px 0;
+  padding-left: 12px;
+  border-left: 2px solid transparent;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant {
+  border-left-color: #c9d2dc;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.user {
+  border-left-color: var(--ink);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.system,
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent {
+  border-left-color: #dfe4ea;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-main {
@@ -68,55 +87,46 @@
   color: #2b3440;
 }
 
+:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-meta strong {
+  color: var(--ink);
+}
+
 :where([data-component-owner="event-timeline"]) .agent-message-meta span {
-  color: #8a97a5;
+  color: #9aa6b3;
   font-size: 11px;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-tag {
-  padding: 1px 6px;
-  border-radius: 4px;
-  background: #dcdfe4;
-  color: #4a5560;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #9aa6b3;
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-bubble {
-  margin-left: 14px;
-  border-radius: 6px;
+  margin-left: 0;
+  border-radius: 0;
   color: #2b3440;
-  padding: 2px 0;
+  padding: 0;
+  background: transparent;
 }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.assistant .agent-message-bubble {
-  border: 1px solid var(--line);
-  background: #fff;
-  padding: 8px 10px;
-}
-
-:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-bubble {
-  border: 1px solid var(--ink);
-  background: var(--ink);
-  color: #fff;
-  padding: 8px 10px;
-}
-
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble,
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble {
-  border: 1px solid #dcdfe4;
-  background: #f4f5f7;
-  padding: 8px 10px;
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble p,
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble p {
+  color: #7c8896;
+  font-size: 12px;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong,
 :where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong {
-  color: #5c6b7a;
+  color: #8a97a5;
+  font-weight: 600;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-role-tag {
-  border: 1px solid #dcdfe4;
-  background: #e8eaee;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -147,11 +157,12 @@
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group {
   width: 100%;
-  margin: 8px 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  color: #4a5560;
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid #e3e7ec;
+  border-radius: 0;
+  background: transparent;
+  color: #5c6b7a;
   font-size: 12px;
 }
 
@@ -166,7 +177,7 @@
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group>summary {
   min-height: 36px;
-  padding: 7px 9px;
+  padding: 8px 2px;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group summary::-webkit-details-marker {
@@ -187,19 +198,19 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group-icon {
-  color: #5c6b7a;
+  color: #8a97a5;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group-title {
   flex: 0 0 auto;
-  color: #2b3440;
+  color: #4a5560;
   font-weight: 700;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group-preview {
   min-width: 0;
   overflow: hidden;
-  color: #5c6b7a;
+  color: #8a97a5;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -214,11 +225,11 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-list {
-  padding: 0 9px 9px;
+  padding: 0 2px 8px 21px;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-item {
-  border-top: 1px solid var(--line-soft);
+  border-top: 0;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-item>summary {
@@ -232,13 +243,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #2b3440;
+  color: #4a5560;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-item>summary small {
   margin-left: auto;
   flex: 0 0 auto;
-  color: #8a97a5;
+  color: #9aa6b3;
   font-size: 10px;
 }
 
@@ -247,9 +258,9 @@
   margin: 0 0 8px;
   overflow: auto;
   padding: 9px;
-  border-radius: 6px;
-  background: #2c3e50;
-  color: #dcdfe4;
+  border-radius: 4px;
+  background: #232a33;
+  color: #d6dde5;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 11px;
   line-height: 1.5;
@@ -270,11 +281,12 @@
 
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note {
   width: 100%;
-  margin: 8px 0;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
-  color: #5c6b7a;
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid #e3e7ec;
+  border-radius: 0;
+  background: transparent;
+  color: #8a97a5;
   font-size: 12px;
 }
 
@@ -282,9 +294,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 7px 9px;
+  padding: 8px 2px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 600;
   list-style: none;
 }
 
@@ -309,7 +321,8 @@
 
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note p {
   margin: 0;
-  padding: 0 9px 9px;
+  padding: 0 2px 8px 21px;
+  color: #8a97a5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -317,11 +330,12 @@
 :where([data-component-owner="event-timeline"]) .agent-system-note {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin: 10px 0;
-  color: #8a97a5;
+  color: #a5b0bc;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
   text-align: left;
 }
 
@@ -332,8 +346,8 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-system-note .agent-note-time {
-  margin-left: auto;
-  color: #8a97a5;
+  margin-left: 8px;
+  color: #a5b0bc;
   font-weight: 600;
 }
 
@@ -365,11 +379,12 @@
 }
 
 :where([data-component-owner="event-timeline"]) .agent-event {
-  margin-bottom: 8px;
-  padding: 9px;
-  border: 1px solid #dcdfe4;
-  border-radius: 6px;
-  background: #fff;
+  margin: 14px 0;
+  padding: 4px 0 4px 12px;
+  border: 0;
+  border-left: 3px solid #dfe4ea;
+  border-radius: 0;
+  background: transparent;
   color: #2b3440;
 }
 
@@ -392,7 +407,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #8a97a5;
+  color: #9aa6b3;
   font-size: 10px;
 }
 
@@ -400,20 +415,26 @@
   margin: 6px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  color: #4a5560;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #5c6b7a;
+  font-family: inherit;
   font-size: 12px;
   line-height: 1.5;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-event.error {
-  border-color: var(--red);
-  background: #fff;
+  border-left-color: var(--red);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event.error strong {
+  color: var(--accent-deep);
 }
 
 :where([data-component-owner="event-timeline"]) .agent-event.approval {
-  border-color: var(--amber);
-  background: #fff;
+  border-left-color: var(--amber);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event.approval strong {
+  color: var(--amber-deep);
 }
 
 :where([data-component-owner="event-timeline"]) .approval-actions {
@@ -421,6 +442,13 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-actions .secondary-button,
+:where([data-component-owner="event-timeline"]) .approval-options .secondary-button {
+  border: 1px solid #d3d9e0;
+  background: transparent;
+  color: #4a5560;
 }
 
 :where([data-component-owner="event-timeline"]) .agent-event.approval .approval-question {
@@ -450,8 +478,8 @@
 :where([data-component-owner="event-timeline"]) .approval-reply input {
   min-width: 0;
   flex: 1;
-  border: 1px solid #e67e22;
-  border-radius: 6px;
+  border: 1px solid #d3d9e0;
+  border-radius: 4px;
   padding: 6px 8px;
   background: #fff;
   color: #2b3440;
