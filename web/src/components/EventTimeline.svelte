@@ -11,8 +11,13 @@
   let { channel }: { channel: ModelChannel<EventTimelineModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
+  // Keep projection independent from model metadata updates. The application
+  // republishes the model when tree or run metadata changes, but its projector
+  // is stable and the event history has not necessarily changed.
+  // svelte-ignore state_referenced_locally
+  let projector = $state(channel.current().project);
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
-  let projected = $derived(model.project(snapshot.events));
+  let projected = $derived(projector(snapshot.events));
   let root: HTMLDivElement | undefined = $state();
   let controller: ChatSessionController | undefined;
   let deferredSnapshot: ChatContextSnapshot | null = null;
@@ -33,6 +38,7 @@
     const unsubscribeModel = channel.subscribe((next) => {
       const previousIdentity = model.identity;
       model = next;
+      if (next.project !== projector) projector = next.project;
       if (next.identity !== previousIdentity) {
         contextChanged = true;
         deferredSnapshot = null;

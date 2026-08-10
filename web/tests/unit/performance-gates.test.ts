@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import AppShell from "../../src/components/AppShell.svelte";
 import LogTimeline from "../../src/components/LogTimeline.svelte";
 import MarkdownDocument from "../../src/components/MarkdownDocument.svelte";
-import { mergeCanonicalEvent, mergeCanonicalEvents } from "../../src/components/chat-state";
+import { compactTimelineEvents, mergeCanonicalEvent, mergeCanonicalEvents } from "../../src/components/chat-state";
 import { createModelChannel } from "../../src/components/model-channel";
+import type { AgentEvent } from "../../src/components/models";
 import { continuousEvents, largeMarkdown, largeTreeModel, longLogs, performanceBudgets } from "../fixtures/performance";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -85,5 +86,32 @@ describe("performance and bounded-DOM gates", () => {
 
     expect(merged).toHaveLength(11_000);
     expect(elapsed).toBeLessThan(performanceBudgets.continuousDeltaMs);
+  });
+
+  it("bounds a sustained stream of cumulative ACP tool updates", () => {
+    const events: AgentEvent[] = [{
+      id: 1, type: "tool.event", data: {
+        method: "session/update",
+        raw: { update: { sessionUpdate: "tool_call", toolCallId: "call-a", status: "in_progress" } },
+      },
+    }];
+    for (let index = 0; index < 30_000; index++) {
+      events.push({
+        id: index + 2, type: "tool.event", data: {
+          method: "session/update",
+          raw: { update: {
+            sessionUpdate: "tool_call_update", toolCallId: "call-a", status: "in_progress",
+            content: [{ type: "text", text: `cumulative output ${index}` }],
+          } },
+        },
+      });
+    }
+    const started = performance.now();
+    const compacted = compactTimelineEvents(events);
+    const elapsed = performance.now() - started;
+
+    expect(compacted).toHaveLength(2);
+    expect(compacted[1].id).toBe(30_001);
+    expect(elapsed).toBeLessThan(performanceBudgets.eventMergeMs);
   });
 });

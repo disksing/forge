@@ -46,6 +46,28 @@ function model(runId: string): EventTimelineModel {
 }
 
 describe("EventTimeline", () => {
+  it("does not reproject unchanged events when only model metadata is republished", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      events: [{ id: 1, type: "message", sessionId: "session-run-a", data: { text: "message A" } }],
+      page: { hasMoreBefore: false },
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+    const projector = vi.fn(project);
+    const initial = { ...model("run-a"), project: projector };
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.textContent).toContain("message A"));
+    const projections = projector.mock.calls.length;
+    channel.publish({ ...initial, agentName: "Renamed Agent", runCount: 3 });
+    await tick();
+    expect(projector).toHaveBeenCalledTimes(projections);
+  });
+
   it("keeps keyed nodes and expansion stable, while a session switch invalidates the old view immediately", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
