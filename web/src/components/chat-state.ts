@@ -2,6 +2,7 @@ import { ApiClient, StaleResponseError } from "../api/client";
 import type { AgentEvent, AgentNotice, AgentRun, ChatContextSnapshot } from "./models";
 
 const PAGE_LIMIT = 250;
+const STREAM_BATCH_WINDOW_MS = 80;
 const HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
 
 type EventSourceFactory = (url: string) => EventSource;
@@ -30,6 +31,8 @@ interface ChatContext {
   loaded: boolean;
   error: string;
   stream: EventSource | null;
+  pendingEvents: AgentEvent[];
+  flushTimer: ReturnType<typeof setTimeout> | null;
 }
 
 export interface ChatSessionControllerOptions {
@@ -37,6 +40,7 @@ export interface ChatSessionControllerOptions {
   eventSourceFactory?: EventSourceFactory;
   onEvent?: (workspaceId: string, runId: string, event: AgentEvent) => void;
   onNotice?: (workspaceId: string, runId: string, notice: AgentNotice) => void;
+  streamBatchWindowMs?: number;
 }
 
 export class ChatSessionController {
@@ -46,6 +50,7 @@ export class ChatSessionController {
   private readonly listeners = new Set<SnapshotListener>();
   private readonly onEvent?: ChatSessionControllerOptions["onEvent"];
   private readonly onNotice?: ChatSessionControllerOptions["onNotice"];
+  private readonly streamBatchWindowMs: number;
   private activeKey = "";
   private disposed = false;
 
@@ -54,6 +59,7 @@ export class ChatSessionController {
     this.eventSourceFactory = options.eventSourceFactory ?? ((url) => new EventSource(url));
     this.onEvent = options.onEvent;
     this.onNotice = options.onNotice;
+    this.streamBatchWindowMs = Math.max(0, options.streamBatchWindowMs ?? STREAM_BATCH_WINDOW_MS);
   }
 
   subscribe(listener: SnapshotListener): () => void {
@@ -66,6 +72,7 @@ export class ChatSessionController {
     if (this.disposed) return;
     const runId = String(run?.id || "").trim();
     const nextKey = contextKey(workspaceId, runId);
+    const contextChanged = this.activeKey !== nextKey;
     if (this.activeKey && this.activeKey !== nextKey) this.deactivate(this.contexts.get(this.activeKey));
     this.activeKey = nextKey;
     if (!workspaceId || !runId) {
@@ -75,13 +82,13 @@ export class ChatSessionController {
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, runId);
     context.run = run;
     context.acceptedSessionIds = sessionIdentities(run);
-    this.reconcileNotices(context);
+    const noticesChanged = this.reconcileNotices(context);
     if (!isLiveRun(run) && context.stream) {
       context.streamGeneration++;
       context.stream.close();
       context.stream = null;
     }
-    this.emit();
+    if (contextChanged || noticesChanged) this.emit();
     if (!context.loaded && !context.loading) void this.loadInitial(context);
     else this.connect(context);
   }
@@ -105,7 +112,7 @@ export class ChatSessionController {
         context.hasMoreBefore = false;
         return false;
       }
-      context.events = mergeCanonicalEvents([...older, ...context.events]);
+      context.events = compactTimelineEvents(mergeCanonicalEvents([...older, ...context.events]));
       if (nextBefore) context.beforeId = nextBefore;
       context.hasMoreBefore = Boolean(page.page?.hasMoreBefore && nextBefore);
       return older.length > 0;
@@ -153,6 +160,7 @@ export class ChatSessionController {
       key: contextKey(workspaceId, runId), workspaceId, runId, acceptedSessionIds: new Set([runId]), run: null,
       generation: 1, streamGeneration: 0, events: [], notices: [], noticeWatermarks: new Map(), beforeId: 0,
       hasMoreBefore: false, loading: false, loadingOlder: false, loaded: false, error: "", stream: null,
+      pendingEvents: [], flushTimer: null,
     };
     this.contexts.set(context.key, context);
     return context;
@@ -169,7 +177,7 @@ export class ChatSessionController {
       });
       if (!this.isCurrent(context, generation)) return;
       const events = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));
-      context.events = mergeCanonicalEvents(events);
+      context.events = compactTimelineEvents(mergeCanonicalEvents(events));
       context.beforeId = oldestEventId(events);
       context.hasMoreBefore = Boolean(page.page?.hasMoreBefore && context.beforeId);
       context.loaded = true;
@@ -197,9 +205,9 @@ export class ChatSessionController {
       try {
         const event = JSON.parse(message.data) as AgentEvent;
         if (!this.eventBelongsToContext(context, event)) return;
-        context.events = mergeCanonicalEvent(context.events, event);
+        context.pendingEvents.push(event);
         this.onEvent?.(context.workspaceId, context.runId, event);
-        this.emit();
+        this.scheduleEventFlush(context);
       } catch {
         context.error = "An Agent event could not be decoded.";
         this.emit();
@@ -210,6 +218,7 @@ export class ChatSessionController {
       try {
         const notice = JSON.parse((message as MessageEvent).data) as AgentNotice;
         if (!this.noticeBelongsToContext(context, notice)) return;
+        this.flushEvents(context, false);
         this.appendNotice(context, notice);
         this.onNotice?.(context.workspaceId, context.runId, notice);
         this.emit();
@@ -245,9 +254,10 @@ export class ChatSessionController {
     if (context.notices.length > 20) context.notices.splice(0, context.notices.length - 20);
   }
 
-  private reconcileNotices(context: ChatContext): void {
+  private reconcileNotices(context: ChatContext): boolean {
     const run = context.run;
-    context.notices = context.notices.filter((notice) => {
+    const previous = context.notices;
+    const next = previous.filter((notice) => {
       if (!waitingNoticeKey(notice)) return true;
       const data = notice.data || {};
       if (!run || String(data.runId || "") !== run.id || String(data.resourceId || "") !== String(run.resourceId || "")) return false;
@@ -258,10 +268,32 @@ export class ChatSessionController {
       if (run.schedulerTurn && (!noticeSequence || runSequence >= noticeSequence)) return false;
       return true;
     });
+    context.notices = next;
+    return next.length !== previous.length || next.some((notice, index) => notice !== previous[index]);
+  }
+
+  private scheduleEventFlush(context: ChatContext): void {
+    if (context.flushTimer) return;
+    context.flushTimer = setTimeout(() => {
+      context.flushTimer = null;
+      if (!this.isActive(context)) return;
+      this.flushEvents(context, true);
+    }, this.streamBatchWindowMs);
+  }
+
+  private flushEvents(context: ChatContext, publish: boolean): void {
+    if (!context.pendingEvents.length) return;
+    const pending = context.pendingEvents;
+    context.pendingEvents = [];
+    context.events = compactTimelineEvents(mergeCanonicalEventBatch(context.events, pending));
+    if (publish && this.isActive(context)) this.emit();
   }
 
   private deactivate(context?: ChatContext): void {
     if (!context) return;
+    if (context.flushTimer) clearTimeout(context.flushTimer);
+    context.flushTimer = null;
+    this.flushEvents(context, false);
     context.generation++;
     context.streamGeneration++;
     context.stream?.close();
@@ -317,8 +349,19 @@ export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
 }
 
 export function mergeCanonicalEvent(events: AgentEvent[], incoming: AgentEvent): AgentEvent[] {
+  return mergeCanonicalEventBatch(events, [incoming]);
+}
+
+export function mergeCanonicalEventBatch(events: AgentEvent[], incomingEvents: AgentEvent[]): AgentEvent[] {
+  if (!incomingEvents.length) return events;
+  const next = [...events];
+  for (const incoming of incomingEvents) mergeCanonicalEventInto(next, incoming);
+  return next;
+}
+
+function mergeCanonicalEventInto(events: AgentEvent[], incoming: AgentEvent): void {
   const id = Number(incoming?.id) || 0;
-  if (!id) return events;
+  if (!id) return;
   let low = 0;
   let high = events.length;
   while (low < high) {
@@ -328,13 +371,75 @@ export function mergeCanonicalEvent(events: AgentEvent[], incoming: AgentEvent):
   }
   const index = low < events.length && Number(events[low].id) === id ? low : -1;
   if (index < 0) {
-    const next = [...events];
-    next.splice(low, 0, normalizeAppendEvent(incoming));
-    return next;
+    events.splice(low, 0, normalizeAppendEvent(incoming));
+    return;
   }
-  const next = [...events];
-  next[index] = mergeEvent(events[index], incoming);
-  return next;
+  events[index] = mergeEvent(events[index], incoming);
+}
+
+export function compactTimelineEvents(events: AgentEvent[]): AgentEvent[] {
+  const compacted: AgentEvent[] = [];
+  let toolUpdates = new Map<string, AgentEvent>();
+
+  const flushToolUpdates = () => {
+    if (!toolUpdates.size) return;
+    compacted.push(...[...toolUpdates.values()].sort((left, right) => Number(left.id) - Number(right.id)));
+    toolUpdates = new Map();
+  };
+
+  for (const event of events) {
+    // ACP tool_call_update frames carry a cumulative snapshot rather than a
+    // delta. Retain only the latest snapshot per call within an uninterrupted
+    // update segment; a non-update event remains a hard ordering boundary.
+    const callId = acpToolCallUpdateId(event);
+    if (callId) {
+      const previous = toolUpdates.get(callId);
+      toolUpdates.set(callId, previous ? mergeACPToolCallUpdate(previous, event) : event);
+      continue;
+    }
+    flushToolUpdates();
+    compacted.push(event);
+  }
+  flushToolUpdates();
+  return compacted;
+}
+
+function acpToolCallUpdateId(event: AgentEvent): string {
+  if (event.type !== "tool.event") return "";
+  const raw = objectValue(event.data?.raw);
+  const update = raw.update && typeof raw.update === "object" && !Array.isArray(raw.update) ? objectValue(raw.update) : raw;
+  if (update.sessionUpdate !== "tool_call_update") return "";
+  return stringValue(update.toolCallId) || stringValue(update.id);
+}
+
+function mergeACPToolCallUpdate(previous: AgentEvent, incoming: AgentEvent): AgentEvent {
+  const previousData = previous.data || {};
+  const incomingData = incoming.data || {};
+  const previousRaw = objectValue(previousData.raw);
+  const incomingRaw = objectValue(incomingData.raw);
+  const previousUpdate = previousRaw.update && typeof previousRaw.update === "object" && !Array.isArray(previousRaw.update) ? objectValue(previousRaw.update) : previousRaw;
+  const incomingUpdate = incomingRaw.update && typeof incomingRaw.update === "object" && !Array.isArray(incomingRaw.update) ? objectValue(incomingRaw.update) : incomingRaw;
+  return {
+    ...previous,
+    ...incoming,
+    data: {
+      ...previousData,
+      ...incomingData,
+      raw: {
+        ...previousRaw,
+        ...incomingRaw,
+        update: { ...previousUpdate, ...incomingUpdate },
+      },
+    },
+  };
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function mergeEvent(existing: AgentEvent, incoming: AgentEvent): AgentEvent {
