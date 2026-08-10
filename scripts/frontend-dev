@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+workspace=${1:-}
+
+if [ -z "$workspace" ]; then
+	echo "usage: scripts/frontend-dev /path/to/isolated/AgentWorkspace" >&2
+	exit 2
+fi
+
+forge_dev_runtime=$(mktemp -d "${TMPDIR:-/tmp}/forge-frontend-dev.XXXXXX")
+mkdir -p "$forge_dev_runtime/agenthub"
+go -C "$root" build -o "$forge_dev_runtime/forge" ./cli/cmd/forge
+FORGE_GUI_CONFIG="$forge_dev_runtime/gui.json" \
+AGENTHUB_DATA_DIR="$forge_dev_runtime/agenthub" \
+"$forge_dev_runtime/forge" serve --addr=127.0.0.1:4936 --workspace="$workspace" &
+forge_dev_server_pid=$!
+cleanup() {
+	kill "$forge_dev_server_pid" 2>/dev/null || true
+	wait "$forge_dev_server_pid" 2>/dev/null || true
+	rm -rf "$forge_dev_runtime"
+}
+trap cleanup EXIT HUP INT TERM
+
+npm --prefix "$root/frontend" run dev

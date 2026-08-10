@@ -23,4 +23,7 @@ ldflags="-X github.com/disksing/forge/internal/buildinfo.Branch=$branch -X githu
 
 mkdir -p "$out_path"
 cd "$root"
+npm --prefix frontend ci
+npm --prefix frontend run check
+npm --prefix frontend run build
 go build -ldflags "$ldflags" -o "$out_path/forge" ./cli/cmd/forge

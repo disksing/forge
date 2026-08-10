@@ -54,6 +54,55 @@ func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
 	}
 }
 
+func TestSvelteIslandAssetsAreLinkedEmbeddedAndUseHistoryFallback(t *testing.T) {
+	indexData, err := staticFiles.ReadFile("static/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := string(indexData)
+	for _, want := range []string{
+		`id="brandVersionIsland"`,
+		`data-version="v0.1.0"`,
+		`<script type="module" src="/svelte/forge-svelte.js"></script>`,
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("Svelte island bootstrap is missing %q", want)
+		}
+	}
+
+	staticRoot, err := fs.Sub(staticFiles, "static")
+	if err != nil {
+		t.Fatal(err)
+	}
+	assetData, err := staticFiles.ReadFile("static/svelte/forge-svelte.js")
+	if err != nil {
+		t.Fatalf("built Svelte entry is not embedded: %v", err)
+	}
+	if len(assetData) == 0 {
+		t.Fatal("built Svelte entry is empty")
+	}
+
+	assetRequest := httptest.NewRequest(http.MethodGet, "/svelte/forge-svelte.js", nil)
+	assetRecorder := httptest.NewRecorder()
+	serveStatic(staticRoot, assetRecorder, assetRequest)
+	if assetRecorder.Code != http.StatusOK {
+		t.Fatalf("Svelte asset request returned %d: %s", assetRecorder.Code, assetRecorder.Body.String())
+	}
+	if contentType := assetRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "javascript") {
+		t.Fatalf("Svelte asset content type is %q, want JavaScript", contentType)
+	}
+
+	historyRequest := httptest.NewRequest(http.MethodGet, "/w/test/r/project1.task1", nil)
+	historyRecorder := httptest.NewRecorder()
+	serveStatic(staticRoot, historyRecorder, historyRequest)
+	if historyRecorder.Code != http.StatusOK {
+		t.Fatalf("history fallback returned %d: %s", historyRecorder.Code, historyRecorder.Body.String())
+	}
+	if historyRecorder.Body.String() != index {
+		t.Fatal("history fallback did not return the embedded application shell")
+	}
+}
+
 func TestWorkspaceIconsAreEmbedded(t *testing.T) {
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
