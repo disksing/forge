@@ -3728,7 +3728,7 @@ async function refreshCreateTaskPreview(draft) {
 	}
 	const selectedTemplate = (controllerState.details[dialog.projectId]?.templates || []).find((item) => item.name === dialog.templateName);
 	if (selectedTemplate && !selectedTemplate.taskTitle && (!dialog.titleOverride || !String(dialog.title).trim())) {
-		dialog.previewError = "This template does not generate a title. Enter a task title in the Edit tab to render the preview.";
+		dialog.previewError = "This template does not generate a title. Enter a task title to render the preview.";
 		renderCreateDialog();
 		return null;
 	}

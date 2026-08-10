@@ -28,7 +28,7 @@
 :where([data-component-owner="create-dialog"]) .create-task-dialog {
   display: flex;
   flex-direction: column;
-  width: min(900px, calc(100vw - 48px));
+  width: min(1080px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
 }
@@ -69,25 +69,163 @@
   min-height: 0;
   gap: 0;
   overflow: hidden;
+  padding: 0;
 }
 
-:where([data-component-owner="create-dialog"]) .create-task-dialog-body {
+/* Split layout: form column on the left, live preview panel on the right. */
+:where([data-component-owner="create-dialog"]) .create-task-split {
   display: grid;
-  gap: 10px;
+  grid-template-columns: 55fr 45fr;
   flex: 1;
+  min-height: 0;
+}
+
+:where([data-component-owner="create-dialog"]) .create-task-form-col {
+  display: grid;
+  gap: 18px;
+  align-content: start;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  padding: 20px;
+}
+
+:where([data-component-owner="create-dialog"]) .create-task-preview-col {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+  background: var(--bg);
+  border-left: 1px solid var(--line-soft);
+}
+
+:where([data-component-owner="create-dialog"]) .create-task-dialog .form-actions {
+  padding: 12px 20px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Form sections. */
+:where([data-component-owner="create-dialog"]) .create-section {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+:where([data-component-owner="create-dialog"]) .create-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="create-dialog"]) .create-required {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Template cards. */
+:where([data-component-owner="create-dialog"]) .template-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+:where([data-component-owner="create-dialog"]) .template-cards .template-card {
+  position: relative;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 400;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+
+:where([data-component-owner="create-dialog"]) .template-cards .template-card:hover:not(:disabled) {
+  border-color: #c3c9d1;
+  background: #fff;
+  color: var(--text);
+}
+
+:where([data-component-owner="create-dialog"]) .template-cards .template-card:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+:where([data-component-owner="create-dialog"]) .template-card strong {
+  padding-right: 22px;
+  font-size: 13px;
+}
+
+:where([data-component-owner="create-dialog"]) .template-card small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+:where([data-component-owner="create-dialog"]) .template-card-check {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: none;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+}
+
+:where([data-component-owner="create-dialog"]) .template-card-check svg,
+:where([data-component-owner="create-dialog"]) .template-card-check i[data-lucide] {
+  width: 11px;
+  height: 11px;
+}
+
+:where([data-component-owner="create-dialog"]) .template-cards .template-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+:where([data-component-owner="create-dialog"]) .template-cards .template-card.selected .template-card-check {
+  display: inline-flex;
+}
+
+/* Uniform select styling (matches the text inputs). */
+:where([data-component-owner="create-dialog"]) .create-task-dialog select {
+  width: 100%;
+  padding: 8px 28px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%235c6b7a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  appearance: none;
 }
 
 :where([data-component-owner="create-dialog"]) .create-task-dialog textarea[name="detail"] {
   min-height: clamp(180px, 32vh, 340px);
-}
-
-:where([data-component-owner="create-dialog"]) .template-description {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.84rem;
 }
 
 :where([data-component-owner="create-dialog"]) .template-fields {
@@ -134,29 +272,31 @@
   flex: 0 0 170px;
 }
 
-:where([data-component-owner="create-dialog"]) .create-task-more-options>summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 0.84rem;
-  font-weight: 700;
-  user-select: none;
+:where([data-component-owner="create-dialog"]) .create-task-slug-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 150ms ease;
 }
 
-:where([data-component-owner="create-dialog"]) .create-task-more-options>summary:hover {
+:where([data-component-owner="create-dialog"]) .create-task-slug-prefix {
+  padding-left: 10px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+:where([data-component-owner="create-dialog"]) .create-task-slug-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px 8px 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
   color: var(--text);
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-more-options[open]>summary {
-  margin-bottom: 0.6rem;
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-more-options:not([open])>.create-task-more-options-body {
-  display: none;
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-more-options-body {
-  display: grid;
-  gap: 10px;
+  outline: none;
 }
 
 :where([data-component-owner="create-dialog"]) .compact {
@@ -177,42 +317,22 @@
   padding: 0.85rem;
   border: 1px solid var(--line);
   border-radius: 6px;
-  background: var(--bg);
+  background: #fff;
 }
 
 :where([data-component-owner="create-dialog"]) .template-preview h4 {
   margin: 0;
 }
 
-:where([data-component-owner="create-dialog"]) .create-dialog-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line-soft);
+:where([data-component-owner="create-dialog"]) .create-task-blank-preview .create-task-blank-detail {
+  margin: 0;
+  font-size: 13px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
-:where([data-component-owner="create-dialog"]) .create-dialog-tab {
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  padding: 6px 12px;
-  color: var(--muted);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-:where([data-component-owner="create-dialog"]) .create-dialog-tab:hover {
-  color: var(--text);
-}
-
-:where([data-component-owner="create-dialog"]) .create-dialog-tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
-:where([data-component-owner="create-dialog"]) .create-task-preview-pane {
-  display: grid;
-  gap: 0.6rem;
-  align-content: start;
+:where([data-component-owner="create-dialog"]) .create-preview-title {
+  margin-bottom: 0;
 }
 
 :where([data-component-owner="create-dialog"]) .create-task-preview-editor {
@@ -291,6 +411,10 @@
   padding: 8px 10px;
 }
 
+:where([data-component-owner="create-dialog"]) .create-task-automation-fields select {
+  padding-right: 28px;
+}
+
 :where([data-component-owner="create-dialog"]) .create-task-automation-fields small {
   color: var(--muted);
   font-size: 11px;
@@ -312,6 +436,21 @@
   }
 }
 
-:where([data-component-owner="create-dialog"]) .create-dialog {
-  border-radius: 6px;
+/* Narrow screens: collapse the split into one scrollable column, preview last. */
+@media (max-width:900px) {
+  :where([data-component-owner="create-dialog"]) .create-task-split {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  :where([data-component-owner="create-dialog"]) .create-task-form-col,
+  :where([data-component-owner="create-dialog"]) .create-task-preview-col {
+    overflow: visible;
+  }
+
+  :where([data-component-owner="create-dialog"]) .create-task-preview-col {
+    border-left: none;
+    border-top: 1px solid var(--line-soft);
+  }
 }
