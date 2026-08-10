@@ -17,7 +17,6 @@ const state = {
   sessionOrder: [],
   listDrag: null,
   expandedPaths: new Set(),
-  expandedMarkdownFiles: new Set(),
   preview: null,
   diff: null,
   modalEnter: "",
@@ -203,8 +202,6 @@ const AGENT_AUTOFILL_MAX_PAGES = 16;
 const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
 const TASK_RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);
 const SYSTEM_AGENT_PROFILE_KEYS = new Set(["default", "fast", "reasoning", "scheduler"]);
-const MARKDOWN_PREVIEW_CHAR_LIMIT = 2200;
-const MARKDOWN_PREVIEW_LINE_LIMIT = 38;
 const DEFAULT_WORKSPACE_ICON = { id: "", label: "Forge default", src: "/favicon.svg", type: "image/svg+xml" };
 const WORKSPACE_ICONS = [
   { id: "home-base", label: "Home base", src: "/workspace-icons/01-home-base.png" },
@@ -2536,30 +2533,45 @@ function setDetailsHTML(panel, html) {
 }
 
 // Resource details are grouped into tabs; each tab simply shows/hides the
-// regions it owns. Rendering logic and data flow stay unchanged.
+// regions it owns. Document tabs additionally own individual files inside
+// the shared documents region. Rendering logic and data flow stay unchanged.
 const DETAILS_RESOURCE_TABS = [
-  { id: "details", label: "Details", regions: ["documents", "templates"] },
+  { id: "project", label: "Project", regions: ["documents"], files: ["project.md"] },
+  { id: "task", label: "Task", regions: ["documents"], files: ["task.md"] },
+  { id: "work", label: "Work", regions: ["documents"], files: ["work.md"] },
+  { id: "template", label: "Template", regions: ["templates"] },
   { id: "logs", label: "Logs", regions: ["logs"] },
   { id: "artifacts", label: "Artifacts", regions: ["artifacts"] },
   { id: "worktrees", label: "Worktrees", regions: ["worktrees"] },
 ];
 
-// Projects have no worktrees of their own, so the Worktrees tab only
-// applies to tasks.
-function detailsResourceTabs(resourceType) {
-  return DETAILS_RESOURCE_TABS.filter((tab) => tab.id !== "worktrees" || resourceType !== "project");
+// Tabs are only offered when they have content: document tabs require the
+// matching file, the Template tab requires template content, and projects
+// never get a Worktrees tab. Unknown document files fall back to the first
+// available document tab.
+function detailsResourceTabs(resourceType, detail) {
+  const fileNames = new Set(visibleResourceFiles(detail || {}).map((file) => String(file.name || "")));
+  const hasTemplate = resourceType === "project" || Boolean(detail?.template);
+  const has = (tab) => {
+    if (tab.id === "worktrees") return resourceType !== "project";
+    if (tab.id === "template") return hasTemplate;
+    if (tab.files) return tab.files.some((name) => fileNames.has(name));
+    return true;
+  };
+  const tabs = DETAILS_RESOURCE_TABS.filter(has);
+  return tabs;
 }
 
 // Remembers the last selected tab per resource (in-memory only).
 const detailsTabMemory = new Map();
 
-function detailsPanelShell(kind, resourceType) {
+function detailsPanelShell(kind, resourceType, detail) {
   const regions = kind === "workspace"
     ? ["header", "workspace-agents", "wiki", "file-modal", "diff-modal"]
     : ["header", "documents", "logs", "templates", "artifacts", "worktrees", "file-modal", "diff-modal"];
   const tabs = kind === "resource" ? `
     <div class="details-tabs" role="tablist" data-details-tabs>
-      ${detailsResourceTabs(resourceType).map((tab) => `
+      ${detailsResourceTabs(resourceType, detail).map((tab) => `
         <button type="button" class="details-tab" role="tab" data-details-tab="${tab.id}" aria-selected="false">
           <span>${tab.label}</span>${tab.id === "logs" ? `<span class="details-tab-count" data-details-tab-count="logs" hidden></span>` : ""}
         </button>`).join("")}
@@ -2590,6 +2602,20 @@ function applyDetailsTab(panel, resourceKey) {
       if (region) region.hidden = !visible.has(name);
     }
   }
+  // Document tabs share the documents region; only the files the active tab
+  // owns stay visible. Files no available tab claims go to the first
+  // document tab.
+  const documentsRegion = panel.querySelector('[data-detail-region="documents"]');
+  if (documentsRegion && !documentsRegion.hidden) {
+    const docTabs = available.filter((tab) => tab.files);
+    const claimed = new Set(docTabs.flatMap((tab) => tab.files));
+    const firstDocTab = docTabs[0];
+    documentsRegion.querySelectorAll("[data-doc-file]").forEach((section) => {
+      const name = String(section.dataset.docFile || "");
+      const owner = claimed.has(name) ? docTabs.find((tab) => tab.files.includes(name)) : firstDocTab;
+      section.hidden = owner !== active;
+    });
+  }
 }
 
 function bindDetailsTabs(panel, resourceKey) {
@@ -2612,9 +2638,9 @@ function updateDetailsTabCounts(panel, detail) {
   badge.textContent = String(count);
 }
 
-function ensureDetailsShell(panel, key, kind, resourceType) {
+function ensureDetailsShell(panel, key, kind, resourceType, detail) {
   if (panel.dataset.detailsShellKey === key) return false;
-  setDetailsHTML(panel, detailsPanelShell(kind, resourceType));
+  setDetailsHTML(panel, detailsPanelShell(kind, resourceType, detail));
   panel.dataset.detailsShellKey = key;
   return true;
 }
@@ -2682,7 +2708,6 @@ function resourceDocumentsRenderKey(item) {
       contentHash,
       contentFallback: contentHash ? "" : content,
       mode: isMarkdownFile(name) ? "markdown-preview" : "plain-text",
-      expanded: isMarkdownFile(name) ? !isLongMarkdownContent(content) || state.expandedMarkdownFiles.has(markdownFileKey(name)) : false,
     };
   });
   return JSON.stringify({
@@ -2692,13 +2717,6 @@ function resourceDocumentsRenderKey(item) {
     renderer: markdownRendererKey(),
     files,
   });
-}
-
-function syncDetailsDocumentsRenderKey(region = null) {
-  const detail = state.details?.[state.selectedId];
-  const target = region || document.querySelector('[data-detail-region="documents"]');
-  if (!detail || !target) return;
-  target.dataset.renderKey = resourceDocumentsRenderKey(detail);
 }
 
 function artifactRenderKey(section, entries, extra = {}) {
@@ -2793,7 +2811,6 @@ function resourceDetailsHeader(selected, detail) {
           <button class="danger" id="archiveButton">${icon("archive")}<span>Archive</span></button>
         </div>
       </div>
-		${detail.template ? `<small class="template-source">Created from template ${escapeHTML(detail.template.name)} · v${escapeHTML(detail.template.schemaVersion)} · ${escapeHTML(detail.template.digest)}</small>` : ""}
     </div>
   `;
 }
@@ -2876,8 +2893,8 @@ function renderDetails() {
     return;
   }
   const resourceShellKey = `resource:${state.activeWorkspaceId}:${selected.id}:${selected.type}`;
-  if (ensureDetailsShell(panel, resourceShellKey, "resource", selected.type)) bindDetailsTabs(panel, resourceShellKey);
-  applyDetailsTab(panel, resourceShellKey);
+  ensureDetailsShell(panel, resourceShellKey, "resource", selected.type, detail);
+  bindDetailsTabs(panel, resourceShellKey);
   updateDetailRegion(panel, "header", JSON.stringify({
     workspaceId: state.activeWorkspaceId,
     id: selected.id,
@@ -2887,8 +2904,11 @@ function renderDetails() {
     archived: detail.archived,
   }), () => resourceDetailsHeader(selected, detail));
   updateDetailRegion(panel, "documents", resourceDocumentsRenderKey(detail), () => fileSection(detail));
+  // Apply after the documents region renders: the re-render resets the
+  // per-file visibility the active tab owns.
+  applyDetailsTab(panel, resourceShellKey);
   updateDetailRegion(panel, "logs", detailLogsRenderKey(detail), () => logSection(detail));
-  updateDetailRegion(panel, "templates", JSON.stringify(detail.templates || []), () => selected.type === "project" ? templateSection(detail) : "");
+  updateDetailRegion(panel, "templates", JSON.stringify({ templates: detail.templates || [], template: detail.template || null }), () => selected.type === "project" ? templateSection(detail) : taskTemplateSection(detail));
   updateDetailRegion(panel, "artifacts", artifactRenderKey("Artifacts", detail.artifacts), () => artifactSection("Artifacts", detail.artifacts));
   updateDetailRegion(panel, "worktrees", JSON.stringify(detail.repos || []), () => selected.type === "project" ? "" : worktreeSection(detail.repos));
   updateDetailRegion(panel, "file-modal", fileModalRenderKey(state.preview), () => fileModal());
@@ -2911,6 +2931,22 @@ function templateSection(item) {
             ${icon("chevron-right")}
           </button>
         `).join("") : emptyListRow("No task templates in templates/*.md.", "layout-template")}
+      </div>
+    </div>
+  `;
+}
+
+function taskTemplateSection(item) {
+  const template = item.template;
+  if (!template) return "";
+  return `
+    <div class="content-section">
+      <h3>${icon("layout-template")}<span>Template</span></h3>
+      <div class="template-list">
+        <div class="template-row">
+          ${icon("file-text")}
+          <span><strong>${escapeHTML(template.name)}</strong><small>Created from template · v${escapeHTML(template.schemaVersion)} · ${escapeHTML(template.digest)}</small></span>
+        </div>
       </div>
     </div>
   `;
@@ -3144,7 +3180,7 @@ function fileSection(item) {
   return files.map((file) => {
     const path = file.path || resourceFilePath(item.path, file.name);
     return `
-      <div class="content-section">
+      <div class="content-section" data-doc-file="${escapeHTML(file.name)}">
         <h3>${icon("file-text")}<span>${escapeHTML(file.name)}</span>${openFileAction(file.name, path)}</h3>
         ${renderFileContent(file.name, file.content)}
       </div>
@@ -3192,44 +3228,11 @@ function renderAgentsFileContent(content) {
 }
 
 function renderMarkdownFileContent(name, content) {
-  const key = markdownFileKey(name);
-  const canCollapse = isLongMarkdownContent(content);
-  const expanded = !canCollapse || state.expandedMarkdownFiles.has(key);
   return `
-    <div class="markdown-preview ${expanded ? "expanded" : "collapsed"}">
+    <div class="markdown-preview">
       <div class="markdown-view markdown-rendered">${renderMarkdown(content)}</div>
-      ${expanded ? "" : `
-        <button type="button" class="markdown-show-all" data-markdown-toggle="${escapeHTML(key)}" aria-expanded="false">
-          show all
-        </button>
-      `}
     </div>
   `;
-}
-
-function markdownFileKey(name) {
-  return `${state.activeWorkspaceId}:${state.selectedId || "workspace"}:${name}`;
-}
-
-function isLongMarkdownContent(content) {
-  const text = String(content ?? "");
-  return text.length > MARKDOWN_PREVIEW_CHAR_LIMIT || text.split(/\r\n|\r|\n/).length > MARKDOWN_PREVIEW_LINE_LIMIT;
-}
-
-function expandMarkdownPreview(button) {
-  const key = button.dataset.markdownToggle;
-  if (key) {
-    state.expandedMarkdownFiles.add(key);
-  }
-  const preview = button.closest(".markdown-preview");
-  if (!preview) {
-    renderDetails();
-    return;
-  }
-  preview.classList.remove("collapsed");
-  preview.classList.add("expanded");
-  button.remove();
-  syncDetailsDocumentsRenderKey(preview.closest('[data-detail-region="documents"]'));
 }
 
 function stripForgeManagedBlocks(content) {
@@ -7745,12 +7748,6 @@ document.addEventListener("paste", (event) => {
 
 document.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
-  const markdownToggle = target?.closest("[data-markdown-toggle]");
-  if (markdownToggle) {
-    event.preventDefault();
-    expandMarkdownPreview(markdownToggle);
-    return;
-  }
   const breadcrumbButton = target?.closest("[data-breadcrumb-resource]");
   if (breadcrumbButton) {
     openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource).catch((err) => toast(err.message));
