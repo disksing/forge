@@ -1,0 +1,197 @@
+/* WorkspaceSwitcher styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="workspace-switcher"]) .workspace-select-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="workspace-switcher"]).workspace-switcher {
+  padding: 12px;
+}
+
+:where([data-component-owner="workspace-switcher"]).workspace-switcher select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+
+:where([data-component-owner="workspace-switcher"]).workspace-switcher select {
+  border-color: var(--ink-row);
+  background: var(--ink-deep);
+  color: #ecf0f3;
+}
+
+:where([data-component-owner="workspace-switcher"]).workspace-switcher select {
+  height: 34px;
+  margin-top: 8px;
+  padding: 0 8px;
+}
+
+:where([data-component-owner="workspace-switcher"]).workspace-switcher {
+  position: relative;
+  padding: 10px 12px 12px;
+  background: var(--ink);
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-select-row {
+  position: relative;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button {
+  width: 100%;
+  height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: var(--ink-deep);
+  color: #ecf0f3;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button:hover {
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-name {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button .select-icon {
+  flex: 0 0 auto;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-avatar {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 8px;
+  right: 8px;
+  padding: 4px;
+  border: 1px solid #c3c9d1;
+  border-radius: 6px;
+  background: #fff;
+  animation: modal-zoom-in 140ms ease-out;
+  transform-origin: top center;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-title {
+  padding: 7px 9px 5px;
+  color: #5c6b7a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: transparent;
+  color: #2b3440;
+  text-align: left;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-row:hover {
+  background: #e8eaee;
+  color: #2c3e50;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-main {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-main strong,
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-main small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-main strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-main small {
+  color: #8a97a5;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-check {
+  width: 15px;
+  height: 15px;
+  color: #e74c3c;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-footer {
+  margin-top: 2px;
+  padding-top: 2px;
+  border-top: 1px solid #e8eaee;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-footer button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border-radius: 4px;
+  background: transparent;
+  color: #4a5560;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-footer button:hover {
+  background: #e8eaee;
+  color: #2c3e50;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-menu-footer svg {
+  width: 14px;
+  height: 14px;
+}

@@ -1,0 +1,75 @@
+/* MobileToolbar styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="mobile-toolbar"]).mobile-toolbar,
+:where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
+  display: none;
+}
+
+@media (max-width:980px) {
+
+  :where([data-component-owner="mobile-toolbar"]).mobile-toolbar {
+    z-index: 45;
+    grid-row: 1;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    padding-top: calc(6px + env(safe-area-inset-top, 0px));
+    border-bottom: 1px solid var(--line);
+    background: #fff;
+  }
+
+  :where([data-component-owner="mobile-toolbar"]) .mobile-icon-button {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: 3px;
+    border-radius: 6px;
+    background: #dcdfe4;
+  }
+
+  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button {
+    min-height: 34px;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  :where([data-component-owner="mobile-toolbar"]) .mobile-view-switcher button[aria-selected="true"] {
+    background: #fff;
+    color: var(--accent);
+  }
+
+  :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
+    position: fixed;
+    z-index: 55;
+    inset: 0;
+    width: 100%;
+    background: rgba(34, 49, 63, 0.42);
+  }
+
+  :where(body).mobile-sidebar-open :where([data-component-owner="mobile-toolbar"]).mobile-sidebar-backdrop {
+    display: block;
+  }
+
+  :where([data-component-owner="mobile-toolbar"]) .mobile-immersive-button[aria-pressed="true"] {
+    background: var(--accent);
+    color: #fff;
+  }
+}
+

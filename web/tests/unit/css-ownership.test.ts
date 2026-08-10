@@ -13,14 +13,20 @@ const components = [
   "EventTimeline",
   "FileBrowser",
   "FilePreviewModal",
+  "GlobalSessionList",
   "LogTimeline",
   "MarkdownDocument",
+  "MobileToolbar",
+  "PaneResizeHandle",
+  "ProjectTree",
   "SelfDrivingBar",
   "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
+  "StatusPresentation",
   "Toast",
   "UploadDialog",
+  "WorkspaceSwitcher",
   "WorkspaceAgentsEditor",
 ] as const;
 
@@ -33,14 +39,20 @@ const owners: Record<(typeof components)[number], string> = {
   EventTimeline: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
+  GlobalSessionList: "global-session-list",
   LogTimeline: "log-timeline",
   MarkdownDocument: "markdown-document",
+  MobileToolbar: "mobile-toolbar",
+  PaneResizeHandle: "pane-resize-handle",
+  ProjectTree: "project-tree",
   SelfDrivingBar: "self-driving-bar",
   SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
+  StatusPresentation: "status-presentation",
   Toast: "toast",
   UploadDialog: "upload-dialog",
+  WorkspaceSwitcher: "workspace-switcher",
   WorkspaceAgentsEditor: "workspace-agents-editor",
 };
 
@@ -92,8 +104,8 @@ describe("CSS ownership", () => {
     for (const header of selectorHeaders(css)) {
       for (const selector of header.split(",")) {
         const normalized = selector.trim();
-        const appShellBodyState = component === "AppShell" && /^body\.resizing(?:-[xy])?$/.test(normalized);
-        expect(appShellBodyState || normalized.includes(`[data-component-owner="${owner}"]`), normalized).toBe(true);
+        const paneBodyState = component === "PaneResizeHandle" && /^body\.resizing(?:-[xy])?$/.test(normalized);
+        expect(paneBodyState || normalized.includes(`[data-component-owner="${owner}"]`), normalized).toBe(true);
       }
     }
   });
@@ -105,8 +117,14 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "WorkspaceAgentsEditor"] as const) {
+    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "GlobalSessionList", "LogTimeline", "MarkdownDocument", "MobileToolbar", "PaneResizeHandle", "ProjectTree", "StatusPresentation", "WorkspaceAgentsEditor", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
+  });
+
+  it("keeps WorkspaceSwitcher controls below the component root boundary", () => {
+    const css = read("src/components/WorkspaceSwitcher.css");
+    expect(css).toContain(':where([data-component-owner="workspace-switcher"]) .workspace-switcher-button');
+    expect(css).not.toContain(':where([data-component-owner="workspace-switcher"]).workspace-switcher-button');
   });
 });

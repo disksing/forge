@@ -1,0 +1,69 @@
+<script lang="ts">
+  import "./PaneResizeHandle.css";
+
+  import { onDestroy } from "svelte";
+
+  import type { AppShellModel } from "./models";
+
+  type PaneName = keyof AppShellModel["paneSizes"];
+
+  let { id, kind, className, label, onPreview, onCommit }: {
+    id: string;
+    kind: PaneName;
+    className: string;
+    label: string;
+    onPreview: (name: PaneName, value: number) => void;
+    onCommit: (name: PaneName) => void;
+  } = $props();
+  let resizeCleanup: (() => void) | null = null;
+
+  onDestroy(() => resizeCleanup?.());
+
+  function beginResize(event: PointerEvent): void {
+    if (window.matchMedia("(max-width: 980px)").matches) return;
+    event.preventDefault();
+    resizeCleanup?.();
+    const handle = event.currentTarget as HTMLElement;
+    const app = document.getElementById("app");
+    const sidebar = document.getElementById("mobileSidebar");
+    const workspace = document.querySelector<HTMLElement>(".workspace-panel");
+    const chat = document.getElementById("agentPanel");
+    const sessions = document.querySelector<HTMLElement>(".session-section");
+    if (!app || !sidebar || !workspace || !chat || !sessions) return;
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const startSidebar = sidebar.getBoundingClientRect().width;
+    const startChat = chat.getBoundingClientRect().width;
+    const startSessions = sessions.getBoundingClientRect().height;
+    const bodyClass = kind === "sidebarSessionHeight" ? "resizing-y" : "resizing-x";
+    handle.classList.add("dragging");
+    document.body.classList.add(bodyClass);
+    const move = (moveEvent: PointerEvent) => {
+      if (kind === "sidebarWidth") {
+        const max = Math.max(220, app.getBoundingClientRect().width - 8 - 360 - 8 - Math.max(320, chat.getBoundingClientRect().width));
+        onPreview(kind, Math.min(max, Math.max(220, startSidebar + moveEvent.clientX - startX)));
+      } else if (kind === "chatWidth") {
+        const max = Math.max(320, workspace.getBoundingClientRect().width - 360 - 8);
+        onPreview(kind, Math.min(max, Math.max(320, startChat - (moveEvent.clientX - startX))));
+      } else {
+        const max = Math.max(120, sidebar.getBoundingClientRect().height - 250);
+        onPreview(kind, Math.min(max, Math.max(84, startSessions - (moveEvent.clientY - startY))));
+      }
+    };
+    const done = () => {
+      handle.classList.remove("dragging");
+      document.body.classList.remove(bodyClass);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", done);
+      window.removeEventListener("pointercancel", done);
+      resizeCleanup = null;
+      onCommit(kind);
+    };
+    resizeCleanup = done;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", done, { once: true });
+    window.addEventListener("pointercancel", done, { once: true });
+  }
+</script>
+
+<div {id} class={`resize-handle ${className}`} data-component-owner="pane-resize-handle" role="separator" aria-orientation={kind === "sidebarSessionHeight" ? "horizontal" : "vertical"} aria-label={label} onpointerdown={beginResize}></div>

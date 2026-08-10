@@ -1,0 +1,126 @@
+/* StatusPresentation styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="status-presentation"]).task-status-slot,
+:where([data-component-owner="status-presentation"]) .task-status-indicator,
+:where([data-component-owner="status-presentation"]) .task-lock-indicator {
+  display: grid;
+  place-items: center;
+}
+
+:where([data-component-owner="status-presentation"]).task-status-slot {
+  position: relative;
+  width: 34px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+}
+
+:where([data-component-owner="status-presentation"]).task-status-slot.task-status-single,
+:where([data-component-owner="status-presentation"]).task-status-slot.task-status-lock-only {
+  width: 16px;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-danger {
+  color: var(--red);
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-attention {
+  color: #e67e22;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-running,
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-stopping {
+  color: var(--green);
+  animation: task-status-spin 1.8s linear infinite;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-stopping {
+  color: #e67e22;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-running.task-status-fresh,
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-stopping.task-status-fresh {
+  animation-duration: 1.1s;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-info {
+  color: #2980b9;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-queued {
+  color: #8d9aa8;
+}
+
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-neutral {
+  color: #8d9aa8;
+}
+
+:where([data-component-owner="status-presentation"]) .task-lock-indicator {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 11px;
+  height: 11px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="status-presentation"]) .task-lock-indicator svg {
+  width: 8px;
+  height: 8px;
+  stroke-width: 3;
+}
+
+:where([data-component-owner="status-presentation"]) .task-lock-external {
+  color: #e67e22;
+}
+
+:where([data-component-owner="status-presentation"]).task-status-lock-only .task-lock-indicator {
+  right: 2px;
+  bottom: 2px;
+  width: 12px;
+  height: 12px;
+}
+
+:where([data-component-owner="status-presentation"]).task-status-slot.task-status-single .task-lock-indicator {
+  right: -4px;
+  bottom: -4px;
+}
+
+@keyframes task-status-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+@keyframes task-status-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  :where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-running,
+:where([data-component-owner="status-presentation"]) .task-status-indicator.task-status-session-stopping {
+    animation: none;
+  }
+}
+

@@ -1,0 +1,317 @@
+/* GlobalSessionList styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="global-session-list"]) .session-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title button {
+  border-radius: 6px;
+  background: var(--ink-row);
+  color: #ecf0f3;
+  font-weight: 700;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 6px;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title button {
+  width: 24px;
+  height: 24px;
+}
+
+:where([data-component-owner="global-session-list"]).session-section {
+  flex: 0 0 var(--sidebar-session-height);
+  min-height: 84px;
+  padding: 14px 12px;
+  overflow: auto;
+}
+
+:where([data-component-owner="global-session-list"]) .session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .section-title button:hover {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="global-session-list"]) .section-title {
+  height: 22px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+:where([data-component-owner="global-session-list"]).session-section {
+  margin: 0 12px;
+  flex: 0 0 var(--sidebar-session-height);
+  min-height: 84px;
+  padding: 14px 0;
+  max-height: none;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row {
+  width: 100%;
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto auto auto;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 8px 8px 20px;
+  border-radius: 6px;
+  background: transparent;
+  color: #c7d0da;
+  font-size: 13px;
+  text-align: left;
+  cursor: default;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.has-task-status-dual {
+  grid-template-columns: 36px minmax(0, 1fr) auto auto auto;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row:hover,
+:where([data-component-owner="global-session-list"]) .clickable-session:hover {
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.current-session {
+  background: var(--ink-deep);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.current-session:hover,
+:where([data-component-owner="global-session-list"]) .session-row.current-session.clickable-session:hover {
+  background: var(--ink);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.current-session strong {
+  color: #fff;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.session-unread:not(.current-session) strong {
+  color: #fff;
+}
+
+:where([data-component-owner="global-session-list"]) .clickable-session {
+  cursor: pointer;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row svg {
+  margin-top: 1px;
+  color: #7fb3d9;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-status-icon {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  overflow: visible;
+  white-space: normal;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.has-task-status-dual .session-status-icon {
+  width: 34px;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-status-icon svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 0;
+  color: inherit;
+}
+
+:where([data-component-owner="global-session-list"]) .external-session svg {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-status-external {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ecf0f3;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-title {
+  min-width: 0;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="global-session-list"]) .muted-row svg {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 20px;
+  margin-top: 0;
+  padding: 0 7px;
+  border-radius: 4px;
+  border: 1px solid var(--ink-row);
+  color: var(--faint-on-dark);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .session-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 20px;
+  margin-top: 0;
+  padding: 0 6px;
+  border: 1px solid var(--amber);
+  border-radius: 4px;
+  background: var(--amber);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+:where([data-component-owner="global-session-list"]) .session-badge.internal {
+  border-color: var(--blue);
+  background: transparent;
+  color: #7fb3d9;
+}
+
+:where([data-component-owner="global-session-list"]) .session-badge.external {
+  background: transparent;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .drag-handle {
+  display: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--faint-on-dark);
+  cursor: grab;
+}
+
+:where([data-component-owner="global-session-list"]) .drag-handle:active {
+  cursor: grabbing;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row .drag-handle svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .session-row:hover .drag-handle {
+  display: grid;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.drag-source {
+  opacity: 0.5;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.drop-before {
+  box-shadow: inset 0 2px 0 0 #2980b9;
+}
+
+:where([data-component-owner="global-session-list"]) .session-row.drop-after {
+  box-shadow: inset 0 -2px 0 0 #2980b9;
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu {
+  margin: -2px 8px 8px 44px;
+  padding: 4px;
+  border: 1px solid var(--ink-row);
+  border-radius: 6px;
+  background: var(--ink-deep);
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu button {
+  width: 100%;
+  min-height: 34px;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: 4px;
+  background: transparent;
+  color: #d3dbe3;
+  text-align: left;
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu button:hover {
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu svg {
+  margin-top: 1px;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu strong,
+:where([data-component-owner="global-session-list"]) .session-resource-menu small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu strong {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="global-session-list"]) .session-resource-menu small {
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 600;
+}

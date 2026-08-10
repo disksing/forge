@@ -1,0 +1,291 @@
+/* ProjectTree styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="project-tree"]) .tree-item {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="project-tree"]) .section-title {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="project-tree"]) .section-title button {
+  border-radius: 6px;
+  background: var(--ink-row);
+  color: #ecf0f3;
+  font-weight: 700;
+}
+
+:where([data-component-owner="project-tree"]).tree-section {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 14px 12px;
+}
+
+:where([data-component-owner="project-tree"]) .section-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  padding: 0 6px;
+}
+
+:where([data-component-owner="project-tree"]) .section-title button {
+  width: 24px;
+  height: 24px;
+}
+
+:where([data-component-owner="project-tree"]) .project-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: #d3dbe3;
+  text-align: left;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item:hover {
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.active {
+  background: var(--ink-deep);
+  color: #fff;
+  font-weight: 700;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .chevron {
+  width: 14px;
+  color: var(--faint);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .name .name-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:where([data-component-owner="project-tree"]) .project-task-summary {
+  min-width: 0;
+  max-width: min(48%, 148px);
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 4px;
+  overflow: hidden;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: normal;
+}
+
+:where([data-component-owner="project-tree"]) .project-task-summary-count,
+:where([data-component-owner="project-tree"]) .project-task-summary-running {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="project-tree"]) .project-task-summary-separator {
+  flex: 0 0 auto;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.active .project-task-summary {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .resource-ref {
+  color: var(--muted);
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .resource-ref {
+  flex-shrink: 0;
+  color: var(--faint-on-dark);
+  font-size: 12px;
+}
+
+:where([data-component-owner="project-tree"]) .task-item {
+  padding-left: 28px;
+  font-size: 13px;
+}
+
+:where([data-component-owner="project-tree"]) .section-title button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .section-title button:hover {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="project-tree"]).tree-section {
+  padding: 14px 12px 8px;
+}
+
+:where([data-component-owner="project-tree"]) .section-title {
+  height: 22px;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item {
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  column-gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: #d3dbe3;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.has-task-status {
+  grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.has-task-status-dual {
+  grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item:hover {
+  background: #33475c;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.active {
+  background: var(--ink-deep);
+  color: #fff;
+  font-weight: 700;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .chevron {
+  width: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .tree-icon {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.active .tree-icon,
+:where([data-component-owner="project-tree"]) .tree-item.active .chevron {
+  color: #fff;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item:hover .task-lock-indicator {
+  border-color: var(--ink-row);
+  background: var(--ink-row);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.active .task-lock-indicator {
+  border-color: var(--ink-deep);
+  background: var(--ink-deep);
+}
+
+:where([data-component-owner="project-tree"]) .task-item {
+  padding-left: 30px;
+  font-size: 13px;
+}
+
+:where([data-component-owner="project-tree"]) .task-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-left: 15px;
+  padding-left: 7px;
+  border-left: 1px solid var(--ink-row);
+}
+
+:where([data-component-owner="project-tree"]) .task-group .task-item {
+  padding-left: 8px;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .drag-handle {
+  display: none;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--faint-on-dark);
+  cursor: grab;
+}
+
+:where([data-component-owner="project-tree"]) .drag-handle:active {
+  cursor: grabbing;
+}
+
+:where([data-component-owner="project-tree"]) .drag-handle svg {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="project-tree"]) .tree-item:hover .drag-handle {
+  display: grid;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.drag-source {
+  opacity: 0.5;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.drop-before {
+  box-shadow: inset 0 2px 0 0 #2980b9;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item.drop-after {
+  box-shadow: inset 0 -2px 0 0 #2980b9;
+}
+
+@media (max-width:420px) {
+  :where([data-component-owner="project-tree"]) .project-task-summary {
+    max-width: 42%;
+    gap: 3px;
+    font-size: 10px;
+  }
+  :where([data-component-owner="project-tree"]) .tree-item .name {
+    gap: 4px;
+  }
+}

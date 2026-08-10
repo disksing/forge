@@ -149,4 +149,26 @@ describe("AppShell", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
     await vi.waitFor(() => expect(onHistoryNavigation).toHaveBeenCalledWith("/w/workspace-b/r/project-b"));
   });
+
+  it("preserves Escape priority between the mobile sidebar and local menus", async () => {
+    const onMobileSidebar = vi.fn();
+    const initial = model({ mobile: { sidebarOpen: true, view: "details", immersive: false }, onMobileSidebar });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLButtonElement>("#workspaceSwitcher")!.click();
+    await tick();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(onMobileSidebar).toHaveBeenCalledWith(false);
+    expect(target.querySelector("#workspaceMenu")).not.toBeNull();
+
+    channel.publish({ ...initial, mobile: { ...initial.mobile, sidebarOpen: false } });
+    await tick();
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await tick();
+    expect(target.querySelector("#workspaceMenu")).toBeNull();
+  });
 });
