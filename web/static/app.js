@@ -6544,7 +6544,7 @@ function renderCreateDialog() {
   const optionalTemplateFields = (selectedTemplate?.fields || []).filter((field) => !field.required);
   const moreOptions = `
             <details class="create-task-more-options" ${dialog.showOptions ? "open" : ""}>
-              <summary>More options${dialog.autorun ? " · AutoRun on" : ""}</summary>
+              <summary>More options${dialog.selfDriving ? " · Self-Driving on" : ""}</summary>
               <div class="create-task-more-options-body">
                 ${optionalTemplateFields.length ? `
                   <div class="template-fields" aria-label="Optional template fields">
