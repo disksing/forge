@@ -5469,7 +5469,7 @@ function Q(e, t) {
 }
 //#endregion
 //#region src/components/AppShell.svelte
-var Ru = /* @__PURE__ */ H("<button type=\"button\" class=\"workspace-menu-row\" role=\"option\"><span class=\"workspace-avatar\"><img alt=\"\" aria-hidden=\"true\"/></span> <span class=\"workspace-menu-main\"><strong> </strong><small> </small></span> <!></button>"), zu = /* @__PURE__ */ H("<div id=\"workspaceMenu\" class=\"workspace-menu\" role=\"listbox\"><div class=\"workspace-menu-title\">Switch Workspace</div> <!> <div class=\"workspace-menu-footer\"><button type=\"button\" id=\"workspaceMenuAdd\"><!><span>Add workspace...</span></button></div></div>"), Bu = /* @__PURE__ */ H("<div class=\"empty-state\"><!><strong>Loading workspace</strong><span>Refreshing navigation...</span></div>"), Vu = /* @__PURE__ */ H("<div class=\"empty-state\" role=\"alert\"><!><strong>Workspace unavailable</strong><span> </span></div>"), Hu = /* @__PURE__ */ H("<div class=\"empty-state\"><!><strong>No workspace yet</strong><span>Add a workspace path to begin.</span></div>"), Uu = /* @__PURE__ */ H("<span><!></span>"), Wu = /* @__PURE__ */ H("<span aria-hidden=\"true\"><!><!></span>"), Gu = /* @__PURE__ */ H("<span class=\"project-task-summary\" aria-hidden=\"true\"><span class=\"project-task-summary-count\"> </span><span class=\"project-task-summary-separator\">·</span><span class=\"project-task-summary-running\"> </span></span>"), Ku = /* @__PURE__ */ H("<button type=\"button\"><span class=\"chevron\"></span> <!> <!><span class=\"name\"><span class=\"name-text\"> </span><span class=\"resource-ref\"> </span></span> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button>"), qu = /* @__PURE__ */ H("<div class=\"task-group\"></div>"), Ju = /* @__PURE__ */ H("<button type=\"button\"><span class=\"chevron\"><!></span> <!> <!> <span class=\"name\"><span class=\"name-text\"> </span><span class=\"resource-ref\"> </span><!></span> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button> <!>", 1), Yu = /* @__PURE__ */ H("<div class=\"session-row muted-row\"><!><div><strong>No active sessions</strong><span>Start one from a task directory.</span></div></div>"), Xu = /* @__PURE__ */ H("<span class=\"session-unread-badge\" aria-label=\"Unread turn completion\">New</span>"), Zu = /* @__PURE__ */ H("<button type=\"button\"><!><span><strong> </strong><small> </small></span></button>"), Qu = /* @__PURE__ */ H("<div class=\"session-resource-menu\"></div>"), $u = /* @__PURE__ */ H("<button type=\"button\"><!> <div class=\"session-title\"><strong> </strong><span> </span></div> <span> </span> <!> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button> <!>", 1), ed = /* @__PURE__ */ H("<header class=\"mobile-toolbar\"><button id=\"mobileMenuButton\" class=\"mobile-icon-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button> <div class=\"mobile-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"mobileDetailsButton\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"mobileChatButton\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div> <button id=\"mobileImmersiveButton\" class=\"mobile-icon-button mobile-immersive-button\" type=\"button\" aria-label=\"Toggle immersive chat\"><!></button></header> <button id=\"mobileSidebarBackdrop\" class=\"mobile-sidebar-backdrop\" type=\"button\" aria-label=\"Close navigation\"></button> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div></div> <section class=\"workspace-switcher\"><div class=\"workspace-select-row\"><button id=\"workspaceSwitcher\" class=\"workspace-switcher-button\" type=\"button\" aria-haspopup=\"listbox\"><span class=\"workspace-avatar\" id=\"workspaceAvatar\"><img alt=\"\" aria-hidden=\"true\"/></span> <span class=\"workspace-switcher-name\" id=\"workspaceSwitcherName\"> </span> <!></button> <!></div></section> <section class=\"tree-section\"><div class=\"section-title\"><span>Projects</span><button id=\"newProjectButton\" type=\"button\" title=\"New project\"><!></button></div> <nav id=\"projectTree\" class=\"project-tree\"><!></nav></section> <div id=\"sessionResize\" class=\"resize-handle horizontal-resize sidebar-session-resize\" role=\"separator\" aria-orientation=\"horizontal\" aria-label=\"Resize sessions panel\"></div> <section class=\"session-section\"><div class=\"section-title\"><span>Sessions</span></div> <div id=\"sessionList\" class=\"session-list\"><!></div></section> <div class=\"sidebar-footer\"><button id=\"systemSettingsButton\" type=\"button\"><!><span>Settings</span></button></div></aside> <div id=\"sidebarResize\" class=\"resize-handle sidebar-resize\" role=\"separator\" aria-orientation=\"vertical\" aria-label=\"Resize sidebar\"></div> <main class=\"workspace-panel\"><section id=\"detailsPanel\" class=\"details-panel\"></section> <div id=\"detailsResize\" class=\"resize-handle details-resize\" role=\"separator\" aria-orientation=\"vertical\" aria-label=\"Resize chat panel\"></div> <aside id=\"agentPanel\" class=\"agent-panel\"><div id=\"agentControls\" class=\"agent-actions\"></div><div id=\"selfDrivingBarWrap\" class=\"self-driving-bar-wrap\"></div><div id=\"agentSessionsWrap\" class=\"agent-sessions\"></div><div class=\"tty-panel\"><div id=\"ttyLog\" class=\"tty-log\"></div><div id=\"ttyComposer\" class=\"tty-composer\"></div></div></aside></main>", 1);
+var Ru = /* @__PURE__ */ H("<button type=\"button\" class=\"workspace-menu-row\" role=\"option\"><span class=\"workspace-avatar\"><img alt=\"\" aria-hidden=\"true\"/></span> <span class=\"workspace-menu-main\"><strong> </strong><small> </small></span> <!></button>"), zu = /* @__PURE__ */ H("<div id=\"workspaceMenu\" class=\"workspace-menu\" role=\"listbox\"><div class=\"workspace-menu-title\">Switch Workspace</div> <!> <div class=\"workspace-menu-footer\"><button type=\"button\" id=\"workspaceMenuAdd\"><!><span>Add workspace...</span></button></div></div>"), Bu = /* @__PURE__ */ H("<div class=\"empty-state\"><!><strong>Loading workspace</strong><span>Refreshing navigation...</span></div>"), Vu = /* @__PURE__ */ H("<div class=\"empty-state\" role=\"alert\"><!><strong>Workspace unavailable</strong><span> </span></div>"), Hu = /* @__PURE__ */ H("<div class=\"empty-state\"><!><strong>No workspace yet</strong><span>Add a workspace path to begin.</span></div>"), Uu = /* @__PURE__ */ H("<span><!></span>"), Wu = /* @__PURE__ */ H("<span aria-hidden=\"true\"><!><!></span>"), Gu = /* @__PURE__ */ H("<span class=\"project-task-summary\" aria-hidden=\"true\"><span class=\"project-task-summary-count\"> </span><span class=\"project-task-summary-separator\">·</span><span class=\"project-task-summary-running\"> </span></span>"), Ku = /* @__PURE__ */ H("<button type=\"button\"><span class=\"chevron\"></span> <!> <!><span class=\"name\"><span class=\"name-text\"> </span><span class=\"resource-ref\"> </span></span> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button>"), qu = /* @__PURE__ */ H("<div class=\"task-group\"></div>"), Ju = /* @__PURE__ */ H("<button type=\"button\"><span class=\"chevron\"><!></span> <!> <!> <span class=\"name\"><span class=\"name-text\"> </span><span class=\"resource-ref\"> </span><!></span> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button> <!>", 1), Yu = /* @__PURE__ */ H("<div class=\"session-row muted-row\"><!><div><strong>No active sessions</strong><span>Start one from a task directory.</span></div></div>"), Xu = /* @__PURE__ */ H("<span class=\"session-unread-badge\" aria-label=\"Unread turn completion\">New</span>"), Zu = /* @__PURE__ */ H("<button type=\"button\"><!><span><strong> </strong><small> </small></span></button>"), Qu = /* @__PURE__ */ H("<div class=\"session-resource-menu\"></div>"), $u = /* @__PURE__ */ H("<button type=\"button\"><!> <div class=\"session-title\"><strong> </strong><span> </span></div> <span> </span> <!> <span class=\"drag-handle\" draggable=\"true\" title=\"Drag to reorder\"><!></span></button> <!>", 1), ed = /* @__PURE__ */ H("<header class=\"mobile-toolbar\"><button id=\"mobileMenuButton\" class=\"mobile-icon-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button> <div class=\"mobile-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"mobileDetailsButton\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"mobileChatButton\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div> <button id=\"mobileImmersiveButton\" class=\"mobile-icon-button mobile-immersive-button\" type=\"button\" aria-label=\"Toggle immersive chat\"><!></button></header> <button id=\"mobileSidebarBackdrop\" class=\"mobile-sidebar-backdrop\" type=\"button\" aria-label=\"Close navigation\"></button> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <section class=\"workspace-switcher\"><div class=\"workspace-select-row\"><button id=\"workspaceSwitcher\" class=\"workspace-switcher-button\" type=\"button\" aria-haspopup=\"listbox\"><span class=\"workspace-avatar\" id=\"workspaceAvatar\"><img alt=\"\" aria-hidden=\"true\"/></span> <span class=\"workspace-switcher-name\" id=\"workspaceSwitcherName\"> </span> <!></button> <!></div></section> <section class=\"tree-section\"><div class=\"section-title\"><span>Projects</span><button id=\"newProjectButton\" type=\"button\" title=\"New project\"><!></button></div> <nav id=\"projectTree\" class=\"project-tree\"><!></nav></section> <div id=\"sessionResize\" class=\"resize-handle horizontal-resize sidebar-session-resize\" role=\"separator\" aria-orientation=\"horizontal\" aria-label=\"Resize sessions panel\"></div> <section class=\"session-section\"><div class=\"section-title\"><span>Sessions</span></div> <div id=\"sessionList\" class=\"session-list\"><!></div></section></aside> <div id=\"sidebarResize\" class=\"resize-handle sidebar-resize\" role=\"separator\" aria-orientation=\"vertical\" aria-label=\"Resize sidebar\"></div> <main class=\"workspace-panel\"><section id=\"detailsPanel\" class=\"details-panel\"></section> <div id=\"detailsResize\" class=\"resize-handle details-resize\" role=\"separator\" aria-orientation=\"vertical\" aria-label=\"Resize chat panel\"></div> <aside id=\"agentPanel\" class=\"agent-panel\"><div id=\"agentControls\" class=\"agent-actions\"></div><div id=\"selfDrivingBarWrap\" class=\"self-driving-bar-wrap\"></div><div id=\"agentSessionsWrap\" class=\"agent-sessions\"></div><div class=\"tty-panel\"><div id=\"ttyLog\" class=\"tty-log\"></div><div id=\"ttyComposer\" class=\"tty-composer\"></div></div></aside></main>", 1);
 function td(e, t) {
 	Ue(t, !0);
 	let n = /* @__PURE__ */ N(en(t.channel.current())), r = /* @__PURE__ */ N(!1), i = /* @__PURE__ */ N(""), a = /* @__PURE__ */ N(""), o = /* @__PURE__ */ N(null), s = /* @__PURE__ */ N(null), c = null, l = /* @__PURE__ */ N(0), u = /* @__PURE__ */ j(() => B(n).workspaces.find((e) => e.id === B(n).activeWorkspaceId) ?? null);
@@ -5636,23 +5636,25 @@ function td(e, t) {
 	}
 	k(ne), k(w);
 	var ie = I(w, 2), ae = I(ie, 2), oe = F(ae), se = I(F(oe)), ce = I(F(se)), le = F(ce, !0);
-	k(ce), k(se), k(oe);
-	var ue = I(oe, 2), de = F(ue), fe = F(de), pe = F(fe), me = F(pe);
-	k(pe);
-	var he = I(pe, 2), ge = F(he, !0);
-	k(he);
-	var _e = I(he, 2);
+	k(ce), k(se);
+	var ue = I(se);
+	Q(F(ue), { name: "settings" }), k(ue), k(oe);
+	var de = I(oe, 2), fe = F(de), pe = F(fe), me = F(pe), he = F(me);
+	k(me);
+	var ge = I(me, 2), _e = F(ge, !0);
+	k(ge);
+	var ve = I(ge, 2);
 	{
 		let e = /* @__PURE__ */ j(() => B(a) ? "loader-circle" : "chevrons-up-down");
-		Q(_e, {
+		Q(ve, {
 			get name() {
 				return B(e);
 			},
 			className: "select-icon"
 		});
 	}
-	k(fe);
-	var ve = I(fe, 2), ye = (e) => {
+	k(pe);
+	var ye = I(pe, 2), be = (e) => {
 		var t = zu(), i = I(F(t), 2);
 		K(i, 17, () => B(n).workspaces, (e) => e.id, (e, t) => {
 			var r = Ru(), i = F(r), o = F(i);
@@ -5678,18 +5680,18 @@ function td(e, t) {
 			P(r, !1), B(n).onAddWorkspace();
 		}), U(e, t);
 	};
-	G(ve, (e) => {
-		B(r) && e(ye);
-	}), k(de), k(ue);
-	var be = I(ue, 2), xe = F(be), Se = I(F(xe));
-	Q(F(Se), { name: "plus" }), k(Se), k(xe);
-	var Ce = I(xe, 2), we = F(Ce), Te = (e) => {
+	G(ye, (e) => {
+		B(r) && e(be);
+	}), k(fe), k(de);
+	var xe = I(de, 2), Se = F(xe), Ce = I(F(Se));
+	Q(F(Ce), { name: "plus" }), k(Ce), k(Se);
+	var we = I(Se, 2), Te = F(we), Ee = (e) => {
 		var t = Bu();
 		Q(F(t), {
 			name: "loader-circle",
 			className: "empty-state-icon"
 		}), A(2), k(t), U(e, t);
-	}, Ee = (e) => {
+	}, De = (e) => {
 		var t = Vu(), r = F(t);
 		Q(r, {
 			name: "circle-alert",
@@ -5697,13 +5699,13 @@ function td(e, t) {
 		});
 		var i = I(r, 2), a = F(i, !0);
 		k(i), k(t), L(() => W(a, B(n).error)), U(e, t);
-	}, De = (e) => {
+	}, Oe = (e) => {
 		var t = Hu();
 		Q(F(t), {
 			name: "folder-search",
 			className: "empty-state-icon"
 		}), A(2), k(t), U(e, t);
-	}, Oe = (e) => {
+	}, ke = (e) => {
 		var t = Ar();
 		K(fn(t), 17, () => B(n).projects, (e) => e.id, (e, t) => {
 			var n = Ju(), r = fn(n), i = F(r), a = F(i), s = (e) => {
@@ -5844,13 +5846,13 @@ function td(e, t) {
 			})), xr("dragend", T, _), U(e, n);
 		}), U(e, t);
 	};
-	G(we, (e) => {
-		B(n).loading ? e(Te) : B(n).error ? e(Ee, 1) : B(n).projects.length === 0 ? e(De, 2) : e(Oe, -1);
-	}), k(Ce), k(be);
-	var ke = I(be, 2), Ae = I(ke, 2), je = I(F(Ae), 2), Me = F(je), D = (e) => {
+	G(Te, (e) => {
+		B(n).loading ? e(Ee) : B(n).error ? e(De, 1) : B(n).projects.length === 0 ? e(Oe, 2) : e(ke, -1);
+	}), k(we), k(xe);
+	var Ae = I(xe, 2), je = I(Ae, 2), Me = I(F(je), 2), D = F(Me), Ne = (e) => {
 		var t = Yu();
 		Q(F(t), { name: "message-square" }), A(), k(t), U(e, t);
-	}, Ne = (e) => {
+	}, O = (e) => {
 		var t = Ar();
 		K(fn(t), 17, () => B(n).sessions, (e) => e.id, (e, t) => {
 			var n = $u(), r = fn(n), a = F(r), s = (e) => {
@@ -5927,21 +5929,19 @@ function td(e, t) {
 			})), xr("dragend", T, _), U(e, n);
 		}), U(e, t);
 	};
-	G(Me, (e) => {
-		B(n).sessions.length === 0 ? e(D) : e(Ne, -1);
-	}), k(je), k(Ae);
-	var O = I(Ae, 2), Pe = F(O);
-	Q(F(Pe), { name: "settings" }), A(), k(Pe), k(O), k(ae);
-	var Fe = I(ae, 2), Ie = I(Fe, 2), Le = I(F(Ie), 2);
-	A(2), k(Ie), L(() => {
-		J(T, "aria-expanded", B(n).mobile.sidebarOpen), J(ee, "aria-selected", B(n).mobile.view === "details"), J(te, "aria-selected", B(n).mobile.view === "chat"), J(ne, "aria-pressed", B(n).mobile.immersive), W(le, B(n).version), J(fe, "aria-expanded", B(r)), J(me, "src", B(u)?.iconSrc || "/favicon.svg"), W(ge, B(u)?.name || "Workspace"), J(Ce, "data-navigation-identity", B(n).identity);
-	}), V("click", T, () => B(n).onMobileSidebar(!B(n).mobile.sidebarOpen)), V("click", ee, () => B(n).onMobileView("details")), V("click", te, () => B(n).onMobileView("chat")), V("click", ne, () => B(n).onMobileImmersive(!B(n).mobile.immersive)), V("click", ie, () => B(n).onMobileSidebar(!1)), V("click", fe, (e) => {
-		e.stopPropagation(), P(r, !B(r));
-	}), V("click", Se, function(...e) {
-		B(n).onCreateProject?.apply(this, e);
-	}), V("pointerdown", ke, (e) => S(e, "sidebarSessionHeight")), V("click", Pe, () => {
+	G(D, (e) => {
+		B(n).sessions.length === 0 ? e(Ne) : e(O, -1);
+	}), k(Me), k(je), k(ae);
+	var Pe = I(ae, 2), Fe = I(Pe, 2), Ie = I(F(Fe), 2);
+	A(2), k(Fe), L(() => {
+		J(T, "aria-expanded", B(n).mobile.sidebarOpen), J(ee, "aria-selected", B(n).mobile.view === "details"), J(te, "aria-selected", B(n).mobile.view === "chat"), J(ne, "aria-pressed", B(n).mobile.immersive), W(le, B(n).version), J(pe, "aria-expanded", B(r)), J(he, "src", B(u)?.iconSrc || "/favicon.svg"), W(_e, B(u)?.name || "Workspace"), J(we, "data-navigation-identity", B(n).identity);
+	}), V("click", T, () => B(n).onMobileSidebar(!B(n).mobile.sidebarOpen)), V("click", ee, () => B(n).onMobileView("details")), V("click", te, () => B(n).onMobileView("chat")), V("click", ne, () => B(n).onMobileImmersive(!B(n).mobile.immersive)), V("click", ie, () => B(n).onMobileSidebar(!1)), V("click", ue, () => {
 		B(n).onMobileSidebar(!1), B(n).onOpenSettings();
-	}), V("pointerdown", Fe, (e) => S(e, "sidebarWidth")), V("pointerdown", Le, (e) => S(e, "chatWidth")), U(e, C), We();
+	}), V("click", pe, (e) => {
+		e.stopPropagation(), P(r, !B(r));
+	}), V("click", Ce, function(...e) {
+		B(n).onCreateProject?.apply(this, e);
+	}), V("pointerdown", Ae, (e) => S(e, "sidebarSessionHeight")), V("pointerdown", Pe, (e) => S(e, "sidebarWidth")), V("pointerdown", Ie, (e) => S(e, "chatWidth")), U(e, C), We();
 }
 Sr(["click", "pointerdown"]);
 //#endregion

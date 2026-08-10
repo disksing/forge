@@ -41,6 +41,20 @@
   color: #d3dbe3;
 }
 
+/* Sidebar scrollbars: translucent white to sit on the dark slate background. */
+:where([data-component-owner="app-shell"]) .sidebar,
+:where([data-component-owner="app-shell"]) .sidebar * {
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+:where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+:where([data-component-owner="app-shell"]) .sidebar ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
 :where([data-component-owner="app-shell"]) .resize-handle {
   position: relative;
   z-index: 2;
@@ -104,12 +118,34 @@ body.resizing-y {
   height: 2px;
 }
 
+/* Sidebar session divider: transparent track with an always-visible center
+   line that stretches to the full sidebar width on hover/drag. */
+:where([data-component-owner="app-shell"]) .resize-handle.sidebar-session-resize,
+:where([data-component-owner="app-shell"]) .resize-handle.sidebar-session-resize:hover,
+:where([data-component-owner="app-shell"]) .resize-handle.sidebar-session-resize.dragging {
+  background: transparent;
+  border-color: transparent;
+}
+
+:where([data-component-owner="app-shell"]) .sidebar-session-resize::after {
+  width: 42px;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.22);
+  transition: width 150ms ease, background-color 150ms ease;
+}
+
+:where([data-component-owner="app-shell"]) .sidebar-session-resize:hover::after,
+:where([data-component-owner="app-shell"]) .sidebar-session-resize.dragging::after {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.38);
+}
+
 :where([data-component-owner="app-shell"]) .brand-band {
   height: 54px;
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 16px;
+  padding: 0 10px 0 16px;
   background: var(--ink-deep);
 }
 
@@ -126,6 +162,8 @@ body.resizing-y {
 }
 
 :where([data-component-owner="app-shell"]) .brand-copy {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -143,9 +181,28 @@ body.resizing-y {
   text-transform: uppercase;
 }
 
+:where([data-component-owner="app-shell"]) .brand-settings {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="app-shell"]) .brand-settings:hover {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="app-shell"]) .brand-settings svg {
+  width: 17px;
+  height: 17px;
+}
+
 :where([data-component-owner="app-shell"]) .workspace-switcher {
   padding: 12px;
-  border-bottom: 1px solid var(--ink-row);
 }
 
 :where([data-component-owner="app-shell"]) .section-title {
@@ -303,7 +360,6 @@ body.resizing-y {
 }
 
 :where([data-component-owner="app-shell"]) .session-section {
-  border-top: 1px solid var(--ink-row);
   flex: 0 0 var(--sidebar-session-height);
   min-height: 84px;
   padding: 14px 12px;
@@ -314,27 +370,6 @@ body.resizing-y {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer {
-  border-top: 1px solid var(--ink-row);
-  padding: 12px;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer button {
-  min-height: 32px;
-  border-radius: 6px;
-  background: var(--accent);
-  color: #fff;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer button {
-  width: 100%;
-  background: transparent;
-  color: var(--faint-on-dark);
 }
 
 :where([data-component-owner="app-shell"]) .workspace-panel {
@@ -401,7 +436,7 @@ body.resizing-y {
 
 :where([data-component-owner="app-shell"]) .workspace-switcher {
   position: relative;
-  padding: 0 0 4px;
+  padding: 10px 12px 12px;
   background: var(--ink);
 }
 
@@ -411,12 +446,14 @@ body.resizing-y {
 
 :where([data-component-owner="app-shell"]) .workspace-switcher-button {
   width: 100%;
-  height: 48px;
+  height: 46px;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0 16px;
-  background: transparent;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: var(--ink-deep);
   color: #ecf0f3;
   font-size: 14px;
   font-weight: 600;
@@ -1036,27 +1073,6 @@ body.resizing-y {
   color: var(--faint-on-dark);
   font-size: 11px;
   font-weight: 600;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer {
-  padding: 12px;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer button {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--faint-on-dark);
-  font-weight: 700;
-}
-
-:where([data-component-owner="app-shell"]) .sidebar-footer button:hover {
-  background: var(--ink-deep);
-  color: #fff;
 }
 
 :where([data-component-owner="app-shell"]) .workspace-panel {

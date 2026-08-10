@@ -288,7 +288,7 @@
 </header>
 <button id="mobileSidebarBackdrop" class="mobile-sidebar-backdrop" type="button" aria-label="Close navigation" onclick={() => model.onMobileSidebar(false)}></button>
 <aside id="mobileSidebar" class="sidebar">
-  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div></div>
+  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div><button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
   <section class="workspace-switcher">
     <div class="workspace-select-row">
       <button id="workspaceSwitcher" class="workspace-switcher-button" type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onclick={(event) => { event.stopPropagation(); workspaceMenuOpen = !workspaceMenuOpen; }}>
@@ -374,7 +374,6 @@
       {/if}
     </div>
   </section>
-  <div class="sidebar-footer"><button id="systemSettingsButton" type="button" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /><span>Settings</span></button></div>
 </aside>
 <div id="sidebarResize" class="resize-handle sidebar-resize" role="separator" aria-orientation="vertical" aria-label="Resize sidebar" onpointerdown={(event) => beginResize(event, "sidebarWidth")}></div>
 <main class="workspace-panel">
