@@ -218,6 +218,114 @@ export interface ComposerModel {
   onIconsChanged: () => void;
 }
 
+export interface AgentRun {
+  id: string;
+  workspaceId?: string;
+  resourceId?: string;
+  agentHubSessionId?: string;
+  sourceExternalId?: string;
+  agentHubAgentName?: string;
+  title?: string;
+  status?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  schedulerTurn?: boolean;
+  schedulerTurnId?: string;
+  schedulerTurnSequence?: number;
+  selfDrivingRevision?: number;
+}
+
+export interface AgentEvent {
+  id: number;
+  type: string;
+  time?: string;
+  startTime?: string;
+  sessionId?: string;
+  turnId?: string;
+  data?: Record<string, unknown> & { text?: string; append?: boolean };
+}
+
+export interface AgentNotice {
+  source?: string;
+  type?: string;
+  data?: Record<string, unknown> & {
+    level?: string;
+    method?: string;
+    kind?: string;
+    lifecycle?: string;
+    runId?: string;
+    resourceId?: string;
+    selfDrivingRevision?: number;
+    schedulerTurnId?: string;
+    schedulerTurnSequence?: number;
+    text?: string;
+  };
+}
+
+export interface TimelineItem {
+  kind: string;
+  key?: string | number;
+  role?: string;
+  text?: string;
+  time?: string;
+  startTime?: string;
+  active?: boolean;
+  steer?: boolean;
+  sender?: { name?: string; id?: string; sessionId?: string };
+  tone?: string;
+  type?: string;
+  preview?: string;
+  calls?: Array<Record<string, unknown> & { key?: string | number; callId?: string; name?: string; summary?: string; status?: string; output?: string; error?: string; method?: string; rawPreview?: string }>;
+  approvalId?: string;
+  title?: string;
+  detail?: string;
+  question?: string;
+  options?: Array<{ optionId: string; name?: string; kind?: string }>;
+  status?: string;
+  decision?: string;
+  reply?: string;
+}
+
+export interface ChatContextSnapshot {
+  identity: string;
+  workspaceId: string;
+  runId: string;
+  events: AgentEvent[];
+  notices: AgentNotice[];
+  hasMoreBefore: boolean;
+  loading: boolean;
+  loadingOlder: boolean;
+  loaded: boolean;
+  error: string;
+}
+
+export interface SessionSwitcherModel {
+  identity: string;
+  workspaceId: string;
+  resourceId: string;
+  activeRunId: string;
+  runs: AgentRun[];
+  switchingRunId: string;
+  onSelect: (runId: string) => Promise<void>;
+  onToast: (message: string) => void;
+  onIconsChanged: () => void;
+}
+
+export interface EventTimelineModel {
+  identity: string;
+  workspaceId: string;
+  activeRunId: string;
+  activeRun: AgentRun | null;
+  runCount: number;
+  agentName: string;
+  project: (events: AgentEvent[]) => TimelineItem[];
+  onEvent: (workspaceId: string, runId: string, event: AgentEvent) => void;
+  onNotice: (workspaceId: string, runId: string, notice: AgentNotice) => void;
+  onApproval: (runId: string, approvalId: string, reply: { decision?: string; optionId?: string; text?: string }) => Promise<void>;
+  onToast: (message: string) => void;
+  onIconsChanged: () => void;
+}
+
 export interface ResourceFileModel {
   name: string;
   path?: string;
@@ -321,6 +429,8 @@ export interface ForgeSvelteBridge {
   renderSelfDrivingDialog(model: SelfDrivingDialogModel): void;
   renderUploadDialog(model: UploadDialogModel): void;
   renderComposer(model: ComposerModel): void;
+  renderSessionSwitcher(model: SessionSwitcherModel): void;
+  renderEventTimeline(model: EventTimelineModel): void;
   renderDetailPanel(model: DetailPanelModel): void;
   unmount(name: string): Promise<void>;
   unmountAll(): Promise<void>;
@@ -332,5 +442,7 @@ export interface IslandChannels {
   selfDriving: IslandChannel<SelfDrivingDialogModel>;
   upload: IslandChannel<UploadDialogModel>;
   composer: IslandChannel<ComposerModel>;
+  sessions: IslandChannel<SessionSwitcherModel>;
+  timeline: IslandChannel<EventTimelineModel>;
   detail: IslandChannel<DetailPanelModel>;
 }

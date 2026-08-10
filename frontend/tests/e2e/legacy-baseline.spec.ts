@@ -98,7 +98,7 @@ function detail(id: string) {
 
 function historyEvents(runId: string) {
   return Array.from({ length: 32 }, (_, index) => ({
-    id: index + 1,
+    id: index + 33,
     time: `2026-08-10T12:${String(index).padStart(2, "0")}:00Z`,
     type: index % 2 === 0 ? "message.input" : "message.assistant.delta",
     sessionId: runId,
@@ -234,7 +234,18 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
     }
     const eventsMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/events$/);
     if (eventsMatch) {
-      return json(route, { events: historyEvents(eventsMatch[1]), page: { hasMoreBefore: false } });
+      if (url.searchParams.has("before")) {
+        return json(route, {
+          events: [
+            { id: 1, time: "2026-08-10T10:00:00Z", type: "message.input", sessionId: eventsMatch[1], turnId: "turn-older", data: { text: `${eventsMatch[1]} older history`, role: "user", sender: { name: "Test User" } } },
+            { id: 32, time: "2026-08-10T10:01:00Z", type: "message.assistant.delta", sessionId: eventsMatch[1], turnId: "turn-older", data: { text: `${eventsMatch[1]} older reply` } },
+            { id: 33, time: "2026-08-10T10:02:00Z", type: "message.input", sessionId: eventsMatch[1], turnId: "turn-overlap", data: { text: `${eventsMatch[1]} baseline message 1`, role: "user", sender: { name: "Test User" } } },
+          ],
+          page: { hasMoreBefore: false },
+        });
+      }
+      if (eventsMatch[1] === "run-2") await new Promise((resolve) => setTimeout(resolve, 300));
+      return json(route, { events: historyEvents(eventsMatch[1]), page: { hasMoreBefore: true } });
     }
     const streamMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/stream$/);
     if (streamMatch) {
@@ -368,14 +379,27 @@ test("switches sessions, sends input, receives SSE, and preserves active reading
 
   await expect(page.locator(".agent-current-run strong")).toHaveText("Primary session");
   await expect(page.locator("#ttyLog")).toContainText("SSE update for run-1");
+  const historyAnchor = page.locator('[data-timeline-key="message:33"]');
+  await expect(historyAnchor).toBeVisible();
+  await historyAnchor.evaluate((node) => node.setAttribute("data-history-anchor", "stable"));
+  await page.locator("#loadOlderAgentEventsButton, .load-older-events").click();
+  await expect(page.locator("#ttyLog")).toContainText("run-1 older history");
+  await expect(historyAnchor).toHaveAttribute("data-history-anchor", "stable");
+  await expect(page.locator('[data-timeline-key="message:33"]')).toHaveCount(1);
+  const input = page.locator("#ttyInput");
+  await input.fill("draft for run one");
   await page.locator(".agent-current-run").click();
   await page.locator('[data-agent-run="run-2"]').last().click();
   await expect(page.locator(".agent-current-run strong")).toHaveText("Secondary session");
+  await expect(page.locator("#ttyLog")).not.toContainText("run-1 baseline message");
+  await expect(page.locator("#ttyLog")).toContainText("run-2 baseline message");
+  await expect(input).toHaveValue("");
+  await input.fill("draft for run two");
   await page.locator(".agent-current-run").click();
   await page.locator('[data-agent-run="run-1"]').last().click();
   await expect(page.locator(".agent-current-run strong")).toHaveText("Primary session");
+  await expect(input).toHaveValue("draft for run one");
 
-  const input = page.locator("#ttyInput");
   await input.fill("Preserve this draft until accepted");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);

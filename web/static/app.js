@@ -155,11 +155,12 @@ const state = {
     eventsHasMore: false,
     historyBeforeId: 0,
     loadingOlder: false,
-    sendingInput: false,
+    sendingInputRunIds: new Set(),
     turnStopping: false,
     turnStoppingRunId: "",
     sessionStopping: false,
     sessionStoppingRunId: "",
+    switchingRunId: "",
     toolGroupOpen: new Map(),
     approvalDrafts: new Map(),
     selfDrivingFinishNoticeWatermarks: new Map(),
@@ -250,6 +251,8 @@ function renderMigratedSvelteIslands() {
   renderSelfDrivingConfigDialog();
   renderAgentUploadDialog();
   renderTTYComposer();
+  renderAgent();
+  renderTTY();
   renderSettingsModal();
 }
 
@@ -967,7 +970,6 @@ async function navigateToNotification(record) {
       const run = state.agent.runs.find((item) => item.id === record.runId);
       if (run) {
         state.agent.activeRunId = run.id;
-        await loadCanonicalAgentEvents();
         renderAgent();
         renderTTY();
         bindAgentEvents();
@@ -1588,10 +1590,8 @@ async function autoRefresh() {
     if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
     if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
     if (reconcileActiveAgentRun(runs)) {
-      await loadCanonicalAgentEvents({ projectionVersion: agentRunProjectionVersion });
       if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) ||
           agentRunProjectionVersion !== state.agentRunProjectionVersion) return;
-      connectAgentStream();
       changed = true;
     }
     if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
@@ -3985,16 +3985,9 @@ async function loadAgentRuns() {
   observeCompletionProjections(state.agent.runs);
   reconcileActiveAgentRun(state.agent.runs);
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
-  if (state.agent.activeRunId) {
-    await loadCanonicalAgentEvents({ projectionVersion });
-  } else {
-    state.agent.events = [];
-    state.agent.notices = [];
-    state.agent.historyBeforeId = 0;
-  }
+  if (!state.agent.activeRunId) state.agent.historyBeforeId = 0;
   if (projectionVersion !== state.agentRunProjectionVersion) return false;
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
-  connectAgentStream();
   return true;
 }
 
@@ -4009,9 +4002,7 @@ async function refreshAgentRunMetadata(options = {}) {
   observeCompletionProjections(runs);
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
   if (reconcileActiveAgentRun(runs)) {
-    await loadCanonicalAgentEvents({ projectionVersion });
     if (projectionVersion !== state.agentRunProjectionVersion || state.activeWorkspaceId !== workspaceId) return false;
-    connectAgentStream();
   }
   if (options.refreshSelfDrivingProjection && state.agent.activeRunId) {
     const activeRun = currentAgentRun();
@@ -4426,6 +4417,28 @@ function appendForgeNotice(notice) {
   }
 }
 
+function handleSvelteAgentEvent(workspaceId, runId, event) {
+  if (workspaceId !== state.activeWorkspaceId || runId !== state.agent.activeRunId || !event) return;
+  const run = state.agent.runs.find((candidate) => candidate.id === runId) || null;
+  if (["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type)) {
+    observeCompletionEvent(event, run);
+  }
+  if (["turn.completed", "turn.failed", "turn.cancelled", "session.state", "approval.requested", "approval.resolved"].includes(event.type)) {
+    refreshAgentRunMetadata({
+      refreshSelfDrivingProjection: ["turn.completed", "turn.failed", "turn.cancelled", "session.state"].includes(event.type),
+    }).then(renderAll).catch((err) => console.warn("agent refresh failed", err));
+  }
+}
+
+function handleSvelteForgeNotice(workspaceId, runId, notice) {
+  if (workspaceId !== state.activeWorkspaceId || runId !== state.agent.activeRunId) return;
+  if (notice?.data?.kind === SELF_DRIVING_FINISH_NOTICE_KIND) {
+    refreshAgentRunMetadata({ refreshSelfDrivingProjection: true })
+      .then(renderAll)
+      .catch((err) => console.warn("Self-Driving notice projection refresh failed", err));
+  }
+}
+
 function isKnownCanonicalAgentEvent(event) {
   if (!event?.id) return false;
   if (state.agent.events.some((existing) => existing.id === event.id)) return true;
@@ -4457,35 +4470,38 @@ function mergeCanonicalAgentEvents(events) {
   return [...byID.values()].sort((left, right) => Number(left.id) - Number(right.id));
 }
 
-function projectAgentTimeline() {
+function projectAgentEvents(events) {
   if (!window.AgentHubEventTimeline?.buildTimeline) {
     throw new Error("AgentHub Event Timeline library is unavailable");
   }
-  const visibleEvents = state.agent.events.filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
+  const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
   return window.AgentHubEventTimeline.buildTimeline(visibleEvents);
+}
+
+function projectAgentTimeline() {
+  return projectAgentEvents(state.agent.events);
 }
 
 function renderAgent() {
   if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(state.agent.runs);
   const controls = $("agentControls");
   const barWrap = $("selfDrivingBarWrap");
-  const wrap = $("agentSessionsWrap");
   const activeRun = currentAgentRun();
-  const visibleRun = activeRun || state.agent.runs[0] || null;
   controls.hidden = true;
   controls.innerHTML = "";
   const detail = state.details[state.selectedId];
   barWrap.innerHTML = selfDrivingTopBar(detail);
-  wrap.innerHTML = `
-    <div id="agentSessions" class="agent-session-switcher">
-      ${visibleRun ? agentCurrentSessionRow(visibleRun) : `<div class="session-pill"><strong>No sessions yet</strong><span>Start an agent session from the selected task.</span></div>`}
-      ${state.agent.historyOpen && state.agent.runs.length ? `
-        <div class="agent-session-menu">
-          ${state.agent.runs.map(agentSessionMenuRow).join("")}
-        </div>
-      ` : ""}
-    </div>
-  `;
+  window.ForgeSvelteIslands?.renderSessionSwitcher({
+    identity: `${state.activeWorkspaceId}:${selectedAgentResourceId()}`,
+    workspaceId: state.activeWorkspaceId,
+    resourceId: selectedAgentResourceId(),
+    activeRunId: activeRun?.id || "",
+    runs: state.agent.runs,
+    switchingRunId: state.agent.switchingRunId || "",
+    onSelect: switchAgentRun,
+    onToast: toast,
+    onIconsChanged: refreshIcons,
+  });
 }
 
 function selfDrivingStatusReason(run, logs = []) {
@@ -4656,46 +4672,23 @@ function ttyLogHasActiveSelection(log) {
 }
 
 function renderTTY(options = {}) {
-  const log = $("ttyLog");
-  const previousRunId = log.dataset.agentRunId || "";
-  const nextRunId = state.agent.activeRunId || "";
-  const previousScrollTop = log.scrollTop;
-  const explicitStickToBottom = typeof options.stickToBottom === "boolean";
-  const stickToBottom = explicitStickToBottom
-    ? options.stickToBottom
-    : previousRunId !== nextRunId || isTTYNearBottom(log);
   renderTTYComposer();
-  // Re-rendering replaces the log DOM and destroys any in-progress text
-  // selection. Defer the render while the user is selecting text in the
-  // current session log; the selectionchange listener flushes it later.
-  if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {
-    state.agent.renderDeferredForSelection = true;
-    return;
-  }
-  state.agent.renderDeferredForSelection = false;
-  if (state.agent.activeRunId) {
-    const items = projectAgentTimeline();
-    const notices = state.agent.notices.map(forgeNoticeRow).join("");
-    const olderButton = state.agent.eventsHasMore
-      ? `<button type="button" id="loadOlderAgentEventsButton" class="load-older-events">${state.agent.loadingOlder ? icon("loader-circle") : icon("chevrons-up")}<span>${state.agent.loadingOlder ? "Loading..." : "Load older messages"}</span></button>`
-      : "";
-    log.innerHTML = items.length || notices || olderButton
-      ? `${olderButton}${items.map((item, index) => agentTimelineItemRow(item, index, items)).join("")}${notices}`
-      : `<div class="tty-empty">${icon("loader-circle")}<strong>Waiting for agent events</strong></div>`;
-  } else {
-    const text = state.agent.runs.length ? "Select an Agent Run to view its events." : "Start an agent session.";
-    log.innerHTML = `<div class="tty-empty">${icon("bot")}<strong>No agent run selected</strong><span>${escapeHTML(text)}</span></div>`;
-  }
-  log.dataset.agentRunId = nextRunId;
-  $("loadOlderAgentEventsButton")?.addEventListener("click", () => {
-    loadOlderAgentEvents().catch((err) => toast(err.message));
+  const run = currentAgentRun();
+  const configured = (state.config?.agents || []).find((agent) => agent.id === run?.agentHubAgentName);
+  window.ForgeSvelteIslands?.renderEventTimeline({
+    identity: `${state.activeWorkspaceId}:${run?.id || ""}`,
+    workspaceId: state.activeWorkspaceId,
+    activeRunId: run?.id || "",
+    activeRun: run,
+    runCount: state.agent.runs.length,
+    agentName: agentDisplayName(configured || selectedAgentConfig()),
+    project: projectAgentEvents,
+    onEvent: handleSvelteAgentEvent,
+    onNotice: handleSvelteForgeNotice,
+    onApproval: resolveAgentApprovalForRun,
+    onToast: toast,
+    onIconsChanged: refreshIcons,
   });
-  bindAgentToolGroupEvents();
-  if (stickToBottom) {
-    log.scrollTop = log.scrollHeight;
-  } else {
-    log.scrollTop = previousScrollTop;
-  }
 }
 
 function bindAgentToolGroupEvents() {
@@ -4719,6 +4712,10 @@ function agentComposerAgentKey() {
   })));
 }
 
+function agentSessionMutationKey(workspaceId, runId) {
+  return `${workspaceId || "workspace"}:${runId || "run"}`;
+}
+
 function renderTTYComposer(options = {}) {
   state.agent.skipTTYDraftSync = false;
   closeNewSessionChooserForResourceLock();
@@ -4740,7 +4737,7 @@ function renderTTYComposer(options = {}) {
     draftKey: state.agent.ttyDraftKey || "",
     draftResetVersion: state.agent.ttyDraftResetVersion || 0,
     unavailableReason: live ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
-    sending: Boolean(state.agent.sendingInput),
+    sending: Boolean(activeRun && state.agent.sendingInputRunIds.has(agentSessionMutationKey(state.activeWorkspaceId, activeRun.id))),
     externalLocked: selectedResourceHasExternalLock(),
     internalLocked: selectedResourceHasInternalLock(),
     agents: svelteAgentOptions(),
@@ -5685,9 +5682,6 @@ function closeCurrentAgentSession() {
 }
 
 function bindAgentEvents() {
-  document.querySelector(".agent-session-menu")?.addEventListener("click", (event) => {
-    event.stopPropagation();
-  });
   const selfDrivingSwitch = $("selfDrivingSwitch");
   if (selfDrivingSwitch) selfDrivingSwitch.onclick = (event) => {
     event.preventDefault();
@@ -5708,48 +5702,6 @@ function bindAgentEvents() {
       renderAgent();
       bindAgentEvents();
       refreshIcons();
-    });
-  });
-  document.querySelectorAll("[data-agent-run]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const runId = button.dataset.agentRun;
-      if (runId === state.agent.activeRunId && button.classList.contains("agent-current-run")) {
-        state.agent.historyOpen = !state.agent.historyOpen;
-        state.agent.optionsOpen = false;
-        state.agent.agentChooserOpen = false;
-        renderAgent();
-        bindAgentEvents();
-        refreshIcons();
-        return;
-      }
-      switchAgentRun(runId).catch((err) => toast(err.message));
-    });
-  });
-  document.querySelectorAll("[data-agent-approval]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const reply = button.dataset.optionId
-        ? { optionId: button.dataset.optionId }
-        : { decision: button.dataset.decision };
-      resolveAgentApproval(button.dataset.agentApproval, reply).catch((err) => toast(err.message));
-    });
-  });
-  document.querySelectorAll("[data-agent-approval-reply]").forEach((input) => {
-    input.addEventListener("input", () => {
-      state.agent.approvalDrafts.set(agentApprovalDraftKey(input.dataset.agentApprovalReply), input.value);
-      const submit = input.form?.querySelector('button[type="submit"]');
-      if (submit) submit.disabled = !input.value.trim();
-    });
-  });
-  document.querySelectorAll("[data-agent-approval-reply-form]").forEach((form) => {
-    form.addEventListener("submit", (event) => {
-      event.preventDefault();
-      const requestId = form.dataset.agentApprovalReplyForm;
-      const input = form.querySelector("[data-agent-approval-reply]");
-      const text = input?.value.trim() || "";
-      if (!text) return;
-      resolveAgentApproval(requestId, { text }).catch((err) => toast(err.message));
     });
   });
 }
@@ -6164,17 +6116,36 @@ async function stopAgentTurn() {
 async function switchAgentRun(runId) {
   if (!runId || runId === state.agent.activeRunId) return;
   return mutateAgentSession(async () => {
+    const workspaceId = state.activeWorkspaceId;
     flushAgentDraft();
     const previousRun = currentAgentRun();
-    if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
-      await closeAgentRun(previousRun.id);
-    }
     state.agent.activeRunId = runId;
+    state.agent.switchingRunId = runId;
     clearAgentDraftMemory();
-    state.agent.historyOpen = false;
-    state.agent.approvalDrafts.clear();
-    await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+    const nextRun = state.agent.runs.find((run) => run.id === runId);
+    if (nextRun) restoreAgentDraftForRun(nextRun);
     renderAll();
+    try {
+      if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) {
+        try {
+          await closeAgentRun(previousRun.id);
+        } catch (err) {
+          if (workspaceId === state.activeWorkspaceId && state.agent.activeRunId === runId) {
+            state.agent.activeRunId = previousRun.id;
+            clearAgentDraftMemory();
+            restoreAgentDraftForRun(previousRun);
+            renderAll();
+          }
+          throw err;
+        }
+      }
+      if (workspaceId !== state.activeWorkspaceId || state.agent.activeRunId !== runId) return;
+      await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
+      if (workspaceId === state.activeWorkspaceId) renderAll();
+    } finally {
+      if (state.agent.switchingRunId === runId) state.agent.switchingRunId = "";
+      renderAgent();
+    }
   });
 }
 
@@ -6201,14 +6172,20 @@ async function resumeAgentRun() {
 }
 
 async function resolveAgentApproval(requestId, reply) {
-  if (!state.agent.activeRunId || !requestId) return;
-  await api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/approval`, {
+  return resolveAgentApprovalForRun(state.agent.activeRunId, requestId, reply);
+}
+
+async function resolveAgentApprovalForRun(runId, requestId, reply) {
+  if (!runId || !requestId) return;
+  const workspaceId = state.activeWorkspaceId;
+  await api(`/api/workspaces/${workspaceId}/agent/runs/${runId}/approval`, {
     method: "POST",
     body: JSON.stringify({ requestId, ...reply }),
   });
-  state.agent.approvalDrafts.delete(agentApprovalDraftKey(requestId));
-  await loadAgentRuns();
-  renderAll();
+  if (workspaceId === state.activeWorkspaceId) {
+    await loadAgentRuns();
+    renderAll();
+  }
 }
 
 function currentAgentRun() {
@@ -6240,7 +6217,8 @@ function isAgentSessionStopping(run) {
 }
 
 async function submitTTYInput(rawText, context) {
-  if (state.agent.sendingInput) return { accepted: false, clear: false };
+  const sendingKey = agentSessionMutationKey(context?.workspaceId, context?.runId);
+  if (state.agent.sendingInputRunIds.has(sendingKey)) return { accepted: false, clear: false };
   if (!String(rawText || "").trim()) return { accepted: false, clear: false };
   const sendingRun = currentAgentRun();
   if (!sendingRun) return { accepted: false, clear: false };
@@ -6254,7 +6232,7 @@ async function submitTTYInput(rawText, context) {
   const sendResourceId = context.resourceId;
   const sendDraftKey = context.draftKey;
   const sendDraftVersion = state.agent.ttyDraftVersion;
-  state.agent.sendingInput = true;
+  state.agent.sendingInputRunIds.add(sendingKey);
   try {
     const result = await sendAgentInputForContext(rawText, context);
     let clearedDraft = false;
@@ -6279,7 +6257,7 @@ async function submitTTYInput(rawText, context) {
 		}
     return { accepted: result?.status === "accepted", clear: clearedDraft };
   } finally {
-    state.agent.sendingInput = false;
+    state.agent.sendingInputRunIds.delete(sendingKey);
     renderTTYComposer();
     refreshIcons();
   }

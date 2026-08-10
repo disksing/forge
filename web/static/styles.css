@@ -1818,6 +1818,18 @@ body.resizing-y {
   line-height: 1.55;
 }
 
+.event-timeline-root {
+  display: contents;
+}
+
+.agent-session-error {
+  padding: 6px 8px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 11px;
+}
+
 .load-older-events {
   width: 100%;
   min-height: 30px;

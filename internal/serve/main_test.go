@@ -61,6 +61,29 @@ func TestMigratedSvelteRegionsHaveExclusiveDOMOwnership(t *testing.T) {
 			t.Fatalf("legacy renderer %q still owns DOM or event listeners", region.start)
 		}
 	}
+	timelineStart := strings.Index(source, "function renderTTY(")
+	timelineEnd := strings.Index(source, "function bindAgentToolGroupEvents(")
+	if timelineStart < 0 || timelineEnd <= timelineStart {
+		t.Fatal("could not isolate migrated Event Timeline renderer")
+	}
+	timelineRenderer := source[timelineStart:timelineEnd]
+	if !strings.Contains(timelineRenderer, "ForgeSvelteIslands?.renderEventTimeline") || strings.Contains(timelineRenderer, ".innerHTML") || strings.Contains(timelineRenderer, "addEventListener") {
+		t.Fatal("legacy Event Timeline renderer still owns DOM or does not publish to Svelte")
+	}
+	sessionsStart := strings.Index(source, "function renderAgent()")
+	sessionsEnd := strings.Index(source, "function selfDrivingStatusReason(")
+	if sessionsStart < 0 || sessionsEnd <= sessionsStart {
+		t.Fatal("could not isolate migrated Session switcher renderer")
+	}
+	sessionsRenderer := source[sessionsStart:sessionsEnd]
+	if !strings.Contains(sessionsRenderer, "ForgeSvelteIslands?.renderSessionSwitcher") || strings.Contains(sessionsRenderer, `wrap.innerHTML`) || strings.Contains(sessionsRenderer, `[data-agent-run]`) {
+		t.Fatal("legacy Session switcher still owns its DOM or event bindings")
+	}
+	for _, component := range []string{"SessionSwitcher.svelte", "EventTimeline.svelte"} {
+		if !strings.Contains(frontendSource(t, "src", "entry.ts"), component[:strings.Index(component, ".svelte")]) {
+			t.Fatalf("Svelte entry is missing %s", component)
+		}
+	}
 	detailStart := strings.Index(source, "function renderDetails()")
 	if detailStart < 0 {
 		t.Fatal("could not isolate migrated Detail renderer")
@@ -2636,33 +2659,21 @@ assert(state.agent.ttyDraft === "", "empty drafts must clear in-memory state");
 }
 
 func TestTTYRenderDefersWhileTextSelected(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
+	source := frontendSource(t, "src", "islands", "EventTimeline.svelte")
 	for _, want := range []string{
-		`function ttyLogHasActiveSelection(log) {`,
-		`selection.getRangeAt(0).intersectsNode(log)`,
-		`if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {`,
-		`state.agent.renderDeferredForSelection = true;`,
-		`document.addEventListener("selectionchange", () => {`,
+		`if (snapshot.identity && next.identity === snapshot.identity && hasActiveSelection())`,
+		`deferredSnapshot = next;`,
+		`selection.getRangeAt(0).intersectsNode(scroll)`,
+		`document.addEventListener("selectionchange", selectionChanged);`,
+		`if (!deferredSnapshot || hasActiveSelection()) return;`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY selection-safe render is missing %q", want)
 		}
 	}
 
-	guard := strings.Index(source, `if (previousRunId === nextRunId && ttyLogHasActiveSelection(log)) {`)
-	replace := strings.Index(source, `log.innerHTML =`)
-	if guard < 0 || replace < 0 || guard > replace {
-		t.Fatal("TTY render must defer before replacing the session log DOM")
-	}
-
-	listener := strings.Index(source, `document.addEventListener("selectionchange", () => {`)
-	flush := strings.Index(source[listener:], `renderTTY();`)
-	if listener < 0 || flush < 0 {
-		t.Fatal("selectionchange listener must flush the deferred TTY render")
+	if strings.Contains(source, ".innerHTML") {
+		t.Fatal("Svelte Timeline must not rebuild the log with innerHTML")
 	}
 }
 
@@ -3067,32 +3078,34 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 		t.Fatal(err)
 	}
 	app := string(appData)
+	chatState := frontendSource(t, "src", "islands", "chat-state.ts")
+	timeline := frontendSource(t, "src", "islands", "EventTimeline.svelte")
+	combined := app + chatState + timeline
 	for _, want := range []string{
 		`const AGENT_HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);`,
-		`const visibleEvents = state.agent.events.filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));`,
+		`const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));`,
 		`window.AgentHubEventTimeline.buildTimeline(visibleEvents)`,
 		`stream.addEventListener("forge.notice"`,
-		`state.agent.toolGroupOpen.set(details.dataset.toolGroupKey, !details.open)`,
-		`<div class="agent-message-content markdown-rendered">${renderMarkdown(item.text)}</div>`,
-		`return window.DOMPurify.sanitize(window.marked.parse(String(content ?? "")))`,
+		`openCache.set(snapshot.identity, new Map(openTools));`,
+		`<div class="agent-message-content markdown-rendered">{@html markdown(item.text)}</div>`,
+		`window.DOMPurify.sanitize(window.marked.parse(source))`,
 		`item.kind === "message"`,
 		`item.kind === "thinking"`,
 		`item.kind === "tools"`,
 		`item.kind === "approval"`,
-		`escapeHTML(agentThinkingTitle(item))`,
-		`return duration ? ` + "`Thought for ${duration}`" + ` : "Thought"`,
-		`data-option-id="${escapeHTML(option.optionId)}"`,
-		`data-agent-approval-reply-form="${escapeHTML(item.approvalId)}"`,
+		`thinkingTitle(item)`,
+		`Thought for ${seconds}`,
+		`optionId: option.optionId`,
+		`approvalKey(approvalId)`,
 		`body: JSON.stringify({ requestId, ...reply })`,
 		`item.kind === "lifecycle"`,
 		`item.kind === "error"`,
-		`item.kind === "unknown"`,
-		`agentMessageSenderName(item)`,
-		`agentClockTime(item.time)`,
+		`senderName(item)`,
+		`clock(item.time)`,
 		`<div class="agent-message-meta">`,
 		`<span class="agent-note-time">`,
 	} {
-		if !strings.Contains(app, want) {
+		if !strings.Contains(combined, want) {
 			t.Fatalf("canonical timeline integration is missing %q", want)
 		}
 	}
@@ -3105,7 +3118,7 @@ func TestAgentChatUsesOnlySharedCanonicalTimeline(t *testing.T) {
 		"assistant" + "_delta",
 		"approval" + "_requested",
 	} {
-		if strings.Contains(app, forbidden) {
+		if strings.Contains(combined, forbidden) {
 			t.Fatalf("legacy event compatibility remains in app.js: %q", forbidden)
 		}
 	}
