@@ -1,0 +1,47 @@
+:where([data-component-owner="event-timeline"]) .agent-tool-item { border-top: 0; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary {
+  min-height: 34px;
+  padding: 6px 2px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item summary>svg { width: 14px; height: 14px; }
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary span {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #4a5560;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary small {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: #9aa6b3;
+  font-size: 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item pre {
+  max-height: 280px;
+  margin: 0 0 8px;
+  overflow: auto;
+  padding: 9px;
+  border-radius: 4px;
+  background: #232a33;
+  color: #d6dde5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-running summary>svg { color: var(--amber); }
+:where([data-component-owner="event-timeline"]) .agent-tool-completed summary>svg { color: var(--green); }
+:where([data-component-owner="event-timeline"]) .agent-tool-failed summary>svg { color: var(--red); }

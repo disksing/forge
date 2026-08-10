@@ -5,41 +5,59 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
 const components = [
+  "ApprovalCard",
   "AppShell",
   "ChatComposer",
   "CreateDialog",
   "DetailPanel",
   "DiffModal",
   "EventTimeline",
+  "ErrorNotice",
   "FileBrowser",
   "FilePreviewModal",
+  "ForgeNotice",
   "LogTimeline",
+  "LifecycleNotice",
   "MarkdownDocument",
   "SelfDrivingBar",
   "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
+  "ThinkingBlock",
+  "TimelineMessage",
   "Toast",
+  "ToolGroup",
+  "ToolItem",
+  "UnknownEvent",
   "UploadDialog",
   "WorkspaceAgentsEditor",
 ] as const;
 
 const owners: Record<(typeof components)[number], string> = {
+  ApprovalCard: "event-timeline",
   AppShell: "app-shell",
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
   EventTimeline: "event-timeline",
+  ErrorNotice: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
+  ForgeNotice: "event-timeline",
   LogTimeline: "log-timeline",
+  LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
   SelfDrivingBar: "self-driving-bar",
   SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
+  ThinkingBlock: "event-timeline",
+  TimelineMessage: "event-timeline",
   Toast: "toast",
+  ToolGroup: "event-timeline",
+  ToolItem: "event-timeline",
+  UnknownEvent: "event-timeline",
   UploadDialog: "upload-dialog",
   WorkspaceAgentsEditor: "workspace-agents-editor",
 };
@@ -105,7 +123,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "WorkspaceAgentsEditor"] as const) {
+    for (const component of ["ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "WorkspaceAgentsEditor"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

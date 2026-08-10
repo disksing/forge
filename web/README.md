@@ -43,6 +43,20 @@ The shell has one canonical Workspace and Resource selection. That selection dri
 
 Form state is keyed by explicit identity, not refresh frequency. Republishing a model with the same identity preserves edits, focus, selection, scroll, uploads, and pending sends. Changing identity resets local state and invalidates work from the previous context. Document identity includes Workspace, Resource, path, display mode, and `contentHash`; AGENTS.md saves carry the baseline hash and preserve the local draft on HTTP 409.
 
+### Event timeline boundary
+
+`EventTimeline.svelte` is the only owner of the active chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-Session tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, `ErrorNotice`, `ForgeNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant Markdown remains inside `.markdown-rendered`.
+
+`chat-state.ts` owns HTTP/SSE context generations, accepted Session identities, the 80 ms stream publication window, notice reconciliation, and cleanup of requests, streams, and flush timers. It consumes the side-effect-free `timeline-events.ts` module for canonical merge, batched insertion, append healing, and cumulative ACP tool-update compaction. Rendering components never import the Session controller or open network streams.
+
+The extraction reduced the stateful roots while retaining the complete behavior in focused modules:
+
+| Source boundary | Before | After |
+| --- | ---: | ---: |
+| `EventTimeline.svelte` state plus all event markup | 311 lines | 203 lines, plus 221 lines across nine typed renderers |
+| `chat-state.ts` state machine plus event algorithms | 514 lines | 393 lines, plus 123 lines in `timeline-events.ts` |
+| One timeline stylesheet | 497 lines | 47 root lines plus 363 lines next to the nine renderers |
+
 ## Lifecycle contract
 
 - The component registry gives every mounted root exactly one cleanup and tears down the previous instance before replacement.
@@ -62,6 +76,7 @@ Form state is keyed by explicit identity, not refresh frequency. Republishing a 
 | Markdown document | 3,000 sections | 1,000 ms |
 | Session event canonicalization | 10,000 events with an overlapping delta | 1,000 ms |
 | Continuous Session updates | 1,000 deltas applied after 10,000 events | 1,500 ms |
+| Cumulative ACP tool updates | 30,000 frames for one call | 1,000 ms and a two-event compacted timeline |
 
 These gates complement component stability tests and Playwright flows; they are regression alarms rather than user-facing latency targets.
 
