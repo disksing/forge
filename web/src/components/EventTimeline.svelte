@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./EventTimeline.css";
+
   import { onMount, tick } from "svelte";
 
   import { ChatSessionController } from "./chat-state";

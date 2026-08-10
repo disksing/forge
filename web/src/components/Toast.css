@@ -1,0 +1,18 @@
+/* Toast styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="toast"]) .toast {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translateX(-50%);
+  z-index: 30;
+  max-width: 440px;
+  padding: 12px 14px;
+  border: 1px solid var(--ink-deep);
+  border-radius: 6px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 13px;
+}

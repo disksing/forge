@@ -1,0 +1,11 @@
+/* WorkspaceAgentsEditor styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="workspace-agents-editor"]) .workspace-agents-form {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+:where([data-component-owner="workspace-agents-editor"]) .workspace-agents-form textarea {
+  min-width: 0;
+}

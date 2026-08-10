@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./LogTimeline.css";
+
   import Icon from "./Icon.svelte";
   import { compareLogTimeDesc, markdownHTML, relativeTime } from "./detail";
   import type { ResourceLogModel } from "./models";
@@ -15,7 +17,7 @@
 </script>
 
 {#if ordered.length || error || hasMore}
-  <div class="content-section" data-log-resource={resourceId}>
+  <div class="content-section" data-component-owner="log-timeline" data-log-resource={resourceId}>
     <h3><Icon name="history" /><span>Log</span></h3>
     <div class="log-timeline">
       {#each ordered as entry (entry.id)}

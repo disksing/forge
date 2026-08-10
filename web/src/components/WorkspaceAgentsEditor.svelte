@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./WorkspaceAgentsEditor.css";
+
   import type { WorkspaceAgentsModel } from "./models";
   import { stripForgeManagedBlocks } from "./detail";
   import Icon from "./Icon.svelte";
@@ -54,7 +56,7 @@
   }
 </script>
 
-<div class="content-section">
+<div class="content-section" data-component-owner="workspace-agents-editor">
   <h3><Icon name="file-text" /><span>Workspace AGENTS.md</span></h3>
   {#if !file}<div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading AGENTS.md...</strong></div>
   {:else if file.error}<div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>AGENTS.md unavailable</strong><span>{file.error}</span></div>

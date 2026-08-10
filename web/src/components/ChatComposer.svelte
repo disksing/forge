@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./ChatComposer.css";
+
   import { onMount, tick } from "svelte";
 
   import type { ModelChannel } from "./model-channel";

@@ -1,0 +1,380 @@
+/* primitives styles. Keep selectors within the documented ownership boundary. */
+
+.details-form input,
+.details-form textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+
+.details-form button,
+.empty-state button {
+  min-height: 32px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.details-form button.secondary {
+  background: #dcdfe4;
+  color: #2b3440;
+}
+
+.details-form button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.details-form {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+.details-form input,
+.details-form textarea {
+  padding: 8px 10px;
+}
+
+.details-form textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+
+.self-driving-dialog-form .form-actions {
+  padding-top: 2px;
+}
+
+.create-task-dialog .form-actions {
+  padding-top: 10px;
+}
+
+.approval-actions .secondary-button,
+.approval-options .secondary-button,
+.secondary-button {
+  border-color: #dcdfe4;
+  background: #fff;
+  color: #2b3440;
+}
+
+.upload-dialog-header .icon-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.upload-drop-zone .secondary-button {
+  width: auto;
+  margin-top: 6px;
+  padding: 0 14px;
+}
+
+.tty-composer-error .secondary-button {
+  flex: 0 0 auto;
+}
+
+.empty-state {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  padding: 32px;
+  text-align: center;
+  color: var(--muted);
+}
+
+.empty-state strong,
+.empty-state span {
+  display: block;
+}
+
+.empty-state strong {
+  color: #2b3440;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.empty-state span {
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+.empty-state-icon {
+  width: 28px;
+  height: 28px;
+  margin-bottom: 2px;
+  color: #8a97a5;
+}
+
+.sidebar .empty-state {
+  color: var(--faint-on-dark);
+}
+
+.sidebar .empty-state strong {
+  color: #ecf0f3;
+}
+
+.sidebar .empty-state span,
+.sidebar .empty-state-icon {
+  color: var(--faint-on-dark);
+}
+
+svg,
+i[data-lucide] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.details-form button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b3440;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.details-form button:hover {
+  border-color: #c3c9d1;
+  background: #f4f5f7;
+}
+
+.log-load-more .spin {
+  animation: task-status-spin 1s linear infinite;
+}
+
+.empty-list-row {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: #5c6b7a;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.empty-list-row svg {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  color: #8a97a5;
+}
+
+.empty-list-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.secondary-button {
+  flex: 0 0 auto;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b3440;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.secondary-button:hover {
+  border-color: #c3c9d1;
+  background: #f4f5f7;
+  color: var(--text);
+}
+
+.file-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 49, 63, 0.48);
+}
+
+.file-modal-header {
+  flex: 0 0 auto;
+  min-height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 14px 10px 16px;
+  border-bottom: 1px solid #dcdfe4;
+  background: #f4f5f7;
+}
+
+.file-modal-header>div:first-child strong,
+.file-modal-header>div:first-child span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-modal-header>div:first-child {
+  min-width: 0;
+}
+
+.file-modal-header>div:first-child strong {
+  color: #2b3440;
+  font-size: 14px;
+}
+
+.file-modal-header>div:first-child span {
+  margin-top: 3px;
+  color: #5c6b7a;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.icon-button {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #4a5560;
+}
+
+.icon-button:hover {
+  background: #e8eaee;
+  color: #2c3e50;
+}
+
+.file-modal-empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px;
+  color: #5c6b7a;
+  text-align: center;
+}
+
+.file-modal-empty svg {
+  width: 28px;
+  height: 28px;
+  color: #8a97a5;
+}
+
+.file-modal-empty strong {
+  color: #2b3440;
+  font-size: 14px;
+}
+
+.file-modal-empty span {
+  max-width: 560px;
+  color: #5c6b7a;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.error-preview svg,
+.error-preview strong {
+  color: #e74c3c;
+}
+
+.form-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width:980px) {
+  .secondary-button {
+    justify-content: center;
+    width: 100%;
+  }
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes modal-zoom-in-centered {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.create-dialog-backdrop.modal-enter,
+.self-driving-dialog-backdrop.modal-enter,
+.upload-dialog-backdrop.modal-enter,
+.file-modal-backdrop.modal-enter,
+.settings-overlay.modal-enter {
+  animation: modal-fade-in 160ms ease-out;
+}
+
+.create-dialog.modal-enter,
+.self-driving-dialog.modal-enter,
+.upload-dialog.modal-enter,
+.file-modal.modal-enter,
+.diff-modal.modal-enter {
+  animation: modal-zoom-in 180ms ease-out;
+}
+
+.settings-modal.modal-enter {
+  animation: modal-zoom-in-centered 180ms ease-out;
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .create-dialog-backdrop.modal-enter,
+  .self-driving-dialog-backdrop.modal-enter,
+  .upload-dialog-backdrop.modal-enter,
+  .file-modal-backdrop.modal-enter,
+  .settings-overlay.modal-enter,
+  .create-dialog.modal-enter,
+  .self-driving-dialog.modal-enter,
+  .upload-dialog.modal-enter,
+  .file-modal.modal-enter,
+  .diff-modal.modal-enter,
+  .settings-modal.modal-enter {
+    animation: none;
+  }
+}

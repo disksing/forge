@@ -1,0 +1,127 @@
+/* FileBrowser styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="file-browser"]) .artifact-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-tree {
+  min-width: 0;
+  max-height: 380px;
+  overflow: auto;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 6px;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-node {
+  min-width: 0;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row {
+  width: 100%;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px calc(8px + (var(--depth) * 16px));
+  border-radius: 6px;
+  background: transparent;
+  color: #2b3440;
+  text-align: left;
+  font-size: 13px;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row:hover {
+  background: #e8eaee;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.active {
+  background: #f4f5f7;
+  color: #c0392b;
+  font-weight: 700;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-chevron {
+  width: 14px;
+  display: grid;
+  place-items: center;
+  color: #8a97a5;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.file .artifact-chevron {
+  width: 0;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-icon {
+  color: #5c6b7a;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-icon-dir {
+  color: #2980b9;
+  fill: currentColor;
+  fill-opacity: 0.16;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.active .artifact-icon,
+:where([data-component-owner="file-browser"]) .artifact-row.active .artifact-chevron {
+  color: #e74c3c;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row small {
+  flex: 0 0 auto;
+  color: #8a97a5;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-side {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-download {
+  display: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  color: #5c6b7a;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row:hover .artifact-download,
+:where([data-component-owner="file-browser"]) .artifact-row:focus-within .artifact-download {
+  display: grid;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-download:hover {
+  background: #dcdfe4;
+  color: #e74c3c;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-download .artifact-download-icon {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.active small {
+  color: #2980b9;
+}

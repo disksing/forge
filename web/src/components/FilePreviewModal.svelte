@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./FilePreviewModal.css";
+
   import { onDestroy } from "svelte";
 
   import type { ApiClient } from "../api/client";
@@ -35,7 +37,7 @@
 </script>
 
 {#if selection}
-  <div class="file-modal-layer" role="presentation">
+  <div class="file-modal-layer" data-component-owner="file-preview-modal" role="presentation">
     <button class="file-modal-backdrop modal-enter" type="button" aria-label="Close file preview" onclick={onClose}></button>
     <div class="file-modal modal-enter" role="dialog" aria-modal="true" aria-label="File preview" data-preview-identity={`${workspaceId}:${resourceId}:${selection.section}:${selection.path}:${preview?.contentHash || "pending"}`}>
       <header class="file-modal-header"><div><strong>{preview?.name || selection.path.split("/").pop() || "File preview"}</strong><span>{selection.path}{preview?.size != null ? ` · ${formatBytes(preview.size)}` : ""}{preview?.truncated ? " · truncated" : ""}</span></div><div class="file-modal-actions"><a class="secondary-button file-modal-open" href={rawURL} target="_blank" rel="noopener" title="Open file in new window"><Icon name="external-link" /><span>Open</span></a><button class="icon-button" type="button" title="Close" aria-label="Close" onclick={onClose}><Icon name="x" /></button></div></header>

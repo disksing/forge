@@ -1,0 +1,469 @@
+/* EventTimeline styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="event-timeline"]) .approval-actions button,
+:where([data-component-owner="event-timeline"]) .approval-options button,
+:where([data-component-owner="event-timeline"]) .approval-reply button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #e74c3c;
+  border-radius: 6px;
+  background: #e74c3c;
+  color: #fff;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="event-timeline"]) .event-timeline-root {
+  display: contents;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-events {
+  width: 100%;
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 12px;
+  border: 1px solid #c3c9d1;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: #4a5560;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-events:hover {
+  background: #dcdfe4;
+  color: #2c3e50;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-events svg {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row {
+  display: flex;
+  margin: 12px 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-main {
+  flex: 1;
+  min-width: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 3px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-meta strong {
+  font-size: 12px;
+  color: #2b3440;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-meta span {
+  color: #8a97a5;
+  font-size: 11px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-tag {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #dcdfe4;
+  color: #4a5560;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-bubble {
+  margin-left: 14px;
+  border-radius: 6px;
+  color: #2b3440;
+  padding: 2px 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant .agent-message-bubble {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 8px 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.user .agent-message-bubble {
+  border: 1px solid var(--ink);
+  background: var(--ink);
+  color: #fff;
+  padding: 8px 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble,
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble {
+  border: 1px solid #dcdfe4;
+  background: #f4f5f7;
+  padding: 8px 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong,
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong {
+  color: #5c6b7a;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-role-tag {
+  border: 1px solid #dcdfe4;
+  background: #e8eaee;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-source {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-bubble>p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-content {
+  color: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-message-content pre {
+  white-space: pre;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group {
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #4a5560;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group>summary,
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  list-style: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group>summary {
+  min-height: 36px;
+  padding: 7px 9px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group summary::-webkit-details-marker {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon,
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon svg,
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron svg,
+:where([data-component-owner="event-timeline"]) .agent-tool-item summary>svg {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-icon {
+  color: #5c6b7a;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-title {
+  flex: 0 0 auto;
+  color: #2b3440;
+  font-weight: 700;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-preview {
+  min-width: 0;
+  overflow: hidden;
+  color: #5c6b7a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group-chevron {
+  margin-left: auto;
+  transition: transform 0.16s ease;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-group[open]>summary .agent-tool-group-chevron {
+  transform: rotate(90deg);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-list {
+  padding: 0 9px 9px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item {
+  border-top: 1px solid var(--line-soft);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary {
+  min-height: 34px;
+  padding: 6px 2px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary span {
+  min-width: 0;
+  flex: 0 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #2b3440;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item>summary small {
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: #8a97a5;
+  font-size: 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-item pre {
+  max-height: 280px;
+  margin: 0 0 8px;
+  overflow: auto;
+  padding: 9px;
+  border-radius: 6px;
+  background: #2c3e50;
+  color: #dcdfe4;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-running summary>svg {
+  color: var(--amber);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-completed summary>svg {
+  color: var(--green);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-failed summary>svg {
+  color: var(--red);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note {
+  width: 100%;
+  margin: 8px 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  cursor: pointer;
+  font-weight: 700;
+  list-style: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary::-webkit-details-marker {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary svg {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note[open] .agent-reasoning-chevron {
+  transform: rotate(90deg);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note p {
+  margin: 0;
+  padding: 0 9px 9px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-system-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0;
+  color: #8a97a5;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-system-note svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-system-note .agent-note-time {
+  margin-left: auto;
+  color: #8a97a5;
+  font-weight: 600;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-lifecycle-ok {
+  color: var(--green-deep);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-lifecycle-danger {
+  color: var(--red);
+}
+
+:where([data-component-owner="event-timeline"]) .agent-lifecycle-info {
+  color: var(--blue);
+}
+
+:where([data-component-owner="event-timeline"]) .tty-empty {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 6px;
+  color: #5c6b7a;
+  text-align: center;
+}
+
+:where([data-component-owner="event-timeline"]) .tty-empty strong,
+:where([data-component-owner="event-timeline"]) .tty-empty span {
+  display: block;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event {
+  margin-bottom: 8px;
+  padding: 9px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b3440;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event>div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event small {
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #8a97a5;
+  font-size: 10px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #4a5560;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event.error {
+  border-color: var(--red);
+  background: #fff;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event.approval {
+  border-color: var(--amber);
+  background: #fff;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-actions {
+  margin-top: 9px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-event.approval .approval-question {
+  color: #2b3440;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-options {
+  margin-top: 9px;
+  display: grid;
+  gap: 7px;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-options button {
+  justify-content: flex-start;
+  min-height: 34px;
+  text-align: left;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-reply {
+  margin-top: 9px;
+  display: flex;
+  gap: 7px;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-reply input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid #e67e22;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  color: #2b3440;
+  font: inherit;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-reply input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+:where([data-component-owner="event-timeline"]) .approval-reply button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

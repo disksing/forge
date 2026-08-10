@@ -1,0 +1,376 @@
+/* DetailPanel styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="detail-panel"]) .worktree-row,
+:where([data-component-owner="detail-panel"]) .template-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="detail-panel"]) .title-row h1 .resource-ref {
+  margin-left: 10px;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button {
+  min-height: 32px;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="detail-panel"]) .details-header {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb-link {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb-link:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb-link.current {
+  color: var(--accent);
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb-separator {
+  color: var(--muted);
+}
+
+:where([data-component-owner="detail-panel"]) .title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+:where([data-component-owner="detail-panel"]) .title-row h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+:where([data-component-owner="detail-panel"]) .content-section {
+  padding: 24px 32px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+:where([data-component-owner="detail-panel"]) .content-section h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions {
+  display: flex;
+  gap: 8px;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button.secondary {
+  background: #dcdfe4;
+  color: #2b3440;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button.danger {
+  background: #fff;
+  color: var(--red);
+}
+
+:where([data-component-owner="detail-panel"]) .template-row.invalid {
+  border-color: var(--red);
+}
+
+:where([data-component-owner="detail-panel"]) .details-header {
+  padding: 24px 32px 22px;
+  border-bottom-color: var(--line);
+}
+
+:where([data-component-owner="detail-panel"]) .details-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 24px;
+  overflow-x: auto;
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+:where([data-component-owner="detail-panel"]) .details-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+:where([data-component-owner="detail-panel"]) .details-tab:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+:where([data-component-owner="detail-panel"]) .details-tab.active {
+  border-bottom-color: var(--accent);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+:where([data-component-owner="detail-panel"]) .details-tab-count {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="detail-panel"]) .details-tab.active .details-tab-count {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+:where([data-component-owner="detail-panel"]) .breadcrumb {
+  margin-bottom: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+:where([data-component-owner="detail-panel"]) .title-row h1 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions {
+  align-items: center;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b3440;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button:not(.danger) {
+  background: #e74c3c;
+  border-color: #e74c3c;
+  color: #fff;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button.danger {
+  background: #fff;
+  color: #e74c3c;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button:hover {
+  border-color: #c3c9d1;
+  background: #f4f5f7;
+}
+
+:where([data-component-owner="detail-panel"]) .details-actions button:not(.danger):hover {
+  background: #c0392b;
+  border-color: #c0392b;
+}
+
+:where([data-component-owner="detail-panel"]) .content-section {
+  padding: 24px 32px;
+}
+
+:where([data-component-owner="detail-panel"]) .content-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: #2c3e50;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="detail-panel"]) .content-section h3 svg {
+  width: 18px;
+  height: 18px;
+  color: #5c6b7a;
+}
+
+:where([data-component-owner="detail-panel"]) .content-section p {
+  margin: 0;
+  color: #4a5560;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-row {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-row:hover {
+  background: #f4f5f7;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-main {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-icon {
+  margin-top: 2px;
+  color: var(--blue);
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-main strong,
+:where([data-component-owner="detail-panel"]) .worktree-main span,
+:where([data-component-owner="detail-panel"]) .worktree-main small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-main strong {
+  color: #2b3440;
+  font-size: 14px;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-main span {
+  margin-top: 3px;
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+:where([data-component-owner="detail-panel"]) .worktree-main small {
+  margin-top: 3px;
+  color: #8a97a5;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+:where([data-component-owner="detail-panel"]) .wiki-status {
+  min-height: 120px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #f4f5f7;
+}
+
+@media (max-width:980px) {
+  :where([data-component-owner="detail-panel"]) .details-header,
+  :where([data-component-owner="detail-panel"]) .content-section {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  :where([data-component-owner="detail-panel"]) .details-tabs {
+    padding: 0 10px;
+  }
+
+  :where([data-component-owner="detail-panel"]) .title-row {
+    flex-direction: column;
+  }
+
+  :where([data-component-owner="detail-panel"]) .details-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  :where([data-component-owner="detail-panel"]) .worktree-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+:where([data-component-owner="detail-panel"]) .template-list {
+  display: grid;
+  gap: 8px;
+}
+
+:where([data-component-owner="detail-panel"]) .template-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: inherit;
+  text-align: left;
+}
+
+:where([data-component-owner="detail-panel"]) .template-row span {
+  display: grid;
+  gap: 2px;
+}
+
+:where([data-component-owner="detail-panel"]) .template-row small {
+  color: var(--muted);
+}

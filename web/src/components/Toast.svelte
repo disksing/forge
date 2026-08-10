@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./Toast.css";
+
   import { onMount } from "svelte";
 
   import type { ModelChannel } from "./model-channel";

@@ -1,0 +1,280 @@
+/* UploadDialog styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 49, 63, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog {
+  position: relative;
+  width: min(660px, calc(100vw - 48px));
+  max-height: min(760px, calc(100dvh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #c3c9d1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 18px 20px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-header strong,
+:where([data-component-owner="upload-dialog"]) .upload-dialog-header span {
+  display: block;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-header strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-header span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-content {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone {
+  display: grid;
+  place-items: center;
+  gap: 7px;
+  min-height: 180px;
+  border: 2px dashed #c3c9d1;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: #4a5560;
+  text-align: center;
+  outline: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone:focus,
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone.dragging {
+  border-color: #e74c3c;
+  background: #f4f5f7;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone>svg {
+  width: 30px;
+  height: 30px;
+  color: #e74c3c;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone>strong {
+  color: #2b3440;
+  font-size: 15px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-drop-zone>span {
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-list {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-empty {
+  border-radius: 4px;
+  background: #f4f5f7;
+  padding: 14px;
+  color: #5c6b7a;
+  font-size: 12px;
+  text-align: center;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item {
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  padding: 11px 12px;
+  background: #fff;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-success {
+  border-color: #c3e6d0;
+  background: #eef7f1;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-error {
+  border-color: #f2b8b2;
+  background: #fdecea;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading>svg {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: #2980b9;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-heading>svg {
+  animation: task-status-spin 1s linear infinite;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-heading>svg {
+  color: #27ae60;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-heading>svg,
+:where([data-component-owner="upload-dialog"]) .upload-error {
+  color: #e74c3c;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading>span {
+  min-width: 0;
+  flex: 1;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading strong,
+:where([data-component-owner="upload-dialog"]) .upload-item-heading small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading strong {
+  color: #2b3440;
+  font-size: 13px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading small {
+  margin-top: 2px;
+  color: #8a97a5;
+  font-size: 10px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-heading em {
+  flex: 0 0 auto;
+  color: #5c6b7a;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-progress {
+  height: 6px;
+  margin-top: 9px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #dcdfe4;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-progress>span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #2980b9;
+  transition: width 0.12s ease;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-progress>span {
+  background: #27ae60;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-progress>span {
+  background: #e74c3c;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-result-path,
+:where([data-component-owner="upload-dialog"]) .upload-error {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-result-path {
+  color: #1e8a4c;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--line-soft);
+  padding: 14px 20px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-footer>span {
+  color: #5c6b7a;
+  font-size: 12px;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-footer>button {
+  min-width: 82px;
+  min-height: 34px;
+  border-radius: 6px;
+  background: #e74c3c;
+  color: #fff;
+  font-weight: 700;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog-footer>button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+@media (max-width:980px) {
+  :where([data-component-owner="upload-dialog"]) .upload-dialog-layer {
+    padding: 12px;
+  }
+
+  :where([data-component-owner="upload-dialog"]) .upload-dialog {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+  }
+
+  :where([data-component-owner="upload-dialog"]) .upload-dialog-header,
+  :where([data-component-owner="upload-dialog"]) .upload-dialog-content,
+  :where([data-component-owner="upload-dialog"]) .upload-dialog-footer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  :where([data-component-owner="upload-dialog"]) .upload-dialog-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-dialog {
+  border-radius: 6px;
+}

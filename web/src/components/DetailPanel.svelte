@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./DetailPanel.css";
+
   import { onDestroy, onMount } from "svelte";
 
   import { ApiClient } from "../api/client";

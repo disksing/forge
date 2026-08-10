@@ -569,6 +569,7 @@ test("preserves composer draft through upload and supports Settings and Self-Dri
   await settings.getByRole("button", { name: "Save All" }).click();
   await expect.poll(() => harness.settingsBodies.length).toBe(1);
   expect(harness.settingsBodies[0]).toMatchObject({ endpoint: "http://127.0.0.1:5656" });
+  await expect(settings.locator(".settings-save-hint")).toBeHidden();
   await settings.getByRole("button", { name: "Close" }).click();
 
   await page.locator("#selfDrivingSwitch").click();

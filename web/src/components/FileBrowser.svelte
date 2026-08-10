@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./FileBrowser.css";
+
   import Icon from "./Icon.svelte";
   import { flattenFiles, formatBytes } from "./detail";
   import type { FileTreeModel } from "./models";
@@ -17,7 +19,7 @@
   }
 </script>
 
-<div class="content-section">
+<div class="content-section" data-component-owner="file-browser">
   <h3><Icon name={headingIcon} /><span>{title}</span></h3>
   <div class="artifact-browser"><div class="artifact-tree" role="tree">
     {#if rows.length}

@@ -1,0 +1,35 @@
+/* tokens styles. Keep selectors within the documented ownership boundary. */
+
+:root {
+  color-scheme: light;
+  /* Flat design palette: solid fills, 1px borders, no shadows/gradients. */
+  --bg: #f4f5f7;
+  --panel: #ffffff;
+  --line: #dcdfe4;
+  --line-soft: #e8eaee;
+  --text: #2b3440;
+  --muted: #5c6b7a;
+  --faint: #8a97a5;
+  --accent: #e74c3c;
+  --accent-deep: #c0392b;
+  --accent-pressed: #a93226;
+  --accent-soft: #fdecea;
+  --green: #27ae60;
+  --green-deep: #1e8a4c;
+  --amber: #e67e22;
+  --amber-deep: #b46218;
+  --red: #e74c3c;
+  --blue: #2980b9;
+  /* Dark slate sidebar block. */
+  --ink: #2c3e50;
+  --ink-deep: #22313f;
+  --ink-row: #33475c;
+  --faint-on-dark: #aebac6;
+  --sidebar-width: 280px;
+  --chat-width: 420px;
+  --sidebar-min-width: 220px;
+  --details-min-width: 360px;
+  --chat-min-width: 320px;
+  --pane-handle-width: 8px;
+  --sidebar-session-height: 210px;
+}

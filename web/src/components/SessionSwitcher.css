@@ -1,0 +1,212 @@
+/* SessionSwitcher styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="session-switcher"]) .agent-current-run,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row {
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+:where([data-component-owner="session-switcher"]) #agentSessions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill {
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-size: 12px;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill strong {
+  display: block;
+  color: #2b3440;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill span {
+  color: var(--muted);
+}
+
+:where([data-component-owner="session-switcher"]) .agent-session-switcher {
+  position: relative;
+  display: grid;
+  gap: 8px;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-session {
+  display: block;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  color: #2b3440;
+  text-align: left;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run {
+  min-height: 44px;
+  padding: 7px 8px;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run:hover,
+:where([data-component-owner="session-switcher"]) .agent-current-run.active,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row:hover,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row.active {
+  border-color: #c3c9d1;
+  background: #f4f5f7;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-session-menu {
+  position: absolute;
+  z-index: 15;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+  border: 1px solid #c3c9d1;
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row {
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 42px;
+  padding: 8px;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run strong,
+:where([data-component-owner="session-switcher"]) .agent-current-run small,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row strong,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run strong,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row strong {
+  font-size: 13px;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run small,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row small {
+  margin-top: 2px;
+  color: #5c6b7a;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run small,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 5px;
+  border: 1px solid #dcdfe4;
+  border-radius: 4px;
+  background: #f4f5f7;
+  color: #5c6b7a;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-pulse {
+  animation: task-status-pulse 1.8s ease-in-out infinite;
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-running {
+  color: var(--amber);
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-attention {
+  color: var(--blue);
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-done {
+  color: var(--green);
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-danger {
+  color: var(--red);
+}
+
+:where([data-component-owner="session-switcher"]) .run-badge-time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run.active,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row.active {
+  border-color: #8a97a5;
+  background: #e8eaee;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-current-run.active strong,
+:where([data-component-owner="session-switcher"]) .agent-session-menu-row.active strong {
+  font-weight: 700;
+}
+
+:where([data-component-owner="session-switcher"]) .session-select-icon {
+  width: 16px;
+  height: 16px;
+  color: #8a97a5;
+}
+
+:where([data-component-owner="session-switcher"]) .agent-session-error {
+  padding: 6px 8px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  color: var(--red);
+  font-size: 11px;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill {
+  border-color: #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill strong {
+  color: #2b3440;
+  font-size: 14px;
+}
+
+:where([data-component-owner="session-switcher"]) .session-pill span {
+  margin-top: 4px;
+  display: block;
+  font-size: 12px;
+}

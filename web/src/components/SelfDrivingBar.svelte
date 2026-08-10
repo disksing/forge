@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./SelfDrivingBar.css";
+
   import { onMount } from "svelte";
 
   import type { ModelChannel } from "./model-channel";

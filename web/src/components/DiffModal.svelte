@@ -1,4 +1,6 @@
 <script lang="ts">
+  import "./DiffModal.css";
+
   import { onDestroy, tick } from "svelte";
 
   import type { ApiClient } from "../api/client";
@@ -39,7 +41,7 @@
 </script>
 
 {#if repo}
-  <div class="diff-modal-layer" role="presentation">
+  <div class="diff-modal-layer" data-component-owner="diff-modal" role="presentation">
     <button class="file-modal-backdrop modal-enter" type="button" aria-label="Close worktree diff" onclick={onClose}></button>
     <div class="diff-modal modal-enter" role="dialog" aria-modal="true" aria-label="Worktree diff">
       <header class="file-modal-header diff-modal-header"><div><strong>{diff?.branch || repo.branch || repo.name || "Diff"}</strong><span>{repo.worktreePath || ""}{(repo.targetBranch || repo.baseBranch) ? ` · base ${repo.targetBranch || repo.baseBranch}` : ""}</span></div><button class="icon-button" type="button" title="Close" aria-label="Close" onclick={onClose}><Icon name="x" /></button></header>
