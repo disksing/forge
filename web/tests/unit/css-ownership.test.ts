@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, "../..");
 const components = [
   "ApprovalCard",
   "AppShell",
+  "AgentHubSettingsPanel",
   "ChatComposer",
   "CreateDialog",
   "DetailPanel",
@@ -21,12 +22,15 @@ const components = [
   "LifecycleNotice",
   "MarkdownDocument",
   "MobileToolbar",
+  "NotificationSettingsPanel",
   "PaneResizeHandle",
+  "ProfilesSettingsPanel",
   "ProjectTree",
   "SelfDrivingBar",
   "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
+  "SettingsNavigation",
   "StatusPresentation",
   "ThinkingBlock",
   "TimelineMessage",
@@ -35,6 +39,8 @@ const components = [
   "ToolItem",
   "UnknownEvent",
   "UploadDialog",
+  "UserSettingsPanel",
+  "WorkspaceSettingsPanel",
   "WorkspaceSwitcher",
   "WorkspaceAgentsEditor",
 ] as const;
@@ -42,6 +48,7 @@ const components = [
 const owners: Record<(typeof components)[number], string> = {
   ApprovalCard: "event-timeline",
   AppShell: "app-shell",
+  AgentHubSettingsPanel: "agenthub-settings-panel",
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
   DetailPanel: "detail-panel",
@@ -56,12 +63,15 @@ const owners: Record<(typeof components)[number], string> = {
   LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
   MobileToolbar: "mobile-toolbar",
+  NotificationSettingsPanel: "notification-settings-panel",
   PaneResizeHandle: "pane-resize-handle",
+  ProfilesSettingsPanel: "profiles-settings-panel",
   ProjectTree: "project-tree",
   SelfDrivingBar: "self-driving-bar",
   SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
+  SettingsNavigation: "settings-navigation",
   StatusPresentation: "status-presentation",
   ThinkingBlock: "event-timeline",
   TimelineMessage: "event-timeline",
@@ -70,6 +80,8 @@ const owners: Record<(typeof components)[number], string> = {
   ToolItem: "event-timeline",
   UnknownEvent: "event-timeline",
   UploadDialog: "upload-dialog",
+  UserSettingsPanel: "user-settings-panel",
+  WorkspaceSettingsPanel: "workspace-settings-panel",
   WorkspaceSwitcher: "workspace-switcher",
   WorkspaceAgentsEditor: "workspace-agents-editor",
 };
@@ -134,8 +146,14 @@ describe("CSS ownership", () => {
     }
   });
 
+  it("keeps shared settings panel rules inside explicit panel roots", () => {
+    for (const header of selectorHeaders(read("src/components/SettingsPanel.css"))) {
+      for (const selector of header.split(",")) expect(selector.trim()).toContain("[data-component-owner][data-settings-panel]");
+    }
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "GlobalSessionList", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "PaneResizeHandle", "ProjectTree", "StatusPresentation", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "WorkspaceAgentsEditor", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "GlobalSessionList", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectTree", "SettingsNavigation", "StatusPresentation", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });
