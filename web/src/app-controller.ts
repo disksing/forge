@@ -9,9 +9,24 @@ import type {
   SelfDrivingDialogModel,
   SessionSwitcherModel,
   SettingsModel,
+  ShellDragTarget,
+  TaskTemplate,
+  TimelineItem,
   ToastModel,
   UploadDialogModel,
 } from "./components/models";
+import { createAgentDraftStore, agentDraftResourceScope, agentDraftSessionIdentity, type AgentDraftContext } from "./controllers/agent-draft-store";
+import { createAgentOperationController } from "./controllers/agent-operation-controller";
+import { createAgentSessionController, type AgentRunRecord } from "./controllers/agent-session-controller";
+import { createCreateDialogController } from "./controllers/create-dialog-controller";
+import { createNotificationController } from "./controllers/notification-controller";
+import { createPaneLayoutController } from "./controllers/pane-layout-controller";
+import { createResourceDetailController, type ResourceDetailRecord, type ResourceLogPageState } from "./controllers/resource-detail-controller";
+import { createRouteController } from "./controllers/route-controller";
+import { createSettingsController, type ForgeSettingsConfig } from "./controllers/settings-controller";
+import { createUserSettingsController } from "./controllers/user-settings-controller";
+import { ApiError } from "./api/client";
+import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
 
 export interface ForgeViewPublisher {
@@ -30,97 +45,78 @@ export interface ForgeViewPublisher {
 
 let publisher: ForgeViewPublisher;
 let lifecycle: ResourceScope | null = null;
-const initialControllerState = {
-	config: null,
-	tree: null,
-	details: {},
-	resourceLogPages: {},
-	workspaceAgents: null,
+interface DomainRecord {
+	[key: string]: unknown;
+	id: string;
+	name: string;
+	title: string;
+	type: string;
+	path: string;
+	status: string;
+	updatedAt: string;
+	resourceId: string;
+	runId: string;
+	agentName: string;
+	key: string;
+	description: string;
+	icon: string;
+	activeId: string;
+	error: string;
+	condition: string;
+	enabled: boolean;
+	revision: number;
+	notificationError: string;
+	providerId: string;
+	agentHubSessionId: string;
+	sourceExternalId: string;
+	source: string;
+	children: DomainRecord[];
+	projects: DomainRecord[];
+	sessions: DomainRecord[];
+	workspaces: DomainRecord[];
+	agents: DomainRecord[];
+	agentProfiles: DomainRecord[];
+	templates: TaskTemplate[];
+	providers: DomainRecord[];
+	controls: DomainRecord[];
+	logs: DomainRecord[];
+	events: DomainRecord[];
+	capabilities: string[];
+	agentHubProviders: DomainRecord[];
+	preferredAgentProfiles: string[];
+	options: { model?: string };
+	selfDriving?: DomainRecord;
+	lastOutcome?: DomainRecord;
+	logPage?: { entries?: DomainRecord[]; hasMore?: boolean; nextCursor?: string };
+	data?: DomainRecord;
+}
+
+const controllerState = {
+	config: null as DomainRecord | null,
+	tree: null as DomainRecord | null,
+	details: {} as Record<string, DomainRecord>,
+	resourceLogPages: {} as Record<string, ResourceLogPageState>,
+	workspaceAgents: null as DomainRecord | null,
 	workspaceAgentsDraft: "",
 	workspaceAgentsDirty: false,
 	workspaceAgentsSaving: false,
 	activeWorkspaceId: "",
 	navigationLoading: true,
 	navigationError: "",
-	routeProjection: {
-		path: "",
-		revision: 0,
-		replace: true
-	},
 	workspaceMenuOpen: false,
 	selectedId: "",
 	lastResourceId: "",
-	expandedProjects: /* @__PURE__ */ new Set(),
-	projectOrder: [],
-	taskOrder: {},
-	sessionOrder: [],
-	listDrag: null,
-	expandedPaths: /* @__PURE__ */ new Set(),
-	preview: null,
-	diff: null,
+	expandedProjects: /* @__PURE__ */ new Set<string>(),
+	projectOrder: [] as string[],
+	taskOrder: {} as Record<string, string[]>,
+	sessionOrder: [] as string[],
+	listDrag: null as ShellDragTarget | null,
+	expandedPaths: /* @__PURE__ */ new Set<string>(),
+	preview: null as DomainRecord | null,
+	diff: null as DomainRecord | null,
 	modalEnter: "",
-	sessionMenu: null,
+	sessionMenu: null as DomainRecord | null,
 	taskOperationalStateKey: "",
-	paneSizes: {
-		sidebarWidth: 280,
-		chatWidth: 420,
-		sidebarSessionHeight: 210
-	},
-	settings: {
-		open: false,
-		identity: 0,
-		dataVersion: 0,
-		tab: "workspace",
-		data: null,
-		agentDirty: false,
-		expandedAgents: /* @__PURE__ */ new Set(),
-		suppressDraftSync: false,
-		workspacePath: "",
-		createWorkspace: false,
-		saving: false,
-		workspaceIconPickerId: "",
-		workspaceIconSavingId: "",
-		newProfile: {
-			key: "",
-			description: "",
-			agentName: ""
-		}
-	},
-	user: { name: "User" },
-	notifications: {
-		ready: false,
-		workspaceId: "",
-		store: null,
-		settings: null,
-		channel: null,
-		tabId: "tab-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2),
-		audioContext: null,
-		soundError: "",
-		permissionError: ""
-	},
-	createDialog: {
-		open: false,
-		identity: 0,
-		type: "",
-		projectId: "",
-		templateName: "",
-		templateFields: {},
-		templateDirty: false,
-		titleOverride: false,
-		templateDigest: "",
-		preview: null,
-		previewing: false,
-		title: "",
-		description: "",
-		detail: "",
-		slug: "",
-		selfDriving: false,
-		agentName: "",
-		preferredAgentProfiles: [],
-		prompt: "",
-		completionCriteria: "",
-		submitting: false
-	},
 	selfDrivingDialog: {
 		open: false,
 		identity: 0,
@@ -136,7 +132,7 @@ const initialControllerState = {
 		submitting: false,
 		error: "",
 		unknown: false,
-		returnFocus: null
+		returnFocus: null as HTMLElement | null
 	},
 	uploadDialog: {
 		open: false,
@@ -145,7 +141,7 @@ const initialControllerState = {
 		items: [],
 		nextId: 1
 	},
-	autoRefreshTimer: null,
+		autoRefreshTimer: null as number | null,
 	autoRefreshInFlight: false,
 	autoRefreshVersion: 0,
 	agentRunProjectionVersion: 0,
@@ -157,19 +153,14 @@ const initialControllerState = {
 	diffRequestVersion: 0,
 	agentSessionMutationCount: 0,
 	iconRefreshScheduled: false,
-	mobile: {
-		sidebarOpen: false,
-		view: "details",
-		immersive: false
-	},
 	agent: {
-		runs: [],
+		runs: [] as DomainRecord[],
 		activeRunId: "",
-		events: [],
-		notices: [],
-		stream: null,
+		events: [] as DomainRecord[],
+		notices: [] as DomainRecord[],
+		stream: null as EventSource | null,
 		streamRunId: "",
-		renderTimer: null,
+		renderTimer: null as number | null,
 		draftPrompt: "",
 		ttyDraft: "",
 		ttyMultiline: false,
@@ -185,22 +176,13 @@ const initialControllerState = {
 		agentChooserOpen: false,
 		historyOpen: false,
 		selfDrivingExpanded: false,
-		selfDrivingSaving: false,
-		selfDrivingDisabling: false,
-		newSessionStarting: false,
 		sessionActionsOpen: false,
 		eventsHasMore: false,
 		historyBeforeId: 0,
 		loadingOlder: false,
-		sendingInputRunIds: /* @__PURE__ */ new Set(),
-		turnStopping: false,
-		turnStoppingRunId: "",
-		sessionStopping: false,
-		sessionStoppingRunId: "",
-		switchingRunId: "",
-		toolGroupOpen: /* @__PURE__ */ new Map(),
-		approvalDrafts: /* @__PURE__ */ new Map(),
-		selfDrivingFinishNoticeWatermarks: /* @__PURE__ */ new Map(),
+		toolGroupOpen: /* @__PURE__ */ new Map<string, boolean>(),
+		approvalDrafts: /* @__PURE__ */ new Map<string, DomainRecord>(),
+		selfDrivingFinishNoticeWatermarks: /* @__PURE__ */ new Map<string, number>(),
 		renderDeferredForSelection: false
 	},
 	tty: [{
@@ -209,17 +191,112 @@ const initialControllerState = {
 	}, {
 		type: "system",
 		text: "Workspace data is loaded through forge CLI."
-	}]
+	}] as Array<{ type: string; text: string }>
 };
-type ControllerState = { [Key in keyof typeof initialControllerState]: any };
-const controllerState: ControllerState = initialControllerState;
+
+function clearResourceDetailState() {
+	for (const id of Object.keys(controllerState.details)) delete controllerState.details[id];
+	for (const id of Object.keys(controllerState.resourceLogPages)) delete controllerState.resourceLogPages[id];
+}
+
+const agentOperations = createAgentOperationController(() => {
+	if (!appBooted) return;
+	renderAgent();
+	renderTTYComposer();
+	refreshIcons();
+});
+const agentSessionController = createAgentSessionController({
+	operations: agentOperations,
+	workspaceId: () => controllerState.activeWorkspaceId,
+	selectedResource: () => findResource(controllerState.selectedId),
+	taskDetail: () => {
+		const selected = findResource(controllerState.selectedId);
+		return selected ? controllerState.details[selected.id] || selected : null;
+	},
+	currentRun: () => currentAgentRun(),
+	runs: () => controllerState.agent.runs,
+	activeRunId: () => controllerState.agent.activeRunId,
+	selectedAgent: () => selectedAgentConfig(),
+	enabledAgents: () => enabledAgentConfigs(),
+	setAgentName: (name) => { controllerState.agent.agentName = name; },
+	setActiveRun: (id) => { controllerState.agent.activeRunId = id; },
+	setHistoryOpen: (open) => { controllerState.agent.historyOpen = open; },
+	closeAgentMenus: () => {
+		controllerState.agent.optionsOpen = false;
+		controllerState.agent.agentChooserOpen = false;
+		controllerState.agent.historyOpen = false;
+	},
+	resetDraft: () => {
+		controllerState.agent.draftPrompt = "";
+		clearAgentDraftMemory();
+	},
+	flushDraft: flushAgentDraft,
+	restoreDraft: (run) => restoreAgentDraftForRun(run),
+	currentDraft: () => ({ key: controllerState.agent.ttyDraftKey, text: controllerState.agent.ttyDraft, version: controllerState.agent.ttyDraftVersion }),
+	updateDraft: (text) => updateAgentDraft(text),
+	clearDraftAfterAccepted: (context) => clearAgentDraftAfterAccepted(context),
+	bumpDraftResetVersion: () => { controllerState.agent.ttyDraftResetVersion++; },
+	userName: currentUserName,
+	workspaceName,
+	defaultCwd: agentDefaultCwd,
+	hasExternalLock: selectedResourceHasExternalLock,
+	externalLockMessage: "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.",
+	isLive: isLiveAgentRun,
+	isTurnInterruptible: isAgentTurnInterruptible,
+	inputSelfDrivingProjection: agentInputSelfDrivingProjection,
+	mutate: (action) => mutateAgentSession(action),
+	request: (path, init) => api(path, init),
+	reloadRuns: async () => { await loadAgentRuns(); },
+	refreshTree: async () => { await refreshTreeAfterAgentSessionMutation(); },
+	fetchDetail: (resourceId, workspaceId) => fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }),
+	applyDetail: (detail) => { applyResourceDetail(detail, "head"); },
+	refreshInputProjection: async (workspaceId, resourceId) => { await refreshAgentInputProjection(workspaceId, resourceId); },
+	publish: publishViewModels,
+	renderAgent,
+	renderComposer: renderTTYComposer,
+	refreshIcons,
+	toast
+});
+const paneLayoutController = createPaneLayoutController(() => renderAppShell());
+const routeController = createRouteController(() => renderAppShell());
+const resourceDetailController = createResourceDetailController({
+	details: controllerState.details as unknown as Record<string, ResourceDetailRecord>,
+	pages: controllerState.resourceLogPages,
+	context: () => ({
+		workspaceId: controllerState.activeWorkspaceId,
+		navigationVersion: controllerState.navigationVersion,
+		selectedId: controllerState.selectedId,
+		detailRequestVersion: controllerState.detailRequestVersion
+	}),
+	nextDetailRequestVersion: () => ++controllerState.detailRequestVersion,
+	isCurrentWorkspace: (workspaceId, navigationVersion) => isCurrentWorkspaceView(workspaceId, navigationVersion),
+	request: (path, init) => api(path, init),
+	render: renderDetails,
+	refreshIcons
+});
+const createDialogController = createCreateDialogController({
+	workspaceId: () => controllerState.activeWorkspaceId,
+	templates: (projectId) => controllerState.details[projectId]?.templates || [],
+	agents: svelteAgentOptions,
+	profileKeys: () => (controllerState.config?.agentProfiles || []).map((profile) => profile.key),
+	request: (path, init) => api(path, init),
+	publish: (model) => publisher.renderCreateDialog(model),
+	toast,
+	reloadTree: () => loadTree(),
+	selectWorkspaceResource: () => {
+		controllerState.selectedId = "workspace";
+	},
+	onOpen: () => {
+		controllerState.modalEnter = "create";
+	},
+	onIconsChanged: refreshIcons,
+	confirmTemplateSwitch: () => window.confirm("Discard edited template fields and switch templates?")
+});
 const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string): ElementType | null => document.getElementById(id) as ElementType | null;
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
 const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const RESOURCE_LOG_MORE_LIMIT = 20;
 const TASK_OUTPUT_FRESH_WINDOW_MS = 6e4;
-const PANE_SIZE_KEY = "forge.gui.paneSizes";
-const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
 const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.";
 const SELF_DRIVING_FINISH_NOTICE_KIND = "self-driving-finish";
 const SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE = "until-reconcile";
@@ -228,16 +305,6 @@ const SELF_DRIVING_RESUMABLE_STATES = /* @__PURE__ */ new Set([
 	"blocked",
 	"error"
 ]);
-const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";
-const AGENT_DRAFT_STORAGE_VERSION = 1;
-const NOTIFICATION_STORAGE_PREFIX = "forge.gui.notifications.v1";
-const NOTIFICATION_SETTINGS_KEY = `${NOTIFICATION_STORAGE_PREFIX}.settings`;
-const NOTIFICATION_STORE_VERSION = 1;
-const USER_SETTINGS_KEY = "forge.gui.user.v1";
-const USER_SETTINGS_VERSION = 1;
-const USER_NAME_MAX_LENGTH = 80;
-const AGENT_DRAFT_MAX_ORPHAN_COUNT = 50;
-const AGENT_DRAFT_MAX_AGE_MS = 7776e6;
 const AGENT_HIDDEN_EVENT_TYPES = /* @__PURE__ */ new Set(["session.launch-environment"]);
 const TASK_RUNNING_SESSION_STATES = /* @__PURE__ */ new Set([
 	"starting",
@@ -245,6 +312,22 @@ const TASK_RUNNING_SESSION_STATES = /* @__PURE__ */ new Set([
 	"waiting_approval",
 	"recovering"
 ]);
+interface LoadTreeOptions { updateURL?: boolean; replaceURL?: boolean }
+interface LoadDetailOptions { force?: boolean }
+interface FetchDetailOptions { logsCursor?: string | number; cursor?: string | number; logsLimit?: number; limit?: number }
+interface WorkspaceAgentsOptions { force?: boolean }
+interface SelectResourceOptions { clearUnread?: boolean; forceDetail?: boolean }
+interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; rethrow?: boolean }
+interface AgentMetadataOptions { refreshSelfDrivingProjection?: boolean }
+interface RenderOptions { skipDraftSync?: boolean }
+interface SelfDrivingOptions {
+	enabled?: boolean;
+	configured?: boolean;
+	agentName?: string;
+	runInstructions?: string;
+	completionCriteria?: string;
+}
+interface UploadContext { workspaceId?: string; runId?: string }
 const DEFAULT_WORKSPACE_ICON = {
 	id: "",
 	label: "Forge default",
@@ -334,13 +417,39 @@ const WORKSPACE_ICONS = [
 	}
 ];
 const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, item]));
-let createDialogIdentity = 0;
 let selfDrivingDialogIdentity = 0;
 let uploadDialogIdentity = 0;
-let settingsIdentity = 0;
-let createPreviewGeneration = 0;
-let createPreviewController: AbortController | null = null;
-let createPreviewPendingKey = "";
+const settingsController = createSettingsController({
+	config: () => controllerState.config as unknown as ForgeSettingsConfig || { workspaces: [], agents: [], agentProfiles: [] },
+	setConfig: (config) => { controllerState.config = config as unknown as DomainRecord; },
+	activeWorkspaceId: () => controllerState.activeWorkspaceId,
+	setActiveWorkspaceId: (id) => { controllerState.activeWorkspaceId = id; },
+	selectWorkspaceResource: () => { controllerState.selectedId = "workspace"; },
+	request: (path, init) => api(path, init),
+	publish: (model) => publisher.renderSettings(model),
+	agentOptions: svelteAgentOptions,
+	workspaceIcons: [DEFAULT_WORKSPACE_ICON, ...WORKSPACE_ICONS],
+	userName: currentUserName,
+	saveUser: (name) => {
+		if (!userSettingsController) throw new Error("User settings are unavailable.");
+		return userSettingsController.save(name);
+	},
+	notificationPreferences: () => notificationController?.preferences() || { browser: false, sound: false, permission: "unsupported", permissionError: "", soundError: "" },
+	setBrowserNotifications: (enabled) => notificationController?.setBrowserEnabled(enabled),
+	setCompletionSound: (enabled) => notificationController?.setSoundEnabled(enabled),
+	flushDraft: flushAgentDraft,
+	resetAgentState,
+	reloadWorkspaceContext: async () => { await loadUIState(); await loadTree(); },
+	clearWorkspaceContext: () => {
+		controllerState.tree = null;
+		clearResourceDetailState();
+		publishViewModels();
+	},
+	renderWorkspace: renderWorkspaceSelect,
+	renderAgentViews: () => { applyAgentConfig(); renderAgent(); renderTTYComposer(); },
+	toast,
+	onIconsChanged: refreshIcons
+});
 function svelteAgentOptions() {
 	return enabledAgentConfigs().map((agent) => ({
 		id: agent.id || "",
@@ -359,809 +468,41 @@ function publishAllViewModels() {
 	renderTTY();
 	renderSettingsModal();
 }
-function notificationStorage() {
-	try {
-		return window.localStorage;
-	} catch (_) {
-		return null;
-	}
-}
-function normalizeUserName(value) {
-	const trimmed = String(value || "").trim();
-	if (!trimmed) return "User";
-	return Array.from(trimmed).slice(0, USER_NAME_MAX_LENGTH).join("") || "User";
-}
-
-function errorMessage(error: unknown, fallback = "Unexpected error"): string {
-	if (error instanceof Error && error.message) return error.message;
-	if (error && typeof error === "object" && "message" in error) return String(error.message || fallback);
-	return String(error || fallback);
-}
-function decodeStoredUserName(raw) {
-	if (!raw) return "User";
-	try {
-		const stored = JSON.parse(raw);
-		if (!stored || stored.version !== USER_SETTINGS_VERSION) return "User";
-		return normalizeUserName(stored.name);
-	} catch (_) {
-		return "User";
-	}
-}
-function readStoredUserName() {
-	try {
-		return decodeStoredUserName(window.localStorage.getItem(USER_SETTINGS_KEY));
-	} catch (_) {
-		return "User";
-	}
-}
-function currentUserName() {
-	return normalizeUserName(controllerState.user?.name);
-}
-function saveStoredUserName(value) {
-	const name = normalizeUserName(value);
-	try {
-		window.localStorage.setItem(USER_SETTINGS_KEY, JSON.stringify({
-			version: USER_SETTINGS_VERSION,
-			name
-		}));
-	} catch (_) {
-		return false;
-	}
-	controllerState.user.name = name;
-	return true;
-}
-function installUserSettingsCrossTabListener() {
-	lifecycle?.listen(window, "storage", (event) => {
-		if (event.key !== USER_SETTINGS_KEY) return;
-		controllerState.user.name = decodeStoredUserName(event.newValue);
-		if (controllerState.settings.open && controllerState.settings.tab === "user") renderSettingsModal();
-	});
-}
-function notificationStateKey(workspaceId = controllerState.notifications.workspaceId) {
-	const workspace = String(workspaceId || "").trim();
-	return workspace ? `${NOTIFICATION_STORAGE_PREFIX}.state.${encodeURIComponent(workspace)}` : "";
-}
-function notificationDefaultStore() {
-	return {
-		version: NOTIFICATION_STORE_VERSION,
-		seen: [],
-		pending: [],
-		unread: [],
-		effects: []
-	};
-}
-function notificationRecord(raw) {
-	if (!raw || typeof raw !== "object") return null;
-	const marker = String(raw.marker || "").trim();
-	const sessionId = String(raw.sessionId || "").trim();
-	if (!marker || !sessionId) return null;
-	return {
-		workspaceId: String(raw.workspaceId || "").trim(),
-		sessionId,
-		runId: String(raw.runId || "").trim(),
-		resourceId: String(raw.resourceId || "").trim(),
-		marker,
-		completionState: String(raw.completionState || "completed").trim(),
-		selfDriving: Boolean(raw.selfDriving),
-		selfDrivingState: String(raw.selfDrivingState || "").trim(),
-		title: String(raw.title || "").trim(),
-		resourceType: String(raw.resourceType || "").trim(),
-		resourceTitle: String(raw.resourceTitle || "").trim(),
-		at: Number(raw.at) || Date.now()
-	};
-}
-function normalizeNotificationStore(raw) {
-	if (!raw || raw.version !== NOTIFICATION_STORE_VERSION) return notificationDefaultStore();
-	const seen = Array.isArray(raw.seen) ? raw.seen.map((item) => ({
-		marker: String(item?.marker || "").trim(),
-		at: Number(item?.at) || Date.now()
-	})).filter((item) => item.marker) : [];
-	const pending = Array.isArray(raw.pending) ? raw.pending.map(notificationRecord).filter(Boolean) : [];
-	const unread = Array.isArray(raw.unread) ? raw.unread.map(notificationRecord).filter(Boolean) : [];
-	const effects = Array.isArray(raw.effects) ? raw.effects.map((item) => ({
-		key: String(item?.key || "").trim(),
-		at: Number(item?.at) || Date.now()
-	})).filter((item) => item.key) : [];
-	return {
-		version: NOTIFICATION_STORE_VERSION,
-		seen: seen.slice(-2e3),
-		pending: pending.slice(-200),
-		unread: unread.slice(-200),
-		effects: effects.slice(-2e3)
-	};
-}
-function readNotificationStore(workspaceId = controllerState.notifications.workspaceId) {
-	const storage = notificationStorage();
-	const key = notificationStateKey(workspaceId);
-	if (!storage || !key) return notificationDefaultStore();
-	try {
-		const raw = storage.getItem(key);
-		if (!raw) return notificationDefaultStore();
-		const parsed = JSON.parse(raw);
-		if (!parsed || parsed.version !== NOTIFICATION_STORE_VERSION) {
-			storage.removeItem(key);
-			return notificationDefaultStore();
-		}
-		return normalizeNotificationStore(parsed);
-	} catch (_) {
-		try {
-			storage.removeItem(key);
-		} catch (_) {}
-		return notificationDefaultStore();
-	}
-}
-function writeNotificationStore() {
-	const storage = notificationStorage();
-	const key = notificationStateKey();
-	if (!storage || !key || !controllerState.notifications.store) return;
-	controllerState.notifications.store = normalizeNotificationStore(controllerState.notifications.store);
-	try {
-		storage.setItem(key, JSON.stringify(controllerState.notifications.store));
-	} catch (_) {}
-}
-function readNotificationSettings() {
-	const defaults = {
-		browser: false,
-		sound: false
-	};
-	const storage = notificationStorage();
-	if (!storage) return defaults;
-	try {
-		const parsed = JSON.parse(storage.getItem(NOTIFICATION_SETTINGS_KEY) || "null");
-		if (!parsed || parsed.version !== NOTIFICATION_STORE_VERSION) return defaults;
-		return {
-			browser: Boolean(parsed.browser),
-			sound: Boolean(parsed.sound)
-		};
-	} catch (_) {
-		try {
-			storage.removeItem(NOTIFICATION_SETTINGS_KEY);
-		} catch (_) {}
-		return defaults;
-	}
-}
-function writeNotificationSettings() {
-	const storage = notificationStorage();
-	if (!storage || !controllerState.notifications.settings) return;
-	try {
-		storage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify({
-			version: NOTIFICATION_STORE_VERSION,
-			browser: Boolean(controllerState.notifications.settings.browser),
-			sound: Boolean(controllerState.notifications.settings.sound)
-		}));
-	} catch (_) {}
-}
-function notificationPermission() {
-	if (typeof window.Notification === "undefined") return "unsupported";
-	const permission = String(window.Notification.permission || "default");
-	return [
-		"granted",
-		"default",
-		"denied"
-	].includes(permission) ? permission : "default";
-}
+let notificationController: ReturnType<typeof createNotificationController> | null = null;
+let userSettingsController: ReturnType<typeof createUserSettingsController> | null = null;
 function initializeNotificationState(workspaceId) {
-	const nextWorkspace = String(workspaceId || "").trim();
-	if (!nextWorkspace) return;
-	closeNotificationChannel();
-	controllerState.notifications.workspaceId = nextWorkspace;
-	controllerState.notifications.store = readNotificationStore(nextWorkspace);
-	controllerState.notifications.settings = readNotificationSettings();
-	if (notificationPermission() !== "granted") {
-		controllerState.notifications.settings.browser = false;
-		writeNotificationSettings();
-	}
-	controllerState.notifications.ready = false;
-	controllerState.notifications.permissionError = "";
-	openNotificationChannel(nextWorkspace);
-}
-function openNotificationChannel(workspaceId) {
-	const Channel = window.BroadcastChannel || globalThis.BroadcastChannel;
-	if (typeof Channel !== "function") return;
-	try {
-		const channel = new Channel(`${NOTIFICATION_STORAGE_PREFIX}.${encodeURIComponent(workspaceId)}`);
-		channel.onmessage = (event) => handleNotificationBroadcast(event.data);
-		controllerState.notifications.channel = channel;
-	} catch (_) {
-		controllerState.notifications.channel = null;
-	}
-}
-function closeNotificationChannel() {
-	try {
-		controllerState.notifications.channel?.close();
-	} catch (_) {}
-	controllerState.notifications.channel = null;
-}
-function broadcastNotification(message) {
-	try {
-		controllerState.notifications.channel?.postMessage({
-			...message,
-			workspaceId: controllerState.notifications.workspaceId,
-			sourceTabId: controllerState.notifications.tabId
-		});
-	} catch (_) {}
-}
-function handleNotificationBroadcast(message) {
-	if (!message || message.workspaceId !== controllerState.notifications.workspaceId || message.sourceTabId === controllerState.notifications.tabId) return;
-	const store = controllerState.notifications.store || notificationDefaultStore();
-	if (message.type === "effect" && message.effectKey) {
-		if (!store.effects.some((item) => item.key === message.effectKey)) {
-			store.effects.push({
-				key: message.effectKey,
-				at: Number(message.at) || Date.now()
-			});
-			controllerState.notifications.store = store;
-			writeNotificationStore();
-		}
-		return;
-	}
-	if (message.type === "record" && message.record) {
-		const record = notificationRecord(message.record);
-		if (!record) return;
-		if (!store.seen.some((item) => item.marker === record.marker)) store.seen.push({
-			marker: record.marker,
-			at: record.at
-		});
-		if (notificationRecordIsCurrentAndVisible(record)) {
-			store.unread = store.unread.filter((item) => item.marker !== record.marker);
-			store.pending = store.pending.filter((item) => item.marker !== record.marker);
-			controllerState.notifications.store = store;
-			writeNotificationStore();
-			broadcastNotification({
-				type: "clear-resource",
-				resourceId: record.resourceId
-			});
-			if (controllerState.tree) renderSessions();
-			return;
-		}
-		if (!store.unread.some((item) => item.marker === record.marker)) store.unread.push(record);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		if (controllerState.tree) {
-			renderSessions();
-			refreshIcons();
-		}
-		return;
-	}
-	if (message.type === "clear-marker" && message.marker) {
-		store.unread = store.unread.filter((item) => item.marker !== message.marker);
-		store.pending = store.pending.filter((item) => item.marker !== message.marker);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		if (controllerState.tree) renderSessions();
-		return;
-	}
-	if (message.type === "clear-resource" && message.resourceId) {
-		const resourceId = String(message.resourceId);
-		store.unread = store.unread.filter((item) => item.resourceId !== resourceId);
-		store.pending = store.pending.filter((item) => item.resourceId !== resourceId);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		if (controllerState.tree) renderSessions();
-	}
-}
-function notificationStore() {
-	if (!controllerState.notifications.store) controllerState.notifications.store = notificationDefaultStore();
-	return controllerState.notifications.store;
-}
-function notificationMarkerFor(item) {
-	const explicit = String(item?.completionMarker || item?.agentRunCompletionMarker || "").trim();
-	if (explicit) return explicit;
-	const sessionID = String(item?.agentHubSessionId || item?.completionSessionId || "").trim();
-	const eventID = Number(item?.completionEventId) || 0;
-	return sessionID && eventID > 0 ? `${sessionID}:${eventID}` : "";
-}
-function notificationSessionIDFor(item) {
-	return String(item?.forgeSessionId || item?.sessionId || item?.agentHubSessionId || item?.id || "").trim();
-}
-function notificationResourceIDFor(item) {
-	if (item?.source === "internal" || item?.source === "external") return sessionNavigationTarget(item).primaryResourceId || "";
-	if (item?.resourceId) return String(item.resourceId).trim();
-	if (Array.isArray(item?.controls) && item.controls.length === 1) return String(item.controls[0]?.resourceId || "").trim();
-	return "";
-}
-function notificationEventState(event) {
-	switch (event?.type) {
-		case "turn.failed": return "failed";
-		case "turn.cancelled": return "cancelled";
-		case "turn.completed": return "completed";
-		default: return "";
-	}
-}
-function notificationSelfDrivingContext(item, resourceId) {
-	const revision = Number(item?.selfDrivingRevision) || 0;
-	if (!(Boolean(item?.schedulerTurn) || revision > 0)) return {
-		isSelfDriving: false,
-		state: "",
-		final: false,
-		suppressed: false
-	};
-	const selfDriving = findResource(resourceId)?.selfDriving;
-	const stateName = String(selfDriving?.condition || "disabled").trim().toLowerCase();
-	const completed = !selfDriving?.enabled && selfDriving?.lastOutcome?.status === "completed";
-	const requiresAttention = Boolean(selfDriving?.enabled) && [
-		"blocked",
-		"error",
-		"needs_configuration"
-	].includes(stateName);
-	const disabledControl = !selfDriving?.enabled && !completed;
-	const final = completed || requiresAttention;
-	return {
-		isSelfDriving: true,
-		state: stateName,
-		final,
-		suppressed: !final,
-		disabledControl
-	};
-}
-function notificationRecordFor(item, marker, completionState = "") {
-	const resourceId = notificationResourceIDFor(item);
-	const resource = findResource(resourceId);
-	const selfDriving = notificationSelfDrivingContext(item, resourceId);
-	return notificationRecord({
-		workspaceId: controllerState.notifications.workspaceId,
-		sessionId: notificationSessionIDFor(item),
-		runId: String(item?.runId || item?.agentRunId || item?.id || "").trim(),
-		resourceId,
-		marker,
-		completionState: completionState || item?.completionState || "completed",
-		selfDriving: selfDriving.isSelfDriving,
-		selfDrivingState: selfDriving.state,
-		title: resource?.title || item?.title || item?.agentRunTitle || item?.id || "Session",
-		resourceType: resource?.type || "",
-		resourceTitle: resource?.title || "",
-		at: Date.now()
-	});
-}
-function notificationRecordIsCurrentAndVisible(record) {
-	if (!record?.resourceId || controllerState.selectedId !== record.resourceId) return false;
-	return notificationPageIsVisibleAndFocused();
-}
-function notificationPageIsVisibleAndFocused() {
-	const visible = document.visibilityState ? document.visibilityState === "visible" : !document.hidden;
-	const focused = typeof document.hasFocus !== "function" || document.hasFocus();
-	return visible && !document.hidden && focused;
-}
-function notificationEffectKey(record, kind) {
-	return `${record.marker}:${kind}`;
-}
-function mergeNotificationEffectsFromStorage() {
-	const persisted = readNotificationStore();
-	const store = notificationStore();
-	const effects = /* @__PURE__ */ new Map();
-	for (const effect of [...persisted.effects, ...store.effects]) if (effect?.key) effects.set(effect.key, effect);
-	store.effects = [...effects.values()].slice(-2e3);
-	controllerState.notifications.store = store;
-}
-function claimNotificationEffect(record, kind) {
-	const key = notificationEffectKey(record, kind);
-	const store = notificationStore();
-	if (store.effects.some((item) => item.key === key)) return false;
-	store.effects.push({
-		key,
-		at: Date.now()
-	});
-	controllerState.notifications.store = store;
-	writeNotificationStore();
-	broadcastNotification({
-		type: "effect",
-		effectKey: key,
-		at: Date.now()
-	});
-	return true;
-}
-function withNotificationEffectClaim(record, kind, action) {
-	const locks = typeof navigator !== "undefined" ? navigator.locks : null;
-	const run = () => {
-		mergeNotificationEffectsFromStorage();
-		if (claimNotificationEffect(record, kind)) action();
-	};
-	if (!locks || typeof locks.request !== "function") {
-		run();
-		return;
-	}
-	try {
-		Promise.resolve(locks.request(`forge.gui.notification.${controllerState.notifications.workspaceId}.${notificationEffectKey(record, kind)}`, { ifAvailable: true }, (lock) => {
-			if (!lock) return;
-			run();
-		})).catch((err) => {
-			console.warn("notification effect lock unavailable", err);
-			run();
-		});
-	} catch (err) {
-		console.warn("notification effect lock unavailable", err);
-		run();
-	}
-}
-function notificationDisplayTitle(record) {
-	return `${record.resourceType === "project" ? "Project" : record.resourceType === "task" ? "Task" : "Session"}: ${record.title || record.resourceId || record.sessionId}`;
-}
-function notificationDisplayBody(record) {
-	if (record.selfDriving) return `Self-Driving ${record.selfDrivingState || "finished"}.`;
-	if (record.completionState === "failed") return "Turn failed.";
-	if (record.completionState === "cancelled") return "Turn cancelled.";
-	return "Turn completed.";
-}
-function playCompletionSound() {
-	if (!controllerState.notifications.settings?.sound) return;
-	const AudioContext = window.AudioContext || window.webkitAudioContext;
-	if (typeof AudioContext !== "function") {
-		controllerState.notifications.soundError = "Audio is unavailable in this browser.";
-		if (controllerState.settings.open && controllerState.settings.tab === "notifications") renderSettingsModal();
-		return;
-	}
-	try {
-		const audio = controllerState.notifications.audioContext || new AudioContext();
-		controllerState.notifications.audioContext = audio;
-		const start = () => {
-			const oscillator = audio.createOscillator();
-			const gain = audio.createGain();
-			oscillator.type = "sine";
-			oscillator.frequency.setValueAtTime(880, audio.currentTime);
-			oscillator.frequency.exponentialRampToValueAtTime(660, audio.currentTime + .12);
-			gain.gain.setValueAtTime(1e-4, audio.currentTime);
-			gain.gain.exponentialRampToValueAtTime(.08, audio.currentTime + .01);
-			gain.gain.exponentialRampToValueAtTime(1e-4, audio.currentTime + .16);
-			oscillator.connect(gain);
-			gain.connect(audio.destination);
-			oscillator.start();
-			oscillator.stop(audio.currentTime + .18);
-		};
-		if (audio.state === "suspended") audio.resume().then(start).catch((err) => {
-			controllerState.notifications.soundError = "Chrome blocked completion sound until audio is enabled by the page.";
-			console.warn("completion sound unavailable", err);
-			if (controllerState.settings.open && controllerState.settings.tab === "notifications") renderSettingsModal();
-		});
-		else start();
-	} catch (err) {
-		controllerState.notifications.soundError = "Completion sound is unavailable right now.";
-		console.warn("completion sound unavailable", err);
-		if (controllerState.settings.open && controllerState.settings.tab === "notifications") renderSettingsModal();
-	}
-}
-function sendBrowserNotification(record, alreadyClaimed = false) {
-	if (!controllerState.notifications.settings?.browser || notificationPermission() !== "granted") return;
-	if (!alreadyClaimed && !claimNotificationEffect(record, "browser")) return;
-	try {
-		const notification = new window.Notification(notificationDisplayTitle(record), {
-			body: notificationDisplayBody(record),
-			tag: `forge-${record.marker}`,
-			icon: "/favicon.svg"
-		});
-		notification.onclick = () => {
-			try {
-				window.focus();
-			} catch (_) {}
-			navigateToNotification(record).catch((err) => console.warn("notification navigation failed", err));
-		};
-	} catch (err) {
-		console.warn("browser notification unavailable", err);
-	}
-}
-function deliverCompletionEffects(record) {
-	if (controllerState.notifications.settings?.browser && notificationPermission() === "granted") withNotificationEffectClaim(record, "browser", () => sendBrowserNotification(record, true));
-	if (controllerState.notifications.settings?.sound) withNotificationEffectClaim(record, "sound", playCompletionSound);
-}
-function observeCompletion(item, completionState = "") {
-	const marker = notificationMarkerFor(item);
-	const sessionId = notificationSessionIDFor(item);
-	if (!marker || !sessionId || !controllerState.notifications.workspaceId) return false;
-	const record = notificationRecordFor(item, marker, completionState);
-	if (!record?.sessionId) return false;
-	const store = notificationStore();
-	const seen = store.seen.some((entry) => entry.marker === marker);
-	const pendingIndex = store.pending.findIndex((entry) => entry.marker === marker);
-	const selfDriving = notificationSelfDrivingContext(item, record.resourceId);
-	if (!controllerState.notifications.ready) {
-		if (!seen) store.seen.push({
-			marker,
-			at: Date.now()
-		});
-		store.pending = store.pending.filter((entry) => entry.marker !== marker);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		return false;
-	}
-	if (seen && pendingIndex < 0) return false;
-	if (selfDriving.isSelfDriving && selfDriving.state === "waiting") {
-		if (!seen) store.seen.push({
-			marker,
-			at: Date.now()
-		});
-		store.pending = store.pending.filter((entry) => entry.marker !== marker);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		return false;
-	}
-	if (selfDriving.isSelfDriving && selfDriving.disabledControl) {
-		if (!seen) store.seen.push({
-			marker,
-			at: Date.now()
-		});
-		store.pending = store.pending.filter((entry) => entry.marker !== marker);
-		store.unread = store.unread.filter((entry) => entry.marker !== marker);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		return false;
-	}
-	if (selfDriving.isSelfDriving && selfDriving.suppressed && !selfDriving.final) {
-		if (!seen) store.seen.push({
-			marker,
-			at: Date.now()
-		});
-		if (pendingIndex < 0) store.pending.push(record);
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		return false;
-	}
-	if (!seen) store.seen.push({
-		marker,
-		at: Date.now()
-	});
-	store.pending = store.pending.filter((entry) => entry.marker !== marker);
-	if (notificationRecordIsCurrentAndVisible(record)) {
-		controllerState.notifications.store = store;
-		writeNotificationStore();
-		return false;
-	}
-	store.unread = store.unread.filter((entry) => entry.marker !== marker);
-	store.unread.push(record);
-	controllerState.notifications.store = store;
-	writeNotificationStore();
-	broadcastNotification({
-		type: "record",
-		record
-	});
-	deliverCompletionEffects(record);
-	if (controllerState.tree) {
-		renderSessions();
-		refreshIcons();
-	}
-	return true;
-}
-function observeCompletionProjections(items) {
-	for (const item of items || []) if (notificationMarkerFor(item)) observeCompletion(item, item.completionState || item.agentRunCompletionState || "");
-}
-function observeCompletionEvent(event, run) {
-	const completionState = notificationEventState(event);
-	if (!completionState || !event?.sessionId || !Number(event.id)) return;
-	const marker = `${event.sessionId}:${event.id}`;
-	observeCompletion({
-		...run || {},
-		completionMarker: marker,
-		completionState,
-		agentHubSessionId: run?.agentHubSessionId || event.sessionId
-	}, completionState);
+	notificationController?.initialize(workspaceId);
 }
 function establishNotificationBaseline() {
-	if (controllerState.notifications.ready) return;
-	observeCompletionProjections(controllerState.tree?.sessions || []);
-	observeCompletionProjections(controllerState.agent.runs || []);
-	controllerState.notifications.ready = true;
-	writeNotificationStore();
+	notificationController?.establishBaseline();
+}
+function observeCompletionProjections(items) {
+	notificationController?.observeProjections(items);
+}
+function observeCompletionEvent(event, run) {
+	notificationController?.observeEvent(event, run);
 }
 function hasUnreadNotificationForSession(sessionId) {
-	const normalized = String(sessionId || "").trim();
-	return Boolean(normalized && notificationStore().unread.some((record) => record.sessionId === normalized));
-}
-function clearUnreadForMarker(marker) {
-	const value = String(marker || "").trim();
-	if (!value) return;
-	const store = notificationStore();
-	if (!(store.unread.some((record) => record.marker === value) || store.pending.some((record) => record.marker === value))) return;
-	store.unread = store.unread.filter((record) => record.marker !== value);
-	store.pending = store.pending.filter((record) => record.marker !== value);
-	controllerState.notifications.store = store;
-	writeNotificationStore();
-	broadcastNotification({
-		type: "clear-marker",
-		marker: value
-	});
-	if (controllerState.tree) renderSessions();
+	return notificationController?.hasUnreadForSession(sessionId) ?? false;
 }
 function clearUnreadForResource(resourceId) {
-	const value = String(resourceId || "").trim();
-	if (!value) return;
-	const store = notificationStore();
-	if (!(store.unread.some((record) => record.resourceId === value) || store.pending.some((record) => record.resourceId === value))) return;
-	store.unread = store.unread.filter((record) => record.resourceId !== value);
-	store.pending = store.pending.filter((record) => record.resourceId !== value);
-	controllerState.notifications.store = store;
-	writeNotificationStore();
-	broadcastNotification({
-		type: "clear-resource",
-		resourceId: value
-	});
-	if (controllerState.tree) renderSessions();
+	notificationController?.clearResource(resourceId);
 }
-function notificationSettingsChanged() {
-	writeNotificationSettings();
-	if (controllerState.settings.open && controllerState.settings.tab === "notifications") renderSettingsModal();
+function currentUserName() {
+	return userSettingsController?.current() || "User";
 }
-async function requestBrowserNotifications() {
-	const permission = notificationPermission();
-	if (permission === "unsupported") {
-		controllerState.notifications.settings.browser = false;
-		controllerState.notifications.permissionError = "Browser notifications are not supported here.";
-		notificationSettingsChanged();
-		return permission;
-	}
-	if (permission === "denied") {
-		controllerState.notifications.settings.browser = false;
-		controllerState.notifications.permissionError = "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically.";
-		notificationSettingsChanged();
-		return permission;
-	}
-	let nextPermission = permission;
-	if (permission === "default") try {
-		nextPermission = await window.Notification.requestPermission();
-	} catch (err) {
-		controllerState.notifications.permissionError = "Chrome could not request notification permission.";
-		console.warn("notification permission request failed", err);
-	}
-	if (nextPermission === "granted") {
-		controllerState.notifications.settings.browser = true;
-		controllerState.notifications.permissionError = "";
-	} else {
-		controllerState.notifications.settings.browser = false;
-		controllerState.notifications.permissionError = nextPermission === "denied" ? "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically." : "Notification permission is still pending.";
-	}
-	notificationSettingsChanged();
-	return nextPermission;
-}
-function setBrowserNotificationsEnabled(enabled) {
-	controllerState.notifications.settings = controllerState.notifications.settings || readNotificationSettings();
-	if (!enabled) {
-		controllerState.notifications.settings.browser = false;
-		controllerState.notifications.permissionError = "";
-		notificationSettingsChanged();
-		return;
-	}
-	requestBrowserNotifications().catch((err) => {
-		controllerState.notifications.settings.browser = false;
-		controllerState.notifications.permissionError = "Chrome could not request notification permission.";
-		console.warn("notification permission request failed", err);
-		notificationSettingsChanged();
-	});
-}
-function initializeCompletionAudio() {
-	const AudioContext = window.AudioContext || window.webkitAudioContext;
-	if (typeof AudioContext !== "function") {
-		controllerState.notifications.soundError = "Audio is unavailable in this browser.";
-		notificationSettingsChanged();
-		return Promise.resolve(false);
-	}
-	try {
-		controllerState.notifications.audioContext = controllerState.notifications.audioContext || new AudioContext();
-		const resume = controllerState.notifications.audioContext.resume?.();
-		return Promise.resolve(resume).then(() => {
-			controllerState.notifications.soundError = "";
-			notificationSettingsChanged();
-			return true;
-		}).catch((err) => {
-			controllerState.notifications.soundError = "Chrome may block sound until the page receives an audio gesture.";
-			console.warn("completion audio initialization failed", err);
-			notificationSettingsChanged();
-			return false;
-		});
-	} catch (err) {
-		controllerState.notifications.soundError = "Completion sound is unavailable right now.";
-		console.warn("completion audio initialization failed", err);
-		notificationSettingsChanged();
-		return Promise.resolve(false);
-	}
-}
-function setCompletionSoundEnabled(enabled) {
-	controllerState.notifications.settings = controllerState.notifications.settings || readNotificationSettings();
-	controllerState.notifications.settings.sound = Boolean(enabled);
-	controllerState.notifications.soundError = "";
-	notificationSettingsChanged();
-	if (enabled) initializeCompletionAudio();
-}
-async function navigateToNotification(record) {
-	if (!record?.resourceId) return;
-	try {
-		await selectResource(record.resourceId, {
-			clearUnread: false,
-			forceDetail: true
-		});
-		if (record.runId) {
-			const run = controllerState.agent.runs.find((item) => item.id === record.runId);
-			if (run) {
-				controllerState.agent.activeRunId = run.id;
-				renderAgent();
-				renderTTY();
-				refreshIcons();
-			}
-		}
-	} finally {
-		clearUnreadForMarker(record.marker);
-	}
-}
-function installNotificationCrossTabListeners() {
-	lifecycle?.listen(window, "storage", (event) => {
-		if (event.key === notificationStateKey() && event.newValue) {
-			controllerState.notifications.store = readNotificationStore();
-			if (controllerState.tree) renderSessions();
-		}
-		if (event.key === NOTIFICATION_SETTINGS_KEY) {
-			controllerState.notifications.settings = readNotificationSettings();
-			if (notificationPermission() !== "granted") controllerState.notifications.settings.browser = false;
-			if (controllerState.settings.open && controllerState.settings.tab === "notifications") renderSettingsModal();
-		}
-	});
-	lifecycle?.listen(document, "visibilitychange", () => {
-		flushAgentDraftOnPageLeave();
-		if (notificationPageIsVisibleAndFocused()) clearUnreadForResource(controllerState.selectedId);
-	});
-	lifecycle?.listen(window, "focus", () => clearUnreadForResource(controllerState.selectedId));
-}
-function agentDraftStorage() {
-	try {
-		return window.localStorage;
-	} catch (_) {
-		return null;
-	}
-}
-function agentDraftStoragePart(value) {
-	return encodeURIComponent(String(value || "").trim());
-}
-function agentDraftSessionIdentity(run) {
-	return String(run?.agentHubSessionId || run?.sourceExternalId || run?.id || "").trim();
-}
-function agentDraftResourceScope(resourceId) {
-	return String(resourceId || "").trim() || "workspace";
-}
+const agentDraftStore = createAgentDraftStore();
 function agentDraftKeyForRun(run, workspaceId = controllerState.activeWorkspaceId) {
-	const workspace = String(workspaceId || "").trim();
-	const session = agentDraftSessionIdentity(run);
-	if (!workspace || !session) return "";
-	return `${AGENT_DRAFT_STORAGE_PREFIX}.session.${agentDraftStoragePart(workspace)}.${agentDraftStoragePart(session)}`;
-}
-function agentDraftRecord(raw) {
-	try {
-		const record = JSON.parse(raw);
-		if (!record || record.version !== AGENT_DRAFT_STORAGE_VERSION || typeof record.text !== "string") return null;
-		return record;
-	} catch (_) {
-		return null;
-	}
-}
-function readAgentDraftRecord(key) {
-	const storage = agentDraftStorage();
-	if (!storage || !key) return null;
-	let raw = "";
-	try {
-		raw = storage.getItem(key) || "";
-	} catch (_) {
-		return null;
-	}
-	if (!raw) return null;
-	const record = agentDraftRecord(raw);
-	if (record) return record;
-	try {
-		storage.removeItem(key);
-	} catch (_) {}
-	return null;
+	return agentDraftStore.keyForRun(run, workspaceId);
 }
 function readAgentDraft(key) {
-	const record = readAgentDraftRecord(key);
-	if (!record) return "";
-	if (!record.text) {
-		removeAgentDraft(key);
-		return "";
-	}
-	return record.text;
+	return agentDraftStore.read(key);
 }
 function removeAgentDraft(key) {
-	const storage = agentDraftStorage();
-	if (!storage || !key) return;
-	try {
-		storage.removeItem(key);
-	} catch (_) {}
+	agentDraftStore.remove(key);
 }
 function agentDraftProtectedKeys(workspaceId, resourceId) {
-	const protectedKeys = /* @__PURE__ */ new Set();
+	const protectedKeys = /* @__PURE__ */ new Set<string>();
 	if (controllerState.agent.ttyDraftWorkspaceId === workspaceId && controllerState.agent.ttyDraftResourceId === resourceId && controllerState.agent.ttyDraftKey) protectedKeys.add(controllerState.agent.ttyDraftKey);
 	for (const run of controllerState.agent.runs || []) {
 		if (agentDraftResourceScope(run.resourceId) !== resourceId) continue;
@@ -1171,60 +512,13 @@ function agentDraftProtectedKeys(workspaceId, resourceId) {
 	return protectedKeys;
 }
 function pruneAgentDraftStorage(workspaceId = controllerState.activeWorkspaceId, resourceId = controllerState.agent.ttyDraftResourceId) {
-	const storage = agentDraftStorage();
 	const workspace = String(workspaceId || "").trim();
 	const resource = agentDraftResourceScope(resourceId);
-	if (!storage || !workspace || !resource) return;
-	const prefix = `${AGENT_DRAFT_STORAGE_PREFIX}.session.${agentDraftStoragePart(workspace)}.`;
-	const protectedKeys = agentDraftProtectedKeys(workspace, resource);
-	const candidates: Array<{ key: string; updatedAt: number }> = [];
-	const now = Date.now();
-	try {
-		for (let index = 0; index < storage.length; index++) {
-			const key = storage.key(index);
-			if (!key || !key.startsWith(prefix)) continue;
-			const record = readAgentDraftRecord(key);
-			if (!record || agentDraftResourceScope(record.resourceId) !== resource || protectedKeys.has(key)) continue;
-			if (!record.text) {
-				storage.removeItem(key);
-				continue;
-			}
-			const updatedAt = Number(record.updatedAt) || 0;
-			if (updatedAt > 0 && now - updatedAt > AGENT_DRAFT_MAX_AGE_MS) {
-				storage.removeItem(key);
-				continue;
-			}
-			candidates.push({
-				key,
-				updatedAt
-			});
-		}
-		candidates.sort((left, right) => left.updatedAt - right.updatedAt);
-		while (candidates.length > AGENT_DRAFT_MAX_ORPHAN_COUNT) {
-			const candidate = candidates.shift();
-			if (candidate) removeAgentDraft(candidate.key);
-		}
-	} catch (_) {}
+	if (!workspace) return;
+	agentDraftStore.prune(workspace, resource, agentDraftProtectedKeys(workspace, resource));
 }
-function writeAgentDraft(key, text, context: any = {}) {
-	if (!key) return;
-	if (!text) {
-		removeAgentDraft(key);
-		return;
-	}
-	const storage = agentDraftStorage();
-	if (!storage) return;
-	try {
-		storage.setItem(key, JSON.stringify({
-			version: AGENT_DRAFT_STORAGE_VERSION,
-			text,
-			updatedAt: Date.now(),
-			workspaceId: context.workspaceId || "",
-			resourceId: context.resourceId || "",
-			runId: context.runId || "",
-			sessionId: context.sessionId || ""
-		}));
-	} catch (_) {}
+function writeAgentDraft(key, text, context: AgentDraftContext) {
+	agentDraftStore.write(key, text, context);
 }
 function persistAgentDraft() {
 	const key = controllerState.agent.ttyDraftKey;
@@ -1280,7 +574,7 @@ function clearAgentDraftAfterAccepted({ workspaceId, runId, key, text, version }
 	updateAgentDraft("", false);
 	return true;
 }
-async function api(path, options: any = {}) {
+async function api(path: string, options: RequestInit = {}) {
 	const response = await fetch(path, {
 		headers: { "Content-Type": "application/json" },
 		...options
@@ -1290,9 +584,7 @@ async function api(path, options: any = {}) {
 		try {
 			message = (await response.json()).error || message;
 		} catch (_) {}
-		const error: any = new Error(message);
-		error.status = response.status;
-		throw error;
+		throw new ApiError(response.status, message);
 	}
 	if (response.status === 204) return null;
 	return response.json();
@@ -1302,7 +594,7 @@ async function load() {
 	const [base, agentHub] = await Promise.all([api("/api/workspaces"), api("/api/settings/agenthub")]);
 	controllerState.config = configWithAgentHubCatalog(base, agentHub);
 	applyAgentConfig();
-	controllerState.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId : controllerState.config.activeId || controllerState.config.workspaces[0]?.id || "";
+	controllerState.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId || "" : controllerState.config?.activeId || controllerState.config?.workspaces[0]?.id || "";
 	controllerState.selectedId = route.resourceId || "workspace";
 	renderWorkspaceSelect();
 	if (controllerState.activeWorkspaceId) {
@@ -1313,8 +605,7 @@ async function load() {
 	} else {
 		controllerState.navigationLoading = false;
 		controllerState.tree = null;
-		controllerState.details = {};
-		controllerState.resourceLogPages = {};
+		clearResourceDetailState();
 		controllerState.workspaceAgents = null;
 		controllerState.preview = null;
 		controllerState.diff = null;
@@ -1322,7 +613,7 @@ async function load() {
 		publishViewModels();
 	}
 }
-async function loadTree(options: any = {}) {
+async function loadTree(options: LoadTreeOptions = {}) {
 	if (!controllerState.activeWorkspaceId) return;
 	const workspaceId = controllerState.activeWorkspaceId;
 	const navigationVersion = controllerState.navigationVersion;
@@ -1347,8 +638,7 @@ async function loadTree(options: any = {}) {
 	}
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	controllerState.tree = tree;
-	controllerState.details = {};
-	controllerState.resourceLogPages = {};
+	clearResourceDetailState();
 	controllerState.workspaceAgents = null;
 	controllerState.workspaceAgentsSaving = false;
 	controllerState.preview = null;
@@ -1360,163 +650,34 @@ async function loadTree(options: any = {}) {
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	await loadAgentRuns();
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
-	if (!controllerState.notifications.ready) establishNotificationBaseline();
+	establishNotificationBaseline();
 	controllerState.navigationLoading = false;
 	controllerState.navigationError = "";
 	publishViewModels();
 	if (options.updateURL !== false) syncURL({ replace: Boolean(options.replaceURL) });
 }
-async function loadDetail(id, options: any = {}) {
-	if (!id || id === "workspace" || controllerState.details[id] && !options.force) return;
-	if (options.force) {
-		resetResourceLogState(id);
-		delete controllerState.details[id];
-	}
-	const workspaceId = controllerState.activeWorkspaceId;
-	const navigationVersion = controllerState.navigationVersion;
-	const detailRequestVersion = ++controllerState.detailRequestVersion;
-	const detail = await fetchDetail(id, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT });
-	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || controllerState.selectedId !== id || detailRequestVersion !== controllerState.detailRequestVersion) return null;
-	return applyResourceDetail(detail, "replace");
+async function loadDetail(id, options: LoadDetailOptions = {}) {
+	return resourceDetailController.load(id, options) as Promise<DomainRecord | null | undefined>;
 }
-function fetchDetail(id, workspaceId = controllerState.activeWorkspaceId, options: any = {}) {
-	const params = new URLSearchParams();
-	const cursor = options.logsCursor === void 0 ? options.cursor : options.logsCursor;
-	const limit = options.logsLimit === void 0 ? options.limit === void 0 ? RESOURCE_LOG_INITIAL_LIMIT : options.limit : options.logsLimit;
-	params.set("logsLimit", String(limit));
-	if (cursor !== void 0 && cursor !== null && String(cursor) !== "") params.set("logsCursor", String(cursor));
-	return api(`/api/workspaces/${workspaceId}/resources/${encodeURIComponent(id)}?${params.toString()}`);
+function fetchDetail(id, workspaceId = controllerState.activeWorkspaceId, options: FetchDetailOptions = {}) {
+	return resourceDetailController.fetch(id, workspaceId, options) as Promise<DomainRecord>;
 }
 function resetResourceLogState(resourceId) {
-	if (!controllerState.resourceLogPages) controllerState.resourceLogPages = {};
-	if (resourceId) delete controllerState.resourceLogPages[resourceId];
+	resourceDetailController.reset(resourceId);
 }
 function resourceLogPage(resourceId) {
-	if (!controllerState.resourceLogPages) controllerState.resourceLogPages = {};
-	if (!controllerState.resourceLogPages[resourceId]) controllerState.resourceLogPages[resourceId] = {
-		loaded: false,
-		hasMore: false,
-		nextCursor: "",
-		loading: false,
-		error: "",
-		requestVersion: 0
-	};
-	return controllerState.resourceLogPages[resourceId];
-}
-function resourceLogEntries(detail) {
-	if (Array.isArray(detail?.logs) && detail.logs.length) return detail.logs;
-	if (Array.isArray(detail?.logPage?.entries)) return detail.logPage.entries;
-	return Array.isArray(detail?.logs) ? detail.logs : [];
-}
-function mergeResourceLogs(existing, incoming, prepend) {
-	const next: any[] = [];
-	const byID = /* @__PURE__ */ new Map();
-	const add = (entry, replaceDuplicate) => {
-		const id = String(entry?.id || "");
-		if (id && byID.has(id)) {
-			if (replaceDuplicate) next[byID.get(id)] = entry;
-			return;
-		}
-		if (id) byID.set(id, next.length);
-		next.push(entry);
-	};
-	const first = prepend ? incoming : existing;
-	const second = prepend ? existing : incoming;
-	for (const entry of first || []) add(entry, false);
-	for (const entry of second || []) add(entry, !prepend);
-	return next.sort(compareLogTimeDesc);
+	return resourceDetailController.page(resourceId);
 }
 function resourceDetailSnapshot(resourceId) {
-	const page = controllerState.resourceLogPages?.[resourceId];
-	return {
-		detail: controllerState.details[resourceId] || null,
-		page: page ? {
-			loaded: page.loaded,
-			hasMore: page.hasMore,
-			nextCursor: page.nextCursor,
-			loading: page.loading,
-			error: page.error
-		} : null
-	};
+	return resourceDetailController.snapshot(resourceId);
 }
-function applyResourceDetail(detail, mode = "head") {
-	if (!detail?.id) return null;
-	const resourceId = detail.id;
-	const incoming = resourceLogEntries(detail);
-	const incomingPage = detail.logPage || null;
-	const page = resourceLogPage(resourceId);
-	if (mode === "replace" || !page.loaded || !controllerState.details[resourceId]) {
-		page.loaded = true;
-		page.hasMore = Boolean(incomingPage?.hasMore);
-		page.nextCursor = String(incomingPage?.nextCursor || "");
-		page.error = "";
-		const logs = mergeResourceLogs([], incoming, true);
-		controllerState.details[resourceId] = {
-			...detail,
-			logs,
-			logPage: {
-				hasMore: page.hasMore,
-				nextCursor: page.nextCursor
-			}
-		};
-		return controllerState.details[resourceId];
-	}
-	const current = controllerState.details[resourceId];
-	const logs = mergeResourceLogs(current.logs || [], incoming, mode !== "older");
-	if (mode === "older" && incomingPage) {
-		page.hasMore = Boolean(incomingPage.hasMore);
-		page.nextCursor = String(incomingPage.nextCursor || "");
-	}
-	page.loaded = true;
-	page.error = "";
-	const nextDetail = mode === "older" ? current : {
-		...current,
-		...detail
-	};
-	controllerState.details[resourceId] = {
-		...nextDetail,
-		logs,
-		logPage: {
-			hasMore: page.hasMore,
-			nextCursor: page.nextCursor
-		}
-	};
-	return controllerState.details[resourceId];
+function applyResourceDetail(detail, mode: "head" | "replace" | "older" = "head") {
+	return resourceDetailController.apply(detail as ResourceDetailRecord, mode) as DomainRecord | null;
 }
 async function loadMoreLogs(resourceId = controllerState.selectedId) {
-	if (!resourceId || resourceId === "workspace" || controllerState.selectedId !== resourceId) return;
-	const page = resourceLogPage(resourceId);
-	if (!page.loaded || !page.hasMore || page.loading) return;
-	const cursor = String(page.nextCursor || "");
-	if (!cursor) {
-		page.error = "The log page did not provide a continuation cursor.";
-		renderDetails();
-		return;
-	}
-	const workspaceId = controllerState.activeWorkspaceId;
-	const navigationVersion = controllerState.navigationVersion;
-	const requestVersion = ++page.requestVersion;
-	page.loading = true;
-	page.error = "";
-	renderDetails();
-	try {
-		const detail = await fetchDetail(resourceId, workspaceId, {
-			logsCursor: cursor,
-			logsLimit: RESOURCE_LOG_MORE_LIMIT
-		});
-		if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || controllerState.selectedId !== resourceId || controllerState.resourceLogPages[resourceId] !== page || requestVersion !== page.requestVersion) return;
-		applyResourceDetail(detail, "older");
-	} catch (err) {
-		if (isCurrentWorkspaceView(workspaceId, navigationVersion) && controllerState.selectedId === resourceId && controllerState.resourceLogPages[resourceId] === page && requestVersion === page.requestVersion) page.error = errorMessage(err, "Could not load older logs.");
-	} finally {
-		if (isCurrentWorkspaceView(workspaceId, navigationVersion) && controllerState.selectedId === resourceId && controllerState.resourceLogPages[resourceId] === page && requestVersion === page.requestVersion) {
-			page.loading = false;
-			renderDetails();
-			refreshIcons();
-		}
-	}
+	await resourceDetailController.loadMore(resourceId);
 }
-async function loadWorkspaceAgents(options: any = {}) {
+async function loadWorkspaceAgents(options: WorkspaceAgentsOptions = {}) {
 	if (!controllerState.activeWorkspaceId || controllerState.workspaceAgents && !options.force) return;
 	const workspaceId = controllerState.activeWorkspaceId;
 	const navigationVersion = controllerState.navigationVersion;
@@ -1531,7 +692,7 @@ async function loadWorkspaceAgents(options: any = {}) {
 			path: "AGENTS.md",
 			name: "AGENTS.md",
 			error: errorMessage(err)
-		};
+		} as DomainRecord;
 	}
 	return controllerState.workspaceAgents;
 }
@@ -1569,7 +730,7 @@ function startAutoRefresh() {
 		autoRefresh().catch((err) => {
 			console.warn("auto refresh failed", err);
 		});
-	}, AUTO_REFRESH_INTERVAL_MS);
+	}, AUTO_REFRESH_INTERVAL_MS) ?? null;
 }
 async function autoRefresh() {
 	if (!controllerState.activeWorkspaceId || controllerState.autoRefreshInFlight || controllerState.agentSessionMutationCount > 0 || controllerState.listDrag) return;
@@ -1666,7 +827,7 @@ function updateWorkspaceFavicon(workspace) {
 		link.rel = "icon";
 		document.head.appendChild(link);
 	}
-	link.type = (option as any).type || "image/png";
+	link.type = "type" in option ? String(option.type || "image/png") : "image/png";
 	link.href = option.src;
 }
 function renderWorkspaceSelect() {
@@ -1778,9 +939,8 @@ function renderAppShell() {
 		})),
 		projects,
 		sessions,
-		paneSizes: { ...controllerState.paneSizes },
-		mobile: { ...controllerState.mobile },
-		route: { ...controllerState.routeProjection },
+		...paneLayoutController.snapshot(),
+		route: routeController.projection(),
 		onSwitchWorkspace: (id) => switchWorkspace(id),
 		onAddWorkspace: () => openSettings("workspace").catch((err) => toast(err.message)),
 		onCreateProject: () => showProjectForm(),
@@ -1825,8 +985,7 @@ async function switchWorkspace(id) {
 	controllerState.tree = null;
 	controllerState.navigationLoading = true;
 	controllerState.navigationError = "";
-	controllerState.details = {};
-	controllerState.resourceLogPages = {};
+	clearResourceDetailState();
 	initializeNotificationState(id);
 	controllerState.sessionMenu = null;
 	resetWorkspaceAgentsDraft();
@@ -1862,7 +1021,7 @@ function taskSessionCountsAsRunning(session) {
 async function commitListDrag(drag, target, after) {
 	const previous = {
 		projectOrder: [...controllerState.projectOrder],
-		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, [...(order as any[])]])),
+		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []])),
 		sessionOrder: [...controllerState.sessionOrder]
 	};
 	if (drag.kind === "session") {
@@ -1920,7 +1079,7 @@ function taskOperationalState(item) {
 		})
 	};
 }
-function operationalStatusPresentation(statuses, lock: any = null) {
+function operationalStatusPresentation(statuses, lock: { kind?: string; className?: string; label?: string } | null = null) {
 	const visibleStatuses = (statuses || []).filter(Boolean);
 	const hasTaskState = visibleStatuses.length > 0 || Boolean(lock);
 	return {
@@ -2067,7 +1226,7 @@ function hasRecentAgentOutput(session) {
 	const updatedAt = new Date(session.agentRunUpdatedAt || "").getTime();
 	return Number.isFinite(updatedAt) && Date.now() - updatedAt <= TASK_OUTPUT_FRESH_WINDOW_MS;
 }
-async function selectResource(id, options: any = {}) {
+async function selectResource(id, options: SelectResourceOptions = {}) {
 	const selectionChanged = controllerState.selectedId !== id;
 	if (options.clearUnread !== false) clearUnreadForResource(id);
 	const forceDetail = selectionChanged || Boolean(options.forceDetail);
@@ -2250,7 +1409,7 @@ function sessionOperationalLabel(session, taskResource, taskState, sessionStatus
 	if (parts.length > 0) return parts.join(" · ");
 	return session?.source === "external" ? "External session active" : "Session active";
 }
-function detailPanelModel() {
+function detailPanelModel(): DetailPanelModel {
 	const workspaceId = controllerState.activeWorkspaceId || "";
 	const base = {
 		identity: workspaceId ? `${workspaceId}:${controllerState.selectedId || "workspace"}` : "empty",
@@ -2277,20 +1436,20 @@ function detailPanelModel() {
 		onToast: toast,
 		onIconsChanged: refreshIcons
 	};
-	if (!controllerState.tree) return base;
+	if (!controllerState.tree) return base as DetailPanelModel;
 	if (controllerState.selectedId === "workspace") return {
 		...base,
 		resourceId: "workspace",
 		resourceType: "workspace",
 		resourceTitle: workspaceName()
-	};
+		} as unknown as DetailPanelModel;
 	const selected = findResource(controllerState.selectedId) || controllerState.tree.projects[0];
 	if (!selected) return {
 		...base,
 		resourceId: "workspace",
 		resourceType: "workspace",
 		resourceTitle: workspaceName()
-	};
+	} as DetailPanelModel;
 	const detail = controllerState.details[selected.id] || null;
 	const parent = parentProject(selected.id);
 	const page = controllerState.resourceLogPages?.[selected.id] || {};
@@ -2298,7 +1457,7 @@ function detailPanelModel() {
 		...base,
 		identity: `${workspaceId}:${selected.id}:${selected.type}`,
 		resourceId: selected.id,
-		resourceType: selected.type,
+		resourceType: selected.type === "project" || selected.type === "task" ? selected.type : "",
 		resourceTitle: detail?.title || selected.title || selected.id,
 		parent: parent && parent.id !== selected.id ? {
 			id: parent.id,
@@ -2311,19 +1470,13 @@ function detailPanelModel() {
 			loading: Boolean(page.loading),
 			error: String(page.error || "")
 		}
-	};
+	} as unknown as DetailPanelModel;
 }
 function renderDetails() {
 	publisher.renderDetailPanel(detailPanelModel());
 }
 async function openBreadcrumbResource(id) {
 	await selectResource(id, { forceDetail: id === controllerState.selectedId && id !== "workspace" });
-}
-function compareLogTimeDesc(a, b) {
-	const left = Date.parse(a?.time || "");
-	const right = Date.parse(b?.time || "");
-	if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return right - left;
-	return String(b?.time || "").localeCompare(String(a?.time || ""));
 }
 function stripForgeManagedBlocks(content) {
 	const startMarker = "<!-- managed by forge cli -->";
@@ -2353,7 +1506,7 @@ function resetWorkspaceAgentsDraft() {
 	controllerState.workspaceAgentsDraft = "";
 	controllerState.workspaceAgentsDirty = false;
 }
-async function refreshFilePreview(section, path, options: any = {}) {
+async function refreshFilePreview(section, path, options: FilePreviewOptions = {}) {
 	const workspaceId = options.workspaceId || controllerState.activeWorkspaceId;
 	const requestVersion = options.requestVersion || ++controllerState.previewRequestVersion;
 	try {
@@ -2370,7 +1523,7 @@ async function refreshFilePreview(section, path, options: any = {}) {
 			section,
 			path,
 			error: errorMessage(err)
-		};
+		} as unknown as DomainRecord;
 		if (options.rethrow && current) throw err;
 		return null;
 	}
@@ -2415,7 +1568,7 @@ function selfDrivingWaitingNoticeSequence(notice) {
 function selfDrivingProjectionForRun(run) {
 	const resourceId = String(run?.resourceId || "").trim();
 	if (!resourceId) return null;
-	const candidates = [controllerState.details?.[resourceId], findResource(resourceId)].map((resource) => resource?.selfDriving).filter(Boolean).map((selfDriving) => ({
+	const candidates = [controllerState.details?.[resourceId], findResource(resourceId)].map((resource) => resource?.selfDriving).filter((selfDriving): selfDriving is DomainRecord => Boolean(selfDriving)).map((selfDriving) => ({
 		revision: Number(selfDriving.revision) || 0,
 		state: String(selfDriving.condition || "").trim().toLowerCase()
 	}));
@@ -2463,7 +1616,7 @@ async function loadAgentRuns() {
 	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 	return true;
 }
-async function refreshAgentRunMetadata(options: any = {}) {
+async function refreshAgentRunMetadata(options: AgentMetadataOptions = {}) {
 	if (!controllerState.activeWorkspaceId) return;
 	controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
 	const projectionVersion = controllerState.agentRunProjectionVersion;
@@ -2555,10 +1708,7 @@ function fetchAgentRuns() {
 async function reloadAgentRunsForSelection() {
 	flushAgentDraft();
 	closeAgentStream();
-	controllerState.agent.turnStopping = false;
-	controllerState.agent.turnStoppingRunId = "";
-	controllerState.agent.sessionStopping = false;
-	controllerState.agent.sessionStoppingRunId = "";
+	agentOperations.reset();
 	controllerState.agent.activeRunId = "";
 	controllerState.agent.events = [];
 	controllerState.agent.notices = [];
@@ -2583,11 +1733,7 @@ function resetAgentState() {
 	controllerState.agent.agentChooserOpen = false;
 	controllerState.agent.historyOpen = false;
 	clearAgentDraftMemory();
-	controllerState.agent.newSessionStarting = false;
-	controllerState.agent.turnStopping = false;
-	controllerState.agent.turnStoppingRunId = "";
-	controllerState.agent.sessionStopping = false;
-	controllerState.agent.sessionStoppingRunId = "";
+	agentOperations.reset();
 	controllerState.agent.toolGroupOpen.clear();
 	controllerState.agent.approvalDrafts.clear();
 	if (controllerState.agent.selfDrivingFinishNoticeWatermarks instanceof Map) controllerState.agent.selfDrivingFinishNoticeWatermarks.clear();
@@ -2632,7 +1778,7 @@ function clearAgentRenderTimer() {
 function projectAgentEvents(events) {
 	if (!window.AgentHubEventTimeline?.buildTimeline) throw new Error("AgentHub Event Timeline library is unavailable");
 	const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
-	return window.AgentHubEventTimeline.buildTimeline(visibleEvents) as any[];
+	return window.AgentHubEventTimeline.buildTimeline(visibleEvents) as TimelineItem[];
 }
 function renderAgent() {
 	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
@@ -2645,7 +1791,7 @@ function renderAgent() {
 		resourceId: selectedAgentResourceId(),
 		activeRunId: activeRun?.id || "",
 		runs: controllerState.agent.runs,
-		switchingRunId: controllerState.agent.switchingRunId || "",
+		switchingRunId: agentOperations.key("session-switch"),
 		onSelect: switchAgentRun,
 		onToast: toast,
 		onIconsChanged: refreshIcons
@@ -2698,9 +1844,9 @@ function selfDrivingBarModel(detail) {
 			reason: String(run.lastOutcome.reason || "")
 		} : null,
 		statusReason: selfDrivingStatusReason(run, detail?.logs),
-		pending: Boolean(controllerState.agent.selfDrivingSaving || controllerState.agent.selfDrivingDisabling),
+		pending: agentOperations.active("self-driving-save") || agentOperations.active("self-driving-disable"),
 		onToggleEnabled: () => {
-			if (controllerState.agent.selfDrivingSaving || controllerState.agent.selfDrivingDisabling) return;
+			if (agentOperations.active("self-driving-save") || agentOperations.active("self-driving-disable")) return;
 			if (run?.enabled) disableSelectedSelfDriving().catch((err) => toast(err.message));
 			else if (selfDrivingNeedsConfiguration(detail)) openSelfDrivingConfigDialog();
 			else setChatSelfDrivingDesiredState({ enabled: true }).catch((err) => toast(err.message));
@@ -2776,14 +1922,14 @@ function agentConfigSummary(agent) {
 	return parts.filter(Boolean).join(" · ");
 }
 function providerName(providerId) {
-	return (controllerState.config?.agentHubProviders || controllerState.settings.data?.agentHub?.catalog?.providers || []).find((item) => item.id === providerId)?.name || providerId || "Provider";
+	return (controllerState.config?.agentHubProviders || settingsController.providers()).find((item) => item.id === providerId)?.name || providerId || "Provider";
 }
 function ttyLogHasActiveSelection(log) {
 	const selection = window.getSelection?.();
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
 	return selection.getRangeAt(0).intersectsNode(log);
 }
-function renderTTY(options: any = {}) {
+function renderTTY(options: RenderOptions = {}) {
 	renderTTYComposer();
 	const run = currentAgentRun();
 	const configured = (controllerState.config?.agents || []).find((agent) => agent.id === run?.agentHubAgentName);
@@ -2805,7 +1951,7 @@ function renderTTY(options: any = {}) {
 function agentSessionMutationKey(workspaceId, runId) {
 	return `${workspaceId || "workspace"}:${runId || "run"}`;
 }
-function renderTTYComposer(options: any = {}) {
+function renderTTYComposer(options: RenderOptions = {}) {
 	controllerState.agent.skipTTYDraftSync = false;
 	closeNewSessionChooserForResourceLock();
 	const activeRun = currentAgentRun();
@@ -2826,24 +1972,24 @@ function renderTTYComposer(options: any = {}) {
 		draftKey: controllerState.agent.ttyDraftKey || "",
 		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
 		unavailableReason: live ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
-		sending: Boolean(activeRun && controllerState.agent.sendingInputRunIds.has(agentSessionMutationKey(controllerState.activeWorkspaceId, activeRun.id))),
+		sending: Boolean(activeRun && agentOperations.isSending(agentSessionMutationKey(controllerState.activeWorkspaceId, activeRun.id))),
 		externalLocked: selectedResourceHasExternalLock(),
 		internalLocked: selectedResourceHasInternalLock(),
 		agents: svelteAgentOptions(),
 		selectedAgentId: selectedAgentConfig()?.id || "",
 		chooserOpen: Boolean(controllerState.agent.agentChooserOpen),
-		sessionStarting: Boolean(controllerState.agent.newSessionStarting),
+		sessionStarting: agentOperations.active("session-start"),
 		actionsOpen: Boolean(controllerState.agent.sessionActionsOpen),
 		canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending)),
 		endingTurn: stopTurnPending,
 		closingSession: sessionStopping,
 		selfDrivingRemainsEnabled: isSelfDrivingSessionCloseTarget(activeRun),
-		selfDrivingDisabling: Boolean(controllerState.agent.selfDrivingDisabling),
+		selfDrivingDisabling: agentOperations.active("self-driving-disable"),
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
 		onToggleChooser: () => {
-			if (controllerState.agent.newSessionStarting || !enabledAgentConfigs().length || selectedResourceHasExternalLock()) return;
+			if (agentOperations.active("session-start") || !enabledAgentConfigs().length || selectedResourceHasExternalLock()) return;
 			controllerState.agent.agentChooserOpen = !controllerState.agent.agentChooserOpen;
 			renderTTYComposer();
 		},
@@ -2879,46 +2025,8 @@ function agentDisplayName(agent) {
 function selfDrivingNeedsConfiguration(detail) {
 	return !detail?.selfDriving?.agentName && !(detail?.selfDriving?.preferredAgentProfiles || []).length;
 }
-async function setChatSelfDrivingDesiredState(options: any = {}) {
-	return mutateAgentSession(async () => {
-		const selected = findResource(controllerState.selectedId);
-		const detail = selected ? controllerState.details[selected.id] || selected : null;
-		if (!detail || detail.type !== "task") throw new Error("Select a task first.");
-		const enabled = options.enabled === void 0 ? true : Boolean(options.enabled);
-		controllerState.agent.selfDrivingSaving = true;
-		renderAgent();
-		renderTTYComposer();
-		refreshIcons();
-		try {
-			const body: any = {
-				resourceId: selected.id,
-				enabled
-			};
-			if (options.configured) {
-				body.agentName = String(options.agentName || "").trim();
-				body.prompt = String(options.runInstructions || "");
-				body.completionCriteria = String(options.completionCriteria || "");
-			}
-			const response = await api(`/api/workspaces/${controllerState.activeWorkspaceId}/self-driving`, {
-				method: "PUT",
-				body: JSON.stringify(body)
-			});
-			await Promise.all([
-				loadAgentRuns(),
-				refreshTreeAfterAgentSessionMutation(),
-				fetchDetail(selected.id, controllerState.activeWorkspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }).then((fresh) => {
-					if (fresh && controllerState.activeWorkspaceId) applyResourceDetail(fresh, "head");
-				})
-			]);
-			publishViewModels();
-			toast(enabled ? "Self-Driving enabled. The Scheduler will reconcile asynchronously." : response.notificationError ? `Self-Driving disabled. ${response.notificationError}` : "Self-Driving disabled. The current Turn and Session were left open.");
-		} finally {
-			controllerState.agent.selfDrivingSaving = false;
-			renderAgent();
-			renderTTYComposer();
-			refreshIcons();
-		}
-	});
+async function setChatSelfDrivingDesiredState(options: SelfDrivingOptions = {}) {
+	return agentSessionController.setSelfDriving(options);
 }
 function selfDrivingDialogInitialState() {
 	return {
@@ -3044,82 +2152,7 @@ async function submitSelfDrivingConfigDialog(draft) {
 	}
 }
 function renderSettingsModal() {
-	const data = controllerState.settings.data || {
-		workspaces: controllerState.config?.workspaces || [],
-		activeId: controllerState.activeWorkspaceId,
-		agents: controllerState.config?.agents || [],
-		agentProfiles: controllerState.config?.agentProfiles || []
-	};
-	const hub = data.agentHub || {};
-	const status = hub.status || {};
-	const catalog = hub.catalog || {
-		providers: [],
-		agents: []
-	};
-	const preferences = controllerState.notifications.settings || readNotificationSettings();
-	controllerState.notifications.settings = preferences;
-	publisher.renderSettings({
-		open: Boolean(controllerState.settings.open),
-		identity: `${controllerState.settings.identity || 0}`,
-		dataVersion: controllerState.settings.dataVersion || 0,
-		initialTab: controllerState.settings.tab || "workspace",
-		workspaces: data.workspaces || [],
-		activeWorkspaceId: data.activeId || controllerState.activeWorkspaceId,
-		workspaceIcons: [DEFAULT_WORKSPACE_ICON, ...WORKSPACE_ICONS],
-		workspaceIconSavingId: controllerState.settings.workspaceIconSavingId || "",
-		userName: currentUserName(),
-		agentHub: {
-			configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646",
-			connected: Boolean(hub.connected),
-			compatible: Boolean(hub.compatible),
-			error: hub.error || "",
-			apiVersion: status.apiVersion || "",
-			version: status.version || "",
-			capabilities: status.capabilities || [],
-			providers: catalog.providers || [],
-			agents: catalog.agents || []
-		},
-		profiles: (data.agentProfiles || []).map((profile) => ({
-			key: profile.key || "",
-			description: profile.description || "",
-			agentName: profile.agentName || ""
-		})),
-		agents: svelteAgentOptions(),
-		notifications: {
-			browser: Boolean(preferences.browser),
-			sound: Boolean(preferences.sound),
-			permission: notificationPermission(),
-			permissionError: controllerState.notifications.permissionError || "",
-			soundError: controllerState.notifications.soundError || ""
-		},
-		onClose: closeSettings,
-		onAddWorkspace: async (draft) => {
-			syncSettingsDraftFromSvelte(draft);
-			await submitSettingsWorkspace();
-		},
-		onRemoveWorkspace: async (id, draft) => {
-			syncSettingsDraftFromSvelte(draft);
-			await removeSettingsWorkspace(id);
-		},
-		onWorkspaceIcon: async (id, iconId, draft) => {
-			syncSettingsDraftFromSvelte(draft);
-			await updateSettingsWorkspaceIcon(id, iconId);
-		},
-		onSaveUser: async (name) => {
-			const normalized = normalizeUserName(name);
-			if (!saveStoredUserName(normalized)) throw new Error("User name could not be saved in this browser.");
-			toast(normalized === "User" ? "User name reset to User." : `User name saved as ${normalized}.`);
-			return normalized;
-		},
-		onSaveAgentHub: async (draft) => {
-			syncSettingsDraftFromSvelte(draft);
-			await saveAgentSettings();
-		},
-		onBrowserNotifications: setBrowserNotificationsEnabled,
-		onCompletionSound: setCompletionSoundEnabled,
-		onToast: toast,
-		onIconsChanged: refreshIcons
-	});
+	settingsController.render();
 }
 function updateAgentDraftFromSvelte(text, context) {
 	if (!context || context.workspaceId !== controllerState.activeWorkspaceId || context.runId !== controllerState.agent.activeRunId || context.draftKey !== controllerState.agent.ttyDraftKey) return;
@@ -3137,51 +2170,7 @@ function closeCurrentAgentSession() {
 	if (window.confirm("Disable Self-Driving and close this Session instead?")) disableSelectedSelfDriving().then(() => stopAgentRun()).catch((err) => toast(err.message));
 }
 async function startAgentRun(agentName = "") {
-	if (controllerState.agent.newSessionStarting) return;
-	return mutateAgentSession(async () => {
-		if (!controllerState.activeWorkspaceId) throw new Error("Select a workspace first.");
-		const selected = findResource(controllerState.selectedId);
-		if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
-		const requestedAgentName = String(agentName || "").trim();
-		const agent = requestedAgentName ? enabledAgentConfigs().find((candidate) => candidate.id === requestedAgentName) : selectedAgentConfig();
-		if (!agent) throw new Error("Select an enabled agent first.");
-		controllerState.agent.agentName = agent.id;
-		controllerState.agent.newSessionStarting = true;
-		renderTTYComposer();
-		refreshIcons();
-		try {
-			const response = await api(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs`, {
-				method: "POST",
-				body: JSON.stringify({
-					agentName: agent.id,
-					userName: currentUserName(),
-					resourceId: selected?.id || "",
-					title: selected?.title || workspaceName(),
-					prompt: "",
-					cwd: agentDefaultCwd()
-				})
-			});
-			controllerState.agent.draftPrompt = "";
-			controllerState.agent.ttyDraft = "";
-			controllerState.agent.ttyMultiline = false;
-			controllerState.agent.ttyDraftKey = "";
-			controllerState.agent.ttyDraftWorkspaceId = "";
-			controllerState.agent.ttyDraftResourceId = "";
-			controllerState.agent.ttyDraftRunId = "";
-			controllerState.agent.ttyDraftVersion++;
-			controllerState.agent.optionsOpen = false;
-			controllerState.agent.agentChooserOpen = false;
-			controllerState.agent.historyOpen = false;
-			controllerState.agent.activeRunId = response.run.id;
-			await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-			publishViewModels();
-			toast("Agent session started.");
-		} finally {
-			controllerState.agent.newSessionStarting = false;
-			renderTTYComposer();
-			refreshIcons();
-		}
-	});
+	return agentSessionController.start(agentName);
 }
 function agentInputSelfDrivingProjection(run) {
 	const selected = findResource(controllerState.selectedId);
@@ -3194,22 +2183,6 @@ function agentInputSelfDrivingProjection(run) {
 		expectedSelfDrivingRevision: Number(selfDriving?.revision) || 0,
 		expectedSelfDrivingCondition: String(selfDriving?.condition || "").trim().toLowerCase()
 	};
-}
-async function sendAgentInputForContext(text, context) {
-	if (!context?.runId) throw new Error("Start or select an agent run first.");
-	if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
-	const run = currentAgentRun();
-	if (context.workspaceId !== controllerState.activeWorkspaceId || context.runId !== run?.id || context.resourceId !== (run.resourceId || "") || context.draftKey !== controllerState.agent.ttyDraftKey) throw new Error("The selected Workspace or Session changed before the message could be sent.");
-	const projection = agentInputSelfDrivingProjection(run);
-	const body = {
-		text,
-		userName: currentUserName()
-	};
-	if (projection) Object.assign(body, projection);
-	return api(`/api/workspaces/${context.workspaceId}/agent/runs/${context.runId}/input`, {
-		method: "POST",
-		body: JSON.stringify(body)
-	});
 }
 function openAgentUploadDialog() {
 	const run = currentAgentRun();
@@ -3229,7 +2202,7 @@ function openAgentUploadDialog() {
 	};
 	renderAgentUploadDialog();
 }
-function closeAgentUploadDialog(paths: string[] = [], context: any = {}) {
+function closeAgentUploadDialog(paths: string[] = [], context: UploadContext = {}) {
 	if (!controllerState.uploadDialog.open) return;
 	const sameContext = context.workspaceId === controllerState.activeWorkspaceId && context.runId === controllerState.agent.activeRunId;
 	const shouldSkipDraftSync = paths.length > 0 && sameContext && controllerState.uploadDialog.runId === controllerState.agent.activeRunId;
@@ -3272,162 +2245,25 @@ function renderAgentUploadDialog() {
 	});
 }
 async function stopAgentRun() {
-	if (!controllerState.agent.activeRunId || controllerState.agent.sessionStopping || controllerState.agent.turnStopping) return;
-	const run = currentAgentRun();
-	if (!isLiveAgentRun(run) || run.status === "stopping") return;
-	return mutateAgentSession(async () => {
-		const runId = controllerState.agent.activeRunId;
-		controllerState.agent.sessionStopping = true;
-		controllerState.agent.sessionStoppingRunId = runId;
-		renderTTYComposer();
-		refreshIcons();
-		try {
-			await closeAgentRun(runId);
-			await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-			publishViewModels();
-			toast("Agent session closed. Self-Driving desired state was not changed.");
-		} catch (err) {
-			try {
-				await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-				publishViewModels();
-			} catch (_) {}
-			throw err;
-		} finally {
-			controllerState.agent.sessionStopping = false;
-			controllerState.agent.sessionStoppingRunId = "";
-			renderTTYComposer();
-			refreshIcons();
-		}
-	});
+	return agentSessionController.stopSession();
 }
 async function disableSelectedSelfDriving() {
-	if (controllerState.agent.selfDrivingDisabling) return;
-	const selected = findResource(controllerState.selectedId);
-	const detail = selected ? controllerState.details[selected.id] || selected : null;
-	if (!detail || detail.type !== "task") return;
-	return mutateAgentSession(async () => {
-		controllerState.agent.selfDrivingDisabling = true;
-		renderAgent();
-		renderTTYComposer();
-		refreshIcons();
-		try {
-			const response = await api(`/api/workspaces/${controllerState.activeWorkspaceId}/self-driving`, {
-				method: "PUT",
-				body: JSON.stringify({
-					resourceId: detail.id,
-					enabled: false
-				})
-			});
-			await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-			publishViewModels();
-			toast(response.notificationError ? `Self-Driving disabled. ${response.notificationError}` : "Self-Driving disabled. The Agent Session remains open.");
-		} catch (err) {
-			try {
-				await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-				publishViewModels();
-			} catch (_) {}
-			throw err;
-		} finally {
-			controllerState.agent.selfDrivingDisabling = false;
-			renderAgent();
-			renderTTYComposer();
-			refreshIcons();
-		}
-	});
+	return agentSessionController.disableSelfDriving();
 }
 async function stopAgentTurn() {
-	if (!controllerState.agent.activeRunId || controllerState.agent.turnStopping || controllerState.agent.sessionStopping) return;
-	if (!isAgentTurnInterruptible(currentAgentRun())) return;
-	return mutateAgentSession(async () => {
-		const runId = controllerState.agent.activeRunId;
-		controllerState.agent.turnStopping = true;
-		controllerState.agent.turnStoppingRunId = runId;
-		renderTTYComposer();
-		refreshIcons();
-		try {
-			await api(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs/${runId}/interrupt`, { method: "POST" });
-			await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-			publishViewModels();
-			toast("Turn ended. The AgentHub Session remains open.");
-		} catch (err) {
-			try {
-				await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-				publishViewModels();
-			} catch (_) {}
-			throw err;
-		} finally {
-			controllerState.agent.turnStopping = false;
-			controllerState.agent.turnStoppingRunId = "";
-			renderTTYComposer();
-			refreshIcons();
-		}
-	});
+	return agentSessionController.stopTurn();
 }
 async function switchAgentRun(runId) {
-	if (!runId || runId === controllerState.agent.activeRunId) return;
-	return mutateAgentSession(async () => {
-		const workspaceId = controllerState.activeWorkspaceId;
-		flushAgentDraft();
-		const previousRun = currentAgentRun();
-		controllerState.agent.activeRunId = runId;
-		controllerState.agent.switchingRunId = runId;
-		clearAgentDraftMemory();
-		const nextRun = controllerState.agent.runs.find((run) => run.id === runId);
-		if (nextRun) restoreAgentDraftForRun(nextRun);
-		publishViewModels();
-		try {
-			if (previousRun && isLiveAgentRun(previousRun) && !previousRun.schedulerTurn) try {
-				await closeAgentRun(previousRun.id);
-			} catch (err) {
-				if (workspaceId === controllerState.activeWorkspaceId && controllerState.agent.activeRunId === runId) {
-					controllerState.agent.activeRunId = previousRun.id;
-					clearAgentDraftMemory();
-					restoreAgentDraftForRun(previousRun);
-					publishViewModels();
-				}
-				throw err;
-			}
-			if (workspaceId !== controllerState.activeWorkspaceId || controllerState.agent.activeRunId !== runId) return;
-			await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-			if (workspaceId === controllerState.activeWorkspaceId) publishViewModels();
-		} finally {
-			if (controllerState.agent.switchingRunId === runId) controllerState.agent.switchingRunId = "";
-			renderAgent();
-		}
-	});
+	return agentSessionController.switchRun(runId);
 }
 async function closeAgentRun(runId) {
-	if (!runId) return;
-	return api(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs/${runId}/stop`, { method: "POST" });
+	return agentSessionController.closeRun(runId);
 }
 async function resumeAgentRun() {
-	if (!controllerState.agent.activeRunId) return;
-	return mutateAgentSession(async () => {
-		if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
-		flushAgentDraft();
-		const response = await api(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs/${controllerState.agent.activeRunId}/resume`, { method: "POST" });
-		controllerState.agent.activeRunId = response.run.id;
-		restoreAgentDraftForRun(response.run);
-		controllerState.agent.historyOpen = false;
-		await Promise.all([loadAgentRuns(), refreshTreeAfterAgentSessionMutation()]);
-		publishViewModels();
-		toast("Agent session resumed.");
-	});
+	return agentSessionController.resume();
 }
 async function resolveAgentApprovalForRun(runId, requestId, reply) {
-	if (!runId || !requestId) return;
-	const workspaceId = controllerState.activeWorkspaceId;
-	await api(`/api/workspaces/${workspaceId}/agent/runs/${runId}/approval`, {
-		method: "POST",
-		body: JSON.stringify({
-			requestId,
-			...reply
-		})
-	});
-	if (workspaceId === controllerState.activeWorkspaceId) {
-		await loadAgentRuns();
-		publishViewModels();
-	}
+	return agentSessionController.resolveApproval(runId, requestId, reply);
 }
 function currentAgentRun() {
 	return controllerState.agent.runs.find((run) => run.id === controllerState.agent.activeRunId) || null;
@@ -3452,62 +2288,13 @@ function isSelfDrivingSessionCloseTarget(run) {
 	return Boolean(selfDriving?.enabled);
 }
 function isAgentTurnStopping(run) {
-	return Boolean(controllerState.agent.turnStopping && controllerState.agent.turnStoppingRunId === run?.id);
+	return agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === run?.id;
 }
 function isAgentSessionStopping(run) {
-	return Boolean(controllerState.agent.sessionStopping && controllerState.agent.sessionStoppingRunId === run?.id);
+	return agentOperations.active("session-stop") && agentOperations.key("session-stop") === run?.id;
 }
 async function submitTTYInput(rawText, context) {
-	const sendingKey = agentSessionMutationKey(context?.workspaceId, context?.runId);
-	if (controllerState.agent.sendingInputRunIds.has(sendingKey)) return {
-		accepted: false,
-		clear: false
-	};
-	if (!String(rawText || "").trim()) return {
-		accepted: false,
-		clear: false
-	};
-	const sendingRun = currentAgentRun();
-	if (!sendingRun) return {
-		accepted: false,
-		clear: false
-	};
-	restoreAgentDraftForRun(sendingRun);
-	if (context.workspaceId !== controllerState.activeWorkspaceId || context.runId !== controllerState.agent.activeRunId || context.draftKey !== controllerState.agent.ttyDraftKey) throw new Error("The selected Workspace or Session changed before the message could be sent.");
-	updateAgentDraft(rawText);
-	const sendWorkspaceId = context.workspaceId;
-	const sendRunId = context.runId;
-	const sendResourceId = context.resourceId;
-	const sendDraftKey = context.draftKey;
-	const sendDraftVersion = controllerState.agent.ttyDraftVersion;
-	controllerState.agent.sendingInputRunIds.add(sendingKey);
-	try {
-		const result = await sendAgentInputForContext(rawText, context);
-		let clearedDraft = false;
-		if (result?.status === "accepted") {
-			clearedDraft = clearAgentDraftAfterAccepted({
-				workspaceId: sendWorkspaceId,
-				runId: sendRunId,
-				key: sendDraftKey,
-				text: rawText,
-				version: sendDraftVersion
-			});
-			if (clearedDraft) controllerState.agent.ttyDraftResetVersion++;
-			try {
-				if (typeof refreshAgentInputProjection === "function") await refreshAgentInputProjection(sendWorkspaceId, sendResourceId);
-			} catch (refreshError) {
-				toast(`Message accepted, but the view could not refresh: ${errorMessage(refreshError)}`);
-			}
-		}
-		return {
-			accepted: result?.status === "accepted",
-			clear: clearedDraft
-		};
-	} finally {
-		controllerState.agent.sendingInputRunIds.delete(sendingKey);
-		renderTTYComposer();
-		refreshIcons();
-	}
+	return agentSessionController.send(rawText, context);
 }
 function agentDefaultCwd() {
 	const selected = findResource(controllerState.selectedId);
@@ -3537,303 +2324,13 @@ function showTaskForm(projectId) {
 	openCreateDialog("task", projectId);
 }
 function openCreateDialog(type, projectId = "") {
-	createPreviewController?.abort();
-	createPreviewController = null;
-	createPreviewPendingKey = "";
-	controllerState.modalEnter = "create";
-	controllerState.createDialog = {
-		open: true,
-		identity: ++createDialogIdentity,
-		type,
-		projectId,
-		templateName: "",
-		templateFields: {},
-		templateDirty: false,
-		titleOverride: false,
-		templateDigest: "",
-		preview: null,
-		previewing: false,
-		previewError: "",
-		previewKey: "",
-		activeTab: "edit",
-		editedMarkdown: null,
-		showOptions: false,
-		title: "",
-		description: "",
-		detail: "",
-		slug: "",
-		selfDriving: false,
-		agentName: "",
-		preferredAgentProfiles: [],
-		prompt: "",
-		completionCriteria: "",
-		submitting: false
-	};
-	renderCreateDialog();
+	createDialogController.open(type === "task" ? "task" : "project", projectId);
 }
 function closeCreateDialog() {
-	if (controllerState.createDialog.submitting) return;
-	createPreviewGeneration++;
-	createPreviewController?.abort();
-	createPreviewController = null;
-	createPreviewPendingKey = "";
-	controllerState.createDialog = {
-		open: false,
-		identity: ++createDialogIdentity,
-		type: "",
-		projectId: "",
-		templateName: "",
-		templateFields: {},
-		templateDirty: false,
-		titleOverride: false,
-		templateDigest: "",
-		preview: null,
-		previewing: false,
-		previewError: "",
-		previewKey: "",
-		activeTab: "edit",
-		editedMarkdown: null,
-		showOptions: false,
-		title: "",
-		description: "",
-		detail: "",
-		slug: "",
-		selfDriving: false,
-		agentName: "",
-		preferredAgentProfiles: [],
-		prompt: "",
-		completionCriteria: "",
-		submitting: false
-	};
-	renderCreateDialog();
+	createDialogController.close();
 }
 function renderCreateDialog() {
-	const dialog = controllerState.createDialog;
-	publisher.renderCreateDialog({
-		open: Boolean(dialog.open),
-		identity: `${dialog.identity || 0}:${dialog.type}:${dialog.projectId}`,
-		workspaceId: controllerState.activeWorkspaceId,
-		draft: createDialogDraft(dialog),
-		templates: dialog.type === "task" ? controllerState.details[dialog.projectId]?.templates || [] : [],
-		agents: svelteAgentOptions(),
-		profileKeys: (controllerState.config?.agentProfiles || []).map((profile) => profile.key),
-		preview: dialog.preview,
-		previewKey: dialog.previewKey || "",
-		previewing: Boolean(dialog.previewing),
-		previewError: dialog.previewError || "",
-		templateDigest: dialog.templateDigest || "",
-		submitting: Boolean(dialog.submitting),
-		onClose: closeCreateDialog,
-		onPreview: refreshCreateTaskPreview,
-		onSubmit: submitCreateDialog,
-		previewRequestKey: (draft) => JSON.stringify(createTaskRequest({
-			...dialog,
-			...createDialogStateFromDraft(draft),
-			templateDigest: ""
-		})),
-		onConfirmTemplateSwitch: () => window.confirm("Discard edited template fields and switch templates?"),
-		onIconsChanged: refreshIcons
-	});
-}
-function createDialogDraft(dialog): CreateDraft {
-	return {
-		type: dialog.type === "task" ? "task" : "project",
-		projectId: dialog.projectId || "",
-		templateName: dialog.templateName || "",
-		templateFields: { ...dialog.templateFields || {} },
-		title: dialog.title || "",
-		titleOverride: Boolean(dialog.titleOverride),
-		description: dialog.description || "",
-		detail: dialog.detail || "",
-		slug: dialog.slug || "",
-		selfDriving: Boolean(dialog.selfDriving),
-		agentName: dialog.agentName || "",
-		agentProfiles: (dialog.preferredAgentProfiles || []).join(", "),
-		prompt: dialog.prompt || "",
-		completionCriteria: dialog.completionCriteria || "",
-		activeTab: dialog.activeTab === "preview" ? "preview" : "edit",
-		editedMarkdown: dialog.editedMarkdown == null ? null : String(dialog.editedMarkdown),
-		showOptions: Boolean(dialog.showOptions)
-	};
-}
-function createDialogStateFromDraft(draft) {
-	return {
-		type: draft.type,
-		projectId: draft.projectId,
-		templateName: draft.templateName,
-		templateFields: { ...draft.templateFields || {} },
-		title: draft.title,
-		titleOverride: Boolean(draft.titleOverride),
-		description: draft.description,
-		detail: draft.detail,
-		slug: draft.slug,
-		selfDriving: Boolean(draft.selfDriving),
-		agentName: draft.agentName,
-		preferredAgentProfiles: parseAgentProfiles(draft.agentProfiles),
-		prompt: draft.prompt,
-		completionCriteria: draft.completionCriteria,
-		activeTab: draft.activeTab,
-		editedMarkdown: draft.editedMarkdown,
-		showOptions: Boolean(draft.showOptions)
-	};
-}
-function syncCreateDialogDraft(draft) {
-	if (!draft || !controllerState.createDialog.open) return;
-	if (String(draft.templateName || "") !== String(controllerState.createDialog.templateName || "")) {
-		controllerState.createDialog.preview = null;
-		controllerState.createDialog.templateDigest = "";
-		controllerState.createDialog.previewError = "";
-		controllerState.createDialog.previewKey = "";
-		controllerState.createDialog.previewing = false;
-		createPreviewGeneration++;
-		createPreviewController?.abort();
-		createPreviewController = null;
-		createPreviewPendingKey = "";
-	}
-	Object.assign(controllerState.createDialog, createDialogStateFromDraft(draft));
-}
-function createTaskRequest(dialog) {
-	return {
-		project: dialog.projectId,
-		title: dialog.templateName ? dialog.titleOverride ? dialog.title : "" : dialog.title,
-		...dialog.templateName ? {
-			templateName: dialog.templateName,
-			templateFields: dialog.templateFields,
-			...dialog.templateDigest ? { expectedTemplateDigest: dialog.templateDigest } : {}
-		} : { detail: dialog.detail },
-		slug: dialog.slug,
-		selfDriving: dialog.selfDriving,
-		agentName: dialog.selfDriving ? dialog.agentName : "",
-		preferredAgentProfiles: dialog.selfDriving ? dialog.preferredAgentProfiles : [],
-		prompt: dialog.selfDriving ? dialog.prompt : "",
-		completionCriteria: dialog.selfDriving ? dialog.completionCriteria : ""
-	};
-}
-async function refreshCreateTaskPreview(draft) {
-	const dialog = controllerState.createDialog;
-	syncCreateDialogDraft(draft);
-	if (!dialog.open || !dialog.templateName) return null;
-	const request = createTaskRequest({
-		...dialog,
-		templateDigest: ""
-	});
-	const requestKey = JSON.stringify(request);
-	if (dialog.previewing) {
-		if (requestKey === createPreviewPendingKey) return null;
-		createPreviewGeneration++;
-		createPreviewController?.abort();
-		createPreviewController = null;
-		createPreviewPendingKey = "";
-		dialog.previewing = false;
-	}
-	const selectedTemplate = (controllerState.details[dialog.projectId]?.templates || []).find((item) => item.name === dialog.templateName);
-	if (selectedTemplate && !selectedTemplate.taskTitle && (!dialog.titleOverride || !String(dialog.title).trim())) {
-		dialog.previewError = "This template does not generate a title. Enter a task title to render the preview.";
-		renderCreateDialog();
-		return null;
-	}
-	dialog.previewing = true;
-	dialog.previewError = "";
-	const workspaceId = controllerState.activeWorkspaceId;
-	const dialogIdentity = dialog.identity;
-	const generation = ++createPreviewGeneration;
-	createPreviewController?.abort();
-	const controller = new AbortController();
-	createPreviewController = controller;
-	createPreviewPendingKey = requestKey;
-	renderCreateDialog();
-	try {
-		const preview = await api(`/api/workspaces/${workspaceId}/tasks/preview`, {
-			method: "POST",
-			body: JSON.stringify(request),
-			signal: controller.signal
-		});
-		if (generation !== createPreviewGeneration || dialogIdentity !== controllerState.createDialog.identity || workspaceId !== controllerState.activeWorkspaceId) return null;
-		dialog.preview = preview;
-		dialog.templateDigest = preview.template?.digest || "";
-		dialog.previewKey = JSON.stringify(request);
-		return preview;
-	} catch (err) {
-		if (controller.signal.aborted || generation !== createPreviewGeneration || dialogIdentity !== controllerState.createDialog.identity) return null;
-		dialog.previewError = errorMessage(err);
-		return null;
-	} finally {
-		if (generation === createPreviewGeneration && dialogIdentity === controllerState.createDialog.identity) {
-			dialog.previewing = false;
-			if (createPreviewController === controller) createPreviewController = null;
-			if (createPreviewPendingKey === requestKey) createPreviewPendingKey = "";
-			renderCreateDialog();
-		}
-	}
-}
-async function submitCreateDialog(draft) {
-	const dialog = controllerState.createDialog;
-	if (!dialog.open || dialog.submitting) return;
-	syncCreateDialogDraft(draft);
-	const workspaceId = controllerState.activeWorkspaceId;
-	const dialogIdentity = dialog.identity;
-	dialog.submitting = true;
-	renderCreateDialog();
-	try {
-		if (dialog.type === "project") {
-			await api(`/api/workspaces/${workspaceId}/projects`, {
-				method: "POST",
-				body: JSON.stringify({
-					description: dialog.description,
-					slug: dialog.slug
-				})
-			});
-			toast("Project created.");
-			controllerState.selectedId = "workspace";
-		} else {
-			let requestBody;
-			const editedMarkdown = dialog.templateName && dialog.editedMarkdown != null && dialog.editedMarkdown !== dialog.preview?.markdown ? dialog.editedMarkdown : null;
-			if (editedMarkdown != null) {
-				const editedTitle = String(dialog.titleOverride ? dialog.title : dialog.preview?.title || "").trim();
-				if (!editedTitle) throw new Error("Task title is required when creating from edited preview content.");
-				requestBody = {
-					project: dialog.projectId,
-					title: editedTitle,
-					taskMarkdown: editedMarkdown,
-					slug: dialog.slug,
-					selfDriving: dialog.selfDriving,
-					agentName: dialog.selfDriving ? dialog.agentName : "",
-					preferredAgentProfiles: dialog.selfDriving ? dialog.preferredAgentProfiles : [],
-					prompt: dialog.selfDriving ? dialog.prompt : "",
-					completionCriteria: dialog.selfDriving ? dialog.completionCriteria : ""
-				};
-			} else {
-				if (dialog.templateName && !dialog.templateDigest) {
-					await refreshCreateTaskPreview(createDialogDraft(dialog));
-					if (!dialog.templateDigest) throw new Error(dialog.previewError || "Could not render the selected template.");
-				}
-				requestBody = createTaskRequest(dialog);
-			}
-			await api(`/api/workspaces/${workspaceId}/tasks`, {
-				method: "POST",
-				body: JSON.stringify(requestBody)
-			});
-			toast("Task created.");
-		}
-		if (controllerState.activeWorkspaceId !== workspaceId || controllerState.createDialog.identity !== dialogIdentity) return;
-		controllerState.createDialog.open = false;
-		controllerState.createDialog.identity = ++createDialogIdentity;
-		await loadTree();
-	} catch (err) {
-		if (controllerState.createDialog.identity === dialogIdentity) {
-			dialog.submitting = false;
-			renderCreateDialog();
-			toast(errorMessage(err));
-		}
-	}
-}
-function parseAgentProfiles(value) {
-	const seen = /* @__PURE__ */ new Set();
-	return String(value || "").split(",").map((item) => item.trim().toLowerCase()).filter((item) => {
-		if (!item || seen.has(item)) return false;
-		seen.add(item);
-		return true;
-	});
+	createDialogController.render();
 }
 async function archiveResource(resourceId) {
 	if (!confirm(`Archive ${resourceId}?`)) return;
@@ -3876,34 +2373,13 @@ function ensureSelectedProjectExpanded(persist = false) {
 	if (persist) saveUIState().catch((err) => toast(err.message));
 }
 function parseRoute(pathname = window.location.pathname) {
-	const parts = pathname.split("/").filter(Boolean);
-	if (parts[0] !== "w") return {};
-	return {
-		workspaceId: decodePathPart(parts[1]),
-		resourceId: parts[2] === "r" ? decodePathPart(parts[3]) : "workspace"
-	};
-}
-function decodePathPart(value = "") {
-	try {
-		return decodeURIComponent(value);
-	} catch (_) {
-		return "";
-	}
+	return routeController.parse(pathname);
 }
 function workspaceExists(id) {
 	return Boolean(id && controllerState.config?.workspaces.some((workspace) => workspace.id === id));
 }
-function syncURL(options: any = {}) {
-	if (!controllerState.activeWorkspaceId) return;
-	const resourceId = controllerState.selectedId && controllerState.selectedId !== "workspace" ? controllerState.selectedId : "";
-	const nextPath = resourceId ? `/w/${encodeURIComponent(controllerState.activeWorkspaceId)}/r/${encodeURIComponent(resourceId)}` : `/w/${encodeURIComponent(controllerState.activeWorkspaceId)}`;
-	if (window.location.pathname === nextPath && controllerState.routeProjection.path === nextPath) return;
-	controllerState.routeProjection = {
-		path: nextPath,
-		revision: controllerState.routeProjection.revision + 1,
-		replace: Boolean(options.replace)
-	};
-	renderAppShell();
+function syncURL(options: { replace?: boolean } = {}) {
+	routeController.project(controllerState.activeWorkspaceId, controllerState.selectedId, options);
 }
 function workspaceName() {
 	return controllerState.config?.workspaces.find((w) => w.id === controllerState.activeWorkspaceId)?.name || "Workspace";
@@ -3923,7 +2399,7 @@ function enabledAgentConfigs() {
 }
 function defaultChatAgentName() {
 	const agents = enabledAgentConfigs();
-	const configured = configuredAgentProfileName(controllerState.config?.agentProfiles, "default") || configuredAgentProfileName(controllerState.settings.data?.agentProfiles, "default");
+	const configured = configuredAgentProfileName(controllerState.config?.agentProfiles, "default") || configuredAgentProfileName(settingsController.profiles(), "default");
 	if (configured) return configured;
 	return agents[0]?.id || "";
 }
@@ -3932,184 +2408,17 @@ function configuredAgentProfileName(profiles, key) {
 	const profile = (profiles || []).find((item) => String(item.key || "").trim().toLowerCase() === normalizedKey);
 	return String(profile?.agentName || "").trim();
 }
-async function openSettings(tab = "workspace") {
-	controllerState.modalEnter = "settings";
-	controllerState.settings.open = true;
-	controllerState.settings.identity = ++settingsIdentity;
-	controllerState.settings.tab = tab;
-	controllerState.settings.agentDirty = false;
-	controllerState.settings.expandedAgents = /* @__PURE__ */ new Set();
-	controllerState.settings.workspaceIconPickerId = "";
-	controllerState.settings.workspaceIconSavingId = "";
-	await refreshSettings();
-	renderSettingsModal();
+async function openSettings(tab: SettingsModel["initialTab"] = "workspace") {
+	return settingsController.open(tab);
 }
-function closeSettings(dirty = controllerState.settings.agentDirty) {
-	if (controllerState.settings.open && dirty && !window.confirm("Discard unsaved agent settings changes?")) return;
-	controllerState.settings.open = false;
-	controllerState.settings.identity = ++settingsIdentity;
-	controllerState.settings.agentDirty = false;
-	renderSettingsModal();
+function closeSettings(dirty = false) {
+	settingsController.close(dirty);
 }
 async function refreshSettings() {
-	const [base, agentHub] = await Promise.all([api("/api/settings"), api("/api/settings/agenthub")]);
-	const catalogAgents = (agentHub.catalog?.agents || []).map((agent) => ({
-		...agent,
-		id: agent.name
-	}));
-	controllerState.settings.data = {
-		...base,
-		agentHub,
-		agents: catalogAgents,
-		agentProfiles: agentHub.config?.agentProfiles || []
-	};
-	controllerState.config = configWithAgentHubCatalog({
-		...controllerState.config || {},
-		...base
-	}, agentHub);
-	controllerState.settings.dataVersion = (controllerState.settings.dataVersion || 0) + 1;
+	await settingsController.refresh();
 }
 function configWithAgentHubCatalog(base, agentHub) {
-	const agents = (agentHub.catalog?.agents || []).filter((agent) => agent.available !== false).map((agent) => ({
-		...agent,
-		id: agent.name
-	}));
-	return {
-		...base,
-		agents,
-		agentHubProviders: agentHub.catalog?.providers || [],
-		agentProfiles: agentHub.config?.agentProfiles || []
-	};
-}
-function snapshotAgentDraft() {
-	const data = controllerState.settings.data || {};
-	return {
-		agents: data.agents || [],
-		agentProfiles: data.agentProfiles || []
-	};
-}
-async function refreshSettingsPreservingAgentDraft() {
-	const draft = controllerState.settings.agentDirty ? snapshotAgentDraft() : null;
-	await refreshSettings();
-	if (draft) controllerState.settings.data = {
-		...controllerState.settings.data || {},
-		...draft
-	};
-}
-async function submitSettingsWorkspace() {
-	const path = controllerState.settings.workspacePath.trim();
-	if (!path) throw new Error("Workspace path is required.");
-	const created = controllerState.settings.createWorkspace;
-	const workspace = await api("/api/workspaces", {
-		method: "POST",
-		body: JSON.stringify({
-			path,
-			create: created
-		})
-	});
-	flushAgentDraft();
-	controllerState.settings.workspacePath = "";
-	controllerState.settings.createWorkspace = false;
-	controllerState.config = await api("/api/workspaces");
-	controllerState.activeWorkspaceId = workspace.id;
-	resetAgentState();
-	renderWorkspaceSelect();
-	await loadUIState();
-	await loadTree();
-	await refreshSettingsPreservingAgentDraft();
-	renderSettingsModal();
-	toast(created ? "Workspace created." : "Workspace added.");
-}
-async function removeSettingsWorkspace(id) {
-	if (!id) return;
-	flushAgentDraft();
-	await api(`/api/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
-	controllerState.config = await api("/api/workspaces");
-	if (controllerState.activeWorkspaceId === id) {
-		controllerState.activeWorkspaceId = controllerState.config.activeId || controllerState.config.workspaces[0]?.id || "";
-		controllerState.selectedId = "workspace";
-		resetAgentState();
-		if (controllerState.activeWorkspaceId) {
-			await loadUIState();
-			await loadTree();
-		} else {
-			controllerState.tree = null;
-			controllerState.details = {};
-			publishViewModels();
-		}
-	} else renderWorkspaceSelect();
-	await refreshSettingsPreservingAgentDraft();
-	renderSettingsModal();
-	toast("Workspace removed from Forge GUI.");
-}
-async function updateSettingsWorkspaceIcon(id, iconId) {
-	if (!id || controllerState.settings.workspaceIconSavingId) return;
-	controllerState.settings.workspaceIconSavingId = id;
-	controllerState.settings.workspaceIconPickerId = "";
-	renderSettingsModal();
-	try {
-		const workspace = await api(`/api/workspaces/${encodeURIComponent(id)}`, {
-			method: "PUT",
-			body: JSON.stringify({ icon: iconId || "" })
-		});
-		const replaceWorkspace = (items) => (items || []).map((item) => item.id === workspace.id ? workspace : item);
-		controllerState.config = {
-			...controllerState.config || {},
-			workspaces: replaceWorkspace(controllerState.config?.workspaces)
-		};
-		controllerState.settings.data = {
-			...controllerState.settings.data || {},
-			workspaces: replaceWorkspace(controllerState.settings.data?.workspaces)
-		};
-		controllerState.settings.workspaceIconPickerId = "";
-		renderWorkspaceSelect();
-		toast(iconId ? "Workspace icon saved." : "Workspace icon reset to the Forge default.");
-	} finally {
-		controllerState.settings.workspaceIconSavingId = "";
-		renderSettingsModal();
-	}
-}
-function syncSettingsDraftFromSvelte(draft) {
-	if (!draft || !controllerState.settings.open) return;
-	controllerState.settings.tab = draft.tab || controllerState.settings.tab;
-	controllerState.settings.workspacePath = String(draft.workspacePath || "");
-	controllerState.settings.createWorkspace = Boolean(draft.createWorkspace);
-	controllerState.settings.agentDirty = Boolean(draft.dirty);
-	controllerState.settings.data = {
-		...controllerState.settings.data || {},
-		agentHub: {
-			...controllerState.settings.data?.agentHub || {},
-			configuredEndpoint: String(draft.endpoint || "")
-		},
-		agentProfiles: (draft.profiles || []).map((profile) => ({
-			key: profile.key,
-			description: profile.description,
-			agentName: profile.agentName
-		}))
-	};
-}
-async function saveAgentSettings() {
-	const data = controllerState.settings.data || {};
-	await api("/api/settings/agenthub", {
-		method: "PUT",
-		body: JSON.stringify({
-			endpoint: data.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
-			agentProfiles: (data.agentProfiles || []).map((profile) => ({
-				key: profile.key,
-				description: profile.description,
-				agentName: profile.agentName
-			}))
-		})
-	});
-	await refreshSettings();
-	controllerState.config = configWithAgentHubCatalog(await api("/api/workspaces"), controllerState.settings.data.agentHub);
-	controllerState.settings.agentDirty = false;
-	applyAgentConfig();
-	renderAgent();
-	renderTTYComposer();
-	renderSettingsModal();
-	refreshIcons();
-	toast("AgentHub settings saved.");
+	return settingsController.withAgentHubCatalog(base, agentHub) as unknown as DomainRecord;
 }
 function sameJSON(a, b) {
 	return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -4137,123 +2446,25 @@ function optionalAssetLoaded(asset) {
 }
 window.forgeAssetLoaded = optionalAssetLoaded;
 function initPaneResize() {
-	const raw = readStoredPaneSizes();
-	controllerState.paneSizes = loadPaneSizes(raw, 0);
-	applyPaneSizes();
-	if (isFinitePaneSize(raw.detailsWidth) && !isFinitePaneSize(raw.chatWidth) && !isMobilePaneLayout()) {
-		controllerState.paneSizes = loadPaneSizes(raw, workspacePanelWidth());
-		applyPaneSizes();
-		saveAllPaneSizes();
-	}
+	paneLayoutController.initialize();
 }
-function setCSSPixels(name, value) {
-	document.documentElement.style.setProperty(name, `${Math.round(value)}px`);
-}
-const PANE_HANDLE_WIDTH = 8;
-const SIDEBAR_MIN_WIDTH = 220;
-const DETAILS_MIN_WIDTH = 360;
-const CHAT_MIN_WIDTH = 320;
-const PANE_MAX_SIZE = 1e4;
-const PANE_DEFAULTS: Record<string, number> = Object.freeze({
-	sidebarWidth: 280,
-	chatWidth: 420,
-	sidebarSessionHeight: 210
-});
-const PANE_CSS_VARIABLES = Object.freeze({
-	sidebarWidth: "--sidebar-width",
-	chatWidth: "--chat-width",
-	sidebarSessionHeight: "--sidebar-session-height"
-});
 function setPaneSize(name, value) {
-	if (!Object.hasOwn(PANE_CSS_VARIABLES, name) || !Number.isFinite(value)) return;
-	const next = Math.round(clamp(value, name === "sidebarWidth" ? SIDEBAR_MIN_WIDTH : name === "chatWidth" ? CHAT_MIN_WIDTH : 84, PANE_MAX_SIZE));
-	controllerState.paneSizes[name] = next;
-	setCSSPixels(PANE_CSS_VARIABLES[name], next);
-}
-function applyPaneSizes() {
-	for (const name of Object.keys(PANE_CSS_VARIABLES)) setPaneSize(name, controllerState.paneSizes[name]);
+	paneLayoutController.previewPane(name, value);
 }
 function savePaneSize(name) {
-	if (!Object.hasOwn(PANE_CSS_VARIABLES, name)) return;
-	const saved = readStoredPaneSizes();
-	delete saved.detailsWidth;
-	for (const paneName of Object.keys(PANE_CSS_VARIABLES)) if (!isFinitePaneSize(saved[paneName])) saved[paneName] = controllerState.paneSizes[paneName];
-	saved[name] = controllerState.paneSizes[name];
-	localStorage.setItem(PANE_SIZE_KEY, JSON.stringify(saved));
-}
-function saveAllPaneSizes() {
-	localStorage.setItem(PANE_SIZE_KEY, JSON.stringify({ ...controllerState.paneSizes }));
-}
-function isFinitePaneSize(value) {
-	return typeof value === "number" && Number.isFinite(value);
-}
-function readStoredPaneSizes() {
-	try {
-		const saved = JSON.parse(localStorage.getItem(PANE_SIZE_KEY) || "{}");
-		return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
-	} catch (_) {
-		return {};
-	}
-}
-function normalizePaneSizes(raw, availableWorkspaceWidth = 0) {
-	const source = raw && typeof raw === "object" ? raw : {};
-	const sizes = { ...PANE_DEFAULTS };
-	if (isFinitePaneSize(source.sidebarWidth)) sizes.sidebarWidth = clamp(source.sidebarWidth, SIDEBAR_MIN_WIDTH, PANE_MAX_SIZE);
-	if (isFinitePaneSize(source.chatWidth)) sizes.chatWidth = clamp(source.chatWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
-	else if (isFinitePaneSize(source.detailsWidth) && availableWorkspaceWidth >= 688) {
-		const detailsWidth = clamp(source.detailsWidth, DETAILS_MIN_WIDTH, availableWorkspaceWidth - PANE_HANDLE_WIDTH - CHAT_MIN_WIDTH);
-		sizes.chatWidth = clamp(availableWorkspaceWidth - PANE_HANDLE_WIDTH - detailsWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
-	}
-	if (isFinitePaneSize(source.sidebarSessionHeight)) sizes.sidebarSessionHeight = clamp(source.sidebarSessionHeight, 84, PANE_MAX_SIZE);
-	return sizes;
-}
-function loadPaneSizes(raw = readStoredPaneSizes(), availableWorkspaceWidth = workspacePanelWidth()) {
-	return normalizePaneSizes(raw, availableWorkspaceWidth);
-}
-function workspacePanelWidth() {
-	return document.querySelector(".workspace-panel")?.getBoundingClientRect().width || 0;
-}
-function isMobilePaneLayout() {
-	return typeof MOBILE_LAYOUT_QUERY !== "undefined" && MOBILE_LAYOUT_QUERY.matches;
+	paneLayoutController.commitPane(name);
 }
 function syncPaneViewport() {
-	if (isMobilePaneLayout()) return;
-	const raw = readStoredPaneSizes();
-	if (isFinitePaneSize(raw.detailsWidth) && !isFinitePaneSize(raw.chatWidth)) {
-		controllerState.paneSizes = normalizePaneSizes(raw, workspacePanelWidth());
-		applyPaneSizes();
-		saveAllPaneSizes();
-	}
+	paneLayoutController.syncViewport();
 }
-function clamp(value, min, max) {
-	return Math.min(max, Math.max(min, value));
-}
-const MOBILE_LAYOUT_QUERY = window.matchMedia("(max-width: 980px)");
 function setMobileSidebar(open) {
-	controllerState.mobile.sidebarOpen = Boolean(open);
-	document.body.classList.toggle("mobile-sidebar-open", controllerState.mobile.sidebarOpen);
-	renderAppShell();
+	paneLayoutController.setMobileSidebar(open);
 }
 function setMobileView(view) {
-	controllerState.mobile.view = view === "chat" ? "chat" : "details";
-	const chatActive = controllerState.mobile.view === "chat";
-	document.body.classList.toggle("mobile-chat-active", chatActive);
-	renderAppShell();
-}
-function loadMobileImmersive() {
-	try {
-		return localStorage.getItem(MOBILE_IMMERSIVE_KEY) === "1";
-	} catch (_) {
-		return false;
-	}
+	paneLayoutController.setMobileView(view);
 }
 function setMobileImmersive(immersive) {
-	controllerState.mobile.immersive = Boolean(immersive);
-	document.body.classList.toggle("chat-immersive", controllerState.mobile.immersive);
-	try {
-		localStorage.setItem(MOBILE_IMMERSIVE_KEY, controllerState.mobile.immersive ? "1" : "0");
-	} catch (_) {}
-	renderAppShell();
+	paneLayoutController.setMobileImmersive(immersive);
 }
 function installControllerListeners() {
 	lifecycle?.listen(document, "selectionchange", () => {
@@ -4312,13 +2523,37 @@ function startForgeApp(nextPublisher: ForgeViewPublisher) {
 		return;
 	}
 	appBooted = true;
-	lifecycle = new ResourceScope();
+	const scope = new ResourceScope();
+	lifecycle = scope;
+	notificationController = createNotificationController({
+		scope,
+		selectedResourceId: () => controllerState.selectedId,
+		treeSessions: () => controllerState.tree?.sessions || [],
+		agentRuns: () => controllerState.agent.runs,
+		hasTree: () => Boolean(controllerState.tree),
+		findResource,
+		sessionNavigationTarget,
+		selectResource,
+		activateRun: (runId) => {
+			const run = controllerState.agent.runs.find((item) => item.id === runId);
+			if (!run) return;
+			controllerState.agent.activeRunId = run.id;
+			renderAgent();
+			renderTTY();
+			refreshIcons();
+		},
+		notificationsSettingsVisible: () => settingsController.isOpenTab("notifications"),
+		renderSettings: renderSettingsModal,
+		renderSessions,
+		refreshIcons,
+		flushDraft: flushAgentDraftOnPageLeave
+	});
+	userSettingsController = createUserSettingsController(scope, () => {
+		if (settingsController.isOpenTab("user")) renderSettingsModal();
+	});
 	installControllerListeners();
 	initPaneResize();
-	installNotificationCrossTabListeners();
-	controllerState.user.name = readStoredUserName();
-	installUserSettingsCrossTabListener();
-	controllerState.mobile.immersive = loadMobileImmersive();
+	notificationController.install();
 	renderAppShell();
 	load().catch((err) => {
 		controllerState.navigationLoading = false;
@@ -4336,10 +2571,12 @@ function stopForgeApp() {
 	flushAgentDraftOnPageLeave();
 	appBooted = false;
 	closeAgentStream();
-	closeNotificationChannel();
+	notificationController?.dispose();
+	notificationController = null;
+	userSettingsController = null;
+	agentOperations.reset();
 	clearAgentRenderTimer();
-	createPreviewController?.abort();
-	createPreviewController = null;
+	createDialogController.dispose();
 	lifecycle?.dispose();
 	lifecycle = null;
 	controllerState.autoRefreshTimer = null;
@@ -4362,7 +2599,7 @@ async function handleHistoryNavigation(pathname) {
 	controllerState.diffRequestVersion++;
 	controllerState.workspaceAgentsSaving = false;
 	const navigationVersion = controllerState.navigationVersion;
-	controllerState.activeWorkspaceId = route.workspaceId;
+	controllerState.activeWorkspaceId = route.workspaceId || "";
 	controllerState.selectedId = route.resourceId || "workspace";
 	if (!workspaceChanged && previousSelectedId !== controllerState.selectedId && controllerState.selectedId !== "workspace") {
 		resetResourceLogState(controllerState.selectedId);
