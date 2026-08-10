@@ -1,6 +1,13 @@
-# Forge frontend
+# Forge web application
 
-Forge's browser UI is a Svelte 5 and TypeScript application. `src/entry.ts` is the only production entry point, and all components use runes mode. Vite emits deterministic `forge-app.js` and `forge-app.css` assets into `../web/static/assets`; the Go server embeds those files so the released Forge binary has no Node runtime dependency.
+This directory owns the complete Forge web application: Svelte 5 and TypeScript source, frontend tests and build tooling, the static HTML/vendor tree, generated Vite assets, and the Go embed boundary. `src/entry.ts` is the only production application entry point, and all components use runes mode. Vite emits deterministic `forge-app.js` and `forge-app.css` assets into `static/assets`; `assets.go` embeds `static/` so the released Forge binary has no Node runtime dependency.
+
+The directory layers are intentional:
+
+- `src/` contains editable application source.
+- `tests/` contains Vitest fixtures/component tests and Playwright flows.
+- `static/` contains the HTML shell, immutable vendor/icon assets, and generated `assets/forge-app.{js,css}` files served at runtime.
+- `assets.go` exposes the complete static tree to the Go server through `go:embed`.
 
 ## Architecture and ownership
 

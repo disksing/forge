@@ -23,4 +23,4 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
-npm --prefix "$root/frontend" run dev
+npm --prefix "$root/web" run dev

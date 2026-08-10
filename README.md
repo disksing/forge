@@ -372,11 +372,11 @@ Run the full test suite and build all binaries:
 ```bash
 go test -race ./...
 go vet ./...
-cd frontend && npm ci && npm run check && npm test && npm run test:e2e && cd ..
+cd web && npm ci && npm run check && npm test && npm run test:e2e && cd ..
 scripts/build
 ```
 
-`scripts/build` validates and builds the Svelte frontend before embedding the generated assets in the single Forge binary. Node is required only for development and builds; the shipped binary has no Node runtime dependency. For frontend development against an isolated Workspace, run `scripts/frontend-dev /path/to/isolated/AgentWorkspace` and open the Vite URL. See [frontend/README.md](frontend/README.md) for the frontend ownership, lifecycle, and performance contracts.
+`scripts/build` validates and builds the Svelte frontend before embedding the generated assets in the single Forge binary. Node is required only for development and builds; the shipped binary has no Node runtime dependency. For frontend development against an isolated Workspace, run `scripts/frontend-dev /path/to/isolated/AgentWorkspace` and open the Vite URL. See [web/README.md](web/README.md) for the frontend ownership, lifecycle, and performance contracts.
 
 Useful focused commands:
 

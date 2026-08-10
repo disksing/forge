@@ -7,7 +7,7 @@ import { defineConfig } from "vite";
 const root = fileURLToPath(new URL(".", import.meta.url));
 
 export default defineConfig({
-  root: resolve(root, "../web/static"),
+  root: resolve(root, "static"),
   cacheDir: resolve(root, ".vite"),
   plugins: [
     {
@@ -27,7 +27,7 @@ export default defineConfig({
   ],
   build: {
     emptyOutDir: true,
-    outDir: resolve(root, "../web/static/assets"),
+    outDir: resolve(root, "static/assets"),
     sourcemap: false,
     lib: {
       entry: resolve(root, "src/entry.ts"),
@@ -43,7 +43,7 @@ export default defineConfig({
   },
   server: {
     fs: {
-      allow: [root, resolve(root, "../web/static")],
+      allow: [root, resolve(root, "static")],
     },
     proxy: {
       "/api": "http://127.0.0.1:4936",
