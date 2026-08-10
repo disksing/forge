@@ -955,6 +955,14 @@ func (m *agentManager) resumeStoppedAgentHubRun(w http.ResponseWriter, r *http.R
 }
 
 func (m *agentManager) resumeStoppedAgentHubRunLocked(w http.ResponseWriter, r *http.Request, rt *agentRuntime) {
+	// Serialize replacement creation with the asynchronous stopped-session
+	// release. Without this guard, a delayed release can observe the replacement
+	// while the AgentHub resume request is in flight, delete it, and leave the
+	// newly resumed run active without a Forge session, resource lock, or tree
+	// status projection.
+	rt.forgeSessionReleaseMu.Lock()
+	defer rt.forgeSessionReleaseMu.Unlock()
+
 	workspace := rt.workspace
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {

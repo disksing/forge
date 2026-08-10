@@ -35,6 +35,7 @@ type runtimeFakeAgentHub struct {
 	rejectAgentName    string
 	extraAgents        []string
 	stopHook           func(string)
+	resumeHook         func(string)
 	messageSteers      []bool
 	messageRoles       []string
 	messageSenders     []*agentHubMessageSender
@@ -163,12 +164,14 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if len(parts) == 4 && r.Method == http.MethodPost {
 		action := parts[3]
 		var stopHook func(string)
+		var resumeHook func(string)
 		var resumeRequest agentHubResumeRequest
 		if action == "resume" {
 			_ = json.NewDecoder(r.Body).Decode(&resumeRequest)
 		}
 		f.mu.Lock()
 		if action == "resume" {
+			resumeHook = f.resumeHook
 			f.resumeEnvironments = append(f.resumeEnvironments, resumeRequest.LaunchEnvironment)
 			if f.failNextResume {
 				f.failNextResume = false
@@ -235,6 +238,9 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.mu.Unlock()
 		if stopHook != nil {
 			stopHook(id)
+		}
+		if resumeHook != nil {
+			resumeHook(id)
 		}
 		writeRuntimeFakeJSON(w, map[string]any{"session": session})
 		return
@@ -2601,6 +2607,86 @@ func TestAgentHubStoppedResumeReleasesStaleForgeSession(t *testing.T) {
 	}
 	if persisted[0].ForgeSessionID != detail.Run.ForgeSessionID || persisted[0].AgentHubStoppedObserved || persisted[0].Status != "idle" {
 		t.Fatalf("persisted run mismatch: %#v", persisted[0])
+	}
+}
+
+func TestAgentHubStoppedResumeSerializesDelayedForgeSessionRelease(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	resumeEntered := make(chan struct{})
+	resumeRelease := make(chan struct{})
+	var releaseResumeOnce sync.Once
+	unblockResume := func() { releaseResumeOnce.Do(func() { close(resumeRelease) }) }
+	var hookOnce sync.Once
+	fake.resumeHook = func(_ string) {
+		hookOnce.Do(func() { close(resumeEntered) })
+		<-resumeRelease
+	}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	defer unblockResume()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := seedStoppedResumeRun(t, fake, workspace, agentRun{
+		ID: "run-stopped-release-race", ResourceID: "project1.task1",
+		AgentHubSessionID: "ses_stopped_release_race",
+	})
+
+	resumeDone := make(chan *httptest.ResponseRecorder, 1)
+	go func() { resumeDone <- resumeRunRequest(manager, workspace, run.ID) }()
+	select {
+	case <-resumeEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("resume request did not reach AgentHub")
+	}
+	rt := manager.runtimeByID(run.ID)
+	if rt == nil {
+		t.Fatal("resume did not register the runtime")
+	}
+	resumedWhileStopped := pollerRunState(rt)
+	if resumedWhileStopped.ForgeSessionID == "" || !resumedWhileStopped.AgentHubStoppedObserved || resumedWhileStopped.Status != "stopped" {
+		t.Fatalf("test did not reach the replacement-before-resume-response window: %#v", resumedWhileStopped)
+	}
+
+	releaseDone := make(chan error, 1)
+	go func() { releaseDone <- rt.releaseForgeSessionAfterStopped(manager) }()
+	select {
+	case err := <-releaseDone:
+		t.Fatalf("stale release completed while resume owned the replacement: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	unblockResume()
+
+	var response *httptest.ResponseRecorder
+	select {
+	case response = <-resumeDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("resume request did not finish")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("resume failed: %d %s", response.Code, response.Body.String())
+	}
+	select {
+	case err := <-releaseDone:
+		if err != nil {
+			t.Fatalf("delayed release failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("delayed release did not finish after resume")
+	}
+
+	updated := pollerRunState(rt)
+	if updated.Status != "idle" || updated.AgentHubStoppedObserved || updated.ForgeSessionID == "" {
+		t.Fatalf("delayed release removed the resumed run projection: %#v", updated)
+	}
+	sessions := testForgeSessions(t, workspace.Path)
+	if len(sessions) != 1 || sessions[0].ID != updated.ForgeSessionID {
+		t.Fatalf("delayed release removed the replacement Forge session: %#v", sessions)
+	}
+	tree, err := manager.server.tree(context.Background(), workspace.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.Sessions) != 1 || tree.Sessions[0].AgentRunID != run.ID || tree.Sessions[0].AgentRunStatus != "idle" {
+		t.Fatalf("resumed run is missing from the workspace tree: %#v", tree.Sessions)
 	}
 }
 
