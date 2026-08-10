@@ -25,6 +25,12 @@ When adding or changing styles, prefer the nearest component module. Promote a r
 
 Application state is never rendered by assembling HTML strings or mutating component-owned DOM. `DiffModal.svelte` is the single explicit rich-HTML boundary: Diff2Html converts a backend diff string to its vendor-defined presentation inside a dedicated viewer element. Markdown passes through Marked and DOMPurify before Svelte inserts the sanitized output.
 
+### Settings view boundaries
+
+`SettingsModal.svelte` is the coordination layer for modal visibility, keyboard/overlay close, active navigation, the shared AgentHub/Profile draft, dirty refresh protection, and the single cross-panel pending lease. It delegates rendering and domain actions to `SettingsNavigation.svelte` plus `WorkspaceSettingsPanel.svelte`, `UserSettingsPanel.svelte`, `AgentHubSettingsPanel.svelte`, `ProfilesSettingsPanel.svelte`, and `NotificationSettingsPanel.svelte`. The parent dropped from 258 to 75 lines; its CSS dropped from 711 to 68 lines and now owns only the overlay, modal grid, close button, viewport, and responsive shell.
+
+Each panel receives typed `SettingsModel` callbacks and the smallest relevant shared state. Panels do not import controllers, issue API requests, query another panel's DOM, or recreate AgentHub/Profile catalog derivation. Workspace owns add/remove/icon UI and pending errors; User owns browser-local name submission; AgentHub owns connection/catalog display and shared save; Profiles owns route validation, system/custom rules, unavailable-agent fallback, and shared save; Notifications owns permission/error/sound toggles. `SettingsPanel.css` contains the visual contract intentionally shared by all five panel roots, while each adjacent panel stylesheet owns its domain selectors and `SettingsNavigation.css` owns desktop/mobile tabs. Direct panel tests live in `tests/unit/settings-panels.test.ts`; parent refresh, dirty, pending, focus, identity, and close coordination is covered by `tests/unit/settings-modal.test.ts`.
+
 ### Controller boundaries
 
 | Controller | Single responsibility | Creation and disposal |

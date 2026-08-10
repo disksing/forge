@@ -1,0 +1,28 @@
+@import "./SettingsPanel.css";
+
+:where([data-component-owner="user-settings-panel"]) .settings-user-form {
+  display: grid;
+  gap: 10px;
+  max-width: 520px;
+}
+
+:where([data-component-owner="user-settings-panel"]) .settings-user-form label {
+  color: #2b3440;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="user-settings-panel"]) .settings-user-form input {
+  width: 100%;
+}
+
+:where([data-component-owner="user-settings-panel"]) .settings-user-form small {
+  color: #5c6b7a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+:where([data-component-owner="user-settings-panel"]) .settings-user-form .settings-form-actions {
+  justify-content: flex-start;
+  margin-top: 4px;
+}

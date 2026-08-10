@@ -8970,388 +8970,579 @@ function Pp(e, t) {
 }
 br(["click"]);
 //#endregion
-//#region src/components/SettingsModal.svelte
-var Fp = /* @__PURE__ */ W("<span class=\"settings-tab-dot\" aria-hidden=\"true\"></span>"), Ip = /* @__PURE__ */ W("<button type=\"button\"><!><span> </span><!></button>"), Lp = /* @__PURE__ */ W("<span class=\"settings-pill\">Active</span>"), Rp = /* @__PURE__ */ W("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), zp = /* @__PURE__ */ W("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), Bp = /* @__PURE__ */ W("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span><span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/><span> </span><!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), Vp = /* @__PURE__ */ W("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), Hp = /* @__PURE__ */ W("<div class=\"settings-panel\"><div class=\"settings-panel-header\"><h2>Workspaces</h2><p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/><span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>"), Up = /* @__PURE__ */ W("<div class=\"settings-panel\"><div class=\"settings-panel-header\"><h2>User</h2><p>Choose the name shown for messages you send from this browser.</p></div> <form id=\"settingsUserForm\" class=\"settings-user-form\"><label><span>Name</span><input id=\"settingsUserName\" maxlength=\"80\" placeholder=\"User\"/><small>Stored only in this browser. Empty values use User.</small></label> <div class=\"settings-form-actions\"><button type=\"submit\"><!><span>Save</span></button></div></form></div>"), Wp = /* @__PURE__ */ W("<span class=\"settings-pill\"> </span>"), Gp = /* @__PURE__ */ W("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), Kp = /* @__PURE__ */ W("<div class=\"settings-empty\">No AgentHub agents available.</div>"), qp = /* @__PURE__ */ W("<div class=\"settings-panel settings-agent-panel\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>"), Jp = /* @__PURE__ */ W("<option> </option>"), Yp = /* @__PURE__ */ W("<span class=\"settings-profile-system-label\">System</span>"), Xp = /* @__PURE__ */ W("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), Zp = /* @__PURE__ */ W("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), Qp = /* @__PURE__ */ W("<div class=\"settings-panel settings-agent-panel\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map chat and Self-Driving preferences to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>"), $p = /* @__PURE__ */ W("<small class=\"settings-notification-help\"> </small>"), em = /* @__PURE__ */ W("<div class=\"settings-panel\"><div class=\"settings-panel-header\"><h2>Notifications</h2><p>Choose how this browser notifies you when an Agent run finishes.</p></div> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Browser notifications</strong><small>Show one notification when a background run finishes.</small></span><input id=\"settingsBrowserNotifications\" type=\"checkbox\"/></label> <!></section> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Completion sound</strong><small>Play one short local sound for each new notification.</small></span><input id=\"settingsCompletionSound\" type=\"checkbox\"/></label> <small class=\"settings-notification-help\"> </small></section></div>"), tm = /* @__PURE__ */ W("<button class=\"settings-overlay modal-enter\" type=\"button\" aria-label=\"Close settings\"></button> <div class=\"settings-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"System Settings\"><aside class=\"settings-tabs\"><div class=\"settings-title\">System Settings</div> <!></aside> <div class=\"settings-content\"><button type=\"button\" class=\"settings-close\" title=\"Close\" aria-label=\"Close\"><!></button> <!></div></div>", 1);
-function nm(e, t) {
+//#region src/components/settings-draft.ts
+function Fp(e) {
+	return {
+		tab: e.initialTab,
+		workspacePath: "",
+		createWorkspace: !1,
+		userName: e.userName,
+		endpoint: e.agentHub.configuredEndpoint || "http://127.0.0.1:4646",
+		profiles: e.profiles.map((e) => ({ ...e })),
+		newProfile: {
+			key: "",
+			description: "",
+			agentName: e.agents[0]?.id || ""
+		},
+		dirty: !1
+	};
+}
+function Ip(e) {
+	return {
+		...e,
+		profiles: e.profiles.map((e) => ({ ...e })),
+		newProfile: { ...e.newProfile }
+	};
+}
+function Lp(e) {
+	return e instanceof Error ? e.message : String(e);
+}
+//#endregion
+//#region src/components/AgentHubSettingsPanel.svelte
+var Rp = /* @__PURE__ */ W("<span class=\"settings-pill\"> </span>"), zp = /* @__PURE__ */ W("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), Bp = /* @__PURE__ */ W("<div class=\"settings-empty\">No AgentHub agents available.</div>"), Vp = /* @__PURE__ */ W("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"agenthub-settings-panel\" data-settings-panel=\"\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>");
+function Hp(e, t) {
 	Ue(t, !0);
-	let n = /* @__PURE__ */ N(F(t.channel.current())), r = /* @__PURE__ */ N(""), i = /* @__PURE__ */ N(-1), a = /* @__PURE__ */ N(F(l(H(n)))), o = /* @__PURE__ */ N(""), s = /* @__PURE__ */ N(""), c = /* @__PURE__ */ new Set([
+	let n = xi(t, "draft", 15), r = xi(t, "pending", 15);
+	async function i() {
+		if (!(!n().dirty || r())) {
+			r("agenthub");
+			try {
+				await t.onSaveAgentHub(Ip(n())), n(n().dirty = !1, !0);
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	var a = Vp(), o = R(I(a), 2), s = I(o), c = R(I(s)), l = I(c, !0);
+	k(c), k(s);
+	var u = R(s, 2), d = R(I(u));
+	li(d), k(u);
+	var f = R(u, 2), p = I(f, !0);
+	k(f);
+	var m = R(f, 2);
+	J(m, 21, () => t.agentHub.capabilities, Fr, (e, t) => {
+		var n = Rp(), r = I(n, !0);
+		k(n), z(() => K(r, H(t))), G(e, n);
+	}), k(m), k(o);
+	var h = R(o, 2), g = I(h), _ = R(I(g)), v = I(_);
+	k(_), k(g);
+	var y = R(g, 2);
+	J(y, 21, () => t.agentHub.agents, (e) => e.name, (e, t) => {
+		var n = zp(), r = I(n), i = I(r), a = I(i, !0);
+		k(i);
+		var o = R(i), s = I(o), c = I(s, !0);
+		k(s);
+		var l = R(s), u = I(l);
+		k(l), k(o), k(r), k(n), z((e) => {
+			K(a, e), K(c, H(t).name), K(u, `${(H(t).providerId || "") ?? ""} · ${(H(t).available === !1 ? H(t).unavailableReason || "Unavailable" : "Available") ?? ""}`);
+		}, [() => (H(t).name || "A").slice(0, 1).toUpperCase()]), G(e, n);
+	}, (e) => {
+		G(e, Bp());
+	}), k(y), k(h);
+	var b = R(h, 2), x = I(b);
+	let S;
+	var C = I(x, !0);
+	k(x);
+	var w = R(x);
+	Q(I(w), { name: "save" }), A(), k(w), k(b), k(a), z((e) => {
+		K(l, t.agentHub.connected && t.agentHub.compatible ? "Compatible" : t.agentHub.connected ? "Incompatible" : "Unavailable"), K(p, t.agentHub.error || `API ${t.agentHub.apiVersion || "unknown"} · AgentHub ${t.agentHub.version || "unknown"}`), K(v, `${t.agentHub.agents.length ?? ""} agents · ${t.agentHub.providers.length ?? ""} providers`), S = Y(x, 1, "settings-save-hint", null, S, { visible: n().dirty }), K(C, n().dirty ? "Unsaved changes" : ""), w.disabled = e;
+	}, [() => !n().dirty || !!r()]), U("input", d, function(...e) {
+		t.onDirty?.apply(this, e);
+	}), hi(d, () => n().endpoint, (e) => n(n().endpoint = e, !0)), U("click", w, i), G(e, a), We();
+}
+br(["input", "click"]);
+//#endregion
+//#region src/components/NotificationSettingsPanel.svelte
+var Up = /* @__PURE__ */ W("<small class=\"settings-notification-help\"> </small>"), Wp = /* @__PURE__ */ W("<div class=\"settings-panel\" data-component-owner=\"notification-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Notifications</h2><p>Choose how this browser notifies you when an Agent run finishes.</p></div> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Browser notifications</strong><small>Show one notification when a background run finishes.</small></span> <input id=\"settingsBrowserNotifications\" type=\"checkbox\"/></label> <!></section> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Completion sound</strong><small>Play one short local sound for each new notification.</small></span> <input id=\"settingsCompletionSound\" type=\"checkbox\"/></label> <small class=\"settings-notification-help\"> </small></section></div>");
+function Gp(e, t) {
+	Ue(t, !0);
+	var n = Wp(), r = R(I(n), 2), i = I(r), a = R(I(i), 2);
+	li(a), k(i);
+	var o = R(i, 2), s = (e) => {
+		var n = Up(), r = I(n, !0);
+		k(n), z(() => K(r, t.notifications.permissionError)), G(e, n);
+	};
+	q(o, (e) => {
+		t.notifications.permissionError && e(s);
+	}), k(r);
+	var c = R(r, 2), l = I(c), u = R(I(l), 2);
+	li(u), k(l);
+	var d = R(l, 2), f = I(d, !0);
+	k(d), k(c), k(n), z(() => {
+		di(a, t.notifications.browser), di(u, t.notifications.sound), K(f, t.notifications.soundError || "Chrome may require the enable action to happen from a user gesture.");
+	}), U("change", a, (e) => t.onBrowserNotifications(e.currentTarget.checked)), U("change", u, (e) => t.onCompletionSound(e.currentTarget.checked)), G(e, n), We();
+}
+br(["change"]);
+//#endregion
+//#region src/components/ProfilesSettingsPanel.svelte
+var Kp = /* @__PURE__ */ W("<option> </option>"), qp = /* @__PURE__ */ W("<span class=\"settings-profile-system-label\">System</span>"), Jp = /* @__PURE__ */ W("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), Yp = /* @__PURE__ */ W("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), Xp = /* @__PURE__ */ W("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"profiles-settings-panel\" data-settings-panel=\"\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map chat and Self-Driving preferences to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>");
+function Zp(e, t) {
+	Ue(t, !0);
+	let n = xi(t, "draft", 15), r = xi(t, "pending", 15), i = /* @__PURE__ */ new Set([
 		"default",
 		"fast",
 		"reasoning",
 		"scheduler"
 	]);
+	function a(e, r, i) {
+		n(n().profiles[e][r] = i, !0), t.onDirty();
+	}
+	function o() {
+		let e = n().newProfile.key.trim().toLowerCase();
+		if (!e) return t.onToast("Profile key is required.");
+		if (i.has(e)) return t.onToast(`${e} is a reserved system profile.`);
+		if (n().profiles.some((t) => t.key.trim().toLowerCase() === e)) return t.onToast(`Profile ${e} already exists.`);
+		n(n().profiles = [...n().profiles, {
+			key: e,
+			description: n().newProfile.description.trim(),
+			agentName: n().newProfile.agentName
+		}], !0), n(n().newProfile = {
+			key: "",
+			description: "",
+			agentName: t.agents[0]?.id || ""
+		}, !0), t.onDirty();
+	}
+	function s(e) {
+		let r = n().profiles[e];
+		if (!r || i.has(r.key.trim().toLowerCase())) return t.onToast("System profiles cannot be deleted.");
+		n(n().profiles = n().profiles.filter((t, n) => e !== n), !0), t.onDirty();
+	}
+	function c(e) {
+		let n = t.agents.map((e) => ({
+			id: e.id,
+			label: e.label
+		}));
+		return e && !n.some((t) => t.id === e) ? [{
+			id: e,
+			label: `${e} (Unavailable)`
+		}, ...n] : n;
+	}
+	async function l() {
+		if (!(!n().dirty || r())) {
+			r("agenthub");
+			try {
+				await t.onSaveAgentHub(Ip(n())), n(n().dirty = !1, !0);
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	var u = Xp(), d = R(I(u), 2), f = I(d), p = R(I(f)), m = I(p);
+	k(p), k(f);
+	var h = R(f, 2), g = R(I(h), 2);
+	J(g, 17, () => n().profiles, Fr, (e, t, n) => {
+		let r = /* @__PURE__ */ j(() => i.has(H(t).key.trim().toLowerCase()));
+		var o = Yp();
+		let l;
+		var u = I(o);
+		li(u);
+		var d = R(u, 2);
+		li(d);
+		var f = R(d, 2);
+		J(f, 21, () => c(H(t).agentName), Fr, (e, t) => {
+			var n = Kp(), r = I(n, !0);
+			k(n);
+			var i = {};
+			z(() => {
+				K(r, H(t).label), i !== (i = H(t).id) && (n.value = (n.__value = H(t).id) ?? "");
+			}), G(e, n);
+		}), k(f);
+		var p;
+		ni(f);
+		var m = R(f, 2), h = (e) => {
+			G(e, qp());
+		}, g = (e) => {
+			var t = Jp();
+			Q(I(t), { name: "trash-2" }), k(t), U("click", t, () => s(n)), G(e, t);
+		};
+		q(m, (e) => {
+			H(r) ? e(h) : e(g, -1);
+		}), k(o), z(() => {
+			l = Y(o, 1, "settings-profile-row", null, l, { "settings-profile-system": H(r) }), ui(u, H(t).key), u.disabled = H(r), ui(d, H(t).description), d.disabled = H(r), p !== (p = H(t).agentName) && (f.value = (f.__value = H(t).agentName) ?? "", ti(f, H(t).agentName));
+		}), U("input", u, (e) => a(n, "key", e.currentTarget.value)), U("input", d, (e) => a(n, "description", e.currentTarget.value)), U("change", f, (e) => a(n, "agentName", e.currentTarget.value)), G(e, o);
+	});
+	var _ = R(g, 2), v = I(_);
+	li(v);
+	var y = R(v, 2);
+	li(y);
+	var b = R(y, 2);
+	J(b, 21, () => t.agents, Fr, (e, t) => {
+		var n = Kp(), r = I(n, !0);
+		k(n);
+		var i = {};
+		z(() => {
+			K(r, H(t).label), i !== (i = H(t).id) && (n.value = (n.__value = H(t).id) ?? "");
+		}), G(e, n);
+	}), k(b);
+	var x = R(b, 2);
+	Q(I(x), { name: "plus" }), A(), k(x), k(_), k(h), k(d);
+	var S = R(d, 2), C = I(S);
+	let w;
+	var T = I(C, !0);
+	k(C);
+	var E = R(C);
+	Q(I(E), { name: "save" }), A(), k(E), k(S), k(u), z((e) => {
+		K(m, `${n().profiles.length ?? ""} routes`), b.disabled = !t.agents.length, x.disabled = !t.agents.length, w = Y(C, 1, "settings-save-hint", null, w, { visible: n().dirty }), K(T, n().dirty ? "Unsaved changes" : ""), E.disabled = e;
+	}, [() => !n().dirty || !!r()]), hi(v, () => n().newProfile.key, (e) => n(n().newProfile.key = e, !0)), hi(y, () => n().newProfile.description, (e) => n(n().newProfile.description = e, !0)), ri(b, () => n().newProfile.agentName, (e) => n(n().newProfile.agentName = e, !0)), U("click", x, o), U("click", E, l), G(e, u), We();
+}
+br([
+	"input",
+	"change",
+	"click"
+]);
+//#endregion
+//#region src/components/SettingsNavigation.svelte
+var Qp = /* @__PURE__ */ W("<span class=\"settings-tab-dot\" aria-hidden=\"true\"></span>"), $p = /* @__PURE__ */ W("<button type=\"button\"><!> <span> </span> <!></button>"), em = /* @__PURE__ */ W("<aside class=\"settings-tabs\" data-component-owner=\"settings-navigation\"><div class=\"settings-title\">System Settings</div> <!></aside>");
+function tm(e, t) {
+	Ue(t, !0);
+	let n = [
+		{
+			id: "workspace",
+			icon: "hard-drive",
+			label: "Workspace",
+			sharesAgentDraft: !1
+		},
+		{
+			id: "user",
+			icon: "user-round",
+			label: "User",
+			sharesAgentDraft: !1
+		},
+		{
+			id: "agenthub",
+			icon: "network",
+			label: "AgentHub",
+			sharesAgentDraft: !0
+		},
+		{
+			id: "profiles",
+			icon: "route",
+			label: "Profiles",
+			sharesAgentDraft: !0
+		},
+		{
+			id: "notifications",
+			icon: "bell",
+			label: "Notifications",
+			sharesAgentDraft: !1
+		}
+	];
+	var r = em();
+	J(R(I(r), 2), 17, () => n, (e) => e.id, (e, n) => {
+		var r = $p();
+		let i;
+		var a = I(r);
+		Q(a, { get name() {
+			return H(n).icon;
+		} });
+		var o = R(a, 2), s = I(o, !0);
+		k(o);
+		var c = R(o, 2), l = (e) => {
+			G(e, Qp());
+		};
+		q(c, (e) => {
+			H(n).sharesAgentDraft && e(l);
+		}), k(r), z(() => {
+			i = Y(r, 1, "settings-tab", null, i, {
+				active: t.activeTab === H(n).id,
+				dirty: t.dirty && H(n).sharesAgentDraft
+			}), X(r, "aria-current", t.activeTab === H(n).id ? "page" : void 0), K(s, H(n).label);
+		}), U("click", r, () => t.onSelect(H(n).id)), G(e, r);
+	}), k(r), G(e, r), We();
+}
+br(["click"]);
+//#endregion
+//#region src/components/UserSettingsPanel.svelte
+var nm = /* @__PURE__ */ W("<div class=\"settings-panel\" data-component-owner=\"user-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>User</h2><p>Choose the name shown for messages you send from this browser.</p></div> <form id=\"settingsUserForm\" class=\"settings-user-form\"><label><span>Name</span> <input id=\"settingsUserName\" maxlength=\"80\" placeholder=\"User\"/> <small>Stored only in this browser. Empty values use User.</small></label> <div class=\"settings-form-actions\"><button type=\"submit\"><!><span>Save</span></button></div></form></div>");
+function rm(e, t) {
+	Ue(t, !0);
+	let n = xi(t, "draft", 15), r = xi(t, "pending", 15);
+	async function i(e) {
+		if (e.preventDefault(), !r()) {
+			r("user");
+			try {
+				n(n().userName = await t.onSaveUser(n().userName), !0);
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	var a = nm(), o = R(I(a), 2), s = I(o), c = R(I(s), 2);
+	li(c), A(2), k(s);
+	var l = R(s, 2), u = I(l);
+	Q(I(u), { name: "save" }), A(), k(u), k(l), k(o), k(a), z(() => u.disabled = r() === "user"), yr("submit", o, i), hi(c, () => n().userName, (e) => n(n().userName = e, !0)), G(e, a), We();
+}
+//#endregion
+//#region src/components/WorkspaceSettingsPanel.svelte
+var im = /* @__PURE__ */ W("<span class=\"settings-pill\">Active</span>"), am = /* @__PURE__ */ W("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), om = /* @__PURE__ */ W("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), sm = /* @__PURE__ */ W("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), cm = /* @__PURE__ */ W("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), lm = /* @__PURE__ */ W("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
+function um(e, t) {
+	Ue(t, !0);
+	let n = xi(t, "draft", 15), r = xi(t, "pending", 15), i = /* @__PURE__ */ N("");
+	async function a(e) {
+		if (e.preventDefault(), !(!n().workspacePath.trim() || r())) {
+			r("workspace");
+			try {
+				await t.onAddWorkspace(Ip(n())), n(n().workspacePath = "", !0), n(n().createWorkspace = !1, !0);
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	async function o(e) {
+		if (!r()) {
+			r(`remove:${e}`);
+			try {
+				await t.onRemoveWorkspace(e, Ip(n()));
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	async function s(e, a) {
+		if (!r()) {
+			r(`icon:${e}`), P(i, "");
+			try {
+				await t.onWorkspaceIcon(e, a, Ip(n()));
+			} catch (e) {
+				t.onToast(Lp(e));
+			} finally {
+				r("");
+			}
+		}
+	}
+	function c(e) {
+		let n = t.workspaces.find((t) => t.id === e);
+		return t.workspaceIcons.find((e) => e.id === (n?.icon || "")) || t.workspaceIcons[0];
+	}
+	var l = lm(), u = R(I(l), 2), d = I(u);
+	li(d);
+	var f = R(d, 2), p = I(f);
+	li(p), A(2), k(f);
+	var m = R(f, 2), h = I(m);
+	Q(h, { name: "plus" });
+	var g = R(h), _ = I(g, !0);
+	k(g), k(m), k(u);
+	var v = R(u, 2);
+	J(v, 21, () => t.workspaces, (e) => e.id, (e, n) => {
+		let a = /* @__PURE__ */ j(() => c(H(n).id));
+		var l = sm(), u = I(l), d = I(u), f = I(d), p = I(f);
+		k(f);
+		var m = R(f, 2), h = I(m), g = I(h, !0);
+		k(h);
+		var _ = R(h), v = I(_, !0);
+		k(_), k(m), k(d);
+		var y = R(d, 2), b = I(y), x = (e) => {
+			G(e, im());
+		};
+		q(b, (e) => {
+			H(n).id === t.activeWorkspaceId && e(x);
+		});
+		var S = R(b, 2), C = I(S), w = R(C, 2), T = I(w, !0);
+		k(w), Q(R(w, 2), { name: "chevron-down" }), k(S);
+		var E = R(S, 2);
+		Q(I(E), { name: "trash-2" }), k(E), k(y), k(u);
+		var ee = R(u, 2), te = (e) => {
+			var r = om();
+			J(r, 21, () => t.workspaceIcons, (e) => e.id, (e, t) => {
+				var r = am();
+				let i;
+				var o = I(r), c = R(o), l = I(c, !0);
+				k(c);
+				var u = R(c), d = (e) => {
+					Q(e, { name: "check" });
+				};
+				q(u, (e) => {
+					H(t).id === H(a).id && e(d);
+				}), k(r), z(() => {
+					X(r, "aria-checked", H(t).id === H(a).id), X(r, "title", H(t).label), i = Y(r, 1, "", null, i, { selected: H(t).id === H(a).id }), X(o, "src", H(t).src), K(l, H(t).label);
+				}), U("click", r, () => s(H(n).id, H(t).id)), G(e, r);
+			}), k(r), z(() => X(r, "aria-label", `Icon for ${H(n).name}`)), G(e, r);
+		};
+		q(ee, (e) => {
+			H(i) === H(n).id && e(te);
+		}), k(l), z((e, t) => {
+			X(p, "src", H(a).src), K(g, H(n).name), K(v, H(n).path), X(S, "aria-expanded", H(i) === H(n).id), S.disabled = e, X(C, "src", H(a).src), K(T, r() === `icon:${H(n).id}` ? "Saving..." : H(a).label), E.disabled = t;
+		}, [() => !!r(), () => !!r()]), U("click", S, () => P(i, H(i) === H(n).id ? "" : H(n).id, !0)), U("click", E, () => o(H(n).id)), G(e, l);
+	}, (e) => {
+		G(e, cm());
+	}), k(v), k(l), z((e) => {
+		m.disabled = e, K(_, n().createWorkspace ? "Create" : "Add");
+	}, [() => !!r()]), yr("submit", u, a), hi(d, () => n().workspacePath, (e) => n(n().workspacePath = e, !0)), gi(p, () => n().createWorkspace, (e) => n(n().createWorkspace = e, !0)), G(e, l), We();
+}
+br(["click"]);
+//#endregion
+//#region src/components/SettingsModal.svelte
+var dm = /* @__PURE__ */ W("<button class=\"settings-overlay modal-enter\" type=\"button\" aria-label=\"Close settings\"></button> <div class=\"settings-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"System Settings\"><!> <div class=\"settings-content\"><button type=\"button\" class=\"settings-close\" title=\"Close\" aria-label=\"Close\"><!></button> <!></div></div>", 1);
+function fm(e, t) {
+	Ue(t, !0);
+	let n = /* @__PURE__ */ N(F(t.channel.current())), r = /* @__PURE__ */ N(""), i = /* @__PURE__ */ N(-1), a = /* @__PURE__ */ N(F(Fp(H(n)))), o = /* @__PURE__ */ N("");
 	Si(() => t.channel.subscribe((e) => {
-		P(n, e, !0), e.identity === H(r) ? e.dataVersion !== H(i) && !H(a).dirty && (P(i, e.dataVersion, !0), P(a, l(e), !0)) : (P(r, e.identity, !0), P(i, e.dataVersion, !0), P(a, l(e), !0), P(o, ""), P(s, "")), queueMicrotask(e.onIconsChanged);
+		P(n, e, !0), e.identity === H(r) ? e.dataVersion !== H(i) && !H(a).dirty && (P(i, e.dataVersion, !0), P(a, Fp(e), !0)) : (P(r, e.identity, !0), P(i, e.dataVersion, !0), P(a, Fp(e), !0), P(o, "")), queueMicrotask(e.onIconsChanged);
 	})), Si(() => {
 		let e = (e) => {
 			H(n).open && e.key === "Escape" && (e.preventDefault(), H(n).onClose(H(a).dirty));
 		};
 		return document.addEventListener("keydown", e), () => document.removeEventListener("keydown", e);
 	});
-	function l(e) {
-		return {
-			tab: e.initialTab,
-			workspacePath: "",
-			createWorkspace: !1,
-			userName: e.userName,
-			endpoint: e.agentHub.configuredEndpoint || "http://127.0.0.1:4646",
-			profiles: e.profiles.map((e) => ({ ...e })),
-			newProfile: {
-				key: "",
-				description: "",
-				agentName: e.agents[0]?.id || ""
-			},
-			dirty: !1
-		};
-	}
-	function u() {
-		return {
-			...H(a),
-			profiles: H(a).profiles.map((e) => ({ ...e })),
-			newProfile: { ...H(a).newProfile }
-		};
-	}
-	function d() {
+	function s() {
 		H(a).dirty = !0;
 	}
-	async function f(e) {
-		if (e.preventDefault(), !(!H(a).workspacePath.trim() || H(o))) {
-			P(o, "workspace");
-			try {
-				await H(n).onAddWorkspace(u()), H(a).workspacePath = "", H(a).createWorkspace = !1;
-			} catch (e) {
-				H(n).onToast(S(e));
-			} finally {
-				P(o, "");
-			}
-		}
-	}
-	async function p(e) {
-		if (!H(o)) {
-			P(o, `remove:${e}`);
-			try {
-				await H(n).onRemoveWorkspace(e, u());
-			} catch (e) {
-				H(n).onToast(S(e));
-			} finally {
-				P(o, "");
-			}
-		}
-	}
-	async function m(e, t) {
-		if (!H(o)) {
-			P(o, `icon:${e}`), P(s, "");
-			try {
-				await H(n).onWorkspaceIcon(e, t, u());
-			} catch (e) {
-				H(n).onToast(S(e));
-			} finally {
-				P(o, "");
-			}
-		}
-	}
-	async function h(e) {
-		if (e.preventDefault(), !H(o)) {
-			P(o, "user");
-			try {
-				H(a).userName = await H(n).onSaveUser(H(a).userName);
-			} catch (e) {
-				H(n).onToast(S(e));
-			} finally {
-				P(o, "");
-			}
-		}
-	}
-	function g(e, t, n) {
-		H(a).profiles[e][t] = n, d();
-	}
-	function _() {
-		let e = H(a).newProfile.key.trim().toLowerCase();
-		if (!e) return H(n).onToast("Profile key is required.");
-		if (c.has(e)) return H(n).onToast(`${e} is a reserved system profile.`);
-		if (H(a).profiles.some((t) => t.key.trim().toLowerCase() === e)) return H(n).onToast(`Profile ${e} already exists.`);
-		H(a).profiles = [...H(a).profiles, {
-			key: e,
-			description: H(a).newProfile.description.trim(),
-			agentName: H(a).newProfile.agentName
-		}], H(a).newProfile = {
-			key: "",
-			description: "",
-			agentName: H(n).agents[0]?.id || ""
-		}, d();
-	}
-	function v(e) {
-		let t = H(a).profiles[e];
-		if (!t || c.has(t.key.trim().toLowerCase())) return H(n).onToast("System profiles cannot be deleted.");
-		H(a).profiles = H(a).profiles.filter((t, n) => e !== n), d();
-	}
-	async function y() {
-		if (!(!H(a).dirty || H(o))) {
-			P(o, "agenthub");
-			try {
-				await H(n).onSaveAgentHub(u()), H(a).dirty = !1;
-			} catch (e) {
-				H(n).onToast(S(e));
-			} finally {
-				P(o, "");
-			}
-		}
-	}
-	function b(e) {
-		let t = H(n).workspaces.find((t) => t.id === e);
-		return H(n).workspaceIcons.find((e) => e.id === (t?.icon || "")) || H(n).workspaceIcons[0];
-	}
-	function x(e) {
-		let t = H(n).agents.map((e) => ({
-			id: e.id,
-			label: e.label
-		}));
-		return e && !t.some((t) => t.id === e) ? [{
-			id: e,
-			label: `${e} (Unavailable)`
-		}, ...t] : t;
-	}
-	function S(e) {
-		return e instanceof Error ? e.message : String(e);
-	}
-	var C = Or(), w = L(C), T = (e) => {
-		var t = tm(), r = L(t), i = R(r, 2), l = I(i);
-		J(R(I(l), 2), 16, () => [
-			[
-				"workspace",
-				"hard-drive",
-				"Workspace"
-			],
-			[
-				"user",
-				"user-round",
-				"User"
-			],
-			[
-				"agenthub",
-				"network",
-				"AgentHub"
-			],
-			[
-				"profiles",
-				"route",
-				"Profiles"
-			],
-			[
-				"notifications",
-				"bell",
-				"Notifications"
-			]
-		], Fr, (e, t) => {
-			var n = Ip();
-			let r;
-			var i = I(n);
-			Q(i, { get name() {
-				return t[1];
-			} });
-			var o = R(i), s = I(o, !0);
-			k(o);
-			var c = R(o), l = (e) => {
-				G(e, Fp());
-			};
-			q(c, (e) => {
-				(t[0] === "agenthub" || t[0] === "profiles") && e(l);
-			}), k(n), z(() => {
-				r = Y(n, 1, "settings-tab", null, r, {
-					active: H(a).tab === t[0],
-					dirty: H(a).dirty && (t[0] === "agenthub" || t[0] === "profiles")
-				}), K(s, t[2]);
-			}), U("click", n, () => H(a).tab = t[0]), G(e, n);
-		}), k(l);
-		var u = R(l, 2), S = I(u);
-		Q(I(S), { name: "x" }), k(S);
-		var C = R(S, 2), w = (e) => {
-			var t = Hp(), r = R(I(t), 2), i = I(r);
-			li(i);
-			var c = R(i, 2), l = I(c);
-			li(l), A(), k(c);
-			var u = R(c, 2), d = I(u);
-			Q(d, { name: "plus" });
-			var h = R(d), g = I(h, !0);
-			k(h), k(u), k(r);
-			var _ = R(r, 2);
-			J(_, 21, () => H(n).workspaces, (e) => e.id, (e, t) => {
-				let r = /* @__PURE__ */ j(() => b(H(t).id));
-				var i = Bp(), a = I(i), c = I(a), l = I(c), u = I(l);
-				k(l);
-				var d = R(l), f = I(d), h = I(f, !0);
-				k(f);
-				var g = R(f), _ = I(g, !0);
-				k(g), k(d), k(c);
-				var v = R(c, 2), y = I(v), x = (e) => {
-					G(e, Lp());
-				};
-				q(y, (e) => {
-					H(t).id === H(n).activeWorkspaceId && e(x);
-				});
-				var S = R(y, 2), C = I(S), w = R(C), T = I(w, !0);
-				k(w), Q(R(w), { name: "chevron-down" }), k(S);
-				var E = R(S, 2);
-				Q(I(E), { name: "trash-2" }), k(E), k(v), k(a);
-				var ee = R(a, 2), te = (e) => {
-					var i = zp();
-					J(i, 21, () => H(n).workspaceIcons, (e) => e.id, (e, n) => {
-						var i = Rp();
-						let a;
-						var o = I(i), s = R(o), c = I(s, !0);
-						k(s);
-						var l = R(s), u = (e) => {
-							Q(e, { name: "check" });
-						};
-						q(l, (e) => {
-							H(n).id === H(r).id && e(u);
-						}), k(i), z(() => {
-							X(i, "aria-checked", H(n).id === H(r).id), X(i, "title", H(n).label), a = Y(i, 1, "", null, a, { selected: H(n).id === H(r).id }), X(o, "src", H(n).src), K(c, H(n).label);
-						}), U("click", i, () => m(H(t).id, H(n).id)), G(e, i);
-					}), k(i), z(() => X(i, "aria-label", `Icon for ${H(t).name}`)), G(e, i);
-				};
-				q(ee, (e) => {
-					H(s) === H(t).id && e(te);
-				}), k(i), z((e, n) => {
-					X(u, "src", H(r).src), K(h, H(t).name), K(_, H(t).path), X(S, "aria-expanded", H(s) === H(t).id), S.disabled = e, X(C, "src", H(r).src), K(T, H(o) === `icon:${H(t).id}` ? "Saving..." : H(r).label), E.disabled = n;
-				}, [() => !!H(o), () => !!H(o)]), U("click", S, () => P(s, H(s) === H(t).id ? "" : H(t).id, !0)), U("click", E, () => p(H(t).id)), G(e, i);
-			}, (e) => {
-				G(e, Vp());
-			}), k(_), k(t), z((e) => {
-				u.disabled = e, K(g, H(a).createWorkspace ? "Create" : "Add");
-			}, [() => !!H(o)]), yr("submit", r, f), hi(i, () => H(a).workspacePath, (e) => H(a).workspacePath = e), gi(l, () => H(a).createWorkspace, (e) => H(a).createWorkspace = e), G(e, t);
-		}, T = (e) => {
-			var t = Up(), n = R(I(t), 2), r = I(n), i = R(I(r));
-			li(i), A(), k(r);
-			var s = R(r, 2), c = I(s);
-			Q(I(c), { name: "save" }), A(), k(c), k(s), k(n), k(t), z(() => c.disabled = H(o) === "user"), yr("submit", n, h), hi(i, () => H(a).userName, (e) => H(a).userName = e), G(e, t);
-		}, E = (e) => {
-			var t = qp(), r = R(I(t), 2), i = I(r), s = R(I(i)), c = I(s, !0);
-			k(s), k(i);
-			var l = R(i, 2), u = R(I(l));
-			li(u), k(l);
-			var f = R(l, 2), p = I(f, !0);
-			k(f);
-			var m = R(f, 2);
-			J(m, 21, () => H(n).agentHub.capabilities, Fr, (e, t) => {
-				var n = Wp(), r = I(n, !0);
-				k(n), z(() => K(r, H(t))), G(e, n);
-			}), k(m), k(r);
-			var h = R(r, 2), g = I(h), _ = R(I(g)), v = I(_);
-			k(_), k(g);
-			var b = R(g, 2);
-			J(b, 21, () => H(n).agentHub.agents, (e) => e.name, (e, t) => {
-				var n = Gp(), r = I(n), i = I(r), a = I(i, !0);
-				k(i);
-				var o = R(i), s = I(o), c = I(s, !0);
-				k(s);
-				var l = R(s), u = I(l);
-				k(l), k(o), k(r), k(n), z((e) => {
-					K(a, e), K(c, H(t).name), K(u, `${(H(t).providerId || "") ?? ""} · ${(H(t).available === !1 ? H(t).unavailableReason || "Unavailable" : "Available") ?? ""}`);
-				}, [() => (H(t).name || "A").slice(0, 1).toUpperCase()]), G(e, n);
-			}, (e) => {
-				G(e, Kp());
-			}), k(b), k(h);
-			var x = R(h, 2), S = I(x);
-			let C;
-			var w = I(S, !0);
-			k(S);
-			var T = R(S);
-			Q(I(T), { name: "save" }), A(), k(T), k(x), k(t), z((e) => {
-				K(c, H(n).agentHub.connected && H(n).agentHub.compatible ? "Compatible" : H(n).agentHub.connected ? "Incompatible" : "Unavailable"), K(p, H(n).agentHub.error || `API ${H(n).agentHub.apiVersion || "unknown"} · AgentHub ${H(n).agentHub.version || "unknown"}`), K(v, `${H(n).agentHub.agents.length ?? ""} agents · ${H(n).agentHub.providers.length ?? ""} providers`), C = Y(S, 1, "settings-save-hint", null, C, { visible: H(a).dirty }), K(w, H(a).dirty ? "Unsaved changes" : ""), T.disabled = e;
-			}, [() => !H(a).dirty || !!H(o)]), U("input", u, d), hi(u, () => H(a).endpoint, (e) => H(a).endpoint = e), U("click", T, y), G(e, t);
-		}, ee = (e) => {
-			var t = Qp(), r = R(I(t), 2), i = I(r), s = R(I(i)), l = I(s);
-			k(s), k(i);
-			var u = R(i, 2), d = R(I(u), 2);
-			J(d, 17, () => H(a).profiles, Fr, (e, t, n) => {
-				let r = /* @__PURE__ */ j(() => c.has(H(t).key.trim().toLowerCase()));
-				var i = Zp();
-				let a;
-				var o = I(i);
-				li(o);
-				var s = R(o, 2);
-				li(s);
-				var l = R(s, 2);
-				J(l, 21, () => x(H(t).agentName), Fr, (e, t) => {
-					var n = Jp(), r = I(n, !0);
-					k(n);
-					var i = {};
-					z(() => {
-						K(r, H(t).label), i !== (i = H(t).id) && (n.value = (n.__value = H(t).id) ?? "");
-					}), G(e, n);
-				}), k(l);
-				var u;
-				ni(l);
-				var d = R(l, 2), f = (e) => {
-					G(e, Yp());
-				}, p = (e) => {
-					var t = Xp();
-					Q(I(t), { name: "trash-2" }), k(t), U("click", t, () => v(n)), G(e, t);
-				};
-				q(d, (e) => {
-					H(r) ? e(f) : e(p, -1);
-				}), k(i), z(() => {
-					a = Y(i, 1, "settings-profile-row", null, a, { "settings-profile-system": H(r) }), ui(o, H(t).key), o.disabled = H(r), ui(s, H(t).description), s.disabled = H(r), u !== (u = H(t).agentName) && (l.value = (l.__value = H(t).agentName) ?? "", ti(l, H(t).agentName));
-				}), U("input", o, (e) => g(n, "key", e.currentTarget.value)), U("input", s, (e) => g(n, "description", e.currentTarget.value)), U("change", l, (e) => g(n, "agentName", e.currentTarget.value)), G(e, i);
+	var c = Or(), l = L(c), u = (e) => {
+		var t = dm(), r = L(t), i = R(r, 2), c = I(i);
+		tm(c, {
+			get activeTab() {
+				return H(a).tab;
+			},
+			get dirty() {
+				return H(a).dirty;
+			},
+			onSelect: (e) => H(a).tab = e
+		});
+		var l = R(c, 2), u = I(l);
+		Q(I(u), { name: "x" }), k(u);
+		var d = R(u, 2), f = (e) => {
+			um(e, {
+				get workspaces() {
+					return H(n).workspaces;
+				},
+				get activeWorkspaceId() {
+					return H(n).activeWorkspaceId;
+				},
+				get workspaceIcons() {
+					return H(n).workspaceIcons;
+				},
+				get onAddWorkspace() {
+					return H(n).onAddWorkspace;
+				},
+				get onRemoveWorkspace() {
+					return H(n).onRemoveWorkspace;
+				},
+				get onWorkspaceIcon() {
+					return H(n).onWorkspaceIcon;
+				},
+				get onToast() {
+					return H(n).onToast;
+				},
+				get draft() {
+					return H(a);
+				},
+				set draft(e) {
+					P(a, e, !0);
+				},
+				get pending() {
+					return H(o);
+				},
+				set pending(e) {
+					P(o, e, !0);
+				}
 			});
-			var f = R(d, 2), p = I(f);
-			li(p);
-			var m = R(p, 2);
-			li(m);
-			var h = R(m, 2);
-			J(h, 21, () => H(n).agents, Fr, (e, t) => {
-				var n = Jp(), r = I(n, !0);
-				k(n);
-				var i = {};
-				z(() => {
-					K(r, H(t).label), i !== (i = H(t).id) && (n.value = (n.__value = H(t).id) ?? "");
-				}), G(e, n);
-			}), k(h);
-			var b = R(h, 2);
-			Q(I(b), { name: "plus" }), A(), k(b), k(f), k(u), k(r);
-			var S = R(r, 2), C = I(S);
-			let w;
-			var T = I(C, !0);
-			k(C);
-			var E = R(C);
-			Q(I(E), { name: "save" }), A(), k(E), k(S), k(t), z((e) => {
-				K(l, `${H(a).profiles.length ?? ""} routes`), h.disabled = !H(n).agents.length, b.disabled = !H(n).agents.length, w = Y(C, 1, "settings-save-hint", null, w, { visible: H(a).dirty }), K(T, H(a).dirty ? "Unsaved changes" : ""), E.disabled = e;
-			}, [() => !H(a).dirty || !!H(o)]), hi(p, () => H(a).newProfile.key, (e) => H(a).newProfile.key = e), hi(m, () => H(a).newProfile.description, (e) => H(a).newProfile.description = e), ri(h, () => H(a).newProfile.agentName, (e) => H(a).newProfile.agentName = e), U("click", b, _), U("click", E, y), G(e, t);
-		}, te = (e) => {
-			var t = em(), r = R(I(t), 2), i = I(r), a = R(I(i));
-			li(a), k(i);
-			var o = R(i, 2), s = (e) => {
-				var t = $p(), r = I(t, !0);
-				k(t), z(() => K(r, H(n).notifications.permissionError)), G(e, t);
-			};
-			q(o, (e) => {
-				H(n).notifications.permissionError && e(s);
-			}), k(r);
-			var c = R(r, 2), l = I(c), u = R(I(l));
-			li(u), k(l);
-			var d = R(l, 2), f = I(d, !0);
-			k(d), k(c), k(t), z(() => {
-				di(a, H(n).notifications.browser), di(u, H(n).notifications.sound), K(f, H(n).notifications.soundError || "Chrome may require the enable action to happen from a user gesture.");
-			}), U("change", a, (e) => H(n).onBrowserNotifications(e.currentTarget.checked)), U("change", u, (e) => H(n).onCompletionSound(e.currentTarget.checked)), G(e, t);
+		}, p = (e) => {
+			rm(e, {
+				get onSaveUser() {
+					return H(n).onSaveUser;
+				},
+				get onToast() {
+					return H(n).onToast;
+				},
+				get draft() {
+					return H(a);
+				},
+				set draft(e) {
+					P(a, e, !0);
+				},
+				get pending() {
+					return H(o);
+				},
+				set pending(e) {
+					P(o, e, !0);
+				}
+			});
+		}, m = (e) => {
+			Hp(e, {
+				get agentHub() {
+					return H(n).agentHub;
+				},
+				onDirty: s,
+				get onSaveAgentHub() {
+					return H(n).onSaveAgentHub;
+				},
+				get onToast() {
+					return H(n).onToast;
+				},
+				get draft() {
+					return H(a);
+				},
+				set draft(e) {
+					P(a, e, !0);
+				},
+				get pending() {
+					return H(o);
+				},
+				set pending(e) {
+					P(o, e, !0);
+				}
+			});
+		}, h = (e) => {
+			Zp(e, {
+				get agents() {
+					return H(n).agents;
+				},
+				onDirty: s,
+				get onSaveAgentHub() {
+					return H(n).onSaveAgentHub;
+				},
+				get onToast() {
+					return H(n).onToast;
+				},
+				get draft() {
+					return H(a);
+				},
+				set draft(e) {
+					P(a, e, !0);
+				},
+				get pending() {
+					return H(o);
+				},
+				set pending(e) {
+					P(o, e, !0);
+				}
+			});
+		}, g = (e) => {
+			Gp(e, {
+				get notifications() {
+					return H(n).notifications;
+				},
+				get onBrowserNotifications() {
+					return H(n).onBrowserNotifications;
+				},
+				get onCompletionSound() {
+					return H(n).onCompletionSound;
+				}
+			});
 		};
-		q(C, (e) => {
-			H(a).tab === "workspace" ? e(w) : H(a).tab === "user" ? e(T, 1) : H(a).tab === "agenthub" ? e(E, 2) : H(a).tab === "profiles" ? e(ee, 3) : e(te, -1);
-		}), k(u), k(i), U("click", r, () => H(n).onClose(H(a).dirty)), U("click", S, () => H(n).onClose(H(a).dirty)), G(e, t);
+		q(d, (e) => {
+			H(a).tab === "workspace" ? e(f) : H(a).tab === "user" ? e(p, 1) : H(a).tab === "agenthub" ? e(m, 2) : H(a).tab === "profiles" ? e(h, 3) : e(g, -1);
+		}), k(l), k(i), U("click", r, () => H(n).onClose(H(a).dirty)), U("click", u, () => H(n).onClose(H(a).dirty)), G(e, t);
 	};
-	q(w, (e) => {
-		H(n).open && e(T);
-	}), G(e, C), We();
+	q(l, (e) => {
+		H(n).open && e(u);
+	}), G(e, c), We();
 }
-br([
-	"click",
-	"input",
-	"change"
-]);
+br(["click"]);
 //#endregion
 //#region src/components/Toast.svelte
-var rm = /* @__PURE__ */ W("<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"> </div>");
-function im(e, t) {
+var pm = /* @__PURE__ */ W("<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"> </div>");
+function mm(e, t) {
 	Ue(t, !0);
 	let n = /* @__PURE__ */ N(F(t.channel.current())), r = /* @__PURE__ */ N(!1), i = null;
 	Si(() => {
@@ -9364,15 +9555,15 @@ function im(e, t) {
 			e(), i !== null && window.clearTimeout(i);
 		};
 	});
-	var a = rm(), o = I(a, !0);
+	var a = pm(), o = I(a, !0);
 	k(a), z(() => {
 		X(a, "hidden", !H(r)), K(o, H(n).message);
 	}), G(e, a), We();
 }
 //#endregion
 //#region src/components/UploadDialog.svelte
-var am = /* @__PURE__ */ W("<div class=\"upload-empty\">Selected or pasted files upload automatically.</div>"), om = /* @__PURE__ */ W("<small class=\"upload-result-path\"> </small>"), sm = /* @__PURE__ */ W("<small class=\"upload-error\"> </small>"), cm = /* @__PURE__ */ W("<div><div class=\"upload-item-heading\"><!><span><strong> </strong><small> </small></span><em> </em></div> <div class=\"upload-progress\" role=\"progressbar\" aria-valuemin=\"0\" aria-valuemax=\"100\"><span></span></div> <!> <!></div>"), lm = /* @__PURE__ */ W("<div class=\"upload-dialog-layer\" role=\"presentation\"><button class=\"upload-dialog-backdrop modal-enter\" type=\"button\" aria-label=\"Close\"></button> <div class=\"upload-dialog modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Upload files\"><header class=\"upload-dialog-header\"><div><strong>Upload files</strong><span>Files are saved in this session's artifacts/upload/ directory.</span></div> <button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></header> <div class=\"upload-dialog-content\"><input id=\"agentUploadInput\" type=\"file\" multiple=\"\" hidden=\"\"/> <div id=\"agentUploadDropZone\" class=\"upload-drop-zone\" tabindex=\"0\" role=\"button\"><!><strong>Paste files from the clipboard</strong><span>or choose one or more files from this device</span> <button id=\"agentUploadChooseButton\" type=\"button\" class=\"secondary-button\"><!><span>Choose files</span></button></div> <div class=\"upload-list\" aria-live=\"polite\"><!> <!></div></div> <footer class=\"upload-dialog-footer\"><span> </span> <button type=\"button\">Done</button></footer></div></div>");
-function um(e, t) {
+var hm = /* @__PURE__ */ W("<div class=\"upload-empty\">Selected or pasted files upload automatically.</div>"), gm = /* @__PURE__ */ W("<small class=\"upload-result-path\"> </small>"), _m = /* @__PURE__ */ W("<small class=\"upload-error\"> </small>"), vm = /* @__PURE__ */ W("<div><div class=\"upload-item-heading\"><!><span><strong> </strong><small> </small></span><em> </em></div> <div class=\"upload-progress\" role=\"progressbar\" aria-valuemin=\"0\" aria-valuemax=\"100\"><span></span></div> <!> <!></div>"), ym = /* @__PURE__ */ W("<div class=\"upload-dialog-layer\" role=\"presentation\"><button class=\"upload-dialog-backdrop modal-enter\" type=\"button\" aria-label=\"Close\"></button> <div class=\"upload-dialog modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Upload files\"><header class=\"upload-dialog-header\"><div><strong>Upload files</strong><span>Files are saved in this session's artifacts/upload/ directory.</span></div> <button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></header> <div class=\"upload-dialog-content\"><input id=\"agentUploadInput\" type=\"file\" multiple=\"\" hidden=\"\"/> <div id=\"agentUploadDropZone\" class=\"upload-drop-zone\" tabindex=\"0\" role=\"button\"><!><strong>Paste files from the clipboard</strong><span>or choose one or more files from this device</span> <button id=\"agentUploadChooseButton\" type=\"button\" class=\"secondary-button\"><!><span>Choose files</span></button></div> <div class=\"upload-list\" aria-live=\"polite\"><!> <!></div></div> <footer class=\"upload-dialog-footer\"><span> </span> <button type=\"button\">Done</button></footer></div></div>");
+function bm(e, t) {
 	Ue(t, !0);
 	let n = /* @__PURE__ */ N(F(t.channel.current())), r = /* @__PURE__ */ N(""), i = /* @__PURE__ */ N(F([])), a = 1, o = /* @__PURE__ */ N(void 0), s = /* @__PURE__ */ new Map(), c = /* @__PURE__ */ j(() => H(i).some((e) => e.status === "queued" || e.status === "uploading")), l = /* @__PURE__ */ j(() => H(i).filter((e) => e.status === "success").length), u = /* @__PURE__ */ j(() => H(i).filter((e) => e.status === "error").length);
 	Si(() => {
@@ -9481,7 +9672,7 @@ function um(e, t) {
 		};
 	}
 	var b = Or(), x = L(b), S = (e) => {
-		var t = lm(), n = I(t), r = R(n, 2), a = I(r), s = R(I(a), 2);
+		var t = ym(), n = I(t), r = R(n, 2), a = I(r), s = R(I(a), 2);
 		Q(I(s), { name: "x" }), k(s), k(a);
 		var d = R(a, 2), f = I(d);
 		bi(f, (e) => P(o, e), () => H(o));
@@ -9490,13 +9681,13 @@ function um(e, t) {
 		var g = R(h, 4);
 		Q(I(g), { name: "folder-open" }), A(), k(g), k(p);
 		var b = R(p, 2), x = I(b), S = (e) => {
-			G(e, am());
+			G(e, hm());
 		};
 		q(x, (e) => {
 			H(i).length || e(S);
 		}), J(R(x, 2), 17, () => H(i), (e) => e.id, (e, t) => {
 			let n = /* @__PURE__ */ j(() => y(H(t)));
-			var r = cm();
+			var r = vm();
 			let i;
 			var a = I(r), o = I(a);
 			Q(o, { get name() {
@@ -9512,14 +9703,14 @@ function um(e, t) {
 			let g;
 			k(m);
 			var _ = R(m, 2), b = (e) => {
-				var n = om(), r = I(n, !0);
+				var n = gm(), r = I(n, !0);
 				k(n), z(() => K(r, H(t).path)), G(e, n);
 			};
 			q(_, (e) => {
 				H(t).status === "success" && e(b);
 			});
 			var x = R(_, 2), S = (e) => {
-				var n = sm(), r = I(n, !0);
+				var n = _m(), r = I(n, !0);
 				k(n), z(() => K(r, H(t).error || "Upload failed")), G(e, n);
 			};
 			q(x, (e) => {
@@ -9556,21 +9747,21 @@ br([
 ]);
 //#endregion
 //#region src/components/component-registry.ts
-var dm = /* @__PURE__ */ new Map();
-async function fm(e, t, n) {
-	await pm(e), t.replaceChildren(), dm.set(e, n(t));
+var xm = /* @__PURE__ */ new Map();
+async function Sm(e, t, n) {
+	await Cm(e), t.replaceChildren(), xm.set(e, n(t));
 }
-async function pm(e) {
-	let t = dm.get(e);
-	t && (dm.delete(e), await t());
+async function Cm(e) {
+	let t = xm.get(e);
+	t && (xm.delete(e), await t());
 }
-async function mm() {
-	let e = [...dm.keys()].reverse();
-	for (let t of e) await pm(t);
+async function wm() {
+	let e = [...xm.keys()].reverse();
+	for (let t of e) await Cm(t);
 }
 //#endregion
 //#region src/components/model-channel.ts
-function hm(e) {
+function Tm(e) {
 	let t = e, n = /* @__PURE__ */ new Set();
 	return {
 		current: () => t,
@@ -9585,11 +9776,11 @@ function hm(e) {
 }
 //#endregion
 //#region src/entry.ts
-var $ = () => void 0, gm = async () => void 0, _m = [{
+var $ = () => void 0, Em = async () => void 0, Dm = [{
 	id: "",
 	label: "Forge default",
 	src: "/favicon.svg"
-}], vm = hm({
+}], Om = Tm({
 	identity: "",
 	loading: !0,
 	error: "",
@@ -9613,13 +9804,13 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 		revision: 0,
 		replace: !0
 	},
-	onSwitchWorkspace: gm,
+	onSwitchWorkspace: Em,
 	onAddWorkspace: $,
 	onCreateProject: $,
 	onOpenSettings: $,
-	onToggleProject: gm,
-	onSelectResource: gm,
-	onReorder: gm,
+	onToggleProject: Em,
+	onSelectResource: Em,
+	onReorder: Em,
 	onDragState: $,
 	onPanePreview: $,
 	onPaneCommit: $,
@@ -9629,8 +9820,8 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	onMobileImmersive: $,
 	onToast: $,
 	onIconsChanged: $,
-	onHistoryNavigation: gm
-}), ym = hm({
+	onHistoryNavigation: Em
+}), km = Tm({
 	open: !1,
 	identity: "",
 	workspaceId: "",
@@ -9663,19 +9854,19 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	templateDigest: "",
 	submitting: !1,
 	onClose: $,
-	onPreview: gm,
-	onSubmit: gm,
+	onPreview: Em,
+	onSubmit: Em,
 	previewRequestKey: () => "",
 	onConfirmTemplateSwitch: () => !0,
 	onIconsChanged: $
-}), bm = hm({
+}), Am = Tm({
 	open: !1,
 	identity: "",
 	dataVersion: 0,
 	initialTab: "workspace",
 	workspaces: [],
 	activeWorkspaceId: "",
-	workspaceIcons: _m,
+	workspaceIcons: Dm,
 	workspaceIconSavingId: "",
 	userName: "User",
 	agentHub: {
@@ -9699,16 +9890,16 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 		soundError: ""
 	},
 	onClose: $,
-	onAddWorkspace: gm,
-	onRemoveWorkspace: gm,
-	onWorkspaceIcon: gm,
+	onAddWorkspace: Em,
+	onRemoveWorkspace: Em,
+	onWorkspaceIcon: Em,
 	onSaveUser: async (e) => e,
-	onSaveAgentHub: gm,
+	onSaveAgentHub: Em,
 	onBrowserNotifications: $,
 	onCompletionSound: $,
 	onToast: $,
 	onIconsChanged: $
-}), xm = hm({
+}), jm = Tm({
 	open: !1,
 	identity: "",
 	resourceId: "",
@@ -9722,9 +9913,9 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	error: "",
 	unknown: !1,
 	onClose: $,
-	onSubmit: gm,
+	onSubmit: Em,
 	onIconsChanged: $
-}), Sm = hm({
+}), Mm = Tm({
 	identity: "",
 	visible: !1,
 	status: {
@@ -9749,17 +9940,17 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	onToggleEnabled: $,
 	onToggleDetails: $,
 	onIconsChanged: $
-}), Cm = hm({
+}), Nm = Tm({
 	message: "",
 	revision: 0
-}), wm = hm({
+}), Pm = Tm({
 	open: !1,
 	identity: "",
 	workspaceId: "",
 	runId: "",
 	onDone: $,
 	onIconsChanged: $
-}), Tm = hm({
+}), Fm = Tm({
 	identity: "",
 	workspaceId: "",
 	resourceId: "",
@@ -9797,7 +9988,7 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	onEndTurn: $,
 	onCloseSession: $,
 	onIconsChanged: $
-}), Em = hm({
+}), Im = Tm({
 	identity: "",
 	workspaceId: "",
 	workspaceName: "",
@@ -9817,21 +10008,21 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	onNavigate: $,
 	onCreateTask: $,
 	onArchive: $,
-	onLoadMoreLogs: gm,
+	onLoadMoreLogs: Em,
 	onSaveWorkspaceAgents: async () => ({ path: "AGENTS.md" }),
 	onToast: $,
 	onIconsChanged: $
-}), Dm = hm({
+}), Lm = Tm({
 	identity: "",
 	workspaceId: "",
 	resourceId: "",
 	activeRunId: "",
 	runs: [],
 	switchingRunId: "",
-	onSelect: gm,
+	onSelect: Em,
 	onToast: $,
 	onIconsChanged: $
-}), Om = hm({
+}), Rm = Tm({
 	identity: "",
 	workspaceId: "",
 	activeRunId: "",
@@ -9841,16 +10032,16 @@ var $ = () => void 0, gm = async () => void 0, _m = [{
 	project: () => [],
 	onEvent: $,
 	onNotice: $,
-	onApproval: gm,
+	onApproval: Em,
 	onToast: $,
 	onIconsChanged: $
 });
-async function km() {
-	await Am("app-shell", "app", ou, { channel: vm });
+async function zm() {
+	await Bm("app-shell", "app", ou, { channel: Om });
 }
-async function Am(e, t, n, r) {
+async function Bm(e, t, n, r) {
 	let i = document.getElementById(t);
-	i && await fm(e, i, (t) => {
+	i && await Sm(e, i, (t) => {
 		t.dataset.componentOwner = e;
 		let i = kr(n, {
 			target: t,
@@ -9861,40 +10052,40 @@ async function Am(e, t, n, r) {
 		};
 	});
 }
-async function jm() {
+async function Vm() {
 	await Promise.all([
-		Am("create-dialog", "createDialogRoot", $u, { channel: ym }),
-		Am("settings", "settingsRoot", nm, { channel: bm }),
-		Am("self-driving-dialog", "selfDrivingDialogRoot", Dp, { channel: xm }),
-		Am("self-driving-bar", "selfDrivingBarWrap", bp, { channel: Sm }),
-		Am("upload-dialog", "uploadDialogRoot", um, { channel: wm }),
-		Am("chat-composer", "ttyComposer", bu, { channel: Tm }),
-		Am("session-switcher", "agentSessionsWrap", Pp, { channel: Dm }),
-		Am("event-timeline", "ttyLog", mp, { channel: Om }),
-		Am("detail-panel", "detailsPanel", ff, { channel: Em }),
-		Am("toast", "toastRoot", im, { channel: Cm })
+		Bm("create-dialog", "createDialogRoot", $u, { channel: km }),
+		Bm("settings", "settingsRoot", fm, { channel: Am }),
+		Bm("self-driving-dialog", "selfDrivingDialogRoot", Dp, { channel: jm }),
+		Bm("self-driving-bar", "selfDrivingBarWrap", bp, { channel: Mm }),
+		Bm("upload-dialog", "uploadDialogRoot", bm, { channel: Pm }),
+		Bm("chat-composer", "ttyComposer", bu, { channel: Fm }),
+		Bm("session-switcher", "agentSessionsWrap", Pp, { channel: Lm }),
+		Bm("event-timeline", "ttyLog", mp, { channel: Rm }),
+		Bm("detail-panel", "detailsPanel", ff, { channel: Im }),
+		Bm("toast", "toastRoot", mm, { channel: Nm })
 	]);
 }
-var Mm = {
-	renderAppShell: (e) => vm.publish(e),
-	renderCreateDialog: (e) => ym.publish(e),
-	renderSettings: (e) => bm.publish(e),
-	renderSelfDrivingDialog: (e) => xm.publish(e),
-	renderSelfDrivingBar: (e) => Sm.publish(e),
-	renderUploadDialog: (e) => wm.publish(e),
-	renderComposer: (e) => Tm.publish(e),
-	renderSessionSwitcher: (e) => Dm.publish(e),
-	renderEventTimeline: (e) => Om.publish(e),
-	renderDetailPanel: (e) => Em.publish(e),
-	renderToast: (e) => Cm.publish(e)
+var Hm = {
+	renderAppShell: (e) => Om.publish(e),
+	renderCreateDialog: (e) => km.publish(e),
+	renderSettings: (e) => Am.publish(e),
+	renderSelfDrivingDialog: (e) => jm.publish(e),
+	renderSelfDrivingBar: (e) => Mm.publish(e),
+	renderUploadDialog: (e) => Pm.publish(e),
+	renderComposer: (e) => Fm.publish(e),
+	renderSessionSwitcher: (e) => Lm.publish(e),
+	renderEventTimeline: (e) => Rm.publish(e),
+	renderDetailPanel: (e) => Im.publish(e),
+	renderToast: (e) => Nm.publish(e)
 };
 window.addEventListener("pagehide", () => {
-	Bl(), mm();
+	Bl(), wm();
 }), window.addEventListener("pageshow", (e) => {
 	e.persisted && (async () => {
-		await km(), await jm(), Rl(Mm);
+		await zm(), await Vm(), Rl(Hm);
 	})();
 }), (async () => {
-	await km(), await jm(), Rl(Mm);
+	await zm(), await Vm(), Rl(Hm);
 })().catch((e) => console.error("Failed to start the Forge application", e));
 //#endregion

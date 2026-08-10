@@ -1,0 +1,42 @@
+@import "./SettingsPanel.css";
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 58px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-copy {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-copy strong {
+  color: #2c3e50;
+  font-size: 13px;
+}
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-copy small,
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-help {
+  color: #5c6b7a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-option input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+:where([data-component-owner="notification-settings-panel"]) .settings-notification-help {
+  display: block;
+  margin-top: -4px;
+}

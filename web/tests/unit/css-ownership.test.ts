@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 const root = resolve(import.meta.dirname, "../..");
 const components = [
   "AppShell",
+  "AgentHubSettingsPanel",
   "ChatComposer",
   "CreateDialog",
   "DetailPanel",
@@ -15,17 +16,23 @@ const components = [
   "FilePreviewModal",
   "LogTimeline",
   "MarkdownDocument",
+  "NotificationSettingsPanel",
+  "ProfilesSettingsPanel",
   "SelfDrivingBar",
   "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
+  "SettingsNavigation",
   "Toast",
   "UploadDialog",
+  "UserSettingsPanel",
+  "WorkspaceSettingsPanel",
   "WorkspaceAgentsEditor",
 ] as const;
 
 const owners: Record<(typeof components)[number], string> = {
   AppShell: "app-shell",
+  AgentHubSettingsPanel: "agenthub-settings-panel",
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
   DetailPanel: "detail-panel",
@@ -35,12 +42,17 @@ const owners: Record<(typeof components)[number], string> = {
   FilePreviewModal: "file-preview-modal",
   LogTimeline: "log-timeline",
   MarkdownDocument: "markdown-document",
+  NotificationSettingsPanel: "notification-settings-panel",
+  ProfilesSettingsPanel: "profiles-settings-panel",
   SelfDrivingBar: "self-driving-bar",
   SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
+  SettingsNavigation: "settings-navigation",
   Toast: "toast",
   UploadDialog: "upload-dialog",
+  UserSettingsPanel: "user-settings-panel",
+  WorkspaceSettingsPanel: "workspace-settings-panel",
   WorkspaceAgentsEditor: "workspace-agents-editor",
 };
 
@@ -104,8 +116,14 @@ describe("CSS ownership", () => {
     }
   });
 
+  it("keeps shared settings panel rules inside explicit panel roots", () => {
+    for (const header of selectorHeaders(read("src/components/SettingsPanel.css"))) {
+      for (const selector of header.split(",")) expect(selector.trim()).toContain("[data-component-owner][data-settings-panel]");
+    }
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "WorkspaceAgentsEditor"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "NotificationSettingsPanel", "ProfilesSettingsPanel", "SettingsNavigation", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });
