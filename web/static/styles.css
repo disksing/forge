@@ -2726,6 +2726,20 @@ body.resizing-y {
   flex: 0 0 auto;
 }
 
+.tty-composer-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--red);
+  font-size: 12px;
+}
+
+.tty-composer-error .secondary-button {
+  flex: 0 0 auto;
+}
+
 .tty-composer-toolbar {
   min-height: 40px;
   display: flex;

@@ -10,7 +10,9 @@ This directory contains Svelte 5 islands that coexist with the legacy page durin
 - Timers, DOM listeners, streams, and requests created by a component must be disposed from the component teardown path.
 - Shared state crosses the boundary through typed properties, callbacks, or the API client, never by scraping DOM.
 
-The first island owns only the brand version text. It deliberately preserves the current page appearance while proving build, embed, mount, replacement, and unmount behavior.
+The migrated islands now own the create-project/create-task flow (including template preview), settings, Self-Driving configuration, upload dialog, and chat composer. Their roots expose `data-svelte-owned` for ownership diagnostics. Legacy JavaScript remains responsible for API calls and global navigation state, then publishes typed models and callbacks through the bridge; it must not render or read form controls inside those roots.
+
+Form state is keyed by an explicit identity rather than by refresh frequency. Publishing a new model for the same identity preserves user edits, focus, selection, scroll position, uploads, and pending sends. A changed identity resets the local state and invalidates or aborts work from the previous context.
 
 ## Commands
 

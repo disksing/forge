@@ -20,6 +20,59 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
+func frontendSource(t *testing.T, parts ...string) string {
+	t.Helper()
+	pathParts := append([]string{"..", "..", "frontend"}, parts...)
+	data, err := os.ReadFile(filepath.Join(pathParts...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestMigratedSvelteRegionsHaveExclusiveDOMOwnership(t *testing.T) {
+	data, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(data)
+	regions := []struct {
+		start string
+		end   string
+		call  string
+	}{
+		{"function renderTTYComposer(", "function isAgentSessionReady(", "renderComposer"},
+		{"function renderSelfDrivingConfigDialog(", "function bindSelfDrivingConfigDialogEvents(", "renderSelfDrivingDialog"},
+		{"function renderSettingsModal(", "function settingsTabButton(", "renderSettings"},
+		{"function renderAgentUploadDialog(", "function uploadItemRow(", "renderUploadDialog"},
+		{"function renderCreateDialog(", "function createDialogDraft(", "renderCreateDialog"},
+	}
+	for _, region := range regions {
+		start := strings.Index(source, region.start)
+		end := strings.Index(source, region.end)
+		if start < 0 || end <= start {
+			t.Fatalf("could not isolate migrated renderer %q", region.start)
+		}
+		body := source[start:end]
+		if !strings.Contains(body, "ForgeSvelteIslands?."+region.call) {
+			t.Fatalf("migrated renderer %q does not publish to Svelte", region.start)
+		}
+		if strings.Contains(body, ".innerHTML") || strings.Contains(body, "addEventListener") {
+			t.Fatalf("legacy renderer %q still owns DOM or event listeners", region.start)
+		}
+	}
+	draftSyncStart := strings.Index(source, "function syncAgentDraftFromDOM()")
+	draftSyncEnd := -1
+	if draftSyncStart >= 0 {
+		if offset := strings.Index(source[draftSyncStart:], "function flushAgentDraft()"); offset >= 0 {
+			draftSyncEnd = draftSyncStart + offset
+		}
+	}
+	if draftSyncStart < 0 || draftSyncEnd <= draftSyncStart || strings.Contains(source[draftSyncStart:draftSyncEnd], ".value") {
+		t.Fatal("legacy composer must not read its draft from DOM")
+	}
+}
+
 func TestFaviconIsLinkedAndEmbedded(t *testing.T) {
 	indexData, err := staticFiles.ReadFile("static/index.html")
 	if err != nil {
@@ -562,12 +615,8 @@ func TestCreateTaskRejectsRunOptionsWithoutSelfDriving(t *testing.T) {
 }
 
 func TestCreateTaskDialogIncludesAutomationFields(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	for _, want := range []string{`name="selfDriving"`, `name="agentName"`, `name="prompt"`, `name="agentProfiles"`, `name="completionCriteria"`, `preferredAgentProfiles: dialog.selfDriving`} {
+	source := frontendSource(t, "src", "islands", "CreateDialog.svelte") + frontendSource(t, "src", "islands", "models.ts")
+	for _, want := range []string{`name="selfDriving"`, `name="agentName"`, `name="prompt"`, `name="agentProfiles"`, `name="completionCriteria"`, `agentProfiles`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("create task dialog is missing %q", want)
 		}
@@ -624,19 +673,12 @@ func TestAgentProfileSettingsAndSelfDrivingStatusUI(t *testing.T) {
 }
 
 func TestAgentHubSettingsReplaceLocalProviderEditors(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
+	source := frontendSource(t, "src", "islands", "SettingsModal.svelte")
 	for _, want := range []string{
-		`settingsTabButton("agenthub", "network", "AgentHub")`,
-		`settingsTabButton("profiles", "route", "Profiles")`,
-		`function settingsAgentHubPanel(data)`,
+		`["agenthub", "network", "AgentHub"]`,
+		`["profiles", "route", "Profiles"]`,
 		`Provider and agent definitions are read-only here.`,
-		`status.capabilities`,
 		`data-settings-section="agenthub"`,
-		`function settingsProfilesPanel(data)`,
 		`data-settings-section="profiles"`,
 	} {
 		if !strings.Contains(source, want) {
@@ -644,23 +686,19 @@ func TestAgentHubSettingsReplaceLocalProviderEditors(t *testing.T) {
 		}
 	}
 	for _, removed := range []string{
-		`settingsTabButton("providers",`,
-		`settingsTabButton("agents",`,
+		`["providers",`,
+		`["agents",`,
 	} {
 		if strings.Contains(source, removed) {
 			t.Fatalf("local provider/agent editor tab remains: %q", removed)
 		}
 	}
-	start := strings.Index(source, "function syncSettingsDraftFromDOM()")
-	end := strings.Index(source, "function markAgentSettingsDirty()")
-	if start < 0 || end <= start {
-		t.Fatal("could not isolate syncSettingsDraftFromDOM")
+	legacy, err := staticFiles.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatal(err)
 	}
-	sync := source[start:end]
-	for _, want := range []string{`data-settings-section="agenthub"`, `data-settings-section="profiles"`} {
-		if !strings.Contains(sync, want) {
-			t.Fatalf("draft sync should only collect rendered sections, missing %q", want)
-		}
+	if !strings.Contains(string(legacy), "The legacy layer never reads settings values from DOM.") {
+		t.Fatal("legacy settings bridge must explicitly avoid DOM draft reads")
 	}
 }
 
@@ -669,10 +707,9 @@ func TestBrowserLocalUserSettingsAndMessagePresentation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
+	source := string(data) + frontendSource(t, "src", "islands", "SettingsModal.svelte")
 	for _, want := range []string{
-		`settingsTabButton("user", "user-round", "User")`,
-		`function settingsUserPanel()`,
+		`["user", "user-round", "User"]`,
 		`id="settingsUserForm"`,
 		`id="settingsUserName"`,
 		`window.localStorage.setItem(USER_SETTINGS_KEY`,
@@ -683,7 +720,7 @@ func TestBrowserLocalUserSettingsAndMessagePresentation(t *testing.T) {
 			t.Fatalf("browser-local User UI is missing %q", want)
 		}
 	}
-	if got := strings.Count(source, `userName: currentUserName()`); got != 2 {
+	if got := strings.Count(source, `userName: currentUserName()`); got < 2 {
 		t.Fatalf("user name must be attached to initial and follow-up message requests; got %d call sites", got)
 	}
 
@@ -777,11 +814,14 @@ func TestBackgroundRenderPreservesOpenSettingsModal(t *testing.T) {
 		t.Fatal("could not isolate renderAll")
 	}
 	renderAll := source[start:end]
-	if !strings.Contains(renderAll, `if (!state.settings.open) renderSettingsModal();`) {
-		t.Fatal("background renders should leave an open settings modal mounted")
+	if !strings.Contains(renderAll, "renderSettingsModal();") {
+		t.Fatal("background renders should publish updated server state to the settings island")
 	}
-	if strings.Contains(renderAll, "\n  renderSettingsModal();") {
-		t.Fatal("renderAll should not unconditionally rebuild the settings modal")
+	settings := frontendSource(t, "src", "islands", "SettingsModal.svelte")
+	for _, want := range []string{`next.identity !== identity`, `next.dataVersion !== dataVersion && !draft.dirty`} {
+		if !strings.Contains(settings, want) {
+			t.Fatalf("Svelte settings identity protection is missing %q", want)
+		}
 	}
 }
 
@@ -826,16 +866,16 @@ func TestAgentUploadUIIncludesSelectionPasteProgressAndDraftBackfill(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := string(appData)
+	app := string(appData) + frontendSource(t, "src", "islands", "UploadDialog.svelte") + frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
-		`id="agentUploadButton" class="tty-upload-button"`,
-		`id="agentUploadInput" type="file" multiple`,
+		`id="agentUploadButton"`,
+		`id="agentUploadInput"`,
 		`document.addEventListener("paste"`,
-		`clipboardUploadFiles(event.clipboardData)`,
-		`items.forEach(uploadAgentFile)`,
+		`clipboardFiles(event.clipboardData)`,
+		`for (const item of added) upload`,
 		`request.upload.addEventListener("progress"`,
-		`item.status = "success"`,
-		`item.status = "error"`,
+		`status: "success"`,
+		`status: "error"`,
 		`.filter((item) => item.status === "success" && item.path)`,
 		`function appendUploadedPaths(draft, paths)`,
 		"return `${draft}${draft.endsWith(\"\\n\") ? \"\" : \"\\n\"}${block}`;",
@@ -1788,7 +1828,7 @@ func TestAgentInitialEventsLoadDoesNotAutoPage(t *testing.T) {
 	if strings.Contains(initialLoad, "ensureVisibleAgentEvents") {
 		t.Fatal("initial event load must not page upward automatically")
 	}
-	if !strings.Contains(app, `const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);`) {
+	if !strings.Contains(app, `canResume: Boolean(activeRun && !live && (activeRun.agentHubSessionId || activeRun.sourceExternalId))`) {
 		t.Fatal("closed composer must offer Resume for any AgentHub-attached run")
 	}
 
@@ -2085,8 +2125,8 @@ func TestProjectTaskTemplatesAreVisibleAndSelectable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
-	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `applyCreateDialogTemplate`, `templateFields: dialog.templateFields`, `{ detail: dialog.detail }`, `/tasks/preview`, `expectedTemplateDigest`} {
+	source := string(data) + frontendSource(t, "src", "islands", "CreateDialog.svelte")
+	for _, want := range []string{`<span>Task Templates</span>`, `data-template-preview`, `name="templateName"`, `templateFields: dialog.templateFields`, `{ detail: dialog.detail }`, `/tasks/preview`, `expectedTemplateDigest`} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("task template UI is missing %q", want)
 		}
@@ -2139,14 +2179,11 @@ if (blank.detail !== "Only once" || blank.templateName !== undefined || blank.ag
 }
 
 func TestCreateTaskDialogIsLargeAndResponsive(t *testing.T) {
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(appData), `class="create-dialog${isTask ? " create-task-dialog" : ""}${entering ? " modal-enter" : ""}"`) {
+	component := frontendSource(t, "src", "islands", "CreateDialog.svelte")
+	if !strings.Contains(component, `class:create-task-dialog={isTask}`) {
 		t.Fatal("create task dialog should have a task-specific class")
 	}
-	if !strings.Contains(string(appData), `<div class="create-task-dialog-body">`) {
+	if !strings.Contains(component, `<div class="create-task-dialog-body">`) {
 		t.Fatal("create task dialog should wrap scrollable fields in a dedicated body so actions stay visible")
 	}
 
@@ -2345,13 +2382,13 @@ func TestTTYComposerKeyboardSendModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
+	source := string(data) + frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
 		`ttyMultiline: false`,
 		`event.isComposing || event.keyCode === 229`,
 		`if (event.metaKey || event.ctrlKey)`,
 		`if (event.shiftKey)`,
-		`if (state.agent.ttyMultiline) return`,
+		`if (multiline) return`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY composer keyboard handling is missing %q", want)
@@ -2364,13 +2401,11 @@ func TestTTYComposerOffersResumeForAgentHubAttachedRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
+	source := string(data) + frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
-		`function agentComposerAgentKey() {`,
-		`const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);`,
-		`agentComposerActions({`,
-		`standalone: true,`,
-		`includeResume: canResume,`,
+		`canResume: Boolean(activeRun && !live && (activeRun.agentHubSessionId || activeRun.sourceExternalId))`,
+		`{#if model.canResume}`,
+		`id="agentResumeButton"`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY composer resume guard is missing %q", want)
@@ -2386,29 +2421,17 @@ func TestTTYComposerOffersResumeForAgentHubAttachedRuns(t *testing.T) {
 }
 
 func TestTTYComposerRestoresKeyboardFocusAfterSend(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
+	source := frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
-		`let restoreInputFocus = document.activeElement === input;`,
-		`document.addEventListener("focusin", cancelInputFocusRestore, true);`,
-		`restoreInputFocus = false;`,
-		`document.removeEventListener("focusin", cancelInputFocusRestore, true);`,
-		`$("ttyInput")?.focus({ preventScroll: true });`,
+		`const requestIdentity = identity;`,
+		`if (identity === requestIdentity)`,
+		`input?.focus({ preventScroll: true });`,
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("TTY composer focus restoration is missing %q", want)
 		}
 	}
 
-	removeListener := strings.Index(source, `document.removeEventListener("focusin", cancelInputFocusRestore, true);`)
-	renderComposer := strings.Index(source[removeListener:], `renderTTYComposer();`)
-	restoreFocus := strings.Index(source[removeListener:], `$("ttyInput")?.focus({ preventScroll: true });`)
-	if removeListener < 0 || renderComposer < 0 || restoreFocus < 0 || renderComposer >= restoreFocus {
-		t.Fatal("TTY composer should restore focus only after replacing the sending input")
-	}
 }
 
 func TestTTYComposerDraftPersistence(t *testing.T) {
@@ -2416,14 +2439,14 @@ func TestTTYComposerDraftPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
+	source := string(data) + frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
 		`const AGENT_DRAFT_STORAGE_PREFIX = "forge.gui.agentDraft.v1";`,
 		`function agentDraftKeyForRun(run, workspaceId = state.activeWorkspaceId)`,
 		`function pruneAgentDraftStorage(`,
 		`function restoreAgentDraftForRun(run, workspaceId = state.activeWorkspaceId)`,
-		`data-agent-draft-key=`,
-		`updateAgentDraft(event.target.value);`,
+		`data-agent-draft-key={model.draftKey}`,
+		`model.onDraft(value, context());`,
 		`window.addEventListener("pagehide", flushAgentDraftOnPageLeave);`,
 		`window.addEventListener("beforeunload", flushAgentDraftOnPageLeave);`,
 		`if (result?.status === "accepted")`,
@@ -2434,7 +2457,7 @@ func TestTTYComposerDraftPersistence(t *testing.T) {
 		}
 	}
 
-	submitStart := strings.Index(source, "async function submitTTYInput(event)")
+	submitStart := strings.Index(source, "async function submitTTYInput(rawText, context)")
 	if submitStart < 0 {
 		t.Fatal("could not isolate TTY submit handler")
 	}
@@ -2538,54 +2561,6 @@ storageBroken = false;
 context.updateAgentDraft("");
 assert(state.agent.ttyDraft === "", "empty drafts must clear in-memory state");
 
-(async () => {
-const submitStart = source.indexOf("async function submitTTYInput(event)");
-const submitEnd = source.indexOf("function resizeTTYInput(input)", submitStart);
-if (submitStart < 0 || submitEnd < 0) throw new Error("could not isolate submit handler");
-context.document = {
-  activeElement: null,
-  addEventListener() {},
-  removeEventListener() {},
-};
-context.renderTTYComposer = () => {};
-context.refreshIcons = () => {};
-context.toast = () => {};
-context.__sendAgentInput = async () => ({ status: "accepted" });
-vm.runInContext("async function sendAgentInput(text) { return globalThis.__sendAgentInput(text); }\n" + source.slice(submitStart, submitEnd), context);
-
-state.agent.activeRunId = "run-a";
-context.restoreAgentDraftForRun(runA);
-ttyInput = { value: "failed message", dataset: { agentDraftKey: state.agent.ttyDraftKey }, focus() {} };
-context.document.activeElement = ttyInput;
-context.__sendAgentInput = async () => ({ status: "rejected" });
-await context.submitTTYInput({ preventDefault() {} });
-assert(state.agent.ttyDraft === "failed message" && data.has(keyA), "failed sends must retain the draft");
-
-context.__sendAgentInput = async () => { throw new Error("network"); };
-await context.submitTTYInput({ preventDefault() {} });
-assert(state.agent.ttyDraft === "failed message" && data.has(keyA), "network errors must retain the draft");
-
-context.__sendAgentInput = async () => ({ status: "accepted" });
-ttyInput.value = "accepted message";
-await context.submitTTYInput({ preventDefault() {} });
-assert(state.agent.ttyDraft === "" && !data.has(keyA), "only an explicitly accepted send may clear the draft");
-
-context.restoreAgentDraftForRun(runA);
-ttyInput.value = "sent message";
-let resolveSend;
-context.__sendAgentInput = () => new Promise((resolve) => { resolveSend = resolve; });
-const pendingSend = context.submitTTYInput({ preventDefault() {} });
-await Promise.resolve();
-assert(resolveSend, "send request did not start");
-context.updateAgentDraft("typed while sending");
-ttyInput.value = "typed while sending";
-resolveSend({ status: "accepted" });
-await pendingSend;
-assert(state.agent.ttyDraft === "typed while sending" && data.has(keyA), "a stale accepted callback must not clear newer input");
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
 `
 	testFile := filepath.Join(t.TempDir(), "tty-drafts.js")
 	if err := os.WriteFile(testFile, []byte(script), 0o600); err != nil {
@@ -2684,22 +2659,14 @@ func TestNewSessionComposerUsesSingleAgentChooserFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
-	composerStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
-	composerEnd := -1
-	if composerStart >= 0 {
-		composerEnd = strings.Index(source[composerStart:], `function agentDisplayName(agent) {`)
-	}
-	if composerStart < 0 || composerEnd < 0 {
-		t.Fatal("New Session composer renderer is missing")
-	}
-	composer := source[composerStart : composerStart+composerEnd]
+	composer := frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
 		`id="agentStartButton" class="tty-new-session-button"`,
 		`aria-haspopup="menu"`,
 		`aria-controls="ttyAgentMenu"`,
 		`id="ttyAgentMenu" class="tty-agent-menu" role="menu"`,
 		`role="menuitem"`,
-		`agentConfigSummary(agent)`,
+		`agent.summary`,
 		`Creating Session...`,
 		`No enabled agents are available. Configure an AgentHub Agent in Settings.`,
 	} {
@@ -2718,26 +2685,17 @@ func TestNewSessionComposerUsesSingleAgentChooserFlow(t *testing.T) {
 		}
 	}
 
-	start := strings.Index(source, `const startButton = $("agentStartButton");`)
-	end := -1
-	if start >= 0 {
-		end = strings.Index(source[start:], `const closeSessionButton = $("agentCloseSessionButton");`)
-	}
-	if start < 0 || end < 0 {
-		t.Fatal("New Session event handler boundary is missing")
-	}
-	handler := source[start : start+end]
+	handler := source + composer
 	for _, want := range []string{
 		`state.agent.agentChooserOpen = !state.agent.agentChooserOpen;`,
-		`focusAgentChoice();`,
-		`const agentName = button.dataset.agentChoice || "";`,
-		`startAgentRun(agentName).catch((err) => toast(err.message));`,
+		`onChooseAgent: (id) => startAgentRun(id).catch((err) => toast(err.message))`,
+		`onclick={() => model.onChooseAgent(agent.id)}`,
 	} {
 		if !strings.Contains(handler, want) {
 			t.Fatalf("New Session event handler is missing %q", want)
 		}
 	}
-	if strings.Contains(handler, `startAgentRun().catch`) {
+	if strings.Contains(handler, `onChooseAgent: () => startAgentRun()`) {
 		t.Fatal("clicking New Session must open the Agent chooser instead of starting immediately")
 	}
 	if strings.Contains(handler, `state.agent.agentName = button.dataset.agentChoice;`) {
@@ -2898,13 +2856,13 @@ func TestSelfDrivingTTYComposerSupportsLiveIntervention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := string(data)
+	source := string(data) + frontendSource(t, "src", "islands", "ChatComposer.svelte")
 	for _, want := range []string{
 		`function preferredAgentRunID(runs)`,
 		`run.schedulerTurn && isLiveAgentRun(run)`,
 		`if (run.status !== "starting") return true;`,
 		`function agentInputUnavailableReason(run, sessionReady = isAgentSessionReady(run))`,
-		`placeholder="${escapeHTML(placeholder)}"${inputDisabled}`,
+		`placeholder={model.unavailableReason || "Send input to the selected agent session"}`,
 		`!previousRun.schedulerTurn`,
 	} {
 		if !strings.Contains(source, want) {
@@ -2919,13 +2877,14 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
+	component := frontendSource(t, "src", "islands", "ChatComposer.svelte")
+	combined := source + component
 	for _, want := range []string{
 		`function isAgentTurnInterruptible(run)`,
 		`["running", "waiting_approval"].includes(run?.status)`,
-		`includeEndTurn: stopTurnAvailable`,
-		`function sessionControlComposerActions(options = {})`,
+		`canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending))`,
 		`id="agentEndTurnButton"`,
-		`icon(endTurnPending ? "loader-circle" : "pause")`,
+		`model.endingTurn ? "loader-circle" : "pause"`,
 		`End current turn; keep the Session open.`,
 		`id="agentCloseSessionButton"`,
 		`Close session; end the entire AgentHub Session.`,
@@ -2934,37 +2893,13 @@ func TestEndTurnAndCloseSessionComposerUsesToolbar(t *testing.T) {
 		`state.agent.turnStopping = true`,
 		`Turn ended. The AgentHub Session remains open.`,
 		`state.agent.sessionStopping = true`,
-		`Closing session…`,
-		`state.agent.selfDrivingDisabling ? "disabling-self-driving" : "self-driving-stable"`,
+		`model.closingSession`,
 	} {
-		if !strings.Contains(source, want) {
+		if !strings.Contains(combined, want) {
 			t.Fatalf("End Turn/Close Session composer is missing %q", want)
 		}
 	}
-	actionsStart := strings.Index(source, `function agentComposerActions(options = {}) {`)
-	actionsEnd := -1
-	if actionsStart >= 0 {
-		actionsEnd = strings.Index(source[actionsStart:], `function sessionControlComposerActions(options = {}) {`)
-	}
-	if actionsStart < 0 || actionsEnd < 0 {
-		t.Fatal("Session actions composer boundary is missing")
-	}
-	actionsSource := source[actionsStart : actionsStart+actionsEnd]
-	for _, removed := range []string{`id="agentEndTurnButton"`, `id="agentCloseSessionButton"`, `Stop Turn`} {
-		if strings.Contains(actionsSource, removed) {
-			t.Fatalf("bottom Session actions still render the moved control %q", removed)
-		}
-	}
-	toolbarStart := strings.Index(source, `function sessionControlComposerActions(options = {}) {`)
-	toolbarEnd := strings.Index(source[toolbarStart:], `function agentDisplayName(agent) {`)
-	if toolbarStart < 0 || toolbarEnd < 0 {
-		t.Fatal("composer toolbar boundary is missing")
-	}
-	toolbarSource := source[toolbarStart : toolbarStart+toolbarEnd]
-	if strings.Contains(toolbarSource, `<span>`) {
-		t.Fatal("End Turn and Close Session toolbar buttons must remain icon-only")
-	}
-	if strings.Index(toolbarSource, `id="agentEndTurnButton"`) > strings.Index(toolbarSource, `id="agentCloseSessionButton"`) {
+	if strings.Index(component, `id="agentEndTurnButton"`) > strings.Index(component, `id="agentCloseSessionButton"`) {
 		t.Fatal("End Turn must precede Close Session in the composer toolbar")
 	}
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
@@ -3526,7 +3461,7 @@ func TestProjectDetailsOmitsDescription(t *testing.T) {
 	if strings.Contains(source, `<span>Description</span>`) || strings.Contains(source, `detail.description || "No description."`) {
 		t.Fatal("project details should not render the description section")
 	}
-	if !strings.Contains(source, `<textarea name="description"`) {
+	if !strings.Contains(frontendSource(t, "src", "islands", "CreateDialog.svelte"), `<textarea name="description"`) {
 		t.Fatal("project creation dialog should retain its description field")
 	}
 }

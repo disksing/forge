@@ -29,6 +29,8 @@ const state = {
   },
   settings: {
     open: false,
+    identity: 0,
+    dataVersion: 0,
     tab: "workspace",
     data: null,
     agentDirty: false,
@@ -61,6 +63,7 @@ const state = {
   },
   createDialog: {
     open: false,
+    identity: 0,
     type: "",
     projectId: "",
     templateName: "",
@@ -83,6 +86,7 @@ const state = {
   },
   selfDrivingDialog: {
     open: false,
+    identity: 0,
     mode: "",
     resourceId: "",
     reuseRunId: "",
@@ -99,6 +103,7 @@ const state = {
   },
   uploadDialog: {
     open: false,
+    identity: 0,
     runId: "",
     items: [],
     nextId: 1,
@@ -136,6 +141,7 @@ const state = {
     ttyDraftResourceId: "",
     ttyDraftRunId: "",
     ttyDraftVersion: 0,
+    ttyDraftResetVersion: 0,
     skipTTYDraftSync: false,
     agentName: "",
     optionsOpen: false,
@@ -222,6 +228,31 @@ const WORKSPACE_ICONS = [
   { id: "community-team", label: "Community and team", src: "/workspace-icons/16-community-team.png" },
 ];
 const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, item]));
+let createDialogIdentity = 0;
+let selfDrivingDialogIdentity = 0;
+let uploadDialogIdentity = 0;
+let settingsIdentity = 0;
+let createPreviewGeneration = 0;
+let createPreviewController = null;
+let createPreviewPendingKey = "";
+
+function svelteAgentOptions() {
+  return enabledAgentConfigs().map((agent) => ({
+    id: agent.id || "",
+    label: agentDisplayName(agent),
+    summary: agentConfigSummary(agent),
+  }));
+}
+
+function renderMigratedSvelteIslands() {
+  renderCreateDialog();
+  renderSelfDrivingConfigDialog();
+  renderAgentUploadDialog();
+  renderTTYComposer();
+  renderSettingsModal();
+}
+
+if (typeof window !== "undefined") window.ForgeLegacySvelteReady = renderMigratedSvelteIslands;
 
 function notificationStorage() {
   try {
@@ -1160,9 +1191,8 @@ function restoreAgentDraftForRun(run, workspaceId = state.activeWorkspaceId) {
 }
 
 function syncAgentDraftFromDOM() {
-  const input = $("ttyInput");
-  if (!input || !state.agent.ttyDraftKey || input.dataset.agentDraftKey !== state.agent.ttyDraftKey) return;
-  updateAgentDraft(input.value);
+  // The Svelte composer publishes every edit into the draft store. Reading
+  // the DOM here would create a second owner and can resurrect stale input.
 }
 
 function flushAgentDraft() {
@@ -1596,10 +1626,7 @@ function renderAll() {
   renderDiffContent();
   renderCreateDialog();
   renderSelfDrivingConfigDialog();
-  // Background refreshes render the main workspace frequently. Keep an open
-  // settings modal mounted so its scroll position and in-progress controls
-  // are not reset; settings actions render it explicitly when needed.
-  if (!state.settings.open) renderSettingsModal();
+  renderSettingsModal();
 }
 
 function renderSelectionPanels() {
@@ -4632,92 +4659,54 @@ function agentComposerAgentKey() {
 }
 
 function renderTTYComposer(options = {}) {
-  const skipDraftSync = options.skipDraftSync || state.agent.skipTTYDraftSync;
   state.agent.skipTTYDraftSync = false;
-  if (!skipDraftSync) syncAgentDraftFromDOM();
-  const composer = $("ttyComposer");
-  if (!composer) return;
   closeNewSessionChooserForResourceLock();
   const activeRun = currentAgentRun();
-  if (!activeRun) {
-    const actionsMarkup = agentComposerActions({ standalone: true });
-    const key = `none:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${selectedResourceLockComposerKey()}`;
-    if (composer.dataset.composerKey === key) return;
-    composer.dataset.composerKey = key;
-    composer.innerHTML = actionsMarkup;
-    return;
-  }
-  restoreAgentDraftForRun(activeRun);
-  if (isLiveAgentRun(activeRun)) {
-    const sessionReady = isAgentSessionReady(activeRun);
-    const unavailableReason = agentInputUnavailableReason(activeRun, sessionReady);
-    const stopTurnPending = isAgentTurnStopping(activeRun);
-    const stopTurnAvailable = isAgentTurnInterruptible(activeRun) || stopTurnPending;
-    const sessionStopping = isAgentSessionStopping(activeRun) || activeRun.status === "stopping";
-    const selfDrivingRemainsEnabled = isSelfDrivingSessionCloseTarget(activeRun);
-    const sessionActionsMarkup = agentComposerActions({ collapsible: true });
-    const sessionControlsMarkup = sessionControlComposerActions({
-      includeEndTurn: stopTurnAvailable,
-      endingTurn: stopTurnPending,
-      includeClose: true,
-      closingSession: sessionStopping,
-      selfDrivingRemainsEnabled,
-      selfDrivingDisabling: state.agent.selfDrivingDisabling,
-    });
-    const key = `live:${activeRun.id}:${activeRun.status}:${state.agent.agentName}:${agentComposerAgentKey()}:${sessionReady ? "ready" : "starting"}:${unavailableReason}:${stopTurnAvailable ? "stoppable" : "not-stoppable"}:${stopTurnPending ? "ending-turn" : "idle"}:${sessionStopping ? "closing-session" : "idle"}:${selfDrivingRemainsEnabled ? "self-driving-remains-enabled" : "close-session"}:${state.agent.selfDrivingDisabling ? "disabling-self-driving" : "self-driving-stable"}:${state.agent.sendingInput ? "sending" : "idle"}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${sessionActionsMarkup ? "actions" : "compact"}:${selectedResourceLockComposerKey()}`;
-    if (composer.dataset.composerKey === key && $("ttyInput")) return;
-    composer.dataset.composerKey = key;
-    const inputDisabled = state.agent.sendingInput || unavailableReason ? " disabled" : "";
-    const sendIcon = state.agent.sendingInput ? icon("loader-circle") : icon("send");
-    const placeholder = unavailableReason || "Send input to the selected agent session";
-    const sendTitle = state.agent.sendingInput ? "Sending..." : unavailableReason || "Send input";
-    composer.innerHTML = `
-      <form id="ttyForm" class="tty-input">
-        <span>&gt;</span>
-        <textarea id="ttyInput" rows="1" autocomplete="off" data-agent-draft-key="${escapeHTML(state.agent.ttyDraftKey)}" placeholder="${escapeHTML(placeholder)}"${inputDisabled}>${escapeHTML(state.agent.ttyDraft)}</textarea>
-        <span class="tty-composer-group">
-          ${selectedResourceHasExternalLock() ? "" : `<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files">${icon("plus")}</button>`}
-          <button type="submit" class="tty-send-button" title="${escapeHTML(sendTitle)}" aria-label="${escapeHTML(sendTitle)}"${inputDisabled}>${sendIcon}</button>
-        </span>
-        ${sessionControlsMarkup ? `<span class="tty-composer-divider" aria-hidden="true"></span><span class="tty-composer-group">${sessionControlsMarkup}</span>` : ""}
-        ${sessionActionsMarkup ? `<button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded="${state.agent.sessionActionsOpen ? "true" : "false"}">${icon("ellipsis")}</button>` : ""}
-      </form>
-      ${sessionActionsMarkup}
-    `;
-    $("ttyInput")?.addEventListener("input", (event) => {
-      updateAgentDraft(event.target.value);
-      resizeTTYInput(event.target);
-    });
-    $("ttyInput")?.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
-      if (event.metaKey || event.ctrlKey) {
-        event.preventDefault();
-        $("ttyForm")?.requestSubmit();
-        return;
-      }
-      if (event.shiftKey) {
-        state.agent.ttyMultiline = true;
-        return;
-      }
-      if (state.agent.ttyMultiline) return;
-      event.preventDefault();
-      $("ttyForm")?.requestSubmit();
-    });
-    resizeTTYInput($("ttyInput"));
-    $("ttyForm")?.addEventListener("submit", submitTTYInput);
-    return;
-  }
-  // A stopped AgentHub session resumes with a freshly created Forge session,
-  // so the button only needs the AgentHub attachment, not a live Forge session.
-  const canResume = Boolean(activeRun.agentHubSessionId || activeRun.sourceExternalId);
-  const actionsMarkup = agentComposerActions({
-    standalone: true,
-    includeResume: canResume,
+  if (activeRun) restoreAgentDraftForRun(activeRun);
+  const live = isLiveAgentRun(activeRun);
+  const resourceId = activeRun?.resourceId || selectedAgentResourceId();
+  const stopTurnPending = isAgentTurnStopping(activeRun);
+  const sessionStopping = isAgentSessionStopping(activeRun) || activeRun?.status === "stopping";
+  window.ForgeSvelteIslands?.renderComposer({
+    identity: `${state.activeWorkspaceId}:${resourceId}:${activeRun?.id || "none"}:${state.agent.ttyDraftKey || ""}`,
+    workspaceId: state.activeWorkspaceId,
+    resourceId,
+    runId: activeRun?.id || "",
+    runStatus: activeRun?.status || "",
+    live,
+    canResume: Boolean(activeRun && !live && (activeRun.agentHubSessionId || activeRun.sourceExternalId)),
+    draft: state.agent.ttyDraft || "",
+    draftKey: state.agent.ttyDraftKey || "",
+    draftResetVersion: state.agent.ttyDraftResetVersion || 0,
+    unavailableReason: live ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
+    sending: Boolean(state.agent.sendingInput),
+    externalLocked: selectedResourceHasExternalLock(),
+    internalLocked: selectedResourceHasInternalLock(),
+    agents: svelteAgentOptions(),
+    selectedAgentId: selectedAgentConfig()?.id || "",
+    chooserOpen: Boolean(state.agent.agentChooserOpen),
+    sessionStarting: Boolean(state.agent.newSessionStarting),
+    actionsOpen: Boolean(state.agent.sessionActionsOpen),
+    canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending)),
+    endingTurn: stopTurnPending,
+    closingSession: sessionStopping,
+    selfDrivingRemainsEnabled: isSelfDrivingSessionCloseTarget(activeRun),
+    selfDrivingDisabling: Boolean(state.agent.selfDrivingDisabling),
+    onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
+    onSend: submitTTYInput,
+    onOpenUpload: openAgentUploadDialog,
+    onToggleChooser: () => {
+      if (state.agent.newSessionStarting || !enabledAgentConfigs().length || selectedResourceHasExternalLock()) return;
+      state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
+      renderTTYComposer();
+    },
+    onChooseAgent: (id) => startAgentRun(id).catch((err) => toast(err.message)),
+    onToggleActions: () => { state.agent.sessionActionsOpen = !state.agent.sessionActionsOpen; renderTTYComposer(); },
+    onResume: () => resumeAgentRun().catch((err) => toast(err.message)),
+    onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
+    onCloseSession: closeCurrentAgentSession,
+    onIconsChanged: refreshIcons,
   });
-  const key = `closed:${activeRun.id}:${canResume ? "resumable" : "final"}:${state.agent.agentName}:${agentComposerAgentKey()}:${state.agent.agentChooserOpen ? "chooser" : "closed"}:${state.agent.newSessionStarting ? "starting" : "idle"}:${actionsMarkup ? "actions" : "empty"}:${selectedResourceLockComposerKey()}`;
-  if (composer.dataset.composerKey === key) return;
-  composer.dataset.composerKey = key;
-  composer.innerHTML = actionsMarkup;
 }
 
 function isAgentSessionReady(run) {
@@ -4901,6 +4890,7 @@ async function setChatSelfDrivingDesiredState(options = {}) {
 function selfDrivingDialogInitialState() {
   return {
     open: false,
+    identity: ++selfDrivingDialogIdentity,
     mode: "",
     resourceId: "",
     reuseRunId: "",
@@ -4942,6 +4932,7 @@ function openSelfDrivingConfigDialog() {
   state.modalEnter = "selfDriving";
   state.selfDrivingDialog = {
     open: true,
+    identity: ++selfDrivingDialogIdentity,
     mode,
     resourceId: selected.id,
     reuseRunId: reuseRun?.id || "",
@@ -4969,62 +4960,21 @@ function closeSelfDrivingConfigDialog() {
 }
 
 function renderSelfDrivingConfigDialog() {
-  const root = $("selfDrivingDialogRoot");
-  if (!root) return;
   const dialog = state.selfDrivingDialog;
-  if (!dialog.open) {
-    root.innerHTML = "";
-    delete root.dataset.selfDrivingDialogKey;
-    return;
-  }
-  const resumeMode = false;
-  const title = "Configure Self-Driving";
-  const submitLabel = "Save and Enable";
-  const agents = enabledAgentConfigs();
-  const key = `${dialog.resourceId}:${dialog.mode}:${dialog.reuseRunId}:${dialog.agentName}:${dialog.submitting}:${dialog.error}:${dialog.unknown}`;
-  if (root.dataset.selfDrivingDialogKey === key && root.querySelector("#selfDrivingConfigForm")) return;
-  root.dataset.selfDrivingDialogKey = key;
-  const entering = state.modalEnter === "selfDriving";
-  if (entering) state.modalEnter = "";
-  const submitDisabled = dialog.submitting || dialog.unknown || (!dialog.reuseCurrentSession && !dialog.agentName) || (!dialog.reuseCurrentSession && agents.length === 0);
-  root.innerHTML = `
-    <div class="self-driving-dialog-layer" role="presentation">
-      <div class="self-driving-dialog-backdrop${entering ? " modal-enter" : ""}" data-self-driving-dialog-close="true"></div>
-      <section class="self-driving-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-labelledby="selfDrivingDialogTitle">
-        <header class="self-driving-dialog-header">
-          <strong id="selfDrivingDialogTitle">${title}</strong>
-          <button class="icon-button" type="button" data-self-driving-dialog-close="true" title="Close" aria-label="Close"${dialog.submitting ? " disabled" : ""}>${icon("x")}</button>
-        </header>
-        <form id="selfDrivingConfigForm" class="details-form self-driving-dialog-form">
-          <label>
-            <span>Agent</span>
-            ${dialog.reuseCurrentSession ? `
-              <input name="agentName" value="${escapeHTML(dialog.agentName)}" readonly aria-readonly="true" />
-            ` : `
-              <select name="agentName" required ${agents.length === 0 || dialog.submitting ? "disabled" : ""}>
-                <option value="">Select an Agent</option>
-                ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${agent.id === dialog.agentName ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
-              </select>
-            `}
-          </label>
-          ${resumeMode ? "" : `
-            <label>
-              <span>Run instructions <small>(optional)</small></span>
-              <textarea name="runInstructions" rows="4" placeholder="Additional Self-Driving instructions"${dialog.submitting ? " disabled" : ""}>${escapeHTML(dialog.runInstructions)}</textarea>
-            </label>
-          `}
-          ${dialog.error ? `<p class="self-driving-dialog-error" role="alert">${escapeHTML(dialog.error)}</p>` : ""}
-          ${dialog.unknown ? `<p class="self-driving-dialog-error" role="alert">The result may be unknown. Refresh the task and session state before trying again.</p>` : ""}
-          <div class="form-actions">
-            <button type="submit"${submitDisabled ? " disabled" : ""}${dialog.submitting ? " aria-busy=\"true\"" : ""}>${dialog.submitting ? "Enabling…" : submitLabel}</button>
-            <button type="button" class="secondary" data-self-driving-dialog-close="true"${dialog.submitting ? " disabled" : ""}>Cancel</button>
-          </div>
-        </form>
-      </section>
-    </div>
-  `;
-  bindSelfDrivingConfigDialogEvents();
-  refreshIcons();
+  window.ForgeSvelteIslands?.renderSelfDrivingDialog({
+    open: Boolean(dialog.open),
+    identity: `${dialog.identity || 0}:${dialog.resourceId || ""}`,
+    resourceId: dialog.resourceId || "",
+    reuseCurrentSession: Boolean(dialog.reuseCurrentSession),
+    agents: svelteAgentOptions(),
+    draft: { agentName: dialog.agentName || "", runInstructions: dialog.runInstructions || "" },
+    submitting: Boolean(dialog.submitting),
+    error: dialog.error || "",
+    unknown: Boolean(dialog.unknown),
+    onClose: closeSelfDrivingConfigDialog,
+    onSubmit: submitSelfDrivingConfigDialog,
+    onIconsChanged: refreshIcons,
+  });
 }
 
 function bindSelfDrivingConfigDialogEvents() {
@@ -5044,16 +4994,11 @@ function bindSelfDrivingConfigDialogEvents() {
   }
 }
 
-async function submitSelfDrivingConfigDialog(event) {
-  event.preventDefault();
+async function submitSelfDrivingConfigDialog(draft) {
   const dialog = state.selfDrivingDialog;
   if (!dialog.open || dialog.submitting || dialog.unknown) return;
-  const form = new FormData(event.currentTarget);
-  dialog.agentName = String(form.get("agentName") || dialog.agentName || "").trim();
-  const runInstructions = form.get("runInstructions");
-  const completionCriteria = form.get("completionCriteria");
-  if (runInstructions !== null) dialog.runInstructions = String(runInstructions || "");
-  if (completionCriteria !== null) dialog.completionCriteria = String(completionCriteria || "");
+  dialog.agentName = String(draft?.agentName || dialog.agentName || "").trim();
+  dialog.runInstructions = String(draft?.runInstructions || "");
   if (!dialog.reuseCurrentSession && !dialog.agentName) {
     dialog.error = "Select an Agent before enabling Self-Driving.";
     renderSelfDrivingConfigDialog();
@@ -5061,6 +5006,9 @@ async function submitSelfDrivingConfigDialog(event) {
   }
   dialog.submitting = true;
   dialog.error = "";
+  const dialogIdentity = dialog.identity;
+  const workspaceId = state.activeWorkspaceId;
+  const resourceId = dialog.resourceId;
   renderSelfDrivingConfigDialog();
   try {
     await setChatSelfDrivingDesiredState({
@@ -5069,11 +5017,13 @@ async function submitSelfDrivingConfigDialog(event) {
       runInstructions: dialog.runInstructions,
       completionCriteria: dialog.completionCriteria,
     });
+    if (dialogIdentity !== state.selfDrivingDialog.identity || workspaceId !== state.activeWorkspaceId || resourceId !== state.selectedId) return;
     const returnFocus = dialog.returnFocus;
     state.selfDrivingDialog = selfDrivingDialogInitialState();
     renderSelfDrivingConfigDialog();
     if (returnFocus && document.contains(returnFocus)) returnFocus.focus({ preventScroll: true });
   } catch (err) {
+    if (dialogIdentity !== state.selfDrivingDialog.identity) return;
     dialog.submitting = false;
     const message = String(err?.message || err || "Self-Driving could not be enabled.");
     dialog.error = message;
@@ -5083,41 +5033,52 @@ async function submitSelfDrivingConfigDialog(event) {
 }
 
 function renderSettingsModal() {
-  const root = $("settingsRoot");
-  if (!root) return;
-  if (!state.settings.open) {
-    root.innerHTML = "";
-    return;
-  }
-  if (!state.settings.suppressDraftSync) syncSettingsDraftFromDOM();
-  state.settings.suppressDraftSync = false;
   const data = state.settings.data || {
     workspaces: state.config?.workspaces || [],
     activeId: state.activeWorkspaceId,
     agents: state.config?.agents || [],
     agentProfiles: state.config?.agentProfiles || [],
   };
-  const entering = state.modalEnter === "settings";
-  if (entering) state.modalEnter = "";
-  root.innerHTML = `
-    <div class="settings-overlay${entering ? " modal-enter" : ""}" data-settings-close></div>
-    <section class="settings-modal${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="System Settings">
-      <aside class="settings-tabs">
-        <div class="settings-title">System Settings</div>
-        ${settingsTabButton("workspace", "hard-drive", "Workspace")}
-        ${settingsTabButton("user", "user-round", "User")}
-        ${settingsTabButton("agenthub", "network", "AgentHub")}
-        ${settingsTabButton("profiles", "route", "Profiles")}
-        ${settingsTabButton("notifications", "bell", "Notifications")}
-      </aside>
-      <div class="settings-content">
-        <button type="button" class="settings-close" data-settings-close title="Close">${icon("x")}</button>
-        ${settingsActivePanel(data)}
-      </div>
-    </section>
-  `;
-  bindSettingsEvents();
-  refreshIcons();
+  const hub = data.agentHub || {};
+  const status = hub.status || {};
+  const catalog = hub.catalog || { providers: [], agents: [] };
+  const preferences = state.notifications.settings || readNotificationSettings();
+  state.notifications.settings = preferences;
+  window.ForgeSvelteIslands?.renderSettings({
+    open: Boolean(state.settings.open),
+    identity: `${state.settings.identity || 0}`,
+    dataVersion: state.settings.dataVersion || 0,
+    initialTab: state.settings.tab || "workspace",
+    workspaces: data.workspaces || [],
+    activeWorkspaceId: data.activeId || state.activeWorkspaceId,
+    workspaceIcons: [DEFAULT_WORKSPACE_ICON, ...WORKSPACE_ICONS],
+    workspaceIconSavingId: state.settings.workspaceIconSavingId || "",
+    userName: currentUserName(),
+    agentHub: {
+      configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646",
+      connected: Boolean(hub.connected), compatible: Boolean(hub.compatible), error: hub.error || "",
+      apiVersion: status.apiVersion || "", version: status.version || "", capabilities: status.capabilities || [],
+      providers: catalog.providers || [], agents: catalog.agents || [],
+    },
+    profiles: (data.agentProfiles || []).map((profile) => ({ key: profile.key || "", description: profile.description || "", agentName: profile.agentName || "" })),
+    agents: svelteAgentOptions(),
+    notifications: { browser: Boolean(preferences.browser), sound: Boolean(preferences.sound), permission: notificationPermission(), permissionError: state.notifications.permissionError || "", soundError: state.notifications.soundError || "" },
+    onClose: closeSettings,
+    onAddWorkspace: async (draft) => { syncSettingsDraftFromSvelte(draft); await submitSettingsWorkspace(); },
+    onRemoveWorkspace: async (id, draft) => { syncSettingsDraftFromSvelte(draft); await removeSettingsWorkspace(id); },
+    onWorkspaceIcon: async (id, iconId, draft) => { syncSettingsDraftFromSvelte(draft); await updateSettingsWorkspaceIcon(id, iconId); },
+    onSaveUser: async (name) => {
+      const normalized = normalizeUserName(name);
+      if (!saveStoredUserName(normalized)) throw new Error("User name could not be saved in this browser.");
+      toast(normalized === "User" ? "User name reset to User." : `User name saved as ${normalized}.`);
+      return normalized;
+    },
+    onSaveAgentHub: async (draft) => { syncSettingsDraftFromSvelte(draft); await saveAgentSettings(); },
+    onBrowserNotifications: setBrowserNotificationsEnabled,
+    onCompletionSound: setCompletionSoundEnabled,
+    onToast: toast,
+    onIconsChanged: refreshIcons,
+  });
 }
 
 function settingsTabButton(id, iconName, label) {
@@ -5642,58 +5603,30 @@ function forgeNoticeRow(notice) {
   return `<div class="agent-event ${level}"><div>${icon(level === "error" ? "triangle-alert" : "info")}<strong>Forge</strong></div><p>${escapeHTML(notice?.data?.text || "")}</p></div>`;
 }
 
+function updateAgentDraftFromSvelte(text, context) {
+  if (!context || context.workspaceId !== state.activeWorkspaceId || context.runId !== state.agent.activeRunId || context.draftKey !== state.agent.ttyDraftKey) return;
+  updateAgentDraft(text);
+}
+
+function closeCurrentAgentSession() {
+  const run = currentAgentRun();
+  if (!isSelfDrivingSessionCloseTarget(run)) {
+    stopAgentRun().catch((err) => toast(err.message));
+    return;
+  }
+  if (window.confirm("Self-Driving is On. Close this Session while keeping Self-Driving On? The Scheduler may create a replacement Session.")) {
+    stopAgentRun().catch((err) => toast(err.message));
+    return;
+  }
+  if (window.confirm("Disable Self-Driving and close this Session instead?")) {
+    disableSelectedSelfDriving().then(() => stopAgentRun()).catch((err) => toast(err.message));
+  }
+}
+
 function bindAgentEvents() {
   document.querySelector(".agent-session-menu")?.addEventListener("click", (event) => {
     event.stopPropagation();
   });
-  const startButton = $("agentStartButton");
-  if (startButton) startButton.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (state.agent.newSessionStarting || enabledAgentConfigs().length === 0 || (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock())) return;
-    state.agent.agentChooserOpen = !state.agent.agentChooserOpen;
-    renderTTYComposer();
-    bindAgentEvents();
-    refreshIcons();
-    if (state.agent.agentChooserOpen) focusAgentChoice();
-  };
-  document.querySelectorAll("[data-agent-choice]").forEach((button) => {
-    button.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      if (state.agent.newSessionStarting) return;
-      const agentName = button.dataset.agentChoice || "";
-      if (!agentName) return;
-      startAgentRun(agentName).catch((err) => toast(err.message));
-    });
-  });
-  const closeSessionButton = $("agentCloseSessionButton");
-  if (closeSessionButton) closeSessionButton.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const run = currentAgentRun();
-    if (!isSelfDrivingSessionCloseTarget(run)) {
-      stopAgentRun().catch((err) => toast(err.message));
-      return;
-    }
-    if (window.confirm("Self-Driving is On. Close this Session while keeping Self-Driving On? The Scheduler may create a replacement Session.")) {
-      stopAgentRun().catch((err) => toast(err.message));
-      return;
-    }
-    if (window.confirm("Disable Self-Driving and close this Session instead?")) {
-      disableSelectedSelfDriving().then(() => stopAgentRun()).catch((err) => toast(err.message));
-    }
-  };
-  const endTurnButton = $("agentEndTurnButton");
-  if (endTurnButton) endTurnButton.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    stopAgentTurn().catch((err) => toast(err.message));
-  };
-  const resumeButton = $("agentResumeButton");
-  if (resumeButton) resumeButton.onclick = () => {
-    resumeAgentRun().catch((err) => toast(err.message));
-  };
   const selfDrivingSwitch = $("selfDrivingSwitch");
   if (selfDrivingSwitch) selfDrivingSwitch.onclick = (event) => {
     event.preventDefault();
@@ -5703,18 +5636,8 @@ function bindAgentEvents() {
     const detail = selected ? (state.details[selected.id] || selected) : null;
     const enabled = Boolean(detail?.selfDriving?.enabled);
     if (enabled) disableSelectedSelfDriving().catch((err) => toast(err.message));
+    else if (selfDrivingNeedsConfiguration(detail)) openSelfDrivingConfigDialog();
     else setChatSelfDrivingDesiredState({ enabled: true }).catch((err) => toast(err.message));
-  };
-  const uploadButton = $("agentUploadButton");
-  if (uploadButton) uploadButton.onclick = openAgentUploadDialog;
-  const actionsToggle = $("agentActionsToggle");
-  if (actionsToggle) actionsToggle.onclick = (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    state.agent.sessionActionsOpen = !state.agent.sessionActionsOpen;
-    renderTTYComposer();
-    bindAgentEvents();
-    refreshIcons();
   };
   document.querySelectorAll("[data-self-driving-toggle]").forEach((toggle) => {
     toggle.addEventListener("click", (event) => {
@@ -5844,17 +5767,30 @@ function agentInputSelfDrivingProjection(run) {
 }
 
 async function sendAgentInput(text) {
-  if (!state.agent.activeRunId) throw new Error("Start or select an agent run first.");
+  const run = currentAgentRun();
+  return sendAgentInputForContext(text, {
+    workspaceId: state.activeWorkspaceId,
+    resourceId: run?.resourceId || "",
+    runId: state.agent.activeRunId,
+    draftKey: state.agent.ttyDraftKey,
+  });
+}
+
+async function sendAgentInputForContext(text, context) {
+  if (!context?.runId) throw new Error("Start or select an agent run first.");
   if (typeof selectedResourceHasExternalLock === "function" && selectedResourceHasExternalLock()) {
     throw new Error(EXTERNAL_RESOURCE_LOCK_MESSAGE);
   }
   const run = currentAgentRun();
+  if (context.workspaceId !== state.activeWorkspaceId || context.runId !== run?.id || context.resourceId !== (run.resourceId || "") || context.draftKey !== state.agent.ttyDraftKey) {
+    throw new Error("The selected Workspace or Session changed before the message could be sent.");
+  }
   const projection = agentInputSelfDrivingProjection(run);
   const body = { text, userName: currentUserName() };
   if (projection) {
     Object.assign(body, projection);
   }
-  return api(`/api/workspaces/${state.activeWorkspaceId}/agent/runs/${state.agent.activeRunId}/input`, {
+  return api(`/api/workspaces/${context.workspaceId}/agent/runs/${context.runId}/input`, {
     method: "POST",
     body: JSON.stringify(body),
   });
@@ -5871,22 +5807,21 @@ function openAgentUploadDialog() {
   state.modalEnter = "upload";
   state.uploadDialog = {
     open: true,
+    identity: ++uploadDialogIdentity,
     runId: run.id,
     items: [],
     nextId: 1,
   };
   renderAgentUploadDialog();
-  $("agentUploadDropZone")?.focus({ preventScroll: true });
 }
 
-function closeAgentUploadDialog() {
-  if (!state.uploadDialog.open || uploadInProgress()) return;
-  const paths = state.uploadDialog.items
-    .filter((item) => item.status === "success" && item.path)
-    .map((item) => item.path);
-  const shouldSkipDraftSync = paths.length > 0 && state.uploadDialog.runId === state.agent.activeRunId;
+function closeAgentUploadDialog(paths = [], context = {}) {
+  if (!state.uploadDialog.open) return;
+  const sameContext = context.workspaceId === state.activeWorkspaceId && context.runId === state.agent.activeRunId;
+  const shouldSkipDraftSync = paths.length > 0 && sameContext && state.uploadDialog.runId === state.agent.activeRunId;
   if (shouldSkipDraftSync) {
     updateAgentDraft(appendUploadedPaths(state.agent.ttyDraft, paths));
+    state.agent.ttyDraftResetVersion++;
   }
   discardAgentUploadDialog();
   const composer = $("ttyComposer");
@@ -5900,12 +5835,12 @@ function closeAgentUploadDialog() {
 function discardAgentUploadDialog() {
   state.uploadDialog = {
     open: false,
+    identity: ++uploadDialogIdentity,
     runId: "",
     items: [],
     nextId: 1,
   };
-  const root = $("uploadDialogRoot");
-  if (root) root.innerHTML = "";
+  renderAgentUploadDialog();
 }
 
 function appendUploadedPaths(draft, paths) {
@@ -5920,48 +5855,15 @@ function uploadInProgress() {
 }
 
 function renderAgentUploadDialog() {
-  const root = $("uploadDialogRoot");
-  if (!root) return;
-  if (!state.uploadDialog.open) {
-    root.innerHTML = "";
-    return;
-  }
-  const busy = uploadInProgress();
-  const items = state.uploadDialog.items;
-  const entering = state.modalEnter === "upload";
-  if (entering) state.modalEnter = "";
-  root.innerHTML = `
-    <div class="upload-dialog-layer" role="presentation">
-      <div class="upload-dialog-backdrop${entering ? " modal-enter" : ""}" data-upload-close="true"></div>
-      <section class="upload-dialog${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="Upload files">
-        <header class="upload-dialog-header">
-          <div>
-            <strong>Upload files</strong>
-            <span>Files are saved in this session's artifacts/upload/ directory.</span>
-          </div>
-          <button class="icon-button" type="button" data-upload-close="true" title="Close" aria-label="Close" ${busy ? "disabled" : ""}>${icon("x")}</button>
-        </header>
-        <div class="upload-dialog-content">
-          <input id="agentUploadInput" type="file" multiple hidden />
-          <div id="agentUploadDropZone" class="upload-drop-zone" tabindex="0">
-            ${icon("clipboard-paste")}
-            <strong>Paste files from the clipboard</strong>
-            <span>or choose one or more files from this device</span>
-            <button id="agentUploadChooseButton" type="button" class="secondary-button">${icon("folder-open")}<span>Choose files</span></button>
-          </div>
-          <div class="upload-list" aria-live="polite">
-            ${items.length ? items.map(uploadItemRow).join("") : `<div class="upload-empty">Selected or pasted files upload automatically.</div>`}
-          </div>
-        </div>
-        <footer class="upload-dialog-footer">
-          <span>${busy ? "Wait for uploads to finish before closing." : uploadSummary(items)}</span>
-          <button type="button" data-upload-close="true" ${busy ? "disabled" : ""}>Done</button>
-        </footer>
-      </section>
-    </div>
-  `;
-  bindAgentUploadDialogEvents();
-  refreshIcons();
+  const dialog = state.uploadDialog;
+  window.ForgeSvelteIslands?.renderUploadDialog({
+    open: Boolean(dialog.open),
+    identity: `${dialog.identity || 0}:${state.activeWorkspaceId}:${dialog.runId || ""}`,
+    workspaceId: state.activeWorkspaceId,
+    runId: dialog.runId || "",
+    onDone: closeAgentUploadDialog,
+    onIconsChanged: refreshIcons,
+  });
 }
 
 function uploadItemRow(item) {
@@ -6276,35 +6178,27 @@ function isAgentSessionStopping(run) {
   return Boolean(state.agent.sessionStopping && state.agent.sessionStoppingRunId === run?.id);
 }
 
-async function submitTTYInput(event) {
-  event.preventDefault();
-  if (state.agent.sendingInput) return;
-  const input = $("ttyInput");
-  const rawText = input?.value || "";
-  if (!rawText.trim()) return;
+async function submitTTYInput(rawText, context) {
+  if (state.agent.sendingInput) return { accepted: false, clear: false };
+  if (!String(rawText || "").trim()) return { accepted: false, clear: false };
   const sendingRun = currentAgentRun();
-  if (!sendingRun) return;
+  if (!sendingRun) return { accepted: false, clear: false };
   restoreAgentDraftForRun(sendingRun);
-	updateAgentDraft(rawText);
-  const sendWorkspaceId = state.activeWorkspaceId;
-  const sendRunId = state.agent.activeRunId;
-  const sendResourceId = sendingRun.resourceId || "";
-  const sendDraftKey = state.agent.ttyDraftKey;
-  const sendDraftVersion = state.agent.ttyDraftVersion;
-  let restoreInputFocus = document.activeElement === input;
-  const cancelInputFocusRestore = () => {
-    restoreInputFocus = false;
-  };
-  if (restoreInputFocus) {
-    document.addEventListener("focusin", cancelInputFocusRestore, true);
+  if (context.workspaceId !== state.activeWorkspaceId || context.runId !== state.agent.activeRunId || context.draftKey !== state.agent.ttyDraftKey) {
+    throw new Error("The selected Workspace or Session changed before the message could be sent.");
   }
+	updateAgentDraft(rawText);
+  const sendWorkspaceId = context.workspaceId;
+  const sendRunId = context.runId;
+  const sendResourceId = context.resourceId;
+  const sendDraftKey = context.draftKey;
+  const sendDraftVersion = state.agent.ttyDraftVersion;
   state.agent.sendingInput = true;
-  renderTTYComposer();
-  refreshIcons();
   try {
-    const result = await sendAgentInput(rawText);
+    const result = await sendAgentInputForContext(rawText, context);
+    let clearedDraft = false;
     if (result?.status === "accepted") {
-      const clearedDraft = clearAgentDraftAfterAccepted({
+      clearedDraft = clearAgentDraftAfterAccepted({
         workspaceId: sendWorkspaceId,
         runId: sendRunId,
         key: sendDraftKey,
@@ -6312,15 +6206,7 @@ async function submitTTYInput(event) {
         version: sendDraftVersion,
       });
       if (clearedDraft) {
-        // A user message can make Self-Driving eligible for re-evaluation and refresh
-        // before this submit finishes. Do not let that render read the old
-        // textarea value back into the accepted-and-cleared draft.
-        state.agent.skipTTYDraftSync = true;
-        const currentInput = $("ttyInput");
-        if (currentInput && currentInput.dataset?.agentDraftKey === sendDraftKey) {
-          currentInput.value = "";
-          if (typeof resizeTTYInput === "function") resizeTTYInput(currentInput);
-        }
+        state.agent.ttyDraftResetVersion++;
       }
 			try {
 				if (typeof refreshAgentInputProjection === "function") {
@@ -6330,16 +6216,10 @@ async function submitTTYInput(event) {
 				toast(`Message accepted, but the view could not refresh: ${refreshError.message}`);
 			}
 		}
-	} catch (err) {
-		toast(err.message);
+    return { accepted: result?.status === "accepted", clear: clearedDraft };
   } finally {
-    document.removeEventListener("focusin", cancelInputFocusRestore, true);
     state.agent.sendingInput = false;
-    state.agent.skipTTYDraftSync = true;
     renderTTYComposer();
-    if (restoreInputFocus) {
-      $("ttyInput")?.focus({ preventScroll: true });
-    }
     refreshIcons();
   }
 }
@@ -6394,9 +6274,13 @@ function showTaskForm(projectId) {
 }
 
 function openCreateDialog(type, projectId = "") {
+  createPreviewController?.abort();
+  createPreviewController = null;
+  createPreviewPendingKey = "";
   state.modalEnter = "create";
   state.createDialog = {
     open: true,
+    identity: ++createDialogIdentity,
     type,
     projectId,
     templateName: "",
@@ -6427,8 +6311,13 @@ function openCreateDialog(type, projectId = "") {
 
 function closeCreateDialog() {
   if (state.createDialog.submitting) return;
+  createPreviewGeneration++;
+  createPreviewController?.abort();
+  createPreviewController = null;
+  createPreviewPendingKey = "";
   state.createDialog = {
     open: false,
+    identity: ++createDialogIdentity,
     type: "",
     projectId: "",
     templateName: "",
@@ -6458,149 +6347,88 @@ function closeCreateDialog() {
 }
 
 function renderCreateDialog() {
-  const root = $("createDialogRoot");
-  if (!root) return;
   const dialog = state.createDialog;
-  if (!dialog.open) {
-    root.innerHTML = "";
-    delete root.dataset.createDialogKey;
-    return;
+  window.ForgeSvelteIslands?.renderCreateDialog({
+    open: Boolean(dialog.open),
+    identity: `${dialog.identity || 0}:${dialog.type}:${dialog.projectId}`,
+    workspaceId: state.activeWorkspaceId,
+    draft: createDialogDraft(dialog),
+    templates: dialog.type === "task" ? (state.details[dialog.projectId]?.templates || []) : [],
+    agents: svelteAgentOptions(),
+    profileKeys: (state.config?.agentProfiles || []).map((profile) => profile.key),
+    preview: dialog.preview,
+    previewKey: dialog.previewKey || "",
+    previewing: Boolean(dialog.previewing),
+    previewError: dialog.previewError || "",
+    templateDigest: dialog.templateDigest || "",
+    submitting: Boolean(dialog.submitting),
+    onClose: closeCreateDialog,
+    onPreview: refreshCreateTaskPreview,
+    onSubmit: submitCreateDialog,
+    previewRequestKey: (draft) => JSON.stringify(createTaskRequest({ ...dialog, ...createDialogStateFromDraft(draft), templateDigest: "" })),
+    onConfirmTemplateSwitch: () => window.confirm("Discard edited template fields and switch templates?"),
+    onIconsChanged: refreshIcons,
+  });
+}
+
+function createDialogDraft(dialog) {
+  return {
+    type: dialog.type === "task" ? "task" : "project",
+    projectId: dialog.projectId || "",
+    templateName: dialog.templateName || "",
+    templateFields: { ...(dialog.templateFields || {}) },
+    title: dialog.title || "",
+    titleOverride: Boolean(dialog.titleOverride),
+    description: dialog.description || "",
+    detail: dialog.detail || "",
+    slug: dialog.slug || "",
+    selfDriving: Boolean(dialog.selfDriving),
+    agentName: dialog.agentName || "",
+    agentProfiles: (dialog.preferredAgentProfiles || []).join(", "),
+    prompt: dialog.prompt || "",
+    completionCriteria: dialog.completionCriteria || "",
+    activeTab: dialog.activeTab === "preview" ? "preview" : "edit",
+    editedMarkdown: dialog.editedMarkdown == null ? null : String(dialog.editedMarkdown),
+    showOptions: Boolean(dialog.showOptions),
+  };
+}
+
+function createDialogStateFromDraft(draft) {
+  return {
+    type: draft.type,
+    projectId: draft.projectId,
+    templateName: draft.templateName,
+    templateFields: { ...(draft.templateFields || {}) },
+    title: draft.title,
+    titleOverride: Boolean(draft.titleOverride),
+    description: draft.description,
+    detail: draft.detail,
+    slug: draft.slug,
+    selfDriving: Boolean(draft.selfDriving),
+    agentName: draft.agentName,
+    preferredAgentProfiles: parseAgentProfiles(draft.agentProfiles),
+    prompt: draft.prompt,
+    completionCriteria: draft.completionCriteria,
+    activeTab: draft.activeTab,
+    editedMarkdown: draft.editedMarkdown,
+    showOptions: Boolean(draft.showOptions),
+  };
+}
+
+function syncCreateDialogDraft(draft) {
+  if (!draft || !state.createDialog.open) return;
+  if (String(draft.templateName || "") !== String(state.createDialog.templateName || "")) {
+    state.createDialog.preview = null;
+    state.createDialog.templateDigest = "";
+    state.createDialog.previewError = "";
+    state.createDialog.previewKey = "";
+    state.createDialog.previewing = false;
+    createPreviewGeneration++;
+    createPreviewController?.abort();
+    createPreviewController = null;
+    createPreviewPendingKey = "";
   }
-  const isTask = dialog.type === "task";
-  const title = isTask ? "Create task" : "Create project";
-  const descriptionPlaceholder = "Describe the project";
-  const detailPlaceholder = "Task detail";
-  const profiles = state.config?.agentProfiles || [];
-  const agents = enabledAgentConfigs();
-  const templates = isTask ? (state.details[dialog.projectId]?.templates || []) : [];
-  const selectedTemplate = templates.find((item) => item.name === dialog.templateName);
-  const generatesTitle = Boolean(selectedTemplate?.taskTitle);
-  const generatedTitle = dialog.preview?.title || "";
-  const shownTitle = dialog.titleOverride ? dialog.title : generatedTitle;
-  const renderKey = `${dialog.type}:${dialog.projectId}:${dialog.templateName}:${dialog.selfDriving}:${dialog.submitting}:${dialog.previewing}:${dialog.titleOverride}:${dialog.activeTab}:${dialog.previewError}:${JSON.stringify(dialog.templateFields)}:${dialog.templateDigest}:${JSON.stringify(dialog.preview)}`;
-  if (root.dataset.createDialogKey === renderKey && root.querySelector("#createDialogForm")) return;
-  root.dataset.createDialogKey = renderKey;
-  const entering = state.modalEnter === "create";
-  if (entering) state.modalEnter = "";
-  const titleSlugRow = `
-            <div class="create-title-slug-row">
-              <label>
-                <span>Task title ${selectedTemplate && generatesTitle && !dialog.titleOverride ? "<small>(generated by template)</small>" : ""}</span>
-                <span class="template-title-control">
-                  <input name="title" ${selectedTemplate && generatesTitle ? "" : "required"} value="${escapeHTML(selectedTemplate && generatesTitle ? shownTitle : dialog.title)}" placeholder="${selectedTemplate && generatesTitle ? "Auto-generated from the template fields — type to override" : "Task title"}" />
-                  ${selectedTemplate && generatesTitle && dialog.titleOverride ? `<button type="button" class="secondary compact" data-clear-title-override="true">Use generated</button>` : ""}
-                </span>
-              </label>
-              <label class="create-task-slug-field">
-                <span>Slug <small>(optional)</small></span>
-                <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
-              </label>
-            </div>`;
-  const automationFields = `
-            <label class="create-task-automation-toggle">
-              <input name="selfDriving" type="checkbox" ${dialog.selfDriving ? "checked" : ""} />
-              <span><strong>Enable Self-Driving</strong><small>Persist the Task-level desired state and let the Scheduler reconcile one autonomous Turn at a time.</small></span>
-            </label>
-            ${dialog.selfDriving ? `
-              <div class="create-task-automation-fields">
-                <label>
-                  <span>Agent <small>(optional)</small></span>
-                  <select name="agentName">
-                    <option value="">Workspace default</option>
-                    ${agents.map((agent) => `<option value="${escapeHTML(agent.id)}" ${dialog.agentName === agent.id ? "selected" : ""}>${escapeHTML(agentDisplayName(agent))} — ${escapeHTML(agentConfigSummary(agent))}</option>`).join("")}
-                  </select>
-                </label>
-                <label>
-                  <span>Run instructions</span>
-                  <textarea name="prompt" placeholder="Instructions for the automated run">${escapeHTML(dialog.prompt)}</textarea>
-                </label>
-                <label>
-                  <span>Preferred Agent Profiles</span>
-                  <input name="agentProfiles" value="${escapeHTML((dialog.preferredAgentProfiles || []).join(", "))}" placeholder="Workspace default, or kimi, codex" />
-                  <small>${profiles.length ? `Available: ${profiles.map((profile) => escapeHTML(profile.key)).join(", ")}` : "No Profiles configured; the workspace default will be used."}</small>
-                </label>
-                <label>
-                  <span>Completion criteria</span>
-                  <textarea name="completionCriteria" placeholder="Natural-language completion criteria">${escapeHTML(dialog.completionCriteria)}</textarea>
-                </label>
-              </div>
-            ` : ""}`;
-  // Template mode mirrors the blank-task layout: only the title and the
-  // required template fields (the "detail" equivalent) are shown up front;
-  // optional fields and the automation settings live behind a disclosure.
-  const requiredTemplateFields = (selectedTemplate?.fields || []).filter((field) => field.required);
-  const optionalTemplateFields = (selectedTemplate?.fields || []).filter((field) => !field.required);
-  const moreOptions = `
-            <details class="create-task-more-options" ${dialog.showOptions ? "open" : ""}>
-              <summary>More options${dialog.selfDriving ? " · Self-Driving on" : ""}</summary>
-              <div class="create-task-more-options-body">
-                ${optionalTemplateFields.length ? `
-                  <div class="template-fields" aria-label="Optional template fields">
-                    ${optionalTemplateFields.map((field) => templateFieldControl(field, dialog.templateFields[field.name])).join("")}
-                  </div>
-                ` : ""}
-                ${automationFields}
-              </div>
-            </details>`;
-  const formActions = `
-            <div class="form-actions">
-              <button type="submit" ${dialog.submitting ? "disabled" : ""}>${dialog.submitting ? "Creating..." : "Create"}</button>
-              <button type="button" class="secondary" data-create-dialog-close="true" ${dialog.submitting ? "disabled" : ""}>Cancel</button>
-            </div>`;
-  root.innerHTML = `
-    <div class="create-dialog-layer" role="presentation">
-      <div class="create-dialog-backdrop${entering ? " modal-enter" : ""}" data-create-dialog-close="true"></div>
-      <section class="create-dialog${isTask ? " create-task-dialog" : ""}${entering ? " modal-enter" : ""}" role="dialog" aria-modal="true" aria-label="${title}">
-        <header class="create-dialog-header">
-          <div>
-            <strong>${title}</strong>
-            ${isTask ? `<span>${escapeHTML(dialog.projectId)}</span>` : ""}
-          </div>
-          <button class="icon-button" type="button" data-create-dialog-close="true" title="Close" aria-label="Close">${icon("x")}</button>
-        </header>
-        <form id="createDialogForm" class="details-form create-dialog-form">
-          ${isTask ? `
-            <div class="create-task-dialog-body">
-            ${templates.length ? `
-              <label>
-                <span>Template</span>
-                <select name="templateName">
-                  <option value="">Blank task</option>
-                  ${templates.map((template) => `<option value="${escapeHTML(template.name)}" ${dialog.templateName === template.name ? "selected" : ""} ${template.valid ? "" : "disabled"}>${escapeHTML(template.title || template.name)}${template.valid ? "" : " (invalid)"}</option>`).join("")}
-                </select>
-              </label>
-            ` : ""}
-            ${selectedTemplate?.description ? `<p class="template-description">${escapeHTML(selectedTemplate.description)}</p>` : ""}
-            ${selectedTemplate ? `
-              <div class="create-dialog-tabs" role="tablist" aria-label="Task content">
-                <button type="button" role="tab" class="create-dialog-tab${dialog.activeTab === "edit" ? " active" : ""}" data-create-tab="edit" aria-selected="${dialog.activeTab === "edit"}">Edit</button>
-                <button type="button" role="tab" class="create-dialog-tab${dialog.activeTab === "preview" ? " active" : ""}" data-create-tab="preview" aria-selected="${dialog.activeTab === "preview"}">Preview</button>
-              </div>
-            ` : ""}
-            ${selectedTemplate && dialog.activeTab === "preview" ? createTaskPreviewPane(dialog) : `
-              ${titleSlugRow}
-              ${selectedTemplate ? `
-                ${requiredTemplateFields.length ? `
-                  <div class="template-fields" aria-label="Required template fields">
-                    ${requiredTemplateFields.map((field) => templateFieldControl(field, dialog.templateFields[field.name])).join("")}
-                  </div>
-                ` : ""}
-              ` : `<textarea name="detail" placeholder="${detailPlaceholder}">${escapeHTML(dialog.detail)}</textarea>`}
-              ${moreOptions}
-            `}
-            </div>
-            ${formActions}
-          ` : `
-            <textarea name="description" required placeholder="${descriptionPlaceholder}">${escapeHTML(dialog.description)}</textarea>
-            <input name="slug" value="${escapeHTML(dialog.slug)}" placeholder="optional-slug" />
-            ${formActions}
-          `}
-        </form>
-      </section>
-    </div>
-  `;
-  bindCreateDialogEvents(entering);
-  refreshIcons();
+  Object.assign(state.createDialog, createDialogStateFromDraft(draft));
 }
 
 function createDialogPreviewRequestKey(dialog) {
@@ -6793,9 +6621,20 @@ function createTaskRequest(dialog) {
 	};
 }
 
-async function refreshCreateTaskPreview() {
+async function refreshCreateTaskPreview(draft) {
   const dialog = state.createDialog;
-  if (!dialog.open || !dialog.templateName || dialog.previewing) return null;
+  syncCreateDialogDraft(draft);
+	if (!dialog.open || !dialog.templateName) return null;
+	const request = createTaskRequest({ ...dialog, templateDigest: "" });
+	const requestKey = JSON.stringify(request);
+	if (dialog.previewing) {
+		if (requestKey === createPreviewPendingKey) return null;
+		createPreviewGeneration++;
+		createPreviewController?.abort();
+		createPreviewController = null;
+		createPreviewPendingKey = "";
+		dialog.previewing = false;
+	}
 	const selectedTemplate = (state.details[dialog.projectId]?.templates || []).find((item) => item.name === dialog.templateName);
 	if (selectedTemplate && !selectedTemplate.taskTitle && (!dialog.titleOverride || !String(dialog.title).trim())) {
 		// Templates without a task-title pattern cannot render without an
@@ -6807,57 +6646,46 @@ async function refreshCreateTaskPreview() {
 	}
 	dialog.previewing = true;
 	dialog.previewError = "";
+	const workspaceId = state.activeWorkspaceId;
+	const dialogIdentity = dialog.identity;
+	const generation = ++createPreviewGeneration;
+	createPreviewController?.abort();
+	const controller = new AbortController();
+	createPreviewController = controller;
+	createPreviewPendingKey = requestKey;
 	renderCreateDialog();
 	try {
-		const request = createTaskRequest({ ...dialog, templateDigest: "" });
-		const preview = await api(`/api/workspaces/${state.activeWorkspaceId}/tasks/preview`, { method: "POST", body: JSON.stringify(request) });
+		const preview = await api(`/api/workspaces/${workspaceId}/tasks/preview`, { method: "POST", body: JSON.stringify(request), signal: controller.signal });
+		if (generation !== createPreviewGeneration || dialogIdentity !== state.createDialog.identity || workspaceId !== state.activeWorkspaceId) return null;
 		dialog.preview = preview;
 		dialog.templateDigest = preview.template?.digest || "";
 		dialog.previewKey = JSON.stringify(request);
 		return preview;
 	} catch (err) {
+		if (controller.signal.aborted || generation !== createPreviewGeneration || dialogIdentity !== state.createDialog.identity) return null;
 		dialog.previewError = err.message;
 		return null;
 	} finally {
-		dialog.previewing = false;
-		renderCreateDialog();
+		if (generation === createPreviewGeneration && dialogIdentity === state.createDialog.identity) {
+			dialog.previewing = false;
+			if (createPreviewController === controller) createPreviewController = null;
+			if (createPreviewPendingKey === requestKey) createPreviewPendingKey = "";
+			renderCreateDialog();
+		}
 	}
 }
 
-async function submitCreateDialog(event) {
-  event.preventDefault();
+async function submitCreateDialog(draft) {
   const dialog = state.createDialog;
   if (!dialog.open || dialog.submitting) return;
-  const form = new FormData(event.currentTarget);
-  // In template mode the Edit tab fields are unmounted while the Preview tab
-  // is active; only sync form values that are actually mounted, otherwise the
-  // FormData read would wipe state that only exists in the other tab.
-  const previewTabActive = dialog.type === "task" && dialog.templateName && dialog.activeTab === "preview";
-  if (form.has("title")) dialog.title = String(form.get("title") || "");
-  dialog.templateName = String(form.get("templateName") || "");
-  dialog.description = String(form.get("description") || "");
-  if (form.has("detail")) dialog.detail = String(form.get("detail") || "");
-  if (!previewTabActive) {
-    dialog.slug = String(form.get("slug") || "");
-    dialog.selfDriving = form.get("selfDriving") === "on";
-    dialog.agentName = String(form.get("agentName") || "");
-    dialog.preferredAgentProfiles = parseAgentProfiles(String(form.get("agentProfiles") || ""));
-    dialog.prompt = String(form.get("prompt") || "");
-    dialog.completionCriteria = String(form.get("completionCriteria") || "");
-  }
-	if (form.has("previewMarkdown")) dialog.editedMarkdown = String(form.get("previewMarkdown"));
-	if (dialog.templateName && !previewTabActive) {
-		const template = (state.details[dialog.projectId]?.templates || []).find((item) => item.name === dialog.templateName);
-		(template?.fields || []).forEach((field) => {
-			const value = form.get(`templateField:${field.name}`);
-			dialog.templateFields[field.name] = field.type === "boolean" ? value === "on" : String(value || "");
-		});
-	}
+  syncCreateDialogDraft(draft);
+  const workspaceId = state.activeWorkspaceId;
+  const dialogIdentity = dialog.identity;
   dialog.submitting = true;
   renderCreateDialog();
   try {
     if (dialog.type === "project") {
-      await api(`/api/workspaces/${state.activeWorkspaceId}/projects`, {
+      await api(`/api/workspaces/${workspaceId}/projects`, {
         method: "POST",
         body: JSON.stringify({
           description: dialog.description,
@@ -6885,23 +6713,27 @@ async function submitCreateDialog(event) {
 				};
 			} else {
 				if (dialog.templateName && !dialog.templateDigest) {
-					await refreshCreateTaskPreview();
+					await refreshCreateTaskPreview(createDialogDraft(dialog));
 					if (!dialog.templateDigest) throw new Error(dialog.previewError || "Could not render the selected template.");
 				}
 				requestBody = createTaskRequest(dialog);
 			}
-      await api(`/api/workspaces/${state.activeWorkspaceId}/tasks`, {
+      await api(`/api/workspaces/${workspaceId}/tasks`, {
         method: "POST",
         body: JSON.stringify(requestBody),
       });
       toast("Task created.");
     }
+    if (state.activeWorkspaceId !== workspaceId || state.createDialog.identity !== dialogIdentity) return;
     state.createDialog.open = false;
+    state.createDialog.identity = ++createDialogIdentity;
     await loadTree();
   } catch (err) {
-    dialog.submitting = false;
-    renderCreateDialog();
-    toast(err.message);
+    if (state.createDialog.identity === dialogIdentity) {
+      dialog.submitting = false;
+      renderCreateDialog();
+      toast(err.message);
+    }
   }
 }
 
@@ -7037,6 +6869,7 @@ function configuredAgentProfileName(profiles, key) {
 async function openSettings(tab = "workspace") {
   state.modalEnter = "settings";
   state.settings.open = true;
+  state.settings.identity = ++settingsIdentity;
   state.settings.tab = tab;
   state.settings.agentDirty = false;
   state.settings.expandedAgents = new Set();
@@ -7046,11 +6879,12 @@ async function openSettings(tab = "workspace") {
   renderSettingsModal();
 }
 
-function closeSettings() {
-  if (state.settings.open && state.settings.agentDirty && !window.confirm("Discard unsaved agent settings changes?")) {
+function closeSettings(dirty = state.settings.agentDirty) {
+  if (state.settings.open && dirty && !window.confirm("Discard unsaved agent settings changes?")) {
     return;
   }
   state.settings.open = false;
+  state.settings.identity = ++settingsIdentity;
   state.settings.agentDirty = false;
   renderSettingsModal();
 }
@@ -7065,6 +6899,7 @@ async function refreshSettings() {
 	    agentProfiles: agentHub.config?.agentProfiles || [],
   };
   state.config = configWithAgentHubCatalog({ ...(state.config || {}), ...base }, agentHub);
+  state.settings.dataVersion = (state.settings.dataVersion || 0) + 1;
 }
 
 function configWithAgentHubCatalog(base, agentHub) {
@@ -7167,24 +7002,21 @@ async function updateSettingsWorkspaceIcon(id, iconId) {
 }
 
 function syncSettingsDraftFromDOM() {
-  if (!state.settings.open) return;
-  const data = state.settings.data || {};
-  const next = { ...data };
-  let touched = false;
-  // Agent settings are split across tabs; only collect sections currently rendered
-  // so drafts on other tabs survive tab switches.
-  if (document.querySelector('[data-settings-section="profiles"]')) {
-    next.agentProfiles = collectSettingsAgentProfiles();
-    touched = true;
-  }
-  if (document.querySelector('[data-settings-section="agenthub"]')) {
-    next.agentHub = {
-      ...(data.agentHub || {}),
-      configuredEndpoint: $("settingsAgentHubEndpoint")?.value.trim() || data.agentHub?.configuredEndpoint || "",
-    };
-    touched = true;
-  }
-  if (touched) state.settings.data = next;
+  // Svelte owns every editable settings field and publishes a typed draft
+  // before an action. The legacy layer never reads settings values from DOM.
+}
+
+function syncSettingsDraftFromSvelte(draft) {
+  if (!draft || !state.settings.open) return;
+  state.settings.tab = draft.tab || state.settings.tab;
+  state.settings.workspacePath = String(draft.workspacePath || "");
+  state.settings.createWorkspace = Boolean(draft.createWorkspace);
+  state.settings.agentDirty = Boolean(draft.dirty);
+  state.settings.data = {
+    ...(state.settings.data || {}),
+    agentHub: { ...(state.settings.data?.agentHub || {}), configuredEndpoint: String(draft.endpoint || "") },
+    agentProfiles: (draft.profiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
+  };
 }
 
 function markAgentSettingsDirty() {
@@ -7673,45 +7505,16 @@ $("mobileImmersiveButton").onclick = () => setMobileImmersive(!state.mobile.imme
 setMobileImmersive(loadMobileImmersive());
 
 document.addEventListener("keydown", (event) => {
-  if (state.selfDrivingDialog.open) {
-    if (event.key === "Escape") {
-      event.preventDefault();
-      closeSelfDrivingConfigDialog();
-      return;
-    }
-    if (event.key === "Tab") {
-      const dialog = $("selfDrivingDialogRoot")?.querySelector('[role="dialog"]');
-      const focusable = dialog ? [...dialog.querySelectorAll("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])")] : [];
-      if (focusable.length) {
-        const first = focusable[0];
-        const last = focusable[focusable.length - 1];
-        if (event.shiftKey && document.activeElement === first) {
-          event.preventDefault();
-          last.focus();
-        } else if (!event.shiftKey && document.activeElement === last) {
-          event.preventDefault();
-          first.focus();
-        }
-      }
-    }
-    return;
-  }
-  if (event.key === "Escape" && state.uploadDialog.open) {
-    closeAgentUploadDialog();
-  } else if (event.key === "Escape" && state.mobile.sidebarOpen) {
+  if (event.key === "Escape" && state.mobile.sidebarOpen) {
     setMobileSidebar(false);
   } else if (event.key === "Escape" && state.diff) {
     closeDiff();
   } else if (event.key === "Escape" && state.preview) {
     closePreview();
-  } else if (event.key === "Escape" && state.createDialog.open) {
-    closeCreateDialog();
   } else if (event.key === "Escape" && state.sessionMenu) {
     state.sessionMenu = null;
     renderSessions();
     refreshIcons();
-  } else if (event.key === "Escape" && state.settings.open) {
-    closeSettings();
   } else if (event.key === "Escape" && state.workspaceMenuOpen) {
     state.workspaceMenuOpen = false;
     renderWorkspaceSelect();
@@ -7724,14 +7527,6 @@ document.addEventListener("keydown", (event) => {
     bindAgentEvents();
     refreshIcons();
   }
-});
-
-document.addEventListener("paste", (event) => {
-  if (!state.uploadDialog.open) return;
-  const files = clipboardUploadFiles(event.clipboardData);
-  if (files.length === 0) return;
-  event.preventDefault();
-  enqueueAgentUploads(files);
 });
 
 document.addEventListener("click", (event) => {

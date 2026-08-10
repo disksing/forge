@@ -5,9 +5,24 @@ const now = "2026-08-10T12:00:00Z";
 interface Harness {
   inputBodies: Array<Record<string, unknown>>;
   taskBodies: Array<Record<string, unknown>>;
+  previewBodies: Array<Record<string, unknown>>;
+  settingsBodies: Array<Record<string, unknown>>;
+  selfDrivingBodies: Array<Record<string, unknown>>;
+  uploadNames: string[];
   streamRequests: string[];
   treeRequests: number;
 }
+
+const templates = [
+  {
+    name: "feature-a", title: "Feature A", description: "First template", valid: true, taskTitle: "{{ summary }}",
+    fields: [{ name: "summary", type: "text", label: "Summary", required: true, hasDefault: false }],
+  },
+  {
+    name: "feature-b", title: "Feature B", description: "Second template", valid: true, taskTitle: "{{ summary }}",
+    fields: [{ name: "summary", type: "text", label: "Summary", required: true, hasDefault: false }],
+  },
+];
 
 const project = {
   id: "project1",
@@ -72,7 +87,8 @@ function detail(id: string) {
     logPage: { hasMore: false, nextCursor: "" },
     artifacts: [],
     repos: [],
-    templates: [],
+    templates: resource?.type === "project" ? templates : [],
+    ...(resource?.type === "task" ? { selfDriving: { enabled: false, revision: 0, condition: "disabled", agentName: "" } } : {}),
   };
 }
 
@@ -95,7 +111,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], streamRequests: [], treeRequests: 0 };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0 };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -111,6 +127,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
       });
     }
     if (path === "/api/settings/agenthub") {
+      if (method === "PUT") {
+        harness.settingsBodies.push(request.postDataJSON());
+        return json(route, {});
+      }
       return json(route, {
         config: { agentProfiles: [{ key: "default", agentName: "test-agent" }] },
         connected: true,
@@ -120,6 +140,13 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
           agents: [{ name: "test-agent", providerId: "test", available: true }],
           probes: [],
         },
+      });
+    }
+    if (path === "/api/settings" && method === "GET") {
+      return json(route, {
+        version: 3,
+        activeId: "ws-test",
+        workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/forge-e2e" }],
       });
     }
     if (path === "/api/workspaces/ws-test/ui-state") {
@@ -159,6 +186,18 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
       harness.taskBodies.push(request.postDataJSON());
       return json(route, { id: "project1.task3" }, 201);
     }
+    if (path === "/api/workspaces/ws-test/tasks/preview" && method === "POST") {
+      const body = request.postDataJSON();
+      harness.previewBodies.push(body);
+      const templateName = String(body.templateName || "");
+      await new Promise((resolve) => setTimeout(resolve, templateName === "feature-a" ? 350 : 20));
+      const summary = String((body.templateFields as Record<string, unknown>)?.summary || "Untitled");
+      return json(route, { title: `${templateName}:${summary}`, markdown: `# ${templateName}:${summary}\n`, slug: "", selfDriving: null, template: { digest: `digest-${templateName}` } });
+    }
+    if (path === "/api/workspaces/ws-test/self-driving" && method === "PUT") {
+      harness.selfDrivingBodies.push(request.postDataJSON());
+      return json(route, {});
+    }
     if (path === "/api/workspaces/ws-test/agent/runs" && method === "GET") {
       const resourceId = url.searchParams.get("resourceId");
       return json(route, { runs: resourceId === "project1.task1" ? runs : [] });
@@ -193,6 +232,13 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
     if (inputMatch && method === "POST") {
       harness.inputBodies.push(request.postDataJSON());
       return json(route, { status: "accepted" });
+    }
+    const uploadMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/uploads$/);
+    if (uploadMatch && method === "POST") {
+      const multipart = request.postData() || "";
+      const name = multipart.match(/filename="([^"]+)"/)?.[1] || "upload.txt";
+      harness.uploadNames.push(name);
+      return json(route, { name, path: `artifacts/upload/${name}` }, 201);
     }
     if (/\/agent\/runs\/run-[12]\/stop$/.test(path) && method === "POST") return json(route, {});
     return json(route, { error: `Unhandled mock request: ${method} ${path}` }, 500);
@@ -272,4 +318,77 @@ test("switches sessions, sends input, receives SSE, and preserves active reading
   expect(after.selection).not.toBe("");
   expect(harness.treeRequests).toBeGreaterThan(1);
   expect(harness.streamRequests).toContain("run-1");
+});
+
+test("keeps the Svelte template editor stable and ignores an older preview response", async ({ page }) => {
+  const harness = await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+  await page.getByRole("button", { name: "New Task" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create task" });
+  await dialog.getByLabel("Template").selectOption("feature-a");
+  await dialog.getByLabel("Summary *").fill("older");
+  await dialog.getByRole("tab", { name: "Preview" }).click();
+  await expect.poll(() => harness.previewBodies.length).toBe(1);
+  page.once("dialog", (confirmation) => confirmation.accept());
+  await dialog.getByLabel("Template").selectOption("feature-b");
+  await dialog.getByLabel("Summary *").fill("newer");
+  await dialog.getByRole("tab", { name: "Preview" }).click();
+  await expect.poll(() => harness.previewBodies.length).toBe(2);
+
+  await expect(dialog.getByRole("heading", { name: "feature-b:newer" })).toBeVisible();
+  await page.waitForTimeout(450);
+  await expect(dialog.getByRole("heading", { name: "feature-b:newer" })).toBeVisible();
+  await dialog.getByLabel("Task markdown").fill("# Locally edited preview\n");
+  await dialog.getByLabel("Task markdown").evaluate((node) => { node.dataset.identityProbe = "same-editor"; });
+  await page.waitForTimeout(5_200);
+  await expect(dialog.getByLabel("Task markdown")).toHaveAttribute("data-identity-probe", "same-editor");
+  await expect(dialog.getByLabel("Task markdown")).toHaveValue("# Locally edited preview\n");
+
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await expect.poll(() => harness.taskBodies.length).toBe(1);
+  expect(harness.previewBodies.map((body) => body.templateName)).toEqual(expect.arrayContaining(["feature-a", "feature-b"]));
+  expect(harness.taskBodies[0]).toMatchObject({ title: "feature-b:newer", taskMarkdown: "# Locally edited preview\n" });
+});
+
+test("preserves composer draft through upload and supports Settings and Self-Driving dialogs", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const input = page.locator("#ttyInput");
+  await input.fill("Keep this draft");
+  await input.evaluate((node) => { node.dataset.identityProbe = "same-composer"; });
+  await page.waitForTimeout(5_200);
+  await expect(input).toHaveAttribute("data-identity-probe", "same-composer");
+  await expect(input).toHaveValue("Keep this draft");
+
+  await page.getByRole("button", { name: "Upload files" }).click();
+  await page.locator("#agentUploadInput").setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("isolated upload") });
+  await expect(page.getByText("artifacts/upload/notes.txt")).toBeVisible();
+  await page.getByRole("dialog", { name: "Upload files" }).getByRole("button", { name: "Done" }).click();
+  await expect(input).toHaveValue("Keep this draft\nartifacts/upload/notes.txt");
+  expect(harness.uploadNames).toEqual(["notes.txt"]);
+
+  await page.getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "System Settings" });
+  await settings.getByRole("button", { name: "User" }).click();
+  await settings.getByLabel("Name").fill("Migration User");
+  await settings.getByRole("button", { name: "Save" }).click();
+  await settings.getByRole("button", { name: "AgentHub" }).click();
+  await settings.getByLabel("Endpoint").fill("http://127.0.0.1:5656");
+  await settings.getByRole("button", { name: "Profiles" }).click();
+  await settings.getByRole("button", { name: "AgentHub" }).click();
+  await expect(settings.getByLabel("Endpoint")).toHaveValue("http://127.0.0.1:5656");
+  await settings.getByRole("button", { name: "Save All" }).click();
+  await expect.poll(() => harness.settingsBodies.length).toBe(1);
+  expect(harness.settingsBodies[0]).toMatchObject({ endpoint: "http://127.0.0.1:5656" });
+  await settings.getByRole("button", { name: "Close" }).click();
+
+  await page.locator("#selfDrivingSwitch").click();
+  const selfDriving = page.getByRole("dialog", { name: "Configure Self-Driving" });
+  await selfDriving.getByLabel("Run instructions (optional)").fill("Continue until verified");
+  await selfDriving.getByRole("button", { name: "Save and Enable" }).click();
+  await expect.poll(() => harness.selfDrivingBodies.length).toBe(1);
+  expect(harness.selfDrivingBodies[0]).toMatchObject({ resourceId: "project1.task1", enabled: true, agentName: "test-agent", prompt: "Continue until verified" });
+  await expect(input).toHaveValue("Keep this draft\nartifacts/upload/notes.txt");
 });
