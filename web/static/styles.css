@@ -3941,42 +3941,6 @@ i[data-lucide] {
   max-height: none;
 }
 
-.markdown-preview.collapsed .markdown-view {
-  max-height: 340px;
-  overflow: hidden;
-}
-
-.markdown-preview.collapsed::after {
-  position: absolute;
-  right: 0;
-  bottom: 38px;
-  left: 0;
-  height: 56px;
-  pointer-events: none;
-  content: "";
-  background: linear-gradient(rgba(244, 245, 247, 0), var(--bg));
-}
-
-.markdown-show-all {
-  position: relative;
-  z-index: 1;
-  display: inline-flex;
-  align-items: center;
-  margin-top: 10px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--blue);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.markdown-show-all:hover {
-  text-decoration: underline;
-}
-
 .markdown-rendered > :first-child {
   margin-top: 0;
 }
