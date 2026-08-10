@@ -200,7 +200,7 @@ func (w *Workspace) SetSelfDrivingCondition(input SelfDrivingConditionInput) (Ta
 			return err
 		}
 		switch input.Condition {
-		case selfDrivingConditionReady, selfDrivingConditionReconciling, selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
+		case selfDrivingConditionReady, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
 		default:
 			return fmt.Errorf("invalid Self-Driving condition %q", input.Condition)
 		}

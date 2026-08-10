@@ -29,19 +29,6 @@ func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspa
 	if err := saveAgentRun(workspace.Path, run); err != nil {
 		t.Fatal(err)
 	}
-	if run.SchedulerTurn {
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		revision := run.SelfDrivingRevision
-		if revision <= 0 {
-			revision = 1
-		}
-		if _, err := forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: run.ResourceID, ExpectedRevision: revision, Condition: "reconciling"}); err != nil {
-			t.Fatal(err)
-		}
-	}
 }
 
 func pollerRunState(rt *agentRuntime) agentRun {

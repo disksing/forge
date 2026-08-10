@@ -816,10 +816,9 @@ func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 	app := string(appData)
 	for _, want := range []string{
 		`function taskOperationalState(item)`,
-		`function deriveTaskSelfDrivingState(selfDriving, sessions)`,
+		`function deriveTaskSelfDrivingState(selfDriving)`,
 		`function deriveTaskSessionState(sessions)`,
 		`function sessionStatusPresentation(session)`,
-		`session.schedulerTurn && session.selfDrivingRevision === selfDriving.revision`,
 		`function taskAgentSessions(resourceId)`,
 		`session.resourceId === resourceId`,
 		`function resourceLocks(resourceId)`,
@@ -841,6 +840,16 @@ func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 			t.Fatalf("combined task tree status is missing %q", want)
 		}
 	}
+	for _, unwanted := range []string{
+		`condition === "reconciling"`,
+		`auto-recovering`,
+		`Self-Driving waiting for scheduler recovery`,
+		`No matching active scheduler session`,
+	} {
+		if strings.Contains(app, unwanted) {
+			t.Fatalf("frontend still derives Scheduler coordination state %q", unwanted)
+		}
+	}
 	stylesData, err := staticFiles.ReadFile("static/styles.css")
 	if err != nil {
 		t.Fatal(err)
@@ -853,7 +862,6 @@ func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 		`.tree-item.has-task-status-dual`,
 		`grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;`,
 		`.task-status-slot.task-status-single .task-lock-indicator`,
-		`.task-status-indicator.task-status-self-driving-running`,
 		`.task-status-indicator.task-status-session-running`,
 		`animation: task-status-spin 1.8s linear infinite;`,
 		`.task-lock-external`,
@@ -863,11 +871,6 @@ func TestTreeTaskStatusSeparatesSelfDrivingSessionsAndLocks(t *testing.T) {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("combined task tree status styles are missing %q", want)
 		}
-	}
-	if strings.Contains(styles, `.task-status-indicator.task-status-self-driving-running {
-	  color: var(--green);
-  animation:`) {
-		t.Fatal("Self-Driving running indicator should remain static")
 	}
 }
 
@@ -966,7 +969,7 @@ function assert(condition, message) {
 const project = {
   id: "project1",
   children: [
-    { id: "project1.task1", selfDriving: { enabled: true, revision: 1, condition: "reconciling" } },
+    { id: "project1.task1", selfDriving: { enabled: true, revision: 1, condition: "ready" } },
     { id: "project1.task2" },
     { id: "project1.task3" },
     { id: "project1.task4" },
@@ -977,19 +980,19 @@ const project = {
     { id: "project1.task9" },
     { id: "project1.task10" },
     { id: "project1.task11" },
-    { id: "project1.task12", archived: true, selfDriving: { enabled: true, revision: 1, condition: "reconciling" } },
+    { id: "project1.task12", archived: true, selfDriving: { enabled: true, revision: 1, condition: "ready" } },
   ],
 };
 const summary = context.projectTaskSummary(project);
 assert(summary.taskCount === 11, "archived children must not contribute to the open task count");
-assert(summary.runningCount === 6, "running tasks must include Self-Driving/internal active sessions once each");
-assert(summary.text === "11 tasks · 6 running", "summary text has the wrong pluralization or counts: " + summary.text);
-assert(summary.ariaLabel === "Open tasks: 11 tasks; 6 running", "summary aria label has the wrong counts: " + summary.ariaLabel);
+assert(summary.runningCount === 5, "running tasks must come from active Sessions and count each Task once");
+assert(summary.text === "11 tasks · 5 running", "summary text has the wrong pluralization or counts: " + summary.text);
+assert(summary.ariaLabel === "Open tasks: 11 tasks; 5 running", "summary aria label has the wrong counts: " + summary.ariaLabel);
 const markup = context.projectTaskSummaryMarkup(summary);
 assert(markup.includes('class="project-task-summary" aria-hidden="true"'), "summary markup should be hidden from screen readers");
 assert(markup.includes('class="project-task-summary-separator" aria-hidden="true">·</span>'), "summary separator should be decorative");
 context.state.tree.sessions.find((session) => session.id === "running").agentRunStatus = "idle";
-assert(context.projectTaskSummary(project).runningCount === 5, "session status changes must be reflected on the next summary calculation");
+assert(context.projectTaskSummary(project).runningCount === 4, "session status changes must be reflected on the next summary calculation");
 assert(context.projectTaskSummary({ id: "empty", children: [] }).text === "0 tasks · 0 running", "empty projects should show zero counts");
 assert(context.projectTaskSummary({ id: "one", children: [{ id: "one.task1" }] }).text === "1 task · 0 running", "single-task projects should use the singular label");
 `
@@ -1840,7 +1843,7 @@ func TestTreeProjectStatusCombinesSessionsAndLocks(t *testing.T) {
 		`if (taskState.label)`,
 		`const sessions = taskAgentSessions(item.id);`,
 		`const locks = resourceLocks(item.id);`,
-		`const selfDriving = deriveTaskSelfDrivingState(item.selfDriving, sessions);`,
+		`const selfDriving = deriveTaskSelfDrivingState(item.selfDriving);`,
 		`const session = deriveTaskSessionState(sessions);`,
 		`const projectState = taskOperationalState(project);`,
 		"parts.push(`${project.id}:auto=${taskStatusKey(projectState.selfDriving)}:session=${taskStatusKey(projectState.session)}:${projectState.lock?.kind || \"none\"}:${projectState.label}:tasks=${summary.taskCount}:${summary.runningCount}`);",
@@ -1974,13 +1977,8 @@ vm.runInContext([
   extract("sessionOperationalLabel"),
 ].join("\n"), context);
 
-const scheduler = { schedulerTurn: true, selfDrivingRevision: 7, agentRunStatus: "running" };
 const sessionStatus = context.sessionStatusPresentation({ agentRunStatus: "idle" });
-const running = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: "reconciling" }, [scheduler]);
-const recovery = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: "reconciling" }, []);
 const expectedSelfDriving = {
-  reconciling: ["self-driving-running", "workflow"],
-  recovery: ["auto-recovering", "rotate-ccw"],
   ready: ["ready", "clock"],
   waiting: ["waiting", "pause"],
   blocked: ["blocked", "square"],
@@ -1988,23 +1986,19 @@ const expectedSelfDriving = {
   needs_configuration: ["needs_configuration", "square"],
 };
 for (const [state, [kind, iconName]] of Object.entries(expectedSelfDriving)) {
-	const sessions = state === "reconciling" ? [scheduler] : [];
-	const selfDrivingState = state === "recovery" ? "reconciling" : state;
-	const presentation = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: selfDrivingState }, sessions);
+	const presentation = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: state });
   assertEqual(presentation.kind, kind, "Self-Driving " + state + " kind");
   assertEqual(presentation.iconName, iconName, "Self-Driving " + state + " icon");
 }
-assertEqual(running.kind, "self-driving-running", "matching scheduler should make Self-Driving running");
-assertEqual(recovery.kind, "auto-recovering", "missing scheduler should make Self-Driving recovering");
-
-const dual = context.operationalStatusPresentation([running, sessionStatus]);
+const controller = context.deriveTaskSelfDrivingState({ enabled: true, revision: 7, condition: "ready" });
+const dual = context.operationalStatusPresentation([controller, sessionStatus]);
 const treeMarkup = context.operationalStatusMarkup(dual);
 const sessionMarkup = context.operationalStatusMarkup(dual, { slotClassName: "session-status-icon" });
 assertEqual(dual.layoutClassName, "has-task-status-dual", "Self-Driving plus Session should use dual layout");
 assertEqual(dual.slotClassName, "task-status-dual", "Self-Driving plus Session should use dual slot");
-assert(treeMarkup.includes("data-icon=\"workflow\"") && treeMarkup.includes("data-icon=\"message-square\""), "TreeView markup should contain both canonical icons");
-assert(sessionMarkup.includes("data-icon=\"workflow\"") && sessionMarkup.includes("data-icon=\"message-square\""), "Session markup should contain the same canonical icons");
-assert(sessionMarkup.indexOf("data-icon=\"workflow\"") < sessionMarkup.indexOf("data-icon=\"message-square\""), "Self-Driving icon should precede Session icon");
+assert(treeMarkup.includes("data-icon=\"clock\"") && treeMarkup.includes("data-icon=\"message-square\""), "TreeView markup should contain both canonical icons");
+assert(sessionMarkup.includes("data-icon=\"clock\"") && sessionMarkup.includes("data-icon=\"message-square\""), "Session markup should contain the same canonical icons");
+assert(sessionMarkup.indexOf("data-icon=\"clock\"") < sessionMarkup.indexOf("data-icon=\"message-square\""), "Self-Driving icon should precede Session icon");
 const single = context.operationalStatusPresentation([sessionStatus]);
 assertEqual(single.layoutClassName, "has-task-status", "single Session status should use single layout");
 assertEqual(single.slotClassName, "task-status-single", "single Session status should use single slot");
@@ -2979,7 +2973,7 @@ for (const status of ["running", "waiting_approval"]) {
 for (const status of ["starting", "idle", "stopping", "recovering", "stopped"]) {
   assert(!isAgentTurnInterruptible({ status }), status + " must not be interruptible");
 }
-resources.set("project1.task1", { selfDriving: { enabled: true, revision: 7, condition: "reconciling" } });
+resources.set("project1.task1", { selfDriving: { enabled: true, revision: 7, condition: "ready" } });
 assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 7, schedulerTurn: true }), "enabled Self-Driving must warn before close");
 assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 6, schedulerTurn: true }), "close warning follows Task desired state, not historical Turn revision");
 assert(isSelfDrivingSessionCloseTarget({ resourceId: "project1.task1", selfDrivingRevision: 0, schedulerTurn: false }), "ordinary Chat Session for an enabled Task must also warn");

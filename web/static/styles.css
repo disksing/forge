@@ -1558,23 +1558,6 @@ body.resizing-y {
   --self-driving-tone: var(--blue);
 }
 
-.self-driving-bar-running,
-.self-driving-bar-reconciling {
-  --self-driving-tone: var(--amber);
-  background: repeating-linear-gradient(
-    -45deg,
-    #fbdca8 0 12px,
-    #f8cd8b 12px 24px
-  );
-  border-color: #e6a23c;
-}
-
-.self-driving-bar-running .self-driving-state-icon,
-.self-driving-bar-reconciling .self-driving-state-icon {
-  transform-origin: center;
-  animation: self-driving-running-icon 2.6s ease-in-out infinite;
-}
-
 .self-driving-bar-suspended,
 .self-driving-bar-waiting,
 .self-driving-bar-blocked,
@@ -1599,27 +1582,11 @@ body.resizing-y {
   --self-driving-tone: var(--muted);
 }
 
-@keyframes self-driving-running-icon {
-  0%, 100% {
-    opacity: 0.78;
-    transform: scale(0.92);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.08);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .self-driving-bar,
   .self-driving-bar-button,
   .self-driving-bar-toggle {
     transition: none;
-  }
-
-  .self-driving-bar-running,
-  .self-driving-bar-running .self-driving-state-icon {
-    animation: none;
   }
 }
 
@@ -1629,16 +1596,6 @@ body.resizing-y {
   .self-driving-bar-button,
   .self-driving-bar-toggle {
     border-color: CanvasText;
-  }
-
-  .self-driving-bar-running,
-  .self-driving-bar-running .self-driving-state-icon {
-    animation: none;
-  }
-
-  .self-driving-bar-running {
-    outline: 2px solid Highlight;
-    outline-offset: -4px;
   }
 }
 
@@ -3288,10 +3245,6 @@ i[data-lucide] {
 
 .task-status-indicator.task-status-attention {
   color: #e67e22;
-}
-
-.task-status-indicator.task-status-self-driving-running {
-  color: var(--amber);
 }
 
 .task-status-indicator.task-status-session-running,
@@ -5999,46 +5952,5 @@ i[data-lucide] {
 
   .tree-item .name {
     gap: 4px;
-  }
-}
-
-/* Self-Driving running highlight: animated striped frame around the agent
-   panel. Stripes flow counterclockwise (left down, top left, right up,
-   bottom right); each loop shifts the pattern by exactly one 28px stripe
-   period so the animation is seamless. Pure CSS via :has(), no JS hooks. */
-.agent-panel:has(.self-driving-bar-running),
-.agent-panel:has(.self-driving-bar-reconciling) {
-  position: relative;
-}
-
-.agent-panel:has(.self-driving-bar-running)::before,
-.agent-panel:has(.self-driving-bar-reconciling)::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  padding: 4px;
-  background:
-    repeating-linear-gradient(90deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 0 / 100% 4px repeat-x,
-    repeating-linear-gradient(90deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 100% / 100% 4px repeat-x,
-    repeating-linear-gradient(0deg, #e6a23c 0 14px, #2c3e50 14px 28px) 0 0 / 4px 100% repeat-y,
-    repeating-linear-gradient(0deg, #e6a23c 0 14px, #2c3e50 14px 28px) 100% 0 / 4px 100% repeat-y;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  mask-composite: exclude;
-  animation: self-driving-frame-stripes 1.12s linear infinite;
-  pointer-events: none;
-  z-index: 20;
-}
-
-@keyframes self-driving-frame-stripes {
-  0% { background-position: 0 0, 0 100%, 0 0, 100% 0; }
-  100% { background-position: -28px 0, 28px 100%, 0 28px, 100% -28px; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .agent-panel:has(.self-driving-bar-running)::before,
-  .agent-panel:has(.self-driving-bar-reconciling)::before {
-    animation: none;
   }
 }

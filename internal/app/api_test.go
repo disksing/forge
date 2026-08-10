@@ -114,6 +114,81 @@ func TestSelfDrivingWakeAdvancesRevision(t *testing.T) {
 	}
 }
 
+func TestSelfDrivingConditionAPIRejectsSchedulerCoordination(t *testing.T) {
+	for _, condition := range []string{"reconciling", "waiting"} {
+		t.Run(condition, func(t *testing.T) {
+			workspace, task := newSelfDrivingWorkspace(t, true)
+			if _, err := workspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
+				TaskID: task.ID, ExpectedRevision: task.SelfDriving.Revision, Condition: condition, Reason: "runtime coordination",
+			}); err == nil {
+				t.Fatalf("condition API accepted transient %q state", condition)
+			}
+			got, err := workspace.ResourceValue(task.ID)
+			if err != nil || got.Task == nil || got.Task.SelfDriving == nil {
+				t.Fatalf("reload task: resource=%#v err=%v", got, err)
+			}
+			if got.Task.SelfDriving.Condition != "ready" || got.Task.SelfDriving.ConditionReason != "" {
+				t.Fatalf("rejected %q changed task state: %#v", condition, got.Task.SelfDriving)
+			}
+		})
+	}
+}
+
+func TestPersistedSchedulerCoordinationMigratesToReady(t *testing.T) {
+	for _, test := range []struct {
+		name, condition, reason string
+	}{
+		{"reconciling", "reconciling", "dispatching"},
+		{"session-busy", "waiting", "the selected Session is busy; user messages and approvals have priority"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			workspace, task := newSelfDrivingWorkspace(t, true)
+			resource, err := workspace.ResourceValue(task.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(workspace.Root(), filepath.FromSlash(resource.Path), "task.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var raw map[string]any
+			if err := json.Unmarshal(data, &raw); err != nil {
+				t.Fatal(err)
+			}
+			raw["selfDriving"] = map[string]any{
+				"enabled": true, "revision": task.SelfDriving.Revision, "condition": test.condition,
+				"conditionReason": test.reason,
+				"agentName":       "codex",
+			}
+			encoded, err := json.MarshalIndent(raw, "", "  ")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, append(encoded, '\n'), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			migrated, err := workspace.ResourceValue(task.ID)
+			if err != nil || migrated.Task == nil || migrated.Task.SelfDriving == nil {
+				t.Fatalf("migrate transient coordination: resource=%#v err=%v", migrated, err)
+			}
+			got := migrated.Task.SelfDriving
+			if !got.Enabled || got.Revision != task.SelfDriving.Revision || got.Condition != "ready" || got.ConditionReason != "" || got.WakeContext != nil {
+				t.Fatalf("transient coordination migration = %#v", got)
+			}
+			first, _ := os.ReadFile(path)
+			if _, err := workspace.ResourceValue(task.ID); err != nil {
+				t.Fatal(err)
+			}
+			second, _ := os.ReadFile(path)
+			if string(first) != string(second) {
+				t.Fatal("transient coordination migration was not idempotent")
+			}
+		})
+	}
+}
+
 func TestArchiveAtomicallyDisablesSelfDriving(t *testing.T) {
 	workspace, task := newSelfDrivingWorkspace(t, true)
 	start := make(chan struct{})
@@ -220,7 +295,7 @@ func TestLegacySevenStateMigrationMatrix(t *testing.T) {
 		enabled   bool
 		condition string
 		outcome   string
-	}{{"queued", true, "ready", ""}, {"running", true, "reconciling", ""}, {"suspended", true, "waiting", ""}, {"paused", false, "disabled", "paused"}, {"completed", false, "disabled", "completed"}, {"failed", false, "disabled", "failed"}, {"cancelled", false, "disabled", "cancelled"}}
+	}{{"queued", true, "ready", ""}, {"running", true, "ready", ""}, {"suspended", true, "waiting", ""}, {"paused", false, "disabled", "paused"}, {"completed", false, "disabled", "completed"}, {"failed", false, "disabled", "failed"}, {"cancelled", false, "disabled", "cancelled"}}
 	for _, test := range states {
 		t.Run(test.state, func(t *testing.T) {
 			workspace, task := newSelfDrivingWorkspace(t, false)

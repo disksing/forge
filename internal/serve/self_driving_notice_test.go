@@ -152,7 +152,7 @@ context.appendForgeNotice(unrelatedError);
 assert(state.agent.notices.length === 3, "unrelated recovery errors must remain visible");
 
 state.agent.runs[0] = { ...state.agent.runs[0], schedulerTurn: true, schedulerTurnId: "turn-2", schedulerTurnSequence: 2 };
-state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 7, condition: "reconciling" };
+state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 7, condition: "ready" };
 context.reconcileAgentNotices(state.agent.runs);
 assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-reconcile"), "running projection must clear only the waiting notice");
 context.appendForgeNotice(waiting(1));
@@ -166,7 +166,7 @@ context.appendForgeNotice(waiting(1));
 assert(state.agent.notices.length === 3 && state.agent.notices.some((notice) => notice.data.schedulerTurnSequence === 2), "the first suspension must not revive");
 
 state.agent.runs[0] = { ...state.agent.runs[0], selfDrivingRevision: 8, schedulerTurn: false, schedulerTurnId: "turn-3", schedulerTurnSequence: 3 };
-state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 8, condition: "reconciling" };
+state.tree.projects[0].children[0].selfDriving = { enabled: true, revision: 8, condition: "ready" };
 context.reconcileAgentNotices(state.agent.runs);
 assert(state.agent.notices.length === 2 && state.agent.notices.every((notice) => notice.data.lifecycle !== "until-reconcile"), "a new revision must clear the old waiting notice");
 

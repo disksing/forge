@@ -183,7 +183,7 @@ func TestConcurrentSchedulerScansCreateOneSessionAndTurn(t *testing.T) {
 		t.Fatalf("concurrent Scheduler autonomous Turns = %d, runs=%#v", autonomous, runs)
 	}
 	current := reloadTestTask(t, workspace.Path, candidate.ID)
-	if current.SelfDriving == nil || !current.SelfDriving.Enabled || current.SelfDriving.Condition != "reconciling" {
+	if current.SelfDriving == nil || !current.SelfDriving.Enabled || current.SelfDriving.Condition != "ready" {
 		t.Fatalf("losing Scheduler scan overwrote controller state: %#v", current.SelfDriving)
 	}
 }
@@ -292,6 +292,55 @@ func TestReusableSessionIsStickyToNewestMatchingRun(t *testing.T) {
 	got, busy, err = manager.server.findReusableSelfDrivingSession(context.Background(), workspace, "project1.task1", "fake-agent")
 	if err != nil || !busy || got == nil || got.ID != "run-new" {
 		t.Fatalf("busy sticky selection fanned out to older idle run: %#v busy=%v err=%v", got, busy, err)
+	}
+}
+
+func TestBusySessionDoesNotBecomeSelfDrivingState(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	client, err := newAgentHubClient(hub.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run := agentRun{
+		ID: "run-busy", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "session-busy", AgentHubAgentName: "fake-agent", Status: "running",
+		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+	}
+	fake.mu.Lock()
+	fake.sessions[run.AgentHubSessionID] = agentHubSession{ID: run.AgentHubSessionID, State: "busy"}
+	fake.mu.Unlock()
+	rt := newAgentHubRuntime(manager, workspace, run, client)
+	rt.agentHubState = "busy"
+	registerSchedulerRun(t, manager.server, workspace.Path, run, false)
+	manager.registerRuntime(rt)
+
+	candidate := runnableTaskCandidateFromTask(reloadTestTask(t, workspace.Path, run.ResourceID))
+	result, err := manager.server.startRunnableTask(context.Background(), workspace, candidate)
+	if err != nil || result != runnableTaskSkippedActive {
+		t.Fatalf("busy dispatch = result %q err %v", result, err)
+	}
+	got := reloadTestTask(t, workspace.Path, run.ResourceID)
+	if got.SelfDriving == nil || got.SelfDriving.Condition != "ready" || got.SelfDriving.ConditionReason != "" {
+		t.Fatalf("busy Session leaked into Self-Driving state: %#v", got.SelfDriving)
+	}
+}
+
+func TestDispatchConflictDoesNotBecomeSelfDrivingState(t *testing.T) {
+	workspacePath := t.TempDir()
+	s := newSchedulerTestServer(t, workspacePath, nil, func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "resource is busy", http.StatusConflict)
+	})
+	candidate := runnableTaskCandidateFromTask(reloadTestTask(t, workspacePath, "project1.task1"))
+	result, err := s.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspacePath}, candidate)
+	if err != nil || result != runnableTaskSkippedActive {
+		t.Fatalf("conflicting dispatch = result %q err %v", result, err)
+	}
+	got := reloadTestTask(t, workspacePath, candidate.ID)
+	if got.SelfDriving == nil || got.SelfDriving.Condition != "ready" || got.SelfDriving.ConditionReason != "" {
+		t.Fatalf("dispatch conflict leaked into Self-Driving state: %#v", got.SelfDriving)
 	}
 }
 

@@ -514,16 +514,27 @@ func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorksp
 	return err
 }
 
-func (m *agentManager) startSelfDriving(ctx context.Context, workspace guiWorkspace, run agentRun) error {
+func (m *agentManager) validateSelfDrivingStart(ctx context.Context, workspace guiWorkspace, run agentRun) error {
 	_ = ctx
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
 	}
-	_, err = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
-		TaskID: run.ResourceID, ExpectedRevision: run.SelfDrivingRevision, Condition: "reconciling",
-	})
-	return err
+	resource, err := forgeWorkspace.ResourceValue(run.ResourceID)
+	if err != nil {
+		return err
+	}
+	if resource.Task == nil || resource.Task.SelfDriving == nil || !resource.Task.SelfDriving.Enabled {
+		return errors.New("Self-Driving is disabled")
+	}
+	current := resource.Task.SelfDriving
+	if current.Revision != run.SelfDrivingRevision {
+		return fmt.Errorf("stale Self-Driving revision %d; current revision is %d", run.SelfDrivingRevision, current.Revision)
+	}
+	if current.Condition != "ready" {
+		return fmt.Errorf("Self-Driving is not ready: %s", current.Condition)
+	}
+	return nil
 }
 
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
@@ -1113,7 +1124,7 @@ func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
 				taskCondition = "stale"
 			} else {
 				taskCondition = current.Condition
-				if current.Condition == "reconciling" {
+				if current.Condition == "ready" {
 					_, err = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
 						TaskID: run.ResourceID, ExpectedRevision: run.SelfDrivingRevision,
 						Condition: "error", Reason: "agent turn ended without reporting a Self-Driving outcome",

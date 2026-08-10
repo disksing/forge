@@ -166,7 +166,7 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 	if run.SchedulerTurn {
-		if err := m.startSelfDriving(r.Context(), workspace, run); err != nil {
+		if err := m.validateSelfDrivingStart(r.Context(), workspace, run); err != nil {
 			writeResourceOperationError(w, err, http.StatusBadRequest)
 			return
 		}
@@ -502,7 +502,7 @@ func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request,
 		}
 		beginSchedulerTurn(&run)
 		run.SelfDrivingRevision = req.SelfDrivingRevision
-		if err := m.startSelfDriving(r.Context(), rt.workspace, run); err != nil {
+		if err := m.validateSelfDrivingStart(r.Context(), rt.workspace, run); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
 		}

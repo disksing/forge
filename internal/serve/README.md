@@ -35,13 +35,13 @@ GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 �
 
 ## 会话与锁
 
-新 chat 和 Self-Driving 都可创建或恢复 AgentHub Session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。`PUT /api/workspaces/<id>/self-driving` 只持久化 Task 级期望状态；Scheduler 随后按 revision 异步 reconcile，优先粘性复用同一 Task、Agent 匹配的最近 Session，busy、审批、恢复中或已有 Turn 时等待，且不会 fan-out。缺少 Agent 配置时保持 Enabled 并进入 `needs_configuration`，不忙循环。
+新 chat 和 Self-Driving 都可创建或恢复 AgentHub Session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。`PUT /api/workspaces/<id>/self-driving` 只持久化 Task 级期望状态；Scheduler 随后按 revision 异步 reconcile，优先粘性复用同一 Task、Agent 匹配的最近 Session。busy、审批、恢复中、资源被占用或已有 Turn 时只静默跳过本次派发，不写入 Task condition、不向前端投影 reconcile 状态，也不会 fan-out。缺少 Agent 配置时保持 Enabled 并进入 `needs_configuration`，不忙循环。
 
 Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
 
 浏览器在新 Session 的初始消息和后续 Chat 输入中都提交当前用户名。Forge 转发为 AgentHub provenance `role=user` 和 `sender.name=<用户名>`，timeline 使用该名字并附加 `USER` 标签；字段只描述消息来源，不参与认证或授权。Self-Driving 调度、定时唤醒和 continuation prompt 继续使用 `role=system`、`sender.name=Forge Scheduler`，不会继承浏览器用户名。
 
-当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New/Resume Session，并暂停输入与上传。Self-Driving 开关仍可使用：它通过独立 Task 文件锁和原子读改写持久化，不依赖资源锁；Scheduler 若无法获得创建 Session 所需资源则进入 waiting。
+当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New/Resume Session，并暂停输入与上传。Self-Driving 开关仍可使用：它通过独立 Task 文件锁和原子读改写持久化，不依赖资源锁；Scheduler 若无法获得创建 Session 所需资源，只跳过当前扫描，不改变 Self-Driving condition。
 
 当当前选中的 Project 或 Task 存在 `source=internal` 的有效 Forge GUI Session 锁时，composer 隐藏 New Session 并关闭已展开的 Agent 选择列表；判定依据是该 Resource 的所有 `sessionControls` 锁投影，不依赖当前查看的 Agent Run 或其状态。当前 Session 的输入、审批、Close Session 和 idle Task Self-Driving 复用入口保持可用；下一次 tree 刷新观察到锁释放后恢复 New Session。Self-Driving 仍只适用于 Task。
 

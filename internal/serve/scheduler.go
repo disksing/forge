@@ -178,17 +178,12 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 		return runnableTaskDispatchFailed, err
 	}
 	if reusable != nil && busy {
-		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
-			TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting",
-			Reason: "the selected Session is busy; user messages and approvals have priority",
-		})
 		return runnableTaskSkippedActive, nil
 	}
 	prompt := buildSelfDrivingPrompt(workspace.Path, task)
 	if reusable != nil {
 		if err := s.startSelfDrivingInOpenSession(ctx, workspace, reusable.ID, task.Revision, prompt); err != nil {
 			if errors.Is(err, errSelfDrivingSessionBusy) {
-				_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting", Reason: "the Session became busy before dispatch"})
 				return runnableTaskSkippedActive, nil
 			}
 			return runnableTaskDispatchFailed, err
@@ -217,7 +212,6 @@ func (s *server) startRunnableTask(ctx context.Context, workspace guiWorkspace, 
 	defer response.Body.Close()
 	responseBody, _ := io.ReadAll(response.Body)
 	if response.StatusCode == http.StatusConflict {
-		_, _ = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{TaskID: task.ID, ExpectedRevision: task.Revision, Condition: "waiting", Reason: strings.TrimSpace(string(responseBody))})
 		return runnableTaskSkippedActive, nil
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {

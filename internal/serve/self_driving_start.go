@@ -155,7 +155,8 @@ func (m *agentManager) notifySelfDrivingDisabled(ctx context.Context, workspace 
 }
 
 // findReusableSelfDrivingSession returns the newest matching live session. A
-// busy/approval/manual turn is reported as waiting; it is never fanned out.
+// busy/approval/manual turn is skipped without changing Task state; it is
+// never fanned out.
 func (s *server) findReusableSelfDrivingSession(ctx context.Context, workspace guiWorkspace, taskID, agentName string) (*agentRun, bool, error) {
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {

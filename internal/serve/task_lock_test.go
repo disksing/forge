@@ -128,7 +128,7 @@ func TestExternalResourceLockDoesNotBlockSelfDrivingSwitch(t *testing.T) {
 	fake.mu.Unlock()
 }
 
-func TestExternalResourceLockMakesSchedulerWaitWithoutChangingSwitch(t *testing.T) {
+func TestExternalResourceLockSkipsSchedulerWithoutChangingTaskState(t *testing.T) {
 	workspace := t.TempDir()
 	requests := 0
 	server := newSchedulerTestServer(t, workspace, nil, func(w http.ResponseWriter, r *http.Request) {
@@ -154,8 +154,8 @@ func TestExternalResourceLockMakesSchedulerWaitWithoutChangingSwitch(t *testing.
 	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
 		t.Fatalf("reload locked scheduler task: %v", err)
 	}
-	if !resource.Task.SelfDriving.Enabled || resource.Task.SelfDriving.Revision != 1 || resource.Task.SelfDriving.Condition != "waiting" {
-		t.Fatalf("external lock changed desired state instead of condition: %#v", resource.Task.SelfDriving)
+	if !resource.Task.SelfDriving.Enabled || resource.Task.SelfDriving.Revision != 1 || resource.Task.SelfDriving.Condition != "ready" || resource.Task.SelfDriving.ConditionReason != "" {
+		t.Fatalf("external lock leaked runtime coordination into Task state: %#v", resource.Task.SelfDriving)
 	}
 }
 

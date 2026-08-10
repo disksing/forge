@@ -1766,7 +1766,7 @@ function projectTaskSummary(project) {
     .filter((task) => task && task.archived !== true);
   const runningTaskIds = new Set();
   for (const task of tasks) {
-    if (task.selfDriving?.condition === "reconciling" || taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
+    if (taskAgentSessions(task.id).some(taskSessionCountsAsRunning)) {
       runningTaskIds.add(task.id);
     }
   }
@@ -1938,7 +1938,7 @@ function noTaskOperationalState() {
 function taskOperationalState(item) {
   const sessions = taskAgentSessions(item.id);
   const locks = resourceLocks(item.id);
-  const selfDriving = deriveTaskSelfDrivingState(item.selfDriving, sessions);
+  const selfDriving = deriveTaskSelfDrivingState(item.selfDriving);
   const session = deriveTaskSessionState(sessions);
   const lock = deriveTaskLockState(locks);
   const statusPresentation = operationalStatusPresentation([selfDriving, session], lock);
@@ -1983,17 +1983,10 @@ function operationalStatusMarkup(presentation, options = {}) {
     </span>`;
 }
 
-function deriveTaskSelfDrivingState(selfDriving, sessions) {
+function deriveTaskSelfDrivingState(selfDriving) {
   if (!selfDriving) return null;
   if (!selfDriving.enabled) return null;
   const selfDrivingState = selfDriving?.condition || "ready";
-  if (selfDrivingState === "reconciling") {
-    const scheduler = sessions.find((session) => session.schedulerTurn && session.selfDrivingRevision === selfDriving.revision && ["starting", "running", "waiting_approval", "stopping", "recovering"].includes(session.agentRunStatus));
-    if (scheduler) {
-      return taskStatusState("self-driving-running", "task-status-self-driving-running", "workflow", "Self-Driving running", "self-driving");
-    }
-    return taskStatusState("auto-recovering", "task-status-attention", "rotate-ccw", "Self-Driving waiting for scheduler recovery", "self-driving");
-  }
   if (selfDrivingState === "error") {
     return taskStatusState("error", "task-status-danger", "triangle-alert", "Self-Driving error", "self-driving");
   }
@@ -2128,9 +2121,6 @@ function taskOperationalLabel(selfDriving, sessions, lock, statuses) {
   } else if (sessions.length > 1) {
     const sessionStatuses = [...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ");
     parts.push(`${sessions.length} agent sessions: ${sessionStatuses}`);
-  }
-  if (statuses.selfDriving?.kind === "auto-recovering") {
-    parts.push("No matching active scheduler session");
   }
   if (lock) parts.push(lock.label);
   return parts.join(" · ");
@@ -2468,9 +2458,7 @@ function sessionOperationalLabel(session, taskResource, taskState, sessionStatus
   const parts = [];
   if (taskResource?.selfDriving && taskState?.selfDriving) {
     const rawState = taskResource.selfDriving.condition || "unknown";
-    const stateLabel = taskState.selfDriving.kind === "auto-recovering"
-      ? `${taskState.selfDriving.label} (${rawState})`
-      : `Self-Driving ${rawState}`;
+    const stateLabel = `Self-Driving ${rawState}`;
     const revision = Number.isFinite(taskResource.selfDriving.revision) ? taskResource.selfDriving.revision : "unknown";
     parts.push(`${stateLabel}, revision ${revision}`);
   }
@@ -4491,7 +4479,6 @@ function selfDrivingPresentation(condition, enabled = false) {
   const presentations = {
     disabled: { label: "Off", icon: "circle-dashed" },
     ready: { label: "Ready", icon: "list-start" },
-    reconciling: { label: "Running", icon: "activity" },
     waiting: { label: "Waiting", icon: "pause" },
     blocked: { label: "Blocked", icon: "octagon-alert" },
     error: { label: "Error", icon: "circle-x" },

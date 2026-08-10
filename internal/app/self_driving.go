@@ -10,7 +10,6 @@ import (
 const (
 	selfDrivingConditionDisabled           = "disabled"
 	selfDrivingConditionReady              = "ready"
-	selfDrivingConditionReconciling        = "reconciling"
 	selfDrivingConditionWaiting            = "waiting"
 	selfDrivingConditionBlocked            = "blocked"
 	selfDrivingConditionError              = "error"
@@ -62,7 +61,7 @@ func selfDrivingReady(task Task) (bool, string) {
 		return false, "disabled"
 	}
 	switch task.SelfDriving.Condition {
-	case selfDrivingConditionReady, selfDrivingConditionReconciling, selfDrivingConditionWaiting:
+	case selfDrivingConditionReady, selfDrivingConditionWaiting:
 		return true, task.SelfDriving.Condition
 	default:
 		return false, task.SelfDriving.Condition

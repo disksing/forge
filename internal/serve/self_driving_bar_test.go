@@ -55,12 +55,13 @@ eval(extract("selfDrivingTopBar"));
 
 for (const status of ["none", "starting", "running", "waiting_approval", "idle", "stopped", "recovering"]) {
   state.agent.runs = status === "none" ? [] : [{ resourceId: task.id, status }];
-  state.details[task.id] = { ...task, selfDriving: { enabled: true, revision: 7, condition: "waiting" } };
+  state.details[task.id] = { ...task, selfDriving: { enabled: true, revision: 7, condition: "ready" } };
   let html = selfDrivingTopBar(state.details[task.id]);
   assert(html.includes('role="switch"'), status + " lost the switch");
   assert(html.includes('aria-checked="true"'), status + " changed desired state");
   assert(!html.includes('id="selfDrivingSwitch"') || !html.match(/id="selfDrivingSwitch"[^>]* disabled/), status + " disabled the switch");
-  assert(html.includes("Waiting"), status + " hid the controller condition");
+  assert(html.includes("Ready"), status + " changed the controller condition");
+  assert(!html.includes("Session is busy") && !html.includes("scheduler recovery"), status + " leaked Session reconcile state");
 }
 state.details[task.id] = { ...task };
 let html = selfDrivingTopBar(state.details[task.id]);

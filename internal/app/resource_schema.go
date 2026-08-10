@@ -49,7 +49,7 @@ func validateResource(resource Resource) error {
 				return fmt.Errorf("Self-Driving revision must be positive")
 			}
 			switch typed.SelfDriving.Condition {
-			case selfDrivingConditionDisabled, selfDrivingConditionReady, selfDrivingConditionReconciling, selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
+			case selfDrivingConditionDisabled, selfDrivingConditionReady, selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
 			default:
 				return fmt.Errorf("invalid Self-Driving condition %q", typed.SelfDriving.Condition)
 			}
@@ -58,6 +58,9 @@ func validateResource(resource Resource) error {
 			}
 			if typed.SelfDriving.Enabled && typed.SelfDriving.Condition == selfDrivingConditionDisabled {
 				return fmt.Errorf("enabled Self-Driving cannot use condition %q", selfDrivingConditionDisabled)
+			}
+			if typed.SelfDriving.Condition == selfDrivingConditionWaiting && typed.SelfDriving.WakeContext == nil {
+				return fmt.Errorf("waiting Self-Driving requires wake context")
 			}
 		}
 	default:

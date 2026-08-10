@@ -224,6 +224,20 @@ func migrateLegacySelfDrivingTask(dir string) error {
 			}
 			root["selfDriving"] = encoded
 			changed = true
+		} else if current.Enabled && (current.Condition == "reconciling" || current.Condition == selfDrivingConditionWaiting && current.WakeContext == nil) {
+			// Early versions of the Task-level switch persisted transient
+			// Scheduler progress as reconciling and Session contention as
+			// waiting. Waiting is now reserved for an Agent-reported external
+			// wake condition; Scheduler and Session progress are runtime
+			// coordination and must not become Task state.
+			current.Condition = selfDrivingConditionReady
+			current.ConditionReason = ""
+			encoded, marshalErr := json.Marshal(current)
+			if marshalErr != nil {
+				return marshalErr
+			}
+			root["selfDriving"] = encoded
+			changed = true
 		} else if hasAuto {
 			root["selfDriving"] = selfRaw
 		}
@@ -269,7 +283,7 @@ func convertSevenStateSelfDriving(fields map[string]json.RawMessage, taskRoot ma
 	case "queued":
 		current.Enabled, current.Condition = true, selfDrivingConditionReady
 	case "running":
-		current.Enabled, current.Condition = true, selfDrivingConditionReconciling
+		current.Enabled, current.Condition = true, selfDrivingConditionReady
 	case "suspended", "waiting":
 		current.Enabled, current.Condition = true, selfDrivingConditionWaiting
 		summary := strings.TrimSpace(legacy.SuspensionSummary)

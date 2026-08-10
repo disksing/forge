@@ -224,7 +224,7 @@ const storage = {
 const resources = {
   "task-one": { id: "task-one", type: "task", title: "Task One" },
   "task-two": { id: "task-two", type: "task", title: "Task Two" },
-  "auto-one": { id: "auto-one", type: "task", title: "Auto One", selfDriving: { enabled: true, revision: 1, condition: "reconciling" } },
+  "auto-one": { id: "auto-one", type: "task", title: "Auto One", selfDriving: { enabled: true, revision: 1, condition: "ready" } },
 };
 const context = {
 	storage,
