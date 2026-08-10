@@ -55,13 +55,13 @@ describe("CreateDialog", () => {
     const { channel, target } = mountDialog(first);
     await tick();
 
-    const dialog = target.querySelector<HTMLElement>(".create-dialog")!;
+    const scrollRoot = target.querySelector<HTMLElement>(".create-task-form-col")!;
     const input = target.querySelector<HTMLInputElement>('input[name="title"]')!;
     input.value = "Local task draft";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
     input.focus();
     input.setSelectionRange(3, 8);
-    dialog.scrollTop = 37;
+    scrollRoot.scrollTop = 37;
 
     channel.publish({ ...first, submitting: true });
     await tick();
@@ -71,7 +71,7 @@ describe("CreateDialog", () => {
     expect(current.value).toBe("Local task draft");
     expect(document.activeElement).toBe(current);
     expect([current.selectionStart, current.selectionEnd]).toEqual([3, 8]);
-    expect(dialog.scrollTop).toBe(37);
+    expect(scrollRoot.scrollTop).toBe(37);
   });
 
   it("resets local state only when the dialog identity changes", async () => {
@@ -146,6 +146,32 @@ describe("CreateDialog", () => {
     expect(onPreview.mock.calls.at(-1)?.[0].templateFields.summary).toBe("Newer");
   });
 
+  it("follows fresh rendered Markdown until the user edits, then protects the edit", async () => {
+    const firstPreview = { title: "First", markdown: "# First\n" };
+    const first = model({
+      templates: [featureTemplate],
+      draft: { ...model().draft, templateName: "feature-a", templateFields: { summary: "First" } },
+      preview: firstPreview,
+      previewKey: "first",
+      previewRequestKey: () => "first",
+    });
+    const { channel, target } = mountDialog(first);
+    await tick();
+    const editor = target.querySelector<HTMLTextAreaElement>('textarea[name="previewMarkdown"]')!;
+    expect(editor.value).toBe("# First\n");
+
+    channel.publish({ ...first, preview: { title: "Second", markdown: "# Second\n" } });
+    await tick();
+    expect(editor.value).toBe("# Second\n");
+
+    editor.value = "# Protected local edit\n";
+    editor.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    channel.publish({ ...first, preview: { title: "Third", markdown: "# Third\n" } });
+    await tick();
+    expect(editor.value).toBe("# Protected local edit\n");
+    expect(target.querySelector("[data-preview-edited-note]")).toBeTruthy();
+  });
+
   it("expands Self-Driving fields from the Automation section without a disclosure", async () => {
     const { target } = mountDialog(model());
     await tick();
@@ -158,5 +184,53 @@ describe("CreateDialog", () => {
     expect(target.querySelector(".create-task-automation-fields")).toBeTruthy();
     expect(target.querySelector('select[name="agentName"]')).toBeTruthy();
     expect(target.querySelector('textarea[name="completionCriteria"]')).toBeTruthy();
+  });
+
+  it("submits one complete Task draft while a pending publication cannot replace local inputs", async () => {
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    const first = model({
+      agents: [{ id: "codex", label: "Codex", summary: "Reasoning" }],
+      profileKeys: ["reasoning"],
+      onSubmit,
+    });
+    const { channel, target } = mountDialog(first);
+    await tick();
+
+    const set = (selector: string, value: string) => {
+      const input = target.querySelector<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>(selector)!;
+      input.value = value;
+      input.dispatchEvent(new InputEvent(input instanceof HTMLSelectElement ? "change" : "input", { bubbles: true }));
+      return input;
+    };
+    const title = set('input[name="title"]', "Stable payload");
+    set('textarea[name="detail"]', "Keep all fields");
+    set('input[name="slug"]', "stable-payload");
+    target.querySelector<HTMLInputElement>('input[name="selfDriving"]')!.click();
+    await tick();
+    set('select[name="agentName"]', "codex");
+    set('textarea[name="prompt"]', "Run autonomously");
+    set('input[name="agentProfiles"]', "reasoning");
+    set('textarea[name="completionCriteria"]', "All checks pass");
+    title.focus();
+
+    channel.publish({ ...first, submitting: true });
+    await tick();
+    expect(target.querySelector('input[name="title"]')).toBe(title);
+    channel.publish({ ...first, submitting: false });
+    await tick();
+    target.querySelector<HTMLFormElement>("#createDialogForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    await tick();
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      title: "Stable payload",
+      detail: "Keep all fields",
+      slug: "stable-payload",
+      selfDriving: true,
+      agentName: "codex",
+      agentProfiles: "reasoning",
+      prompt: "Run autonomously",
+      completionCriteria: "All checks pass",
+    });
   });
 });

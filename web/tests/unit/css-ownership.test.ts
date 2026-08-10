@@ -8,6 +8,12 @@ const components = [
   "AppShell",
   "ChatComposer",
   "CreateDialog",
+  "ProjectCreateForm",
+  "SelfDrivingOptions",
+  "TaskCreateForm",
+  "TaskPreview",
+  "TemplateFieldGroup",
+  "TemplatePicker",
   "DetailPanel",
   "DiffModal",
   "EventTimeline",
@@ -28,6 +34,12 @@ const owners: Record<(typeof components)[number], string> = {
   AppShell: "app-shell",
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
+  ProjectCreateForm: "project-create-form",
+  SelfDrivingOptions: "self-driving-options",
+  TaskCreateForm: "task-create-form",
+  TaskPreview: "task-preview",
+  TemplateFieldGroup: "template-field-group",
+  TemplatePicker: "template-picker",
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
   EventTimeline: "event-timeline",
@@ -105,7 +117,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "WorkspaceAgentsEditor"] as const) {
+    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "ProjectCreateForm", "SelfDrivingOptions", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "WorkspaceAgentsEditor"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

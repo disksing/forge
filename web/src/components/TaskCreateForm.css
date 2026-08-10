@@ -1,0 +1,116 @@
+/* TaskCreateForm owns Task form composition and the responsive split. */
+
+:where([data-component-owner="task-create-form"]) {
+  display: grid;
+  grid-template-columns: 55fr 45fr;
+  flex: 1;
+  min-height: 0;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-form-col {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+
+:where([data-component-owner="task-create-form"]) .create-section {
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+:where([data-component-owner="task-create-form"]) .create-section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="task-create-form"]) .create-required {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+:where([data-component-owner="task-create-form"]) .template-title-control {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+:where([data-component-owner="task-create-form"]) .template-title-control input {
+  flex: 1;
+}
+
+:where([data-component-owner="task-create-form"]) .create-title-slug-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  align-items: flex-end;
+}
+
+:where([data-component-owner="task-create-form"]) .create-title-slug-row>label:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-slug-field {
+  flex: 0 0 170px;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-slug-wrap {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  transition: border-color 150ms ease;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-slug-prefix {
+  padding-left: 10px;
+  color: var(--faint);
+  font-size: 13px;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-slug-wrap input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px 8px 4px;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  outline: none;
+}
+
+:where([data-component-owner="task-create-form"]) .create-task-details textarea[name="detail"] {
+  min-height: clamp(180px, 32vh, 340px);
+}
+
+:where([data-component-owner="task-create-form"]) .compact {
+  white-space: nowrap;
+}
+
+@media (max-width:900px) {
+  :where([data-component-owner="task-create-form"]) {
+    grid-template-columns: 1fr;
+    grid-template-rows: max-content max-content;
+    align-content: start;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  :where([data-component-owner="task-create-form"]) .create-task-form-col {
+    overflow: visible;
+  }
+}

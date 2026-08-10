@@ -1,0 +1,6 @@
+/* ProjectCreateForm owns the compact Project input stack. */
+
+:where([data-component-owner="project-create-form"]) {
+  display: grid;
+  gap: 10px;
+}

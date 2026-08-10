@@ -23,6 +23,22 @@ The directory layers are intentional:
 
 When adding or changing styles, prefer the nearest component module. Promote a rule to a shared layer only after identifying multiple current consumers; do not add a component selector to `app.css` or move an unbounded global selector into another file. `tests/unit/css-ownership.test.ts` enforces the entry imports, component imports, ownership markers, and rich-content wrapper contract.
 
+### Create dialog composition
+
+The Create dialog keeps one identity-scoped `CreateDraft` while delegating each stable view responsibility to a directly testable component. The split reduced `CreateDialog.svelte` from 263 to 84 lines and its root-owned CSS from 456 to 93 lines.
+
+```text
+CreateDialog (channel subscription, modal lifecycle, draft identity, focus trap, submit orchestration)
+├── ProjectCreateForm (Project description and slug)
+└── TaskCreateForm (Task coordination and preview debounce)
+    ├── TemplatePicker (blank/template selection)
+    ├── TemplateFieldGroup × required/optional (schema field rendering)
+    ├── SelfDrivingOptions (automation toggle and parameters)
+    └── TaskPreview (blank/rendered preview, edit protection, reset and refresh)
+```
+
+Children edit the shared identity-scoped draft through typed props and callbacks; the parent does not mirror their form state. `TaskCreateForm` owns template defaults, switch confirmation, generated-title overrides, and preview scheduling. `TaskPreview` advances unedited Markdown when a newer preview arrives but preserves an actual local edit. HTTP cancellation, stale-response rejection, request payload conversion, and pending-submit deduplication remain in `controllers/create-dialog-controller.ts`.
+
 Application state is never rendered by assembling HTML strings or mutating component-owned DOM. `DiffModal.svelte` is the single explicit rich-HTML boundary: Diff2Html converts a backend diff string to its vendor-defined presentation inside a dedicated viewer element. Markdown passes through Marked and DOMPurify before Svelte inserts the sanitized output.
 
 ### Controller boundaries
