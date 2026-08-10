@@ -5897,13 +5897,14 @@ function closeAgentUploadDialog() {
   const paths = state.uploadDialog.items
     .filter((item) => item.status === "success" && item.path)
     .map((item) => item.path);
-  if (paths.length > 0 && state.uploadDialog.runId === state.agent.activeRunId) {
+  const shouldSkipDraftSync = paths.length > 0 && state.uploadDialog.runId === state.agent.activeRunId;
+  if (shouldSkipDraftSync) {
     updateAgentDraft(appendUploadedPaths(state.agent.ttyDraft, paths));
   }
   discardAgentUploadDialog();
   const composer = $("ttyComposer");
   if (composer) delete composer.dataset.composerKey;
-  renderTTYComposer();
+  renderTTYComposer({ skipDraftSync: shouldSkipDraftSync });
   bindAgentEvents();
   $("ttyInput")?.focus({ preventScroll: true });
   refreshIcons();
