@@ -1608,7 +1608,6 @@ const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const state = {
   activeWorkspaceId: "workspace-a",
   selectedId: "project1",
-  expandedMarkdownFiles: new Set(),
   details: {},
   navigationVersion: 1,
   detailRequestVersion: 0,
@@ -1620,8 +1619,6 @@ const window = { marked: {}, DOMPurify: {} };
 function visibleResourceFiles(item) { return (item.files || []).filter((file) => file.name !== "AGENTS.md"); }
 function resourceFilePath(resourcePath, name) { return [resourcePath, name].filter(Boolean).join("/"); }
 function isMarkdownFile(path) { return /\.(md|markdown|mdown|mkdn)$/i.test(path); }
-function isLongMarkdownContent(content) { return String(content || "").length > 2200; }
-function markdownFileKey(name) { return state.activeWorkspaceId + ":" + state.selectedId + ":" + name; }
 function renderAll() {}
 function filePreviewURL(section, path, workspaceId) { return workspaceId + "/" + section + "/" + path; }
 function compareLogTimeDesc(a, b) { return String(b?.time || "").localeCompare(String(a?.time || "")); }
@@ -1645,9 +1642,6 @@ const baseKey = resourceDocumentsRenderKey(baseDetail);
 assert(baseKey === resourceDocumentsRenderKey({ ...baseDetail, logs: [{ title: "new log" }] }), "dynamic log changes must not change the Markdown render key");
 assert(baseKey !== resourceDocumentsRenderKey({ ...baseDetail, files: [{ ...baseDetail.files[0], content: "# Changed", contentHash: "hash-b" }] }), "a changed backend content hash must change the Markdown render key");
 assert(baseKey !== resourceDocumentsRenderKey({ ...baseDetail, id: "project1.task1" }), "the same Markdown text on another resource must not reuse the render key");
-state.expandedMarkdownFiles.add(markdownFileKey("project.md"));
-assert(baseKey !== resourceDocumentsRenderKey(baseDetail), "a Markdown display mode change must change the render key");
-state.expandedMarkdownFiles.clear();
 
 let requests = [];
 function api(path) {
@@ -1750,7 +1744,7 @@ func TestAgentInitialEventsLoadDoesNotAutoPage(t *testing.T) {
 	if err != nil {
 		t.Skip("node is required for the agent events paging behavior test")
 	}
-	constants := extract("const AGENT_OLDER_RAW_PAGE_LIMIT", "const MARKDOWN_PREVIEW_CHAR_LIMIT")
+	constants := extract("const AGENT_OLDER_RAW_PAGE_LIMIT", "const DEFAULT_WORKSPACE_ICON")
 	paging := extract("async function loadCanonicalAgentEvents()", "function fetchAgentRuns()")
 	script := `
 const state = {
