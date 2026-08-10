@@ -1,5 +1,6 @@
 import { mount, unmount, type Component } from "svelte";
 
+import AppShell from "./islands/AppShell.svelte";
 import BrandVersion from "./islands/BrandVersion.svelte";
 import ChatComposer from "./islands/ChatComposer.svelte";
 import CreateDialog from "./islands/CreateDialog.svelte";
@@ -11,12 +12,21 @@ import SettingsModal from "./islands/SettingsModal.svelte";
 import UploadDialog from "./islands/UploadDialog.svelte";
 import { createIslandChannel } from "./islands/channel";
 import { replaceIsland, unmountAllIslands, unmountIsland } from "./islands/lifecycle";
-import type { ComposerModel, CreateDialogModel, DetailPanelModel, EventTimelineModel, ForgeSvelteBridge, SelfDrivingDialogModel, SessionSwitcherModel, SettingsModel, UploadDialogModel } from "./islands/models";
+import type { AppShellModel, ComposerModel, CreateDialogModel, DetailPanelModel, EventTimelineModel, ForgeSvelteBridge, SelfDrivingDialogModel, SessionSwitcherModel, SettingsModel, UploadDialogModel } from "./islands/models";
 
 const BRAND_VERSION_ISLAND = "brand-version";
 const noop = () => undefined;
 const noopAsync = async () => undefined;
 const iconOptions = [{ id: "", label: "Forge default", src: "/favicon.svg" }];
+const appShellChannel = createIslandChannel<AppShellModel>({
+  identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [], sessions: [],
+  paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarSessionHeight: 210 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
+  route: { path: "", revision: 0, replace: true },
+  onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onToggleProject: noopAsync, onSelectResource: noopAsync,
+  onReorder: noopAsync, onDragState: noop, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
+  onMobileImmersive: noop, onToast: noop, onIconsChanged: noop,
+  onHistoryNavigation: noopAsync,
+});
 
 const createChannel = createIslandChannel<CreateDialogModel>({
   open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", titleOverride: false, description: "", detail: "", slug: "", selfDriving: false, agentName: "", agentProfiles: "", prompt: "", completionCriteria: "", activeTab: "edit", editedMarkdown: null, showOptions: false },
@@ -55,6 +65,10 @@ async function mountBrandVersion(): Promise<void> {
   }
 }
 
+async function mountAppShell(): Promise<void> {
+  await mountPersistentIsland("app-shell", "app", AppShell, { channel: appShellChannel });
+}
+
 async function mountPersistentIsland<Props extends Record<string, unknown>>(name: string, targetId: string, component: Component<Props>, props: Props): Promise<void> {
   const target = document.getElementById(targetId);
   if (!target) return;
@@ -82,6 +96,7 @@ async function mountMigratedIslands(): Promise<void> {
 }
 
 const bridge: ForgeSvelteBridge = {
+  renderAppShell: (model) => appShellChannel.publish(model),
   mountBrandVersion,
   renderCreateDialog: (model) => createChannel.publish(model),
   renderSettings: (model) => settingsChannel.publish(model),
@@ -111,12 +126,17 @@ if (!window.ForgeSveltePageLifecycleInstalled) {
     void window.ForgeSvelteIslands?.unmountAll();
   });
   window.addEventListener("pageshow", (event) => {
-    if (event.persisted) void Promise.all([window.ForgeSvelteIslands?.mountBrandVersion(), mountMigratedIslands()]);
+    if (event.persisted) void (async () => {
+      await mountAppShell();
+      await Promise.all([window.ForgeSvelteIslands?.mountBrandVersion(), mountMigratedIslands()]);
+      window.ForgeLegacySvelteReady?.();
+    })();
   });
 }
 
 void (async () => {
   await previousBridge?.unmountAll();
+  await mountAppShell();
   await Promise.all([mountBrandVersion(), mountMigratedIslands()]);
   window.ForgeLegacySvelteReady?.();
 })().catch((error) => console.error("Failed to mount the Forge Svelte island", error));

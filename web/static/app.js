@@ -8,6 +8,13 @@ const state = {
   workspaceAgentsDirty: false,
   workspaceAgentsSaving: false,
   activeWorkspaceId: "",
+  navigationLoading: true,
+  navigationError: "",
+  routeProjection: {
+    path: "",
+    revision: 0,
+    replace: true,
+  },
   workspaceMenuOpen: false,
   selectedId: "",
   lastResourceId: "",
@@ -246,6 +253,7 @@ function svelteAgentOptions() {
 }
 
 function renderMigratedSvelteIslands() {
+  renderAppShell();
   renderDetails();
   renderCreateDialog();
   renderSelfDrivingConfigDialog();
@@ -256,7 +264,9 @@ function renderMigratedSvelteIslands() {
   renderSettingsModal();
 }
 
-if (typeof window !== "undefined") window.ForgeLegacySvelteReady = renderMigratedSvelteIslands;
+if (typeof window !== "undefined") {
+  window.ForgeLegacySvelteReady = typeof bootLegacyApp === "function" ? bootLegacyApp : renderMigratedSvelteIslands;
+}
 
 function notificationStorage() {
   try {
@@ -1253,6 +1263,7 @@ async function load() {
     }
     await loadTree({ replaceURL: true });
   } else {
+    state.navigationLoading = false;
     state.tree = null;
     state.details = {};
     state.resourceLogPages = {};
@@ -1269,11 +1280,24 @@ async function loadTree(options = {}) {
   const workspaceId = state.activeWorkspaceId;
   const navigationVersion = state.navigationVersion;
   const treeRequestVersion = ++state.treeRequestVersion;
+  state.navigationLoading = true;
+  state.navigationError = "";
+  renderAppShell();
   state.detailRequestVersion++;
   state.workspaceAgentsRequestVersion++;
   state.previewRequestVersion++;
   state.diffRequestVersion++;
-  const tree = await api(`/api/workspaces/${workspaceId}/tree`);
+  let tree;
+  try {
+    tree = await api(`/api/workspaces/${workspaceId}/tree`);
+  } catch (err) {
+    if (isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) {
+      state.navigationLoading = false;
+      state.navigationError = err.message;
+      renderAppShell();
+    }
+    throw err;
+  }
   if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
   state.tree = tree;
   state.details = {};
@@ -1293,6 +1317,8 @@ async function loadTree(options = {}) {
   await loadAgentRuns();
   if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
   if (!state.notifications.ready) establishNotificationBaseline();
+  state.navigationLoading = false;
+  state.navigationError = "";
   renderAll();
   if (options.updateURL !== false) {
     syncURL({ replace: Boolean(options.replaceURL) });
@@ -1607,8 +1633,7 @@ async function autoRefresh() {
 }
 
 function renderAll() {
-  renderTree();
-  renderSessions();
+  renderAppShell();
   renderDetails();
   renderAgent();
   renderTTY();
@@ -1620,8 +1645,7 @@ function renderAll() {
 }
 
 function renderSelectionPanels() {
-  renderTree();
-  renderSessions();
+  renderAppShell();
   renderDetails();
   renderAgent();
   renderTTY();
@@ -1663,21 +1687,138 @@ function updateWorkspaceFavicon(workspace) {
 }
 
 function renderWorkspaceSelect() {
-  const active = state.config.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId);
-  const avatar = $("workspaceAvatar");
-  avatar.innerHTML = workspaceIconMarkup(active);
+  const active = state.config?.workspaces?.find((workspace) => workspace.id === state.activeWorkspaceId);
   updateWorkspaceFavicon(active);
-  $("workspaceSwitcherName").textContent = active?.name || "Workspace";
-  $("workspaceSwitcher").setAttribute("aria-expanded", String(state.workspaceMenuOpen));
-  const menu = $("workspaceMenu");
-  if (!state.workspaceMenuOpen) {
-    menu.hidden = true;
-    menu.innerHTML = "";
-  } else {
-    menu.hidden = false;
-    menu.innerHTML = workspaceMenuMarkup(active?.id || "");
-  }
-  refreshIcons();
+  renderAppShell();
+}
+
+function resourceRefText(id) {
+  if (!id) return "";
+  const segment = id.includes(".") ? id.slice(id.lastIndexOf(".") + 1) : id;
+  const match = segment.match(/^(?:project|task)(\d+)$/);
+  return `#${match ? match[1] : segment}`;
+}
+
+function appShellStatusModel(presentation) {
+  const statuses = (presentation?.statuses || []).map((status, index) => ({
+    key: `${status.kind || status.iconName || "status"}:${index}`,
+    className: status.className || "",
+    iconName: status.iconName || "circle",
+    recentOutput: Boolean(status.recentOutput),
+  }));
+  return {
+    hasTaskState: Boolean(presentation?.hasTaskState),
+    className: presentation?.className || "",
+    layoutClassName: presentation?.layoutClassName || "",
+    slotClassName: presentation?.slotClassName || "",
+    statuses,
+    lock: presentation?.lock ? { className: presentation.lock.className || "" } : null,
+  };
+}
+
+function appShellResourceModel(item, kind, projectId = "") {
+  const taskState = taskOperationalState(item);
+  const expanded = kind === "project" && isProjectExpanded(item.id);
+  const summary = kind === "project" ? projectTaskSummary(item) : null;
+  const title = item.title || item.id;
+  return {
+    id: item.id,
+    type: kind,
+    title,
+    ref: resourceRefText(item.id),
+    active: state.selectedId === item.id,
+    expanded,
+    ariaLabel: [title, summary?.ariaLabel, taskState.label].filter(Boolean).join(". "),
+    statusLabel: taskState.label || "",
+    status: appShellStatusModel(taskState.statusPresentation),
+    summary: summary ? { taskLabel: summary.taskLabel, runningLabel: summary.runningLabel, ariaLabel: summary.ariaLabel } : null,
+    children: kind === "project"
+      ? applyCustomOrder(item.children || [], state.taskOrder[item.id]).map((task) => appShellResourceModel(task, "task", item.id))
+      : [],
+    projectId,
+  };
+}
+
+function appShellSessionModel(session) {
+  const navigation = sessionNavigationTarget(session);
+  const resourceId = navigation.displayResourceId;
+  const isInternal = session.source === "internal";
+  const status = isInternal
+    ? sessionStatusPresentation(session)
+    : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
+  const taskResource = sessionTaskResource(session);
+  const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
+  const presentation = operationalStatusPresentation(isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status]);
+  const unread = hasUnreadNotificationForSession(session.id);
+  const statusLabel = `${sessionOperationalLabel(session, taskResource, taskState, status)}${unread ? ". Unread turn completion." : ""}`;
+  const agent = isInternal ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName) : null;
+  const metaParts = [isInternal ? "AgentHub" : "External"];
+  if (navigation.controls.length > 1) metaParts.push(`${navigation.controls.length} locks`);
+  else if (resourceId) metaParts.push(resourceId);
+  if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
+  return {
+    id: session.id,
+    source: session.source || "external",
+    title: sessionDisplayTitle(session, navigation),
+    meta: metaParts.join(" · "),
+    label: isInternal ? agent?.name || session.agentRunAgentName || "AgentHub" : "External",
+    statusLabel,
+    status: appShellStatusModel(presentation),
+    unread,
+    current: Boolean(state.selectedId && state.selectedId !== "workspace" && navigation.selectedResourceIds.includes(state.selectedId)),
+    clickable: Boolean(navigation.navigationResourceId || navigation.menu),
+    navigationResourceId: navigation.navigationResourceId,
+    menu: navigation.menu,
+    controls: navigation.controls.map((control) => ({
+      resourceId: control.resourceId,
+      path: control.path || "",
+      navigable: Boolean(sessionNavigableResourceId(control.resourceId)),
+    })),
+  };
+}
+
+function renderAppShell() {
+  const projects = state.tree
+    ? applyCustomOrder(state.tree.projects || [], state.projectOrder).map((project) => appShellResourceModel(project, "project"))
+    : [];
+  const sessions = applyCustomOrder(sortedSessionsForDisplay(state.tree?.sessions || []), state.sessionOrder).map(appShellSessionModel);
+  if (state.tree) state.taskOperationalStateKey = taskOperationalStateKey();
+  window.ForgeSvelteIslands?.renderAppShell({
+    identity: state.activeWorkspaceId || "no-workspace",
+    loading: Boolean(state.navigationLoading),
+    error: state.navigationError || "",
+    version: "v0.1.0",
+    activeWorkspaceId: state.activeWorkspaceId,
+    workspaces: (state.config?.workspaces || []).map((workspace) => ({
+      id: workspace.id,
+      name: workspace.name || workspace.id,
+      path: workspace.path || "",
+      icon: workspace.icon || "",
+      iconSrc: workspaceIconOption(workspace).src,
+    })),
+    projects,
+    sessions,
+    paneSizes: { ...state.paneSizes },
+    mobile: { ...state.mobile },
+    route: { ...state.routeProjection },
+    onSwitchWorkspace: (id) => switchWorkspace(id),
+    onAddWorkspace: () => openSettings("workspace").catch((err) => toast(err.message)),
+    onCreateProject: () => showProjectForm(),
+    onOpenSettings: () => openSettings().catch((err) => toast(err.message)),
+    onToggleProject: (id) => toggleProject(id),
+    onSelectResource: (id) => selectResource(id),
+    onReorder: (drag, target, after) => commitListDrag(drag, target, after),
+    onDragState: (drag) => { state.listDrag = drag; },
+    onPanePreview: (name, value) => setPaneSize(name, value),
+    onPaneCommit: (name) => savePaneSize(name),
+    onPaneViewport: () => syncPaneViewport(),
+    onMobileSidebar: (open) => setMobileSidebar(open),
+    onMobileView: (view) => setMobileView(view),
+    onMobileImmersive: (immersive) => setMobileImmersive(immersive),
+    onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
+    onToast: toast,
+    onIconsChanged: refreshIcons,
+  });
 }
 
 function workspaceMenuMarkup(activeId) {
@@ -1724,6 +1865,9 @@ async function switchWorkspace(id) {
   await saveUIState().catch((err) => console.warn("failed to save UI state", err));
   state.activeWorkspaceId = id;
   state.selectedId = "workspace";
+  state.tree = null;
+  state.navigationLoading = true;
+  state.navigationError = "";
   state.details = {};
   state.resourceLogPages = {};
   initializeNotificationState(id);
@@ -1740,26 +1884,7 @@ async function switchWorkspace(id) {
 }
 
 function renderTree() {
-  hideTaskStatusTooltip();
-  const tree = $("projectTree");
-  tree.innerHTML = "";
-  if (!state.tree) {
-    tree.innerHTML = `<div class="empty-state">${icon("folder-search", "empty-state-icon")}<strong>No workspace yet</strong><span>Add a workspace path to begin.</span></div>`;
-    state.taskOperationalStateKey = "";
-    return;
-  }
-  for (const project of applyCustomOrder(state.tree.projects, state.projectOrder)) {
-    tree.appendChild(treeButton(project, "project"));
-    if (isProjectExpanded(project.id)) {
-      const group = document.createElement("div");
-      group.className = "task-group";
-      for (const task of applyCustomOrder(project.children || [], state.taskOrder[project.id])) {
-        group.appendChild(treeButton(task, "task", project.id));
-      }
-      tree.appendChild(group);
-    }
-  }
-  state.taskOperationalStateKey = taskOperationalStateKey();
+  renderAppShell();
 }
 
 function resourceRefBadge(id) {
@@ -1906,12 +2031,15 @@ function clearListDragIndicators() {
   });
 }
 
-function commitListDrag(drag, target, after) {
+async function commitListDrag(drag, target, after) {
+  const previous = {
+    projectOrder: [...state.projectOrder],
+    taskOrder: Object.fromEntries(Object.entries(state.taskOrder).map(([id, order]) => [id, [...order]])),
+    sessionOrder: [...state.sessionOrder],
+  };
   if (drag.kind === "session") {
     const sessions = applyCustomOrder(sortedSessionsForDisplay(state.tree?.sessions || []), state.sessionOrder);
     state.sessionOrder = moveIdInList(sessions.map((session) => session.id), drag.id, target.id, after);
-    renderSessions();
-    refreshIcons();
   } else if (drag.kind === "task") {
     const project = findResource(drag.projectId);
     if (!project) return;
@@ -1920,17 +2048,22 @@ function commitListDrag(drag, target, after) {
       ...state.taskOrder,
       [drag.projectId]: moveIdInList(tasks.map((task) => task.id), drag.id, target.id, after),
     };
-    renderTree();
-    refreshIcons();
   } else if (drag.kind === "project") {
     const projects = applyCustomOrder(state.tree?.projects || [], state.projectOrder);
     state.projectOrder = moveIdInList(projects.map((project) => project.id), drag.id, target.id, after);
-    renderTree();
-    refreshIcons();
   } else {
     return;
   }
-  saveUIState().catch((err) => toast(err.message));
+  renderAppShell();
+  try {
+    await saveUIState();
+  } catch (err) {
+    state.projectOrder = previous.projectOrder;
+    state.taskOrder = previous.taskOrder;
+    state.sessionOrder = previous.sessionOrder;
+    renderAppShell();
+    throw err;
+  }
 }
 
 function noTaskOperationalState() {
@@ -2261,8 +2394,15 @@ async function toggleProject(id) {
   } else {
     state.expandedProjects.add(id);
   }
-  renderAll();
-  await saveUIState();
+  renderAppShell();
+  try {
+    await saveUIState();
+  } catch (err) {
+    if (state.expandedProjects.has(id)) state.expandedProjects.delete(id);
+    else state.expandedProjects.add(id);
+    renderAppShell();
+    throw err;
+  }
 }
 
 function applyCustomOrder(items, orderedIds) {
@@ -2310,71 +2450,7 @@ function sortedSessionsForDisplay(sessions) {
 }
 
 function renderSessions() {
-  const list = $("sessionList");
-  list.innerHTML = "";
-  const sessions = applyCustomOrder(sortedSessionsForDisplay(state.tree?.sessions || []), state.sessionOrder);
-  if (sessions.length === 0) {
-    list.innerHTML = `<div class="session-row muted-row">${icon("message-square")}<div><strong>No active sessions</strong><span>Start one from a task directory.</span></div></div>`;
-    return;
-  }
-  for (const session of sessions) {
-    const navigation = sessionNavigationTarget(session);
-    const controls = navigation.controls;
-    const resourceId = navigation.displayResourceId;
-    const isInternal = session.source === "internal";
-    const status = isInternal
-      ? sessionStatusPresentation(session)
-      : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
-    const taskResource = sessionTaskResource(session);
-    const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
-    const statusPresentation = operationalStatusPresentation(
-      isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status],
-    );
-    const statusLabel = sessionOperationalLabel(session, taskResource, taskState, status);
-    const clickable = Boolean(navigation.navigationResourceId || navigation.menu);
-    const selectedId = state.selectedId;
-    const isCurrent = Boolean(selectedId) && selectedId !== "workspace" &&
-      navigation.selectedResourceIds.includes(selectedId);
-    const unread = hasUnreadNotificationForSession(session.id);
-    const row = document.createElement(clickable ? "button" : "div");
-    row.className = `session-row ${isInternal ? "internal-session" : "external-session"} ${statusPresentation.layoutClassName} ${statusPresentation.className} ${clickable ? "clickable-session" : ""} ${isCurrent ? "current-session" : ""} ${unread ? "session-unread" : ""}`;
-    if (clickable) row.type = "button";
-    const agent = isInternal
-      ? (state.config?.agents || []).find((item) => item.id === session.agentRunAgentName)
-      : null;
-    const providerLabel = isInternal ? "AgentHub" : "External";
-    const label = isInternal ? agent?.name || session.agentRunAgentName || "AgentHub" : "External";
-    const title = sessionDisplayTitle(session, navigation);
-    const metaParts = [providerLabel];
-    if (controls.length > 1) {
-      metaParts.push(`${controls.length} locks`);
-    } else if (resourceId) {
-      metaParts.push(resourceId);
-    }
-    if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
-    const accessibleStatusLabel = unread ? `${statusLabel}. Unread turn completion.` : statusLabel;
-    row.title = accessibleStatusLabel;
-    bindTaskStatusTooltip(row, accessibleStatusLabel);
-    row.setAttribute("aria-label", `${title}. ${accessibleStatusLabel}. ${providerLabel}`);
-    row.innerHTML = `
-      ${operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })}
-      <div class="session-title">
-        <strong>${escapeHTML(title)}</strong>
-        <span>${escapeHTML(metaParts.join(" · "))}</span>
-      </div>
-      <span class="session-badge ${isInternal ? "internal" : "external"}">${escapeHTML(label)}</span>
-      ${unread ? `<span class="session-unread-badge" aria-label="Unread turn completion">New</span>` : ""}
-      <span class="drag-handle" draggable="true" title="Drag to reorder">${icon("grip-vertical", "drag-handle-icon")}</span>
-    `;
-    if (clickable) {
-      row.addEventListener("click", () => handleSessionClick(session));
-    }
-    bindListDrag(row, { kind: "session", id: session.id, projectId: "" });
-    list.appendChild(row);
-    if (state.sessionMenu?.sessionId === session.id && navigation.menu) {
-      list.appendChild(sessionResourceMenu(session, controls));
-    }
-  }
+  renderAppShell();
 }
 
 function sessionDisplayTitle(session, resourceId) {
@@ -6837,8 +6913,8 @@ function ensureSelectedProjectExpanded(persist = false) {
   }
 }
 
-function parseRoute() {
-  const parts = window.location.pathname.split("/").filter(Boolean);
+function parseRoute(pathname = window.location.pathname) {
+  const parts = pathname.split("/").filter(Boolean);
   if (parts[0] !== "w") return {};
   return {
     workspaceId: decodePathPart(parts[1]),
@@ -6864,9 +6940,13 @@ function syncURL(options = {}) {
   const nextPath = resourceId
     ? `/w/${encodeURIComponent(state.activeWorkspaceId)}/r/${encodeURIComponent(resourceId)}`
     : `/w/${encodeURIComponent(state.activeWorkspaceId)}`;
-  if (window.location.pathname === nextPath) return;
-  const method = options.replace ? "replaceState" : "pushState";
-  window.history[method]({}, "", nextPath);
+  if (window.location.pathname === nextPath && state.routeProjection.path === nextPath) return;
+  state.routeProjection = {
+    path: nextPath,
+    revision: state.routeProjection.revision + 1,
+    replace: Boolean(options.replace),
+  };
+  renderAppShell();
 }
 
 function workspaceName() {
@@ -7211,10 +7291,6 @@ function initPaneResize() {
     applyPaneSizes();
     saveAllPaneSizes();
   }
-  $("sidebarResize")?.addEventListener("pointerdown", (event) => startSidebarResize(event));
-  $("detailsResize")?.addEventListener("pointerdown", (event) => startChatResize(event));
-  $("sessionResize")?.addEventListener("pointerdown", (event) => startSessionResize(event));
-  window.addEventListener("resize", syncPaneViewport);
 }
 
 function startSidebarResize(event) {
@@ -7426,39 +7502,17 @@ function resetAppViewportScroll() {
   syncAppViewport();
 }
 
-if (window.visualViewport) {
-  window.visualViewport.addEventListener("resize", syncAppViewport);
-  window.visualViewport.addEventListener("scroll", syncAppViewport);
-}
-if (typeof MOBILE_LAYOUT_QUERY.addEventListener === "function") {
-  MOBILE_LAYOUT_QUERY.addEventListener("change", syncAppViewport);
-  MOBILE_LAYOUT_QUERY.addEventListener("change", syncPaneViewport);
-}
-window.addEventListener("orientationchange", () => {
-  resetAppViewportScroll();
-  setTimeout(resetAppViewportScroll, 300);
-});
-document.addEventListener("focusout", () => {
-  // The software keyboard is dismissing; some mobile browsers leave the
-  // window scrolled. Reset the scroll offset and re-sync once the keyboard
-  // animation settles.
-  setTimeout(resetAppViewportScroll, 0);
-  setTimeout(resetAppViewportScroll, 300);
-});
-syncAppViewport();
-
 function setMobileSidebar(open) {
   state.mobile.sidebarOpen = Boolean(open);
   document.body.classList.toggle("mobile-sidebar-open", state.mobile.sidebarOpen);
-  $("mobileMenuButton")?.setAttribute("aria-expanded", String(state.mobile.sidebarOpen));
+  renderAppShell();
 }
 
 function setMobileView(view) {
   state.mobile.view = view === "chat" ? "chat" : "details";
   const chatActive = state.mobile.view === "chat";
   document.body.classList.toggle("mobile-chat-active", chatActive);
-  $("mobileDetailsButton")?.setAttribute("aria-selected", String(!chatActive));
-  $("mobileChatButton")?.setAttribute("aria-selected", String(chatActive));
+  renderAppShell();
 }
 
 function loadMobileImmersive() {
@@ -7472,44 +7526,13 @@ function loadMobileImmersive() {
 function setMobileImmersive(immersive) {
   state.mobile.immersive = Boolean(immersive);
   document.body.classList.toggle("chat-immersive", state.mobile.immersive);
-  const button = $("mobileImmersiveButton");
-  if (button) {
-    button.setAttribute("aria-pressed", String(state.mobile.immersive));
-    button.innerHTML = `<i data-lucide="${state.mobile.immersive ? "minimize-2" : "maximize-2"}"></i>`;
-    refreshIcons();
-  }
   try {
     localStorage.setItem(MOBILE_IMMERSIVE_KEY, state.mobile.immersive ? "1" : "0");
   } catch (_) {
     // Persisting the immersive preference is best-effort.
   }
+  renderAppShell();
 }
-
-$("workspaceSwitcher").onclick = (event) => {
-  event.stopPropagation();
-  state.workspaceMenuOpen = !state.workspaceMenuOpen;
-  renderWorkspaceSelect();
-};
-
-$("workspaceMenu").addEventListener("click", (event) => {
-  if (event.target.closest("#workspaceMenuAdd")) {
-    state.workspaceMenuOpen = false;
-    renderWorkspaceSelect();
-    openSettings("workspace").catch((err) => toast(err.message));
-    return;
-  }
-  const row = event.target.closest("[data-workspace-id]");
-  if (row) {
-    switchWorkspace(row.dataset.workspaceId).catch((err) => toast(err.message));
-  }
-});
-
-document.addEventListener("mousedown", (event) => {
-  if (!state.workspaceMenuOpen) return;
-  if (event.target.closest(".workspace-select-row")) return;
-  state.workspaceMenuOpen = false;
-  renderWorkspaceSelect();
-});
 
 // Session log renders are deferred while the user selects text there. Flush
 // the pending render once the selection collapses so new events appear.
@@ -7522,34 +7545,11 @@ document.addEventListener("selectionchange", () => {
   refreshIcons();
 });
 
-$("newProjectButton").onclick = () => showProjectForm();
-
-$("systemSettingsButton").onclick = () => {
-  setMobileSidebar(false);
-  openSettings().catch((err) => toast(err.message));
-};
-
-$("mobileMenuButton").onclick = () => setMobileSidebar(!state.mobile.sidebarOpen);
-$("mobileSidebarBackdrop").onclick = () => setMobileSidebar(false);
-$("mobileDetailsButton").onclick = () => setMobileView("details");
-$("mobileChatButton").onclick = () => setMobileView("chat");
-$("mobileImmersiveButton").onclick = () => setMobileImmersive(!state.mobile.immersive);
-setMobileImmersive(loadMobileImmersive());
-
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && state.mobile.sidebarOpen) {
-    setMobileSidebar(false);
-  } else if (event.key === "Escape" && state.diff) {
+  if (event.key === "Escape" && state.diff) {
     closeDiff();
   } else if (event.key === "Escape" && state.preview) {
     closePreview();
-  } else if (event.key === "Escape" && state.sessionMenu) {
-    state.sessionMenu = null;
-    renderSessions();
-    refreshIcons();
-  } else if (event.key === "Escape" && state.workspaceMenuOpen) {
-    state.workspaceMenuOpen = false;
-    renderWorkspaceSelect();
   } else if (event.key === "Escape" && (state.agent.optionsOpen || state.agent.agentChooserOpen || state.agent.historyOpen)) {
     state.agent.optionsOpen = false;
     state.agent.agentChooserOpen = false;
@@ -7589,10 +7589,28 @@ document.addEventListener("click", (event) => {
   refreshIcons();
 });
 
-initPaneResize();
-installNotificationCrossTabListeners();
-state.user.name = readStoredUserName();
-installUserSettingsCrossTabListener();
+let legacyAppBooted = false;
+
+function bootLegacyApp() {
+  if (legacyAppBooted) {
+    renderMigratedSvelteIslands();
+    return;
+  }
+  legacyAppBooted = true;
+  initPaneResize();
+  installNotificationCrossTabListeners();
+  state.user.name = readStoredUserName();
+  installUserSettingsCrossTabListener();
+  state.mobile.immersive = loadMobileImmersive();
+  renderAppShell();
+  load().catch((err) => {
+    state.navigationLoading = false;
+    state.navigationError = err.message;
+    toast(err.message);
+    renderAll();
+  });
+  startAutoRefresh();
+}
 
 function flushAgentDraftOnPageLeave() {
   flushAgentDraft();
@@ -7604,9 +7622,10 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden || document.visibilityState === "hidden") flushAgentDraftOnPageLeave();
 });
 
-window.addEventListener("popstate", async () => {
-  const route = parseRoute();
+async function handleHistoryNavigation(pathname) {
+  const route = parseRoute(pathname);
   if (!workspaceExists(route.workspaceId)) {
+    syncURL({ replace: true });
     return;
   }
   const workspaceChanged = state.activeWorkspaceId !== route.workspaceId;
@@ -7631,6 +7650,9 @@ window.addEventListener("popstate", async () => {
   state.diff = null;
   state.sessionMenu = null;
   if (workspaceChanged) {
+    state.tree = null;
+    state.navigationLoading = true;
+    state.navigationError = "";
     resetWorkspaceAgentsDraft();
     state.workspaceAgentsSaving = false;
     closeCreateDialog();
@@ -7646,8 +7668,9 @@ window.addEventListener("popstate", async () => {
       state.selectedId = state.lastResourceId;
     }
     await loadTree({ updateURL: false });
+    if (isCurrentWorkspaceView(route.workspaceId, navigationVersion)) syncURL({ replace: true });
   } else {
-    ensureValidSelection();
+    const selectionCorrected = ensureValidSelection();
     if (state.selectedId === "workspace") {
       await loadWorkspaceAgents();
     } else {
@@ -7659,12 +7682,6 @@ window.addEventListener("popstate", async () => {
       await reloadAgentRunsForSelection();
     }
     renderAll();
+    if (selectionCorrected) syncURL({ replace: true });
   }
-});
-
-load().catch((err) => {
-  toast(err.message);
-  renderAll();
-});
-
-startAutoRefresh();
+}

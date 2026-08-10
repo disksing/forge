@@ -36,6 +36,34 @@ func TestMigratedSvelteRegionsHaveExclusiveDOMOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(data)
+	for _, renderer := range []string{"function renderAppShell()", "function renderTree()", "function renderSessions()", "function renderWorkspaceSelect()"} {
+		start := strings.Index(source, renderer)
+		if start < 0 {
+			t.Fatalf("could not find migrated shell renderer %q", renderer)
+		}
+		end := strings.Index(source[start:], "\n}")
+		if end < 0 {
+			t.Fatalf("could not isolate migrated shell renderer %q", renderer)
+		}
+		body := source[start : start+end]
+		if strings.Contains(body, ".innerHTML") || strings.Contains(body, "addEventListener") {
+			t.Fatalf("legacy shell renderer %q still owns DOM or listeners", renderer)
+		}
+	}
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	for _, want := range []string{"workspaceSwitcher", "projectTree", "sessionList", "mobileMenuButton", "sidebarResize", "detailsPanel", "agentPanel"} {
+		if !strings.Contains(appShell, want) {
+			t.Fatalf("Svelte App Shell boundary is missing %q", want)
+		}
+	}
+	if strings.Contains(source, `window.addEventListener("popstate"`) || strings.Contains(source, `window.history[method]`) {
+		t.Fatal("legacy navigation still owns browser History API listeners or mutations")
+	}
+	for _, want := range []string{`window.addEventListener("popstate", popstate)`, `window.history[route.replace ? "replaceState" : "pushState"]`, `onHistoryNavigation`} {
+		if !strings.Contains(appShell, want) {
+			t.Fatalf("Svelte App Shell History ownership is missing %q", want)
+		}
+	}
 	regions := []struct {
 		start string
 		end   string
@@ -159,13 +187,15 @@ func TestSvelteIslandAssetsAreLinkedEmbeddedAndUseHistoryFallback(t *testing.T) 
 		t.Fatal(err)
 	}
 	index := string(indexData)
-	for _, want := range []string{
-		`id="brandVersionIsland"`,
-		`data-version="v0.1.0"`,
-		`<script type="module" src="/svelte/forge-svelte.js"></script>`,
-	} {
+	for _, want := range []string{`id="app"`, `<script type="module" src="/svelte/forge-svelte.js"></script>`} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("Svelte island bootstrap is missing %q", want)
+		}
+	}
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	for _, want := range []string{`id="brandVersionIsland"`, `data-version={model.version}`, `id="detailsPanel"`, `id="ttyComposer"`} {
+		if !strings.Contains(appShell, want) {
+			t.Fatalf("persistent Svelte app shell is missing %q", want)
 		}
 	}
 
@@ -324,7 +354,7 @@ func TestWorkspaceIconFrontendUsesOneFallbackForSwitcherAndFavicon(t *testing.T)
 	for _, want := range []string{
 		`const DEFAULT_WORKSPACE_ICON = { id: "", label: "Forge default", src: "/favicon.svg", type: "image/svg+xml" };`,
 		`return WORKSPACE_ICON_BY_ID.get(String(workspace?.icon || "").trim()) || DEFAULT_WORKSPACE_ICON;`,
-		`avatar.innerHTML = workspaceIconMarkup(active);`,
+		`iconSrc: workspaceIconOption(workspace).src,`,
 		`updateWorkspaceFavicon(active);`,
 		`<span class="workspace-avatar">${workspaceIconMarkup(workspace)}</span>`,
 		`data-workspace-icon="${escapeHTML(option.id)}"`,
@@ -332,6 +362,12 @@ func TestWorkspaceIconFrontendUsesOneFallbackForSwitcherAndFavicon(t *testing.T)
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("workspace icon frontend is missing %q", want)
+		}
+	}
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	for _, want := range []string{`src={activeWorkspace?.iconSrc || "/favicon.svg"}`, `src={workspace.iconSrc}`} {
+		if !strings.Contains(appShell, want) {
+			t.Fatalf("Svelte workspace switcher is missing %q", want)
 		}
 	}
 }
@@ -431,7 +467,7 @@ func TestWorkspaceNavigationDefaultsToWorkspaceDetails(t *testing.T) {
   state.selectedId = "workspace";`,
 		`if (ensureValidSelection()) {
       syncURL({ replace: true });`,
-		`ensureValidSelection();
+		`const selectionCorrected = ensureValidSelection();
     if (state.selectedId === "workspace") {
       await loadWorkspaceAgents();`,
 	} {
@@ -1323,7 +1359,7 @@ func TestSessionNavigationTargetKeepsRunAndControlResourcesDistinct(t *testing.T
 		`function sessionNavigableResourceId(resourceId)`,
 		`function sessionNavigationTarget(session)`,
 		`navigation.navigationResourceId`,
-		`navigation.selectedResourceIds.includes(selectedId)`,
+		`navigation.selectedResourceIds.includes(state.selectedId)`,
 	} {
 		if !strings.Contains(app, marker) {
 			t.Fatalf("session navigation target behavior is missing %q", marker)
@@ -1494,6 +1530,7 @@ const context = {
     selectedId: "workspace",
     sessionMenu: null,
     tree: { projects: [], sessions: [] },
+    routeProjection: { path: "", revision: 0, replace: true },
   },
   window: {
     location: { pathname: "/w/workspace-one" },
@@ -1514,16 +1551,17 @@ vm.runInContext([
   'function clearUnreadForResource(resourceId) { cleared.push(resourceId); }',
   'function selectResource(resourceId) { selected.push(resourceId); state.selectedId = resourceId; syncURL(); return Promise.resolve(); }',
   'function renderSessions() { renders++; }',
+  'function renderAppShell() {}',
   'function refreshIcons() {}',
   'function toast(message) { throw new Error(message); }',
   'function assert(condition, message) { if (!condition) throw new Error(message); }',
-  'function reset() { cleared.length = 0; selected.length = 0; renders = 0; state.selectedId = "workspace"; state.sessionMenu = null; window.location.pathname = "/w/workspace-one"; }',
+  'function reset() { cleared.length = 0; selected.length = 0; renders = 0; state.selectedId = "workspace"; state.sessionMenu = null; state.routeProjection = { path: "", revision: 0, replace: true }; window.location.pathname = "/w/workspace-one"; }',
   'const mismatched = { id: "internal-mismatched", source: "internal", resourceId: "project12.task9", controls: [{ resourceId: "project9.task7" }] };',
   'handleSessionClick(mismatched);',
   'assert(JSON.stringify(selected) === JSON.stringify(["project12.task9"]), "internal click opened an attached control instead of the Run resource");',
   'assert(JSON.stringify(cleared) === JSON.stringify(["project12.task9"]), "internal click cleared the attached control notification");',
   'assert(state.selectedId === "project12.task9", "internal click selected the wrong resource");',
-  'assert(window.location.pathname === "/w/workspace-one/r/project12.task9", "internal click wrote the wrong URL");',
+  'assert(state.routeProjection.path === "/w/workspace-one/r/project12.task9", "internal click projected the wrong URL");',
   'assert(state.sessionMenu === null, "internal Run click should not open an attached-lock menu");',
   'reset();',
   'handleSessionClick({ id: "internal-many", source: "internal", resourceId: "project12.task9", controls: [{ resourceId: "project12.task10" }, { resourceId: "project12.task11" }] });',
@@ -2046,16 +2084,20 @@ func TestSessionListUsesCanonicalSessionStatusIcons(t *testing.T) {
 		`const status = isInternal`,
 		`sessionStatusPresentation(session)`,
 		`taskStatusState("session-external", "session-status-external", "message-square"`,
-		`operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })`,
+		`status: appShellStatusModel(presentation)`,
 		`const taskResource = sessionTaskResource(session);`,
 		`const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();`,
 		`isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status]`,
-		`row.title = accessibleStatusLabel;`,
-		`bindTaskStatusTooltip(row, accessibleStatusLabel);`,
-		`row.setAttribute("aria-label"`,
+		`statusLabel,`,
 	} {
 		if !strings.Contains(app, want) {
 			t.Fatalf("session status icon rendering is missing %q", want)
+		}
+	}
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	for _, want := range []string{`session-status-icon`, `title={session.statusLabel}`, "aria-label={`"} {
+		if !strings.Contains(appShell, want) {
+			t.Fatalf("Svelte session status rendering is missing %q", want)
 		}
 	}
 	if strings.Contains(app, `icon(isInternal ? "bot" : "message-square")`) {
@@ -3452,11 +3494,7 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 }
 
 func TestMobileLayoutProvidesNavigationAndViewSwitching(t *testing.T) {
-	indexData, err := staticFiles.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := string(indexData)
+	index := frontendSource(t, "src", "islands", "AppShell.svelte")
 	for _, want := range []string{`id="mobileMenuButton"`, `id="mobileSidebarBackdrop"`, `id="mobileDetailsButton"`, `id="mobileChatButton"`, `id="agentPanel"`} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("mobile layout markup is missing %q", want)
@@ -3495,16 +3533,12 @@ func TestMobileAppShellTracksVisualViewport(t *testing.T) {
 		t.Fatal("viewport meta should resize the layout viewport when the software keyboard opens")
 	}
 
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	app := string(appData)
+	app := frontendSource(t, "src", "islands", "AppShell.svelte")
 	for _, want := range []string{
-		`const MOBILE_LAYOUT_QUERY = window.matchMedia("(max-width: 980px)");`,
-		`function syncAppViewport()`,
-		`window.visualViewport.addEventListener("resize", syncAppViewport)`,
-		`window.visualViewport.addEventListener("scroll", syncAppViewport)`,
+		`window.matchMedia("(max-width: 980px)")`,
+		`const syncViewport = () =>`,
+		`viewport?.addEventListener("resize", syncViewport)`,
+		`viewport?.addEventListener("scroll", syncViewport)`,
 		`window.scrollTo(0, 0)`,
 		`document.addEventListener("focusout"`,
 	} {
@@ -3748,12 +3782,9 @@ func TestSessionRowReservesUnreadAndDragColumnsForEveryStatusLayout(t *testing.T
 	app := string(appData)
 	for _, want := range []string{
 		`const unread = hasUnreadNotificationForSession(session.id);`,
-		`<span class="session-unread-badge" aria-label="Unread turn completion">New</span>`,
-		`<div class="session-title">`,
-		`<span class="drag-handle" draggable="true" title="Drag to reorder">`,
-		`bindListDrag(row, { kind: "session", id: session.id, projectId: "" });`,
 		`const navigation = sessionNavigationTarget(session);`,
-		`const clickable = Boolean(navigation.navigationResourceId || navigation.menu);`,
+		`clickable: Boolean(navigation.navigationResourceId || navigation.menu),`,
+		`navigationResourceId: navigation.navigationResourceId,`,
 		`clearUnreadForResource(navigation.navigationResourceId);`,
 	} {
 		if !strings.Contains(app, want) {
@@ -3761,22 +3792,23 @@ func TestSessionRowReservesUnreadAndDragColumnsForEveryStatusLayout(t *testing.T
 		}
 	}
 
-	renderStart := strings.Index(app, "function renderSessions()")
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	renderStart := strings.Index(appShell, "{#each model.sessions as session (session.id)}")
 	if renderStart < 0 {
-		t.Fatal("could not find renderSessions function")
+		t.Fatal("could not find Svelte Session list")
 	}
-	renderEnd := strings.Index(app[renderStart:], "function sessionDisplayTitle(session, resourceId)")
+	renderEnd := strings.Index(appShell[renderStart:], `<div class="sidebar-footer">`)
 	if renderEnd < 0 {
-		t.Fatal("could not isolate renderSessions function")
+		t.Fatal("could not isolate Svelte Session list")
 	}
 	renderEnd += renderStart
-	renderSessions := app[renderStart:renderEnd]
+	renderSessions := appShell[renderStart:renderEnd]
 
-	statusMarker := `operationalStatusMarkup(statusPresentation, { slotClassName: "session-status-icon" })`
+	statusMarker := `session-status-icon`
 	titleMarker := `<div class="session-title">`
-	badgeMarker := `<span class="session-badge`
-	unreadMarker := `<span class="session-unread-badge" aria-label="Unread turn completion">New</span>`
-	dragMarker := `<span class="drag-handle" draggable="true" title="Drag to reorder">`
+	badgeMarker := `session-badge ${session.source`
+	unreadMarker := `session-unread-badge`
+	dragMarker := `ondragstart={(event) => beginDrag(event, { kind: "session", id: session.id`
 	markers := []string{statusMarker, titleMarker, badgeMarker, unreadMarker, dragMarker}
 	previous := -1
 	for _, marker := range markers {

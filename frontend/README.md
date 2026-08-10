@@ -4,13 +4,15 @@ This directory contains Svelte 5 islands that coexist with the legacy page durin
 
 ## Ownership and lifecycle
 
-- Legacy markup owns each island root; Svelte exclusively owns the root's children after `replaceIsland` clears the fallback.
+- The static page owns only the empty `#app` mount root. The persistent Svelte App Shell owns its children and exposes stable roots for the nested Detail, Session switcher, Timeline, Composer, and modal islands.
 - Legacy render functions must not write inside an active island, and Svelte components must not query or mutate legacy-owned DOM.
 - Every island mount has one registered cleanup. Replacing an island first awaits its previous cleanup; `pagehide` unmounts all islands.
 - Timers, DOM listeners, streams, and requests created by a component must be disposed from the component teardown path.
 - Shared state crosses the boundary through typed properties, callbacks, or the API client, never by scraping DOM.
 
-The migrated islands now own the create-project/create-task flow (including template preview), settings, Self-Driving configuration, upload dialog, chat composer, and the complete Detail panel. Detail delegates documents, logs, Artifact/Wiki browsers, file preview, Diff, and the Workspace AGENTS.md editor to persistent child boundaries. Their roots expose `data-svelte-owned` for ownership diagnostics. Legacy JavaScript remains responsible for global navigation and the resource query projection, then publishes typed models and callbacks through the bridge; it must not render or read controls inside those roots. Detail-owned preview and Diff requests use the shared API client directly and are aborted when their Workspace, Resource, path, or mode identity changes.
+The migrated islands now own the Workspace switcher, Project/Task tree, global Session list, drag state, responsive three-column shell, History API projection, create-project/create-task flow (including template preview), settings, Self-Driving configuration, upload dialog, chat composer, and the complete Detail panel. Detail delegates documents, logs, Artifact/Wiki browsers, file preview, Diff, and the Workspace AGENTS.md editor to persistent child boundaries. Their roots expose `data-svelte-owned` for ownership diagnostics. Legacy JavaScript publishes typed shell models and business callbacks through the bridge; it no longer mutates the shell DOM or binds its History, resize, drag, mobile, tree, Session-list, or Workspace-switcher listeners. Detail-owned preview and Diff requests use the shared API client directly and are aborted when their Workspace, Resource, path, or mode identity changes.
+
+The shell model uses one Workspace + Resource selection and the existing canonical Session navigation target for tree highlight, Session highlight, display title, unread clearing, and URL projection. Project, Task, and Session rows are keyed by stable IDs. Background refreshes publish new projections without replacing unchanged DOM nodes, and a drag transaction suppresses refresh until it either persists or rolls back.
 
 Form state is keyed by an explicit identity rather than by refresh frequency. Publishing a new model for the same identity preserves user edits, focus, selection, scroll position, uploads, and pending sends. A changed identity resets the local state and invalidates or aborts work from the previous context.
 

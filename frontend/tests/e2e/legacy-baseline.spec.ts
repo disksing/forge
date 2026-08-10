@@ -12,6 +12,7 @@ interface Harness {
   streamRequests: string[];
   treeRequests: number;
   agentsBodies: Array<Record<string, unknown>>;
+  uiStateBodies: Array<Record<string, unknown>>;
 }
 
 const templates = [
@@ -115,7 +116,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [] };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -154,7 +155,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
       });
     }
     if (path === "/api/workspaces/ws-test/ui-state") {
-      if (method === "PUT") return json(route, {});
+      if (method === "PUT") {
+        harness.uiStateBodies.push(request.postDataJSON());
+        return json(route, {});
+      }
       return json(route, {
         version: 1,
         expandedProjects: ["project1"],
@@ -281,6 +285,73 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
     return json(route, { error: `Unhandled mock request: ${method} ${path}` }, 500);
   });
   return harness;
+}
+
+interface ShellHarness {
+  uiStateBodies: Array<{ workspaceId: string; body: Record<string, unknown> }>;
+  failNextUIStateSave(): void;
+}
+
+async function installShellMockApi(page: Page): Promise<ShellHarness> {
+  let failNextSave = false;
+  const uiStateBodies: ShellHarness["uiStateBodies"] = [];
+  const uiStates: Record<string, Record<string, unknown>> = {
+    "ws-a": { version: 1, expandedProjects: ["project1"], lastResourceId: "project1.task1", projectOrder: [], taskOrder: {}, sessionOrder: [] },
+    "ws-b": { version: 1, expandedProjects: ["project2"], lastResourceId: "project2.task1", projectOrder: [], taskOrder: {}, sessionOrder: [] },
+  };
+  const trees = {
+    "ws-a": { root: "/tmp/ws-a", projects: [project], sessions: [], wiki: { exists: false, entries: [] } },
+    "ws-b": {
+      root: "/tmp/ws-b",
+      projects: [{ id: "project2", type: "project", title: "Second workspace project", path: "project2", archived: false, children: [{ id: "project2.task1", type: "task", title: "Second workspace task", path: "project2/task1", archived: false }] }],
+      sessions: [], wiki: { exists: false, entries: [] },
+    },
+  };
+  await page.route("**/api/**", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const path = url.pathname;
+    const method = request.method();
+    if (path === "/api/workspaces") {
+      return json(route, { version: 3, activeId: "ws-a", workspaces: [{ id: "ws-a", name: "Workspace A", path: "/tmp/ws-a" }, { id: "ws-b", name: "Workspace B", path: "/tmp/ws-b" }], agentProfiles: [] });
+    }
+    if (path === "/api/settings/agenthub") {
+      return json(route, { config: { agentProfiles: [] }, connected: false, compatible: false, catalog: { providers: [], agents: [], probes: [] } });
+    }
+    const uiStateMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/ui-state$/);
+    if (uiStateMatch) {
+      const workspaceId = uiStateMatch[1];
+      if (method === "PUT") {
+        const body = request.postDataJSON() as Record<string, unknown>;
+        uiStateBodies.push({ workspaceId, body });
+        if (failNextSave) {
+          failNextSave = false;
+          return json(route, { error: "ui state save failed" }, 500);
+        }
+        uiStates[workspaceId] = body;
+        return json(route, body);
+      }
+      return json(route, uiStates[workspaceId]);
+    }
+    const treeMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/tree$/);
+    if (treeMatch) return json(route, trees[treeMatch[1] as keyof typeof trees]);
+    const detailMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)$/);
+    if (detailMatch) {
+      const id = decodeURIComponent(detailMatch[2]);
+      const all = Object.values(trees).flatMap((tree) => tree.projects.flatMap((item) => [item, ...(item.children || [])]));
+      const resource = all.find((item) => item.id === id);
+      if (!resource) return json(route, { error: "not found" }, 404);
+      return json(route, {
+        ...resource,
+        files: [{ name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}`, contentHash: `${id}-v1` }],
+        logs: [], logPage: { hasMore: false }, artifacts: [], repos: [], templates: [],
+      });
+    }
+    if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+    if (/^\/api\/workspaces\/ws-[ab]\/agent\/runs$/.test(path)) return json(route, { runs: [] });
+    return json(route, { error: `Unhandled shell request: ${method} ${path}` }, 500);
+  });
+  return { uiStateBodies, failNextUIStateSave: () => { failNextSave = true; } };
 }
 
 test("navigates resources and creates a task without changing the legacy flow", async ({ page }) => {
@@ -507,4 +578,75 @@ test("preserves composer draft through upload and supports Settings and Self-Dri
   await expect.poll(() => harness.selfDrivingBodies.length).toBe(1);
   expect(harness.selfDrivingBodies[0]).toMatchObject({ resourceId: "project1.task1", enabled: true, agentName: "test-agent", prompt: "Continue until verified" });
   await expect(input).toHaveValue("Keep this draft\nartifacts/upload/notes.txt");
+});
+
+test("keeps canonical navigation synchronized across history, workspace restore, and reorder rollback", async ({ page }) => {
+  const harness = await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+  const app = page.locator("#app");
+  const detailPanel = page.locator("#detailsPanel");
+  await expect(app).toHaveAttribute("data-svelte-owned", "app-shell");
+  await expect(detailPanel).toHaveAttribute("data-svelte-owned", "detail-panel");
+  await detailPanel.evaluate((node) => { node.dataset.identityProbe = "persistent-detail"; });
+
+  await page.getByRole("button", { name: /Follow-up task/ }).click();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
+  await expect(page.locator('#projectTree .tree-item.active')).toContainText("Follow-up task");
+  await page.goBack();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task1$/);
+  await expect(page.locator('#projectTree .tree-item.active')).toContainText("Infrastructure task");
+  await page.goForward();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
+  await expect(detailPanel).toHaveAttribute("data-identity-probe", "persistent-detail");
+
+  await page.locator("#workspaceSwitcher").click();
+  await page.getByRole("option", { name: /Workspace B/ }).click();
+  await expect(page).toHaveURL(/\/w\/ws-b\/r\/project2\.task1$/);
+  await expect(page.getByRole("heading", { name: "Second workspace task", exact: true })).toBeVisible();
+  await page.locator("#workspaceSwitcher").click();
+  await page.getByRole("option", { name: /Workspace A/ }).click();
+  await expect(page).toHaveURL(/\/w\/ws-a\/r\/project1\.task2$/);
+  await expect(page.locator('#projectTree .tree-item.active')).toContainText("Follow-up task");
+
+  const tasks = page.locator("#projectTree .task-group .tree-item");
+  await expect(tasks).toHaveCount(2);
+  const before = await tasks.locator(".name-text").allTextContents();
+  harness.failNextUIStateSave();
+  await page.evaluate(() => {
+    const rows = [...document.querySelectorAll<HTMLElement>("#projectTree .task-group .tree-item")];
+    const handle = rows[0]?.querySelector<HTMLElement>(".drag-handle");
+    if (!handle || !rows[1]) throw new Error("task drag targets missing");
+    const transfer = new DataTransfer();
+    handle.dispatchEvent(new DragEvent("dragstart", { bubbles: true, cancelable: true, dataTransfer: transfer }));
+    const rect = rows[1].getBoundingClientRect();
+    rows[1].dispatchEvent(new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: transfer, clientY: rect.bottom - 1 }));
+    rows[1].dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: transfer, clientY: rect.bottom - 1 }));
+  });
+  await expect(page.locator("#toast")).toContainText("ui state save failed");
+  await expect.poll(() => tasks.locator(".name-text").allTextContents()).toEqual(before);
+  expect(harness.uiStateBodies.some((entry) => entry.workspaceId === "ws-a" && Object.keys((entry.body.taskOrder as Record<string, unknown>) || {}).length > 0)).toBe(true);
+});
+
+test("keeps mobile navigation, view selection, and immersive preference in the Svelte app shell", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#mobileMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+  await page.locator("#mobileSidebarBackdrop").click({ position: { x: 380, y: 400 } });
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+  await page.locator("#mobileChatButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
+  await expect(page.locator("#agentPanel")).toBeVisible();
+  await page.locator("#mobileImmersiveButton").click();
+  await expect(page.locator("body")).toHaveClass(/chat-immersive/);
+  await expect(page.locator("#mobileImmersiveButton")).toHaveAttribute("aria-pressed", "true");
+
+  await page.reload();
+  await expect(page.locator("body")).toHaveClass(/chat-immersive/);
+  await expect(page.locator("#mobileImmersiveButton")).toHaveAttribute("aria-pressed", "true");
+  await page.locator("#mobileDetailsButton").click();
+  await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
+  await expect(page.locator("#detailsPanel")).toBeVisible();
 });

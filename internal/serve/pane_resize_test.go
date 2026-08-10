@@ -56,11 +56,8 @@ func TestPaneResizeUsesIndependentSidebarAndChatWidths(t *testing.T) {
 	}
 	assertBalancedCSSDelimiters(t, styles)
 
-	indexData, err := staticFiles.ReadFile("static/index.html")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(indexData), `aria-label="Resize chat panel"`) {
+	appShell := frontendSource(t, "src", "islands", "AppShell.svelte")
+	if !strings.Contains(appShell, `aria-label="Resize chat panel"`) {
 		t.Fatal("the right separator should describe the chat panel it controls")
 	}
 

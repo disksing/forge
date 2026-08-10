@@ -17,8 +17,8 @@ export async function unmountIsland(name: string): Promise<void> {
 }
 
 export async function unmountAllIslands(): Promise<void> {
-  const names = [...mounted.keys()];
-  await Promise.all(names.map((name) => unmountIsland(name)));
+  const names = [...mounted.keys()].reverse();
+  for (const name of names) await unmountIsland(name);
 }
 
 export function mountedIslandCount(): number {
