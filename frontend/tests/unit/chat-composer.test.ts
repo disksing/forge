@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import ChatComposer from "../../src/islands/ChatComposer.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { ComposerModel } from "../../src/islands/models";
+import ChatComposer from "../../src/components/ChatComposer.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { ComposerModel } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -35,7 +35,7 @@ describe("ChatComposer", () => {
   it("does not let a late accepted send clear a different session draft", async () => {
     const result = deferred<{ accepted: boolean; clear: boolean }>();
     const first = model({ onSend: vi.fn(() => result.promise) });
-    const channel = createIslandChannel(first);
+    const channel = createModelChannel(first);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ChatComposer, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -58,7 +58,7 @@ describe("ChatComposer", () => {
 
   it("keeps failed text and offers an explicit retry", async () => {
     const onSend = vi.fn().mockRejectedValueOnce(new Error("temporary failure")).mockResolvedValueOnce({ accepted: true, clear: true });
-    const channel = createIslandChannel(model({ onSend }));
+    const channel = createModelChannel(model({ onSend }));
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ChatComposer, { target, props: { channel } });
     cleanups.push(() => unmount(component));

@@ -14,7 +14,7 @@ export default defineConfig({
       name: "forge-svelte-development-entry",
       enforce: "pre",
       async resolveId(id, importer) {
-        if (id === "/svelte/forge-svelte.js") {
+        if (id === "/assets/forge-app.js") {
           return resolve(root, "src/entry.ts");
         }
         if ((id === "svelte" || id.startsWith("svelte/")) && !importer?.includes("/node_modules/svelte/")) {
@@ -27,16 +27,17 @@ export default defineConfig({
   ],
   build: {
     emptyOutDir: true,
-    outDir: resolve(root, "../web/static/svelte"),
+    outDir: resolve(root, "../web/static/assets"),
     sourcemap: false,
     lib: {
       entry: resolve(root, "src/entry.ts"),
       formats: ["es"],
-      fileName: () => "forge-svelte.js",
+      fileName: () => "forge-app.js",
+      cssFileName: "forge-app",
     },
     rollupOptions: {
       output: {
-        assetFileNames: "forge-svelte.[ext]",
+        assetFileNames: "forge-app.[ext]",
       },
     },
   },

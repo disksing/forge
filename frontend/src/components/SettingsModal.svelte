@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ProfileDraft, SettingsDraft, SettingsModel } from "./models";
 
-  let { channel }: { channel: IslandChannel<SettingsModel> } = $props();
+  let { channel }: { channel: ModelChannel<SettingsModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let identity = $state("");

@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
 
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { CreateDialogModel, CreateDraft, TaskTemplate, TemplateField } from "./models";
 
-  let { channel }: { channel: IslandChannel<CreateDialogModel> } = $props();
+  let { channel }: { channel: ModelChannel<CreateDialogModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   // svelte-ignore state_referenced_locally

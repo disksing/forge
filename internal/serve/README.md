@@ -94,7 +94,10 @@ FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
 ```sh
 go test ./...
 go vet ./...
-node --check web/static/app.js
+npm --prefix frontend run check
+npm --prefix frontend test
+npm --prefix frontend run build
+node --check web/static/assets/forge-app.js
 node --check web/static/vendor/agenthub-event-timeline/event-timeline.iife.js
 git diff --check
 ```

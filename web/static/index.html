@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Forge</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/assets/forge-app.css" />
     <link rel="stylesheet" href="/vendor/diff2html/diff2html.min.css" />
   </head>
   <body>
     <div id="app" class="app-shell"></div>
 
-    <div id="toast" class="toast" hidden></div>
+    <div id="toastRoot"></div>
     <div id="uploadDialogRoot"></div>
     <div id="createDialogRoot"></div>
     <div id="selfDrivingDialogRoot"></div>
@@ -21,7 +21,6 @@
     <script src="/vendor/dompurify/purify.min.js"></script>
     <script src="/vendor/marked/marked.min.js"></script>
     <script src="/vendor/agenthub-event-timeline/event-timeline.iife.js"></script>
-    <script src="/app.js"></script>
-    <script type="module" src="/svelte/forge-svelte.js"></script>
+    <script type="module" src="/assets/forge-app.js"></script>
   </body>
 </html>

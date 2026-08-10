@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../../src/api/client";
-import { ChatSessionController, mergeCanonicalEvents } from "../../src/islands/chat-state";
-import type { AgentEvent, AgentRun, ChatContextSnapshot } from "../../src/islands/models";
+import { ChatSessionController, mergeCanonicalEvents } from "../../src/components/chat-state";
+import type { AgentEvent, AgentRun, ChatContextSnapshot } from "../../src/components/models";
 
 const controllers: ChatSessionController[] = [];
 afterEach(() => {

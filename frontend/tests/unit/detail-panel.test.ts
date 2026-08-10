@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import DetailPanel from "../../src/islands/DetailPanel.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { DetailPanelModel } from "../../src/islands/models";
+import DetailPanel from "../../src/components/DetailPanel.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { DetailPanelModel } from "../../src/components/models";
 
 const mounted: Array<ReturnType<typeof mount>> = [];
 
@@ -36,7 +36,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
 }
 
 function mountModel(model: DetailPanelModel) {
-  const channel = createIslandChannel(model);
+  const channel = createModelChannel(model);
   const target = document.createElement("section");
   target.id = "detailsPanel";
   document.body.append(target);

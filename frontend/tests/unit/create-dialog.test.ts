@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import CreateDialog from "../../src/islands/CreateDialog.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { CreateDialogModel } from "../../src/islands/models";
+import CreateDialog from "../../src/components/CreateDialog.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { CreateDialogModel } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -31,7 +31,7 @@ function model(overrides: Partial<CreateDialogModel> = {}): CreateDialogModel {
 describe("CreateDialog", () => {
   it("keeps the same input node, focus, selection, and scroll across background publications", async () => {
     const first = model();
-    const channel = createIslandChannel(first);
+    const channel = createModelChannel(first);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(CreateDialog, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -58,7 +58,7 @@ describe("CreateDialog", () => {
 
   it("resets local state only when the dialog identity changes", async () => {
     const first = model();
-    const channel = createIslandChannel(first);
+    const channel = createModelChannel(first);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(CreateDialog, { target, props: { channel } });
     cleanups.push(() => unmount(component));

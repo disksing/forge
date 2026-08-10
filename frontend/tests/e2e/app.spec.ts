@@ -354,11 +354,11 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
   return { uiStateBodies, failNextUIStateSave: () => { failNextSave = true; } };
 }
 
-test("navigates resources and creates a task without changing the legacy flow", async ({ page }) => {
+test("navigates resources and creates a task through the canonical application flow", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");
 
-  await expect(page.locator('[data-svelte-owned="brand-version"]')).toHaveText("v0.1.0");
+  await expect(page.locator(".brand-copy span")).toHaveText("v0.1.0");
   await expect(page.getByRole("heading", { name: "Migration project", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Infrastructure task/ }).click();
   await expect(page).toHaveURL(/project1\.task1/);
@@ -382,7 +382,7 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
   const panel = page.locator("#detailsPanel");
-  await expect(panel).toHaveAttribute("data-svelte-owned", "detail-panel");
+  await expect(panel).toHaveAttribute("data-component-owner", "detail-panel");
   await expect(panel.getByRole("tab", { name: "Task" })).toHaveAttribute("aria-selected", "true");
   const documentView = panel.locator('[data-doc-file="task.md"] .markdown-view');
   await documentView.evaluate((node) => {
@@ -585,8 +585,8 @@ test("keeps canonical navigation synchronized across history, workspace restore,
   await page.goto("/w/ws-a/r/project1.task1");
   const app = page.locator("#app");
   const detailPanel = page.locator("#detailsPanel");
-  await expect(app).toHaveAttribute("data-svelte-owned", "app-shell");
-  await expect(detailPanel).toHaveAttribute("data-svelte-owned", "detail-panel");
+  await expect(app).toHaveAttribute("data-component-owner", "app-shell");
+  await expect(detailPanel).toHaveAttribute("data-component-owner", "detail-panel");
   await detailPanel.evaluate((node) => { node.dataset.identityProbe = "persistent-detail"; });
 
   await page.getByRole("button", { name: /Follow-up task/ }).click();

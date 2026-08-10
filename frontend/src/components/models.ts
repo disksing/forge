@@ -1,5 +1,3 @@
-import type { IslandChannel } from "./channel";
-
 export interface AgentOption {
   id: string;
   label: string;
@@ -170,6 +168,34 @@ export interface SelfDrivingDialogModel {
   onClose: () => void;
   onSubmit: (draft: SelfDrivingDraft) => Promise<void>;
   onIconsChanged: () => void;
+}
+
+export interface SelfDrivingBarModel {
+  identity: string;
+  visible: boolean;
+  status: { key: string; label: string; icon: string };
+  summary: string;
+  expanded: boolean;
+  hasProjection: boolean;
+  revision: number;
+  enabled: boolean;
+  preferredProfiles: string[];
+  actualAgent: string;
+  actualReason: string;
+  waitingSummary: string;
+  wakeCondition: string;
+  wakeFallback: boolean;
+  lastOutcome: { status: string; reason: string } | null;
+  statusReason: { label: string; text: string } | null;
+  pending: boolean;
+  onToggleEnabled: () => void;
+  onToggleDetails: () => void;
+  onIconsChanged: () => void;
+}
+
+export interface ToastModel {
+  message: string;
+  revision: number;
 }
 
 export interface UploadDialogModel {
@@ -519,31 +545,4 @@ export interface AppShellModel {
   onHistoryNavigation: (pathname: string) => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
-}
-
-export interface ForgeSvelteBridge {
-  renderAppShell(model: AppShellModel): void;
-  mountBrandVersion(): Promise<void>;
-  renderCreateDialog(model: CreateDialogModel): void;
-  renderSettings(model: SettingsModel): void;
-  renderSelfDrivingDialog(model: SelfDrivingDialogModel): void;
-  renderUploadDialog(model: UploadDialogModel): void;
-  renderComposer(model: ComposerModel): void;
-  renderSessionSwitcher(model: SessionSwitcherModel): void;
-  renderEventTimeline(model: EventTimelineModel): void;
-  renderDetailPanel(model: DetailPanelModel): void;
-  unmount(name: string): Promise<void>;
-  unmountAll(): Promise<void>;
-}
-
-export interface IslandChannels {
-  appShell: IslandChannel<AppShellModel>;
-  create: IslandChannel<CreateDialogModel>;
-  settings: IslandChannel<SettingsModel>;
-  selfDriving: IslandChannel<SelfDrivingDialogModel>;
-  upload: IslandChannel<UploadDialogModel>;
-  composer: IslandChannel<ComposerModel>;
-  sessions: IslandChannel<SessionSwitcherModel>;
-  timeline: IslandChannel<EventTimelineModel>;
-  detail: IslandChannel<DetailPanelModel>;
 }

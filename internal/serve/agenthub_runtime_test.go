@@ -2742,21 +2742,3 @@ func TestAgentHubLiveResumeDoesNotOverlayLaunchEnvironment(t *testing.T) {
 		t.Fatalf("live resume must not create a replacement Forge session: %#v", sessions)
 	}
 }
-
-func TestAgentHubRuntimeStoppingAndRecoveryUI(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	for _, expected := range []string{
-		`stopping: "attention"`,
-		`recovering: "attention"`,
-		`AgentHub is stopping the provider.`,
-		`AgentHub event recovery is in progress.`,
-	} {
-		if !strings.Contains(source, expected) {
-			t.Fatalf("AgentHub runtime UI is missing %q", expected)
-		}
-	}
-}

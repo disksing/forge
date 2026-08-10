@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { AppShellModel, ShellDragTarget, ShellResourceItem, ShellSessionItem, ShellStatusPresentation } from "./models";
 
-  let { channel }: { channel: IslandChannel<AppShellModel> } = $props();
+  let { channel }: { channel: ModelChannel<AppShellModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let workspaceMenuOpen = $state(false);
@@ -286,7 +286,7 @@
 </header>
 <button id="mobileSidebarBackdrop" class="mobile-sidebar-backdrop" type="button" aria-label="Close navigation" onclick={() => model.onMobileSidebar(false)}></button>
 <aside id="mobileSidebar" class="sidebar">
-  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span id="brandVersionIsland" data-version={model.version}></span></div></div>
+  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div></div>
   <section class="workspace-switcher">
     <div class="workspace-select-row">
       <button id="workspaceSwitcher" class="workspace-switcher-button" type="button" aria-haspopup="listbox" aria-expanded={workspaceMenuOpen} onclick={(event) => { event.stopPropagation(); workspaceMenuOpen = !workspaceMenuOpen; }}>

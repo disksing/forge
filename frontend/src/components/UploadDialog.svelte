@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
 
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { UploadDialogModel } from "./models";
 
@@ -17,7 +17,7 @@
     error: string;
   }
 
-  let { channel }: { channel: IslandChannel<UploadDialogModel> } = $props();
+  let { channel }: { channel: ModelChannel<UploadDialogModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let identity = $state("");

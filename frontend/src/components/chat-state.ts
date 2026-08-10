@@ -306,34 +306,47 @@ export class ChatSessionController {
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
-  let merged: AgentEvent[] = [];
-  for (const event of events) merged = mergeCanonicalEvent(merged, event);
-  return merged;
+  const byId = new Map<number, AgentEvent>();
+  for (const incoming of events) {
+    const id = Number(incoming?.id) || 0;
+    if (!id) continue;
+    const existing = byId.get(id);
+    byId.set(id, existing ? mergeEvent(existing, incoming) : normalizeAppendEvent(incoming));
+  }
+  return [...byId.values()].sort((left, right) => Number(left.id) - Number(right.id));
 }
 
 export function mergeCanonicalEvent(events: AgentEvent[], incoming: AgentEvent): AgentEvent[] {
   const id = Number(incoming?.id) || 0;
   if (!id) return events;
-  const index = events.findIndex((event) => Number(event.id) === id);
-  const next = [...events];
-  if (index < 0) {
-    next.push(normalizeAppendEvent(incoming));
-  } else {
-    const existing = events[index];
-    if (incoming.data?.append === true) {
-      const currentText = typeof existing.data?.text === "string" ? existing.data.text : "";
-      const fragment = typeof incoming.data.text === "string" ? incoming.data.text : "";
-      next[index] = {
-        ...existing,
-        ...incoming,
-        startTime: incoming.startTime || existing.startTime,
-        data: { ...existing.data, ...incoming.data, append: false, text: currentText + fragment },
-      };
-    } else {
-      next[index] = { ...incoming, startTime: incoming.startTime || existing.startTime };
-    }
+  let low = 0;
+  let high = events.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (Number(events[middle].id) < id) low = middle + 1;
+    else high = middle;
   }
-  return next.sort((left, right) => Number(left.id) - Number(right.id));
+  const index = low < events.length && Number(events[low].id) === id ? low : -1;
+  if (index < 0) {
+    const next = [...events];
+    next.splice(low, 0, normalizeAppendEvent(incoming));
+    return next;
+  }
+  const next = [...events];
+  next[index] = mergeEvent(events[index], incoming);
+  return next;
+}
+
+function mergeEvent(existing: AgentEvent, incoming: AgentEvent): AgentEvent {
+  if (incoming.data?.append !== true) return { ...incoming, startTime: incoming.startTime || existing.startTime };
+  const currentText = typeof existing.data?.text === "string" ? existing.data.text : "";
+  const fragment = typeof incoming.data.text === "string" ? incoming.data.text : "";
+  return {
+    ...existing,
+    ...incoming,
+    startTime: incoming.startTime || existing.startTime,
+    data: { ...existing.data, ...incoming.data, append: false, text: currentText + fragment },
+  };
 }
 
 function normalizeAppendEvent(event: AgentEvent): AgentEvent {

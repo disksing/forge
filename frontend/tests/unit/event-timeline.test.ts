@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import EventTimeline from "../../src/islands/EventTimeline.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { AgentEvent, EventTimelineModel, TimelineItem } from "../../src/islands/models";
+import EventTimeline from "../../src/components/EventTimeline.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { AgentEvent, EventTimelineModel, TimelineItem } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -60,7 +60,7 @@ describe("EventTimeline", () => {
       }), { status: 200, headers: { "content-type": "application/json" } });
     }));
 
-    const channel = createIslandChannel(model("run-a"));
+    const channel = createModelChannel(model("run-a"));
     const target = document.body.appendChild(document.createElement("div"));
     target.className = "tty-log";
     const component = mount(EventTimeline, { target, props: { channel } });

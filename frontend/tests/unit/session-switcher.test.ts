@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createIslandChannel } from "../../src/islands/channel";
-import type { SessionSwitcherModel } from "../../src/islands/models";
-import SessionSwitcher from "../../src/islands/SessionSwitcher.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { SessionSwitcherModel } from "../../src/components/models";
+import SessionSwitcher from "../../src/components/SessionSwitcher.svelte";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -30,7 +30,7 @@ describe("SessionSwitcher", () => {
   it("deduplicates a pending selection and exposes failure without changing the projected session", async () => {
     const pending = deferred<void>();
     const onSelect = vi.fn(() => pending.promise);
-    const channel = createIslandChannel(model(onSelect));
+    const channel = createModelChannel(model(onSelect));
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(SessionSwitcher, { target, props: { channel } });
     cleanups.push(() => unmount(component));

@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import UploadDialog from "../../src/islands/UploadDialog.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { UploadDialogModel } from "../../src/islands/models";
+import UploadDialog from "../../src/components/UploadDialog.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { UploadDialogModel } from "../../src/components/models";
 
 class FakeUploadTarget {
   listeners = new Map<string, EventListener>();
@@ -43,7 +43,7 @@ describe("UploadDialog", () => {
   it("aborts in-flight uploads when the Workspace or Session identity changes", async () => {
     globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest;
     const first = model();
-    const channel = createIslandChannel(first);
+    const channel = createModelChannel(first);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(UploadDialog, { target, props: { channel } });
     cleanups.push(() => unmount(component));

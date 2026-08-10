@@ -1,10 +1,10 @@
-export interface IslandChannel<T> {
+export interface ModelChannel<T> {
   current(): T;
   publish(value: T): void;
   subscribe(listener: (value: T) => void): () => void;
 }
 
-export function createIslandChannel<T>(initial: T): IslandChannel<T> {
+export function createModelChannel<T>(initial: T): ModelChannel<T> {
   let value = initial;
   const listeners = new Set<(value: T) => void>();
   return {

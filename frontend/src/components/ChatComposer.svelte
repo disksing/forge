@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
 
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ComposerModel } from "./models";
 
-  let { channel }: { channel: IslandChannel<ComposerModel> } = $props();
+  let { channel }: { channel: ModelChannel<ComposerModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let identity = $state("");

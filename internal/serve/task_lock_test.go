@@ -235,39 +235,6 @@ func TestExternalResourceLockBlocksAgentInterrupt(t *testing.T) {
 	}
 }
 
-func TestExternalResourceLockComposerProtection(t *testing.T) {
-	data, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	source := string(data)
-	for _, want := range []string{
-		`const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.";`,
-		`function selectedResourceHasExternalLock()`,
-		`session.source === "external"`,
-		`function externalResourceLockNotice()`,
-		`function agentComposerActions(options = {})`,
-		`function selfDrivingBarActions(detail) {`,
-		`if (externalResourceLocked)`,
-		`id="agentCloseSessionButton"`,
-		`Close session; end the entire AgentHub Session.`,
-		`role="switch"`,
-		`function selectedResourceLockComposerKey()`,
-		`const external = selectedResourceHasExternalLock() ? "external-lock" : "unlocked"`,
-	} {
-		if !strings.Contains(source, want) {
-			t.Fatalf("external resource lock composer protection is missing %q", want)
-		}
-	}
-	styles, err := staticFiles.ReadFile("static/styles.css")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(styles), ".tty-external-lock-notice") {
-		t.Fatal("external resource lock notice styling is missing")
-	}
-}
-
 func TestExternalResourceLockErrorJSONIsStable(t *testing.T) {
 	data, err := json.Marshal(map[string]string{"error": (&externalResourceLockError{ResourceID: "project1.task1"}).Error()})
 	if err != nil {

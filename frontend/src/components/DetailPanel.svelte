@@ -2,7 +2,7 @@
   import { onDestroy, onMount } from "svelte";
 
   import { ApiClient } from "../api/client";
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import DiffModal from "./DiffModal.svelte";
   import FileBrowser from "./FileBrowser.svelte";
   import FilePreviewModal from "./FilePreviewModal.svelte";
@@ -12,7 +12,7 @@
   import WorkspaceAgentsEditor from "./WorkspaceAgentsEditor.svelte";
   import type { DetailPanelModel, ResourceFileModel, ResourceRepoModel } from "./models";
 
-  let { channel }: { channel: IslandChannel<DetailPanelModel> } = $props();
+  let { channel }: { channel: ModelChannel<DetailPanelModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let identity = $state("");

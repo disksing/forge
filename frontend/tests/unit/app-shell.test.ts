@@ -1,9 +1,9 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import AppShell from "../../src/islands/AppShell.svelte";
-import { createIslandChannel } from "../../src/islands/channel";
-import type { AppShellModel, ShellResourceItem, ShellStatusPresentation } from "../../src/islands/models";
+import AppShell from "../../src/components/AppShell.svelte";
+import { createModelChannel } from "../../src/components/model-channel";
+import type { AppShellModel, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -59,7 +59,7 @@ describe("AppShell", () => {
   it("keeps keyed navigation nodes stable while canonical selection and status projections update", async () => {
     const onSelectResource = vi.fn(async () => undefined);
     const initial = model({ onSelectResource });
-    const channel = createIslandChannel(initial);
+    const channel = createModelChannel(initial);
     const target = document.body.appendChild(document.createElement("div"));
     target.id = "app";
     const component = mount(AppShell, { target, props: { channel } });
@@ -90,7 +90,7 @@ describe("AppShell", () => {
   it("keeps drag state local and sends one typed reorder transaction", async () => {
     const onReorder = vi.fn(async () => undefined);
     const onDragState = vi.fn();
-    const channel = createIslandChannel(model({ onReorder, onDragState }));
+    const channel = createModelChannel(model({ onReorder, onDragState }));
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -115,7 +115,7 @@ describe("AppShell", () => {
     const pending = new Promise<void>((_resolve, reject) => { rejectSwitch = reject; });
     const onSwitchWorkspace = vi.fn(() => pending);
     const onToast = vi.fn();
-    const channel = createIslandChannel(model({ onSwitchWorkspace, onToast }));
+    const channel = createModelChannel(model({ onSwitchWorkspace, onToast }));
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -135,7 +135,7 @@ describe("AppShell", () => {
     window.history.replaceState({}, "", "/");
     const onHistoryNavigation = vi.fn(async () => undefined);
     const initial = model({ onHistoryNavigation });
-    const channel = createIslandChannel(initial);
+    const channel = createModelChannel(initial);
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(AppShell, { target, props: { channel } });
     cleanups.push(() => unmount(component));

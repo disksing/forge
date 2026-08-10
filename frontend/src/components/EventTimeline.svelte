@@ -2,11 +2,11 @@
   import { onMount, tick } from "svelte";
 
   import { ChatSessionController } from "./chat-state";
-  import type { IslandChannel } from "./channel";
+  import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ChatContextSnapshot, EventTimelineModel, TimelineItem } from "./models";
 
-  let { channel }: { channel: IslandChannel<EventTimelineModel> } = $props();
+  let { channel }: { channel: ModelChannel<EventTimelineModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
