@@ -61,6 +61,29 @@ func TestMigratedSvelteRegionsHaveExclusiveDOMOwnership(t *testing.T) {
 			t.Fatalf("legacy renderer %q still owns DOM or event listeners", region.start)
 		}
 	}
+	detailStart := strings.Index(source, "function renderDetails()")
+	if detailStart < 0 {
+		t.Fatal("could not isolate migrated Detail renderer")
+	}
+	detailEnd := strings.Index(source[detailStart:], "function renderLegacyDetails()")
+	if detailEnd <= 0 {
+		t.Fatal("could not isolate migrated Detail renderer")
+	}
+	detailRenderer := source[detailStart : detailStart+detailEnd]
+	if !strings.Contains(detailRenderer, "ForgeSvelteIslands") || !strings.Contains(detailRenderer, "renderDetailPanel") {
+		t.Fatal("Detail renderer does not publish to its persistent Svelte island")
+	}
+	for _, removed := range []string{"bindLogEvents", "bindArtifactBrowserEvents", "bindWorkspaceAgentsEvents", "renderLegacyDetails();"} {
+		if strings.Contains(detailRenderer, removed) {
+			t.Fatalf("migrated Detail renderer still delegates ownership to %q", removed)
+		}
+	}
+	detailComponent := frontendSource(t, "src", "islands", "DetailPanel.svelte")
+	for _, want := range []string{"MarkdownDocument", "LogTimeline", "FileBrowser", "FilePreviewModal", "DiffModal", "WorkspaceAgentsEditor"} {
+		if !strings.Contains(detailComponent, want) {
+			t.Fatalf("Svelte Detail boundary is missing %q", want)
+		}
+	}
 	draftSyncStart := strings.Index(source, "function syncAgentDraftFromDOM()")
 	draftSyncEnd := -1
 	if draftSyncStart >= 0 {
@@ -826,11 +849,8 @@ func TestBackgroundRenderPreservesOpenSettingsModal(t *testing.T) {
 }
 
 func TestWorkspaceAgentsEditorFillsAvailableWidth(t *testing.T) {
-	appData, err := staticFiles.ReadFile("static/app.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(appData), `id="workspaceAgentsForm" class="details-form workspace-agents-form"`) {
+	editor := frontendSource(t, "src", "islands", "WorkspaceAgentsEditor.svelte")
+	if !strings.Contains(editor, `id="workspaceAgentsForm" class="details-form workspace-agents-form"`) {
 		t.Fatal("workspace AGENTS.md editor should have a layout-specific form class")
 	}
 
@@ -850,6 +870,50 @@ func TestWorkspaceAgentsEditorFillsAvailableWidth(t *testing.T) {
 		if !strings.Contains(styles, want) {
 			t.Fatalf("responsive workspace AGENTS.md editor styles are missing %q", want)
 		}
+	}
+}
+
+func TestWorkspaceAgentsSaveRejectsChangedContentHash(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	get := httptest.NewRecorder()
+	s.handleWorkspace(get, httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path=AGENTS.md", nil))
+	if get.Code != http.StatusOK {
+		t.Fatalf("initial AGENTS.md preview returned %d: %s", get.Code, get.Body.String())
+	}
+	var preview filePreview
+	if err := json.Unmarshal(get.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(workspace.Root(), "AGENTS.md")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	external := append(append([]byte(nil), before...), []byte("\nExternal change.\n")...)
+	if err := os.WriteFile(path, external, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]string{"content": "Unsaved browser draft", "expectedContentHash": preview.ContentHash})
+	put := httptest.NewRecorder()
+	s.handleWorkspace(put, httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/files?path=AGENTS.md", bytes.NewReader(body)))
+	if put.Code != http.StatusConflict || !strings.Contains(put.Body.String(), "changed on disk") {
+		t.Fatalf("stale AGENTS.md save returned %d %q, want conflict", put.Code, put.Body.String())
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, external) {
+		t.Fatal("stale AGENTS.md save overwrote the external change")
 	}
 }
 

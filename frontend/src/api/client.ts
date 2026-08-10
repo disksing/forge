@@ -80,11 +80,13 @@ export interface LatestRequestOptions extends RequestInit {
 
 export class ApiClient {
   readonly requests = new RequestCoordinator();
+  private readonly fetchImpl: typeof fetch;
+  private readonly baseURL: string;
 
-  constructor(
-    private readonly fetchImpl: typeof fetch = globalThis.fetch,
-    private readonly baseURL = "",
-  ) {}
+  constructor(fetchImpl?: typeof fetch, baseURL = "") {
+    this.fetchImpl = fetchImpl ?? globalThis.fetch.bind(globalThis);
+    this.baseURL = baseURL;
+  }
 
   async request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const response = await this.fetchImpl(this.resolve(path), {

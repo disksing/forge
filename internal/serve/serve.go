@@ -949,7 +949,8 @@ func (s *server) saveWorkspaceAgentsFile(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	var body struct {
-		Content string `json:"content"`
+		Content             string `json:"content"`
+		ExpectedContentHash string `json:"expectedContentHash"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -957,10 +958,16 @@ func (s *server) saveWorkspaceAgentsFile(w http.ResponseWriter, r *http.Request,
 	}
 	path := filepath.Join(workspace.Path, "AGENTS.md")
 	current := ""
+	currentData := []byte{}
 	if data, err := os.ReadFile(path); err == nil {
+		currentData = data
 		current = string(data)
 	} else if !os.IsNotExist(err) {
 		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	if body.ExpectedContentHash != "" && body.ExpectedContentHash != previewContentHash(currentData) {
+		writeError(w, errors.New("AGENTS.md changed on disk; reload it before saving or reconcile the preserved draft"), http.StatusConflict)
 		return
 	}
 	updated, err := replaceAgentsUserContent(current, body.Content)

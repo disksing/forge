@@ -245,6 +245,7 @@ function svelteAgentOptions() {
 }
 
 function renderMigratedSvelteIslands() {
+  renderDetails();
   renderCreateDialog();
   renderSelfDrivingConfigDialog();
   renderAgentUploadDialog();
@@ -1428,7 +1429,6 @@ async function loadMoreLogs(resourceId = state.selectedId) {
   if (!cursor) {
     page.error = "The log page did not provide a continuation cursor.";
     renderDetails();
-    bindLogEvents();
     return;
   }
   const workspaceId = state.activeWorkspaceId;
@@ -1437,7 +1437,6 @@ async function loadMoreLogs(resourceId = state.selectedId) {
   page.loading = true;
   page.error = "";
   renderDetails();
-  bindLogEvents();
   try {
     const detail = await fetchDetail(resourceId, workspaceId, {
       logsCursor: cursor,
@@ -1462,7 +1461,6 @@ async function loadMoreLogs(resourceId = state.selectedId) {
         requestVersion === page.requestVersion) {
       page.loading = false;
       renderDetails();
-      bindLogEvents();
       refreshIcons();
     }
   }
@@ -1612,18 +1610,10 @@ function renderAll() {
   renderTree();
   renderSessions();
   renderDetails();
-  bindLogEvents();
-  bindWorkspaceAgentsEvents();
-  bindTemplateEvents();
-  bindArtifactBrowserEvents();
-  bindFileModalEvents();
-  bindDiffEvents();
-  bindDiffModalEvents();
   renderAgent();
   renderTTY();
   bindAgentEvents();
   refreshIcons();
-  renderDiffContent();
   renderCreateDialog();
   renderSelfDrivingConfigDialog();
   renderSettingsModal();
@@ -1633,18 +1623,10 @@ function renderSelectionPanels() {
   renderTree();
   renderSessions();
   renderDetails();
-  bindLogEvents();
-  bindWorkspaceAgentsEvents();
-  bindTemplateEvents();
-  bindArtifactBrowserEvents();
-  bindFileModalEvents();
-  bindDiffEvents();
-  bindDiffModalEvents();
   renderAgent();
   renderTTY();
   bindAgentEvents();
   refreshIcons();
-  renderDiffContent();
   renderCreateDialog();
   renderSelfDrivingConfigDialog();
 }
@@ -2866,7 +2848,69 @@ function updateWorkspaceAgentsSavingControls() {
   }
 }
 
+function detailPanelModel() {
+  const workspaceId = state.activeWorkspaceId || "";
+  const base = {
+    identity: workspaceId ? `${workspaceId}:${state.selectedId || "workspace"}` : "empty",
+    workspaceId,
+    workspaceName: workspaceName(),
+    resourceId: state.selectedId || "",
+    resourceType: "",
+    resourceTitle: "",
+    parent: null,
+    loading: false,
+    detail: null,
+    wiki: state.tree?.wiki || null,
+    workspaceAgents: state.workspaceAgents,
+    logs: { hasMore: false, loading: false, error: "" },
+    onNavigate: (resourceId) => openBreadcrumbResource(resourceId).catch((err) => toast(err.message)),
+    onCreateTask: (projectId) => showTaskForm(projectId),
+    onArchive: (resourceId) => archiveResource(resourceId).catch((err) => toast(err.message)),
+    onLoadMoreLogs: (resourceId) => loadMoreLogs(resourceId),
+    onSaveWorkspaceAgents: (content, expectedContentHash) => saveWorkspaceAgentsFromDetail(content, expectedContentHash),
+    onToast: toast,
+    onIconsChanged: refreshIcons,
+  };
+  if (!state.tree) return base;
+  if (state.selectedId === "workspace") {
+    return { ...base, resourceId: "workspace", resourceType: "workspace", resourceTitle: workspaceName() };
+  }
+  const selected = findResource(state.selectedId) || state.tree.projects[0];
+  if (!selected) return { ...base, resourceId: "workspace", resourceType: "workspace", resourceTitle: workspaceName() };
+  const detail = state.details[selected.id] || null;
+  const parent = parentProject(selected.id);
+  const page = state.resourceLogPages?.[selected.id] || {};
+  return {
+    ...base,
+    identity: `${workspaceId}:${selected.id}:${selected.type}`,
+    resourceId: selected.id,
+    resourceType: selected.type,
+    resourceTitle: detail?.title || selected.title || selected.id,
+    parent: parent && parent.id !== selected.id ? { id: parent.id, title: parent.title || parent.id } : null,
+    loading: !detail,
+    detail,
+    logs: {
+      hasMore: Boolean(page.hasMore ?? detail?.logPage?.hasMore),
+      loading: Boolean(page.loading),
+      error: String(page.error || ""),
+    },
+  };
+}
+
 function renderDetails() {
+  const bridge = window.ForgeSvelteIslands;
+  if (bridge?.renderDetailPanel) {
+    bridge.renderDetailPanel(detailPanelModel());
+    return;
+  }
+  const panel = $("detailsPanel");
+  if (!panel) return;
+  panel.innerHTML = state.tree
+    ? `<div class="empty-state">${icon("loader-circle", "empty-state-icon")}<strong>Loading details...</strong></div>`
+    : emptyDetails();
+}
+
+function renderLegacyDetails() {
   const panel = $("detailsPanel");
   const previewScrollState = captureFilePreviewScrollState();
   if (!state.tree) {
@@ -3687,6 +3731,23 @@ async function refreshFilePreview(section, path, options = {}) {
     if (options.rethrow && current) throw err;
     return null;
   }
+}
+
+async function saveWorkspaceAgentsFromDetail(content, expectedContentHash) {
+  if (!state.activeWorkspaceId) throw new Error("No workspace is selected.");
+  const workspaceId = state.activeWorkspaceId;
+  const navigationVersion = state.navigationVersion;
+  const saved = await api(`/api/workspaces/${workspaceId}/files?path=${encodeURIComponent("AGENTS.md")}`, {
+    method: "PUT",
+    body: JSON.stringify({ content, expectedContentHash }),
+  });
+  if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || state.selectedId !== "workspace") {
+    throw new Error("The workspace changed before AGENTS.md finished saving.");
+  }
+  state.workspaceAgents = saved;
+  state.workspaceAgentsDraft = workspaceAgentsUserContent(saved.content || "");
+  state.workspaceAgentsDirty = false;
+  return saved;
 }
 
 async function saveWorkspaceAgents() {
@@ -7155,16 +7216,9 @@ function optionalAssetLoaded(asset) {
   refreshIcons();
   if (asset === "markdown" && window.marked && window.DOMPurify) {
     renderDetails();
-    bindTemplateEvents();
-    bindArtifactBrowserEvents();
-    bindFileModalEvents();
-    bindDiffEvents();
-    bindDiffModalEvents();
     refreshIcons();
   }
-  if (asset === "diff") {
-    renderDiffContent();
-  }
+  if (asset === "diff") renderDetails();
 }
 
 window.forgeAssetLoaded = optionalAssetLoaded;

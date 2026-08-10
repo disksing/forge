@@ -11,6 +11,7 @@ interface Harness {
   uploadNames: string[];
   streamRequests: string[];
   treeRequests: number;
+  agentsBodies: Array<Record<string, unknown>>;
 }
 
 const templates = [
@@ -23,6 +24,8 @@ const templates = [
     fields: [{ name: "summary", type: "text", label: "Summary", required: true, hasDefault: false }],
   },
 ];
+
+const longDetailBody = Array.from({ length: 60 }, (_, index) => `Stable detail paragraph ${index + 1}.`).join("\n\n");
 
 const project = {
   id: "project1",
@@ -81,12 +84,13 @@ function detail(id: string) {
   return {
     ...resource,
     files: [
-      { name: "task.md", path: `${resource.path}/task.md`, content: `# ${resource.title}\n\nBaseline content.` },
+      { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${id}-brief-v1` },
+      ...(resource.type === "task" ? [{ name: "work.md", path: `${resource.path}/work.md`, content: "# Work\n\nCurrent checkpoint.", contentHash: `${id}-work-v1` }] : []),
     ],
-    logs: [],
-    logPage: { hasMore: false, nextCursor: "" },
-    artifacts: [],
-    repos: [],
+    logs: [{ id: `${id}-log-1`, time: now, title: "Initial detail log", details: "Stable log details." }],
+    logPage: { hasMore: true, nextCursor: `${id}-log-1` },
+    artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
+    repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
     templates: resource?.type === "project" ? templates : [],
     ...(resource?.type === "task" ? { selfDriving: { enabled: false, revision: 0, condition: "disabled", agentName: "" } } : {}),
   };
@@ -111,7 +115,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0 };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [] };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -177,11 +181,33 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
           agentRunStatus: run.status,
           resourceId: run.resourceId,
         })),
-        wiki: { exists: true, entries: [] },
+        wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
     }
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
-    if (resourceMatch) return json(route, detail(decodeURIComponent(resourceMatch[1])));
+    if (resourceMatch) {
+      const value = detail(decodeURIComponent(resourceMatch[1]));
+      if (url.searchParams.get("logsCursor")) {
+        value.logs = [{ id: `${value.id}-log-2`, time: "2026-08-09T12:00:00Z", title: "Older detail log", details: "Older page." }];
+        value.logPage = { hasMore: false, nextCursor: `${value.id}-log-2` };
+      }
+      return json(route, value);
+    }
+    if (path === "/api/workspaces/ws-test/files") {
+      const filePath = url.searchParams.get("path") || "";
+      if (method === "PUT") {
+        const body = request.postDataJSON();
+        harness.agentsBodies.push(body);
+        return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: String(body.content || ""), contentHash: "agents-saved" });
+      }
+      if (filePath === "AGENTS.md") return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+      return json(route, { path: filePath, name: filePath.split("/").pop(), content: `# Preview\n\nContent for ${filePath}\n\n${longDetailBody}`, contentHash: `hash-${filePath}` });
+    }
+    if (path === "/api/workspaces/ws-test/wiki/files") {
+      const filePath = url.searchParams.get("path") || "";
+      return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
+    }
+    if (path === "/api/workspaces/ws-test/diff") return json(route, { path: url.searchParams.get("path"), branch: "topic", base: "master", diff: "diff --git a/a.txt b/a.txt\nnew file mode 100644\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+detail diff\n", hasChanges: true });
     if (path === "/api/workspaces/ws-test/tasks" && method === "POST") {
       harness.taskBodies.push(request.postDataJSON());
       return json(route, { id: "project1.task3" }, 201);
@@ -268,6 +294,72 @@ test("navigates resources and creates a task without changing the legacy flow", 
     detail: "Playwright isolated task body",
   });
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable during refresh", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+  const panel = page.locator("#detailsPanel");
+  await expect(panel).toHaveAttribute("data-svelte-owned", "detail-panel");
+  await expect(panel.getByRole("tab", { name: "Task" })).toHaveAttribute("aria-selected", "true");
+  const documentView = panel.locator('[data-doc-file="task.md"] .markdown-view');
+  await documentView.evaluate((node) => {
+    node.setAttribute("data-identity-probe", "stable-document");
+    const text = node.querySelector("p")?.firstChild;
+    if (text) {
+      const range = document.createRange();
+      range.setStart(text, 0);
+      range.setEnd(text, Math.min(8, text.textContent?.length || 0));
+      const selection = window.getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+    }
+    const panel = document.getElementById("detailsPanel");
+    if (panel) panel.scrollTop = 180;
+  });
+  await page.waitForTimeout(5_200);
+  await expect(documentView).toHaveAttribute("data-identity-probe", "stable-document");
+  await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("Baseline");
+  await expect.poll(() => panel.evaluate((node) => node.scrollTop)).toBe(180);
+
+  await panel.getByRole("tab", { name: /Logs/ }).click();
+  const firstLog = panel.locator('[data-log-id="project1.task1-log-1"]');
+  await firstLog.evaluate((node) => { (node as HTMLDetailsElement).open = true; node.setAttribute("data-identity-probe", "stable-log"); });
+  await panel.getByRole("button", { name: "Load More" }).click();
+  await expect(panel.locator("[data-log-id]")).toHaveCount(2);
+  await expect(firstLog).toHaveAttribute("open", "");
+  await expect(firstLog).toHaveAttribute("data-identity-probe", "stable-log");
+  await expect(documentView).toHaveAttribute("data-identity-probe", "stable-document");
+
+  await panel.getByRole("tab", { name: "Artifacts" }).click();
+  await panel.getByRole("button", { name: /notes\.md/ }).click();
+  const preview = page.getByRole("dialog", { name: "File preview" });
+  await expect(preview).toContainText("Content for project1-migration/task1-infrastructure/artifacts/notes.md");
+  await preview.locator("[data-preview-scroll]").evaluate((node) => { node.setAttribute("data-identity-probe", "stable-preview"); node.scrollTop = 40; });
+  await page.waitForTimeout(5_200);
+  await expect(preview.locator("[data-preview-scroll]")).toHaveAttribute("data-identity-probe", "stable-preview");
+  await expect.poll(() => preview.locator("[data-preview-scroll]").evaluate((node) => node.scrollTop)).toBe(40);
+  await preview.getByRole("button", { name: "Close" }).click();
+
+  await panel.getByRole("tab", { name: "Worktrees" }).click();
+  await panel.getByRole("button", { name: "View Diff" }).click();
+  await expect(page.getByRole("dialog", { name: "Worktree diff" })).toContainText("detail diff");
+  await page.getByRole("dialog", { name: "Worktree diff" }).getByRole("button", { name: "Close" }).click();
+
+  await panel.locator(".breadcrumb").getByRole("button", { name: "Isolated E2E", exact: true }).click();
+  const editor = panel.locator("#workspaceAgentsContent");
+  const editorDraft = Array.from({ length: 30 }, (_, index) => `Unsaved workspace guidance line ${index + 1}`).join("\n");
+  await editor.fill(editorDraft);
+  await editor.evaluate((node) => { const input = node as HTMLTextAreaElement; input.focus(); input.setSelectionRange(8, 17); input.scrollTop = 9; input.setAttribute("data-identity-probe", "stable-editor"); });
+  await page.waitForTimeout(5_200);
+  await expect(editor).toHaveValue(editorDraft);
+  await expect(editor).toHaveAttribute("data-identity-probe", "stable-editor");
+  await expect.poll(() => editor.evaluate((node) => [(node as HTMLTextAreaElement).selectionStart, (node as HTMLTextAreaElement).selectionEnd, (node as HTMLTextAreaElement).scrollTop])).toEqual([8, 17, 9]);
+  await panel.getByRole("button", { name: "Save" }).click();
+  await expect.poll(() => harness.agentsBodies.length).toBe(1);
+  expect(harness.agentsBodies[0]).toMatchObject({ content: editorDraft, expectedContentHash: "agents-v1" });
+  await panel.getByRole("button", { name: /index\.md/ }).click();
+  await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
 });
 
 test("switches sessions, sends input, receives SSE, and preserves active reading state during refresh", async ({ page }) => {

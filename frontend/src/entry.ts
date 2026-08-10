@@ -3,12 +3,13 @@ import { mount, unmount, type Component } from "svelte";
 import BrandVersion from "./islands/BrandVersion.svelte";
 import ChatComposer from "./islands/ChatComposer.svelte";
 import CreateDialog from "./islands/CreateDialog.svelte";
+import DetailPanel from "./islands/DetailPanel.svelte";
 import SelfDrivingDialog from "./islands/SelfDrivingDialog.svelte";
 import SettingsModal from "./islands/SettingsModal.svelte";
 import UploadDialog from "./islands/UploadDialog.svelte";
 import { createIslandChannel } from "./islands/channel";
 import { replaceIsland, unmountAllIslands, unmountIsland } from "./islands/lifecycle";
-import type { ComposerModel, CreateDialogModel, ForgeSvelteBridge, SelfDrivingDialogModel, SettingsModel, UploadDialogModel } from "./islands/models";
+import type { ComposerModel, CreateDialogModel, DetailPanelModel, ForgeSvelteBridge, SelfDrivingDialogModel, SettingsModel, UploadDialogModel } from "./islands/models";
 
 const BRAND_VERSION_ISLAND = "brand-version";
 const noop = () => undefined;
@@ -30,6 +31,7 @@ const settingsChannel = createIslandChannel<SettingsModel>({
 const selfDrivingChannel = createIslandChannel<SelfDrivingDialogModel>({ open: false, identity: "", resourceId: "", reuseCurrentSession: false, agents: [], draft: { agentName: "", runInstructions: "" }, submitting: false, error: "", unknown: false, onClose: noop, onSubmit: noopAsync, onIconsChanged: noop });
 const uploadChannel = createIslandChannel<UploadDialogModel>({ open: false, identity: "", workspaceId: "", runId: "", onDone: noop, onIconsChanged: noop });
 const composerChannel = createIslandChannel<ComposerModel>({ identity: "", workspaceId: "", resourceId: "", runId: "", runStatus: "", live: false, canResume: false, draft: "", draftKey: "", draftResetVersion: 0, unavailableReason: "", sending: false, externalLocked: false, internalLocked: false, agents: [], selectedAgentId: "", chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false, closingSession: false, selfDrivingRemainsEnabled: false, selfDrivingDisabling: false, onDraft: noop, onSend: async () => ({ accepted: false, clear: false }), onOpenUpload: noop, onToggleChooser: noop, onChooseAgent: noop, onToggleActions: noop, onResume: noop, onEndTurn: noop, onCloseSession: noop, onIconsChanged: noop });
+const detailChannel = createIslandChannel<DetailPanelModel>({ identity: "", workspaceId: "", workspaceName: "", resourceId: "", resourceType: "", resourceTitle: "", parent: null, loading: false, detail: null, wiki: null, workspaceAgents: null, logs: { hasMore: false, loading: false, error: "" }, onNavigate: noop, onCreateTask: noop, onArchive: noop, onLoadMoreLogs: noopAsync, onSaveWorkspaceAgents: async () => ({ path: "AGENTS.md" }), onToast: noop, onIconsChanged: noop });
 
 async function mountBrandVersion(): Promise<void> {
   const target = document.getElementById("brandVersionIsland");
@@ -69,6 +71,7 @@ async function mountMigratedIslands(): Promise<void> {
     mountPersistentIsland("self-driving-dialog", "selfDrivingDialogRoot", SelfDrivingDialog, { channel: selfDrivingChannel }),
     mountPersistentIsland("upload-dialog", "uploadDialogRoot", UploadDialog, { channel: uploadChannel }),
     mountPersistentIsland("chat-composer", "ttyComposer", ChatComposer, { channel: composerChannel }),
+    mountPersistentIsland("detail-panel", "detailsPanel", DetailPanel, { channel: detailChannel }),
   ]);
 }
 
@@ -79,6 +82,7 @@ const bridge: ForgeSvelteBridge = {
   renderSelfDrivingDialog: (model) => selfDrivingChannel.publish(model),
   renderUploadDialog: (model) => uploadChannel.publish(model),
   renderComposer: (model) => composerChannel.publish(model),
+  renderDetailPanel: (model) => detailChannel.publish(model),
   unmount: unmountIsland,
   unmountAll: unmountAllIslands,
 };
