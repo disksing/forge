@@ -19,11 +19,9 @@ const components = [
   "DetailPanel",
   "DiffModal",
   "EventTimeline",
-  "ErrorNotice",
   "FileBrowser",
   "FilePreviewModal",
   "GlobalSessionList",
-  "ForgeNotice",
   "LogTimeline",
   "LifecycleNotice",
   "MarkdownDocument",
@@ -40,6 +38,7 @@ const components = [
   "StatusPresentation",
   "ThinkingBlock",
   "TimelineMessage",
+  "TimelineNotice",
   "Toast",
   "ToolGroup",
   "ToolItem",
@@ -66,11 +65,9 @@ const owners: Record<(typeof components)[number], string> = {
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
   EventTimeline: "event-timeline",
-  ErrorNotice: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
   GlobalSessionList: "global-session-list",
-  ForgeNotice: "event-timeline",
   LogTimeline: "log-timeline",
   LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
@@ -87,6 +84,7 @@ const owners: Record<(typeof components)[number], string> = {
   StatusPresentation: "status-presentation",
   ThinkingBlock: "event-timeline",
   TimelineMessage: "event-timeline",
+  TimelineNotice: "event-timeline",
   Toast: "toast",
   ToolGroup: "event-timeline",
   ToolItem: "event-timeline",
@@ -165,7 +163,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "GlobalSessionList", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SelfDrivingOptions", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "GlobalSessionList", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SelfDrivingOptions", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

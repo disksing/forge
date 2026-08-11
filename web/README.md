@@ -11,13 +11,14 @@ The directory layers are intentional:
 
 ## Architecture and ownership
 
-- `app-controller.ts` is the application composition boundary. It owns startup/shutdown, the canonical Workspace/Resource selection, auto-refresh ordering, cross-domain invalidation, and projection of coordinated state into typed view models. It does not render application DOM or implement domain persistence and mutations itself.
+- `app-controller.ts` is the application composition boundary. It owns startup/shutdown, the canonical Workspace/Resource selection, auto-refresh ordering, and cross-domain invalidation. Domain projection, persistence, dialogs, and mutations live behind explicit controller dependencies.
 - `controllers/` contains independently testable domain boundaries. Controllers receive browser/server access and cross-domain effects through explicit dependencies; none imports `app-controller.ts` or owns a second application-wide store.
+- `models/` separates the common, create, settings, chat, detail, shell, and Workspace contracts. `components/models.ts` is a compatibility barrel only; production modules import their owning domain directly, and `noImplicitAny` is enabled.
 - `components/` owns the entire interactive UI. Components receive typed models and callbacks through `ModelChannel`, and keep form, focus, selection, expansion, and pending-action state locally when that state belongs to the view.
-- `entry.ts` creates the channels and component roots. The static HTML document provides mount points and vendor scripts only.
+- `entry.ts` creates the typed channels and mounts one `ForgeApp` root. `ForgeApp.svelte` composes the shell, panes, dialogs, and toast; the static HTML document provides one `#app` mount point plus vendor scripts.
 - `api/client.ts` owns scoped request cancellation and stale-response rejection. Detail previews, Diff requests, uploads, and chat history are keyed by Workspace, Resource, Session, path, or mode identity as appropriate.
 - `app.css` is the global style entry and imports only `styles/tokens.css`, browser defaults from `styles/base.css`, deliberately shared UI primitives, and the `.markdown-rendered` rich-content boundary. It must not contain component selectors.
-- Every visual Svelte component owns an adjacent `ComponentName.css` module imported by that component. Selectors are bounded by the component's `data-component-owner`; top-level mount roots receive the attribute from `entry.ts`, while nested rich UI components declare it on their root element. `:where(...)` keeps the boundary from increasing the original selector specificity.
+- Every visual Svelte component owns an adjacent `ComponentName.css` module imported by that component. Selectors are bounded by the component's `data-component-owner`; composed roots declare the attribute at the owning boundary. `:where(...)` keeps the boundary from increasing the original selector specificity.
 - A rule belongs in `styles/primitives.css` only when multiple independent component roots intentionally share the same class contract. Component-specific responsive rules, forced-colors behavior, reduced-motion behavior, state selectors, and keyframes stay with their component.
 - Dynamic status classes remain inside their owning component boundary. Marked/DOMPurify output is styled only below `.markdown-rendered`, and Diff2Html vendor classes are styled only below the `DiffModal` owner and `.diff-viewer`; unbounded vendor selectors are not allowed.
 
@@ -51,13 +52,16 @@ Each panel receives typed `SettingsModel` callbacks and the smallest relevant sh
 
 | Controller | Single responsibility | Creation and disposal |
 | --- | --- | --- |
-| `notification-controller.ts` | Completion observation, persisted unread/effect claims, cross-tab idempotency, browser notifications, and completion sound | Created for each application start because it owns a `ResourceScope`, `BroadcastChannel`, and optional `AudioContext`; disposed on application stop |
+| `notification-controller.ts` plus `notification-{store,projection,delivery}.ts` | Orchestration; versioned persistence; completion projection; browser/sound delivery | Created for each application start because orchestration owns a `ResourceScope` and `BroadcastChannel`; delivery owns and disposes the optional `AudioContext` |
 | `agent-draft-store.ts` | Versioned Session draft keys, Workspace/Resource metadata, local persistence, and bounded orphan eviction | Stateless adapter created once; browser storage is resolved lazily |
+| `agent-draft-controller.ts` | Active draft restore/persist/prune coordination against the canonical Session projection | Created once over the application draft runtime |
 | `resource-detail-controller.ts` | Resource detail fetch identity, log pagination, overlap deduplication, and stale page rejection | Created once over the canonical detail/page records; requests are accepted only for the captured Workspace, Resource, and generation |
 | `agent-session-controller.ts` and `agent-operation-controller.ts` | Session/Turn/Self-Driving mutations and their keyed pending state; stale operation leases cannot clear newer state | Created once; pending leases are reset during selection changes and application stop |
 | `create-dialog-controller.ts` | Create Project/Task draft conversion, template preview cancellation, submission, and dialog identity | Created once; pending preview is aborted on close and application stop |
 | `settings-controller.ts` and `user-settings-controller.ts` | Settings loading/mutation plus browser-local User identity persistence | Settings state is application-scoped; the User controller and its storage listener are recreated with each application lifecycle |
 | `route-controller.ts` and `pane-layout-controller.ts` | Typed URL projection and persisted desktop/mobile layout state | Created once; browser state is applied during startup and callbacks publish immutable snapshots |
+| `shell-projection.ts` | Pure ordering, lock, status, and Project/Task/Session presentation | Created once with Tree/resource lookup dependencies and a replaceable clock |
+| `self-driving-view-controller.ts` | Self-Driving bar projection plus configuration-dialog identity, focus, validation, and submission | Created once; private dialog state is reset when Workspace or selection changes |
 
 Dependencies point from `app-controller.ts` into these controllers, and from controllers only into typed component models or small runtime utilities. Cross-domain work such as switching Workspace, reconciling Tree + Session projections, and publishing several view roots remains in `app-controller.ts`; storage formats, request pagination, mutations, and pending-operation state remain inside their domain owner.
 
@@ -84,7 +88,7 @@ Form state is keyed by explicit identity, not refresh frequency. Republishing a 
 
 ### Event timeline boundary
 
-`EventTimeline.svelte` is the only owner of the active chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-Session tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, `ErrorNotice`, `ForgeNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant Markdown remains inside `.markdown-rendered`.
+`EventTimeline.svelte` is the only owner of the active chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-Session tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, the shared `TimelineNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant Markdown remains inside `.markdown-rendered`.
 
 `chat-state.ts` owns HTTP/SSE context generations, accepted Session identities, the 80 ms stream publication window, notice reconciliation, and cleanup of requests, streams, and flush timers. It consumes the side-effect-free `timeline-events.ts` module for canonical merge, batched insertion, append healing, and cumulative ACP tool-update compaction. Rendering components never import the Session controller or open network streams.
 
@@ -92,14 +96,14 @@ The extraction reduced the stateful roots while retaining the complete behavior 
 
 | Source boundary | Before | After |
 | --- | ---: | ---: |
-| `EventTimeline.svelte` state plus all event markup | 311 lines | 203 lines, plus 221 lines across nine typed renderers |
+| `EventTimeline.svelte` state plus all event markup | 311 lines | 203 lines, plus focused typed renderers |
 | `chat-state.ts` state machine plus event algorithms | 514 lines | 393 lines, plus 123 lines in `timeline-events.ts` |
 | One timeline stylesheet | 497 lines | 47 root lines plus 363 lines next to the nine renderers |
 
 ## Lifecycle contract
 
-- The component registry gives every mounted root exactly one cleanup and tears down the previous instance before replacement.
-- `pagehide` stops the controller and unmounts all component roots; `pageshow` mounts and starts a fresh application instance.
+- One Svelte application root owns every component subtree and therefore one teardown path.
+- `pagehide` stops the controller and unmounts the application root; `pageshow` mounts and starts a fresh application instance.
 - `ResourceScope` owns controller DOM listeners, intervals, animation frames, and custom cleanup. Controller shutdown also closes EventSource, `BroadcastChannel`, and `AudioContext` instances, clears delayed renders and operation leases, aborts pending preview work, and flushes the active draft.
 - Components release subscriptions, viewport timers, request controllers, streams, and upload XHRs from their Svelte teardown paths.
 - Late HTTP responses, stream events, and send acknowledgements are rejected after their identity or generation changes.

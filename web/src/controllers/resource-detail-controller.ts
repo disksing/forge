@@ -1,17 +1,8 @@
 import { errorMessage } from "../runtime/errors";
+import type { ResourceLogRecord, ResourceRecord } from "../models/workspace";
 
-export interface ResourceLogEntry {
-	[key: string]: unknown;
-	id?: string;
-	time?: string;
-}
-
-export interface ResourceDetailRecord {
-	[key: string]: unknown;
-	id: string;
-	logs?: ResourceLogEntry[];
-	logPage?: { entries?: ResourceLogEntry[]; hasMore?: boolean; nextCursor?: string };
-}
+export type ResourceLogEntry = ResourceLogRecord;
+export type ResourceDetailRecord = ResourceRecord;
 
 export interface ResourceLogPageState {
 	loaded: boolean;

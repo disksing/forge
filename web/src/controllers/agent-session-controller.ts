@@ -1,26 +1,28 @@
 import type { createAgentOperationController } from "./agent-operation-controller";
 import { errorMessage } from "../runtime/errors";
+import type { AgentConfig, ResourceRecord } from "../models/workspace";
 
 export interface AgentRunRecord {
-	[key: string]: unknown;
 	id: string;
 	status: string;
 	resourceId: string;
+	workspaceId?: string;
+	agentHubSessionId?: string;
+	sourceExternalId?: string;
+	agentHubAgentName?: string;
+	title?: string;
+	createdAt?: string;
+	updatedAt?: string;
 	schedulerTurn?: boolean;
+	schedulerTurnId?: string;
+	schedulerTurnSequence?: number;
+	selfDrivingRevision?: number;
+	agentProfile?: string;
+	agentSelectionReason?: string;
+	wakeContext?: { summary?: string; wakeCondition?: string; fallback?: boolean };
 }
-
-export interface AgentResourceRecord {
-	[key: string]: unknown;
-	id: string;
-	type: string;
-	title: string;
-	path: string;
-}
-
-export interface AgentConfigRecord {
-	[key: string]: unknown;
-	id: string;
-}
+export type AgentResourceRecord = ResourceRecord;
+export type AgentConfigRecord = AgentConfig;
 
 export interface AgentInputContext {
 	workspaceId: string;

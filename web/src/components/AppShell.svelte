@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./AppShell.css";
 
-  import { onMount } from "svelte";
+  import { onMount, type Snippet } from "svelte";
 
   import GlobalSessionList from "./GlobalSessionList.svelte";
   import Icon from "./Icon.svelte";
@@ -12,7 +12,14 @@
   import ProjectTree from "./ProjectTree.svelte";
   import WorkspaceSwitcher from "./WorkspaceSwitcher.svelte";
 
-  let { channel }: { channel: ModelChannel<AppShellModel> } = $props();
+  let { channel, details, selfDrivingBar, sessions, timeline, composer }: {
+    channel: ModelChannel<AppShellModel>;
+    details?: Snippet;
+    selfDrivingBar?: Snippet;
+    sessions?: Snippet;
+    timeline?: Snippet;
+    composer?: Snippet;
+  } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let appliedRouteRevision = $state(0);
@@ -110,6 +117,7 @@
   });
 </script>
 
+<div data-component-owner="app-shell" class="app-shell">
 <MobileToolbar sidebarOpen={model.mobile.sidebarOpen} view={model.mobile.view} immersive={model.mobile.immersive} onSidebar={model.onMobileSidebar} onView={model.onMobileView} onImmersive={model.onMobileImmersive} />
 <aside id="mobileSidebar" class="sidebar">
   <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div><button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
@@ -120,7 +128,8 @@
 </aside>
 <PaneResizeHandle id="sidebarResize" kind="sidebarWidth" className="sidebar-resize" label="Resize sidebar" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
 <main class="workspace-panel">
-  <section id="detailsPanel" class="details-panel"></section>
+  <section id="detailsPanel" class="details-panel" data-component-owner="detail-panel">{#if details}{@render details()}{/if}</section>
   <PaneResizeHandle id="detailsResize" kind="chatWidth" className="details-resize" label="Resize chat panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
-  <aside id="agentPanel" class="agent-panel"><div id="agentControls" class="agent-actions"></div><div id="selfDrivingBarWrap" class="self-driving-bar-wrap"></div><div id="agentSessionsWrap" class="agent-sessions"></div><div class="tty-panel"><div id="ttyLog" class="tty-log"></div><div id="ttyComposer" class="tty-composer"></div></div></aside>
+  <aside id="agentPanel" class="agent-panel"><div id="agentControls" class="agent-actions"></div><div id="selfDrivingBarWrap" class="self-driving-bar-wrap" data-component-owner="self-driving-bar">{#if selfDrivingBar}{@render selfDrivingBar()}{/if}</div><div id="agentSessionsWrap" class="agent-sessions" data-component-owner="session-switcher">{#if sessions}{@render sessions()}{/if}</div><div class="tty-panel"><div id="ttyLog" class="tty-log" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="ttyComposer" class="tty-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
 </main>
+</div>

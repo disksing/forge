@@ -3,11 +3,10 @@ import type { Component } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ApprovalCard from "../../src/components/ApprovalCard.svelte";
-import ErrorNotice from "../../src/components/ErrorNotice.svelte";
-import ForgeNotice from "../../src/components/ForgeNotice.svelte";
 import LifecycleNotice from "../../src/components/LifecycleNotice.svelte";
 import ThinkingBlock from "../../src/components/ThinkingBlock.svelte";
 import TimelineMessage from "../../src/components/TimelineMessage.svelte";
+import TimelineNotice from "../../src/components/TimelineNotice.svelte";
 import ToolGroup from "../../src/components/ToolGroup.svelte";
 import ToolItem from "../../src/components/ToolItem.svelte";
 import UnknownEvent from "../../src/components/UnknownEvent.svelte";
@@ -97,8 +96,8 @@ describe("timeline rendering components", () => {
 
   it("renders lifecycle, provider error, Forge notice, and unknown-event fallbacks directly", () => {
     expect(mounted(LifecycleNotice, { item: { kind: "lifecycle", tone: "ok", text: "Completed" } }).querySelector(".agent-lifecycle-ok")?.textContent).toContain("Completed");
-    expect(mounted(ErrorNotice, { title: "Provider error", text: "failed", alert: true }).querySelector('[role="alert"]')?.textContent).toContain("Provider errorfailed");
-    expect(mounted(ForgeNotice, { notice: { data: { level: "error", text: "Scheduler failed" } } }).querySelector(".agent-event.error")?.textContent).toContain("ForgeScheduler failed");
+    expect(mounted(TimelineNotice, { title: "Provider error", text: "failed", error: true, alert: true }).querySelector('[role="alert"]')?.textContent).toContain("Provider error failed");
+    expect(mounted(TimelineNotice, { title: "Forge", text: "Scheduler failed", error: true }).querySelector(".timeline-notice-error")?.textContent).toContain("Forge Scheduler failed");
     expect(mounted(UnknownEvent, { item: { kind: "mystery", type: "provider.mystery", preview: "raw payload" } }).textContent).toContain("Unhandled event: provider.mysteryraw payload");
   });
 });

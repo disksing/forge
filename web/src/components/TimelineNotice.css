@@ -1,0 +1,37 @@
+:where([data-component-owner="event-timeline"]) .timeline-notice {
+  margin: 14px 0;
+  padding: 4px 0 4px 12px;
+  border: 0;
+  border-left: 3px solid #dfe4ea;
+  border-radius: 0;
+  background: transparent;
+  color: #2b3440;
+}
+
+:where([data-component-owner="event-timeline"]) .timeline-notice.timeline-notice-error { border-left-color: var(--red); }
+
+:where([data-component-owner="event-timeline"]) .timeline-notice > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .timeline-notice strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .timeline-notice.timeline-notice-error strong { color: var(--accent-deep); }
+
+:where([data-component-owner="event-timeline"]) .timeline-notice p {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: #5c6b7a;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}

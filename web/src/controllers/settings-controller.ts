@@ -1,31 +1,14 @@
 import type { AgentOption, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
+import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
-export interface SettingsAgent {
-	[key: string]: unknown;
-	id: string;
-	name: string;
-	available?: boolean;
-}
+export type SettingsAgent = AgentConfig;
+export type SettingsProfile = AgentProfile;
 
-export interface SettingsProfile {
-	key: string;
-	description: string;
-	agentName: string;
-}
+export type SettingsWorkspace = WorkspaceOption;
 
-export interface SettingsWorkspace extends WorkspaceOption {
-	[key: string]: unknown;
-}
+export type ForgeSettingsConfig = WorkspaceConfig;
 
-export interface ForgeSettingsConfig {
-	activeId?: string;
-	workspaces: SettingsWorkspace[];
-	agents: SettingsAgent[];
-	agentProfiles: SettingsProfile[];
-	agentHubProviders?: Array<{ id: string; name?: string }>;
-}
-
-interface AgentHubData {
+export interface AgentHubData {
 	configuredEndpoint?: string;
 	connected?: boolean;
 	compatible?: boolean;

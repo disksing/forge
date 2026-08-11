@@ -5,14 +5,13 @@
 
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
-  import ErrorNotice from "./ErrorNotice.svelte";
-  import ForgeNotice from "./ForgeNotice.svelte";
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ChatContextSnapshot, EventTimelineModel, TimelineItem } from "./models";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
+  import TimelineNotice from "./TimelineNotice.svelte";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
 
@@ -185,16 +184,16 @@
         {:else if item.kind === "lifecycle"}
           <LifecycleNotice {item} />
         {:else if item.kind === "error"}
-          <ErrorNotice title="Provider error" text={item.text || ""} />
+          <TimelineNotice title="Provider error" text={item.text || ""} error />
         {:else}
           <UnknownEvent {item} />
         {/if}
       </div>
     {/each}
     {#each snapshot.notices as notice, index (`notice:${snapshot.identity}:${index}:${String(notice.data?.schedulerTurnSequence || notice.data?.text || "")}`)}
-      <div data-timeline-key={`notice:${index}`}><ForgeNotice {notice} /></div>
+      <div data-timeline-key={`notice:${index}`}><TimelineNotice title="Forge" text={String(notice.data?.text || "")} error={notice.data?.level === "error"} /></div>
     {/each}
-    {#if snapshot.error}<ErrorNotice title="Timeline error" text={snapshot.error} alert />{/if}
+    {#if snapshot.error}<TimelineNotice title="Timeline error" text={snapshot.error} error alert />{/if}
     {#if snapshot.loading && !projected.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Loading agent events</strong></div>{/if}
     {#if snapshot.loaded && !snapshot.loading && !projected.length && !snapshot.notices.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Waiting for agent events</strong></div>{/if}
   {:else}
