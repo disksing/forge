@@ -125,10 +125,11 @@
     openCache.set(snapshot.identity, new Map(openTools));
   }
 
-  function toolOpen(item: TimelineItem, index: number): boolean {
-    const saved = openTools.get(timelineKey(item));
-    if (typeof saved === "boolean") return saved;
-    return index === projected.length - 1 || Boolean(item.calls?.some((call) => call.status === "running"));
+  // Tool groups always start collapsed, whether loaded from history or
+  // streamed live. Only an explicit user toggle opens a group; the choice is
+  // remembered per context so live updates and session switches preserve it.
+  function toolOpen(item: TimelineItem): boolean {
+    return openTools.get(timelineKey(item)) ?? false;
   }
 
   function scroller(): HTMLElement | null {
@@ -171,14 +172,14 @@
         <Icon name={snapshot.loadingOlder ? "loader-circle" : "chevrons-up"} /><span>{snapshot.loadingOlder ? "Loading..." : "Load older messages"}</span>
       </button>
     {/if}
-    {#each projected as item, index (timelineKey(item))}
+    {#each projected as item (timelineKey(item))}
       <div data-timeline-key={timelineKey(item)}>
         {#if item.kind === "message"}
           <TimelineMessage {item} agentName={model.agentName} />
         {:else if item.kind === "thinking"}
           <ThinkingBlock {item} />
         {:else if item.kind === "tools"}
-          <ToolGroup {item} runId={snapshot.runId} open={toolOpen(item, index)} onToggle={(open) => rememberToolOpen(item, open)} />
+          <ToolGroup {item} runId={snapshot.runId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
         {:else if item.kind === "approval"}
           <ApprovalCard {item} runId={snapshot.runId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
         {:else if item.kind === "lifecycle"}

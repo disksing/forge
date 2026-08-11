@@ -117,4 +117,41 @@ describe("EventTimeline", () => {
     await vi.waitFor(() => expect(target.textContent).toContain("message A"));
     expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')?.open).toBe(true);
   });
+
+  it("keeps tool groups collapsed by default, including trailing live groups", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      events: [
+        { id: 1, type: "message", sessionId: "session-run-a", data: { text: "message A" } },
+        { id: 2, type: "tool", sessionId: "session-run-a", data: { status: "running" } },
+      ],
+      page: { hasMoreBefore: false },
+    }), { status: 200, headers: { "content-type": "application/json" } })));
+
+    const channel = createModelChannel(model("run-a"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    // Even as the last timeline item with a running call, the group starts collapsed.
+    await vi.waitFor(() => expect(target.querySelector('[data-timeline-key="tools:2"]')).not.toBeNull());
+    expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')?.open).toBe(false);
+
+    // Live tool events append new groups without opening them.
+    const stream = FakeEventSource.instances[0];
+    stream.emit({ id: 3, type: "tool", sessionId: "session-run-a", data: { status: "completed" } });
+    await vi.waitFor(() => expect(target.querySelector('[data-timeline-key="tools:3"]')).not.toBeNull());
+    expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:3"] .agent-tool-group')?.open).toBe(false);
+
+    // A manual toggle is still honored and survives later live updates.
+    const tools = target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')!;
+    tools.open = true;
+    tools.dispatchEvent(new Event("toggle"));
+    await tick();
+    stream.emit({ id: 4, type: "message", sessionId: "session-run-a", data: { text: "live A" } });
+    await vi.waitFor(() => expect(target.textContent).toContain("live A"));
+    expect(tools.open).toBe(true);
+  });
 });
