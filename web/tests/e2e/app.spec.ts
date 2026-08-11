@@ -536,6 +536,46 @@ test("keeps the Svelte template editor stable and ignores an older preview respo
   expect(harness.taskBodies[0]).toMatchObject({ title: "feature-b:newer", taskMarkdown: "# Locally edited preview\n" });
 });
 
+test("keeps the Create Task split usable across desktop and mobile layouts", async ({ page }) => {
+  await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+  await page.getByRole("button", { name: "New Task" }).click();
+
+  const dialog = page.getByRole("dialog", { name: "Create task" });
+  const split = dialog.locator('[data-component-owner="task-create-form"]');
+  const formColumn = split.locator(".create-task-form-col");
+  const previewColumn = split.locator('[data-component-owner="task-preview"]');
+  await expect(split).toBeVisible();
+  const desktop = await split.evaluate((node) => ({
+    columns: getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length,
+    formOverflow: getComputedStyle(node.querySelector(".create-task-form-col")!).overflowY,
+    previewOverflow: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).overflowY,
+  }));
+  expect(desktop).toEqual({ columns: 2, formOverflow: "auto", previewOverflow: "auto" });
+
+  const title = dialog.locator('input[name="title"]');
+  await title.fill("Responsive local draft");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(title).toHaveValue("Responsive local draft");
+  const mobile = await split.evaluate((node) => ({
+    columns: getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length,
+    overflow: getComputedStyle(node).overflowY,
+    formOverflow: getComputedStyle(node.querySelector(".create-task-form-col")!).overflowY,
+    previewOverflow: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).overflowY,
+    previewBorderTop: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).borderTopStyle,
+    panelsDoNotOverlap: node.querySelector(".create-task-form-col")!.getBoundingClientRect().bottom <= node.querySelector('[data-component-owner="task-preview"]')!.getBoundingClientRect().top,
+  }));
+  expect(mobile).toEqual({ columns: 1, overflow: "auto", formOverflow: "visible", previewOverflow: "visible", previewBorderTop: "solid", panelsDoNotOverlap: true });
+  await expect(formColumn).toBeVisible();
+  await expect(previewColumn).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Create", exact: true })).toBeVisible();
+  const bounds = await dialog.boundingBox();
+  expect(bounds).not.toBeNull();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
+});
+
 test("preserves composer draft through upload and supports Settings and Self-Driving dialogs", async ({ page }) => {
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
