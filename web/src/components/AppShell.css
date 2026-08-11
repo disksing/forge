@@ -118,11 +118,10 @@
 :where([data-component-owner="app-shell"]) .details-panel {
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: var(--bg);
-  /* Auto-refresh re-renders the panel in place; without this the browser's
-  scroll anchoring can drift the scroll position after each DOM swap. */
-  overflow-anchor: none;
 }
 
 :where([data-component-owner="app-shell"]) .agent-panel {
@@ -240,7 +239,7 @@
   }
   :where([data-component-owner="app-shell"]) .details-panel {
     grid-column: 1;
-    overflow: auto;
+    overflow: hidden;
   }
   :where([data-component-owner="app-shell"]) .agent-panel {
     display: none;

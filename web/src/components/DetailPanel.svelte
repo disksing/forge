@@ -39,8 +39,8 @@
       diffRepo = null;
       expanded = new Set();
       activeTab = tabMemory.get(identity) || initialTab(next);
-      const panel = document.getElementById("detailsPanel");
-      if (panel) panel.scrollTop = 0;
+      const content = document.getElementById("detailsContent");
+      if (content) content.scrollTop = 0;
     } else if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) {
       activeTab = tabs[0].id;
     }
@@ -93,6 +93,12 @@
     tabMemory.set(identity, tab);
   }
 
+  function resourceReference(id: string): string {
+    const segment = id.includes(".") ? id.slice(id.lastIndexOf(".") + 1) : id;
+    const match = segment.match(/^(?:project|task)(\d+)$/);
+    return `#${match ? match[1] : segment}`;
+  }
+
   function toggleFile(key: string): void {
     const next = new Set(expanded);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -116,13 +122,15 @@
 </script>
 
 {#if !model.workspaceId}
-  <div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div>
+  <div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>
 {:else if model.resourceType === "workspace"}
   <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}</h1></div></div>
-  <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
-  {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
-  {:else if !model.wiki?.exists}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>
-  {:else}<FileBrowser title="Wiki" entries={model.wiki.entries || []} emptyMessage="No Wiki files yet." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} />{/if}
+  <div id="detailsContent" class="details-content">
+    <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
+    {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
+    {:else if !model.wiki?.exists}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>
+    {:else}<FileBrowser title="Wiki" entries={model.wiki.entries || []} emptyMessage="No Wiki files yet." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} />{/if}
+  </div>
 {:else}
   <div class="details-header">
     <nav class="breadcrumb" aria-label="Location">
@@ -130,21 +138,23 @@
       {#if model.parent}<span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link" onclick={() => model.onNavigate(model.parent?.id || "workspace")}>{model.parent.title}</button>{/if}
       <span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate(model.resourceId)}>{model.resourceTitle}</button>
     </nav>
-    <div class="title-row"><h1>{model.resourceTitle}<code class="resource-ref-badge">{model.resourceId}</code></h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button></div>{/if}</div>
+    <div class="title-row"><h1>{model.resourceTitle}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code></h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button></div>{/if}</div>
   </div>
-  {#if model.loading || !model.detail}<div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div>
+  {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}
     <div class="details-tabs" role="tablist" aria-label="Resource details">
       {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><span>{tab.label}</span>{#if tab.id === "logs" && model.detail.logs?.length}<span class="details-tab-count">{model.detail.logs.length}</span>{/if}</button>{/each}
     </div>
-    {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} /></div>{/each}
-    <div hidden={activeTab !== "template"}>
-      {#if model.resourceType === "project"}<div class="content-section"><h3><Icon name="layout-template" /><span>Task Templates</span></h3><div class="template-list">{#if model.detail.templates?.length}{#each model.detail.templates as template (template.name)}<button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && openPreview("Templates", template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}{template.legacy ? " · legacy" : ""}</small></span><Icon name="chevron-right" /></button>{/each}{:else}<div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>{/if}</div></div>
-      {:else if model.detail.template}<div class="content-section"><h3><Icon name="layout-template" /><span>Template</span></h3><div class="template-list"><div class="template-row"><Icon name="file-text" /><span><strong>{model.detail.template.name}</strong><small>Created from template · v{model.detail.template.schemaVersion || "?"} · {model.detail.template.digest || ""}</small></span></div></div></div>{/if}
+    <div id="detailsContent" class="details-content">
+      {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} /></div>{/each}
+      <div hidden={activeTab !== "template"}>
+        {#if model.resourceType === "project"}<div class="content-section"><h3><Icon name="layout-template" /><span>Task Templates</span></h3><div class="template-list">{#if model.detail.templates?.length}{#each model.detail.templates as template (template.name)}<button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && openPreview("Templates", template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}{template.legacy ? " · legacy" : ""}</small></span><Icon name="chevron-right" /></button>{/each}{:else}<div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>{/if}</div></div>
+        {:else if model.detail.template}<div class="content-section"><h3><Icon name="layout-template" /><span>Template</span></h3><div class="template-list"><div class="template-row"><Icon name="file-text" /><span><strong>{model.detail.template.name}</strong><small>Created from template · v{model.detail.template.schemaVersion || "?"} · {model.detail.template.digest || ""}</small></span></div></div></div>{/if}
+      </div>
+      <div hidden={activeTab !== "logs"}><LogTimeline resourceId={model.resourceId} logs={model.detail.logs || []} hasMore={model.logs.hasMore} loading={model.logs.loading} error={model.logs.error} onLoadMore={() => model.onLoadMoreLogs(model.resourceId)} onIconsChanged={model.onIconsChanged} /></div>
+      <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} /></div>
+      <div hidden={activeTab !== "worktrees"}><div class="content-section"><h3><Icon name="folder-git-2" /><span>Worktrees</span></h3><div class="worktree-list">{#if model.detail.repos?.length}{#each model.detail.repos as repo (`${repo.name}:${repo.worktreePath}`)}<div class="worktree-row"><div class="worktree-main"><Icon name="git-branch" className="worktree-icon" /><div><strong>{repo.branch || "HEAD"}</strong><span>{repo.name || "repository"}{(repo.targetBranch || repo.baseBranch) ? ` · base ${repo.targetBranch || repo.baseBranch}` : ""}</span><small>{repo.worktreePath || ""}</small></div></div><button type="button" class="secondary-button" onclick={() => diffRepo = repo}><Icon name="git-compare-arrows" /><span>View Diff</span></button></div>{/each}{:else}<div class="empty-list-row"><Icon name="git-branch" /><span>No worktrees.</span></div>{/if}</div></div></div>
     </div>
-    <div hidden={activeTab !== "logs"}><LogTimeline resourceId={model.resourceId} logs={model.detail.logs || []} hasMore={model.logs.hasMore} loading={model.logs.loading} error={model.logs.error} onLoadMore={() => model.onLoadMoreLogs(model.resourceId)} onIconsChanged={model.onIconsChanged} /></div>
-    <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} /></div>
-    <div hidden={activeTab !== "worktrees"}><div class="content-section"><h3><Icon name="folder-git-2" /><span>Worktrees</span></h3><div class="worktree-list">{#if model.detail.repos?.length}{#each model.detail.repos as repo (`${repo.name}:${repo.worktreePath}`)}<div class="worktree-row"><div class="worktree-main"><Icon name="git-branch" className="worktree-icon" /><div><strong>{repo.branch || "HEAD"}</strong><span>{repo.name || "repository"}{(repo.targetBranch || repo.baseBranch) ? ` · base ${repo.targetBranch || repo.baseBranch}` : ""}</span><small>{repo.worktreePath || ""}</small></div></div><button type="button" class="secondary-button" onclick={() => diffRepo = repo}><Icon name="git-compare-arrows" /><span>View Diff</span></button></div>{/each}{:else}<div class="empty-list-row"><Icon name="git-branch" /><span>No worktrees.</span></div>{/if}</div></div></div>
   {/if}
 {/if}
 
