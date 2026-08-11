@@ -5455,9 +5455,8 @@ function Fc(e, t) {
 		let n = w(e);
 		F(f, new Map(H(f)).set(n, t), !0), d.set(H(i).identity, new Map(H(f)));
 	}
-	function v(e, t) {
-		let n = H(f).get(w(e));
-		return typeof n == "boolean" ? n : t === H(a).length - 1 || !!e.calls?.some((e) => e.status === "running");
+	function v(e) {
+		return H(f).get(w(e)) ?? !1;
 	}
 	function y() {
 		return H(o)?.parentElement ?? null;
@@ -5512,8 +5511,8 @@ function Fc(e, t) {
 			H(i).hasMoreBefore && e(o);
 		});
 		var s = R(r, 2);
-		J(s, 19, () => H(a), (e) => w(e), (e, t, r) => {
-			var a = kc(), o = I(a), s = (e) => {
+		J(s, 17, () => H(a), (e) => w(e), (e, t) => {
+			var r = kc(), a = I(r), o = (e) => {
 				vc(e, {
 					get item() {
 						return H(t);
@@ -5522,13 +5521,13 @@ function Fc(e, t) {
 						return H(n).agentName;
 					}
 				});
-			}, c = (e) => {
+			}, s = (e) => {
 				dc(e, { get item() {
 					return H(t);
 				} });
-			}, l = (e) => {
+			}, c = (e) => {
 				{
-					let n = /* @__PURE__ */ M(() => v(H(t), H(r)));
+					let n = /* @__PURE__ */ M(() => v(H(t)));
 					Tc(e, {
 						get item() {
 							return H(t);
@@ -5542,7 +5541,7 @@ function Fc(e, t) {
 						onToggle: (e) => _(H(t), e)
 					});
 				}
-			}, u = (e) => {
+			}, l = (e) => {
 				Fs(e, {
 					get item() {
 						return H(t);
@@ -5560,11 +5559,11 @@ function Fc(e, t) {
 						return H(n).onToast;
 					}
 				});
-			}, d = (e) => {
+			}, u = (e) => {
 				lc(e, { get item() {
 					return H(t);
 				} });
-			}, f = (e) => {
+			}, d = (e) => {
 				{
 					let n = /* @__PURE__ */ M(() => H(t).text || "");
 					bc(e, {
@@ -5575,14 +5574,14 @@ function Fc(e, t) {
 						error: !0
 					});
 				}
-			}, p = (e) => {
+			}, f = (e) => {
 				Dc(e, { get item() {
 					return H(t);
 				} });
 			};
-			q(o, (e) => {
-				H(t).kind === "message" ? e(s) : H(t).kind === "thinking" ? e(c, 1) : H(t).kind === "tools" ? e(l, 2) : H(t).kind === "approval" ? e(u, 3) : H(t).kind === "lifecycle" ? e(d, 4) : H(t).kind === "error" ? e(f, 5) : e(p, -1);
-			}), O(a), z((e) => X(a, "data-timeline-key", e), [() => w(H(t))]), G(e, a);
+			q(a, (e) => {
+				H(t).kind === "message" ? e(o) : H(t).kind === "thinking" ? e(s, 1) : H(t).kind === "tools" ? e(c, 2) : H(t).kind === "approval" ? e(l, 3) : H(t).kind === "lifecycle" ? e(u, 4) : H(t).kind === "error" ? e(d, 5) : e(f, -1);
+			}), O(r), z((e) => X(r, "data-timeline-key", e), [() => w(H(t))]), G(e, r);
 		});
 		var c = R(s, 2);
 		J(c, 19, () => H(i).notices, (e, t) => `notice:${H(i).identity}:${t}:${String(e.data?.schedulerTurnSequence || e.data?.text || "")}`, (e, t, n) => {
