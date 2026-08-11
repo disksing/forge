@@ -73,11 +73,12 @@ export interface SettingsControllerDependencies {
 
 export function configWithAgentHubCatalog(base: ForgeSettingsConfig, agentHub: AgentHubData): ForgeSettingsConfig {
 	const catalog = agentHub?.catalog || {};
-	const availableByName = new Map((catalog.agents || []).map((agent) => [agent.name, agent]));
-	const agents = (base.agents || []).map((agent) => ({
+	// AgentHub is the source of truth for Agent definitions. Forge's workspace
+	// settings endpoint only contains workspaces and profile routes, so there
+	// is no local agent list to merge against.
+	const agents = (catalog.agents || []).map((agent) => ({
 		...agent,
-		...availableByName.get(agent.name || agent.id),
-		id: agent.id || agent.name
+		id: agent.name
 	}));
 	return {
 		...base,

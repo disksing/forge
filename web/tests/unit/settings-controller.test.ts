@@ -7,20 +7,26 @@ describe("SettingsController", () => {
 		const base = {
 			activeId: "alpha",
 			workspaces: [],
-			agents: [{ id: "codex", name: "Codex", available: true }],
+			agents: [],
 			agentProfiles: []
 		};
 		const merged = configWithAgentHubCatalog(base, {
 			catalog: {
 				providers: [{ id: "openai", name: "OpenAI" }],
-				agents: [{ name: "Codex", available: false, unavailableReason: "offline" }]
+				agents: [
+					{ name: "Codex", providerId: "openai", available: true },
+					{ name: "Offline", providerId: "openai", available: false, unavailableReason: "offline" }
+				]
 			},
 			config: { agentProfiles: [{ key: "default", description: "", agentName: "Codex" }] }
 		});
 
-		expect(merged.agents[0]).toMatchObject({ id: "codex", name: "Codex", available: false, unavailableReason: "offline" });
+		expect(merged.agents).toEqual([
+			{ id: "Codex", name: "Codex", providerId: "openai", available: true },
+			{ id: "Offline", name: "Offline", providerId: "openai", available: false, unavailableReason: "offline" }
+		]);
 		expect(merged.agentHubProviders).toEqual([{ id: "openai", name: "OpenAI" }]);
 		expect(merged.agentProfiles).toEqual([{ key: "default", description: "", agentName: "Codex" }]);
-		expect(base.agents[0]?.available).toBe(true);
+		expect(base.agents).toEqual([]);
 	});
 });

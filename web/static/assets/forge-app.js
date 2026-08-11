@@ -3638,14 +3638,13 @@ function ua(e) {
 //#endregion
 //#region src/controllers/settings-controller.ts
 function da(e, t) {
-	let n = t?.catalog || {}, r = new Map((n.agents || []).map((e) => [e.name, e])), i = (e.agents || []).map((e) => ({
+	let n = t?.catalog || {}, r = (n.agents || []).map((e) => ({
 		...e,
-		...r.get(e.name || e.id),
-		id: e.id || e.name
+		id: e.name
 	}));
 	return {
 		...e,
-		agents: i,
+		agents: r,
 		agentHubProviders: n.providers || [],
 		agentProfiles: t.config?.agentProfiles || []
 	};

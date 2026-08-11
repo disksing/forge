@@ -12,6 +12,7 @@ interface Harness {
   streamRequests: string[];
   treeRequests: number;
   agentsBodies: Array<Record<string, unknown>>;
+  startBodies: Array<Record<string, unknown>>;
   uiStateBodies: Array<Record<string, unknown>>;
 }
 
@@ -116,7 +117,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [] };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -231,6 +232,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
     if (path === "/api/workspaces/ws-test/agent/runs" && method === "GET") {
       const resourceId = url.searchParams.get("resourceId");
       return json(route, { runs: resourceId === "project1.task1" ? runs : [] });
+    }
+    if (path === "/api/workspaces/ws-test/agent/runs" && method === "POST") {
+      harness.startBodies.push(request.postDataJSON());
+      return json(route, { run: { ...runs[0], id: "run-3", agentHubSessionId: "session-3", agentHubAgentName: "test-agent", title: "New session" } }, 201);
     }
     const runMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])$/);
     if (runMatch && method === "GET") {
@@ -505,6 +510,21 @@ test("switches sessions, sends input, receives SSE, and preserves active reading
   expect(after.selection).not.toBe("");
   expect(harness.treeRequests).toBeGreaterThan(1);
   expect(harness.streamRequests).toContain("run-1");
+});
+
+test("uses the AgentHub catalog to enable the New Session agent chooser", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1");
+
+  const start = page.locator("#agentStartButton");
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(page.locator("#ttyAgentMenu")).toBeVisible();
+  await expect(page.locator('[data-agent-choice="test-agent"]')).toBeVisible();
+  await page.locator('[data-agent-choice="test-agent"]').click();
+
+  await expect.poll(() => harness.startBodies.length).toBe(1);
+  expect(harness.startBodies[0]).toMatchObject({ agentName: "test-agent", resourceId: "project1" });
 });
 
 test("keeps the Svelte template editor stable and ignores an older preview response", async ({ page }) => {
