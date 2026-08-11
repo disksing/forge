@@ -2483,23 +2483,23 @@ function Vi(e, t) {
 		e.preventDefault(), n?.();
 		let r = e.currentTarget, i = document.getElementById("app"), a = document.getElementById("mobileSidebar"), o = document.querySelector(".workspace-panel"), s = document.getElementById("agentPanel"), c = document.querySelector(".session-section");
 		if (!i || !a || !o || !s || !c) return;
-		let l = e.clientX, u = e.clientY, d = a.getBoundingClientRect().width, f = s.getBoundingClientRect().width, p = c.getBoundingClientRect().height, m = t.kind === "sidebarSessionHeight" ? "resizing-y" : "resizing-x";
-		r.classList.add("dragging"), document.body.classList.add(m);
-		let h = (e) => {
+		let l = window.matchMedia("(min-width: 981px) and (max-width: 1200px)").matches, u = e.clientX, d = e.clientY, f = a.getBoundingClientRect().width, p = s.getBoundingClientRect().width, m = c.getBoundingClientRect().height, h = t.kind === "sidebarSessionHeight" ? "resizing-y" : "resizing-x";
+		r.classList.add("dragging"), document.body.classList.add(h);
+		let g = (e) => {
 			if (t.kind === "sidebarWidth") {
-				let n = Math.max(220, i.getBoundingClientRect().width - 8 - 360 - 8 - Math.max(320, s.getBoundingClientRect().width));
-				t.onPreview(t.kind, Math.min(n, Math.max(220, d + e.clientX - l)));
+				let n = l ? 360 : 368 + Math.max(320, s.getBoundingClientRect().width), r = Math.max(220, i.getBoundingClientRect().width - 8 - n);
+				t.onPreview(t.kind, Math.min(r, Math.max(220, f + e.clientX - u)));
 			} else if (t.kind === "chatWidth") {
 				let n = Math.max(320, o.getBoundingClientRect().width - 360 - 8);
-				t.onPreview(t.kind, Math.min(n, Math.max(320, f - (e.clientX - l))));
+				t.onPreview(t.kind, Math.min(n, Math.max(320, p - (e.clientX - u))));
 			} else {
 				let n = Math.max(120, a.getBoundingClientRect().height - 250);
-				t.onPreview(t.kind, Math.min(n, Math.max(84, p - (e.clientY - u))));
+				t.onPreview(t.kind, Math.min(n, Math.max(84, m - (e.clientY - d))));
 			}
-		}, g = () => {
-			r.classList.remove("dragging"), document.body.classList.remove(m), window.removeEventListener("pointermove", h), window.removeEventListener("pointerup", g), window.removeEventListener("pointercancel", g), n = null, t.onCommit(t.kind);
+		}, _ = () => {
+			r.classList.remove("dragging"), document.body.classList.remove(h), window.removeEventListener("pointermove", g), window.removeEventListener("pointerup", _), window.removeEventListener("pointercancel", _), n = null, t.onCommit(t.kind);
 		};
-		n = g, window.addEventListener("pointermove", h), window.addEventListener("pointerup", g, { once: !0 }), window.addEventListener("pointercancel", g, { once: !0 });
+		n = _, window.addEventListener("pointermove", g), window.addEventListener("pointerup", _, { once: !0 }), window.addEventListener("pointercancel", _, { once: !0 });
 	}
 	var i = Bi();
 	z(() => {
@@ -2769,7 +2769,7 @@ function ea(e, t) {
 br(["click"]);
 //#endregion
 //#region src/components/AppShell.svelte
-var ta = /* @__PURE__ */ W("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div id=\"agentControls\" class=\"agent-actions\"></div><div id=\"selfDrivingBarWrap\" class=\"self-driving-bar-wrap\" data-component-owner=\"self-driving-bar\"><!></div><div id=\"agentSessionsWrap\" class=\"agent-sessions\" data-component-owner=\"session-switcher\"><!></div><div class=\"tty-panel\"><div id=\"ttyLog\" class=\"tty-log\" data-component-owner=\"event-timeline\"><!></div><div id=\"ttyComposer\" class=\"tty-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div>");
+var ta = /* @__PURE__ */ W("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><div class=\"workspace-view-tabs\" role=\"tablist\" aria-label=\"Workspace view\"><div class=\"workspace-view-switcher\"><button id=\"paneDetailsTab\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"paneChatTab\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div></div> <section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div id=\"agentControls\" class=\"agent-actions\"></div><div id=\"selfDrivingBarWrap\" class=\"self-driving-bar-wrap\" data-component-owner=\"self-driving-bar\"><!></div><div id=\"agentSessionsWrap\" class=\"agent-sessions\" data-component-owner=\"session-switcher\"><!></div><div class=\"tty-panel\"><div id=\"ttyLog\" class=\"tty-log\" data-component-owner=\"event-timeline\"><!></div><div id=\"ttyComposer\" class=\"tty-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div>");
 function na(e, t) {
 	A(t, !0);
 	let n = /* @__PURE__ */ P($t(t.channel.current())), r = /* @__PURE__ */ P(0);
@@ -2947,15 +2947,17 @@ function na(e, t) {
 			return H(n).onPaneCommit;
 		}
 	});
-	var g = R(h, 2), _ = I(g), v = I(_), y = (e) => {
+	var g = R(h, 2), _ = I(g), v = I(_), y = I(v), b = R(y, 2);
+	O(v), O(_);
+	var x = R(_, 2), S = I(x), C = (e) => {
 		var n = Or();
 		qr(L(n), () => t.details), G(e, n);
 	};
-	q(v, (e) => {
-		t.details && e(y);
-	}), O(_);
-	var b = R(_, 2);
-	Vi(b, {
+	q(S, (e) => {
+		t.details && e(C);
+	}), O(x);
+	var w = R(x, 2);
+	Vi(w, {
 		id: "detailsResize",
 		kind: "chatWidth",
 		className: "details-resize",
@@ -2967,36 +2969,38 @@ function na(e, t) {
 			return H(n).onPaneCommit;
 		}
 	});
-	var x = R(b, 2), S = R(I(x)), C = I(S), w = (e) => {
+	var ee = R(w, 2), T = R(I(ee)), te = I(T), ne = (e) => {
 		var n = Or();
 		qr(L(n), () => t.selfDrivingBar), G(e, n);
 	};
-	q(C, (e) => {
-		t.selfDrivingBar && e(w);
-	}), O(S);
-	var ee = R(S), T = I(ee), te = (e) => {
+	q(te, (e) => {
+		t.selfDrivingBar && e(ne);
+	}), O(T);
+	var re = R(T), ie = I(re), ae = (e) => {
 		var n = Or();
 		qr(L(n), () => t.sessions), G(e, n);
 	};
-	q(T, (e) => {
-		t.sessions && e(te);
-	}), O(ee);
-	var ne = R(ee), re = I(ne), ie = I(re), ae = (e) => {
+	q(ie, (e) => {
+		t.sessions && e(ae);
+	}), O(re);
+	var oe = R(re), se = I(oe), ce = I(se), le = (e) => {
 		var n = Or();
 		qr(L(n), () => t.timeline), G(e, n);
 	};
-	q(ie, (e) => {
-		t.timeline && e(ae);
-	}), O(re);
-	var oe = R(re), se = I(oe), ce = (e) => {
+	q(ce, (e) => {
+		t.timeline && e(le);
+	}), O(se);
+	var ue = R(se), de = I(ue), fe = (e) => {
 		var n = Or();
 		qr(L(n), () => t.composer), G(e, n);
 	};
-	q(se, (e) => {
-		t.composer && e(ce);
-	}), O(oe), O(ne), O(x), O(g), O(i), z(() => K(u, H(n).version)), U("click", d, () => {
+	q(de, (e) => {
+		t.composer && e(fe);
+	}), O(ue), O(oe), O(ee), O(g), O(i), z(() => {
+		K(u, H(n).version), X(y, "aria-selected", H(n).mobile.view === "details"), X(b, "aria-selected", H(n).mobile.view === "chat");
+	}), U("click", d, () => {
 		H(n).onMobileSidebar(!1), H(n).onOpenSettings();
-	}), G(e, i), j();
+	}), U("click", y, () => H(n).onMobileView("details")), U("click", b, () => H(n).onMobileView("chat")), G(e, i), j();
 }
 br(["click"]);
 //#endregion

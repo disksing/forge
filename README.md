@@ -12,7 +12,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
 - **Interactive and autonomous agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
 - **Task-level Self-Driving.** Every open Task has a persistent On/Off desired state, a monotonic revision authority boundary, and an independent controller condition. The Scheduler reuses or creates one AgentHub Session as needed without coupling the switch to Session or Turn lifecycle.
-- **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile.
+- **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1200px, and a single-column mobile layout below 980px.
 
 ## Design
 

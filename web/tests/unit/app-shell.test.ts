@@ -171,4 +171,30 @@ describe("AppShell", () => {
     await tick();
     expect(target.querySelector("#workspaceMenu")).toBeNull();
   });
+
+  it("switches the shared details/chat column through the workspace view tabs", async () => {
+    const onMobileView = vi.fn();
+    const initial = model({ onMobileView });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const detailsTab = target.querySelector<HTMLButtonElement>("#paneDetailsTab")!;
+    const chatTab = target.querySelector<HTMLButtonElement>("#paneChatTab")!;
+    expect(detailsTab.getAttribute("aria-selected")).toBe("true");
+    expect(chatTab.getAttribute("aria-selected")).toBe("false");
+
+    chatTab.click();
+    expect(onMobileView).toHaveBeenCalledWith("chat");
+    channel.publish({ ...initial, mobile: { ...initial.mobile, view: "chat" } });
+    await tick();
+    expect(detailsTab.getAttribute("aria-selected")).toBe("false");
+    expect(chatTab.getAttribute("aria-selected")).toBe("true");
+    expect(document.body.classList.contains("mobile-chat-active")).toBe(true);
+
+    detailsTab.click();
+    expect(onMobileView).toHaveBeenCalledWith("details");
+  });
 });

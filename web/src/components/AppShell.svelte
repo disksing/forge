@@ -128,6 +128,12 @@
 </aside>
 <PaneResizeHandle id="sidebarResize" kind="sidebarWidth" className="sidebar-resize" label="Resize sidebar" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
 <main class="workspace-panel">
+  <div class="workspace-view-tabs" role="tablist" aria-label="Workspace view">
+    <div class="workspace-view-switcher">
+      <button id="paneDetailsTab" type="button" role="tab" aria-controls="detailsPanel" aria-selected={model.mobile.view === "details"} onclick={() => model.onMobileView("details")}>Details</button>
+      <button id="paneChatTab" type="button" role="tab" aria-controls="agentPanel" aria-selected={model.mobile.view === "chat"} onclick={() => model.onMobileView("chat")}>Chat</button>
+    </div>
+  </div>
   <section id="detailsPanel" class="details-panel" data-component-owner="detail-panel">{#if details}{@render details()}{/if}</section>
   <PaneResizeHandle id="detailsResize" kind="chatWidth" className="details-resize" label="Resize chat panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
   <aside id="agentPanel" class="agent-panel"><div id="agentControls" class="agent-actions"></div><div id="selfDrivingBarWrap" class="self-driving-bar-wrap" data-component-owner="self-driving-bar">{#if selfDrivingBar}{@render selfDrivingBar()}{/if}</div><div id="agentSessionsWrap" class="agent-sessions" data-component-owner="session-switcher">{#if sessions}{@render sessions()}{/if}</div><div class="tty-panel"><div id="ttyLog" class="tty-log" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="ttyComposer" class="tty-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>

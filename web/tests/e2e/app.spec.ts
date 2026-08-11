@@ -709,3 +709,35 @@ test("keeps mobile navigation, view selection, and immersive preference in the S
   await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
   await expect(page.locator("#detailsPanel")).toBeVisible();
 });
+
+test("merges details and chat into one tabbed column in the two-column layout", async ({ page }) => {
+  await page.setViewportSize({ width: 1100, height: 800 });
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  // Sidebar stays visible; details and chat share one column behind tabs.
+  await expect(page.locator("#mobileSidebar")).toBeVisible();
+  await expect(page.locator(".workspace-view-tabs")).toBeVisible();
+  await expect(page.locator("#detailsResize")).toBeHidden();
+  await expect(page.locator("#paneDetailsTab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeHidden();
+
+  await page.locator("#paneChatTab").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-chat-active/);
+  await expect(page.locator("#paneChatTab")).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#detailsPanel")).toBeHidden();
+  await expect(page.locator("#agentPanel")).toBeVisible();
+
+  await page.locator("#paneDetailsTab").click();
+  await expect(page.locator("body")).not.toHaveClass(/mobile-chat-active/);
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeHidden();
+
+  // Widening back to the three-column layout hides the tabs and shows both panes.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(page.locator(".workspace-view-tabs")).toBeHidden();
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeVisible();
+  await expect(page.locator("#detailsResize")).toBeVisible();
+});

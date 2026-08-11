@@ -30,6 +30,9 @@
     const chat = document.getElementById("agentPanel");
     const sessions = document.querySelector<HTMLElement>(".session-section");
     if (!app || !sidebar || !workspace || !chat || !sessions) return;
+    // Two-column mode stacks details and chat in one column, so the sidebar
+    // only has to leave room for the details minimum.
+    const twoColumn = window.matchMedia("(min-width: 981px) and (max-width: 1200px)").matches;
     const startX = event.clientX;
     const startY = event.clientY;
     const startSidebar = sidebar.getBoundingClientRect().width;
@@ -40,7 +43,8 @@
     document.body.classList.add(bodyClass);
     const move = (moveEvent: PointerEvent) => {
       if (kind === "sidebarWidth") {
-        const max = Math.max(220, app.getBoundingClientRect().width - 8 - 360 - 8 - Math.max(320, chat.getBoundingClientRect().width));
+        const reserved = twoColumn ? 360 : 360 + 8 + Math.max(320, chat.getBoundingClientRect().width);
+        const max = Math.max(220, app.getBoundingClientRect().width - 8 - reserved);
         onPreview(kind, Math.min(max, Math.max(220, startSidebar + moveEvent.clientX - startX)));
       } else if (kind === "chatWidth") {
         const max = Math.max(320, workspace.getBoundingClientRect().width - 360 - 8);
