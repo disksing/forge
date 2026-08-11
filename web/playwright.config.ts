@@ -20,7 +20,12 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Wider than the two-column breakpoint so desktop tests exercise the
+        // three-column layout; tests that need other layouts set explicit sizes.
+        viewport: { width: 1500, height: 800 },
+      },
     },
   ],
   webServer: {

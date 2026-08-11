@@ -748,9 +748,52 @@ test("merges details and chat into one tabbed column in the two-column layout", 
   await expect(page.locator("#agentPanel")).toBeHidden();
 
   // Widening back to the three-column layout hides the tabs and shows both panes.
-  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.setViewportSize({ width: 1500, height: 800 });
   await expect(page.locator(".workspace-view-tabs")).toBeHidden();
   await expect(page.locator("#detailsPanel")).toBeVisible();
   await expect(page.locator("#agentPanel")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeVisible();
+});
+
+test("lets users cycle the layout manually, including the collapsed-sidebar split", async ({ page }) => {
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  // Desktop default viewport (1500px): auto resolves to the three-column layout.
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
+  await expect(page.locator(".workspace-view-tabs")).toBeHidden();
+
+  // auto -> three -> two: the tabbed column appears even on a wide window.
+  const brandSwitcher = page.locator(".brand-band .layout-switcher");
+  await brandSwitcher.click();
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
+  await brandSwitcher.click();
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "two");
+  await expect(page.locator(".workspace-view-tabs")).toBeVisible();
+  await expect(page.locator("#detailsResize")).toBeHidden();
+  await expect(page.locator("#agentPanel")).toBeHidden();
+
+  // two -> split: the sidebar collapses into a drawer, details and chat sit side by side.
+  await brandSwitcher.click();
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "split");
+  await expect(page.locator("#mobileSidebar")).toBeHidden();
+  await expect(page.locator(".workspace-toolbar")).toBeVisible();
+  await expect(page.locator("#detailsPanel")).toBeVisible();
+  await expect(page.locator("#agentPanel")).toBeVisible();
+  await expect(page.locator("#detailsResize")).toBeVisible();
+  await expect(page.locator("#sidebarResize")).toBeHidden();
+
+  // The drawer opens from the toolbar and closes from the backdrop.
+  await page.locator("#splitMenuButton").click();
+  await expect(page.locator("body")).toHaveClass(/mobile-sidebar-open/);
+  await expect(page.locator("#mobileSidebar")).toBeVisible();
+  await page.locator("#mobileSidebarBackdrop").click({ position: { x: 800, y: 400 } });
+  await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
+
+  // The preference persists across reloads; cycling again returns to auto.
+  await page.reload();
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "split");
+  await page.locator(".workspace-toolbar .layout-switcher").click();
+  await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
+  await expect(page.locator("#mobileSidebar")).toBeVisible();
 });

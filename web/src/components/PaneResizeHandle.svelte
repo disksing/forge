@@ -32,7 +32,7 @@
     if (!app || !sidebar || !workspace || !chat || !sessions) return;
     // Two-column mode stacks details and chat in one column, so the sidebar
     // only has to leave room for the details minimum.
-    const twoColumn = window.matchMedia("(min-width: 981px) and (max-width: 1200px)").matches;
+    const twoColumn = document.body.dataset.layout === "two";
     const startX = event.clientX;
     const startY = event.clientY;
     const startSidebar = sidebar.getBoundingClientRect().width;

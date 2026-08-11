@@ -80,6 +80,7 @@ export interface AppShellModel {
   sessions: ShellSessionItem[];
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarSessionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
+  layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
   route: { path: string; revision: number; replace: boolean };
   onSwitchWorkspace: (id: string) => Promise<void>;
   onAddWorkspace: () => void;
@@ -95,6 +96,7 @@ export interface AppShellModel {
   onMobileSidebar: (open: boolean) => void;
   onMobileView: (view: "details" | "chat") => void;
   onMobileImmersive: (immersive: boolean) => void;
+  onLayoutCycle: () => void;
   onHistoryNavigation: (pathname: string) => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;

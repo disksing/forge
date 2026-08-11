@@ -1,5 +1,6 @@
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
+const LAYOUT_PREFERENCE_KEY = "forge.gui.layoutPreference";
 const PANE_HANDLE_WIDTH = 8;
 const SIDEBAR_MIN_WIDTH = 220;
 const DETAILS_MIN_WIDTH = 360;
@@ -16,6 +17,14 @@ export interface MobilePaneState {
 	sidebarOpen: boolean;
 	view: "details" | "chat";
 	immersive: boolean;
+}
+
+export type LayoutPreference = "auto" | "three" | "two" | "split";
+export type EffectiveLayout = "three" | "two" | "split" | "single";
+
+export interface LayoutState {
+	preference: LayoutPreference;
+	effective: EffectiveLayout;
 }
 
 export type PaneName = keyof PaneSizes;
@@ -40,6 +49,12 @@ function finiteSize(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
 }
 
+const LAYOUT_PREFERENCES: LayoutPreference[] = ["auto", "three", "two", "split"];
+
+function normalizeLayoutPreference(value: unknown): LayoutPreference {
+	return LAYOUT_PREFERENCES.includes(value as LayoutPreference) ? value as LayoutPreference : "auto";
+}
+
 export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): PaneSizes {
 	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown } : {};
 	const sizes = { ...PANE_DEFAULTS };
@@ -56,7 +71,9 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 export function createPaneLayoutController(onChange: () => void, storage: Storage | null = window.localStorage) {
 	let paneSizes = { ...PANE_DEFAULTS };
 	let mobile: MobilePaneState = { sidebarOpen: false, view: "details", immersive: false };
+	let layoutPreference: LayoutPreference = "auto";
 	const mobileQuery = window.matchMedia("(max-width: 980px)");
+	const twoColumnQuery = window.matchMedia("(max-width: 1440px)");
 
 	function readStoredPaneSizes(): Record<string, unknown> {
 		if (!storage) return {};
@@ -108,6 +125,18 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 			mobile.immersive = false;
 		}
 		document.body.classList.toggle("chat-immersive", mobile.immersive);
+		try {
+			layoutPreference = normalizeLayoutPreference(storage?.getItem(LAYOUT_PREFERENCE_KEY));
+		} catch (_) {
+			layoutPreference = "auto";
+		}
+		applyLayout();
+		const onLayoutMediaChange = () => {
+			applyLayout();
+			onChange();
+		};
+		mobileQuery.addEventListener?.("change", onLayoutMediaChange);
+		twoColumnQuery.addEventListener?.("change", onLayoutMediaChange);
 	}
 
 	function commitPane(name: string): void {
@@ -129,6 +158,30 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		paneSizes = normalizePaneSizes(raw, workspacePanelWidth());
 		applyPaneSizes();
 		saveAllPaneSizes();
+	}
+
+	function effectiveLayout(): EffectiveLayout {
+		if (mobileQuery.matches) return "single";
+		if (layoutPreference !== "auto") return layoutPreference;
+		return twoColumnQuery.matches ? "two" : "three";
+	}
+
+	function applyLayout(): void {
+		document.body.dataset.layout = effectiveLayout();
+	}
+
+	function setLayoutPreference(preference: string): void {
+		layoutPreference = normalizeLayoutPreference(preference);
+		try {
+			storage?.setItem(LAYOUT_PREFERENCE_KEY, layoutPreference);
+		} catch (_) {}
+		applyLayout();
+		onChange();
+	}
+
+	function cycleLayoutPreference(): void {
+		const next = LAYOUT_PREFERENCES[(LAYOUT_PREFERENCES.indexOf(layoutPreference) + 1) % LAYOUT_PREFERENCES.length];
+		setLayoutPreference(next);
 	}
 
 	function setMobileSidebar(open: boolean): void {
@@ -157,9 +210,11 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		previewPane: setPaneSize,
 		commitPane,
 		syncViewport,
+		setLayoutPreference,
+		cycleLayoutPreference,
 		setMobileSidebar,
 		setMobileView,
 		setMobileImmersive,
-		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile } })
+		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile }, layout: { preference: layoutPreference, effective: effectiveLayout() } })
 	};
 }

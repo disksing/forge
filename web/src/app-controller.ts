@@ -907,6 +907,7 @@ function renderAppShell() {
 		onMobileSidebar: (open) => setMobileSidebar(open),
 		onMobileView: (view) => setMobileView(view),
 		onMobileImmersive: (immersive) => setMobileImmersive(immersive),
+		onLayoutCycle: () => paneLayoutController.cycleLayoutPreference(),
 		onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
 		onToast: toast,
 		onIconsChanged: refreshIcons

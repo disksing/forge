@@ -1,0 +1,40 @@
+/* LayoutSwitcher styles. Keep selectors within the documented ownership boundary. */
+
+
+
+:where([data-component-owner="layout-switcher"]).layout-switcher {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+}
+
+:where([data-component-owner="layout-switcher"]).layout-switcher:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+:where([data-component-owner="layout-switcher"]).layout-switcher.dark {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="layout-switcher"]).layout-switcher.dark:hover {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="layout-switcher"]).layout-switcher svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* The manual layout preference is only honored above the mobile breakpoint. */
+@media (max-width:980px) {
+
+  :where([data-component-owner="layout-switcher"]).layout-switcher {
+    display: none;
+  }
+}

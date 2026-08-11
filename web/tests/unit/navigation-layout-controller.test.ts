@@ -42,4 +42,55 @@ describe("route and pane layout controllers", () => {
 		layout.commitPane("chatWidth");
 		expect(JSON.parse(storage.getItem("forge.gui.paneSizes") || "{}").chatWidth).toBe(510);
 	});
+
+	function mockMatchMedia(matches: Record<string, boolean>): void {
+		Object.defineProperty(window, "matchMedia", {
+			configurable: true,
+			value: vi.fn((query: string) => ({ matches: Boolean(matches[query]), addEventListener: vi.fn(), removeEventListener: vi.fn() }))
+		});
+	}
+
+	it("resolves the effective layout from the preference and viewport, and persists the choice", () => {
+		delete document.body.dataset.layout;
+		mockMatchMedia({});
+		let layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(document.body.dataset.layout).toBe("three");
+		expect(layout.snapshot().layout).toEqual({ preference: "auto", effective: "three" });
+
+		mockMatchMedia({ "(max-width: 1440px)": true });
+		layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(document.body.dataset.layout).toBe("two");
+
+		layout.setLayoutPreference("split");
+		expect(document.body.dataset.layout).toBe("split");
+		expect(layout.snapshot().layout).toEqual({ preference: "split", effective: "split" });
+		expect(storage.getItem("forge.gui.layoutPreference")).toBe("split");
+
+		mockMatchMedia({});
+		layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(document.body.dataset.layout).toBe("split");
+
+		mockMatchMedia({ "(max-width: 980px)": true, "(max-width: 1440px)": true });
+		layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(document.body.dataset.layout).toBe("single");
+	});
+
+	it("cycles the layout preference through auto, three, two, and split", () => {
+		mockMatchMedia({});
+		const layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(layout.snapshot().layout.preference).toBe("auto");
+		layout.cycleLayoutPreference();
+		expect(layout.snapshot().layout).toEqual({ preference: "three", effective: "three" });
+		layout.cycleLayoutPreference();
+		expect(layout.snapshot().layout).toEqual({ preference: "two", effective: "two" });
+		layout.cycleLayoutPreference();
+		expect(layout.snapshot().layout).toEqual({ preference: "split", effective: "split" });
+		layout.cycleLayoutPreference();
+		expect(layout.snapshot().layout).toEqual({ preference: "auto", effective: "three" });
+	});
 });
