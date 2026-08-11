@@ -54,6 +54,46 @@ afterEach(async () => {
 });
 
 describe("DetailPanel", () => {
+  it("renders the compact resource number inside an independently scrollable body", async () => {
+    const { target } = mountModel(resourceModel());
+    await tick();
+
+    const header = target.querySelector(".details-header")!;
+    const tabs = target.querySelector(".details-tabs")!;
+    const content = target.querySelector("#detailsContent")!;
+    expect(target.querySelector(".resource-ref-badge")?.textContent).toBe("#1");
+    expect(header.contains(content)).toBe(false);
+    expect(tabs.contains(content)).toBe(false);
+    expect(content.querySelector('[data-doc-file="task.md"]')).not.toBeNull();
+  });
+
+  it("uses the Project number for a Project detail reference", async () => {
+    const initial = resourceModel();
+    const projectFile = { ...initial.detail!.files![0], name: "project.md", path: "project12/project.md" };
+    const { target } = mountModel(resourceModel({
+      identity: "ws:project12:project",
+      resourceId: "project12",
+      resourceType: "project",
+      parent: null,
+      detail: { ...initial.detail!, id: "project12", type: "project", files: [projectFile] },
+    }));
+    await tick();
+    expect(target.querySelector(".resource-ref-badge")?.textContent).toBe("#12");
+  });
+
+  it("resets the detail body, rather than the fixed panel chrome, after navigation", async () => {
+    const initial = resourceModel();
+    const { channel, target } = mountModel(initial);
+    await tick();
+    const content = target.querySelector<HTMLElement>("#detailsContent")!;
+    content.scrollTop = 80;
+
+    channel.publish({ ...initial, identity: "ws:project1.task2:task", resourceId: "project1.task2" });
+    await tick();
+    expect(content.scrollTop).toBe(0);
+    expect(target.querySelector(".resource-ref-badge")?.textContent).toBe("#2");
+  });
+
   it("keeps the resource document tab selected when detail data arrives after navigation", async () => {
     const loaded = resourceModel();
     const loading = resourceModel({ detail: null, loading: true });

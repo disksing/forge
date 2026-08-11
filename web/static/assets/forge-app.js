@@ -4351,14 +4351,14 @@ function as(e, t) {
 }
 //#endregion
 //#region src/components/DetailPanel.svelte
-var os = /* @__PURE__ */ W("<div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div>"), ss = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), cs = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), ls = /* @__PURE__ */ W("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav><div class=\"title-row\"><h1> </h1></div></div> <!> <!>", 1), us = /* @__PURE__ */ W("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), ds = /* @__PURE__ */ W("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), fs = /* @__PURE__ */ W("<div class=\"details-actions\"><!><button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button></div>"), ps = /* @__PURE__ */ W("<div class=\"empty-state\"><!><strong>Loading details...</strong></div>"), ms = /* @__PURE__ */ W("<span class=\"details-tab-count\"> </span>"), hs = /* @__PURE__ */ W("<button type=\"button\" role=\"tab\"><span> </span><!></button>"), gs = /* @__PURE__ */ W("<div><!></div>"), _s = /* @__PURE__ */ W("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), vs = /* @__PURE__ */ W("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ys = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Task Templates</span></h3><div class=\"template-list\"><!></div></div>"), bs = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Template</span></h3><div class=\"template-list\"><div class=\"template-row\"><!><span><strong> </strong><small> </small></span></div></div></div>"), xs = /* @__PURE__ */ W("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), Ss = /* @__PURE__ */ W("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), Cs = /* @__PURE__ */ W("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <!> <div><!></div> <div><!></div> <div><!></div> <div><div class=\"content-section\"><h3><!><span>Worktrees</span></h3><div class=\"worktree-list\"><!></div></div></div>", 1), ws = /* @__PURE__ */ W("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!> <span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav> <div class=\"title-row\"><h1> <code class=\"resource-ref-badge\"> </code></h1><!></div></div> <!>", 1), Ts = /* @__PURE__ */ W("<!> <!> <!>", 1);
+var os = /* @__PURE__ */ W("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), ss = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), cs = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), ls = /* @__PURE__ */ W("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav><div class=\"title-row\"><h1> </h1></div></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!></div>", 1), us = /* @__PURE__ */ W("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), ds = /* @__PURE__ */ W("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), fs = /* @__PURE__ */ W("<div class=\"details-actions\"><!><button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button></div>"), ps = /* @__PURE__ */ W("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), ms = /* @__PURE__ */ W("<span class=\"details-tab-count\"> </span>"), hs = /* @__PURE__ */ W("<button type=\"button\" role=\"tab\"><span> </span><!></button>"), gs = /* @__PURE__ */ W("<div><!></div>"), _s = /* @__PURE__ */ W("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), vs = /* @__PURE__ */ W("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ys = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Task Templates</span></h3><div class=\"template-list\"><!></div></div>"), bs = /* @__PURE__ */ W("<div class=\"content-section\"><h3><!><span>Template</span></h3><div class=\"template-list\"><div class=\"template-row\"><!><span><strong> </strong><small> </small></span></div></div></div>"), xs = /* @__PURE__ */ W("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), Ss = /* @__PURE__ */ W("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), Cs = /* @__PURE__ */ W("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <div><!></div> <div><!></div> <div><!></div> <div><div class=\"content-section\"><h3><!><span>Worktrees</span></h3><div class=\"worktree-list\"><!></div></div></div></div>", 1), ws = /* @__PURE__ */ W("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!> <span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav> <div class=\"title-row\"><h1> <code class=\"resource-ref-badge\"> </code></h1><!></div></div> <!>", 1), Ts = /* @__PURE__ */ W("<!> <!> <!>", 1);
 function Es(e, t) {
 	A(t, !0);
 	let n = /* @__PURE__ */ P($t(t.channel.current())), r = /* @__PURE__ */ P(""), i = /* @__PURE__ */ P(""), a = /* @__PURE__ */ P($t(/* @__PURE__ */ new Set())), o = /* @__PURE__ */ P(null), s = /* @__PURE__ */ P(null), c = /* @__PURE__ */ new Map(), l = new fo(), u = /* @__PURE__ */ M(() => (H(n).detail?.files || []).filter((e) => e.name !== "AGENTS.md")), d = /* @__PURE__ */ M(() => new Set(H(u).map((e) => e.name))), f = /* @__PURE__ */ M(h), p = /* @__PURE__ */ M(() => H(o) ? `${H(o).section}:${H(o).path}` : "");
 	Ti(() => t.channel.subscribe((e) => {
 		if (F(n, e, !0), e.identity !== H(r)) {
 			H(r) && H(i) && c.set(H(r), H(i)), F(r, e.identity, !0), F(o, null), F(s, null), F(a, /* @__PURE__ */ new Set(), !0), F(i, c.get(H(r)) || m(e), !0);
-			let t = document.getElementById("detailsPanel");
+			let t = document.getElementById("detailsContent");
 			t && (t.scrollTop = 0);
 		} else H(f).length && !H(f).some((e) => e.id === H(i)) && F(i, H(f)[0].id, !0);
 		queueMicrotask(e.onIconsChanged);
@@ -4409,35 +4409,39 @@ function Es(e, t) {
 		F(i, e, !0), c.set(H(r), e);
 	}
 	function v(e) {
+		let t = e.includes(".") ? e.slice(e.lastIndexOf(".") + 1) : e, n = t.match(/^(?:project|task)(\d+)$/);
+		return `#${n ? n[1] : t}`;
+	}
+	function y(e) {
 		let t = new Set(H(a));
 		t.has(e) ? t.delete(e) : t.add(e), F(a, t, !0), queueMicrotask(H(n).onIconsChanged);
 	}
-	function y(e, t, r = !1) {
+	function b(e, t, r = !1) {
 		let i = e === "Wiki" ? "wiki/files/raw" : "files/raw", a = r ? "&download=1" : "";
 		return `/api/workspaces/${encodeURIComponent(H(n).workspaceId)}/${i}?path=${encodeURIComponent(t)}${a}`;
 	}
-	function b(e, t) {
+	function x(e, t) {
 		F(o, {
 			section: e,
 			path: t
 		}, !0);
 	}
-	function x(e) {
+	function S(e) {
 		e && H(n).onToast(e);
 	}
-	var S = Ts(), C = L(S), w = (e) => {
-		var t = os();
-		Z(I(t), {
+	var C = Ts(), w = L(C), ee = (e) => {
+		var t = os(), n = I(t);
+		Z(I(n), {
 			name: "folder-search",
 			className: "empty-state-icon"
-		}), k(2), O(t), G(e, t);
-	}, ee = (e) => {
+		}), k(2), O(n), O(t), G(e, t);
+	}, T = (e) => {
 		var t = ls(), r = L(t), i = I(r), o = I(i), s = I(o, !0);
 		O(o), O(i);
 		var c = R(i), l = I(c), u = I(l, !0);
 		O(l), O(c), O(r);
-		var d = R(r, 2);
-		as(d, {
+		var d = R(r, 2), f = I(d);
+		as(f, {
 			get identity() {
 				return H(n).identity;
 			},
@@ -4454,19 +4458,19 @@ function Es(e, t) {
 				return H(n).onIconsChanged;
 			}
 		});
-		var f = R(d, 2), m = (e) => {
+		var m = R(f, 2), h = (e) => {
 			var t = ss(), r = I(t);
 			Z(I(r), { name: "book-open" }), k(), O(r);
 			var i = R(r), a = I(i);
 			Z(a, { name: "triangle-alert" });
 			var o = R(a, 2), s = I(o, !0);
 			O(o), O(i), O(t), z(() => K(s, H(n).wiki.error)), G(e, t);
-		}, h = (e) => {
+		}, g = (e) => {
 			var t = cs(), n = I(t);
 			Z(I(n), { name: "book-open" }), k(), O(n);
 			var r = R(n);
 			Z(I(r), { name: "book-open" }), k(2), O(r), O(t), G(e, t);
-		}, g = (e) => {
+		}, _ = (e) => {
 			{
 				let t = /* @__PURE__ */ M(() => H(n).wiki.entries || []);
 				No(e, {
@@ -4481,18 +4485,18 @@ function Es(e, t) {
 					get activePath() {
 						return H(p);
 					},
-					onToggle: v,
-					onPreview: b,
-					rawURL: y
+					onToggle: y,
+					onPreview: x,
+					rawURL: b
 				});
 			}
 		};
-		q(f, (e) => {
-			H(n).wiki?.error ? e(m) : H(n).wiki?.exists ? e(g, -1) : e(h, 1);
-		}), z(() => {
+		q(m, (e) => {
+			H(n).wiki?.error ? e(h) : H(n).wiki?.exists ? e(_, -1) : e(g, 1);
+		}), O(d), z(() => {
 			K(s, H(n).workspaceName), K(u, H(n).workspaceName);
 		}), U("click", o, () => H(n).onNavigate("workspace")), G(e, t);
-	}, T = (e) => {
+	}, te = (e) => {
 		var t = ws(), r = L(t), o = I(r), c = I(o), l = I(c, !0);
 		O(c);
 		var d = R(c, 2), m = (e) => {
@@ -4502,11 +4506,11 @@ function Es(e, t) {
 		q(d, (e) => {
 			H(n).parent && e(m);
 		});
-		var h = R(d, 3), x = I(h, !0);
+		var h = R(d, 3), S = I(h, !0);
 		O(h), O(o);
-		var S = R(o, 2), C = I(S), w = I(C, !0), ee = R(w), T = I(ee, !0);
-		O(ee), O(C);
-		var te = R(C), ne = (e) => {
+		var C = R(o, 2), w = I(C), ee = I(w, !0), T = R(ee), te = I(T, !0);
+		O(T), O(w);
+		var ne = R(w), re = (e) => {
 			var t = fs(), r = I(t), i = (e) => {
 				var t = ds();
 				Z(I(t), { name: "plus" }), k(), O(t), U("click", t, () => H(n).onCreateTask(H(n).resourceId)), G(e, t);
@@ -4517,16 +4521,16 @@ function Es(e, t) {
 			var a = R(r);
 			Z(I(a), { name: "archive" }), k(), O(a), O(t), U("click", a, () => H(n).onArchive(H(n).resourceId)), G(e, t);
 		};
-		q(te, (e) => {
-			H(n).detail && e(ne);
-		}), O(S), O(r);
-		var re = R(r, 2), ie = (e) => {
-			var t = ps();
-			Z(I(t), {
+		q(ne, (e) => {
+			H(n).detail && e(re);
+		}), O(C), O(r);
+		var ie = R(r, 2), ae = (e) => {
+			var t = ps(), n = I(t);
+			Z(I(n), {
 				name: "loader-circle",
 				className: "empty-state-icon"
-			}), k(), O(t), G(e, t);
-		}, ae = (e) => {
+			}), k(), O(n), O(t), G(e, t);
+		}, oe = (e) => {
 			var t = Cs(), r = L(t);
 			J(r, 21, () => H(f), (e) => e.id, (e, t) => {
 				var r = hs();
@@ -4543,8 +4547,8 @@ function Es(e, t) {
 					a = Y(r, 1, "details-tab", null, a, { active: H(i) === H(t).id }), X(r, "aria-selected", H(i) === H(t).id), K(s, H(t).label);
 				}), U("click", r, () => _(H(t).id)), G(e, r);
 			}), O(r);
-			var o = R(r, 2);
-			J(o, 17, () => H(u), (e) => e.path || e.name, (e, t) => {
+			var o = R(r, 2), c = I(o);
+			J(c, 17, () => H(u), (e) => e.path || e.name, (e, t) => {
 				var r = gs();
 				Qo(I(r), {
 					get file() {
@@ -4555,7 +4559,7 @@ function Es(e, t) {
 					}
 				}), O(r), z((e) => X(r, "hidden", e), [() => H(i) !== g(H(t))]), G(e, r);
 			});
-			var c = R(o, 2), l = I(c), d = (e) => {
+			var l = R(c, 2), d = I(l), m = (e) => {
 				var t = ys(), r = I(t);
 				Z(I(r), { name: "layout-template" }), k(), O(r);
 				var i = R(r), a = I(i), o = (e) => {
@@ -4570,7 +4574,7 @@ function Es(e, t) {
 						var c = R(o), l = I(c);
 						O(c), O(a), Z(R(a), { name: "chevron-right" }), O(n), z(() => {
 							r = Y(n, 1, "template-row", null, r, { invalid: !H(t).valid }), K(s, H(t).title || H(t).name), K(l, `${H(t).name ?? ""} · v${(H(t).schemaVersion || "?") ?? ""} · ${H(t).valid ? `${(H(t).fields || []).length} fields` : `invalid${H(t).errors?.[0]?.message ? `: ${H(t).errors[0].message}` : ""}`}${H(t).legacy ? " · legacy" : ""}`);
-						}), U("click", n, () => H(t).path && b("Templates", H(t).path)), G(e, n);
+						}), U("click", n, () => H(t).path && x("Templates", H(t).path)), G(e, n);
 					}), G(e, t);
 				}, s = (e) => {
 					var t = vs();
@@ -4579,7 +4583,7 @@ function Es(e, t) {
 				q(a, (e) => {
 					H(n).detail.templates?.length ? e(o) : e(s, -1);
 				}), O(i), O(t), G(e, t);
-			}, m = (e) => {
+			}, h = (e) => {
 				var t = bs(), r = I(t);
 				Z(I(r), { name: "layout-template" }), k(), O(r);
 				var i = R(r), a = I(i), o = I(a);
@@ -4591,13 +4595,13 @@ function Es(e, t) {
 					K(l, H(n).detail.template.name), K(d, `Created from template · v${(H(n).detail.template.schemaVersion || "?") ?? ""} · ${(H(n).detail.template.digest || "") ?? ""}`);
 				}), G(e, t);
 			};
-			q(l, (e) => {
-				H(n).resourceType === "project" ? e(d) : H(n).detail.template && e(m, 1);
-			}), O(c);
-			var h = R(c, 2), x = I(h);
+			q(d, (e) => {
+				H(n).resourceType === "project" ? e(m) : H(n).detail.template && e(h, 1);
+			}), O(l);
+			var v = R(l, 2), S = I(v);
 			{
 				let e = /* @__PURE__ */ M(() => H(n).detail.logs || []);
-				qo(x, {
+				qo(S, {
 					get resourceId() {
 						return H(n).resourceId;
 					},
@@ -4619,11 +4623,11 @@ function Es(e, t) {
 					}
 				});
 			}
-			O(h);
-			var S = R(h, 2), C = I(S);
+			O(v);
+			var C = R(v, 2), w = I(C);
 			{
 				let e = /* @__PURE__ */ M(() => H(n).detail.artifacts || []);
-				No(C, {
+				No(w, {
 					title: "Artifacts",
 					get entries() {
 						return H(e);
@@ -4635,15 +4639,15 @@ function Es(e, t) {
 					get activePath() {
 						return H(p);
 					},
-					onToggle: v,
-					onPreview: b,
-					rawURL: y
+					onToggle: y,
+					onPreview: x,
+					rawURL: b
 				});
 			}
-			O(S);
-			var w = R(S, 2), ee = I(w), T = I(ee);
-			Z(I(T), { name: "folder-git-2" }), k(), O(T);
-			var te = R(T), ne = I(te), re = (e) => {
+			O(C);
+			var ee = R(C, 2), T = I(ee), te = I(T);
+			Z(I(te), { name: "folder-git-2" }), k(), O(te);
+			var ne = R(te), re = I(ne), ie = (e) => {
 				var t = Or();
 				J(L(t), 17, () => H(n).detail.repos, (e) => `${e.name}:${e.worktreePath}`, (e, t) => {
 					var n = xs(), r = I(n), i = I(r);
@@ -4662,27 +4666,27 @@ function Es(e, t) {
 						K(c, H(t).branch || "HEAD"), K(u, `${(H(t).name || "repository") ?? ""}${H(t).targetBranch || H(t).baseBranch ? ` · base ${H(t).targetBranch || H(t).baseBranch}` : ""}`), K(f, H(t).worktreePath || "");
 					}), U("click", p, () => F(s, H(t), !0)), G(e, n);
 				}), G(e, t);
-			}, ie = (e) => {
+			}, ae = (e) => {
 				var t = Ss();
 				Z(I(t), { name: "git-branch" }), k(), O(t), G(e, t);
 			};
-			q(ne, (e) => {
-				H(n).detail.repos?.length ? e(re) : e(ie, -1);
-			}), O(te), O(ee), O(w), z(() => {
-				X(c, "hidden", H(i) !== "template"), X(h, "hidden", H(i) !== "logs"), X(S, "hidden", H(i) !== "artifacts"), X(w, "hidden", H(i) !== "worktrees");
+			q(re, (e) => {
+				H(n).detail.repos?.length ? e(ie) : e(ae, -1);
+			}), O(ne), O(T), O(ee), O(o), z(() => {
+				X(l, "hidden", H(i) !== "template"), X(v, "hidden", H(i) !== "logs"), X(C, "hidden", H(i) !== "artifacts"), X(ee, "hidden", H(i) !== "worktrees");
 			}), G(e, t);
 		};
-		q(re, (e) => {
-			H(n).loading || !H(n).detail ? e(ie) : e(ae, -1);
-		}), z(() => {
-			K(l, H(n).workspaceName), K(x, H(n).resourceTitle), K(w, H(n).resourceTitle), K(T, H(n).resourceId);
-		}), U("click", c, () => H(n).onNavigate("workspace")), U("click", h, () => H(n).onNavigate(H(n).resourceId)), G(e, t);
+		q(ie, (e) => {
+			H(n).loading || !H(n).detail ? e(ae) : e(oe, -1);
+		}), z((e) => {
+			K(l, H(n).workspaceName), K(S, H(n).resourceTitle), K(ee, H(n).resourceTitle), K(te, e);
+		}, [() => v(H(n).resourceId)]), U("click", c, () => H(n).onNavigate("workspace")), U("click", h, () => H(n).onNavigate(H(n).resourceId)), G(e, t);
 	};
-	q(C, (e) => {
-		H(n).workspaceId ? H(n).resourceType === "workspace" ? e(ee, 1) : e(T, -1) : e(w);
+	q(w, (e) => {
+		H(n).workspaceId ? H(n).resourceType === "workspace" ? e(T, 1) : e(te, -1) : e(ee);
 	});
-	var te = R(C, 2);
-	Vo(te, {
+	var ne = R(w, 2);
+	Vo(ne, {
 		get client() {
 			return l;
 		},
@@ -4696,11 +4700,11 @@ function Es(e, t) {
 			return H(o);
 		},
 		onClose: () => F(o, null),
-		onError: x,
+		onError: S,
 		get onIconsChanged() {
 			return H(n).onIconsChanged;
 		}
-	}), bo(R(te, 2), {
+	}), bo(R(ne, 2), {
 		get client() {
 			return l;
 		},
@@ -4714,11 +4718,11 @@ function Es(e, t) {
 			return H(s);
 		},
 		onClose: () => F(s, null),
-		onError: x,
+		onError: S,
 		get onIconsChanged() {
 			return H(n).onIconsChanged;
 		}
-	}), G(e, S), j();
+	}), G(e, C), j();
 }
 br(["click"]);
 //#endregion

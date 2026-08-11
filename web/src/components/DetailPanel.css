@@ -5,7 +5,8 @@
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-:where([data-component-owner="detail-panel"]) .title-row h1 .resource-ref {
+:where([data-component-owner="detail-panel"]) .title-row h1 .resource-ref-badge {
+  display: inline-block;
   margin-left: 10px;
   font-size: 15px;
   font-weight: 500;
@@ -22,9 +23,20 @@
 }
 
 :where([data-component-owner="detail-panel"]) .details-header {
+  flex: 0 0 auto;
   padding: 24px 32px;
   border-bottom: 1px solid var(--line);
   background: #fff;
+}
+
+:where([data-component-owner="detail-panel"]) .details-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  /* Auto-refresh updates the body in place. Disable scroll anchoring so those
+  updates cannot move the reader while the fixed header and tabs stay put. */
+  overflow-anchor: none;
 }
 
 :where([data-component-owner="detail-panel"]) .breadcrumb {
@@ -120,6 +132,7 @@
 }
 
 :where([data-component-owner="detail-panel"]) .details-tabs {
+  flex: 0 0 auto;
   display: flex;
   gap: 2px;
   padding: 0 24px;

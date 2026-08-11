@@ -387,8 +387,17 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
   const panel = page.locator("#detailsPanel");
+  const content = panel.locator("#detailsContent");
   await expect(panel).toHaveAttribute("data-component-owner", "detail-panel");
+  await expect(panel.locator(".resource-ref-badge")).toHaveText("#1");
   await expect(panel.getByRole("tab", { name: "Task" })).toHaveAttribute("aria-selected", "true");
+  await expect.poll(() => page.evaluate(() => ({
+    root: getComputedStyle(document.documentElement).overscrollBehavior,
+    body: getComputedStyle(document.body).overscrollBehavior,
+    content: getComputedStyle(document.getElementById("detailsContent")!).overscrollBehavior,
+  }))).toEqual({ root: "none", body: "none", content: "contain" });
+  const headerTop = await panel.locator(".details-header").evaluate((node) => node.getBoundingClientRect().top);
+  const tabsTop = await panel.locator(".details-tabs").evaluate((node) => node.getBoundingClientRect().top);
   const documentView = panel.locator('[data-doc-file="task.md"] .markdown-view');
   await documentView.evaluate((node) => {
     node.setAttribute("data-identity-probe", "stable-document");
@@ -401,13 +410,17 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
       selection?.removeAllRanges();
       selection?.addRange(range);
     }
-    const panel = document.getElementById("detailsPanel");
-    if (panel) panel.scrollTop = 180;
+    const content = document.getElementById("detailsContent");
+    if (content) content.scrollTop = 180;
   });
+  await expect.poll(() => content.evaluate((node) => node.scrollTop)).toBe(180);
+  await expect.poll(() => panel.evaluate((node) => node.scrollTop)).toBe(0);
+  await expect.poll(() => panel.locator(".details-header").evaluate((node) => node.getBoundingClientRect().top)).toBe(headerTop);
+  await expect.poll(() => panel.locator(".details-tabs").evaluate((node) => node.getBoundingClientRect().top)).toBe(tabsTop);
   await page.waitForTimeout(5_200);
   await expect(documentView).toHaveAttribute("data-identity-probe", "stable-document");
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("Baseline");
-  await expect.poll(() => panel.evaluate((node) => node.scrollTop)).toBe(180);
+  await expect.poll(() => content.evaluate((node) => node.scrollTop)).toBe(180);
 
   await panel.getByRole("tab", { name: /Logs/ }).click();
   const firstLog = panel.locator('[data-log-id="project1.task1-log-1"]');
