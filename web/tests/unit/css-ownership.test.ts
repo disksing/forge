@@ -5,7 +5,9 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
 const components = [
+  "ApprovalCard",
   "AppShell",
+  "AgentHubSettingsPanel",
   "ChatComposer",
   "CreateDialog",
   "ProjectCreateForm",
@@ -17,21 +19,36 @@ const components = [
   "DetailPanel",
   "DiffModal",
   "EventTimeline",
+  "ErrorNotice",
   "FileBrowser",
   "FilePreviewModal",
+  "ForgeNotice",
   "LogTimeline",
+  "LifecycleNotice",
   "MarkdownDocument",
+  "NotificationSettingsPanel",
+  "ProfilesSettingsPanel",
   "SelfDrivingBar",
   "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
+  "SettingsNavigation",
+  "ThinkingBlock",
+  "TimelineMessage",
   "Toast",
+  "ToolGroup",
+  "ToolItem",
+  "UnknownEvent",
   "UploadDialog",
+  "UserSettingsPanel",
+  "WorkspaceSettingsPanel",
   "WorkspaceAgentsEditor",
 ] as const;
 
 const owners: Record<(typeof components)[number], string> = {
+  ApprovalCard: "event-timeline",
   AppShell: "app-shell",
+  AgentHubSettingsPanel: "agenthub-settings-panel",
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
   ProjectCreateForm: "project-create-form",
@@ -43,16 +60,29 @@ const owners: Record<(typeof components)[number], string> = {
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
   EventTimeline: "event-timeline",
+  ErrorNotice: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
+  ForgeNotice: "event-timeline",
   LogTimeline: "log-timeline",
+  LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
+  NotificationSettingsPanel: "notification-settings-panel",
+  ProfilesSettingsPanel: "profiles-settings-panel",
   SelfDrivingBar: "self-driving-bar",
   SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
+  SettingsNavigation: "settings-navigation",
+  ThinkingBlock: "event-timeline",
+  TimelineMessage: "event-timeline",
   Toast: "toast",
+  ToolGroup: "event-timeline",
+  ToolItem: "event-timeline",
+  UnknownEvent: "event-timeline",
   UploadDialog: "upload-dialog",
+  UserSettingsPanel: "user-settings-panel",
+  WorkspaceSettingsPanel: "workspace-settings-panel",
   WorkspaceAgentsEditor: "workspace-agents-editor",
 };
 
@@ -116,8 +146,14 @@ describe("CSS ownership", () => {
     }
   });
 
+  it("keeps shared settings panel rules inside explicit panel roots", () => {
+    for (const header of selectorHeaders(read("src/components/SettingsPanel.css"))) {
+      for (const selector of header.split(",")) expect(selector.trim()).toContain("[data-component-owner][data-settings-panel]");
+    }
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["DiffModal", "FileBrowser", "FilePreviewModal", "LogTimeline", "MarkdownDocument", "ProjectCreateForm", "SelfDrivingOptions", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "WorkspaceAgentsEditor"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "ErrorNotice", "FileBrowser", "FilePreviewModal", "ForgeNotice", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "NotificationSettingsPanel", "ProfilesSettingsPanel", "ProjectCreateForm", "SelfDrivingOptions", "SettingsNavigation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

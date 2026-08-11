@@ -41,6 +41,12 @@ Children edit the shared identity-scoped draft through typed props and callbacks
 
 Application state is never rendered by assembling HTML strings or mutating component-owned DOM. `DiffModal.svelte` is the single explicit rich-HTML boundary: Diff2Html converts a backend diff string to its vendor-defined presentation inside a dedicated viewer element. Markdown passes through Marked and DOMPurify before Svelte inserts the sanitized output.
 
+### Settings view boundaries
+
+`SettingsModal.svelte` is the coordination layer for modal visibility, keyboard/overlay close, active navigation, the shared AgentHub/Profile draft, dirty refresh protection, and the single cross-panel pending lease. It delegates rendering and domain actions to `SettingsNavigation.svelte` plus `WorkspaceSettingsPanel.svelte`, `UserSettingsPanel.svelte`, `AgentHubSettingsPanel.svelte`, `ProfilesSettingsPanel.svelte`, and `NotificationSettingsPanel.svelte`. The parent dropped from 258 to 75 lines; its CSS dropped from 711 to 68 lines and now owns only the overlay, modal grid, close button, viewport, and responsive shell.
+
+Each panel receives typed `SettingsModel` callbacks and the smallest relevant shared state. Panels do not import controllers, issue API requests, query another panel's DOM, or recreate AgentHub/Profile catalog derivation. Workspace owns add/remove/icon UI and pending errors; User owns browser-local name submission; AgentHub owns connection/catalog display and shared save; Profiles owns route validation, system/custom rules, unavailable-agent fallback, and shared save; Notifications owns permission/error/sound toggles. `SettingsPanel.css` contains the visual contract intentionally shared by all five panel roots, while each adjacent panel stylesheet owns its domain selectors and `SettingsNavigation.css` owns desktop/mobile tabs. Direct panel tests live in `tests/unit/settings-panels.test.ts`; parent refresh, dirty, pending, focus, identity, and close coordination is covered by `tests/unit/settings-modal.test.ts`.
+
 ### Controller boundaries
 
 | Controller | Single responsibility | Creation and disposal |
@@ -58,6 +64,20 @@ Dependencies point from `app-controller.ts` into these controllers, and from con
 The shell has one canonical Workspace and Resource selection. That selection drives tree highlight, Session highlight, title, unread state, and History API projection. Project, Task, Session, log, and timeline rows use stable keys so unrelated refreshes retain their DOM identity. A drag transaction suppresses refresh until persistence succeeds or rolls back.
 
 Form state is keyed by explicit identity, not refresh frequency. Republishing a model with the same identity preserves edits, focus, selection, scroll, uploads, and pending sends. Changing identity resets local state and invalidates work from the previous context. Document identity includes Workspace, Resource, path, display mode, and `contentHash`; AGENTS.md saves carry the baseline hash and preserve the local draft on HTTP 409.
+
+### Event timeline boundary
+
+`EventTimeline.svelte` is the only owner of the active chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-Session tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, `ErrorNotice`, `ForgeNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant Markdown remains inside `.markdown-rendered`.
+
+`chat-state.ts` owns HTTP/SSE context generations, accepted Session identities, the 80 ms stream publication window, notice reconciliation, and cleanup of requests, streams, and flush timers. It consumes the side-effect-free `timeline-events.ts` module for canonical merge, batched insertion, append healing, and cumulative ACP tool-update compaction. Rendering components never import the Session controller or open network streams.
+
+The extraction reduced the stateful roots while retaining the complete behavior in focused modules:
+
+| Source boundary | Before | After |
+| --- | ---: | ---: |
+| `EventTimeline.svelte` state plus all event markup | 311 lines | 203 lines, plus 221 lines across nine typed renderers |
+| `chat-state.ts` state machine plus event algorithms | 514 lines | 393 lines, plus 123 lines in `timeline-events.ts` |
+| One timeline stylesheet | 497 lines | 47 root lines plus 363 lines next to the nine renderers |
 
 ## Lifecycle contract
 
@@ -78,6 +98,7 @@ Form state is keyed by explicit identity, not refresh frequency. Republishing a 
 | Markdown document | 3,000 sections | 1,000 ms |
 | Session event canonicalization | 10,000 events with an overlapping delta | 1,000 ms |
 | Continuous Session updates | 1,000 deltas applied after 10,000 events | 1,500 ms |
+| Cumulative ACP tool updates | 30,000 frames for one call | 1,000 ms and a two-event compacted timeline |
 
 These gates complement component stability tests and Playwright flows; they are regression alarms rather than user-facing latency targets.
 

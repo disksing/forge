@@ -4,9 +4,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import AppShell from "../../src/components/AppShell.svelte";
 import LogTimeline from "../../src/components/LogTimeline.svelte";
 import MarkdownDocument from "../../src/components/MarkdownDocument.svelte";
-import { compactTimelineEvents, mergeCanonicalEvent, mergeCanonicalEvents } from "../../src/components/chat-state";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { AgentEvent } from "../../src/components/models";
+import { compactTimelineEvents, mergeCanonicalEvent, mergeCanonicalEvents } from "../../src/components/timeline-events";
 import { continuousEvents, largeMarkdown, largeTreeModel, longLogs, performanceBudgets } from "../fixtures/performance";
 
 const cleanups: Array<() => Promise<void>> = [];

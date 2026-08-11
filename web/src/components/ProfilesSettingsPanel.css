@@ -1,0 +1,61 @@
+@import "./SettingsPanel.css";
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-table {
+  display: grid;
+  gap: 8px;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.7fr) minmax(150px, 1.2fr) minmax(150px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-head span {
+  color: #5c6b7a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-row input,
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-row select {
+  min-width: 0;
+  width: 100%;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-system {
+  border-radius: 6px;
+  background: #f4f5f7;
+  padding: 4px;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-system input:disabled {
+  color: #4a5560;
+  background: #e8eaee;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-system-label {
+  color: #5c6b7a;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-profile-new {
+  border-top: 1px dashed #dcdfe4;
+  padding-top: 10px;
+}
+
+@media (max-width:980px) {
+  :where([data-component-owner="profiles-settings-panel"]) .settings-profile-head {
+    display: none;
+  }
+
+  :where([data-component-owner="profiles-settings-panel"]) .settings-profile-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

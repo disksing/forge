@@ -1,0 +1,74 @@
+@import "./SettingsPanel.css";
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-default-agent {
+  display: grid;
+  gap: 5px;
+  color: #5c6b7a;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-provider-list {
+  display: grid;
+  gap: 8px;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-agent-list {
+  display: grid;
+  gap: 10px;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-service-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-provider-main {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-service-row strong {
+  display: block;
+  color: #2c3e50;
+  font-size: 13px;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-service-row small {
+  display: block;
+  margin-top: 3px;
+  color: #5c6b7a;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="agenthub-settings-panel"]) .settings-agent-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: #f4f5f7;
+  color: var(--blue);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+@media (max-width:980px) {
+  :where([data-component-owner="agenthub-settings-panel"]) .settings-service-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}

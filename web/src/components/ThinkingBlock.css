@@ -1,0 +1,39 @@
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note {
+  width: 100%;
+  margin: 12px 0 0;
+  border: 0;
+  border-top: 1px solid #e3e7ec;
+  border-radius: 0;
+  background: transparent;
+  color: #8a97a5;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 2px;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary::-webkit-details-marker { display: none; }
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note summary svg { width: 14px; height: 14px; }
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-chevron {
+  display: inline-flex;
+  margin-left: auto;
+  transition: transform 120ms ease;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note[open] .agent-reasoning-chevron { transform: rotate(90deg); }
+
+:where([data-component-owner="event-timeline"]) .agent-reasoning-note p {
+  margin: 0;
+  padding: 0 2px 8px 21px;
+  color: #8a97a5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
