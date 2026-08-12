@@ -743,6 +743,23 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 		projectId
 	};
 }
+function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
+	if (!item) return null;
+	const state = taskOperationalState(item);
+	return {
+		id: item.id || "scheduler",
+		type: "scheduler",
+		title: item.title || "Scheduler",
+		ref: "",
+		active: controllerState.selectedId === (item.id || "scheduler"),
+		expanded: false,
+		ariaLabel: ["Scheduler", state.label].filter(Boolean).join(". "),
+		statusLabel: state.label || "Workspace Scheduler",
+		status: appShellStatusModel(state.statusPresentation),
+		summary: null,
+		children: []
+	};
+}
 function appShellSessionModel(session: WorkspaceSession): AppShellModel["sessions"][number] {
 	const navigation = sessionNavigationTarget(session);
 	const resourceId = navigation.displayResourceId;
@@ -788,6 +805,7 @@ function renderAppShell() {
 			icon: workspace.icon || "",
 			iconSrc: workspaceIconOption(workspace).src
 		})),
+		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
 		sessions,
 		...paneLayoutController.snapshot(),
@@ -1028,6 +1046,11 @@ function detailPanelModel(): DetailPanelModel {
 			publishViewModels();
 			toast("Resource agent binding saved.");
 		},
+		onRefreshScheduler: async () => {
+			await loadTree({ updateURL: false });
+			if (controllerState.selectedId === "scheduler") await loadDetail("scheduler", { force: true });
+			publishViewModels();
+		},
 		onToast: toast,
 		onIconsChanged: refreshIcons
 	};
@@ -1038,7 +1061,7 @@ function detailPanelModel(): DetailPanelModel {
 		resourceType: "workspace",
 		resourceTitle: workspaceName()
 		};
-	const selected = findResource(controllerState.selectedId) || controllerState.tree.projects[0];
+	const selected = findResource(controllerState.selectedId) || controllerState.tree.scheduler || controllerState.tree.projects[0];
 	if (!selected) return {
 		...base,
 		resourceId: "workspace",
@@ -1052,7 +1075,7 @@ function detailPanelModel(): DetailPanelModel {
 		...base,
 		identity: `${workspaceId}:${selected.id}:${selected.type}`,
 		resourceId: selected.id,
-		resourceType: selected.type === "project" || selected.type === "task" ? selected.type : "",
+		resourceType: selected.type === "scheduler" || selected.type === "project" || selected.type === "task" ? selected.type : "",
 		resourceTitle: detail?.title || selected.title || selected.id,
 		parent: parent && parent.id !== selected.id ? {
 			id: parent.id,
@@ -1068,7 +1091,7 @@ function detailPanelModel(): DetailPanelModel {
 	};
 }
 function resourceDetailView(detail: ResourceRecord | null): DetailPanelModel["detail"] {
-	if (!detail || (detail.type !== "project" && detail.type !== "task")) return null;
+	if (!detail || (detail.type !== "scheduler" && detail.type !== "project" && detail.type !== "task")) return null;
 	return {
 		...detail,
 		type: detail.type,
@@ -1607,6 +1630,7 @@ async function archiveResource(resourceId: string): Promise<void> {
 }
 function findResource(id: string): ResourceRecord | null {
 	if (!controllerState.tree) return null;
+	if (controllerState.tree.scheduler?.id === id) return controllerState.tree.scheduler;
 	for (const project of controllerState.tree.projects) {
 		if (project.id === id) return project;
 		for (const task of project.children || []) if (task.id === id) return task;

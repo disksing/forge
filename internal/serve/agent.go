@@ -160,18 +160,22 @@ type agentRuntime struct {
 }
 
 type agentManager struct {
-	server      *server
-	mu          sync.Mutex
-	resourceMu  sync.Mutex
-	runtimes    map[string]*agentRuntime
-	subscribers map[string]map[chan agentStreamMessage]bool
+	server           *server
+	mu               sync.Mutex
+	resourceMu       sync.Mutex
+	runtimes         map[string]*agentRuntime
+	subscribers      map[string]map[chan agentStreamMessage]bool
+	schedulerDigests map[string]string
+	now              func() time.Time
 }
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
-		server:      s,
-		runtimes:    make(map[string]*agentRuntime),
-		subscribers: make(map[string]map[chan agentStreamMessage]bool),
+		server:           s,
+		runtimes:         make(map[string]*agentRuntime),
+		subscribers:      make(map[string]map[chan agentStreamMessage]bool),
+		schedulerDigests: make(map[string]string),
+		now:              time.Now,
 	}
 }
 
@@ -540,6 +544,9 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return "", err
+	}
+	if resourceID == app.SchedulerResourceID {
+		return safeWorkspacePath(workspace.Path, app.SchedulerResourceID)
 	}
 	detail, err := forgeWorkspace.Resource(resourceID)
 	if err != nil {

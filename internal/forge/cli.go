@@ -50,6 +50,8 @@ func Run(args []string) error {
 		return runProject(args[1:])
 	case "task":
 		return runTask(args[1:])
+	case "scheduler":
+		return runScheduler(args[1:])
 	case "template":
 		return runTemplate(args[1:])
 	case "resource":
@@ -337,6 +339,11 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+  forge scheduler list [--json]
+  forge scheduler show --id=<schedule>
+  forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
+  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+  forge scheduler remove --id=<schedule>
   forge session list
   forge session show --id=<id>
 

@@ -51,6 +51,47 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		createdOutput := run(t, "scheduler", "add", "--description", "Review release", "--condition", "when the release branch is green", "--target", "workspace", "--creator=user")
+		var created app.Schedule
+		if err := json.Unmarshal([]byte(createdOutput), &created); err != nil {
+			t.Fatal(err)
+		}
+		if created.ID == "" || created.Description != "Review release" || created.Target != "workspace" || created.CreatedBy.Kind != app.CreatorKindUser {
+			t.Fatalf("created schedule = %#v", created)
+		}
+		listed := run(t, "scheduler", "list")
+		if !strings.Contains(listed, created.ID+"\tReview release\twhen the release branch is green\tworkspace") {
+			t.Fatalf("schedule list = %q", listed)
+		}
+		updatedOutput := run(t, "scheduler", "update", "--id="+created.ID, "--condition=after 10:00 when the release branch is green", "--target=scheduler")
+		var updated app.Schedule
+		if err := json.Unmarshal([]byte(updatedOutput), &updated); err != nil {
+			t.Fatal(err)
+		}
+		if updated.Condition != "after 10:00 when the release branch is green" || updated.Target != app.SchedulerResourceID || updated.CreatedAt != created.CreatedAt {
+			t.Fatalf("updated schedule = %#v", updated)
+		}
+		shown := run(t, "scheduler", "show", "--id", created.ID)
+		if !strings.Contains(shown, `"target": "scheduler"`) {
+			t.Fatalf("schedule show = %s", shown)
+		}
+		jsonList := run(t, "scheduler", "list", "--json")
+		if !strings.Contains(jsonList, `"wakeIntervalMinutes": 30`) || !strings.Contains(jsonList, created.ID) {
+			t.Fatalf("JSON schedule list = %s", jsonList)
+		}
+		removed := run(t, "scheduler", "remove", "--id="+created.ID)
+		if !strings.Contains(removed, created.ID) || strings.TrimSpace(run(t, "scheduler", "list")) != "" {
+			t.Fatalf("remove result = %s", removed)
+		}
+		if _, err := os.Stat(filepath.Join(root, "scheduler", "scheduler.json")); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
 func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")

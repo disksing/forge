@@ -11,7 +11,7 @@ export interface WorkspaceSummary {
   icon?: string;
 }
 
-export type ResourceType = "project" | "task";
+export type ResourceType = "scheduler" | "project" | "task";
 
 export interface ResourceSummary {
   id: string;
@@ -32,6 +32,7 @@ export interface SessionSummary {
 
 export interface WorkspaceTreeResponse {
   root: string;
+  scheduler?: ResourceSummary;
   projects: ResourceSummary[];
   sessions: SessionSummary[];
 }

@@ -30,6 +30,24 @@ export interface ResourceRecord {
   templates?: TaskTemplate[];
   template?: { name: string; schemaVersion?: number; digest?: string } | null;
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
+  scheduler?: SchedulerConfigRecord;
+}
+
+export interface ScheduleRecord {
+  id: string;
+  description: string;
+  condition: string;
+  target: string;
+  createdBy?: ResourceCreatorModel;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SchedulerConfigRecord {
+  schemaVersion: number;
+  agentBinding: { kind: "profile" | "agent"; name: string };
+  wakeIntervalMinutes: number;
+  schedules: ScheduleRecord[];
 }
 
 export interface WorkspaceSession extends AgentRun {
@@ -48,6 +66,7 @@ export interface WorkspaceSession extends AgentRun {
 export interface WorkspaceTree {
   creator?: ResourceCreatorModel;
   agentBinding?: { kind: "profile" | "agent"; name: string };
+  scheduler?: ResourceRecord;
   projects: ResourceRecord[];
   sessions: WorkspaceSession[];
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };

@@ -59,7 +59,7 @@ func resolveCreationCreator(option string) (app.Creator, error) {
 	if runtimeConfig.InstanceID != instanceID {
 		return app.Creator{}, errors.New("Agent creator Workspace instance does not match its persisted Forge runtime")
 	}
-	if resourceID != "workspace" {
+	if resourceID != "workspace" && resourceID != app.SchedulerResourceID {
 		resource, err := workspace.ResourceValue(resourceID)
 		if err != nil {
 			return app.Creator{}, fmt.Errorf("validate Agent creator resource: %w", err)

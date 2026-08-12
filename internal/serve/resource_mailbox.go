@@ -34,6 +34,7 @@ const (
 const (
 	resourceMessageTypeCreatorTurnResult = "creator_turn_result"
 	resourceMessageTypeDeliveryTerminal  = "delivery_terminal_notice"
+	resourceMessageTypeSchedulerTick     = "scheduler_tick"
 
 	resourceNotificationWaiting   = "waiting"
 	resourceNotificationAccepted  = "accepted"
@@ -102,6 +103,8 @@ type resourceMessageCausation struct {
 	TurnStatus                string `json:"turnStatus,omitempty"`
 	HistoryUnavailable        bool   `json:"historyUnavailable,omitempty"`
 	TerminalCode              string `json:"terminalCode,omitempty"`
+	Reason                    string `json:"reason,omitempty"`
+	ScheduleDigest            string `json:"scheduleDigest,omitempty"`
 }
 
 type resourceNotificationReceipt struct {
@@ -643,6 +646,10 @@ func resourceExistsAndArchived(workspacePath, resourceID string) (bool, bool, ap
 		binding, err := forgeWorkspace.ResourceAgentBinding(resourceID)
 		return err == nil, false, binding, err
 	}
+	if resourceID == app.SchedulerResourceID {
+		binding, err := forgeWorkspace.ResourceAgentBinding(resourceID)
+		return err == nil, false, binding, err
+	}
 	value, err := forgeWorkspace.ResourceValue(resourceID)
 	if err != nil {
 		return false, false, app.AgentBinding{}, err
@@ -668,6 +675,9 @@ func resourceCreator(workspacePath, resourceID string) (*app.Creator, error) {
 			return nil, err
 		}
 		return runtime.Creator, nil
+	}
+	if resourceID == app.SchedulerResourceID {
+		return nil, nil
 	}
 	value, err := forgeWorkspace.ResourceValue(resourceID)
 	if err != nil {

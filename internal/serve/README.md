@@ -19,9 +19,11 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 项目、任务、日志、归档、文件预览、Wiki、diff 和模板路由都以显式 Workspace ID 为作用域。结构化模板由 `internal/app` 校验和渲染；`POST .../tasks/preview` 返回最终标题、Markdown 和模板来源/digest，创建时可提交 `expectedTemplateDigest` 防止预览后模板发生变化。
 
+Scheduler API 同样委托 `internal/app`，提供 `GET/POST .../scheduler`、`PUT/DELETE .../scheduler/{scheduleId}` 与 `PUT .../scheduler/settings`。Server 不解析自然语言 condition；GUI 使用这些接口维护调度项、独立绑定和唤醒间隔。
+
 ## AgentHub Session
 
-每个 Workspace、Project、Task 都持久化显式 `{kind: profile|agent, name}` 绑定，不做父级继承。资源聊天在首条消息到达时懒创建代际；Forge 使用 Workspace 稳定 instance ID、资源 ID、代际编号/ID、绑定与 Profile revision 组成 AgentHub source metadata，并用代际 ID 幂等建会。浏览器输入携带稳定 `messageId`、provenance `role=user` 和当前用户名；这些来源字段不参与认证或授权。
+每个 Workspace、Scheduler、Project、Task 都持久化显式 `{kind: profile|agent, name}` 绑定，不做父级继承。资源聊天在首条消息到达时懒创建代际；Forge 使用 Workspace 稳定 instance ID、资源 ID、代际编号/ID、绑定与 Profile revision 组成 AgentHub source metadata，并用代际 ID 幂等建会。浏览器输入携带稳定 `messageId`、provenance `role=user` 和当前用户名；这些来源字段不参与认证或授权。
 
 资源代际保存在 `<workspace>/.forge/runtime/generations.json`；Workspace 统一、按目标资源归属的 mailbox 保存在 `<workspace>/.forge/runtime/mailbox.json`。mailbox 项记录稳定 message ID、顺序、目标资源、正文、role/sender provenance、requested/actual mode、降级原因、状态、时间、最近错误和 generation/Session/Turn 关联。HTTP 只有在 mailbox 临时文件完成 write + fsync + rename 且目录 fsync 后才返回 accepted。升级时先把 generation 的旧 `pendingMessages` 合并写入 mailbox，再清空旧字段；崩溃后按稳定 ID 重复迁移不会丢失或复制消息。
 
@@ -74,6 +76,8 @@ curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESS
 绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后旧 Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。
 
 Forge 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新本地 run 投影、Profile 解析和全部资源 generation。Task 或 Project 归档会收敛其所有 generation；活动 Turn 默认拒绝 GUI 归档，外部归档也会等待 Turn 自然结束，随后执行 Stop、确认 `stopped`、Archive。未知 Stop/Archive 响应、服务重启和中间状态均由重复 reconcile 恢复。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才删除对应的瞬态 Forge Session 投影。
+
+同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。Server 重启从 mailbox 的 generation/Turn 关联与 AgentHub canonical Turn 恢复基准，不持久化派生的 `nextWake` 或 `last*` 字段。
 
 Session 投影的创建、AgentHub ID 绑定与安全删除只通过 `internal/app` 的 Server 内部 API 完成。公共 CLI 只保留 `forge session list/show` 作为只读诊断，不提供手工创建、绑定、心跳或结束入口，也不会访问 AgentHub。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，GUI 不再提供 Session 新建、切换、恢复或关闭控件。
 

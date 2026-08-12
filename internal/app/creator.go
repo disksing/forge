@@ -67,7 +67,7 @@ func NormalizeCreator(value Creator) (Creator, error) {
 
 func normalizedCreatorResourceID(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "workspace" {
+	if value == "workspace" || value == SchedulerResourceID {
 		return value
 	}
 	if topProjectName.MatchString(value) {

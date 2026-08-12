@@ -89,6 +89,7 @@ type workspaceTree struct {
 	Root         string             `json:"root"`
 	Creator      *app.Creator       `json:"creator,omitempty"`
 	AgentBinding app.AgentBinding   `json:"agentBinding"`
+	Scheduler    resourceSnapshot   `json:"scheduler"`
 	Projects     []resourceSnapshot `json:"projects"`
 	Sessions     []guiSession       `json:"sessions"`
 	Wiki         workspaceWiki      `json:"wiki"`
@@ -456,6 +457,8 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, detail)
+	case "scheduler":
+		s.handleScheduler(w, r, id, parts[2:])
 	case "messages":
 		if (len(parts) != 3 && len(parts) != 4) || parts[2] == "" {
 			writeError(w, &resourceAPIError{Code: "invalid_request", Message: "message id is required"}, http.StatusBadRequest)
@@ -1339,6 +1342,9 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
 		}); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
+		}
+		if _, err := forgeWorkspace.EnsureScheduler(); err != nil {
+			return fmt.Errorf("initialize Workspace %s Scheduler: %w", workspace.ID, err)
 		}
 		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
 			return fmt.Errorf("migrate Workspace %s resource mailbox: %w", workspace.ID, err)

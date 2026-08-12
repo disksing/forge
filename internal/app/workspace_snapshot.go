@@ -10,11 +10,12 @@ import (
 )
 
 type WorkspaceTree struct {
-	Root     string             `json:"root"`
-	Creator  *Creator           `json:"creator,omitempty"`
-	Projects []ResourceTreeView `json:"projects"`
-	Sessions []Session          `json:"sessions"`
-	Wiki     WorkspaceWikiView  `json:"wiki"`
+	Root      string             `json:"root"`
+	Creator   *Creator           `json:"creator,omitempty"`
+	Scheduler ResourceTreeView   `json:"scheduler"`
+	Projects  []ResourceTreeView `json:"projects"`
+	Sessions  []Session          `json:"sessions"`
+	Wiki      WorkspaceWikiView  `json:"wiki"`
 }
 
 type WorkspaceWikiView struct {
@@ -54,6 +55,7 @@ type ResourceDetailView struct {
 	Children     []ResourceTreeView  `json:"children,omitempty"`
 	Templates    []TaskTemplate      `json:"templates,omitempty"`
 	Template     *TaskTemplateSource `json:"template,omitempty"`
+	Scheduler    *SchedulerConfig    `json:"scheduler,omitempty"`
 }
 
 type TaskTemplate struct {
@@ -109,6 +111,10 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 	if err != nil {
 		return WorkspaceTree{}, err
 	}
+	schedulerConfig, err := readSchedulerJSON(schedulerJSONPath(root))
+	if err != nil {
+		return WorkspaceTree{}, err
+	}
 	projects := make([]ResourceTreeView, 0, len(projectEntries))
 	for _, entry := range projectEntries {
 		project, err := buildResourceTreeItem(root, resourceEntry{Resource: &entry.Project, Path: entry.Path}, true)
@@ -122,8 +128,12 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 		return WorkspaceTree{}, err
 	}
 	return WorkspaceTree{
-		Root:     slash(root),
-		Creator:  config.Creator,
+		Root:    slash(root),
+		Creator: config.Creator,
+		Scheduler: ResourceTreeView{
+			ID: SchedulerResourceID, Type: SchedulerResourceID, Title: "Scheduler",
+			Path: schedulerDir, AgentBinding: schedulerConfig.AgentBinding,
+		},
 		Projects: projects,
 		Sessions: sessions,
 		Wiki:     readWorkspaceWiki(root),

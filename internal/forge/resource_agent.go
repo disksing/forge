@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/disksing/forge/internal/app"
 )
 
 const (
@@ -178,6 +180,17 @@ func inferCurrentResourceID() (string, error) {
 		return "", err
 	} else if ok {
 		return projectID, nil
+	}
+	workspace, err := openApplicationWorkspace()
+	if err != nil {
+		return "", err
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	if inside, matchErr := workspace.IsSchedulerPath(cwd); matchErr == nil && inside {
+		return app.SchedulerResourceID, nil
 	}
 	return "workspace", nil
 }

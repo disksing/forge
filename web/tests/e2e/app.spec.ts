@@ -14,6 +14,7 @@ interface Harness {
   startBodies: Array<Record<string, unknown>>;
   uiStateBodies: Array<Record<string, unknown>>;
   steeredMessageIds: string[];
+  schedulerBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
 }
 
 const templates = [
@@ -51,6 +52,15 @@ const project = {
       archived: false,
     },
   ],
+};
+
+const schedulerResource = {
+  id: "scheduler",
+  type: "scheduler",
+  title: "Scheduler",
+  path: "scheduler",
+  archived: false,
+  agentBinding: { kind: "profile", name: "fast" },
 };
 
 const runs = [
@@ -142,8 +152,23 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
+  let scheduleSequence = 0;
+  let schedulerConfig = {
+    schemaVersion: 1,
+    agentBinding: { kind: "profile" as const, name: "fast" },
+    wakeIntervalMinutes: 30,
+    schedules: [] as Array<{
+      id: string;
+      description: string;
+      condition: string;
+      target: string;
+      createdBy: { kind: string; name: string };
+      createdAt: string;
+      updatedAt: string;
+    }>,
+  };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -199,6 +224,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       harness.treeRequests += 1;
       return json(route, {
         root: "/tmp/forge-e2e",
+        scheduler: { ...schedulerResource, scheduler: schedulerConfig },
         projects: [project],
         sessions: runs.map((run) => ({
           id: `forge-${run.id}`,
@@ -213,6 +239,58 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         })),
         wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
+    }
+    if (path === "/api/workspaces/ws-test/scheduler" && method === "GET") {
+      return json(route, schedulerConfig);
+    }
+    if (path === "/api/workspaces/ws-test/scheduler" && method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      harness.schedulerBodies.push({ method, path, body });
+      scheduleSequence += 1;
+      const schedule = {
+        id: `schedule-${String(scheduleSequence).padStart(24, "0")}`,
+        description: String(body.description || ""),
+        condition: String(body.condition || ""),
+        target: String(body.target || ""),
+        createdBy: { kind: "user", name: "E2E User" },
+        createdAt: now,
+        updatedAt: now,
+      };
+      schedulerConfig = { ...schedulerConfig, schedules: [...schedulerConfig.schedules, schedule] };
+      return json(route, schedule, 201);
+    }
+    if (path === "/api/workspaces/ws-test/scheduler/settings" && method === "PUT") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      harness.schedulerBodies.push({ method, path, body });
+      schedulerConfig = {
+        ...schedulerConfig,
+        agentBinding: body.agentBinding as typeof schedulerConfig.agentBinding,
+        wakeIntervalMinutes: Number(body.wakeIntervalMinutes),
+      };
+      return json(route, schedulerConfig);
+    }
+    const scheduleMutation = path.match(/^\/api\/workspaces\/ws-test\/scheduler\/(schedule-[0-9]+)$/);
+    if (scheduleMutation && method === "PUT") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      harness.schedulerBodies.push({ method, path, body });
+      const index = schedulerConfig.schedules.findIndex((schedule) => schedule.id === scheduleMutation[1]);
+      schedulerConfig = {
+        ...schedulerConfig,
+        schedules: schedulerConfig.schedules.map((schedule, scheduleIndex) => scheduleIndex === index ? {
+          ...schedule,
+          description: body.description === undefined ? schedule.description : String(body.description),
+          condition: body.condition === undefined ? schedule.condition : String(body.condition),
+          target: body.target === undefined ? schedule.target : String(body.target),
+          updatedAt: now,
+        } : schedule),
+      };
+      return json(route, schedulerConfig.schedules[index]);
+    }
+    if (scheduleMutation && method === "DELETE") {
+      harness.schedulerBodies.push({ method, path });
+      const removed = schedulerConfig.schedules.find((schedule) => schedule.id === scheduleMutation[1]);
+      schedulerConfig = { ...schedulerConfig, schedules: schedulerConfig.schedules.filter((schedule) => schedule.id !== scheduleMutation[1]) };
+      return json(route, removed);
     }
     const statusMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/status$/);
     if (statusMatch && method === "GET") {
@@ -269,6 +347,20 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     if (emptyHistoryMatch && method === "GET") return json(route, { resourceId: decodeURIComponent(emptyHistoryMatch[1]), segments: [], page: { limit: 20, hasMore: false } });
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
     if (resourceMatch) {
+      if (decodeURIComponent(resourceMatch[1]) === "scheduler") {
+        return json(route, {
+          ...schedulerResource,
+          scheduler: schedulerConfig,
+          files: [
+            { name: "scheduler.md", path: "scheduler/scheduler.md", content: "# Scheduler context\n", contentHash: "scheduler-context-v1" },
+            { name: "AGENTS.md", path: "scheduler/AGENTS.md", content: "# Scheduler guidance\n", contentHash: "scheduler-agents-v1" },
+          ],
+          logs: [],
+          logPage: { hasMore: false },
+          artifacts: [],
+          repos: [],
+        });
+      }
       const value = detail(decodeURIComponent(resourceMatch[1]));
       if (url.searchParams.get("logsCursor")) {
         value.logs = [{ id: `${value.id}-log-2`, time: "2026-08-09T12:00:00Z", title: "Older detail log", details: "Older page." }];
@@ -477,6 +569,45 @@ test("navigates resources and creates a task through the canonical application f
     detail: "Playwright isolated task body",
   });
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("manages natural-language schedules from the fixed Scheduler resource", async ({ page }) => {
+  const harness = await installMockApi(page);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.locator('[data-component-owner="scheduler-nav"] button').click();
+  await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
+  await expect(page.getByRole("heading", { name: /Scheduler/ }).first()).toBeVisible();
+  await page.getByRole("tab", { name: "Schedules" }).click();
+  await expect(page.getByText("No schedules. The Server will not create empty Scheduler Turns.")).toBeVisible();
+
+  await page.getByLabel("Description").fill("Notify when the release is ready");
+  await page.getByLabel("Condition").fill("When the release branch is green after 09:00 Shanghai time");
+  await page.getByLabel("Target resource ID").fill("project1.task1");
+  await page.getByRole("button", { name: "Add schedule", exact: true }).click();
+  await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
+  await expect(page.locator(".schedule-list article")).toContainText("project1.task1");
+
+  const interval = page.getByLabel("Scheduler wake interval in minutes");
+  await interval.fill("45");
+  await page.locator(".scheduler-settings-card").getByRole("button", { name: "Save" }).click();
+  await expect(interval).toHaveValue("45");
+
+  await page.locator(".schedule-list article").getByRole("button", { name: "Edit" }).click();
+  await page.getByLabel("Description").fill("Notify after release verification");
+  await page.getByRole("button", { name: "Update schedule" }).click();
+  await expect(page.locator(".schedule-list article")).toContainText("Notify after release verification");
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator(".schedule-list article").getByRole("button", { name: "Remove" }).click();
+  await expect(page.locator(".schedule-list article")).toHaveCount(0);
+  expect(harness.schedulerBodies.map(({ method }) => method)).toEqual(["POST", "PUT", "PUT", "DELETE"]);
+  expect(harness.schedulerBodies[0].body).toEqual({
+    description: "Notify when the release is ready",
+    condition: "When the release branch is green after 09:00 Shanghai time",
+    target: "project1.task1",
+  });
+  expect(harness.schedulerBodies[1].body).toMatchObject({ wakeIntervalMinutes: 45 });
 });
 
 test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable during refresh", async ({ page }) => {

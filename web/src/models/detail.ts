@@ -1,5 +1,6 @@
 import type { TaskTemplate } from "./create";
 import type { AgentOption } from "./common";
+import type { SchedulerConfigRecord } from "./workspace";
 
 export interface ResourceAgentBindingModel {
   kind: "profile" | "agent";
@@ -45,7 +46,7 @@ export interface ResourceRepoModel {
 
 export interface ResourceDetailModel {
   id: string;
-  type: "project" | "task";
+  type: "scheduler" | "project" | "task";
   title: string;
   description?: string;
   path: string;
@@ -59,6 +60,7 @@ export interface ResourceDetailModel {
   repos?: ResourceRepoModel[];
   templates?: TaskTemplate[];
   template?: { name: string; schemaVersion?: number; digest?: string } | null;
+  scheduler?: SchedulerConfigRecord;
 }
 
 export interface FilePreviewModel {
@@ -93,7 +95,7 @@ export interface DetailPanelModel {
   workspaceId: string;
   workspaceName: string;
   resourceId: string;
-  resourceType: "workspace" | "project" | "task" | "";
+  resourceType: "workspace" | "scheduler" | "project" | "task" | "";
   resourceTitle: string;
   creator?: ResourceCreatorModel;
   parent?: { id: string; title: string } | null;
@@ -111,6 +113,7 @@ export interface DetailPanelModel {
   onLoadMoreLogs: (resourceId: string) => Promise<void>;
   onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => Promise<WorkspaceAgentsModel>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
+  onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
 }

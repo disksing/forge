@@ -189,6 +189,10 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     const tree = dependencies.tree();
     if (!tree) return "";
     const parts: string[] = [];
+	if (tree.scheduler) {
+		const schedulerState = taskOperationalState(tree.scheduler);
+		parts.push(`scheduler:session=${taskStatusKey(schedulerState.session)}:${schedulerState.label}`);
+	}
     for (const project of tree.projects) {
       const state = taskOperationalState(project);
       const summary = projectTaskSummary(project);

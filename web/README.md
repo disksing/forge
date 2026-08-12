@@ -73,12 +73,15 @@ The shell has one canonical Workspace and Resource selection. That selection dri
 | --- | --- | --- |
 | `MobileToolbar` | Mobile navigation, Details/Chat tabs, immersive toggle, and sidebar backdrop | `mobile-toolbar` |
 | `WorkspaceSwitcher` | Active Workspace presentation, menu dismissal, switch deduplication, pending state, and switch errors | `workspace-switcher` |
+| `SchedulerNav` | Fixed Scheduler entry between the Workspace switcher and Project tree, with resource status and selection | `scheduler-nav` |
 | `ProjectTree` | Keyed Project/Task rows, expansion/selection dispatch, same-kind drag ordering, and Tree empty/error states | `project-tree` |
 | `GlobalSessionList` | Keyed global Session rows, unread/status projection, resource menu, navigation, and Session drag ordering | `global-session-list` |
 | `StatusPresentation` | Shared status/lock icon markup and animation; used only by Tree and global Session rows | `status-presentation` |
 | `PaneResizeHandle` | Pointer preview/commit lifecycle and cleanup for all three desktop resize handles | `pane-resize-handle` |
 
 Callbacks and immutable typed props are the only parent/child coordination mechanism. Workspace menus, Session menus, drag targets, drop previews, switch pending state, and pointer cleanup stay in their nearest owner. `AppShell` intentionally retains ModelChannel subscription, viewport keyboard correction, body-class projection, History push/replace/popstate, and the brand/workspace pane mount points because those span multiple children or application roots.
+
+The Scheduler detail view reuses the normal resource binding and long-running chat surfaces. `SchedulerPanel` owns only local interval/schedule form state and calls the Workspace-scoped Scheduler HTTP API; successful mutations ask the composition controller to refresh the canonical Tree and detail record. Natural-language conditions remain opaque UI strings.
 
 The pre-split baseline was 383 lines in `AppShell.svelte` and 1,270 lines in `AppShell.css`. After the split the root is 126 Svelte lines and 269 CSS lines; the six responsibility components plus shared status presentation total 498 Svelte lines and 1,104 CSS lines. The modest total increase is the explicit typed boundaries and duplicated private section-title/drag-handle rules; no selectors were promoted to a global stylesheet.
 

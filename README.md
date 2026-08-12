@@ -12,6 +12,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Explicit file ownership.** Generated agent instructions allow writes only in the starting resource and its task worktrees, while keeping other Workspace resources read-only.
 - **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1440px, and a single-column mobile layout below 980px. A layout switcher in the brand band (or the slim toolbar when the sidebar is collapsed) lets users override the responsive choice manually: three columns, tabbed two columns, or a split view that collapses the sidebar into a drawer with details and chat side by side; the preference is stored in the browser.
+- **Agent-interpreted scheduling.** Every Workspace has a Forge-managed Scheduler resource that evaluates natural-language conditions and sends ordinary resource messages without introducing a second execution protocol.
 
 ## Design
 
@@ -90,16 +91,16 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 
 The main UI is split into navigation, resource details, and agent chat:
 
-- **Navigation:** switch workspaces, expand the project/task tree, and monitor active or external sessions.
-- **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** select a Workspace, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
+- **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor active or external sessions.
+- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
+- **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
 ### AgentHub execution
 
-Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. Every Workspace, Project, and Task stores an explicit binding to either a Forge Profile or an AgentHub Agent. Profile bindings resolve to an `agentName`; a missing custom Profile preserves that explicit binding and falls back through the resource-type default and then global `default`, exposing the unresolved binding and actual fallback on the generation. Changing or restoring a route retires an obsolete generation at a turn boundary and creates the next generation lazily.
+Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. Every Workspace, Scheduler, Project, and Task stores an explicit binding to either a Forge Profile or an AgentHub Agent. Profile bindings resolve to an `agentName`; a missing custom Profile preserves that explicit binding and falls back through the resource-type default and then global `default`, exposing the unresolved binding and actual fallback on the generation. Changing or restoring a route retires an obsolete generation at a turn boundary and creates the next generation lazily. The Scheduler defaults to Profile `fast` and then the global `default` fallback if `fast` is unavailable.
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
@@ -108,6 +109,22 @@ Forge persists generation projections in `<workspace>/.forge/runtime/generations
 Resource messages use `steer` (default), `enqueue`, or `interrupt`. A supported active Turn receives steer immediately; an unsupported steer is durably downgraded to enqueue. Enqueue waits for a ready boundary. Interrupt first persists its mailbox item, records the exact active Turn, interrupts only that Turn, waits for terminal state, and then opens a new Turn. Already-delivering messages resolve first; otherwise interrupt outranks steer, and steer outranks queued enqueue, with acceptance order preserved inside each class. A live steer or interrupt may therefore bypass older enqueue work. Generation replacement never moves mailbox ownership: delivered steer remains with the old Turn, enqueue waits for the new generation, and interrupt terminates the old Turn before replacement delivery. The periodic reconciler recovers all modes after Server or AgentHub failures. Archived resources reject new messages: items not yet sent become `undeliverable`, while an already-attempted item whose AgentHub outcome cannot be confirmed becomes `delivery_unknown`; both remain queryable by message ID.
 
 Public work-subject state is `idle`, `working`, `attention_required`, `unavailable`, or `archived`. Waiting is a message state and count, never a Task state: the persisted internal `queued` value is exposed as `waiting`. Promoting a waiting message to the current Turn records `promotedAt` and changes its actual mode to steer on the same durable mailbox item.
+
+### Scheduler
+
+`forge init` and `forge migrate` non-destructively create the special `scheduler/` resource. Its formatted `scheduler.json` contains `schemaVersion`, an independent Agent/Profile binding, `wakeIntervalMinutes` (30 by default), and a `schedules` array. A schedule intentionally has only `id`, `description`, `condition`, `target`, immutable `createdBy`/`createdAt`, and `updatedAt`; conditions are natural language, not cron expressions. `scheduler.md` is optional durable judgment context maintained by the Scheduler Agent, while `AGENTS.md` explains the parent instructions, allowed files, duplicate-message behavior, and required target-message fields.
+
+The Server sends enqueue-only `scheduler_tick` system messages. It does not interpret conditions itself. An empty schedule list produces no Turn; adding or changing a schedule requests an immediate coalesced tick. Otherwise the interval is measured from the end of the previous completed Server-triggered Scheduler Turn, so user chat with the Scheduler does not postpone its next wake. Restart recovery checks durable mailbox and canonical AgentHub Turn state before deciding whether one recovery tick is needed. Messages to schedule targets may repeat, and receivers use the schedule ID to handle duplicates.
+
+The Scheduler may target only `workspace`, `scheduler`, or an open Project/Task in the same Workspace. Use the fixed GUI entry to bind its Agent/Profile, change the interval, maintain schedules, inspect context, and chat. The CLI exposes schedule data only:
+
+```text
+forge scheduler list [--json]
+forge scheduler show --id=<schedule>
+forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
+forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+forge scheduler remove --id=<schedule>
+```
 
 Commands address Workspace, Project, and Task directly without exposing a separate Agent subject or requiring run/Session IDs:
 
@@ -217,6 +234,10 @@ AgentWorkspace/
   forge-sessions.json         transient AgentHub Session projections for forge serve
   wiki/
     index.md                  long-lived workspace knowledge
+  scheduler/
+    scheduler.json            formatted configuration and natural-language schedules
+    scheduler.md              Scheduler Agent durable judgment context
+    AGENTS.md                 generated Scheduler resource instructions
   repos/
     forge/                    shared normal checkout
   project1-forge-dev/
@@ -272,6 +293,12 @@ forge project log add|list ...
 
 forge template list|show|validate|render|create|migrate ...
 
+forge scheduler list [--json]
+forge scheduler show --id=<schedule>
+forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
+forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+forge scheduler remove --id=<schedule>
+
 forge workspace status [--server=<url>]
 forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
 forge project status [--project=<project>] [--server=<url>]
@@ -311,7 +338,7 @@ Workspace, Project, and Task creation is local and uses the shared `internal/app
 
 Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the existing durable mailbox as structured system messages with stable `type`, `causation`, and receipt metadata. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
-`forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
+`forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
 
 ```markdown
 <!-- managed by forge cli -->

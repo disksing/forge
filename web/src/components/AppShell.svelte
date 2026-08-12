@@ -11,6 +11,7 @@
   import type { AppShellModel } from "./models";
   import PaneResizeHandle from "./PaneResizeHandle.svelte";
   import ProjectTree from "./ProjectTree.svelte";
+  import SchedulerNav from "./SchedulerNav.svelte";
   import WorkspaceSwitcher from "./WorkspaceSwitcher.svelte";
 
   let { channel, details, timeline, composer }: {
@@ -121,6 +122,7 @@
 <aside id="mobileSidebar" class="sidebar">
   <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div><LayoutSwitcher preference={model.layout.preference} tone="dark" onCycle={model.onLayoutCycle} /><button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
   <WorkspaceSwitcher identity={model.identity} mobileSidebarOpen={model.mobile.sidebarOpen} activeWorkspaceId={model.activeWorkspaceId} workspaces={model.workspaces} onSwitch={model.onSwitchWorkspace} onAdd={model.onAddWorkspace} onToast={model.onToast} />
+  <SchedulerNav item={model.scheduler || null} onSelect={model.onSelectResource} onToast={model.onToast} />
   <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToast={model.onToast} />
   <PaneResizeHandle id="sessionResize" kind="sidebarSessionHeight" className="horizontal-resize sidebar-session-resize" label="Resize sessions panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
   <GlobalSessionList identity={model.identity} sessions={model.sessions} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToast={model.onToast} />

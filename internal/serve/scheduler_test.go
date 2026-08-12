@@ -1,0 +1,232 @@
+package serve
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/disksing/forge/internal/app"
+)
+
+func TestSchedulerHTTPAPIUsesApplicationStore(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	workspace := guiWorkspace{ID: "workspace-scheduler", Name: "Scheduler", Path: root}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace}}); err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		s.handleWorkspace(recorder, httptest.NewRequest(method, path, strings.NewReader(body)))
+		return recorder
+	}
+	createdResponse := request(http.MethodPost, "/api/workspaces/workspace-scheduler/scheduler", `{"description":"Review","condition":"tomorrow","target":"workspace"}`)
+	if createdResponse.Code != http.StatusOK {
+		t.Fatalf("create schedule = %d %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	var created app.Schedule
+	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil || created.ID == "" {
+		t.Fatalf("created schedule = %#v, %v", created, err)
+	}
+	updatedResponse := request(http.MethodPut, "/api/workspaces/workspace-scheduler/scheduler/"+created.ID, `{"condition":"next week","target":"scheduler"}`)
+	var updated app.Schedule
+	updatedErr := json.Unmarshal(updatedResponse.Body.Bytes(), &updated)
+	if updatedResponse.Code != http.StatusOK || updatedErr != nil || updated.Target != app.SchedulerResourceID {
+		t.Fatalf("update schedule = %d %s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+	settingsResponse := request(http.MethodPut, "/api/workspaces/workspace-scheduler/scheduler/settings", `{"agentBinding":{"kind":"agent","name":"cheap-scheduler"},"wakeIntervalMinutes":60}`)
+	var settings app.SchedulerConfig
+	settingsErr := json.Unmarshal(settingsResponse.Body.Bytes(), &settings)
+	if settingsResponse.Code != http.StatusOK || settingsErr != nil || settings.WakeIntervalMinutes != 60 {
+		t.Fatalf("update Scheduler settings = %d %s", settingsResponse.Code, settingsResponse.Body.String())
+	}
+	readResponse := request(http.MethodGet, "/api/workspaces/workspace-scheduler/scheduler", "")
+	if readResponse.Code != http.StatusOK || !strings.Contains(readResponse.Body.String(), created.ID) {
+		t.Fatalf("read Scheduler = %d %s", readResponse.Code, readResponse.Body.String())
+	}
+	removedResponse := request(http.MethodDelete, "/api/workspaces/workspace-scheduler/scheduler/"+created.ID, "")
+	if removedResponse.Code != http.StatusOK {
+		t.Fatalf("remove schedule = %d %s", removedResponse.Code, removedResponse.Body.String())
+	}
+}
+
+func schedulerMessages(t *testing.T, workspacePath string) []resourceMailboxMessage {
+	t.Helper()
+	mailbox, err := loadResourceMailbox(workspacePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := make([]resourceMailboxMessage, 0)
+	for _, message := range mailbox.Messages {
+		if message.ResourceID == app.SchedulerResourceID && message.Type == resourceMessageTypeSchedulerTick {
+			result = append(result, message)
+		}
+	}
+	return result
+}
+
+func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChanges(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	client, err := newAgentHubClient(hub.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil || len(schedulerMessages(t, workspace.Path)) != 0 {
+		t.Fatalf("empty Scheduler reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Check status", Condition: "when appropriate", Target: "workspace"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticks := schedulerMessages(t, workspace.Path)
+	if len(ticks) != 1 || ticks[0].Status != resourceMessageDelivered || ticks[0].Causation == nil || ticks[0].Causation.Reason != schedulerTickReasonChanged {
+		t.Fatalf("first Scheduler tick = %#v", ticks)
+	}
+	first := ticks[0]
+	endedAt := time.Date(2026, 8, 13, 8, 0, 0, 0, time.UTC)
+	first, err = updateMailboxMessage(workspace.Path, first.ID, func(message *resourceMailboxMessage) {
+		message.TurnID = "turn-scheduler-1"
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, found, err := runByGenerationID(workspace.Path, first.GenerationID)
+	if err != nil || !found {
+		t.Fatalf("Scheduler generation = %#v, found=%v err=%v", run, found, err)
+	}
+	fake.mu.Lock()
+	if fake.turns[run.AgentHubSessionID] == nil {
+		fake.turns[run.AgentHubSessionID] = make(map[string]agentHubTurn)
+	}
+	fake.turns[run.AgentHubSessionID][first.TurnID] = agentHubTurn{TurnID: first.TurnID, Status: "completed", Closed: true, EndedAt: endedAt.Format(time.RFC3339Nano)}
+	session := fake.sessions[run.AgentHubSessionID]
+	session.State = "ready"
+	session.CurrentTurnID = ""
+	fake.sessions[run.AgentHubSessionID] = session
+	fake.mu.Unlock()
+
+	manager.now = func() time.Time { return endedAt.Add(29 * time.Minute) }
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil || len(schedulerMessages(t, workspace.Path)) != 1 {
+		t.Fatalf("early interval reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
+	}
+	// A later ordinary user message does not participate in Scheduler timing.
+	appendNotificationTestMessage(t, workspace.Path, resourceMailboxMessage{
+		ID: "msg-user-after-tick", ResourceID: app.SchedulerResourceID, Text: "User chat", Role: "user",
+		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
+		Status: resourceMessageDelivered, AcceptedAt: endedAt.Add(time.Minute).Format(time.RFC3339Nano), UpdatedAt: endedAt.Add(time.Minute).Format(time.RFC3339Nano),
+	})
+	manager.now = func() time.Time { return endedAt.Add(30 * time.Minute) }
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticks = schedulerMessages(t, workspace.Path)
+	if len(ticks) != 2 || ticks[1].Causation == nil || ticks[1].Causation.Reason != schedulerTickReasonInterval {
+		t.Fatalf("due interval tick = %#v", ticks)
+	}
+
+	description := "Check status with new context"
+	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Description: &description}); err != nil {
+		t.Fatal(err)
+	}
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticks = schedulerMessages(t, workspace.Path)
+	if len(ticks) != 3 || ticks[2].Status != resourceMessageQueued || ticks[2].Causation.Reason != schedulerTickReasonChanged {
+		t.Fatalf("queued change tick = %#v", ticks)
+	}
+	condition := "when the updated condition is satisfied"
+	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Condition: &condition}); err != nil {
+		t.Fatal(err)
+	}
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil || len(schedulerMessages(t, workspace.Path)) != 3 {
+		t.Fatalf("coalesced change reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
+	}
+	if _, err := forgeWorkspace.RemoveSchedule(created.ID); err != nil {
+		t.Fatal(err)
+	}
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	ticks = schedulerMessages(t, workspace.Path)
+	if err != nil || ticks[2].Status != resourceMessageUndeliverable || ticks[2].LastErrorCode != "scheduler_empty" {
+		t.Fatalf("empty-list cancellation = %v, messages=%#v", err, ticks)
+	}
+}
+
+func TestFailedSchedulerTickDoesNotResetInterval(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	client, _ := newAgentHubClient(hub.URL, nil)
+	forgeWorkspace, _ := app.OpenWorkspace(workspace.Path)
+	if _, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Retry", Condition: "always inspect", Target: "workspace"}); err != nil {
+		t.Fatal(err)
+	}
+	manager.resourceMu.Lock()
+	err := manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tick := schedulerMessages(t, workspace.Path)[0]
+	tick, err = updateMailboxMessage(workspace.Path, tick.ID, func(message *resourceMailboxMessage) { message.TurnID = "turn-failed" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, _, _ := runByGenerationID(workspace.Path, tick.GenerationID)
+	fake.mu.Lock()
+	if fake.turns[run.AgentHubSessionID] == nil {
+		fake.turns[run.AgentHubSessionID] = make(map[string]agentHubTurn)
+	}
+	fake.turns[run.AgentHubSessionID][tick.TurnID] = agentHubTurn{TurnID: tick.TurnID, Status: "failed", Closed: true, EndedAt: time.Now().Format(time.RFC3339Nano)}
+	session := fake.sessions[run.AgentHubSessionID]
+	session.State = "ready"
+	fake.sessions[run.AgentHubSessionID] = session
+	fake.mu.Unlock()
+	manager.resourceMu.Lock()
+	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
+	manager.resourceMu.Unlock()
+	ticks := schedulerMessages(t, workspace.Path)
+	if err != nil || len(ticks) != 2 || ticks[1].Causation.Reason != schedulerTickReasonRecovery {
+		t.Fatalf("failed tick recovery = %v, messages=%#v", err, ticks)
+	}
+}

@@ -177,6 +177,10 @@ func (w *Workspace) ResourceAgentBinding(id string) (AgentBinding, error) {
 		cfg, err := w.RuntimeConfig()
 		return cfg.AgentBinding, err
 	}
+	if strings.TrimSpace(id) == SchedulerResourceID {
+		cfg, err := w.Scheduler()
+		return cfg.AgentBinding, err
+	}
 	result, err := w.ResourceValue(id)
 	if err != nil {
 		return AgentBinding{}, err
@@ -201,6 +205,14 @@ func (w *Workspace) SetResourceAgentBinding(id string, binding AgentBinding) (Ag
 			}
 			cfg.AgentBinding = binding
 			return writeJSON(filepath.Join(w.root, configFile), cfg)
+		}
+		if strings.TrimSpace(id) == SchedulerResourceID {
+			cfg, err := readSchedulerJSON(schedulerJSONPath(w.root))
+			if err != nil {
+				return err
+			}
+			cfg.AgentBinding = binding
+			return writeSchedulerJSON(schedulerJSONPath(w.root), cfg)
 		}
 		path, resource, err := loadOpenResource(w.root, strings.TrimSpace(id))
 		if err != nil {

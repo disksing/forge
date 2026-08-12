@@ -216,6 +216,9 @@ func initializeWorkspaceLocked(root, language string, creator Creator) error {
 	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md"), language); err != nil {
 		return err
 	}
+	if _, err := ensureSchedulerLocked(root, language); err != nil {
+		return err
+	}
 	return updateOpenTaskAgentsMD(root, language)
 }
 
@@ -267,6 +270,9 @@ func (w *Workspace) migrate(language string) error {
 	}
 	if err := updateOpenTaskAgentsMD(w.root, language); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+	}
+	if _, err := ensureSchedulerLocked(w.root, language); err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "scheduler", Workspace: w.root, Err: err}
 	}
 	config.Version, config.Language = 1, language
 	if strings.TrimSpace(config.InstanceID) == "" {
@@ -405,6 +411,9 @@ func (w *Workspace) Resource(id string) (ResourceDetailView, error) {
 	if err := w.require(); err != nil {
 		return ResourceDetailView{}, err
 	}
+	if cleanID(id) == SchedulerResourceID {
+		return w.schedulerResourceDetail()
+	}
 	path, resource, err := loadResource(w.root, cleanID(id))
 	if err != nil {
 		return ResourceDetailView{}, &APIError{Operation: "read resource", Kind: "resource", Workspace: w.root, ResourceID: id, Err: err}
@@ -422,6 +431,9 @@ func (w *Workspace) Resource(id string) (ResourceDetailView, error) {
 func (w *Workspace) ResourcePage(id, cursor string, limit int) (ResourceDetailView, error) {
 	if err := w.require(); err != nil {
 		return ResourceDetailView{}, err
+	}
+	if cleanID(id) == SchedulerResourceID {
+		return w.schedulerResourceDetail()
 	}
 	path, resource, err := loadResource(w.root, cleanID(id))
 	if err != nil {

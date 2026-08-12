@@ -23,7 +23,7 @@ export interface ShellProjectSummary {
 
 export interface ShellResourceItem {
   id: string;
-  type: "project" | "task";
+  type: "scheduler" | "project" | "task";
   title: string;
   ref: string;
   active: boolean;
@@ -67,6 +67,7 @@ export interface AppShellModel {
   version: string;
   activeWorkspaceId: string;
   workspaces: ShellWorkspaceItem[];
+  scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
   sessions: ShellSessionItem[];
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarSessionHeight: number };

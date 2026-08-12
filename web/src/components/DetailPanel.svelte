@@ -11,6 +11,7 @@
   import Icon from "./Icon.svelte";
   import LogTimeline from "./LogTimeline.svelte";
   import MarkdownDocument from "./MarkdownDocument.svelte";
+  import SchedulerPanel from "./SchedulerPanel.svelte";
   import WorkspaceAgentsEditor from "./WorkspaceAgentsEditor.svelte";
   import type { DetailPanelModel, ResourceFileModel, ResourceRepoModel } from "./models";
 
@@ -67,6 +68,7 @@
 
   function initialTab(value: DetailPanelModel): string {
     const detailFiles = (value.detail?.files || []).filter((file) => file.name !== "AGENTS.md");
+    if (value.resourceType === "scheduler") return "context";
     if (value.resourceType === "project" && detailFiles.some((file) => file.name === "project.md")) return "project";
     if (detailFiles.some((file) => file.name === "task.md")) return "task";
     if (detailFiles.some((file) => file.name === "work.md")) return "work";
@@ -77,6 +79,10 @@
 
   function resourceTabs(): Array<{ id: string; label: string; icon: string }> {
     if (!model.detail) return [];
+	if (model.resourceType === "scheduler") return [
+	  { id: "context", label: "Context", icon: "file-text" },
+	  { id: "schedules", label: "Schedules", icon: "calendar-clock" }
+	];
     const result: Array<{ id: string; label: string; icon: string }> = [];
     if (fileNames.has("project.md")) result.push({ id: "project", label: "Project", icon: "file-text" });
     if (fileNames.has("task.md")) result.push({ id: "task", label: "Task", icon: "file-text" });
@@ -88,6 +94,7 @@
   }
 
   function documentTab(file: ResourceFileModel): string {
+	if (file.name === "scheduler.md") return "context";
     if (file.name === "project.md") return "project";
     if (file.name === "task.md") return "task";
     if (file.name === "work.md") return "work";
@@ -188,7 +195,7 @@
       {#if model.parent}<span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link" onclick={() => model.onNavigate(model.parent?.id || "workspace")}>{model.parent.title}</button>{/if}
       <span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate(model.resourceId)}>{model.resourceTitle}</button>
     </nav>
-    <div class="title-row"><h1>{model.resourceTitle}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code><span class="resource-creator-badge" title={creatorTitle()}>{creatorLabel()}</span></h1>{#if model.detail}<div class="details-actions">{@render agentBindingControl()}{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button></div>{/if}</div>
+    <div class="title-row"><h1>{model.resourceTitle}{#if model.resourceType !== "scheduler"}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code>{/if}<span class="resource-creator-badge" title={model.resourceType === "scheduler" ? "Special Forge-managed Workspace resource" : creatorTitle()}>{model.resourceType === "scheduler" ? "Forge-managed" : creatorLabel()}</span></h1>{#if model.detail}<div class="details-actions">{@render agentBindingControl()}{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}{#if model.resourceType !== "scheduler"}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button>{/if}</div>{/if}</div>
   </div>
   {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}
@@ -197,6 +204,7 @@
     </div>
     <div id="detailsContent" class="details-content">
       {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} /></div>{/each}
+      {#if model.resourceType === "scheduler" && model.detail.scheduler}<div hidden={activeTab !== "schedules"}><SchedulerPanel workspaceId={model.workspaceId} config={model.detail.scheduler} onChanged={model.onRefreshScheduler || (async () => undefined)} onToast={model.onToast} /></div>{/if}
       <div hidden={activeTab !== "template"}>
         {#if model.resourceType === "project"}<div class="content-section"><div class="template-list">{#if model.detail.templates?.length}{#each model.detail.templates as template (template.name)}<button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && openPreview("Templates", template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}{template.legacy ? " · legacy" : ""}</small></span><Icon name="chevron-right" /></button>{/each}{:else}<div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>{/if}</div></div>
         {:else if model.detail.template}<div class="content-section"><div class="template-list"><div class="template-row"><Icon name="file-text" /><span><strong>{model.detail.template.name}</strong><small>Created from template · v{model.detail.template.schemaVersion || "?"} · {model.detail.template.digest || ""}</small></span></div></div></div>{/if}

@@ -34,7 +34,7 @@ func sourceLookupKey(instanceID, externalID string) string {
 
 func resourceAcceptsMessages(workspacePath, resourceID string) error {
 	resourceID = strings.TrimSpace(resourceID)
-	if resourceID == "" || resourceID == "workspace" {
+	if resourceID == "" || resourceID == "workspace" || resourceID == app.SchedulerResourceID {
 		return nil
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
@@ -130,6 +130,9 @@ func resourceAgentKind(workspace *app.Workspace, resourceID string) (string, err
 	if strings.TrimSpace(resourceID) == "" || strings.TrimSpace(resourceID) == "workspace" {
 		return "workspace", nil
 	}
+	if strings.TrimSpace(resourceID) == app.SchedulerResourceID {
+		return app.SchedulerResourceID, nil
+	}
 	value, err := workspace.ResourceValue(resourceID)
 	if err != nil {
 		return "", err
@@ -147,6 +150,8 @@ func resourceDefaultProfile(defaults resourceAgentDefaults, kind string) string 
 		return defaults.Workspace
 	case "task":
 		return defaults.Task
+	case app.SchedulerResourceID:
+		return "fast"
 	default:
 		return defaults.Project
 	}
@@ -174,7 +179,9 @@ func nextResourceGeneration(workspacePath, resourceID string) (int, error) {
 func resourceGenerationTitle(workspace guiWorkspace, resourceID string, generation int) (string, error) {
 	resourceID = normalizedResourceID(resourceID)
 	title := strings.TrimSpace(workspace.Name)
-	if resourceID != "workspace" {
+	if resourceID == app.SchedulerResourceID {
+		title = "Scheduler"
+	} else if resourceID != "workspace" {
 		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			return "", err
@@ -463,6 +470,10 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
 			continue
 		}
+		bindings = append(bindings, struct {
+			id      string
+			binding app.AgentBinding
+		}{id: app.SchedulerResourceID, binding: tree.Scheduler.AgentBinding})
 		for _, project := range tree.Projects {
 			bindings = append(bindings, struct {
 				id      string
