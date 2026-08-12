@@ -1,4 +1,10 @@
 import type { TaskTemplate } from "./create";
+import type { AgentOption } from "./common";
+
+export interface ResourceAgentBindingModel {
+  kind: "profile" | "agent";
+  name: string;
+}
 
 export interface ResourceFileModel {
   name: string;
@@ -38,6 +44,7 @@ export interface ResourceDetailModel {
   description?: string;
   path: string;
   archived?: boolean;
+  agentBinding?: ResourceAgentBindingModel;
   files?: ResourceFileModel[];
   logs?: ResourceLogModel[];
   logPage?: { hasMore?: boolean; nextCursor?: string };
@@ -86,12 +93,16 @@ export interface DetailPanelModel {
   detail: ResourceDetailModel | null;
   wiki: { exists?: boolean; error?: string; entries?: FileTreeModel[] } | null;
   workspaceAgents: WorkspaceAgentsModel | null;
+  agentBinding: ResourceAgentBindingModel;
+  agentProfiles: Array<{ key: string; description?: string }>;
+  agents: AgentOption[];
   logs: { hasMore: boolean; loading: boolean; error: string };
   onNavigate: (resourceId: string) => void;
   onCreateTask: (projectId: string) => void;
   onArchive: (resourceId: string) => void;
   onLoadMoreLogs: (resourceId: string) => Promise<void>;
   onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => Promise<WorkspaceAgentsModel>;
+  onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
 }

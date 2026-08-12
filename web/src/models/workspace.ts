@@ -18,6 +18,7 @@ export interface ResourceRecord {
   description?: string;
   status?: string;
   archived?: boolean;
+  agentBinding?: { kind: "profile" | "agent"; name: string };
   updatedAt?: string;
   children?: ResourceRecord[];
   files?: ResourceFileModel[];
@@ -44,6 +45,7 @@ export interface WorkspaceSession extends AgentRun {
 }
 
 export interface WorkspaceTree {
+  agentBinding?: { kind: "profile" | "agent"; name: string };
   projects: ResourceRecord[];
   sessions: WorkspaceSession[];
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };

@@ -28,6 +28,11 @@ var agentHubMaxResponseBytes int64 = 256 << 20
 
 var requiredAgentHubCapabilities = []string{
 	"session.source",
+	"session.source-metadata",
+	"session.idempotent-create",
+	"session.input-capabilities",
+	"messages.idempotent",
+	"turns.stable-index",
 	"session.launch-environment",
 	"session.launch-environment-update",
 	"session.strict-stopped",
@@ -105,27 +110,33 @@ type agentHubCatalog struct {
 }
 
 type agentHubSource struct {
-	App        string `json:"app,omitempty"`
-	InstanceID string `json:"instanceId,omitempty"`
-	ExternalID string `json:"externalId,omitempty"`
+	App        string            `json:"app,omitempty"`
+	InstanceID string            `json:"instanceId,omitempty"`
+	ExternalID string            `json:"externalId,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+}
+
+type agentHubInputCapabilities struct {
+	Steer bool `json:"steer"`
 }
 
 type agentHubSession struct {
-	ID                 string            `json:"id"`
-	Title              string            `json:"title"`
-	Cwd                string            `json:"cwd"`
-	AgentName          string            `json:"agentName,omitempty"`
-	LaunchEnvironment  map[string]string `json:"launchEnvironment,omitempty"`
-	Source             *agentHubSource   `json:"source,omitempty"`
-	Provider           string            `json:"provider,omitempty"`
-	ProviderSessionID  string            `json:"providerSessionId,omitempty"`
-	State              string            `json:"state"`
-	StopReason         string            `json:"stopReason,omitempty"`
-	CurrentTurnID      string            `json:"currentTurnId,omitempty"`
-	PendingApprovalIDs []string          `json:"pendingApprovalIds,omitempty"`
-	LastEventID        int64             `json:"lastEventId"`
-	CreatedAt          string            `json:"createdAt"`
-	UpdatedAt          string            `json:"updatedAt"`
+	ID                 string                    `json:"id"`
+	Title              string                    `json:"title"`
+	Cwd                string                    `json:"cwd"`
+	AgentName          string                    `json:"agentName,omitempty"`
+	LaunchEnvironment  map[string]string         `json:"launchEnvironment,omitempty"`
+	Source             *agentHubSource           `json:"source,omitempty"`
+	Provider           string                    `json:"provider,omitempty"`
+	InputCapabilities  agentHubInputCapabilities `json:"inputCapabilities"`
+	ProviderSessionID  string                    `json:"providerSessionId,omitempty"`
+	State              string                    `json:"state"`
+	StopReason         string                    `json:"stopReason,omitempty"`
+	CurrentTurnID      string                    `json:"currentTurnId,omitempty"`
+	PendingApprovalIDs []string                  `json:"pendingApprovalIds,omitempty"`
+	LastEventID        int64                     `json:"lastEventId"`
+	CreatedAt          string                    `json:"createdAt"`
+	UpdatedAt          string                    `json:"updatedAt"`
 }
 
 // agentHubMessageSender is provenance identity metadata attached to an
@@ -142,10 +153,11 @@ type agentHubMessageSender struct {
 // describe provenance only; an omitted role persists as an ordinary user
 // message.
 type agentHubInboundMessage struct {
-	Text   string                 `json:"text"`
-	Role   string                 `json:"role,omitempty"`
-	Sender *agentHubMessageSender `json:"sender,omitempty"`
-	Steer  bool                   `json:"steer,omitempty"`
+	Text      string                 `json:"text"`
+	Role      string                 `json:"role,omitempty"`
+	Sender    *agentHubMessageSender `json:"sender,omitempty"`
+	Steer     bool                   `json:"steer,omitempty"`
+	MessageID string                 `json:"messageId,omitempty"`
 }
 
 type agentHubCreateSessionRequest struct {
@@ -154,6 +166,7 @@ type agentHubCreateSessionRequest struct {
 	AgentName         string                  `json:"agentName"`
 	LaunchEnvironment map[string]string       `json:"launchEnvironment,omitempty"`
 	Source            *agentHubSource         `json:"source,omitempty"`
+	IdempotencyKey    string                  `json:"idempotencyKey,omitempty"`
 	InitialMessage    *agentHubInboundMessage `json:"initialMessage,omitempty"`
 }
 

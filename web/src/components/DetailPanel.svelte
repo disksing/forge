@@ -22,6 +22,9 @@
   let expanded = $state(new Set<string>());
   let preview = $state<{ section: string; path: string } | null>(null);
   let diffRepo = $state<ResourceRepoModel | null>(null);
+  let bindingKind = $state<"profile" | "agent">("profile");
+  let bindingName = $state("default");
+  let bindingSaving = $state(false);
   const tabMemory = new Map<string, string>();
   const client = new ApiClient();
 
@@ -39,6 +42,9 @@
       diffRepo = null;
       expanded = new Set();
       activeTab = tabMemory.get(identity) || initialTab(next);
+      bindingKind = next.agentBinding.kind;
+      bindingName = next.agentBinding.name;
+      bindingSaving = false;
       const content = document.getElementById("detailsContent");
       if (content) content.scrollTop = 0;
     } else if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) {
@@ -119,12 +125,44 @@
   function toastError(message: string): void {
     if (message) model.onToast(message);
   }
+
+  function bindingOptions(kind = bindingKind): Array<{ id: string; label: string }> {
+    return kind === "profile"
+      ? model.agentProfiles.map((profile) => ({ id: profile.key, label: profile.description ? `${profile.key} — ${profile.description}` : profile.key }))
+      : model.agents.map((agent) => ({ id: agent.id, label: agent.label }));
+  }
+
+  function changeBindingKind(kind: "profile" | "agent"): void {
+    bindingKind = kind;
+    const options = bindingOptions(kind);
+    if (!options.some((option) => option.id === bindingName)) bindingName = options[0]?.id || "";
+  }
+
+  async function saveBinding(): Promise<void> {
+    if (!bindingName || bindingSaving) return;
+    bindingSaving = true;
+    try {
+      await model.onSaveAgentBinding({ kind: bindingKind, name: bindingName });
+    } catch (error) {
+      toastError(error instanceof Error ? error.message : String(error));
+    } finally {
+      bindingSaving = false;
+    }
+  }
 </script>
+
+{#snippet agentBindingControl()}
+  <div class="resource-agent-binding" aria-label="Resource agent binding">
+    <select aria-label="Binding kind" value={bindingKind} onchange={(event) => changeBindingKind(event.currentTarget.value as "profile" | "agent")}><option value="profile">Profile</option><option value="agent">Agent</option></select>
+    <select aria-label="Binding target" value={bindingName} onchange={(event) => bindingName = event.currentTarget.value}>{#each bindingOptions() as option}<option value={option.id}>{option.label}</option>{/each}</select>
+    <button type="button" class="secondary" disabled={bindingSaving || !bindingName || (bindingKind === model.agentBinding.kind && bindingName === model.agentBinding.name)} onclick={saveBinding}><Icon name={bindingSaving ? "loader-circle" : "save"} /><span>{bindingSaving ? "Saving" : "Bind"}</span></button>
+  </div>
+{/snippet}
 
 {#if !model.workspaceId}
   <div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>
 {:else if model.resourceType === "workspace"}
-  <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}</h1></div></div>
+  <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}</h1>{@render agentBindingControl()}</div></div>
   <div id="detailsContent" class="details-content">
     <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
     {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
@@ -138,7 +176,7 @@
       {#if model.parent}<span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link" onclick={() => model.onNavigate(model.parent?.id || "workspace")}>{model.parent.title}</button>{/if}
       <span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate(model.resourceId)}>{model.resourceTitle}</button>
     </nav>
-    <div class="title-row"><h1>{model.resourceTitle}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code></h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button></div>{/if}</div>
+    <div class="title-row"><h1>{model.resourceTitle}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code></h1>{#if model.detail}<div class="details-actions">{@render agentBindingControl()}{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button></div>{/if}</div>
   </div>
   {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}

@@ -27,9 +27,13 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     },
     wiki: null,
     workspaceAgents: null,
+    agentBinding: { kind: "profile", name: "default" },
+    agentProfiles: [{ key: "default", description: "Default" }],
+    agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
     logs: { hasMore: true, loading: false, error: "" },
     onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(), onLoadMoreLogs: vi.fn(async () => undefined),
     onSaveWorkspaceAgents: vi.fn(async () => ({ path: "AGENTS.md", content: "", contentHash: "saved" })),
+    onSaveAgentBinding: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
     ...overrides,
   };
@@ -54,6 +58,24 @@ afterEach(async () => {
 });
 
 describe("DetailPanel", () => {
+	it("updates the selected resource's explicit Agent binding", async () => {
+		const current = resourceModel({
+			agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }, { id: "other-agent", label: "Other Agent", summary: "other" }]
+		});
+		const { target } = mountModel(current);
+		await tick();
+		const kind = target.querySelector<HTMLSelectElement>('[aria-label="Binding kind"]')!;
+		kind.value = "agent";
+		kind.dispatchEvent(new Event("change", { bubbles: true }));
+		await tick();
+		const targetSelect = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+		targetSelect.value = "other-agent";
+		targetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+		await tick();
+		target.querySelector<HTMLButtonElement>(".resource-agent-binding button")!.click();
+		await vi.waitFor(() => expect(current.onSaveAgentBinding).toHaveBeenCalledWith({ kind: "agent", name: "other-agent" }));
+	});
+
   it("renders the compact resource number inside an independently scrollable body", async () => {
     const { target } = mountModel(resourceModel());
     await tick();

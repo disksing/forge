@@ -18,7 +18,10 @@ export interface AgentHubData {
 		providers?: Array<{ id: string; name?: string }>;
 		agents?: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
 	};
-	config?: { agentProfiles?: SettingsProfile[] };
+	config?: {
+		agentProfiles?: SettingsProfile[];
+		resourceDefaults?: { workspace?: string; project?: string; task?: string };
+	};
 }
 
 interface SettingsData {
@@ -125,7 +128,12 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				version: status.version || "",
 				capabilities: status.capabilities || [],
 				providers: catalog.providers || [],
-				agents: catalog.agents || []
+				agents: catalog.agents || [],
+				resourceDefaults: {
+					workspace: hub.config?.resourceDefaults?.workspace || "default",
+					project: hub.config?.resourceDefaults?.project || "default",
+					task: hub.config?.resourceDefaults?.task || "default"
+				}
 			},
 			profiles: (data.agentProfiles || []).map((profile) => ({ ...profile })),
 			agents: dependencies.agentOptions(),
@@ -183,7 +191,11 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		state.agentDirty = Boolean(draft.dirty);
 		state.data = {
 			...state.data,
-			agentHub: { ...state.data?.agentHub, configuredEndpoint: String(draft.endpoint || "") },
+			agentHub: {
+				...state.data?.agentHub,
+				configuredEndpoint: String(draft.endpoint || ""),
+				config: { ...state.data?.agentHub?.config, resourceDefaults: { ...draft.resourceDefaults } }
+			},
 			agentProfiles: (draft.profiles || []).map((profile) => ({ ...profile }))
 		};
 	}
@@ -261,7 +273,8 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			method: "PUT",
 			body: JSON.stringify({
 				endpoint: state.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
-				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile }))
+				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile })),
+				resourceDefaults: state.data?.agentHub?.config?.resourceDefaults || { workspace: "default", project: "default", task: "default" }
 			})
 		});
 		await refresh();

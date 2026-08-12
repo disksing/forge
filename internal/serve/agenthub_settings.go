@@ -22,8 +22,9 @@ type agentHubSettingsResponse struct {
 }
 
 type updateAgentHubSettingsRequest struct {
-	Endpoint      string                 `json:"endpoint"`
-	AgentProfiles []agentHubProfileRoute `json:"agentProfiles"`
+	Endpoint         string                 `json:"endpoint"`
+	AgentProfiles    []agentHubProfileRoute `json:"agentProfiles"`
+	ResourceDefaults resourceAgentDefaults  `json:"resourceDefaults"`
 }
 
 func (s *server) handleAgentHubSettings(w http.ResponseWriter, r *http.Request) {
@@ -154,14 +155,21 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	if err != nil {
 		return agentHubSettingsResponse{}, fmt.Errorf("validate AgentHub catalog: %w", err)
 	}
+	previous := cfg
 	cfg.AgentHubEndpoint = configured
 	cfg.AgentProfiles = request.AgentProfiles
+	cfg.ResourceDefaults = request.ResourceDefaults
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
 	}
 	if err := writeAgentHubConfigFile(s.config, cfg); err != nil {
 		return agentHubSettingsResponse{}, err
+	}
+	if s.agents != nil {
+		if err := s.agents.profileRoutesChanged(ctx, previous, cfg); err != nil {
+			return agentHubSettingsResponse{}, err
+		}
 	}
 	return agentHubSettingsResponse{
 		Config:             cfg,
@@ -189,6 +197,7 @@ func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
 			return agentHubGUIConfig{
 				Version: agentHubConfigVersion, Workspaces: []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
+				ResourceDefaults: defaultResourceAgentDefaults(),
 			}, nil
 		}
 		return agentHubGUIConfig{}, err
@@ -199,12 +208,20 @@ func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
 	if err := json.Unmarshal(data, &version); err != nil {
 		return agentHubGUIConfig{}, err
 	}
-	if version.Version < agentHubConfigVersion {
+	if version.Version < 3 {
 		return agentHubGUIConfig{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", version.Version)
 	}
+	needsUpgrade := version.Version != agentHubConfigVersion
 	var cfg agentHubGUIConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return agentHubGUIConfig{}, err
+	}
+	cfg.Version = agentHubConfigVersion
+	cfg.ResourceDefaults = normalizeResourceAgentDefaults(cfg.ResourceDefaults)
+	if needsUpgrade {
+		if err := writeAgentHubConfigFile(path, cfg); err != nil {
+			return agentHubGUIConfig{}, err
+		}
 	}
 	return cfg, nil
 }

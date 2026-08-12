@@ -1031,6 +1031,11 @@ function detailPanelModel(): DetailPanelModel {
 		detail: null,
 		wiki: controllerState.tree?.wiki || null,
 		workspaceAgents: controllerState.workspaceAgents,
+		agentBinding: controllerState.selectedId === "workspace"
+			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
+			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
+		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description })),
+		agents: svelteAgentOptions(),
 		logs: {
 			hasMore: false,
 			loading: false,
@@ -1041,6 +1046,16 @@ function detailPanelModel(): DetailPanelModel {
 		onArchive: (resourceId: string) => archiveResource(resourceId).catch((err) => toast(errorMessage(err))),
 		onLoadMoreLogs: (resourceId: string) => loadMoreLogs(resourceId),
 		onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => saveWorkspaceAgentsFromDetail(content, expectedContentHash),
+		onSaveAgentBinding: async (binding) => {
+			const resourceId = controllerState.selectedId || "workspace";
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
+				method: "PUT", body: JSON.stringify(binding)
+			});
+			await loadTree({ updateURL: false });
+			if (resourceId !== "workspace") await loadDetail(resourceId, { force: true });
+			publishViewModels();
+			toast("Resource agent binding saved.");
+		},
 		onToast: toast,
 		onIconsChanged: refreshIcons
 	};

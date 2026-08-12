@@ -14,6 +14,12 @@ export interface NotificationPreferences {
   soundError: string;
 }
 
+export interface ResourceProfileDefaults {
+  workspace: string;
+  project: string;
+  task: string;
+}
+
 export interface AgentHubSettings {
   configuredEndpoint: string;
   connected: boolean;
@@ -24,6 +30,7 @@ export interface AgentHubSettings {
   capabilities: string[];
   providers: Array<{ id: string; name?: string }>;
   agents: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
+  resourceDefaults?: ResourceProfileDefaults;
 }
 
 export interface SettingsDraft {
@@ -33,6 +40,7 @@ export interface SettingsDraft {
   userName: string;
   endpoint: string;
   profiles: ProfileDraft[];
+  resourceDefaults: ResourceProfileDefaults;
   newProfile: ProfileDraft;
   dirty: boolean;
 }

@@ -112,6 +112,22 @@
   gap: 8px;
 }
 
+:where([data-component-owner="detail-panel"]) .resource-agent-binding {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+:where([data-component-owner="detail-panel"]) .resource-agent-binding select {
+  min-height: 30px;
+  max-width: 210px;
+  border: 1px solid #dcdfe4;
+  border-radius: 6px;
+  background: #fff;
+  padding: 0 8px;
+  color: #2b3440;
+}
+
 :where([data-component-owner="detail-panel"]) .details-actions button.secondary {
   background: #dcdfe4;
   color: #2b3440;

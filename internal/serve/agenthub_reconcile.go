@@ -87,12 +87,14 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 // a different Forge source than the persisted run. A conflict means the
 // AgentHub session id no longer identifies this run's session, so no state
 // from it may drive terminal reconciliation.
-func agentHubSourceConflicts(run agentRun, session agentHubSession) bool {
+func agentHubSourceConflicts(cfg config, run agentRun, session agentHubSession) bool {
 	externalID := strings.TrimSpace(run.SourceExternalID)
 	if externalID == "" || session.Source == nil {
 		return false
 	}
-	return session.Source.App != agentHubSourceApp || session.Source.ExternalID != externalID
+	return session.Source.App != agentHubSourceApp ||
+		session.Source.InstanceID != runSourceInstanceID(cfg, run) ||
+		session.Source.ExternalID != externalID
 }
 
 // reconcileArchivedAgentHubSession resolves a run whose AgentHub session is

@@ -50,6 +50,11 @@
     return selected && !options.some((item) => item.id === selected) ? [{ id: selected, label: `${selected} (Unavailable)` }, ...options] : options;
   }
 
+  function updateResourceDefault(kind: "workspace" | "project" | "task", value: string): void {
+    draft.resourceDefaults[kind] = value;
+    onDirty();
+  }
+
   async function saveAgentHub(): Promise<void> {
     if (!draft.dirty || pending) return;
     pending = "agenthub";
@@ -66,6 +71,16 @@
 
 <div class="settings-panel settings-agent-panel" data-component-owner="profiles-settings-panel" data-settings-panel data-settings-section="profiles">
   <div class="settings-panel-header"><h2>Agent Profiles</h2><p>Profiles map Forge workflows to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div>
+  <section class="settings-agent-section">
+    <div class="settings-section-heading"><h3>New Resource Defaults</h3><span>Applied once at creation</span></div>
+    <div class="settings-resource-defaults">
+      {#each [["workspace", "Workspace"], ["project", "Project"], ["task", "Task"]] as item}
+        {@const kind = item[0] as "workspace" | "project" | "task"}
+        <label><span>{item[1]}</span><select value={draft.resourceDefaults[kind]} aria-label={`${item[1]} default profile`} onchange={(event) => updateResourceDefault(kind, event.currentTarget.value)}>{#each draft.profiles as profile}<option value={profile.key}>{profile.key}</option>{/each}</select></label>
+      {/each}
+    </div>
+    <p class="settings-resource-default-note">Existing resources keep their explicit binding. Changing a profile route replaces its referenced resource generations at a safe turn boundary.</p>
+  </section>
   <section class="settings-agent-section">
     <div class="settings-section-heading"><h3>Profile Routes</h3><span>{draft.profiles.length} routes</span></div>
     <div class="settings-profile-table">
