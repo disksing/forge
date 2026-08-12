@@ -14,6 +14,7 @@ interface Harness {
   startBodies: Array<Record<string, unknown>>;
   uiStateBodies: Array<Record<string, unknown>>;
   steeredMessageIds: string[];
+  bindingBodies: Array<Record<string, unknown>>;
 }
 
 const templates = [
@@ -142,7 +143,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [], bindingBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
@@ -155,7 +156,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         version: 3,
         activeId: "ws-test",
         workspaces: [{ id: "ws-test", name: "Isolated E2E", path: "/tmp/forge-e2e" }],
-        agentProfiles: [{ key: "default", agentName: "test-agent" }],
+        agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }],
       });
     }
     if (path === "/api/settings/agenthub") {
@@ -164,12 +165,12 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         return json(route, {});
       }
       return json(route, {
-        config: { agentProfiles: [{ key: "default", agentName: "test-agent" }] },
+        config: { agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }] },
         connected: true,
         compatible: true,
         catalog: {
           providers: [{ id: "test", name: "Test Provider", enabled: true }],
-          agents: [{ name: "test-agent", providerId: "test", available: true }],
+          agents: [{ name: "test-agent", providerId: "test", available: true }, { name: "other-agent", providerId: "test", available: true }],
           probes: [],
         },
       });
@@ -267,6 +268,11 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     const emptyHistoryMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/history\/turns$/);
     if (emptyHistoryMatch && method === "GET") return json(route, { resourceId: decodeURIComponent(emptyHistoryMatch[1]), segments: [], page: { limit: 20, hasMore: false } });
+    const bindingMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/agent-binding$/);
+    if (bindingMatch && method === "PUT") {
+      harness.bindingBodies.push(request.postDataJSON());
+      return json(route, { agentBinding: request.postDataJSON() });
+    }
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
     if (resourceMatch) {
       const value = detail(decodeURIComponent(resourceMatch[1]));
@@ -464,6 +470,18 @@ test("navigates resources and creates a task through the canonical application f
   await page.getByRole("button", { name: /Infrastructure task/ }).click();
   await expect(page).toHaveURL(/project1\.task1/);
   await expect(page.getByRole("heading", { name: /Infrastructure task/ }).first()).toBeVisible();
+  const bindingSelector = page.getByLabel("Binding target");
+  await expect(bindingSelector.locator("optgroup")).toHaveCount(2);
+  await expect(bindingSelector.locator("option")).toHaveText([
+    "default (current: test-agent)",
+    "fast (current: test-agent)",
+    "review (current: other-agent)",
+    "test-agent (default, fast)",
+    "other-agent (review)",
+  ]);
+  await bindingSelector.selectOption("agent:other-agent");
+  await page.getByRole("button", { name: "Bind" }).click();
+  await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
   await page.getByRole("button", { name: "Migration project", exact: true }).click();
   await page.getByRole("button", { name: "New Task" }).click();
   await page.locator('#createDialogForm input[name="title"]').fill("Created from baseline");

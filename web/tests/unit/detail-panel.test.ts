@@ -29,7 +29,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     wiki: null,
     workspaceAgents: null,
     agentBinding: { kind: "profile", name: "default" },
-    agentProfiles: [{ key: "default", description: "Default" }],
+    agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
     agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
     logs: { hasMore: true, loading: false, error: "" },
     onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(), onLoadMoreLogs: vi.fn(async () => undefined),
@@ -61,20 +61,40 @@ afterEach(async () => {
 describe("DetailPanel", () => {
 	it("updates the selected resource's explicit Agent binding", async () => {
 		const current = resourceModel({
+			agentProfiles: [
+				{ key: "default", description: "Default", agentName: "fake-agent" },
+				{ key: "fast", description: "Fast", agentName: "fake-agent" },
+				{ key: "review", description: "Review", agentName: "other-agent" },
+			],
 			agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }, { id: "other-agent", label: "Other Agent", summary: "other" }]
 		});
 		const { target } = mountModel(current);
 		await tick();
-		const kind = target.querySelector<HTMLSelectElement>('[aria-label="Binding kind"]')!;
-		kind.value = "agent";
-		kind.dispatchEvent(new Event("change", { bubbles: true }));
-		await tick();
 		const targetSelect = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
-		targetSelect.value = "other-agent";
+		expect(target.querySelectorAll(".resource-agent-binding select")).toHaveLength(1);
+		expect([...targetSelect.querySelectorAll("optgroup")].map((group) => group.label)).toEqual(["Profiles", "Agents"]);
+		expect([...targetSelect.options].map((option) => option.textContent)).toEqual([
+			"default (current: Fake Agent)",
+			"fast (current: Fake Agent)",
+			"review (current: Other Agent)",
+			"Fake Agent (default, fast)",
+			"Other Agent (review)",
+		]);
+		targetSelect.value = "agent:other-agent";
 		targetSelect.dispatchEvent(new Event("change", { bubbles: true }));
 		await tick();
 		target.querySelector<HTMLButtonElement>(".resource-agent-binding button")!.click();
 		await vi.waitFor(() => expect(current.onSaveAgentBinding).toHaveBeenCalledWith({ kind: "agent", name: "other-agent" }));
+	});
+
+	it("keeps a missing explicit binding visible until the user replaces it", async () => {
+		const current = resourceModel({ agentBinding: { kind: "agent", name: "retired-agent" } });
+		const { target } = mountModel(current);
+		await tick();
+		const targetSelect = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+		expect(targetSelect.value).toBe("agent:retired-agent");
+		expect([...targetSelect.options].map((option) => option.textContent)).toContain("retired-agent (missing agent)");
+		expect(target.querySelector<HTMLButtonElement>(".resource-agent-binding button")?.disabled).toBe(true);
 	});
 
   it("renders the compact resource number inside an independently scrollable body", async () => {

@@ -1006,7 +1006,7 @@ function detailPanelModel(): DetailPanelModel {
 		agentBinding: controllerState.selectedId === "workspace"
 			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
 			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
-		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description })),
+		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
 		agents: svelteAgentOptions(),
 		logs: {
 			hasMore: false,
