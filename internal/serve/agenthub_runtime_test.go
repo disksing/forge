@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,7 @@ type runtimeFakeAgentHub struct {
 	failNextInterrupt  bool
 	failNextResume     bool
 	failNextMessage    bool
+	enforceMessageIDs  bool
 	rejectAgentName    string
 	extraAgents        []string
 	stopHook           func(string)
@@ -40,6 +42,7 @@ type runtimeFakeAgentHub struct {
 	messageRoles       []string
 	messageSenders     []*agentHubMessageSender
 	messageIDs         []string
+	messageInputs      map[string]agentHubInboundMessage
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
@@ -51,8 +54,9 @@ type runtimeFakeAgentHub struct {
 
 func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
 	return &runtimeFakeAgentHub{
-		sessions: make(map[string]agentHubSession),
-		events:   make(map[string][]agentHubEvent),
+		sessions:      make(map[string]agentHubSession),
+		events:        make(map[string][]agentHubEvent),
+		messageInputs: make(map[string]agentHubInboundMessage),
 	}
 }
 
@@ -133,7 +137,27 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.messageRoles = append(f.messageRoles, body.Role)
 		f.messageSenders = append(f.messageSenders, body.Sender)
 		f.messageIDs = append(f.messageIDs, body.MessageID)
-		f.appendLocked(id, "message.input", fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer))
+		if f.enforceMessageIDs && body.MessageID != "" {
+			if previous, exists := f.messageInputs[body.MessageID]; exists {
+				session := f.sessions[id]
+				f.mu.Unlock()
+				if !reflect.DeepEqual(previous, body) {
+					w.WriteHeader(http.StatusConflict)
+					writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
+						"code": "runtime_operation_failed", "message": "message id conflicts with an existing input",
+					}})
+					return
+				}
+				writeRuntimeFakeJSON(w, map[string]any{"session": session})
+				return
+			}
+			f.messageInputs[body.MessageID] = body
+		}
+		inputData := fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer)
+		if body.MessageID != "" {
+			inputData["messageId"] = body.MessageID
+		}
+		f.appendLocked(id, "message.input", inputData)
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
 		session.State = "running"
@@ -608,6 +632,169 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	defer fake.mu.Unlock()
 	if len(fake.messageIDs) != 2 || fake.messageIDs[1] == "" || fake.messageIDs[1] == fake.messageIDs[0] || !fake.messageSteers[1] {
 		t.Fatalf("queued message delivery metadata mismatch: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
+	}
+}
+
+func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.enforceMessageIDs = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	cfg, client, err := manager.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := manager.resolveResourceAgent(workspace, "project1.task1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := manager.runtimeByID(created.ID)
+	if rt == nil {
+		t.Fatal("resource runtime missing")
+	}
+	fake.mu.Lock()
+	fake.failNextMessage = true
+	fake.mu.Unlock()
+	if err := rt.enqueueResourceMessage(newResourceMessage("ambiguous", "Ada")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.deliverPendingResourceMessages(context.Background(), manager); err == nil {
+		fake.mu.Lock()
+		ids, steers, fail := append([]string(nil), fake.messageIDs...), append([]bool(nil), fake.messageSteers...), fake.failNextMessage
+		fake.mu.Unlock()
+		t.Fatalf("expected the synthetic unknown delivery outcome: ids=%#v steers=%#v fail=%v", ids, steers, fail)
+	}
+	created = rt.snapshotRun()
+	if len(created.PendingMessages) != 1 {
+		t.Fatalf("ambiguous delivery was not retained: %#v", created.PendingMessages)
+	}
+	pending := created.PendingMessages[0]
+	if pending.Steer == nil || *pending.Steer {
+		t.Fatalf("first delivery mode was not durably frozen as non-steer: %#v", pending)
+	}
+
+	restarted := newAgentManager(manager.server)
+	manager.server.agents = restarted
+	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		recovered, err := loadAgentRun(workspace.Path, created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(recovered.PendingMessages) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	recovered, err := loadAgentRun(workspace.Path, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered.PendingMessages) != 0 {
+		t.Fatalf("restart did not accept the stable retry: %#v", recovered.PendingMessages)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.messageIDs) != 2 || fake.messageIDs[0] == "" || fake.messageIDs[0] != fake.messageIDs[1] {
+		t.Fatalf("retry did not reuse the stable message id: %#v", fake.messageIDs)
+	}
+	if len(fake.messageSteers) != 2 || fake.messageSteers[0] || fake.messageSteers[1] {
+		t.Fatalf("retry changed the canonical steer value: %#v", fake.messageSteers)
+	}
+}
+
+func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.enforceMessageIDs = true
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	cfg, client, err := manager.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := manager.resolveResourceAgent(workspace, "project1.task1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved, nil, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rt := manager.runtimeByID(created.ID)
+	if rt == nil {
+		t.Fatal("resource runtime missing")
+	}
+	fake.mu.Lock()
+	fake.failNextMessage = true
+	fake.mu.Unlock()
+	if err := rt.enqueueResourceMessage(newResourceMessage("legacy", "Ada")); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.deliverPendingResourceMessages(context.Background(), manager); err == nil {
+		fake.mu.Lock()
+		ids, steers, fail := append([]string(nil), fake.messageIDs...), append([]bool(nil), fake.messageSteers...), fake.failNextMessage
+		fake.mu.Unlock()
+		t.Fatalf("expected the synthetic unknown delivery outcome: ids=%#v steers=%#v fail=%v", ids, steers, fail)
+	}
+	created = rt.snapshotRun()
+	if len(created.PendingMessages) != 1 {
+		t.Fatalf("ambiguous delivery was not retained: %#v", created.PendingMessages)
+	}
+	legacy, err := loadAgentRun(workspace.Path, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy.PendingMessages[0].Steer = nil
+	if err := saveAgentRun(workspace.Path, legacy); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	session := fake.sessions[created.AgentHubSessionID]
+	session.InputCapabilities.Steer = true
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	restarted := newAgentManager(manager.server)
+	manager.server.agents = restarted
+	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		recovered, err := loadAgentRun(workspace.Path, created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(recovered.PendingMessages) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	recovered, err := loadAgentRun(workspace.Path, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recovered.PendingMessages) != 0 {
+		t.Fatalf("legacy retry did not recover from the id conflict: %#v", recovered.PendingMessages)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.messageIDs) != 3 || fake.messageIDs[0] == "" || fake.messageIDs[0] != fake.messageIDs[1] || fake.messageIDs[1] != fake.messageIDs[2] {
+		t.Fatalf("legacy recovery did not preserve the stable message id: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
+	}
+	if !reflect.DeepEqual(fake.messageSteers, []bool{false, true, false}) {
+		t.Fatalf("legacy recovery did not restore canonical steer: %#v", fake.messageSteers)
 	}
 }
 

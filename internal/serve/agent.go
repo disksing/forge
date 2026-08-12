@@ -72,11 +72,15 @@ type agentRun struct {
 }
 
 type resourceInboundMessage struct {
-	ID         string                 `json:"id"`
-	Text       string                 `json:"text"`
-	Role       string                 `json:"role"`
-	Sender     *agentHubMessageSender `json:"sender,omitempty"`
-	AcceptedAt string                 `json:"acceptedAt"`
+	ID     string                 `json:"id"`
+	Text   string                 `json:"text"`
+	Role   string                 `json:"role"`
+	Sender *agentHubMessageSender `json:"sender,omitempty"`
+	// Steer is selected and persisted immediately before the first delivery
+	// attempt. A pointer distinguishes a legacy/unattempted queued message from
+	// a message whose stable id was already sent with steer=false.
+	Steer      *bool  `json:"steer,omitempty"`
+	AcceptedAt string `json:"acceptedAt"`
 }
 
 // agentRunDetail carries run metadata only. Event history is served by the
@@ -960,6 +964,10 @@ func cloneAgentRun(run agentRun) agentRun {
 		if cloned.PendingMessages[index].Sender != nil {
 			sender := *cloned.PendingMessages[index].Sender
 			cloned.PendingMessages[index].Sender = &sender
+		}
+		if cloned.PendingMessages[index].Steer != nil {
+			steer := *cloned.PendingMessages[index].Steer
+			cloned.PendingMessages[index].Steer = &steer
 		}
 	}
 	return cloned
