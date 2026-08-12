@@ -280,24 +280,52 @@ export class ChatSessionController {
   private blocks(context: ResourceChatContext): ConversationBlock[] {
     const blocks: ConversationBlock[] = [];
     const segments = [...context.segments.values()].sort((left, right) => left.generation.generation - right.generation.generation);
+    const currentGeneration = segments.find((segment) => segment.generation.generationId === context.generationId)?.generation || statusGeneration(context);
+    const orphanBlocks = currentGeneration ? this.orphanEventBlocks(context, currentGeneration) : [];
     for (const segment of segments) {
-      if (segment.gap) blocks.push({ kind: "gap", key: `gap:${segment.generation.generationId}`, generation: segment.generation, gap: segment.gap });
+      if (segment.gap) {
+        blocks.push({ kind: "gap", key: `gap:${segment.generation.generationId}`, generation: segment.generation, gap: segment.gap });
+        continue;
+      }
+      const generationBlocks: ConversationBlock[] = [];
       for (const turn of [...(segment.turns || [])].sort((left, right) => left.startEventId - right.startEventId)) {
         const detail = context.details.get(turn.reference);
         const raw = context.liveEvents.get(turn.reference);
-        blocks.push({
+        generationBlocks.push({
           kind: "turn", key: `${segment.generation.generationId}:${turn.turnId}`, generation: segment.generation, turn,
           items: detail && !raw ? compactTurnItems(detail, segment.generation.generationId) : undefined,
           events: raw?.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
           loading: context.detailLoading.has(turn.reference), error: context.detailErrors.get(turn.reference),
         });
       }
+      if (segment.generation.generationId === context.generationId) generationBlocks.push(...orphanBlocks);
+      generationBlocks.sort((left, right) => blockStartEventId(left) - blockStartEventId(right));
+      blocks.push(...generationBlocks);
     }
-    const currentGeneration = segments.find((segment) => segment.generation.generationId === context.generationId)?.generation || statusGeneration(context);
-    if (currentGeneration) for (const [turnId, events] of context.orphanEvents) blocks.push({
-      kind: "turn", key: `${context.generationId}:${turnId || "current"}`, generation: currentGeneration, events: events.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type)),
-    });
+    if (orphanBlocks.length && !segments.some((segment) => segment.generation.generationId === context.generationId)) blocks.push(...orphanBlocks);
     return blocks;
+  }
+
+  // orphanEventBlocks turns session-level events (session.created, provider
+  // and state transitions carry no turnId) into conversation blocks placed by
+  // their durable event id instead of always below every turn. Events are
+  // grouped into contiguous id runs so startup notices stay above the first
+  // turn while terminal notices stay after the last one.
+  private orphanEventBlocks(context: ResourceChatContext, generation: ResourceHistoryGeneration): ConversationBlock[] {
+    const blocks: ConversationBlock[] = [];
+    for (const [turnId, events] of context.orphanEvents) {
+      const visible = events.filter((event) => !HIDDEN_EVENT_TYPES.has(event.type));
+      let run: AgentEvent[] = [];
+      for (const event of visible) {
+        if (run.length && Number(event.id) !== Number(run[run.length - 1].id) + 1) {
+          blocks.push(orphanEventBlock(context, turnId, generation, run));
+          run = [];
+        }
+        run.push(event);
+      }
+      if (run.length) blocks.push(orphanEventBlock(context, turnId, generation, run));
+    }
+    return blocks.sort((left, right) => blockStartEventId(left) - blockStartEventId(right));
   }
 
   private connect(context: ResourceChatContext): void {
@@ -514,6 +542,17 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
 
 function contextKey(workspaceId: string, resourceId: string): string {
   return workspaceId && resourceId ? `${workspaceId}:${resourceId}` : "";
+}
+
+function orphanEventBlock(context: ResourceChatContext, turnId: string, generation: ResourceHistoryGeneration, events: AgentEvent[]): ConversationBlock {
+  const firstEventId = events[0]?.id ?? 0;
+  return { kind: "turn", key: `${context.generationId}:${turnId || "current"}:${firstEventId}`, generation, events };
+}
+
+function blockStartEventId(block: ConversationBlock): number {
+  if (block.turn) return Number(block.turn.startEventId) || 0;
+  const first = block.events?.[0];
+  return first ? Number(first.id) || 0 : 0;
 }
 
 function requestScope(context: ResourceChatContext, kind: string): string {

@@ -110,4 +110,22 @@ describe("resource conversation controller", () => {
     expect(latest.identity).toBe("workspace-a:task-b");
     expect(latest.blocks).toEqual([]);
   });
+
+  it("places session-level lifecycle events in chronological order among turns", async () => {
+    const closedTurn = turn(3, "turn-a", 4, 7);
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closedTurn] }], page: { limit: 20, hasMore: false } }));
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
+    const stream = FakeEventSource.instances[0];
+    stream.emit({ id: 1, type: "session.created", sessionId: "session-3" });
+    stream.emit({ id: 2, type: "session.provider", sessionId: "session-3", data: { agentName: "Fixture Agent", provider: "codex" } });
+    stream.emit({ id: 8, type: "session.state", sessionId: "session-3", data: { state: "stopped", reason: "completed" } });
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(3));
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:current:1", "gen-3:turn-a", "gen-3:current:8"]);
+    expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([1, 2]);
+    expect(latest.blocks[2].events?.map((event) => event.id)).toEqual([8]);
+  });
 });
