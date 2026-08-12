@@ -285,6 +285,7 @@ type CreateTaskInput struct {
 	TemplateFields         map[string]any
 	ExpectedTemplateDigest string
 	Slug                   string
+	AgentBinding           AgentBinding
 }
 
 // TaskPreview is the side-effect-free result of resolving task content and
@@ -465,6 +466,11 @@ func (w *Workspace) createProject(description, slug string) (Project, error) {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
 	project := newProject(id, titleFromDescription(description), description)
+	cfg, err := readWorkspaceConfig(w.root)
+	if err != nil {
+		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
+	}
+	project.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(cfg.ResourceDefaults.Project)}
 	language, err := workspaceLanguage(w.root)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
@@ -599,6 +605,15 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	staging := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	task := newTask(id, parentID, title, "")
+	if strings.TrimSpace(input.AgentBinding.Name) != "" || strings.TrimSpace(input.AgentBinding.Kind) != "" {
+		task.AgentBinding, err = NormalizeAgentBinding(input.AgentBinding)
+	} else {
+		cfg, configErr := readWorkspaceConfig(w.root)
+		if configErr != nil {
+			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: configErr}
+		}
+		task.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(cfg.ResourceDefaults.Task)}
+	}
 	task.Template = templateSource
 	language, err := workspaceLanguage(w.root)
 	if err != nil {

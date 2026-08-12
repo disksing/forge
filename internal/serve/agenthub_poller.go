@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"reflect"
 	"strings"
 	"time"
 
@@ -132,6 +131,16 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			m.reconcileAgentHubRun(ctx, cfg, workspace, run, byExternalID, byID, client)
 		}
 	}
+	profileConfig := agentHubGUIConfig{
+		Workspaces: cfg.Workspaces, ResourceDefaults: cfg.ResourceDefaults,
+		AgentProfiles: make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles)),
+	}
+	for _, route := range cfg.AgentProfiles {
+		profileConfig.AgentProfiles = append(profileConfig.AgentProfiles, agentHubProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
+	}
+	if err := m.profileRoutesChanged(ctx, profileConfig, profileConfig); err != nil {
+		failures = append(failures, err.Error())
+	}
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}
@@ -211,6 +220,12 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 		}()
 		return true
 	}
+	if session.State == "running" || session.State == "waiting_approval" {
+		// An archive performed outside this Server may race an active Turn. Do
+		// not silently interrupt it: the reconciler waits for the natural Turn
+		// boundary, then the next poll performs Stop -> stopped -> Archive.
+		return true
+	}
 	if !activeAgentHubSessionState(session.State) {
 		return false
 	}
@@ -220,40 +235,46 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 		m.registerRuntime(rt)
 	}
 
-	rt.mu.Lock()
-	if rt.agentHubStopRequested || rt.run.ArchivedTaskStopRequested {
-		rt.mu.Unlock()
+	guarded := false
+	_, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
+		if runtime.agentHubStopRequested {
+			guarded = true
+			return
+		}
+		runtime.run.Status = "stopping"
+		runtime.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		runtime.run.ArchivedTaskStopRequested = true
+		runtime.agentHubStopRequested = true
+	})
+	if guarded {
 		// An earlier request still has no durable terminal observation. Keep
 		// the run's stopping/recovering projection and do not let an active
 		// list result hide the ambiguous outcome.
 		return true
 	}
-	previous := rt.run
-	rt.run.Status = "stopping"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	rt.run.ArchivedTaskStopRequested = true
-	rt.agentHub = client
-	rt.agentHubStopRequested = true
-	updated := rt.run
-	rt.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, updated); err != nil {
+	if persistErr != nil {
 		// Do not issue a non-idempotent stop unless the guard was persisted.
-		rt.mu.Lock()
-		rt.run = previous
-		rt.agentHubStopRequested = false
-		rt.mu.Unlock()
-		rt.addForgeNotice(m, "error", "agenthub/task-reclaim", fmt.Sprintf("persist archived-task session stop guard: %v", err))
+		rt.addForgeNotice(m, "error", "agenthub/task-reclaim", fmt.Sprintf("persist archived-resource session stop guard: %v", persistErr))
 		return false
 	}
+	rt.mu.Lock()
+	rt.agentHub = client
+	rt.mu.Unlock()
 
 	go func() {
 		stopped, err := client.Stop(ctx, session.ID)
 		if err != nil {
+			rt.mu.Lock()
+			rt.agentHubStopRequested = false
+			rt.mu.Unlock()
 			rt.setRecoveryError(m, fmt.Errorf("stop AgentHub session for archived task %s: %w", run.ResourceID, err))
 			return
 		}
 		if !agentHubSessionExactlyMatchesRun(cfg, run, stopped) {
-			rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source; stop outcome will not be retried", run.ResourceID))
+			rt.mu.Lock()
+			rt.agentHubStopRequested = false
+			rt.mu.Unlock()
+			rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source", run.ResourceID))
 			return
 		}
 		rt.applyAgentHubSessionState(m, stopped)
@@ -268,7 +289,7 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 
 func activeAgentHubSessionState(state string) bool {
 	switch state {
-	case "starting", "ready", "busy", "waiting_approval":
+	case "starting", "ready", "running", "waiting_approval":
 		return true
 	default:
 		return false
@@ -323,16 +344,12 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 			}
 			return
 		}
-		rt.mu.Lock()
-		if rt.run.Status != "recovering" && isLiveAgentStatus(rt.run.Status) {
-			rt.run.Status = "recovering"
-			rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-			updated := rt.run
-			rt.mu.Unlock()
-			_ = saveAgentRun(workspace.Path, updated)
-		} else {
-			rt.mu.Unlock()
-		}
+		_, _ = rt.mutateRun(func(run *agentRun) {
+			if run.Status != "recovering" && isLiveAgentStatus(run.Status) {
+				run.Status = "recovering"
+				run.UpdatedAt = time.Now().Format(time.RFC3339)
+			}
+		})
 		// A durable stopped edge observed locally permits the release even
 		// after the session disappeared upstream; the call is a no-op for
 		// every other run.
@@ -344,72 +361,65 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 		return
 	}
 
+	turnFinished := false
+	updated, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
+		previousState := runtime.agentHubState
+		if previousState == "" {
+			previousState = agentHubStateForForgeStatus(runtime.run.Status)
+		}
+		turnFinished = (previousState == "running" || previousState == "waiting_approval") &&
+			(session.State == "ready" || session.State == "stopped")
+		runtime.run.Status = forgeStatusForAgentHubState(session.State)
+		runtime.run.AgentHubStoppedObserved = runtime.run.AgentHubStoppedObserved || session.State == "stopped"
+		if session.State == "stopped" {
+			// The durable terminal state resolves any ambiguity around the stop
+			// action. Clear the guard so an explicit out-of-band resume can be
+			// reclaimed again while the resource remains archived.
+			runtime.run.ArchivedTaskStopRequested = false
+			runtime.agentHubStopRequested = false
+		}
+		if session.State == "ready" || session.State == "starting" {
+			runtime.run.AgentHubStoppedObserved = false
+		}
+		if strings.TrimSpace(session.ID) != "" {
+			if runtime.run.CompletionSessionID != session.ID && !turnFinished {
+				// A new AgentHub session starts a new cursor. Baseline it unless
+				// this response is the active -> ready/stopped edge whose terminal
+				// history must be inspected from the beginning.
+				runtime.run.CompletionSessionID = session.ID
+				runtime.run.CompletionCursor = session.LastEventID
+				runtime.run.CompletionEventID = 0
+				runtime.run.CompletionMarker = ""
+				runtime.run.CompletionState = ""
+				runtime.run.CompletionTurnID = ""
+				runtime.run.CompletionAt = ""
+				runtime.run.CompletionPending = false
+			}
+			runtime.run.AgentHubSessionID = session.ID
+		}
+		// LastOutputAt degenerates to the AgentHub session update time: without a
+		// server-side event pipeline it is the closest available recency signal.
+		if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
+			if agentRunTime(runtime.run.UpdatedAt).Before(updatedAt) {
+				runtime.run.UpdatedAt = session.UpdatedAt
+			}
+			if agentRunTime(runtime.run.LastOutputAt).Before(updatedAt) {
+				runtime.run.LastOutputAt = session.UpdatedAt
+			}
+		}
+		runtime.agentHubState = session.State
+	})
+	if persistErr != nil {
+		rt.addForgeNotice(m, "warning", "agenthub/reconcile", "Persist session reconciliation: "+persistErr.Error())
+		return
+	}
 	rt.mu.Lock()
-	current := rt.run
-	previousState := rt.agentHubState
-	if previousState == "" {
-		previousState = agentHubStateForForgeStatus(current.Status)
-	}
-	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
-		(session.State == "ready" || session.State == "stopped")
-	stoppedObserved := current.AgentHubStoppedObserved || session.State == "stopped"
-	archivedTaskStopRequested := current.ArchivedTaskStopRequested
-	if session.State == "stopped" {
-		// The durable terminal state resolves any ambiguity around the stop
-		// action. Clear the guard so an explicit out-of-band resume can be
-		// reclaimed again while the task remains archived.
-		archivedTaskStopRequested = false
-	}
-	if session.State == "ready" || session.State == "starting" {
-		// A resumed session proves the stopped observation is stale.
-		stoppedObserved = false
-	}
-	newStatus := forgeStatusForAgentHubState(session.State)
-	updated := current
-	updated.Status = newStatus
-	updated.AgentHubStoppedObserved = stoppedObserved
-	updated.ArchivedTaskStopRequested = archivedTaskStopRequested
-	if strings.TrimSpace(session.ID) != "" {
-		if updated.CompletionSessionID != session.ID && !turnFinished {
-			// A new AgentHub session starts a new cursor. Baseline it unless
-			// this response is the active -> ready/stopped edge whose terminal
-			// history must be inspected from the beginning.
-			updated.CompletionSessionID = session.ID
-			updated.CompletionCursor = session.LastEventID
-			updated.CompletionEventID = 0
-			updated.CompletionMarker = ""
-			updated.CompletionState = ""
-			updated.CompletionTurnID = ""
-			updated.CompletionAt = ""
-			updated.CompletionPending = false
-		}
-		updated.AgentHubSessionID = session.ID
-	}
-	// LastOutputAt degenerates to the AgentHub session update time: without a
-	// server-side event pipeline it is the closest available recency signal.
-	if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
-		if agentRunTime(updated.UpdatedAt).Before(updatedAt) {
-			updated.UpdatedAt = session.UpdatedAt
-		}
-		if agentRunTime(updated.LastOutputAt).Before(updatedAt) {
-			updated.LastOutputAt = session.UpdatedAt
-		}
-	}
-	changed := !reflect.DeepEqual(updated, current)
-	rt.run = updated
-	rt.agentHubState = session.State
-	if session.State == "stopped" {
-		rt.agentHubStopRequested = false
-	}
 	if rt.agentHub == nil {
 		rt.agentHub = client
 	}
 	rt.mu.Unlock()
-	if changed {
-		_ = saveAgentRun(workspace.Path, updated)
-	}
 
-	// A turn ends when the session leaves busy/waiting_approval for ready or
+	// A turn ends when the session leaves running/waiting_approval for ready or
 	// stopped. Record the durable completion before publishing the final state.
 	if turnFinished {
 		go func() {
@@ -433,7 +443,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	}
 	if updated.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
 		go m.retireResourceGeneration(context.Background(), rt)
-	} else if (session.State == "ready" || session.State == "busy" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
+	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
 		go func() {
 			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
@@ -449,7 +459,7 @@ func agentHubStateForForgeStatus(status string) string {
 	case "starting":
 		return "starting"
 	case "running":
-		return "busy"
+		return "running"
 	case "waiting_approval":
 		return "waiting_approval"
 	case "idle":
@@ -464,53 +474,56 @@ func agentHubStateForForgeStatus(status string) string {
 }
 
 // applyAgentHubSessionState projects an AgentHub action or session response
-// onto the local run. A busy/waiting_approval -> ready/stopped edge is the
+// onto the local run. A running/waiting_approval -> ready/stopped edge is the
 // only status signal that schedules durable canonical terminal inspection.
 func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agentHubSession) {
-	rt.mu.Lock()
-	previousState := rt.agentHubState
-	if previousState == "" {
-		previousState = agentHubStateForForgeStatus(rt.run.Status)
-	}
-	turnFinished := (previousState == "busy" || previousState == "waiting_approval") &&
-		(session.State == "ready" || session.State == "stopped")
-	if strings.TrimSpace(session.ID) != "" {
-		if rt.run.CompletionSessionID != session.ID && !turnFinished {
-			// A new AgentHub session has a new event cursor. Establish its
-			// baseline without carrying historical completion state across it.
-			rt.run.CompletionSessionID = session.ID
-			rt.run.CompletionCursor = session.LastEventID
-			rt.run.CompletionEventID = 0
-			rt.run.CompletionMarker = ""
-			rt.run.CompletionState = ""
-			rt.run.CompletionTurnID = ""
-			rt.run.CompletionAt = ""
-			rt.run.CompletionPending = false
+	turnFinished := false
+	run, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
+		previousState := runtime.agentHubState
+		if previousState == "" {
+			previousState = agentHubStateForForgeStatus(runtime.run.Status)
 		}
-		rt.run.AgentHubSessionID = session.ID
-	}
-	rt.agentHubState = session.State
-	rt.run.Status = forgeStatusForAgentHubState(session.State)
-	if session.State == "stopped" {
-		rt.run.AgentHubStoppedObserved = true
-		rt.run.ArchivedTaskStopRequested = false
-		rt.agentHubStopRequested = false
-	}
-	if session.State == "ready" || session.State == "starting" {
-		// A resumed session proves the stopped observation is stale.
-		rt.run.AgentHubStoppedObserved = false
-	}
-	if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
-		rt.run.UpdatedAt = session.UpdatedAt
-		if agentRunTime(rt.run.LastOutputAt).Before(updatedAt) {
-			rt.run.LastOutputAt = session.UpdatedAt
+		turnFinished = (previousState == "running" || previousState == "waiting_approval") &&
+			(session.State == "ready" || session.State == "stopped")
+		if strings.TrimSpace(session.ID) != "" {
+			if runtime.run.CompletionSessionID != session.ID && !turnFinished {
+				// A new AgentHub session has a new event cursor. Establish its
+				// baseline without carrying historical completion state across it.
+				runtime.run.CompletionSessionID = session.ID
+				runtime.run.CompletionCursor = session.LastEventID
+				runtime.run.CompletionEventID = 0
+				runtime.run.CompletionMarker = ""
+				runtime.run.CompletionState = ""
+				runtime.run.CompletionTurnID = ""
+				runtime.run.CompletionAt = ""
+				runtime.run.CompletionPending = false
+			}
+			runtime.run.AgentHubSessionID = session.ID
 		}
-	} else {
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		runtime.agentHubState = session.State
+		runtime.run.Status = forgeStatusForAgentHubState(session.State)
+		if session.State == "stopped" {
+			runtime.run.AgentHubStoppedObserved = true
+			runtime.run.ArchivedTaskStopRequested = false
+			runtime.agentHubStopRequested = false
+		}
+		if session.State == "ready" || session.State == "starting" {
+			// A resumed session proves the stopped observation is stale.
+			runtime.run.AgentHubStoppedObserved = false
+		}
+		if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
+			runtime.run.UpdatedAt = session.UpdatedAt
+			if agentRunTime(runtime.run.LastOutputAt).Before(updatedAt) {
+				runtime.run.LastOutputAt = session.UpdatedAt
+			}
+		} else {
+			runtime.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		}
+	})
+	if persistErr != nil {
+		rt.addForgeNotice(m, "warning", "agenthub/action", "Persist AgentHub response: "+persistErr.Error())
+		return
 	}
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
 	if turnFinished {
 		go func() {
 			rt.handleTurnFinished(m, session)
@@ -530,7 +543,7 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
 		go m.retireResourceGeneration(context.Background(), rt)
-	} else if (session.State == "ready" || session.State == "busy" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
+	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
 		go func() {
 			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())

@@ -79,9 +79,6 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 	if err != nil {
 		return agentHubGUIConfig{}, err
 	}
-	if err := validateResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles); err != nil {
-		return agentHubGUIConfig{}, err
-	}
 	return cfg, nil
 }
 
@@ -96,6 +93,21 @@ func validateResourceAgentDefaults(defaults resourceAgentDefaults, profiles []ag
 		}
 	}
 	return nil
+}
+
+func effectiveResourceAgentDefaults(defaults resourceAgentDefaults, profiles []agentProfileRoute) resourceAgentDefaults {
+	defaults = normalizeResourceAgentDefaults(defaults)
+	globalAvailable := configuredAgentProfileName(profiles, "default") != ""
+	resolve := func(name string) string {
+		if configuredAgentProfileName(profiles, name) != "" {
+			return name
+		}
+		if globalAvailable {
+			return "default"
+		}
+		return name
+	}
+	return resourceAgentDefaults{Workspace: resolve(defaults.Workspace), Project: resolve(defaults.Project), Task: resolve(defaults.Task)}
 }
 
 func defaultResourceAgentDefaults() resourceAgentDefaults {

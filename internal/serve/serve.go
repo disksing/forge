@@ -611,7 +611,8 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Project})
+	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Project})
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -692,7 +693,8 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Task})
+	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Task})
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -831,6 +833,19 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	if s.agents != nil {
+		s.agents.resourceMu.Lock()
+		defer s.agents.resourceMu.Unlock()
+		active, activeErr := s.agents.resourceHasActiveTurn(r.Context(), workspace, resourceID)
+		if activeErr != nil {
+			writeError(w, activeErr, http.StatusInternalServerError)
+			return
+		}
+		if active {
+			writeError(w, fmt.Errorf("resource %s has an active Turn; interrupt or stop it before archiving", resourceID), http.StatusConflict)
+			return
+		}
+	}
 	result, err := forgeWorkspace.ArchiveResource(resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
@@ -839,6 +854,13 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 	// Keep the existing HTTP response contract while the application layer
 	// returns the richer typed ArchiveResult to in-process callers.
 	writeJSON(w, map[string]string{"path": result.Path})
+	if s.agents != nil {
+		go func() {
+			if err := s.agents.pollAgentHubSessions(context.Background()); err != nil {
+				log.Printf("reconcile archived resource %s: %v", resourceID, err)
+			}
+		}()
+	}
 }
 
 func (s *server) worktreeDiff(w http.ResponseWriter, r *http.Request, id string) {
@@ -1217,13 +1239,14 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	if err != nil {
 		return guiWorkspace{}, err
 	}
+	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
 	if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-		Workspace: cfg.ResourceDefaults.Workspace, Project: cfg.ResourceDefaults.Project, Task: cfg.ResourceDefaults.Task,
+		Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
 	}); err != nil {
 		return guiWorkspace{}, err
 	}
 	if initializedNow {
-		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Workspace}); err != nil {
+		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Workspace}); err != nil {
 			return guiWorkspace{}, err
 		}
 	}
@@ -1259,8 +1282,9 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 		if err != nil {
 			return fmt.Errorf("open Workspace %s for resource runtime: %w", workspace.ID, err)
 		}
+		effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
 		if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-			Workspace: cfg.ResourceDefaults.Workspace, Project: cfg.ResourceDefaults.Project, Task: cfg.ResourceDefaults.Task,
+			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
 		}); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
 		}
@@ -1613,13 +1637,6 @@ func (s *server) loadConfig() (config, error) {
 	if !agentProfileRoutesEqual(cfg.AgentProfiles, normalizedProfiles) {
 		cfg.AgentProfiles = normalizedProfiles
 		needsUpgrade = true
-	}
-	profileRoutes := make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles))
-	for _, route := range cfg.AgentProfiles {
-		profileRoutes = append(profileRoutes, agentHubProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
-	}
-	if err := validateResourceAgentDefaults(cfg.ResourceDefaults, profileRoutes); err != nil {
-		return config{}, err
 	}
 	if needsUpgrade {
 		if err := s.saveConfig(cfg); err != nil {

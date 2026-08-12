@@ -123,6 +123,12 @@
     const key = timelineKey(item);
     openTools = new Map(openTools).set(key, open);
     openCache.set(snapshot.identity, new Map(openTools));
+	if (open) void expandCompact(item);
+  }
+
+  function expandCompact(item: TimelineItem): Promise<void> | undefined {
+    if (!item.compact || !item.rangeStartEventId || !item.rangeEndEventId) return;
+    return controller?.expandRange(item.rangeStartEventId, item.rangeEndEventId);
   }
 
   // Tool groups always start collapsed, whether loaded from history or
@@ -177,7 +183,7 @@
         {#if item.kind === "message"}
           <TimelineMessage {item} agentName={model.agentName} />
         {:else if item.kind === "thinking"}
-          <ThinkingBlock {item} />
+          <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
         {:else if item.kind === "tools"}
           <ToolGroup {item} runId={snapshot.runId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
         {:else if item.kind === "approval"}

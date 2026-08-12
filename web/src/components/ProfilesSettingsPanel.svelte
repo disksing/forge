@@ -55,6 +55,13 @@
     onDirty();
   }
 
+  function resourceDefaultOptions(kind: "workspace" | "project" | "task"): ProfileDraft[] {
+    const selected = draft.resourceDefaults[kind];
+    return selected && !draft.profiles.some((profile) => profile.key === selected)
+      ? [{ key: selected, description: "Missing Profile", agentName: "" }, ...draft.profiles]
+      : draft.profiles;
+  }
+
   async function saveAgentHub(): Promise<void> {
     if (!draft.dirty || pending) return;
     pending = "agenthub";
@@ -76,7 +83,7 @@
     <div class="settings-resource-defaults">
       {#each [["workspace", "Workspace"], ["project", "Project"], ["task", "Task"]] as item}
         {@const kind = item[0] as "workspace" | "project" | "task"}
-        <label><span>{item[1]}</span><select value={draft.resourceDefaults[kind]} aria-label={`${item[1]} default profile`} onchange={(event) => updateResourceDefault(kind, event.currentTarget.value)}>{#each draft.profiles as profile}<option value={profile.key}>{profile.key}</option>{/each}</select></label>
+        <label><span>{item[1]}</span><select value={draft.resourceDefaults[kind]} aria-label={`${item[1]} default profile`} onchange={(event) => updateResourceDefault(kind, event.currentTarget.value)}>{#each resourceDefaultOptions(kind) as profile}<option value={profile.key}>{profile.key}{profile.agentName ? "" : " (Missing)"}</option>{/each}</select></label>
       {/each}
     </div>
     <p class="settings-resource-default-note">Existing resources keep their explicit binding. Changing a profile route replaces its referenced resource generations at a safe turn boundary.</p>

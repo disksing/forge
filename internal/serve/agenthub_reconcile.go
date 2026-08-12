@@ -114,16 +114,12 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		// transient Forge session may be released without proving it again.
 		// Completion history still needs to be reconciled because a transient
 		// event read may have happened after the stopped projection was saved.
-		rt.mu.Lock()
-		if rt.run.Status != "stopped" {
-			rt.run.Status = "stopped"
-			rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-			updated := rt.run
-			rt.mu.Unlock()
-			_ = saveAgentRun(rt.workspace.Path, updated)
-		} else {
-			rt.mu.Unlock()
-		}
+		_, _ = rt.mutateRun(func(run *agentRun) {
+			if run.Status != "stopped" {
+				run.Status = "stopped"
+				run.UpdatedAt = time.Now().Format(time.RFC3339)
+			}
+		})
 		if run.CompletionPending {
 			rt.recordTurnCompletion(session)
 		}
@@ -155,14 +151,12 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		return
 	}
 
-	rt.mu.Lock()
-	rt.run.AgentHubStoppedObserved = true
-	rt.run.Status = "stopped"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	rt.agentHubState = session.State
-	updated := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, updated)
+	_, _ = rt.mutateRuntime(func(runtime *agentRuntime) {
+		runtime.run.AgentHubStoppedObserved = true
+		runtime.run.Status = "stopped"
+		runtime.run.UpdatedAt = time.Now().Format(time.RFC3339)
+		runtime.agentHubState = session.State
+	})
 	// The archived projection is the recovery equivalent of the observed
 	// ready/stopped edge. Inspect the durable terminal event before releasing
 	// the Forge session.

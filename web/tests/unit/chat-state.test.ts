@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ApiClient } from "../../src/api/client";
 import { ChatSessionController } from "../../src/components/chat-state";
-import type { AgentEvent, AgentRun, ChatContextSnapshot } from "../../src/components/models";
+import type { AgentEvent, AgentRun, AgentTurn, ChatContextSnapshot } from "../../src/components/models";
 
 const controllers: ChatSessionController[] = [];
 afterEach(() => {
@@ -22,6 +22,19 @@ function response(body: unknown): Response {
 
 function run(id: string): AgentRun {
   return { id, workspaceId: "workspace-a", agentHubSessionId: `session-${id}`, resourceId: "task-a", status: "idle" };
+}
+
+function turn(id: string, first: number, last: number, closed: boolean, text: string): AgentTurn {
+  return {
+    id, turnId: id, closed, status: closed ? "completed" : "active",
+    startEventId: first, firstEventId: first, lastEventId: last,
+    endEventId: closed ? last : undefined,
+    items: [
+      { type: "lifecycle", text: "turn.started", startEventId: first, endEventId: first, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" },
+      { type: "message", role: "user", text, startEventId: first + 1, endEventId: first + 1, startedAt: "2026-08-12T00:00:01Z", endedAt: "2026-08-12T00:00:01Z" },
+      ...(closed ? [{ type: "lifecycle", text: "turn.completed", startEventId: last, endEventId: last, startedAt: "2026-08-12T00:00:02Z", endedAt: "2026-08-12T00:00:02Z" }] : []),
+    ],
+  };
 }
 
 class FakeEventSource {
@@ -66,6 +79,53 @@ function controller(fetchImpl: typeof fetch, callbacks: ConstructorParameters<ty
 }
 
 describe("ChatSessionController", () => {
+  it("loads compact turns, expands only the open tail, and hands off at the durable head", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/events?start=5&end=10")) {
+        return response({ events: [
+          { id: 5, type: "turn.started", turnId: "turn-open", sessionId: "session-run-a", data: {} },
+          { id: 6, type: "message.input", turnId: "turn-open", sessionId: "session-run-a", data: { role: "user", text: "live input" } },
+          { id: 7, type: "message.reasoning.delta", turnId: "turn-open", sessionId: "session-run-a", data: { text: "thinking" } },
+          { id: 8, type: "message.assistant.delta", turnId: "turn-open", sessionId: "session-run-a", data: { text: "live reply" } },
+          { id: 9, type: "provider.event", turnId: "turn-open", sessionId: "session-run-a", data: {} },
+          { id: 10, type: "session.state", sessionId: "session-run-a", data: { state: "running" } },
+        ], page: { hasMore: false, nextAfter: 10 } });
+      }
+      return response({ turns: [turn("turn-old", 1, 4, true, "compact input"), turn("turn-open", 5, 8, false, "stale compact input")], latestEventId: 10, page: { hasMoreBefore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", run("run-a"));
+
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    expect(latest.events.map((event) => event.id)).toEqual([1, 2, 4, 5, 6, 7, 8, 9, 10]);
+    expect(latest.events.find((event) => event.id === 6)?.data?.text).toBe("live input");
+    expect(FakeEventSource.instances[0].url).toContain("after=10");
+    expect(fetchImpl.mock.calls[0][0].toString()).toContain("/turns?latest=true");
+  });
+
+  it("replaces a completed live range with the materialized turn", async () => {
+    const open = turn("turn-open", 5, 6, false, "open");
+    const closed = turn("turn-open", 5, 9, true, "materialized");
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.endsWith("/turns/turn-open")) return response({ turn: closed, latestEventId: 9 });
+      if (path.includes("/events?")) return response({ events: [{ id: 5, type: "turn.started", turnId: "turn-open" }, { id: 6, type: "message.input", turnId: "turn-open", data: { text: "open" } }], page: { hasMore: false } });
+      return response({ turns: [open], latestEventId: 6, page: {} });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", run("run-a"));
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    FakeEventSource.instances[0].emit({ id: 9, type: "turn.completed", turnId: "turn-open", sessionId: "session-run-a", data: {} });
+
+    await vi.waitFor(() => expect(latest.events.find((event) => event.id === 6)?.data?.text).toBe("materialized"));
+    expect(latest.events.map((event) => event.id)).toEqual([5, 6, 9]);
+  });
+
   it("invalidates the old view immediately and ignores a late HTTP response", async () => {
     const first = deferred<Response>();
     const fetchImpl = vi.fn<typeof fetch>((url) => {

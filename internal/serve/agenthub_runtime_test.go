@@ -136,7 +136,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.appendLocked(id, "message.input", fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
-		session.State = "busy"
+		session.State = "running"
 		f.sessions[id] = session
 		fail := f.failNextMessage
 		f.failNextMessage = false
@@ -171,7 +171,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			"text":       body.Text,
 		})
 		session := f.sessions[id]
-		session.State = "busy"
+		session.State = "running"
 		session.PendingApprovalIDs = nil
 		f.sessions[id] = session
 		f.mu.Unlock()
@@ -310,7 +310,7 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 		f.appendLocked(id, "message.input", fakeMessageInputData(
 			request.InitialMessage.Text, request.InitialMessage.Role, request.InitialMessage.Sender, request.InitialMessage.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": request.InitialMessage.Text})
-		session.State = "busy"
+		session.State = "running"
 	}
 	session.LastEventID = int64(len(f.events[id]))
 	f.sessions[id] = session
@@ -567,7 +567,7 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 
 	secondRecorder, second := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
 	if secondRecorder.Code != http.StatusOK || second.Run.ID != first.Run.ID || len(second.Run.PendingMessages) != 1 {
-		t.Fatalf("busy non-steer generation did not retain the durable message: code=%d run=%#v", secondRecorder.Code, second.Run)
+		t.Fatalf("running non-steer generation did not retain the durable message: code=%d run=%#v", secondRecorder.Code, second.Run)
 	}
 	fake.mu.Lock()
 	if len(fake.messageIDs) != 1 || fake.messageIDs[0] == "" {
@@ -608,6 +608,78 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	defer fake.mu.Unlock()
 	if len(fake.messageIDs) != 2 || fake.messageIDs[1] == "" || fake.messageIDs[1] == fake.messageIDs[0] || !fake.messageSteers[1] {
 		t.Fatalf("queued message delivery metadata mismatch: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
+	}
+}
+
+func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	now := time.Now().Format(time.RFC3339Nano)
+	run := agentRun{ID: "run-atomic", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-atomic", Status: "idle", CreatedAt: now, UpdatedAt: now}
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, run, nil)
+	manager.registerRuntime(rt)
+	const messages = 80
+	var group sync.WaitGroup
+	for index := 0; index < messages; index++ {
+		index := index
+		group.Add(2)
+		go func() {
+			defer group.Done()
+			if err := rt.enqueueResourceMessage(resourceInboundMessage{ID: fmt.Sprintf("msg-%03d", index), Text: "queued"}); err != nil {
+				t.Errorf("enqueue %d: %v", index, err)
+			}
+		}()
+		go func() {
+			defer group.Done()
+			if _, err := rt.mutateRun(func(run *agentRun) { run.CompletionCursor++ }); err != nil {
+				t.Errorf("state update %d: %v", index, err)
+			}
+		}()
+	}
+	group.Wait()
+	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(persisted.PendingMessages) != messages || persisted.CompletionCursor != messages {
+		t.Fatalf("serialized generation lost an update: messages=%d cursor=%d", len(persisted.PendingMessages), persisted.CompletionCursor)
+	}
+}
+
+func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	now := time.Now().Format(time.RFC3339Nano)
+	run := agentRun{ID: "run-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
+		PendingMessages: []resourceInboundMessage{{ID: "msg-kept", Text: "keep me"}}}
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		t.Fatal(err)
+	}
+	rt := newAgentHubRuntime(manager, workspace, run, nil)
+	runtimeDir := agentRoot(workspace.Path)
+	backupDir := runtimeDir + "-backup"
+	if err := os.Rename(runtimeDir, backupDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(runtimeDir, []byte("blocks directory creation"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rt.mutateRun(func(run *agentRun) { run.PendingMessages = nil }); err == nil {
+		t.Fatal("expected generation persistence failure")
+	}
+	if got := rt.snapshotRun().PendingMessages; len(got) != 1 || got[0].ID != "msg-kept" {
+		t.Fatalf("failed write advanced in-memory mailbox: %#v", got)
+	}
+	if err := os.Remove(runtimeDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backupDir, runtimeDir); err != nil {
+		t.Fatal(err)
+	}
+	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	if err != nil || len(persisted.PendingMessages) != 1 {
+		t.Fatalf("failed write removed durable mailbox: %#v, %v", persisted.PendingMessages, err)
 	}
 }
 
@@ -677,7 +749,15 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T
 			t.Fatal(err)
 		}
 		if len(runs) >= 2 && runs[0].Generation == 2 && len(runs[0].PendingMessages) == 0 {
-			break
+			transferred := true
+			for _, candidate := range runs {
+				if candidate.Generation == 1 && len(candidate.PendingMessages) != 0 {
+					transferred = false
+				}
+			}
+			if transferred {
+				break
+			}
 		}
 		time.Sleep(10 * time.Millisecond)
 	}

@@ -333,6 +333,26 @@ func TestNoSchedulerProfileIsSynthesized(t *testing.T) {
 	}
 }
 
+func TestMissingTypedResourceDefaultIsPersistedAndFallsBackGlobally(t *testing.T) {
+	var catalog agentHubCatalog
+	readJSONFixture(t, "agenthub-catalog.json", &catalog)
+	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+		AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "stable-id",
+		AgentProfiles:    []agentHubProfileRoute{{Key: "default", AgentName: "gpt-5.6-sol"}},
+		ResourceDefaults: resourceAgentDefaults{Workspace: "default", Project: "deleted-project-default", Task: "default"},
+	}, catalog)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ResourceDefaults.Project != "deleted-project-default" {
+		t.Fatalf("normalization rewrote unresolved configured default: %+v", cfg.ResourceDefaults)
+	}
+	effective := effectiveResourceAgentDefaults(cfg.ResourceDefaults, toConfigProfileRoutes(cfg.AgentProfiles))
+	if effective.Project != "default" {
+		t.Fatalf("missing Project default did not fall back globally: %+v", effective)
+	}
+}
+
 func TestLoadConfigDoesNotPersistSchedulerMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gui.json")
 	legacy := agentHubGUIConfig{

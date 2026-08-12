@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +33,8 @@ type agentRun struct {
 	BindingKind             string `json:"bindingKind,omitempty"`
 	BindingName             string `json:"bindingName,omitempty"`
 	ProfileRevision         string `json:"profileRevision,omitempty"`
+	ResolvedProfile         string `json:"resolvedProfile,omitempty"`
+	AgentConfigError        string `json:"agentConfigError,omitempty"`
 	ReplacementPending      bool   `json:"replacementPending,omitempty"`
 	AgentProfile            string `json:"agentProfile,omitempty"`
 	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
@@ -40,9 +43,10 @@ type agentRun struct {
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
-	// ArchivedTaskStopRequested is a durable ambiguity guard for the
-	// reconciliation-owned stop action. It prevents a failed or interrupted
-	// request from being retried after a poll or Forge restart.
+	// ArchivedTaskStopRequested is the legacy-named durable progress marker for
+	// any archived Project/Task generation stop. It records that reconciliation
+	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are
+	// retried until observed rather than treated as terminal.
 	ArchivedTaskStopRequested bool                     `json:"archivedTaskStopRequested,omitempty"`
 	PendingInitialMessage     string                   `json:"pendingInitialMessage,omitempty"`
 	PendingMessages           []resourceInboundMessage `json:"pendingMessages,omitempty"`
@@ -235,6 +239,16 @@ func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceI
 			return
 		}
 		m.proxyAgentHubEvents(w, r, workspaceID, runID)
+	case "turns":
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		turnID := ""
+		if len(parts) > 3 {
+			turnID = parts[3]
+		}
+		m.proxyAgentHubTurns(w, r, workspaceID, runID, turnID)
 	case "stream":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -722,11 +736,7 @@ func (rt *agentRuntime) handleTurnFinished(m *agentManager, session agentHubSess
 }
 
 func (rt *agentRuntime) markTurnCompletionPending() {
-	rt.mu.Lock()
-	rt.run.CompletionPending = true
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+	_, _ = rt.mutateRun(func(run *agentRun) { run.CompletionPending = true })
 }
 
 func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
@@ -734,24 +744,23 @@ func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
 	if sessionID == "" {
 		return
 	}
-	rt.mu.Lock()
-	if rt.run.CompletionSessionID != sessionID {
+	_, _ = rt.mutateRun(func(run *agentRun) {
+		if run.CompletionSessionID == sessionID {
+			return
+		}
 		// This path is entered only after an active -> ready/stopped edge, so
 		// inspect the new session from its beginning instead of baselining away
 		// the just-finished turn.
-		rt.run.CompletionSessionID = sessionID
-		rt.run.CompletionCursor = 0
-		rt.run.CompletionEventID = 0
-		rt.run.CompletionMarker = ""
-		rt.run.CompletionState = ""
-		rt.run.CompletionTurnID = ""
-		rt.run.CompletionAt = ""
-		rt.run.CompletionPending = false
-		rt.run.AgentHubSessionID = sessionID
-	}
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+		run.CompletionSessionID = sessionID
+		run.CompletionCursor = 0
+		run.CompletionEventID = 0
+		run.CompletionMarker = ""
+		run.CompletionState = ""
+		run.CompletionTurnID = ""
+		run.CompletionAt = ""
+		run.CompletionPending = false
+		run.AgentHubSessionID = sessionID
+	})
 }
 
 func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
@@ -771,16 +780,16 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 	// cursor starts at one again. The first observation is a baseline, never a
 	// historical notification.
 	if run.CompletionSessionID != sessionID {
-		run.CompletionSessionID = sessionID
-		run.CompletionCursor = session.LastEventID
-		run.CompletionEventID = 0
-		run.CompletionMarker = ""
-		run.CompletionState = ""
-		run.CompletionTurnID = ""
-		run.CompletionAt = ""
-		run.CompletionPending = false
-		rt.setRun(run)
-		_ = saveAgentRun(rt.workspace.Path, run)
+		_, _ = rt.mutateRun(func(run *agentRun) {
+			run.CompletionSessionID = sessionID
+			run.CompletionCursor = session.LastEventID
+			run.CompletionEventID = 0
+			run.CompletionMarker = ""
+			run.CompletionState = ""
+			run.CompletionTurnID = ""
+			run.CompletionAt = ""
+			run.CompletionPending = false
+		})
 		return
 	}
 	if session.LastEventID <= run.CompletionCursor {
@@ -788,9 +797,7 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 		// keeps terminal/stopped recovery lightweight while still retrying a
 		// completion whose cursor advanced before a prior history read failed.
 		if run.CompletionPending {
-			run.CompletionPending = false
-			rt.setRun(run)
-			_ = saveAgentRun(rt.workspace.Path, run)
+			_, _ = rt.mutateRun(func(run *agentRun) { run.CompletionPending = false })
 		}
 		return
 	}
@@ -846,47 +853,43 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 	if sessionID == "" {
 		return
 	}
-	rt.mu.Lock()
-	run := rt.run
-	if strings.TrimSpace(run.AgentHubSessionID) != sessionID {
-		rt.mu.Unlock()
-		return
-	}
-	if run.CompletionSessionID != sessionID {
-		run.CompletionSessionID = sessionID
-		run.CompletionCursor = 0
-		run.CompletionEventID = 0
-		run.CompletionMarker = ""
-		run.CompletionState = ""
-		run.CompletionTurnID = ""
-		run.CompletionAt = ""
-	}
-	cursor := run.CompletionCursor
-	latestTerminal := agentHubEvent{}
-	for _, event := range history {
-		if event.ID <= cursor {
-			continue
+	_, _ = rt.mutateRun(func(run *agentRun) {
+		if strings.TrimSpace(run.AgentHubSessionID) != sessionID {
+			return
 		}
-		cursor = event.ID
-		if isAgentHubTurnTerminal(event.Type) && event.ID > latestTerminal.ID {
-			latestTerminal = event
+		if run.CompletionSessionID != sessionID {
+			run.CompletionSessionID = sessionID
+			run.CompletionCursor = 0
+			run.CompletionEventID = 0
+			run.CompletionMarker = ""
+			run.CompletionState = ""
+			run.CompletionTurnID = ""
+			run.CompletionAt = ""
 		}
-	}
-	if latestCursor > cursor {
-		cursor = latestCursor
-	}
-	run.CompletionCursor = cursor
-	if latestTerminal.ID > run.CompletionEventID {
-		run.CompletionEventID = latestTerminal.ID
-		run.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
-		run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
-		run.CompletionTurnID = latestTerminal.TurnID
-		run.CompletionAt = latestTerminal.Time
-	}
-	run.CompletionPending = false
-	rt.run = run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+		cursor := run.CompletionCursor
+		latestTerminal := agentHubEvent{}
+		for _, event := range history {
+			if event.ID <= cursor {
+				continue
+			}
+			cursor = event.ID
+			if isAgentHubTurnTerminal(event.Type) && event.ID > latestTerminal.ID {
+				latestTerminal = event
+			}
+		}
+		if latestCursor > cursor {
+			cursor = latestCursor
+		}
+		run.CompletionCursor = cursor
+		if latestTerminal.ID > run.CompletionEventID {
+			run.CompletionEventID = latestTerminal.ID
+			run.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
+			run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
+			run.CompletionTurnID = latestTerminal.TurnID
+			run.CompletionAt = latestTerminal.Time
+		}
+		run.CompletionPending = false
+	})
 }
 
 func (rt *agentRuntime) completionHistoryPending(session agentHubSession) bool {
@@ -909,12 +912,10 @@ func isAgentHubTurnTerminal(eventType string) bool {
 }
 
 func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
-	rt.mu.Lock()
-	rt.run.Status = status
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+	_, _ = rt.mutateRun(func(run *agentRun) {
+		run.Status = status
+		run.UpdatedAt = time.Now().Format(time.RFC3339)
+	})
 }
 
 func (rt *agentRuntime) setRun(run agentRun) {
@@ -923,18 +924,57 @@ func (rt *agentRuntime) setRun(run agentRun) {
 	rt.run = run
 }
 
+// mutateRun is the single serialized persistence boundary for an existing
+// generation. The in-memory projection is published only after the complete
+// generation (including its mailbox) has been atomically replaced on disk;
+// a write failure restores the previous in-memory value so retry remains
+// possible after the process continues.
+func (rt *agentRuntime) mutateRun(mutate func(*agentRun)) (agentRun, error) {
+	return rt.mutateRuntime(func(runtime *agentRuntime) { mutate(&runtime.run) })
+}
+
+func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, error) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	previous := cloneAgentRun(rt.run)
+	previousState := rt.agentHubState
+	previousStopRequested := rt.agentHubStopRequested
+	mutate(rt)
+	updated := cloneAgentRun(rt.run)
+	if reflect.DeepEqual(previous, updated) {
+		return updated, nil
+	}
+	if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
+		rt.run = previous
+		rt.agentHubState = previousState
+		rt.agentHubStopRequested = previousStopRequested
+		return previous, err
+	}
+	return updated, nil
+}
+
+func cloneAgentRun(run agentRun) agentRun {
+	cloned := run
+	cloned.PendingMessages = append([]resourceInboundMessage(nil), run.PendingMessages...)
+	for index := range cloned.PendingMessages {
+		if cloned.PendingMessages[index].Sender != nil {
+			sender := *cloned.PendingMessages[index].Sender
+			cloned.PendingMessages[index].Sender = &sender
+		}
+	}
+	return cloned
+}
+
 func isLiveAgentStatus(status string) bool {
 	return status == "starting" || status == "running" || status == "waiting_approval" ||
 		status == "idle" || status == "stopping" || status == "recovering"
 }
 
 func (rt *agentRuntime) markIdle(m *agentManager) {
-	rt.mu.Lock()
-	rt.run.Status = "idle"
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339)
-	run := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, run)
+	_, _ = rt.mutateRun(func(run *agentRun) {
+		run.Status = "idle"
+		run.UpdatedAt = time.Now().Format(time.RFC3339)
+	})
 }
 
 func (rt *agentRuntime) snapshotRun() agentRun {
@@ -1057,11 +1097,37 @@ func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {
 	data = append(data, '\n')
 	path := agentIndexPath(workspacePath)
 	tmp := path + "." + newRunID() + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tmp)
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
+		return err
+	}
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	if err := directory.Sync(); err != nil {
+		directory.Close()
+		return err
+	}
+	if err := directory.Close(); err != nil {
 		return err
 	}
 	return nil

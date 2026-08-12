@@ -62,6 +62,18 @@ func (m *agentManager) resolveAgentHubProxyTarget(workspaceID, runID string) (ag
 }
 
 func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
+	m.proxyAgentHubJSON(w, r, workspaceID, runID, "events", []string{"after", "before", "latest", "limit", "start", "end"})
+}
+
+func (m *agentManager) proxyAgentHubTurns(w http.ResponseWriter, r *http.Request, workspaceID, runID, turnID string) {
+	suffix := "turns"
+	if turnID != "" {
+		suffix += "/" + url.PathEscape(turnID)
+	}
+	m.proxyAgentHubJSON(w, r, workspaceID, runID, suffix, []string{"after", "before", "latest", "limit"})
+}
+
+func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request, workspaceID, runID, suffix string, queryKeys []string) {
 	run, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, runID)
 	if err != nil {
 		writeError(w, err, status)
@@ -69,12 +81,12 @@ func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Reques
 	}
 	// Forward the paging parameters verbatim; AgentHub validates them.
 	query := make(url.Values)
-	for _, key := range []string{"after", "before", "latest", "limit"} {
+	for _, key := range queryKeys {
 		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
 			query.Set(key, value)
 		}
 	}
-	path := sessionPath(run.AgentHubSessionID) + "/events"
+	path := sessionPath(run.AgentHubSessionID) + "/" + suffix
 	if encoded := query.Encode(); encoded != "" {
 		path += "?" + encoded
 	}
@@ -86,7 +98,7 @@ func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Reques
 	request.Header.Set("Accept", "application/json")
 	response, err := client.httpClient.Do(request)
 	if err != nil {
-		writeError(w, fmt.Errorf("proxy AgentHub events: %w", err), http.StatusBadGateway)
+		writeError(w, fmt.Errorf("proxy AgentHub %s: %w", suffix, err), http.StatusBadGateway)
 		return
 	}
 	defer response.Body.Close()

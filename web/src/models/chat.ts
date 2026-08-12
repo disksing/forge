@@ -56,6 +56,8 @@ export interface AgentRun {
   agentHubSessionId?: string;
   sourceExternalId?: string;
   agentHubAgentName?: string;
+  resolvedProfile?: string;
+  agentConfigError?: string;
   title?: string;
   status?: string;
   createdAt?: string;
@@ -76,6 +78,33 @@ export interface AgentEvent {
   sessionId?: string;
   turnId?: string;
   data?: Record<string, unknown> & { text?: string; append?: boolean; state?: string };
+}
+
+export interface AgentTurnItem {
+  type: string;
+  role?: string;
+  sender?: { name?: string; id?: string; sessionId?: string };
+  steer?: boolean;
+  text?: string;
+  startEventId: number;
+  endEventId: number;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
+  count?: number;
+  data?: Record<string, unknown>;
+}
+
+export interface AgentTurn {
+  id: string;
+  turnId?: string;
+  status?: string;
+  closed: boolean;
+  startEventId: number;
+  endEventId?: number;
+  firstEventId: number;
+  lastEventId: number;
+  items: AgentTurnItem[];
 }
 
 export interface AgentNotice {
@@ -114,6 +143,9 @@ export interface TimelineItem {
   status?: string;
   decision?: string;
   reply?: string;
+  compact?: boolean;
+  rangeStartEventId?: number;
+  rangeEndEventId?: number;
 }
 
 export interface ChatContextSnapshot {

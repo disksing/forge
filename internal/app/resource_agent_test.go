@@ -50,6 +50,20 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	if got, err := workspace.ResourceAgentBinding(project.ID); err != nil || got != direct {
 		t.Fatalf("migration overwrote direct Agent binding: got=%#v err=%v", got, err)
 	}
+	newProject, err := workspace.CreateProject("Typed default project", "typed-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	newTask, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: newProject.ID, Title: "Typed default task", Slug: "typed-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if newProject.AgentBinding != (app.AgentBinding{Kind: "profile", Name: "fast"}) {
+		t.Fatalf("new Project did not use persisted Project default: %#v", newProject.AgentBinding)
+	}
+	if newTask.AgentBinding != (app.AgentBinding{Kind: "profile", Name: "reasoning"}) {
+		t.Fatalf("new Task did not use persisted Task default: %#v", newTask.AgentBinding)
+	}
 	info, err := os.Stat(filepath.Join(workspace.Root(), ".forge", "runtime"))
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("runtime directory permissions mismatch: info=%v err=%v", info, err)

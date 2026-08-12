@@ -169,7 +169,34 @@ func TestAgentHubPollerKeepsSessionForOpenTask(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerDoesNotStopProjectSessionWhenProjectArchived(t *testing.T) {
+func TestArchiveResourceRejectsActiveTurnBeforeMovingTask(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-active-archive", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-active-archive",
+		AgentHubSessionID: "ses_active_archive", SourceExternalID: "project1.task1/1", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_active_archive", State: "running", CurrentTurnID: "turn-active", UpdatedAt: "2026-08-01T00:00:10Z"})
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-test/archive", strings.NewReader(`{"resourceId":"project1.task1"}`))
+	manager.server.archiveResource(recorder, request, workspace.ID)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "active Turn") {
+		t.Fatalf("active Turn archive = %d %s", recorder.Code, recorder.Body.String())
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := forgeWorkspace.ResourceValue("project1.task1")
+	if err != nil || value.Archived {
+		t.Fatalf("active resource moved despite rejection: %#v, %v", value, err)
+	}
+}
+
+func TestAgentHubPollerStopsProjectSessionWhenProjectArchived(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -193,10 +220,15 @@ func TestAgentHubPollerDoesNotStopProjectSessionWhenProjectArchived(t *testing.T
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	waitForRuntimeTest(t, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.sessions["ses_project"].State == "stopped"
+	})
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.sessions["ses_project"].State != "ready" || len(fake.actions) != 0 {
-		t.Fatalf("project-level session must not be reclaimed with task sessions: session=%#v actions=%#v", fake.sessions["ses_project"], fake.actions)
+	if fake.sessions["ses_project"].State != "stopped" || strings.Count(strings.Join(fake.actions, ","), "stop") != 1 {
+		t.Fatalf("archived project session was not reclaimed: session=%#v actions=%#v", fake.sessions["ses_project"], fake.actions)
 	}
 }
 
@@ -253,7 +285,7 @@ func TestAgentHubPollerDoesNotStopSessionForMissingTask(t *testing.T) {
 	}
 }
 
-func TestAgentHubPollerDoesNotRetryAmbiguousArchivedTaskStop(t *testing.T) {
+func TestAgentHubPollerRetriesAmbiguousArchivedTaskStop(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.failNextStop = true
 	hub := httptest.NewServer(fake)
@@ -280,42 +312,47 @@ func TestAgentHubPollerDoesNotRetryAmbiguousArchivedTaskStop(t *testing.T) {
 		rt := manager.runtimeByID("run-stop-failure")
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
-		return rt.agentHubStopRequested && rt.run.ArchivedTaskStopRequested &&
+		return !rt.agentHubStopRequested && rt.run.ArchivedTaskStopRequested &&
 			rt.run.Status == "recovering" && rt.run.ForgeSessionID != ""
 	})
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	waitForRuntimeTest(t, func() bool {
+		fake.mu.Lock()
+		defer fake.mu.Unlock()
+		return fake.stopCalls == 2 && (fake.sessions["ses_stop_failure"].State == "stopped" || fake.sessions["ses_stop_failure"].State == "archived")
+	})
 	fake.mu.Lock()
 	stopCalls := fake.stopCalls
 	session := fake.sessions["ses_stop_failure"]
 	fake.mu.Unlock()
-	if stopCalls != 1 || session.State != "ready" {
-		t.Fatalf("ambiguous stop must not be retried: session=%#v stopCalls=%d", session, stopCalls)
+	if stopCalls != 2 || (session.State != "stopped" && session.State != "archived") {
+		t.Fatalf("ambiguous stop did not converge through retry: session=%#v stopCalls=%d", session, stopCalls)
 	}
 	run := pollerRunState(manager.runtimeByID("run-stop-failure"))
-	if run.Status != "recovering" || !run.ArchivedTaskStopRequested || run.ForgeSessionID == "" {
-		t.Fatalf("ambiguous stop did not remain fail-closed: %#v", run)
+	if run.Status != "stopped" || !run.AgentHubStoppedObserved {
+		t.Fatalf("retried stop did not persist terminal observation: %#v", run)
 	}
 
-	// The guard is durable: replacing the manager simulates a Forge restart
-	// and must not turn an unknown prior stop outcome into a duplicate request.
+	// Replacing the manager simulates a Forge restart. The converged archived
+	// generation remains idempotent and needs no additional Stop request.
 	restarted := newAgentManager(manager.server)
 	if err := restarted.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.stopCalls != 1 {
-		t.Fatalf("ambiguous stop was retried after manager restart: stopCalls=%d", fake.stopCalls)
+	if fake.stopCalls != 2 {
+		t.Fatalf("converged stop repeated after manager restart: stopCalls=%d", fake.stopCalls)
 	}
 	restartedRun := pollerRunState(restarted.runtimeByID("run-stop-failure"))
-	if restartedRun.Status != "recovering" || !restartedRun.ArchivedTaskStopRequested {
-		t.Fatalf("restart lost ambiguous stop guard: %#v", restartedRun)
+	if restartedRun.Status != "stopped" || !restartedRun.AgentHubStoppedObserved {
+		t.Fatalf("restart lost terminal reconciliation: %#v", restartedRun)
 	}
 }
 
-func TestAgentHubPollerBusyToStoppedFinishesTurnAndReleasesForgeSession(t *testing.T) {
+func TestAgentHubPollerRunningToStoppedFinishesTurnAndReleasesForgeSession(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -354,14 +391,14 @@ func TestAgentHubPollerWaitingApprovalToBusyDoesNotFinishTurn(t *testing.T) {
 		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
 		ForgeSessionID: "session-test", Status: "waiting_approval",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
-	}, agentHubSession{ID: "ses_sched", State: "busy", UpdatedAt: "2026-08-01T00:00:10Z"})
+	}, agentHubSession{ID: "ses_sched", State: "running", UpdatedAt: "2026-08-01T00:00:10Z"})
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	run := pollerRunState(manager.runtimeByID("run-sched"))
 	if run.Status != "running" {
-		t.Fatalf("waiting_approval to busy projection mismatch: %#v", run)
+		t.Fatalf("waiting_approval to running projection mismatch: %#v", run)
 	}
 }
 

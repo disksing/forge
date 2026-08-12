@@ -1,5 +1,5 @@
 import { ApiClient, StaleResponseError } from "../api/client";
-import type { AgentEvent, AgentNotice, AgentRun, ChatContextSnapshot } from "./models";
+import type { AgentEvent, AgentNotice, AgentRun, AgentTurn, AgentTurnItem, ChatContextSnapshot } from "./models";
 import { compactTimelineEvents, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
 
 const PAGE_LIMIT = 250;
@@ -11,7 +11,17 @@ type SnapshotListener = (snapshot: ChatContextSnapshot) => void;
 
 interface EventPage {
   events?: AgentEvent[];
-  page?: { hasMoreBefore?: boolean };
+  page?: { hasMore?: boolean; hasMoreBefore?: boolean; nextAfter?: number };
+}
+
+interface TurnPage extends EventPage {
+  turns?: AgentTurn[];
+  latestEventId?: number;
+}
+
+interface SingleTurnPage {
+  turn?: AgentTurn;
+  latestEventId?: number;
 }
 
 interface ChatContext {
@@ -25,6 +35,8 @@ interface ChatContext {
   events: AgentEvent[];
   notices: AgentNotice[];
   beforeId: number;
+  latestEventId: number;
+  historyMode: "turns" | "events";
   hasMoreBefore: boolean;
   loading: boolean;
   loadingOlder: boolean;
@@ -82,6 +94,11 @@ export class ChatSessionController {
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, runId);
     context.run = run;
     context.acceptedSessionIds = sessionIdentities(run);
+    context.notices = context.notices.filter((notice) => notice.data?.method !== "resource/profile");
+    if (run?.agentConfigError) this.appendNotice(context, {
+      source: "forge", type: "forge.notice",
+      data: { level: "warning", method: "resource/profile", runId, text: run.agentConfigError },
+    });
     if (!isLiveRun(run) && context.stream) {
       context.streamGeneration++;
       context.stream.close();
@@ -101,10 +118,23 @@ export class ChatSessionController {
     context.error = "";
     this.emit();
     try {
-      const page = await this.api.latest<EventPage>(eventsPath(context, `before=${encodeURIComponent(before)}&limit=${PAGE_LIMIT}`), {
+      const path = context.historyMode === "turns" ? turnsPath(context, `before=${encodeURIComponent(before)}&limit=${PAGE_LIMIT}`) : eventsPath(context, `before=${encodeURIComponent(before)}&limit=${PAGE_LIMIT}`);
+      const page = await this.api.latest<TurnPage>(path, {
         scope: requestScope(context, "older"),
       });
       if (!this.isCurrent(context, generation)) return false;
+      if (context.historyMode === "turns") {
+        const turns = normalizeTurns(page.turns);
+        const nextBefore = oldestTurnCursor(turns);
+        if (turns.length && (!nextBefore || nextBefore >= before)) {
+          context.hasMoreBefore = false;
+          return false;
+        }
+        context.events = compactTimelineEvents(mergeCanonicalEvents([...turns.flatMap(turnEvents), ...context.events]));
+        if (nextBefore) context.beforeId = nextBefore;
+        context.hasMoreBefore = Boolean(page.page?.hasMoreBefore && nextBefore);
+        return turns.length > 0;
+      }
       const older = normalizeEvents(page.events);
       const nextBefore = oldestEventId(older);
       if (older.length && (!nextBefore || nextBefore >= before)) {
@@ -124,6 +154,33 @@ export class ChatSessionController {
         context.loadingOlder = false;
         this.emit();
       }
+    }
+  }
+
+  async expandRange(start: number, end: number): Promise<void> {
+    const context = this.activeContext();
+    if (!context || start <= 0 || end < start) return;
+    const generation = context.generation;
+    let after = start - 1;
+    let events: AgentEvent[] = [];
+    try {
+      while (after < end) {
+        const query = `start=${start}&end=${end}&after=${after}&limit=${PAGE_LIMIT}`;
+        const page = await this.api.latest<EventPage>(eventsPath(context, query), { scope: requestScope(context, `range:${start}:${end}`) });
+        if (!this.isCurrent(context, generation)) return;
+        const batch = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));
+        events = mergeCanonicalEvents([...events, ...batch]);
+        const next = Number(page.page?.nextAfter) || latestEventId(batch);
+        if (!page.page?.hasMore || !next || next <= after) break;
+        after = next;
+      }
+      if (!this.isCurrent(context, generation)) return;
+      context.events = compactTimelineEvents(mergeCanonicalEvents([...context.events, ...events]));
+      this.emit();
+    } catch (error) {
+      if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
+      context.error = errorMessage(error);
+      this.emit();
     }
   }
 
@@ -157,7 +214,7 @@ export class ChatSessionController {
   private createContext(workspaceId: string, runId: string): ChatContext {
     const context: ChatContext = {
       key: contextKey(workspaceId, runId), workspaceId, runId, acceptedSessionIds: new Set([runId]), run: null,
-      generation: 1, streamGeneration: 0, events: [], notices: [], beforeId: 0,
+      generation: 1, streamGeneration: 0, events: [], notices: [], beforeId: 0, latestEventId: 0, historyMode: "turns",
       hasMoreBefore: false, loading: false, loadingOlder: false, loaded: false, error: "", stream: null,
       pendingEvents: [], flushTimer: null,
     };
@@ -171,13 +228,34 @@ export class ChatSessionController {
     context.error = "";
     this.emit();
     try {
-      const page = await this.api.latest<EventPage>(eventsPath(context, `latest=true&limit=${PAGE_LIMIT}`), {
+      const page = await this.api.latest<TurnPage>(turnsPath(context, `latest=true&limit=${PAGE_LIMIT}`), {
         scope: requestScope(context, "initial"),
       });
       if (!this.isCurrent(context, generation)) return;
+      if (Array.isArray(page.turns)) {
+        const turns = normalizeTurns(page.turns);
+        context.historyMode = "turns";
+        context.events = compactTimelineEvents(mergeCanonicalEvents(turns.flatMap(turnEvents)));
+        context.beforeId = oldestTurnCursor(turns);
+        context.hasMoreBefore = Boolean(page.page?.hasMoreBefore && context.beforeId);
+        context.latestEventId = Math.max(0, Number(page.latestEventId) || 0);
+        const open = turns.at(-1);
+        if (open && !open.closed) {
+          const liveEvents = await this.loadTurnRange(context, open, generation);
+          if (!this.isCurrent(context, generation)) return;
+          context.events = replaceTurnEvents(context.events, open.id, liveEvents);
+        }
+        context.loaded = true;
+        this.connect(context);
+        return;
+      }
+      // Keep rolling upgrades usable if the proxy still returns the former
+      // Event page while AgentHub and Forge are being updated independently.
+      context.historyMode = "events";
       const events = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));
       context.events = compactTimelineEvents(mergeCanonicalEvents(events));
       context.beforeId = oldestEventId(events);
+      context.latestEventId = latestEventId(events);
       context.hasMoreBefore = Boolean(page.page?.hasMoreBefore && context.beforeId);
       context.loaded = true;
       this.connect(context);
@@ -194,7 +272,7 @@ export class ChatSessionController {
 
   private connect(context: ChatContext): void {
     if (!this.isActive(context) || context.stream || !isLiveRun(context.run)) return;
-    const after = latestEventId(context.events);
+    const after = Math.max(context.latestEventId, latestEventId(context.events));
     const query = after ? `?after=${encodeURIComponent(after)}` : "";
     const streamGeneration = ++context.streamGeneration;
     const stream = this.eventSourceFactory(`/api/workspaces/${encodeURIComponent(context.workspaceId)}/agent/runs/${encodeURIComponent(context.runId)}/stream${query}`);
@@ -204,9 +282,11 @@ export class ChatSessionController {
       try {
         const event = JSON.parse(message.data) as AgentEvent;
         if (!this.eventBelongsToContext(context, event)) return;
+        context.latestEventId = Math.max(context.latestEventId, Number(event.id) || 0);
         context.pendingEvents.push(event);
         this.onEvent?.(context.workspaceId, context.runId, event);
         this.scheduleEventFlush(context);
+        if (isTurnTerminal(event) && event.turnId) void this.compactClosedTurn(context, event.turnId, streamGeneration);
       } catch {
         context.error = "An Agent event could not be decoded.";
         this.emit();
@@ -236,6 +316,54 @@ export class ChatSessionController {
         context.stream = null;
       }
     };
+  }
+
+  private async loadTurnRange(context: ChatContext, turn: AgentTurn, generation: number): Promise<AgentEvent[]> {
+    const start = Math.max(1, Number(turn.startEventId || turn.firstEventId) || 1);
+    const end = Math.max(start, Number(turn.lastEventId || turn.endEventId) || 0, context.latestEventId);
+    let after = start - 1;
+    let events: AgentEvent[] = [];
+    while (after < end) {
+      const query = `start=${start}&end=${end}&after=${after}&limit=${PAGE_LIMIT}`;
+      const page = await this.api.latest<EventPage>(eventsPath(context, query), { scope: requestScope(context, "live-turn") });
+      if (!this.isCurrent(context, generation)) return [];
+      const batch = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));
+      events = mergeCanonicalEvents([...events, ...batch]);
+      const next = Number(page.page?.nextAfter) || latestEventId(batch);
+      if (!page.page?.hasMore || !next || next <= after) break;
+      after = next;
+    }
+    const ordered = mergeCanonicalEvents(events);
+    for (let index = 0; index < ordered.length; index++) {
+      const expected = start + index;
+      if (Number(ordered[index].id) !== expected) throw new Error(`Agent event history has a gap at ${expected}.`);
+    }
+    if (latestEventId(ordered) !== end) throw new Error(`Agent event history stopped before durable event ${end}.`);
+    return ordered;
+  }
+
+  private async compactClosedTurn(context: ChatContext, turnId: string, streamGeneration: number): Promise<void> {
+    this.flushEvents(context, false);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const result = await this.api.latest<SingleTurnPage>(turnPath(context, turnId), { scope: requestScope(context, `turn:${turnId}`) });
+        if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
+        if (!result.turn?.closed) throw new Error("Turn projection is not closed yet");
+        context.pendingEvents = context.pendingEvents.filter((event) => event.turnId !== turnId);
+        context.events = replaceTurnEvents(context.events, turnId, turnEvents(result.turn));
+        context.latestEventId = Math.max(context.latestEventId, Number(result.latestEventId) || 0);
+        this.emit();
+        return;
+      } catch (error) {
+        if (!this.isActive(context)) return;
+        if (attempt === 2) {
+          context.error = errorMessage(error);
+          this.emit();
+          return;
+        }
+        await delay(50 * (attempt + 1));
+      }
+    }
   }
 
   private appendNotice(context: ChatContext, notice: AgentNotice): void {
@@ -274,6 +402,7 @@ export class ChatSessionController {
     context.loadingOlder = false;
     this.api.requests.abort(requestScope(context, "initial"));
     this.api.requests.abort(requestScope(context, "older"));
+    this.api.requests.abort(requestScope(context, "live-turn"));
   }
 
   private eventBelongsToContext(context: ChatContext, event: AgentEvent): boolean {
@@ -313,6 +442,54 @@ function normalizeEvents(events?: AgentEvent[]): AgentEvent[] {
   return Array.isArray(events) ? events.filter((event) => Number(event?.id) > 0) : [];
 }
 
+function normalizeTurns(turns?: AgentTurn[]): AgentTurn[] {
+  return Array.isArray(turns) ? turns.filter((turn) => Boolean(turn?.id) && Number(turn.firstEventId || turn.startEventId) > 0) : [];
+}
+
+function turnEvents(turn: AgentTurn): AgentEvent[] {
+  const turnId = String(turn.turnId || turn.id);
+  return (Array.isArray(turn.items) ? turn.items : []).flatMap((item) => turnItemEvents(turnId, item));
+}
+
+function turnItemEvents(turnId: string, item: AgentTurnItem): AgentEvent[] {
+  const id = Number(item.startEventId) || 0;
+  if (!id) return [];
+  const time = item.endedAt || item.startedAt;
+  const startTime = item.startedAt;
+  const base = { id, time, startTime, turnId };
+  const data = item.data && typeof item.data === "object" ? item.data : {};
+  switch (item.type) {
+    case "message":
+      if (["assistant", "agent"].includes(String(item.role || ""))) {
+        return [{ ...base, type: "message.assistant.delta", data: { text: item.text || "" } }];
+      }
+      return [{ ...base, type: "message.input", data: { role: item.role || "user", sender: item.sender, steer: item.steer === true, text: item.text || "" } }];
+    case "thinking": {
+      const count = Math.max(1, Number(item.count) || 1);
+      const duration = Math.max(0, Number(item.durationMs) || 0);
+      return [{ ...base, type: "message.reasoning.delta", data: { text: `Reasoning details omitted from compact history · ${count} update${count === 1 ? "" : "s"}${duration ? ` · ${duration} ms` : ""}`, compactRange: { start: id, end: Number(item.endEventId) || id } } }];
+    }
+    case "tool": {
+      const count = Math.max(1, Number(item.count) || 1);
+      return [{ ...base, type: "tool.event", data: { method: "turn/compact", compactRange: { start: id, end: Number(item.endEventId) || id }, raw: { update: { sessionUpdate: "tool_call", toolCallId: `compact:${turnId}:${id}`, kind: "tool", status: "completed", title: `${count} tool call${count === 1 ? "" : "s"} · details omitted` } } } }];
+    }
+    case "approval":
+      return [{ ...base, type: typeof data.decision === "string" ? "approval.resolved" : "approval.requested", data }];
+    case "error":
+      return [{ ...base, type: "provider.error", data: { ...data, message: item.text || data.message } }];
+    case "lifecycle":
+      return item.text ? [{ ...base, type: item.text, data }] : [];
+    case "unknown":
+      return [{ ...base, type: item.text || "unknown", data }];
+    default:
+      return [{ ...base, type: item.type || "turn.item", data }];
+  }
+}
+
+function replaceTurnEvents(events: AgentEvent[], turnId: string, replacement: AgentEvent[]): AgentEvent[] {
+  return compactTimelineEvents(mergeCanonicalEvents([...events.filter((event) => event.turnId !== turnId), ...replacement]));
+}
+
 function contextKey(workspaceId: string, runId: string): string {
   return workspaceId && runId ? `${workspaceId}:${runId}` : "";
 }
@@ -325,9 +502,24 @@ function eventsPath(context: ChatContext, query: string): string {
   return `/api/workspaces/${encodeURIComponent(context.workspaceId)}/agent/runs/${encodeURIComponent(context.runId)}/events?${query}`;
 }
 
+function turnsPath(context: ChatContext, query: string): string {
+  return `/api/workspaces/${encodeURIComponent(context.workspaceId)}/agent/runs/${encodeURIComponent(context.runId)}/turns?${query}`;
+}
+
+function turnPath(context: ChatContext, turnId: string): string {
+  return `/api/workspaces/${encodeURIComponent(context.workspaceId)}/agent/runs/${encodeURIComponent(context.runId)}/turns/${encodeURIComponent(turnId)}`;
+}
+
 function oldestEventId(events: AgentEvent[]): number {
   return events.reduce((oldest, event) => {
     const id = Number(event.id) || 0;
+    return id && (!oldest || id < oldest) ? id : oldest;
+  }, 0);
+}
+
+function oldestTurnCursor(turns: AgentTurn[]): number {
+  return turns.reduce((oldest, turn) => {
+    const id = Number(turn.firstEventId || turn.startEventId) || 0;
     return id && (!oldest || id < oldest) ? id : oldest;
   }, 0);
 }
@@ -342,6 +534,14 @@ function sessionIdentities(run: AgentRun | null): Set<string> {
 
 function isLiveRun(run: AgentRun | null): boolean {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(String(run?.status || ""));
+}
+
+function isTurnTerminal(event: AgentEvent): boolean {
+  return ["turn.completed", "turn.failed", "turn.cancelled"].includes(event.type);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function noticeIdentity(notice: AgentNotice): string {

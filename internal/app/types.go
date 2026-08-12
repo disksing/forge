@@ -6,10 +6,11 @@ import (
 )
 
 type Config struct {
-	Version      int          `json:"version"`
-	Language     string       `json:"language"`
-	InstanceID   string       `json:"instanceId,omitempty"`
-	AgentBinding AgentBinding `json:"agentBinding,omitempty"`
+	Version          int                   `json:"version"`
+	Language         string                `json:"language"`
+	InstanceID       string                `json:"instanceId,omitempty"`
+	AgentBinding     AgentBinding          `json:"agentBinding,omitempty"`
+	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults,omitempty"`
 }
 
 type AgentBinding struct {
@@ -24,8 +25,9 @@ type ResourceAgentDefaults struct {
 }
 
 type WorkspaceRuntimeConfig struct {
-	InstanceID   string       `json:"instanceId"`
-	AgentBinding AgentBinding `json:"agentBinding"`
+	InstanceID       string                `json:"instanceId"`
+	AgentBinding     AgentBinding          `json:"agentBinding"`
+	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults"`
 }
 
 type ResourceMeta struct {

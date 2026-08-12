@@ -110,6 +110,18 @@ function historyEvents(runId: string) {
   }));
 }
 
+function historyTurns(runId: string) {
+  return historyEvents(runId).map((event) => ({
+    id: event.turnId, turnId: event.turnId, status: "completed", closed: true,
+    startEventId: event.id, endEventId: event.id, firstEventId: event.id, lastEventId: event.id,
+    items: [{
+      type: "message", role: event.type === "message.input" ? "user" : "assistant",
+      sender: event.data.sender, text: event.data.text, startEventId: event.id, endEventId: event.id,
+      startedAt: event.time, endedAt: event.time, durationMs: 0, count: 1,
+    }],
+  }));
+}
+
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -233,6 +245,24 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
     const runMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])$/);
     if (runMatch && method === "GET") {
       return json(route, { run: runs.find((run) => run.id === runMatch[1]) });
+    }
+    const turnsMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/turns$/);
+    if (turnsMatch) {
+      if (url.searchParams.has("before")) {
+        return json(route, {
+          turns: [{
+            id: "turn-older", turnId: "turn-older", status: "completed", closed: true,
+            startEventId: 1, endEventId: 32, firstEventId: 1, lastEventId: 32,
+            items: [
+              { type: "message", role: "user", sender: { name: "Test User" }, text: `${turnsMatch[1]} older history`, startEventId: 1, endEventId: 1, startedAt: now, endedAt: now, count: 1 },
+              { type: "message", role: "assistant", text: `${turnsMatch[1]} older reply`, startEventId: 32, endEventId: 32, startedAt: now, endedAt: now, count: 1 },
+            ],
+          }],
+          latestEventId: 64, page: { hasMoreBefore: false },
+        });
+      }
+      if (turnsMatch[1] === "run-2") await new Promise((resolve) => setTimeout(resolve, 300));
+      return json(route, { turns: historyTurns(turnsMatch[1]), latestEventId: 64, page: { hasMoreBefore: true } });
     }
     const eventsMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/events$/);
     if (eventsMatch) {

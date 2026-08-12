@@ -16,6 +16,8 @@ type resolvedResourceAgent struct {
 	Binding         app.AgentBinding
 	AgentName       string
 	ProfileRevision string
+	ResolvedProfile string
+	ConfigError     string
 	InstanceID      string
 }
 
@@ -28,6 +30,55 @@ func runSourceInstanceID(cfg config, run agentRun) string {
 
 func sourceLookupKey(instanceID, externalID string) string {
 	return strings.TrimSpace(instanceID) + "\x00" + strings.TrimSpace(externalID)
+}
+
+func resourceAcceptsMessages(workspacePath, resourceID string) error {
+	resourceID = strings.TrimSpace(resourceID)
+	if resourceID == "" || resourceID == "workspace" {
+		return nil
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	if err != nil {
+		return err
+	}
+	value, err := forgeWorkspace.ResourceValue(resourceID)
+	if err != nil {
+		return err
+	}
+	if value.Archived {
+		return fmt.Errorf("resource %s is archived and no longer accepts messages", resourceID)
+	}
+	return nil
+}
+
+func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace guiWorkspace, resourceID string) (bool, error) {
+	runs, err := loadAgentRuns(workspace.Path)
+	if err != nil {
+		return false, err
+	}
+	_, client, configErr := m.agentHubRuntimeConfig()
+	for _, run := range runs {
+		if !agentRunMatchesResource(run, resourceID) {
+			continue
+		}
+		if run.Status == "running" || run.Status == "waiting_approval" {
+			return true, nil
+		}
+		if !isAgentHubRun(run) || strings.TrimSpace(run.AgentHubSessionID) == "" {
+			continue
+		}
+		if configErr != nil {
+			return false, fmt.Errorf("verify resource Turn state: %w", configErr)
+		}
+		session, fetchErr := client.GetSession(ctx, run.AgentHubSessionID)
+		if fetchErr != nil {
+			return false, fmt.Errorf("verify resource generation %s Turn state: %w", run.GenerationID, fetchErr)
+		}
+		if session.State == "running" || session.State == "waiting_approval" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (m *agentManager) resolveResourceAgent(workspace guiWorkspace, resourceID string, cfg config) (resolvedResourceAgent, error) {
@@ -48,16 +99,62 @@ func (m *agentManager) resolveResourceAgent(workspace guiWorkspace, resourceID s
 	case "agent":
 		resolved.AgentName = binding.Name
 	case "profile":
-		resolved.AgentName = configuredAgentProfileName(cfg.AgentProfiles, binding.Name)
+		requested := strings.ToLower(strings.TrimSpace(binding.Name))
+		resolved.ResolvedProfile = requested
+		resolved.AgentName = configuredAgentProfileName(cfg.AgentProfiles, requested)
 		if strings.TrimSpace(resolved.AgentName) == "" {
-			return resolvedResourceAgent{}, fmt.Errorf("Agent Profile %q has no AgentHub agent", binding.Name)
+			kind, kindErr := resourceAgentKind(forgeWorkspace, resourceID)
+			if kindErr != nil {
+				return resolvedResourceAgent{}, kindErr
+			}
+			fallback := resourceDefaultProfile(cfg.ResourceDefaults, kind)
+			fallbackAgent := configuredAgentProfileName(cfg.AgentProfiles, fallback)
+			if fallbackAgent != "" {
+				resolved.ResolvedProfile, resolved.AgentName = fallback, fallbackAgent
+			} else if global := configuredAgentProfileName(cfg.AgentProfiles, "default"); global != "" {
+				resolved.ResolvedProfile, resolved.AgentName = "default", global
+			} else {
+				return resolvedAgentError(resolved, requested, fallback)
+			}
+			resolved.ConfigError = fmt.Sprintf("Agent Profile %q cannot be resolved; using fallback Profile %q", requested, resolved.ResolvedProfile)
 		}
-		digest := sha256.Sum256([]byte(strings.ToLower(binding.Name) + "\x00" + resolved.AgentName))
+		digest := sha256.Sum256([]byte(requested + "\x00" + resolved.ResolvedProfile + "\x00" + resolved.AgentName + "\x00" + resolved.ConfigError))
 		resolved.ProfileRevision = hex.EncodeToString(digest[:8])
 	default:
 		return resolvedResourceAgent{}, fmt.Errorf("unsupported resource agent binding kind %q", binding.Kind)
 	}
 	return resolved, nil
+}
+
+func resourceAgentKind(workspace *app.Workspace, resourceID string) (string, error) {
+	if strings.TrimSpace(resourceID) == "" || strings.TrimSpace(resourceID) == "workspace" {
+		return "workspace", nil
+	}
+	value, err := workspace.ResourceValue(resourceID)
+	if err != nil {
+		return "", err
+	}
+	if value.Task != nil {
+		return "task", nil
+	}
+	return "project", nil
+}
+
+func resourceDefaultProfile(defaults resourceAgentDefaults, kind string) string {
+	defaults = normalizeResourceAgentDefaults(defaults)
+	switch kind {
+	case "workspace":
+		return defaults.Workspace
+	case "task":
+		return defaults.Task
+	default:
+		return defaults.Project
+	}
+}
+
+func resolvedAgentError(resolved resolvedResourceAgent, requested, fallback string) (resolvedResourceAgent, error) {
+	resolved.ConfigError = fmt.Sprintf("Agent Profile %q cannot be resolved; type default %q and global Profile \"default\" are unavailable", requested, fallback)
+	return resolved, errors.New(resolved.ConfigError + "; configure one of these Profiles before starting a new generation")
 }
 
 func nextResourceGeneration(workspacePath, resourceID string) (int, error) {
@@ -99,23 +196,21 @@ func newResourceMessage(text, userName string) resourceInboundMessage {
 }
 
 func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) error {
-	rt.mu.Lock()
-	for _, pending := range rt.run.PendingMessages {
-		if pending.ID == message.ID {
-			rt.mu.Unlock()
-			return nil
+	_, err := rt.mutateRun(func(run *agentRun) {
+		for _, pending := range run.PendingMessages {
+			if pending.ID == message.ID {
+				return
+			}
 		}
-	}
-	rt.run.PendingMessages = append(rt.run.PendingMessages, message)
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-	run := rt.run
-	rt.mu.Unlock()
-	return saveAgentRun(rt.workspace.Path, run)
+		run.PendingMessages = append(run.PendingMessages, message)
+		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	})
+	return err
 }
 
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
-// AgentHub's messages.idempotent capability makes an unknown response safe:
-// the same durable item stays queued and is retried after polling or restart.
+// AgentHub's at-least-once capability makes an unknown response safe: Forge
+// retains the same stable ID until AgentHub durably accepts retry ownership.
 func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *agentManager) error {
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
@@ -137,7 +232,7 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 		if state == "starting" || state == "stopping" || state == "stopped" || state == "archived" {
 			return nil
 		}
-		steer := state == "busy" || state == "waiting_approval"
+		steer := state == "running" || state == "waiting_approval"
 		if steer {
 			session, err := client.GetSession(ctx, run.AgentHubSessionID)
 			if err != nil {
@@ -154,26 +249,28 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 		if err != nil {
 			return err
 		}
-		rt.mu.Lock()
-		if len(rt.run.PendingMessages) > 0 && rt.run.PendingMessages[0].ID == message.ID {
-			rt.run.PendingMessages = append([]resourceInboundMessage(nil), rt.run.PendingMessages[1:]...)
-		}
-		rt.agentHubState = session.State
-		rt.run.Status = forgeStatusForAgentHubState(session.State)
-		rt.run.AgentHubSessionID = session.ID
-		rt.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-		updated := rt.run
-		rt.mu.Unlock()
-		if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
+		updated, err := rt.mutateRun(func(run *agentRun) {
+			if len(run.PendingMessages) > 0 && run.PendingMessages[0].ID == message.ID {
+				run.PendingMessages = append([]resourceInboundMessage(nil), run.PendingMessages[1:]...)
+			}
+			run.Status = forgeStatusForAgentHubState(session.State)
+			run.AgentHubSessionID = session.ID
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		if err != nil {
 			return err
 		}
+		rt.mu.Lock()
+		rt.agentHubState = session.State
+		rt.run = updated
+		rt.mu.Unlock()
 	}
 }
 
 // createResourceGeneration creates one durable generation while resourceMu is
 // held by the caller. Pending inputs already carry their stable message IDs,
 // so a replacement can transfer them without changing retry identity.
-func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, title, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent, pending []resourceInboundMessage) (agentRun, error) {
+func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, title, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent, pending []resourceInboundMessage, deliverPending bool) (agentRun, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
 		return agentRun{}, err
@@ -189,6 +286,8 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		BindingKind:       resolved.Binding.Kind,
 		BindingName:       resolved.Binding.Name,
 		ProfileRevision:   resolved.ProfileRevision,
+		ResolvedProfile:   resolved.ResolvedProfile,
+		AgentConfigError:  resolved.ConfigError,
 		AgentHubAgentName: resolved.AgentName,
 		Title:             strings.TrimSpace(title),
 		Cwd:               cwd,
@@ -212,7 +311,6 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 	}
 	run.ForgeSessionID = forgeSessionID
 	rt := newAgentHubRuntime(m, workspace, run, client)
-	m.registerRuntime(rt)
 	persisted := false
 	defer func() {
 		if !persisted {
@@ -224,6 +322,7 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		return agentRun{}, err
 	}
 	persisted = true
+	m.registerRuntime(rt)
 
 	source := agentHubSource{
 		App: agentHubSourceApp, InstanceID: run.SourceInstanceID, ExternalID: run.SourceExternalID,
@@ -242,24 +341,27 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		rt.setRecoveryError(m, err)
 		return rt.snapshotRun(), err
 	}
-	run.AgentHubSessionID = session.ID
-	if strings.TrimSpace(session.AgentName) != "" {
-		run.AgentHubAgentName = session.AgentName
+	run, err = rt.mutateRun(func(run *agentRun) {
+		run.AgentHubSessionID = session.ID
+		if strings.TrimSpace(session.AgentName) != "" {
+			run.AgentHubAgentName = session.AgentName
+		}
+		run.CompletionSessionID = session.ID
+		run.CompletionCursor = session.LastEventID
+	})
+	if err != nil {
+		rt.setRecoveryError(m, err)
+		return rt.snapshotRun(), err
 	}
-	run.CompletionSessionID = session.ID
-	run.CompletionCursor = session.LastEventID
-	rt.setRun(run)
 	if err := m.bindForgeSessionAgentHub(ctx, workspace, forgeSessionID, session.ID); err != nil {
 		rt.setRecoveryError(m, err)
 		return rt.snapshotRun(), err
 	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
-		rt.setRecoveryError(m, err)
-		return rt.snapshotRun(), err
-	}
 	rt.applyAgentHubSessionState(m, session)
-	if err := rt.deliverPendingResourceMessages(ctx, m); err != nil {
-		rt.addForgeNotice(m, "warning", "resource/message", "Message is durable and queued for retry: "+err.Error())
+	if deliverPending {
+		if err := rt.deliverPendingResourceMessages(ctx, m); err != nil {
+			rt.addForgeNotice(m, "warning", "resource/message", "Message is durable and queued for retry: "+err.Error())
+		}
 	}
 	return rt.snapshotRun(), nil
 }
@@ -276,29 +378,55 @@ func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace gui
 	}
 	resolved, err := m.resolveResourceAgent(workspace, resourceID, cfg)
 	if err != nil {
-		return err
-	}
-	if strings.EqualFold(run.AgentHubAgentName, resolved.AgentName) &&
-		run.BindingKind == resolved.Binding.Kind && run.BindingName == resolved.Binding.Name &&
-		run.ProfileRevision == resolved.ProfileRevision {
-		return nil
+		rt := m.runtimeByID(run.ID)
+		if rt == nil {
+			rt = newAgentHubRuntime(m, workspace, run, client)
+			m.registerRuntime(rt)
+		}
+		_, persistErr := rt.mutateRun(func(run *agentRun) {
+			run.AgentConfigError = resolved.ConfigError
+			run.ResolvedProfile = ""
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		return persistErr
 	}
 	rt := m.runtimeByID(run.ID)
 	if rt == nil {
 		rt = newAgentHubRuntime(m, workspace, run, client)
 		m.registerRuntime(rt)
 	}
-	rt.mu.Lock()
-	if rt.agentHubState == "busy" || rt.agentHubState == "waiting_approval" || run.Status == "running" || run.Status == "waiting_approval" {
-		rt.run.ReplacementPending = true
-		updated := rt.run
-		rt.mu.Unlock()
-		return saveAgentRun(workspace.Path, updated)
+	if strings.EqualFold(run.AgentHubAgentName, resolved.AgentName) {
+		if run.BindingKind == resolved.Binding.Kind && run.BindingName == resolved.Binding.Name &&
+			run.ProfileRevision == resolved.ProfileRevision && run.ResolvedProfile == resolved.ResolvedProfile &&
+			run.AgentConfigError == resolved.ConfigError {
+			return nil
+		}
+		_, err := rt.mutateRun(func(run *agentRun) {
+			run.BindingKind = resolved.Binding.Kind
+			run.BindingName = resolved.Binding.Name
+			run.ProfileRevision = resolved.ProfileRevision
+			run.ResolvedProfile = resolved.ResolvedProfile
+			run.AgentConfigError = resolved.ConfigError
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		return err
 	}
-	rt.run.ReplacementPending = true
-	updated := rt.run
+	rt.mu.Lock()
+	if rt.agentHubState == "running" || rt.agentHubState == "waiting_approval" || run.Status == "running" || run.Status == "waiting_approval" {
+		rt.mu.Unlock()
+		_, err := rt.mutateRun(func(run *agentRun) {
+			run.ReplacementPending = true
+			run.ResolvedProfile = resolved.ResolvedProfile
+			run.AgentConfigError = resolved.ConfigError
+		})
+		return err
+	}
 	rt.mu.Unlock()
-	if err := saveAgentRun(workspace.Path, updated); err != nil {
+	if _, err := rt.mutateRun(func(run *agentRun) {
+		run.ReplacementPending = true
+		run.ResolvedProfile = resolved.ResolvedProfile
+		run.AgentConfigError = resolved.ConfigError
+	}); err != nil {
 		return err
 	}
 	go m.retireResourceGeneration(context.WithoutCancel(ctx), rt)
@@ -306,20 +434,7 @@ func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace gui
 }
 
 func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next agentHubGUIConfig) error {
-	previousTargets := make(map[string]string, len(previous.AgentProfiles))
-	for _, route := range previous.AgentProfiles {
-		previousTargets[strings.ToLower(strings.TrimSpace(route.Key))] = strings.TrimSpace(route.AgentName)
-	}
-	changed := make(map[string]bool)
-	for _, route := range next.AgentProfiles {
-		before := previousTargets[strings.ToLower(strings.TrimSpace(route.Key))]
-		if !strings.EqualFold(strings.TrimSpace(before), strings.TrimSpace(route.AgentName)) {
-			changed[strings.ToLower(strings.TrimSpace(route.Key))] = true
-		}
-	}
-	if len(changed) == 0 {
-		return nil
-	}
+	_ = previous
 	var failures []string
 	for _, workspace := range next.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
@@ -328,6 +443,13 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
+			continue
+		}
+		effectiveDefaults := effectiveResourceAgentDefaults(next.ResourceDefaults, toConfigProfileRoutes(next.AgentProfiles))
+		if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
+		}); err != nil {
+			failures = append(failures, fmt.Sprintf("%s: persist resource defaults: %v", workspace.ID, err))
 			continue
 		}
 		runtimeConfig, err := forgeWorkspace.RuntimeConfig()
@@ -357,7 +479,7 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 			}
 		}
 		for _, item := range bindings {
-			if item.binding.Kind != "profile" || !changed[strings.ToLower(strings.TrimSpace(item.binding.Name))] {
+			if item.binding.Kind != "profile" {
 				continue
 			}
 			if err := m.resourceBindingChanged(ctx, workspace, item.id, item.binding); err != nil {
@@ -371,6 +493,14 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 	return nil
 }
 
+func toConfigProfileRoutes(routes []agentHubProfileRoute) []agentProfileRoute {
+	result := make([]agentProfileRoute, 0, len(routes))
+	for _, route := range routes {
+		result = append(result, agentProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
+	}
+	return result
+}
+
 func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRuntime) {
 	m.resourceMu.Lock()
 	defer m.resourceMu.Unlock()
@@ -379,44 +509,54 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
-	if run.Status == "stopped" || run.AgentHubStoppedObserved {
-		return
-	}
 	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
 		return
 	}
-	session, err := client.Stop(ctx, run.AgentHubSessionID)
+	session, err := client.GetSession(ctx, run.AgentHubSessionID)
 	if err != nil {
-		rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
+		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", err))
 		return
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for session.State != "stopped" && time.Now().Before(deadline) {
-		timer := time.NewTimer(200 * time.Millisecond)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
-		session, err = client.GetSession(ctx, run.AgentHubSessionID)
+	if session.State != "stopped" && session.State != "archived" {
+		session, err = client.Stop(ctx, run.AgentHubSessionID)
 		if err != nil {
+			rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
+			return
+		}
+		deadline := time.Now().Add(30 * time.Second)
+		for session.State != "stopped" && session.State != "archived" && time.Now().Before(deadline) {
+			timer := time.NewTimer(200 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			session, err = client.GetSession(ctx, run.AgentHubSessionID)
+			if err != nil {
+				return
+			}
+		}
+	}
+	if session.State != "stopped" && session.State != "archived" {
+		return
+	}
+	if session.State != "archived" {
+		if _, err := client.Archive(ctx, run.AgentHubSessionID); err != nil {
+			rt.setRecoveryError(m, fmt.Errorf("archive retired resource generation: %w", err))
 			return
 		}
 	}
-	if session.State != "stopped" {
+	updated, err := rt.mutateRun(func(run *agentRun) {
+		run.Status = "stopped"
+		run.AgentHubStoppedObserved = true
+		run.ReplacementPending = false
+		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	})
+	if err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("persist retired generation: %w", err))
 		return
 	}
-	if _, err := client.Archive(ctx, run.AgentHubSessionID); err != nil {
-		return
-	}
-	rt.mu.Lock()
-	rt.run.Status = "stopped"
-	rt.run.AgentHubStoppedObserved = true
-	rt.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-	updated := rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, updated)
 	if len(updated.PendingMessages) == 0 {
 		return
 	}
@@ -433,15 +573,76 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())
 		return
 	}
-	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Title, updated.Cwd, cfg, replacementClient, resolved, updated.PendingMessages)
+	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Title, updated.Cwd, cfg, replacementClient, resolved, nil, false)
 	if err != nil {
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement generation failed: "+err.Error())
 		return
 	}
-	rt.mu.Lock()
-	rt.run.PendingMessages = nil
-	updated = rt.run
-	rt.mu.Unlock()
-	_ = saveAgentRun(rt.workspace.Path, updated)
+	replacementRuntime := m.runtimeByID(replacement.ID)
+	if replacementRuntime == nil {
+		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement runtime disappeared before mailbox transfer")
+		return
+	}
+	if err := transferGenerationMailbox(rt, replacementRuntime); err != nil {
+		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement started but atomic mailbox transfer will be retried: "+err.Error())
+		return
+	}
+	if err := replacementRuntime.deliverPendingResourceMessages(ctx, m); err != nil {
+		replacementRuntime.addForgeNotice(m, "warning", "resource/message", "Transferred message is durable and queued for retry: "+err.Error())
+	}
 	rt.addForgeNotice(m, "info", "resource/replacement", "Started replacement resource generation "+replacement.GenerationID)
+}
+
+// transferGenerationMailbox publishes the old-empty/new-populated mailbox in
+// one atomic generations.json replacement. A crash can observe either side of
+// the transfer, never a state where accepted inputs exist in neither run.
+func transferGenerationMailbox(from, to *agentRuntime) error {
+	fromID, toID := from.snapshotRun().ID, to.snapshotRun().ID
+	first, second := from, to
+	if fromID > toID {
+		first, second = second, first
+	}
+	first.mu.Lock()
+	second.mu.Lock()
+	defer second.mu.Unlock()
+	defer first.mu.Unlock()
+
+	agentIndexMu.Lock()
+	defer agentIndexMu.Unlock()
+	runs, err := loadAgentRunsLocked(from.workspace.Path)
+	if err != nil {
+		return err
+	}
+	fromIndex, toIndex := -1, -1
+	for index := range runs {
+		switch runs[index].ID {
+		case fromID:
+			fromIndex = index
+		case toID:
+			toIndex = index
+		}
+	}
+	if fromIndex < 0 || toIndex < 0 {
+		return errors.New("generation disappeared during mailbox transfer")
+	}
+	pending := append([]resourceInboundMessage(nil), runs[fromIndex].PendingMessages...)
+	seen := make(map[string]bool, len(pending)+len(runs[toIndex].PendingMessages))
+	for _, message := range runs[toIndex].PendingMessages {
+		seen[message.ID] = true
+	}
+	for _, message := range pending {
+		if !seen[message.ID] {
+			runs[toIndex].PendingMessages = append(runs[toIndex].PendingMessages, message)
+			seen[message.ID] = true
+		}
+	}
+	runs[fromIndex].PendingMessages = nil
+	runs[fromIndex].UpdatedAt = time.Now().Format(time.RFC3339Nano)
+	runs[toIndex].UpdatedAt = runs[fromIndex].UpdatedAt
+	if err := writeAgentRunsIndexLocked(from.workspace.Path, runs); err != nil {
+		return err
+	}
+	from.run = cloneAgentRun(runs[fromIndex])
+	to.run = cloneAgentRun(runs[toIndex])
+	return nil
 }

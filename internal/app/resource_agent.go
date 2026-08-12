@@ -23,6 +23,14 @@ func normalizeDefaultProfile(value string) string {
 	return value
 }
 
+func normalizeResourceDefaults(value ResourceAgentDefaults) ResourceAgentDefaults {
+	return ResourceAgentDefaults{
+		Workspace: normalizeDefaultProfile(value.Workspace),
+		Project:   normalizeDefaultProfile(value.Project),
+		Task:      normalizeDefaultProfile(value.Task),
+	}
+}
+
 // NormalizeAgentBinding validates one explicit resource binding. An empty
 // legacy binding is normalized to the default Profile during migration.
 func NormalizeAgentBinding(value AgentBinding) (AgentBinding, error) {
@@ -69,6 +77,11 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 			return err
 		}
 		changed := false
+		normalizedDefaults := normalizeResourceDefaults(defaults)
+		if cfg.ResourceDefaults != normalizedDefaults {
+			cfg.ResourceDefaults = normalizedDefaults
+			changed = true
+		}
 		if strings.TrimSpace(cfg.InstanceID) == "" {
 			cfg.InstanceID, err = newWorkspaceInstanceID()
 			if err != nil {
@@ -99,7 +112,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 		if err := os.MkdirAll(filepath.Join(w.root, ".forge", "runtime"), 0o700); err != nil {
 			return err
 		}
-		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding}
+		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults}
 		return nil
 	})
 	if err != nil {
@@ -156,7 +169,7 @@ func (w *Workspace) RuntimeConfig() (WorkspaceRuntimeConfig, error) {
 	if strings.TrimSpace(cfg.InstanceID) == "" {
 		return WorkspaceRuntimeConfig{}, fmt.Errorf("Workspace resource runtime is not initialized")
 	}
-	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: binding}, nil
+	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: binding, ResourceDefaults: normalizeResourceDefaults(cfg.ResourceDefaults)}, nil
 }
 
 func (w *Workspace) ResourceAgentBinding(id string) (AgentBinding, error) {

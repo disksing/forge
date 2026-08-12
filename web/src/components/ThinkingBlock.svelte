@@ -4,7 +4,7 @@
   import Icon from "./Icon.svelte";
   import type { TimelineItem } from "./models";
 
-  let { item }: { item: TimelineItem } = $props();
+  let { item, onExpand = () => {} }: { item: TimelineItem; onExpand?: () => void } = $props();
 
   function title(): string {
     if (item.active) return "Thinking…";
@@ -15,7 +15,7 @@
   }
 </script>
 
-<details data-component-owner="event-timeline" class="agent-reasoning-note" open={item.active}>
+<details data-component-owner="event-timeline" class="agent-reasoning-note" open={item.active} ontoggle={(event) => { if (event.currentTarget.open) onExpand(); }}>
   <summary><Icon name="brain-circuit" /><span>{title()}</span><span class="agent-reasoning-chevron"><Icon name="chevron-right" /></span></summary>
   <p>{item.text || ""}</p>
 </details>

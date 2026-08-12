@@ -22,6 +22,9 @@ type proxyFakeAgentHub struct {
 	eventsBody         string
 	eventsStatus       int
 	eventsQueries      []url.Values
+	turnsBody          string
+	turnsPaths         []string
+	turnsQueries       []url.Values
 	streamQueries      []url.Values
 	streamLastEventIDs []string
 	streamBlock        bool
@@ -30,7 +33,21 @@ type proxyFakeAgentHub struct {
 }
 
 func (f *proxyFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !strings.HasPrefix(r.URL.Path, "/v1/sessions/") || !strings.HasSuffix(r.URL.Path, "/events") {
+	if !strings.HasPrefix(r.URL.Path, "/v1/sessions/") {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.Contains(r.URL.Path, "/turns") {
+		f.mu.Lock()
+		f.turnsPaths = append(f.turnsPaths, r.URL.Path)
+		f.turnsQueries = append(f.turnsQueries, r.URL.Query())
+		body := f.turnsBody
+		f.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, body)
+		return
+	}
+	if !strings.HasSuffix(r.URL.Path, "/events") {
 		http.NotFound(w, r)
 		return
 	}
@@ -153,6 +170,34 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	latestQuery := fake.eventsQuery(t, 1)
 	if latestQuery.Get("latest") != "true" || latestQuery.Get("limit") != "250" || latestQuery.Get("before") != "" {
 		t.Fatalf("latest query was not forwarded verbatim: %s", latestQuery.Encode())
+	}
+}
+
+func TestAgentHubProxyTurnsAndBoundedEvents(t *testing.T) {
+	fake := &proxyFakeAgentHub{turnsBody: `{"turn":{"id":"turn-one"},"latestEventId":9}`, eventsBody: `{"events":[]}`}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace := newProxyTestManager(t, hub.URL)
+	registerProxyTestRun(manager, workspace, agentRun{ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle"})
+
+	turns := httptest.NewRecorder()
+	manager.handle(turns, httptest.NewRequest(http.MethodGet, "/runs/run-one/turns/turn-one", nil), workspace.ID, []string{"runs", "run-one", "turns", "turn-one"})
+	if turns.Code != http.StatusOK || turns.Body.String() != fake.turnsBody {
+		t.Fatalf("single Turn proxy = %d %s", turns.Code, turns.Body.String())
+	}
+	bounded := httptest.NewRecorder()
+	manager.handle(bounded, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?start=2&end=9&after=5&limit=3", nil), workspace.ID, []string{"runs", "run-one", "events"})
+	if bounded.Code != http.StatusOK {
+		t.Fatalf("bounded Event proxy = %d %s", bounded.Code, bounded.Body.String())
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.turnsPaths) != 1 || fake.turnsPaths[0] != "/v1/sessions/ses_one/turns/turn-one" {
+		t.Fatalf("Turn path = %#v", fake.turnsPaths)
+	}
+	query := fake.eventsQueries[len(fake.eventsQueries)-1]
+	if query.Get("start") != "2" || query.Get("end") != "9" || query.Get("after") != "5" || query.Get("limit") != "3" {
+		t.Fatalf("bounded Event query = %s", query.Encode())
 	}
 }
 

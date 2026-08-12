@@ -1351,7 +1351,17 @@ function clearAgentRenderTimer(): void {
 function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
 	if (!window.AgentHubEventTimeline?.buildTimeline) throw new Error("AgentHub Event Timeline library is unavailable");
 	const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
-	return window.AgentHubEventTimeline.buildTimeline(visibleEvents) as TimelineItem[];
+	const items = window.AgentHubEventTimeline.buildTimeline(visibleEvents) as TimelineItem[];
+	const byID = new Map(visibleEvents.map((event) => [Number(event.id), event]));
+	for (const item of items) {
+		const event = byID.get(Number(item.key));
+		const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;
+		if (!range) continue;
+		item.compact = true;
+		item.rangeStartEventId = Number(range.start) || Number(event?.id) || 0;
+		item.rangeEndEventId = Number(range.end) || item.rangeStartEventId;
+	}
+	return items;
 }
 function renderAgent(): void {
 	const activeRun = currentAgentRun();
