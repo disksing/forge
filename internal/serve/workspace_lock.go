@@ -241,7 +241,7 @@ func (s *server) requireWorkspaceOwnership(workspacePath string) error {
 // acquireConfiguredWorkspaceLocks takes ownership of every configured
 // Workspace in stable canonical-path order. The semantics are all or
 // nothing: any conflict aborts startup and releases every lock acquired in
-// this round, so a serve instance never runs a partial set of schedulers.
+// this round, so a serve instance never manages only part of its configured workspaces.
 func (s *server) acquireConfiguredWorkspaceLocks() error {
 	if s.locks == nil {
 		return nil

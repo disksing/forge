@@ -1,26 +1,24 @@
 package app_test
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/disksing/forge/internal/app"
 )
 
-func TestLegacySessionResourceFieldsAreIgnoredAndRemoved(t *testing.T) {
+func TestSessionAPIExposesOnlyAgentHubRecordsAndReadDoesNotRewrite(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().Add(-time.Minute).Format(time.RFC3339)
-	// Use this process so stale-session pruning retains the compatibility record.
-	legacy := fmt.Sprintf(`{"version":1,"sessions":[{"id":"session-legacy","primary":"project1.task1","controls":[{"resourceId":"project1.task1","path":"project1/task1"}],"liveness":{"type":"pid","pid":%d},"startedAt":"%s","updatedAt":"%s"}]}`, os.Getpid(), now, now)
 	path := filepath.Join(root, "forge-sessions.json")
+	legacy := `{"version":1,"sessions":[` +
+		`{"id":"legacy-pid","primary":"project1.task1","liveness":{"type":"pid","pid":123},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+		`{"id":"session-agenthub","controls":[{"resourceId":"project1.task1"}],"liveness":{"type":"agenthub","sourceApp":"forge","sourceInstanceId":"instance","sourceExternalId":"workspace/run"},"startedAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
 	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -29,17 +27,47 @@ func TestLegacySessionResourceFieldsAreIgnoredAndRemoved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(sessions) != 1 || sessions[0].ID != "session-legacy" {
-		t.Fatalf("legacy session was not retained: %#v", sessions)
+	if len(sessions) != 1 || sessions[0].ID != "session-agenthub" {
+		t.Fatalf("unexpected sessions: %#v", sessions)
 	}
-	if _, err := workspace.Heartbeat("session-legacy"); err != nil {
+	if _, err := workspace.Session("legacy-pid"); err == nil {
+		t.Fatal("legacy PID session should not be exposed")
+	}
+	if data, err := os.ReadFile(path); err != nil {
+		t.Fatal(err)
+	} else if string(data) != legacy {
+		t.Fatalf("read-only session API rewrote the store: %s", data)
+	}
+}
+
+func TestSessionMutationRejectsLegacyTypeAndDropsLegacyRecords(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.CreateSession(app.SessionLiveness{Type: "heartbeat"}); err == nil {
+		t.Fatal("heartbeat session creation should be rejected")
+	}
+	path := filepath.Join(root, "forge-sessions.json")
+	legacy := `{"version":1,"sessions":[{"id":"legacy-heartbeat","liveness":{"type":"heartbeat","timeout":"1h"},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`
+	if err := os.WriteFile(path, []byte(legacy), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	created, err := workspace.CreateSession(app.SessionLiveness{
+		Type: "agenthub", SourceApp: "forge", SourceInstanceID: "instance", SourceExternalID: "workspace/run",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.BindAgentHubSession(created.ID, "ses_one"); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), `"primary"`) || strings.Contains(string(data), `"controls"`) {
-		t.Fatalf("legacy resource ownership fields survived rewrite: %s", data)
+	if strings.Contains(string(data), "legacy-heartbeat") || strings.Contains(string(data), `"timeout"`) {
+		t.Fatalf("legacy liveness survived a production mutation: %s", data)
 	}
 }

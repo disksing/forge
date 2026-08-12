@@ -93,7 +93,7 @@ The main UI is split into navigation, resource details, and agent chat:
 - **Navigation:** switch workspaces, expand the project/task tree, and monitor active or external sessions.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** start, close, resume, or revisit sessions; end the current turn while keeping the Session open; stream responses and tool activity; answer approvals; and upload files.
-- **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents. The user name defaults to `User` and is not written to server configuration or workspace data.
+- **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map the `default`, `fast`, and `reasoning` system Profiles or ordinary custom Profiles to catalog agents. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
@@ -103,7 +103,7 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge retains workspace/task/Profile control and a minimal transient record for active GUI sessions. `forge serve` owns AgentHub session reconciliation: it removes that record only after observing a durable terminal state, or proving through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the record for later reconciliation. Plain CLI commands (`forge session list/show/new/heartbeat/end`, `forge workspace tree`, and resource archival) never contact AgentHub. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
+Forge retains workspace/task/Profile control and a minimal transient record for active GUI sessions. `forge serve` is the only component that creates, binds, and removes those records while reconciling AgentHub lifecycle state. It removes a record only after observing a durable terminal state, or proving through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the record for later reconciliation. `forge session list` and `forge session show` are read-only local diagnostics and never contact AgentHub; there are no public commands for manually creating, binding, heartbeating, ending, or taking over a Session. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
 
 Useful overrides:
 
@@ -195,7 +195,7 @@ Templates without `schema-version` remain visible as legacy V1 templates with de
 AgentWorkspace/
   AGENTS.md                   global human and agent instructions
   forge.json                  workspace configuration
-  forge-sessions.json         active session and lock registry
+  forge-sessions.json         transient AgentHub Session projections for forge serve
   wiki/
     index.md                  long-lived workspace knowledge
   repos/
@@ -263,7 +263,8 @@ forge task show|archive ...
 forge task log add|list ...
 forge task repo add|list|remove ...
 
-forge session new|heartbeat|end|list|show ...
+forge session list
+forge session show --id=<id>
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json

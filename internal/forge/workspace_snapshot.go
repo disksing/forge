@@ -364,21 +364,12 @@ func skipFileTreeDir(entry os.DirEntry) bool {
 }
 
 func activeSessions(root string) ([]Session, error) {
-	var sessions []Session
-	err := withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		sessions = append([]Session(nil), store.Sessions...)
-		sortSessions(sessions)
-		return nil
-	})
+	workspace, err := app.OpenWorkspace(root)
 	if err != nil {
 		if strings.Contains(err.Error(), "could not find AgentWorkspace root") {
 			return nil, nil
 		}
 		return nil, err
 	}
-	if sessions == nil {
-		sessions = []Session{}
-	}
-	return sessions, nil
+	return workspace.Sessions()
 }

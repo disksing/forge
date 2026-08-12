@@ -71,8 +71,8 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	if err := json.Unmarshal(saved, &savedConfig); err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentHubProfileTarget(savedConfig.AgentProfiles, "scheduler"); got != "kimi-k3" {
-		t.Fatalf("saved scheduler target = %q, want inherited kimi-k3: %+v", got, savedConfig.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(savedConfig.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("save synthesized a scheduler profile: %+v", savedConfig.AgentProfiles)
 	}
 	usesAgentHub, err := server.validatePersistedAgentHubConfig(context.Background())
 	if err != nil || !usesAgentHub {
@@ -135,7 +135,7 @@ func TestAgentHubSettingsSaveAllowsUnavailableProfileTarget(t *testing.T) {
 	}
 }
 
-func TestAgentHubSettingsReadPersistsMissingScheduler(t *testing.T) {
+func TestAgentHubSettingsReadDoesNotSynthesizeScheduler(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
 	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -174,22 +174,22 @@ func TestAgentHubSettingsReadPersistsMissingScheduler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentHubProfileTarget(response.Config.AgentProfiles, "scheduler"); got != "kimi-k3" {
-		t.Fatalf("settings response scheduler target = %q, want kimi-k3: %+v", got, response.Config.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(response.Config.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("settings response synthesized scheduler: %+v", response.Config.AgentProfiles)
 	}
 	persisted, err := readAgentHubConfigFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentHubProfileTarget(persisted.AgentProfiles, "scheduler"); got != "kimi-k3" {
-		t.Fatalf("settings migration did not persist scheduler target: %q (%+v)", got, persisted.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(persisted.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("settings normalization persisted scheduler: %+v", persisted.AgentProfiles)
 	}
 	reloaded, err := server.readAgentHubSettings(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentHubProfileTarget(reloaded.Config.AgentProfiles, "scheduler"); got != "kimi-k3" {
-		t.Fatalf("settings reload scheduler target = %q, want kimi-k3: %+v", got, reloaded.Config.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(reloaded.Config.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("settings reload synthesized scheduler: %+v", reloaded.Config.AgentProfiles)
 	}
 }
 
@@ -245,8 +245,8 @@ func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
 	if len(cfg.AgentProfiles) != len(systemAgentProfileDefinitions)+1 || configuredAgentHubProfileTarget(cfg.AgentProfiles, "deep") != "gpt-5.6-sol" {
 		t.Fatalf("unexpected normalized profile routes: %+v", cfg.AgentProfiles)
 	}
-	if configuredAgentHubProfileTarget(cfg.AgentProfiles, "scheduler") != "gpt-5.6-sol" {
-		t.Fatalf("scheduler should inherit the default target: %+v", cfg.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("normalization synthesized scheduler: %+v", cfg.AgentProfiles)
 	}
 	for index := range cfg.AgentProfiles {
 		if cfg.AgentProfiles[index].Key == "deep" {
@@ -276,7 +276,7 @@ func TestSystemAgentProfilesAreFixedAndReserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.AgentProfiles) != len(systemAgentProfileDefinitions)+1 {
+	if len(cfg.AgentProfiles) != len(systemAgentProfileDefinitions)+2 {
 		t.Fatalf("unexpected profile count: %+v", cfg.AgentProfiles)
 	}
 	for _, definition := range systemAgentProfileDefinitions {
@@ -290,54 +290,29 @@ func TestSystemAgentProfilesAreFixedAndReserved(t *testing.T) {
 		t.Fatalf("unavailable custom target was not preserved: %+v", cfg.AgentProfiles)
 	}
 	if got := configuredAgentHubProfileTarget(cfg.AgentProfiles, "scheduler"); got != "grok-4.5" {
-		t.Fatalf("explicit scheduler target was not preserved: %q (%+v)", got, cfg.AgentProfiles)
+		t.Fatalf("ordinary custom scheduler target was not preserved: %q (%+v)", got, cfg.AgentProfiles)
+	}
+	scheduler, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "scheduler")
+	if !ok || scheduler.Description != "user override" {
+		t.Fatalf("scheduler should be normalized as an ordinary custom profile: %+v", cfg.AgentProfiles)
 	}
 }
 
-func TestSchedulerProfileFallbackAndNoAvailableAgents(t *testing.T) {
+func TestNoSchedulerProfileIsSynthesized(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cases := []struct {
-		name          string
-		routes        []agentHubProfileRoute
-		wantScheduler string
-	}{
-		{
-			name:          "uses first available agent without default",
-			routes:        []agentHubProfileRoute{{Key: "fast", AgentName: "kimi-k3"}},
-			wantScheduler: "gpt-5.3-codex-spark",
-		},
-		{
-			name:          "does not invent a target when no agent is available",
-			routes:        nil,
-			wantScheduler: "",
-		},
+	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+		AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "stable-id",
+	}, catalog)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, test := range cases {
-		t.Run(test.name, func(t *testing.T) {
-			testCatalog := catalog
-			if test.wantScheduler == "" {
-				testCatalog.Agents = append([]agentHubAgent(nil), catalog.Agents...)
-				for index := range testCatalog.Agents {
-					testCatalog.Agents[index].Available = false
-				}
-			}
-			cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
-				AgentHubEndpoint:   defaultAgentHubEndpoint,
-				AgentHubInstanceID: "stable-id",
-				AgentProfiles:      test.routes,
-			}, testCatalog)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if got := configuredAgentHubProfileTarget(cfg.AgentProfiles, "scheduler"); got != test.wantScheduler {
-				t.Fatalf("scheduler target = %q, want %q; routes=%+v", got, test.wantScheduler, cfg.AgentProfiles)
-			}
-		})
+	if _, ok := findAgentHubProfileRoute(cfg.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("scheduler was synthesized: %+v", cfg.AgentProfiles)
 	}
 }
 
-func TestLoadConfigPersistsSchedulerMigration(t *testing.T) {
+func TestLoadConfigDoesNotPersistSchedulerMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "gui.json")
 	legacy := agentHubGUIConfig{
 		Version: agentHubConfigVersion, AgentHubEndpoint: defaultAgentHubEndpoint,
@@ -360,26 +335,26 @@ func TestLoadConfigPersistsSchedulerMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentProfileName(cfg.AgentProfiles, "scheduler"); got != "default-agent" {
-		t.Fatalf("loaded scheduler target = %q, want inherited default-agent: %+v", got, cfg.AgentProfiles)
+	if got := configuredAgentProfileName(cfg.AgentProfiles, "scheduler"); got != "" {
+		t.Fatalf("load synthesized scheduler target %q: %+v", got, cfg.AgentProfiles)
 	}
 	persisted, err := readAgentHubConfigFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentHubProfileTarget(persisted.AgentProfiles, "scheduler"); got != "default-agent" {
-		t.Fatalf("persisted scheduler target = %q, want inherited default-agent: %+v", got, persisted.AgentProfiles)
+	if _, ok := findAgentHubProfileRoute(persisted.AgentProfiles, "scheduler"); ok {
+		t.Fatalf("load persisted scheduler: %+v", persisted.AgentProfiles)
 	}
 	reloaded, err := (&server{config: path}).loadConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := configuredAgentProfileName(reloaded.AgentProfiles, "scheduler"); got != "default-agent" {
-		t.Fatalf("reloaded scheduler target = %q, want inherited default-agent: %+v", got, reloaded.AgentProfiles)
+	if got := configuredAgentProfileName(reloaded.AgentProfiles, "scheduler"); got != "" {
+		t.Fatalf("reload synthesized scheduler target %q: %+v", got, reloaded.AgentProfiles)
 	}
 }
 
-func TestAgentHubRunAgentResolvesSchedulerProfile(t *testing.T) {
+func TestAgentHubRunAgentResolvesCustomProfileNamedScheduler(t *testing.T) {
 	name, err := resolveAgentHubRunAgent(config{
 		Version:       agentHubConfigVersion,
 		AgentProfiles: []agentProfileRoute{{Key: "scheduler", AgentName: "scheduler-agent"}},
@@ -388,7 +363,7 @@ func TestAgentHubRunAgentResolvesSchedulerProfile(t *testing.T) {
 		t.Fatal(err)
 	}
 	if name != "scheduler-agent" {
-		t.Fatalf("scheduler profile resolved to %q", name)
+		t.Fatalf("custom scheduler profile resolved to %q", name)
 	}
 }
 

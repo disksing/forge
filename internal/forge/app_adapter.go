@@ -176,59 +176,6 @@ func applicationLogList(kind, projectID, taskID string, jsonOutput bool) error {
 	return nil
 }
 
-func applicationSessionNew(liveness app.SessionLiveness) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.CreateSession(liveness)
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(os.Stdout, session.ID)
-	return err
-}
-
-func applicationSessionNewLocal(liveness SessionLiveness) error {
-	return applicationSessionNew(app.SessionLiveness(liveness))
-}
-
-func applicationSessionBind(id, agentHubID string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.BindAgentHubSession(id, agentHubID)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
-}
-
-func applicationSessionHeartbeat(id string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.Heartbeat(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
-}
-
-func applicationSessionEnd(id string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.EndSession(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
-}
-
 func applicationSessionList() error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {

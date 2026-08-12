@@ -7,7 +7,8 @@ import (
 	"time"
 )
 
-// CreateSession persists a session with the supplied liveness projection.
+// CreateSession persists the transient Forge projection required by forge
+// serve for one AgentHub Session. It is not exposed by the public CLI.
 func (w *Workspace) CreateSession(liveness SessionLiveness) (Session, error) {
 	if err := w.require(); err != nil {
 		return Session{}, err
@@ -35,8 +36,8 @@ func (w *Workspace) BindAgentHubSession(sessionID, agentHubSessionID string) (Se
 		return Session{}, &APIError{Operation: "bind AgentHub session", Kind: "session", Workspace: w.root, ResourceID: sessionID, Err: errors.New("Forge and AgentHub session ids are required")}
 	}
 	var session Session
-	err := withLockedSessionStore(w.root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
+	err := withLockedSessionStore(w.root, func(store *sessionStore) error {
+		discardLegacySessions(store)
 		index := findSessionIndex(store.Sessions, sessionID)
 		if index < 0 {
 			return fmt.Errorf("session not found: %s", sessionID)
@@ -59,40 +60,16 @@ func (w *Workspace) BindAgentHubSession(sessionID, agentHubSessionID string) (Se
 	return session, nil
 }
 
-// Heartbeat refreshes a session timestamp.
-func (w *Workspace) Heartbeat(sessionID string) (Session, error) {
-	if err := w.require(); err != nil {
-		return Session{}, err
-	}
-	sessionID = strings.TrimSpace(sessionID)
-	var session Session
-	err := withLockedSessionStore(w.root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		index := findSessionIndex(store.Sessions, sessionID)
-		if index < 0 {
-			return fmt.Errorf("session not found: %s", sessionID)
-		}
-		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
-		session = store.Sessions[index]
-		return nil
-	})
-	if err != nil {
-		return Session{}, &APIError{Operation: "heartbeat session", Kind: "session", Workspace: w.root, ResourceID: sessionID, Err: err}
-	}
-	return session, nil
-}
-
-// Session returns one active session after local stale pruning.
+// Session returns one AgentHub-backed projection without modifying the store.
 func (w *Workspace) Session(sessionID string) (Session, error) {
 	if err := w.require(); err != nil {
 		return Session{}, err
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	var session Session
-	err := withLockedSessionStore(w.root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
+	err := withLockedSessionStore(w.root, func(store *sessionStore) error {
 		index := findSessionIndex(store.Sessions, sessionID)
-		if index < 0 {
+		if index < 0 || store.Sessions[index].Liveness.Type != "agenthub" {
 			return fmt.Errorf("session not found: %s", sessionID)
 		}
 		session = store.Sessions[index]
@@ -104,15 +81,15 @@ func (w *Workspace) Session(sessionID string) (Session, error) {
 	return session, nil
 }
 
-// Sessions returns active sessions sorted by the existing CLI ordering.
+// Sessions returns AgentHub-backed projections sorted for read-only CLI and
+// workspace diagnostics. It does not prune or rewrite the store.
 func (w *Workspace) Sessions() ([]Session, error) {
 	if err := w.require(); err != nil {
 		return nil, err
 	}
 	var sessions []Session
-	err := withLockedSessionStore(w.root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		sessions = append([]Session(nil), store.Sessions...)
+	err := withLockedSessionStore(w.root, func(store *sessionStore) error {
+		sessions = activeAgentHubSessions(store.Sessions)
 		sortSessions(sessions)
 		return nil
 	})
@@ -125,7 +102,8 @@ func (w *Workspace) Sessions() ([]Session, error) {
 	return sessions, nil
 }
 
-// EndSession explicitly removes exactly one session. AgentHub is never queried here.
+// EndSession removes one transient projection after forge serve has reconciled
+// a durable AgentHub terminal state. It is not exposed by the public CLI.
 func (w *Workspace) EndSession(sessionID string) (Session, error) {
 	if err := w.require(); err != nil {
 		return Session{}, err

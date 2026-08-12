@@ -362,10 +362,6 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
-forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
-forge session heartbeat --id=<id>
-forge session end --id=<id>
 forge session list
 forge session show --id=<id>
 
@@ -390,7 +386,7 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge task archive`" + ` 将开放任务移入项目的 archive；` + "`forge project archive`" + ` 将开放项目移入 workspace 的 ` + "`archive/`" + `。
 - ` + "`forge task log add/list`" + ` 和 ` + "`forge project log add/list`" + ` 读写结构化 ` + "`log.jsonl`" + `。日志按最新优先显示，` + "`--details -`" + ` 从标准输入读取多行详情。
 - ` + "`forge task repo add/list/remove`" + ` 在任务的 ` + "`task.json`" + ` 中记录、列出或删除相关仓库。任务选择规则与 ` + "`forge task show`" + ` 相同。项目不保存仓库元数据。
-- ` + "`forge session new`" + ` 创建 session 并打印唯一 ID。默认使用 heartbeat 存活方式；也可显式指定 ` + "`--heartbeat [--timeout <duration>]`" + `，或用 ` + "`--pid <pid>`" + ` 绑定进程。Forge GUI 使用持久化 endpoint 与完整 source 的 AgentHub 存活方式，并用 ` + "`forge session bind-agenthub`" + ` 保存最终 AgentHub session ID。普通 CLI 命令不会访问 AgentHub：AgentHub 管理的 session 始终保持活动，直到 ` + "`forge serve`" + ` 根据 AgentHub 的持久终态完成对账，或用户显式结束它。` + "`heartbeat`" + ` 刷新时间戳；` + "`end`" + ` 立即结束 session；` + "`list/show`" + ` 用于查看 session。
+- ` + "`forge session list`" + ` 和 ` + "`forge session show --id=<id>`" + ` 仅用于只读诊断 ` + "`forge serve`" + ` 管理的瞬态 AgentHub Session 投影；它们不会创建、修改、结束、接管或访问 AgentHub Session。
 - ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
 `

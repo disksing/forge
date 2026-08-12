@@ -97,7 +97,7 @@ describe("timeline rendering components", () => {
   it("renders lifecycle, provider error, Forge notice, and unknown-event fallbacks directly", () => {
     expect(mounted(LifecycleNotice, { item: { kind: "lifecycle", tone: "ok", text: "Completed" } }).querySelector(".agent-lifecycle-ok")?.textContent).toContain("Completed");
     expect(mounted(TimelineNotice, { title: "Provider error", text: "failed", error: true, alert: true }).querySelector('[role="alert"]')?.textContent).toContain("Provider error failed");
-    expect(mounted(TimelineNotice, { title: "Forge", text: "Scheduler failed", error: true }).querySelector(".timeline-notice-error")?.textContent).toContain("Forge Scheduler failed");
+    expect(mounted(TimelineNotice, { title: "Forge", text: "Coordinator failed", error: true }).querySelector(".timeline-notice-error")?.textContent).toContain("Forge Coordinator failed");
     expect(mounted(UnknownEvent, { item: { kind: "mystery", type: "provider.mystery", preview: "raw payload" } }).textContent).toContain("Unhandled event: provider.mysteryraw payload");
   });
 });

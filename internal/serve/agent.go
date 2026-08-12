@@ -443,14 +443,13 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
 		Type: "agenthub", Endpoint: endpoint, SourceApp: "forge",
 		SourceInstanceID: cfg.AgentHubInstanceID, SourceExternalID: sourceExternalID,
-		StartingGrace: "30s",
 	})
 	if err != nil {
 		return "", err
 	}
 	sessionID := strings.TrimSpace(session.ID)
 	if sessionID == "" {
-		return "", errors.New("forge session new returned an empty id")
+		return "", errors.New("internal Forge session creation returned an empty id")
 	}
 	return sessionID, nil
 }

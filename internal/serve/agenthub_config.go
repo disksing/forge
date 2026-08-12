@@ -16,16 +16,14 @@ const (
 )
 
 type systemAgentProfileDefinition struct {
-	Key                  string
-	Description          string
-	InheritDefaultTarget bool
+	Key         string
+	Description string
 }
 
 var systemAgentProfileDefinitions = []systemAgentProfileDefinition{
 	{Key: "default", Description: "Balanced, recommended agent"},
 	{Key: "fast", Description: "Faster responses for simple tasks"},
 	{Key: "reasoning", Description: "More thorough reasoning for complex tasks"},
-	{Key: "scheduler", Description: "Task scheduling and coordination", InheritDefaultTarget: true},
 }
 
 type agentHubGUIConfig struct {
@@ -101,17 +99,12 @@ func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agent
 	if len(available) > 0 {
 		fallback = available[0].Name
 	}
-	defaultTarget := strings.TrimSpace(systemTargets["default"])
 	normalized := make([]agentHubProfileRoute, 0, len(routes)+len(systemAgentProfileDefinitions))
 	seen := make(map[string]bool, len(routes)+len(systemAgentProfileDefinitions))
 	for _, definition := range systemAgentProfileDefinitions {
 		agentName := strings.TrimSpace(systemTargets[definition.Key])
 		if agentName == "" {
-			if definition.InheritDefaultTarget && defaultTarget != "" {
-				agentName = defaultTarget
-			} else {
-				agentName = fallback
-			}
+			agentName = fallback
 		}
 		canonicalName, err := canonicalAgentHubAgentName(agentName, catalog.Agents)
 		if err != nil {

@@ -4,16 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
-	"time"
 	"unicode"
 
 	"github.com/disksing/forge/internal/buildinfo"
@@ -35,22 +30,11 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestSortSessionsUsesStartedAtInstantNewestFirst(t *testing.T) {
-	sessions := []Session{
-		{ID: "older", StartedAt: "2026-07-27T16:19:55+08:00"},
-		{ID: "newer", StartedAt: "2026-07-27T09:01:15Z"},
-	}
-	sortSessions(sessions)
-	if sessions[0].ID != "newer" || sessions[1].ID != "older" {
-		t.Fatalf("expected sessions newest first by parsed instant, got: %#v", sessions)
-	}
-}
-
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected forge start to be unknown, got %v", err)
 	}
-	for _, subcommand := range []string{"lock", "unlock"} {
+	for _, subcommand := range []string{"lock", "unlock", "new", "bind-agenthub", "heartbeat", "end"} {
 		if _, err := runErr(t, "session", subcommand, "--id=test"); err == nil || !strings.Contains(err.Error(), "unknown session subcommand") {
 			t.Fatalf("expected forge session %s to be unknown, got %v", subcommand, err)
 		}
@@ -628,7 +612,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] <description>",
 		"  forge template list [--project=<project>] [--json]",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
+		"  forge session list\n  forge session show --id=<id>",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
 		"  forge init [--language=<language>]",
@@ -637,7 +621,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] <description>",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
 		"  forge template list|show|validate|render|create|migrate ...",
-		"  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url>",
+		"  forge session list\n    List the transient AgentHub Session projections managed by forge serve.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0
@@ -860,264 +844,37 @@ func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
 	})
 }
 
-func TestSessionCommandsPruneExpiredSessions(t *testing.T) {
+func TestSessionListAndShowAreReadOnlyAgentHubDiagnostics(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "project", "create", "Session project")
-		run(t, "task", "create", "--project=project1", "Session task")
-		stale := SessionStore{
-			Version: 1,
-			Sessions: []Session{{
-				ID:        "stale",
-				Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1s"},
-				StartedAt: "2026-01-01T00:00:00Z",
-				UpdatedAt: "2026-01-01T00:00:00Z",
-			}},
-		}
-		if err := writeJSON(filepath.Join(root, sessionStateFile), stale); err != nil {
+		path := filepath.Join(root, "forge-sessions.json")
+		store := `{"version":1,"sessions":[` +
+			`{"id":"legacy-pid","liveness":{"type":"pid","pid":123},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+			`{"id":"legacy-heartbeat","liveness":{"type":"heartbeat","timeout":"1h"},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+			`{"id":"session-agenthub","liveness":{"type":"agenthub","sourceExternalId":"workspace/run","agentHubSessionId":"ses_one","lastKnownState":"legacy"},"startedAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
+		if err := os.WriteFile(path, []byte(store), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		before := readFile(t, path)
 
-		id := strings.TrimSpace(run(t, "session", "new"))
 		listed := run(t, "session", "list")
-		if strings.Contains(listed, "stale") || !strings.Contains(listed, id) {
-			t.Fatalf("expected stale session to be pruned and active session to remain, got:\n%s", listed)
+		if !strings.Contains(listed, "session-agenthub\tagenthub:ses_one") ||
+			strings.Contains(listed, "legacy-pid") || strings.Contains(listed, "legacy-heartbeat") {
+			t.Fatalf("unexpected read-only session list:\n%s", listed)
 		}
-	})
-}
-
-func TestSessionNewSupportsPIDLiveness(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		id := strings.TrimSpace(run(t, "session", "new", "--pid", strconv.Itoa(os.Getpid())))
-		listed := run(t, "session", "list")
-		if !strings.Contains(listed, id+"\tpid:") {
-			t.Fatalf("expected pid liveness session in list, got:\n%s", listed)
+		shown := run(t, "session", "show", "--id", "session-agenthub")
+		if !strings.Contains(shown, `"agentHubSessionId": "ses_one"`) {
+			t.Fatalf("unexpected session JSON:\n%s", shown)
 		}
-		shown := run(t, "session", "show", "--id", id)
-		if !strings.Contains(shown, `"type": "pid"`) || !strings.Contains(shown, `"pid": `+strconv.Itoa(os.Getpid())) {
-			t.Fatalf("expected pid liveness in show JSON, got:\n%s", shown)
+		if _, err := runErr(t, "session", "show", "--id=session-agenthub", "--id", "session-agenthub"); err == nil || !strings.Contains(err.Error(), sessionShowUsage) {
+			t.Fatalf("duplicate session ID flag should be rejected, got %v", err)
 		}
-	})
-}
-
-func TestAgentHubSessionsAreNeverProbedByCLI(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "AgentHub lock")
-		var requests int64
-		var requestPaths []string
-		var mu sync.Mutex
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			mu.Lock()
-			requests++
-			requestPaths = append(requestPaths, r.URL.Path)
-			mu.Unlock()
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer server.Close()
-		// A deliberately blocked endpoint: any request hangs until the test
-		// finishes, so a probing CLI would deadlock here.
-		release := make(chan struct{})
-		var blockedRequests int64
-		blocking := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			blockedRequests++
-			<-release
-		}))
-		defer func() {
-			close(release)
-			blocking.Close()
-		}()
-
-		newAgentHubSession := func() string {
-			return strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
-				"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
+		if _, err := runErr(t, "session", "show", "--id", "legacy-pid"); err == nil || !strings.Contains(err.Error(), "session not found") {
+			t.Fatalf("legacy PID session should not be exposed, got %v", err)
 		}
-		first := newAgentHubSession()
-		second := newAgentHubSession()
-		// Unreachable and deliberately blocked endpoints must not slow down or
-		// release sessions either.
-		unreachable := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/gone"))
-		blocked := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", blocking.URL,
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/blocked"))
-		run(t, "session", "bind-agenthub", "--id", first, "--agenthub-session-id", "ses_lock")
-
-		start := time.Now()
-		run(t, "session", "list")
-		run(t, "session", "show", "--id", first)
-		run(t, "session", "show", "--id", second)
-		run(t, "session", "heartbeat", "--id", second)
 		run(t, "workspace", "tree", "--json")
-		if elapsed := time.Since(start); elapsed > 10*time.Second {
-			t.Fatalf("session commands blocked on AgentHub for %s", elapsed)
-		}
-
-		mu.Lock()
-		defer mu.Unlock()
-		if requests != 0 {
-			t.Fatalf("CLI made %d AgentHub requests (%v); plain CLI must never probe AgentHub", requests, requestPaths)
-		}
-		if blockedRequests != 0 {
-			t.Fatalf("CLI probed the blocked AgentHub endpoint %d times", blockedRequests)
-		}
-		for _, id := range []string{first, second, unreachable, blocked} {
-			if listed := run(t, "session", "list"); !strings.Contains(listed, id) {
-				t.Fatalf("AgentHub session %s was pruned by the CLI: %s", id, listed)
-			}
-		}
-	})
-}
-
-func TestAgentHubSessionsSurviveLocalStalePruning(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Mixed store")
-		managed := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run"))
-		store, err := readSessionStore(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store.Sessions = append(store.Sessions, Session{
-			ID:        "dead-pid",
-			Liveness:  SessionLiveness{Type: "pid", PID: 99999999},
-			StartedAt: "2026-01-01T00:00:00Z",
-			UpdatedAt: time.Now().Format(time.RFC3339),
-		}, Session{
-			ID:        "stale-heartbeat",
-			Liveness:  SessionLiveness{Type: "heartbeat", Timeout: "1s"},
-			StartedAt: "2026-01-01T00:00:00Z",
-			UpdatedAt: "2026-01-01T00:00:00Z",
-		})
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-
-		listed := run(t, "session", "list")
-		if strings.Contains(listed, "dead-pid") || strings.Contains(listed, "stale-heartbeat") {
-			t.Fatalf("local stale sessions were not pruned: %s", listed)
-		}
-		if !strings.Contains(listed, managed) {
-			t.Fatalf("AgentHub session must survive local stale pruning: %s", listed)
-		}
-	})
-}
-
-func TestSessionEndOnlyEndsTargetSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "AgentHub end")
-		run(t, "project", "create", "AgentHub other")
-		var requests int64
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			requests++
-			w.WriteHeader(http.StatusInternalServerError)
-		}))
-		defer server.Close()
-		newAgentHubSession := func(externalID string) string {
-			return strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", server.URL,
-				"--source-instance-id", "forge-test", "--source-external-id", externalID))
-		}
-		target := newAgentHubSession("workspace/target")
-		other := newAgentHubSession("workspace/other")
-
-		ended := run(t, "session", "end", "--id", target)
-		if !strings.Contains(ended, `"id": "`+target+`"`) {
-			t.Fatalf("expected end to print the removed session, got: %s", ended)
-		}
-		listed := run(t, "session", "list")
-		if strings.Contains(listed, target) {
-			t.Fatalf("ended session is still listed: %s", listed)
-		}
-		if !strings.Contains(listed, other) {
-			t.Fatalf("session end pruned another AgentHub session: %s", listed)
-		}
-		if requests != 0 {
-			t.Fatalf("session end probed AgentHub %d times", requests)
-		}
-	})
-}
-
-func TestReadOnlySessionCommandsDoNotRewriteStore(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "AgentHub projection")
-		id := strings.TrimSpace(run(t, "session", "new", "--agenthub", "--endpoint", "http://127.0.0.1:1",
-			"--source-instance-id", "forge-test", "--source-external-id", "workspace/run",
-			"--agenthub-session-id", "ses_lock"))
-		// Seed legacy diagnostic projection fields left behind by older Forge
-		// versions; read-only commands must preserve them verbatim.
-		store, err := readSessionStore(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		store.Sessions[0].Liveness.LastKnownState = "unknown"
-		store.Sessions[0].Liveness.LastCheckedAt = "2026-01-01T00:00:00Z"
-		store.Sessions[0].Liveness.LivenessDiagnostic = "legacy diagnostic"
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-		before := readFile(t, filepath.Join(root, sessionStateFile))
-
-		run(t, "session", "list")
-		run(t, "session", "show", "--id", id)
-		run(t, "workspace", "tree", "--json")
-
-		after := readFile(t, filepath.Join(root, sessionStateFile))
-		if before != after {
-			t.Fatalf("read-only commands rewrote the session store:\nbefore:\n%s\nafter:\n%s", before, after)
-		}
-		shown := run(t, "session", "show", "--id", id)
-		if !strings.Contains(shown, `"lastKnownState": "unknown"`) {
-			t.Fatalf("legacy projection fields must remain readable: %s", shown)
-		}
-	})
-}
-
-func TestSessionListPrunesDeadPIDSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		store := SessionStore{
-			Version: 1,
-			Sessions: []Session{{
-				ID:        "dead-pid",
-				Liveness:  SessionLiveness{Type: "pid", PID: 99999999},
-				StartedAt: "2026-01-01T00:00:00Z",
-				UpdatedAt: time.Now().Format(time.RFC3339),
-			}},
-		}
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-
-		listed := run(t, "session", "list")
-		if strings.Contains(listed, "dead-pid") {
-			t.Fatalf("expected dead pid session to be pruned, got:\n%s", listed)
-		}
-	})
-}
-
-func TestSessionHeartbeatExtendsSession(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Session project")
-		id := strings.TrimSpace(run(t, "session", "new", "--timeout", "1h"))
-		store, err := readSessionStore(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		oldTime := time.Now().Add(-time.Minute).Format(time.RFC3339)
-		store.Sessions[0].UpdatedAt = oldTime
-		if err := writeJSON(filepath.Join(root, sessionStateFile), store); err != nil {
-			t.Fatal(err)
-		}
-
-		heartbeat := run(t, "session", "heartbeat", "--id", id)
-		if !strings.Contains(heartbeat, `"id": "`+id+`"`) || strings.Contains(heartbeat, oldTime) {
-			t.Fatalf("expected heartbeat to refresh timestamp, got:\n%s", heartbeat)
+		if after := readFile(t, path); after != before {
+			t.Fatalf("read-only diagnostics rewrote the store:\nbefore:\n%s\nafter:\n%s", before, after)
 		}
 	})
 }

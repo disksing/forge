@@ -21,7 +21,7 @@
     onToast: SettingsModel["onToast"];
   } = $props();
 
-  const systemProfiles = new Set(["default", "fast", "reasoning", "scheduler"]);
+  const systemProfiles = new Set(["default", "fast", "reasoning"]);
 
   function updateProfile(index: number, field: keyof ProfileDraft, value: string): void {
     draft.profiles[index][field] = value;

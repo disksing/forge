@@ -907,9 +907,6 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 			if !isAgentHubRun(run) {
 				continue
 			}
-			// An empty non-nil candidate list means the instance-wide list
-			// already proved the session is gone, so recoverAgentHubRun must not
-			// re-query per run.
 			candidates := []agentHubSession{}
 			if session, ok := byExternalID[strings.TrimSpace(run.SourceExternalID)]; ok {
 				candidates = []agentHubSession{session}
@@ -931,19 +928,10 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 // without eagerly loading event history or opening an event stream. A persisted
 // active -> ready/stopped edge, or a pending completion inspection, may replay
 // the bounded durable history needed for the completion marker. candidates
-// carries the sessions matching the run's source tuple;
-// when nil, the candidates are queried on demand (scheduler dispatch path).
+// carries the sessions found by the single instance-wide startup query.
 // Live runs may recreate a missing AgentHub session from the source tuple.
 func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
-	if candidates == nil {
-		found, err := findAgentHubSourceSessions(ctx, client, source)
-		if err != nil {
-			m.markAgentRunRecovering(workspace, run)
-			return err
-		}
-		candidates = found
-	}
 	live := isLiveAgentStatus(run.Status)
 	if len(candidates) == 0 && live {
 		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{

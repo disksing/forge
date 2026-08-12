@@ -167,8 +167,7 @@ func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 		t.Fatal(err)
 	}
 	if session.Liveness.Type != "agenthub" || session.Liveness.Endpoint != defaultAgentHubEndpoint ||
-		session.Liveness.SourceInstanceID != "forge-one" || session.Liveness.SourceExternalID != "workspace-one/run-one" ||
-		session.Liveness.StartingGrace != "30s" {
+		session.Liveness.SourceInstanceID != "forge-one" || session.Liveness.SourceExternalID != "workspace-one/run-one" {
 		t.Fatalf("unexpected session liveness: %#v", session.Liveness)
 	}
 }

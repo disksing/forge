@@ -23,7 +23,7 @@ func seedTestForgeSession(t *testing.T, workspace guiWorkspace, externalID strin
 	}
 	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
 		Type: "agenthub", SourceApp: "forge", SourceInstanceID: "forge-runtime-test",
-		SourceExternalID: externalID, StartingGrace: "30s",
+		SourceExternalID: externalID,
 	})
 	if err != nil {
 		t.Fatal(err)

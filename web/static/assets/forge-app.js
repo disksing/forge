@@ -5771,8 +5771,7 @@ function Xc(e, t) {
 	let n = wi(t, "draft", 15), r = wi(t, "pending", 15), i = /* @__PURE__ */ new Set([
 		"default",
 		"fast",
-		"reasoning",
-		"scheduler"
+		"reasoning"
 	]);
 	function a(e, r, i) {
 		n(n().profiles[e][r] = i, !0), t.onDirty();

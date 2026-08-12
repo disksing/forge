@@ -295,10 +295,6 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
-  forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
-  forge session heartbeat --id=<id>
-  forge session end --id=<id>
   forge session list
   forge session show --id=<id>
 
@@ -412,30 +408,13 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
-    Create a session and print its unique id. Heartbeat liveness is the
-    default and can use --timeout. PID liveness stays active while the process
-    exists. AgentHub sessions are managed by forge serve: plain CLI commands
-    never contact AgentHub and keep the session active until forge serve
-    reconciles a durable terminal state or forge session end releases it.
-
-  forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
-    Persist the final AgentHub session id after source-based creation or
-    recovery. Existing bindings cannot be changed to a different session.
-
-  forge session heartbeat --id=<id>
-    Update a session's heartbeat timestamp.
-
-  forge session end --id=<id>
-    End a session immediately and remove it from the active session list.
-    This is the manual escape hatch for AgentHub-managed runtime records when
-    forge serve is not running.
-
   forge session list
-    List active sessions after automatically pruning stale sessions.
+    List the transient AgentHub Session projections managed by forge serve.
+    This diagnostic command never changes Session state or contacts AgentHub.
 
   forge session show --id=<id>
-    Print one active session as formatted JSON after pruning stale sessions.
+    Print one transient AgentHub Session projection as formatted JSON. This
+    diagnostic command never changes Session state or contacts AgentHub.
 
   forge workspace tree --json
     Print a lightweight JSON tree of open projects, open tasks, and active

@@ -299,6 +299,14 @@ func parseWorkspaceResourceArgs(args []string) (string, error) {
 	return id, nil
 }
 
+func nextFlagValue(args []string, i *int) (string, bool) {
+	if *i+1 >= len(args) || strings.HasPrefix(args[*i+1], "--") {
+		return "", false
+	}
+	*i = *i + 1
+	return args[*i], true
+}
+
 func readResourceFiles(root, dir string, resource Resource) []ResourceFile {
 	names := []string{markdownFileName(resource)}
 	if !isProject(resource) {
@@ -388,9 +396,8 @@ func skipFileTreeDir(entry os.DirEntry) bool {
 
 func activeSessions(root string) ([]Session, error) {
 	var sessions []Session
-	err := withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		sessions = append([]Session(nil), store.Sessions...)
+	err := withLockedSessionStore(root, func(store *sessionStore) error {
+		sessions = activeAgentHubSessions(store.Sessions)
 		sortSessions(sessions)
 		return nil
 	})

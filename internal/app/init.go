@@ -188,10 +188,6 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
-forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
-forge session heartbeat --id=<id>
-forge session end --id=<id>
 forge session list
 forge session show --id=<id>
 
@@ -216,7 +212,7 @@ Notes:
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task log add/list`" + ` and ` + "`forge project log add/list`" + ` write and read structured ` + "`log.jsonl`" + ` entries. Logs are displayed newest first, and ` + "`--details -`" + ` reads multiline details from standard input.
 - ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
-- ` + "`forge session new`" + ` creates a session and prints a unique id. Use heartbeat liveness by default or explicitly with ` + "`--heartbeat [--timeout <duration>]`" + `; use ` + "`--pid <pid>`" + ` for process liveness. Forge GUI uses AgentHub liveness with a persisted endpoint and complete source, then ` + "`forge session bind-agenthub`" + ` records the final AgentHub session id. Plain CLI commands never contact AgentHub: an AgentHub-managed session stays active until ` + "`forge serve`" + ` reconciles its durable AgentHub terminal state or the user explicitly ends it. ` + "`forge session heartbeat --id=<id>`" + ` refreshes a heartbeat session timestamp. ` + "`forge session end --id=<id>`" + ` removes an active session immediately. ` + "`forge session list`" + ` lists active sessions after pruning stale sessions, and ` + "`forge session show --id=<id>`" + ` prints one session as JSON.
+- ` + "`forge session list`" + ` and ` + "`forge session show --id=<id>`" + ` provide read-only diagnostics for transient AgentHub Session projections managed by ` + "`forge serve`" + `. They do not create, modify, end, take over, or contact AgentHub Sessions.
 - ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
 `

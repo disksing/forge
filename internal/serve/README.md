@@ -23,8 +23,8 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 Forge 使用完整 `source.app=forge`、instance ID 和 external ID 创建或恢复 AgentHub Session。浏览器的新 Session 初始消息与后续输入都携带 provenance `role=user` 和当前用户名；该字段只描述来源，不参与认证或授权。
 
-Forge 定期从 AgentHub 拉取 Session 状态并更新本地 run 投影。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才释放 Forge Session 和资源锁。AgentHub 不可达或状态未知时保守保留锁。普通 CLI 命令不会访问 AgentHub。
+Forge 定期从 AgentHub 拉取 Session 状态并更新本地 run 投影。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才删除对应的瞬态 Forge Session 投影。AgentHub 不可达或状态未知时保留投影，供后续恢复继续对账。
 
-当 Project 或 Task 存在有效外部 Session 锁时，composer 显示统一的资源锁提示，隐藏 New/Resume Session，并暂停输入与上传。内部 GUI Session 锁会阻止为同一资源再建 Session；当前 Session 的输入、审批、End Turn 和 Close Session 仍按其状态可用。
+Session 投影的创建、AgentHub ID 绑定与安全删除只通过 `internal/app` 的 Server 内部 API 完成。公共 CLI 只保留 `forge session list/show` 作为只读诊断，不提供手工创建、绑定、心跳或结束入口，也不会访问 AgentHub。资源级 Session Lock 已删除；同一资源在当前过渡版本中可以拥有多个普通 GUI Session。
 
 `GET .../events` 支持 `after`、`before` 和 limit 游标；SSE 只发送 canonical AgentHub events。恢复诊断使用独立 `forge.notice`，不伪装成 canonical event，也不进入共享 timeline projector。
