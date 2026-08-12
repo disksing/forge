@@ -122,7 +122,7 @@ forge message send --to=project1.task2 --mode=interrupt "Stop the current approa
 forge message show --id=msg-run-0123456789abcdef
 ```
 
-These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. They never write `mailbox.json` directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` remain read-only local diagnostics and never contact AgentHub.
+These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. History lists and Turn/Event details default to formatted text for direct reading; pass `--json` for the complete structured response. They never write `mailbox.json` directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` remain read-only local diagnostics and never contact AgentHub.
 
 Useful overrides:
 
@@ -273,13 +273,13 @@ forge project log add|list ...
 forge template list|show|validate|render|create|migrate ...
 
 forge workspace status [--server=<url>]
-forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 forge project status [--project=<project>] [--server=<url>]
-forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
-forge history turn show --ref=<reference> [--server=<url>]
-forge history event show --ref=<reference> [--server=<url>]
+forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge history turn show --ref=<reference> [--server=<url>] [--json]
+forge history event show --ref=<reference> [--server=<url>] [--json]
 forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
 forge message show --id=<message-id> [--server=<url>]
 forge resource archive --id=<resource>
