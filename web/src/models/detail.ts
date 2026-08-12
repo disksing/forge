@@ -7,6 +7,12 @@ export interface ResourceAgentBindingModel {
   name: string;
 }
 
+export interface ResourceAgentProfileModel {
+  key: string;
+  description?: string;
+  agentName?: string;
+}
+
 export interface ResourceCreatorModel {
   kind: "user" | "resource";
   workspaceInstanceId?: string;
@@ -104,7 +110,7 @@ export interface DetailPanelModel {
   wiki: { exists?: boolean; error?: string; entries?: FileTreeModel[] } | null;
   workspaceAgents: WorkspaceAgentsModel | null;
   agentBinding: ResourceAgentBindingModel;
-  agentProfiles: Array<{ key: string; description?: string }>;
+  agentProfiles: ResourceAgentProfileModel[];
   agents: AgentOption[];
   logs: { hasMore: boolean; loading: boolean; error: string };
   onNavigate: (resourceId: string) => void;

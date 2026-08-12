@@ -321,11 +321,11 @@ Usage:
   forge workspace status [--server=<url>]
   forge project status [--project=<project>] [--server=<url>]
   forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
-  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
-  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
-  forge history turn show --ref=<turn-ref> [--server=<url>]
-  forge history event show --ref=<event-ref> [--server=<url>]
+  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  forge history turn show --ref=<turn-ref> [--server=<url>] [--json]
+  forge history event show --ref=<event-ref> [--server=<url>] [--json]
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
   forge message show --id=<message-id> [--server=<url>]
   forge resource archive --id=<resource>
@@ -468,17 +468,20 @@ Commands:
     messages, steer capability, and recent delivery error. Selection follows
     the corresponding show command; Workspace status selects the Workspace.
 
-  forge workspace|project|task history ... [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+  forge workspace|project|task history ... [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
     Read one bounded newest-first page of the selected resource's long-lived
     conversation through the owning forge serve process. Results are grouped
     into ordered generation segments. Explicit gap segments identify missing,
     unavailable, or damaged AgentHub history without hiding older generations.
+    The default output is formatted text; use --json for the complete structured
+    response.
 
-  forge history turn|event show --ref=<reference> [--server=<url>]
+  forge history turn|event show --ref=<reference> [--server=<url>] [--json]
     Expand a stable opaque reference returned by a resource history page or
     Turn detail. Turn details contain complete compact messages and Event
     ranges; Event details read one canonical AgentHub Event on demand. Neither
-    command requires or accepts a run or AgentHub Session id.
+    command requires or accepts a run or AgentHub Session id. The default
+    output is formatted text; use --json for the complete structured response.
 
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
     Persist a message in the target resource mailbox through the owning

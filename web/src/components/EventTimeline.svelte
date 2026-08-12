@@ -38,6 +38,8 @@
     const unsubscribeSnapshot = controller.subscribe(receive);
     const unsubscribeModel = channel.subscribe((next) => {
       const previousIdentity = model.identity;
+      const workingChanged = turnIsWorking(model.status) !== turnIsWorking(next.status);
+      const followWorkingChange = workingChanged && isNearBottom(scroller());
       model = next;
       if (next.project !== projector) projector = next.project;
       if (next.identity !== previousIdentity) {
@@ -46,7 +48,10 @@
         openTools = new Map(openCache.get(next.identity) ?? []);
       }
       controller?.activate(next.workspaceId, next.resourceId, next.status);
-      queueMicrotask(next.onIconsChanged);
+      void tick().then(() => {
+        if (followWorkingChange && !hasActiveSelection()) scrollToBottom();
+        next.onIconsChanged();
+      });
     });
     const selectionChanged = () => {
       if (!deferredSnapshot || hasActiveSelection()) return;
@@ -163,6 +168,10 @@
     return Boolean(scroll && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight <= 32);
   }
 
+  function turnIsWorking(status: EventTimelineModel["status"]): boolean {
+    return status?.session?.state === "running" && Boolean(status.session.currentTurnId);
+  }
+
   function scrollToBottom(): void {
     const scroll = scroller();
     if (scroll) scroll.scrollTop = scroll.scrollHeight;
@@ -228,8 +237,13 @@
       <div data-timeline-key={`notice:${index}`}><TimelineNotice title="Forge" text={String(notice.data?.text || "")} error={notice.data?.level === "error"} /></div>
     {/each}
     {#if snapshot.error}<TimelineNotice title="Timeline error" text={snapshot.error} error alert />{/if}
+    {#if turnIsWorking(model.status)}
+      <div class="turn-working-indicator" role="status" aria-live="polite" data-timeline-key="turn-working">
+        <Icon name="loader-circle" /><span>working...</span>
+      </div>
+    {/if}
     {#if snapshot.loading && !snapshot.blocks.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Loading resource history</strong></div>{/if}
-    {#if snapshot.loaded && !snapshot.loading && !snapshot.blocks.length && !snapshot.notices.length}<div class="tty-empty"><Icon name="bot" /><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>{/if}
+    {#if snapshot.loaded && !snapshot.loading && !snapshot.blocks.length && !snapshot.notices.length && !turnIsWorking(model.status)}<div class="tty-empty"><Icon name="bot" /><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>{/if}
   {:else}
     <div class="tty-empty"><Icon name="bot" /><strong>No resource selected</strong></div>
   {/if}

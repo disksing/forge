@@ -117,15 +117,19 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"idle","exists":true,"acceptsMessages":true}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/messages/msg-test"):
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","status":"delivered"}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/workspace/history/turns"):
+				_, _ = io.WriteString(w, `{"resourceId":"workspace","segments":[],"page":{"limit":20,"hasMore":false}}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1/history/turns"):
+				_, _ = io.WriteString(w, `{"resourceId":"project1","segments":[],"page":{"limit":20,"hasMore":false}}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/turns"):
 				if r.URL.Query().Get("cursor") != "cursor-test" || r.URL.Query().Get("limit") != "7" {
 					t.Errorf("unexpected history query: %s", r.URL.RawQuery)
 				}
-				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","segments":[],"page":{"limit":7,"hasMore":false}}`)
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","segments":[{"generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"},"turns":[{"reference":"`+turnRef+`","turnId":"turn-1","status":"completed","closed":true,"startedAt":"2026-08-13T00:00:00Z","endedAt":"2026-08-13T00:00:01Z","durationMs":1000,"triggerPreview":"coordinate now","triggerRole":"agent","finalReplyPreview":"done","eventCount":2,"toolEventCount":1,"startEventId":1,"lastEventId":2}]}],"page":{"limit":7,"hasMore":true,"nextCursor":"cursor-next"}}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/turns/"+turnRef):
-				_, _ = io.WriteString(w, `{"turn":{"turnId":"turn-1"},"items":[]}`)
+				_, _ = io.WriteString(w, `{"turn":{"reference":"`+turnRef+`","turnId":"turn-1","status":"completed","closed":true,"startedAt":"2026-08-13T00:00:00Z","endedAt":"2026-08-13T00:00:01Z","durationMs":1000,"triggerPreview":"coordinate now","triggerRole":"agent","finalReplyPreview":"done","eventCount":2,"toolEventCount":1,"startEventId":1,"lastEventId":2,"generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"}},"items":[{"type":"message","role":"agent","text":"coordinate now","startEventId":1,"endEventId":1,"startEventRef":"`+eventRef+`","endEventRef":"`+eventRef+`","startedAt":"2026-08-13T00:00:00Z","endedAt":"2026-08-13T00:00:00Z","durationMs":0,"count":1}],"deliveries":[],"latestEventId":2,"latestEventRef":"`+eventRef+`","turnStartedEventId":1,"completedAt":"2026-08-13T00:00:01Z"}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/events/"+eventRef):
-				_, _ = io.WriteString(w, `{"event":{"id":1}}`)
+				_, _ = io.WriteString(w, `{"reference":"`+eventRef+`","generation":{"generation":1,"generationId":"gen-1","title":"Mailbox task (gen #1)","binding":{"kind":"profile","name":"default"},"agentName":"test-agent","status":"running","createdAt":"2026-08-13T00:00:00Z","updatedAt":"2026-08-13T00:00:01Z"},"event":{"id":1,"time":"2026-08-13T00:00:00Z","type":"message.input","sessionId":"session-1","turnId":"turn-1","data":{"text":"coordinate now"}}}`)
 			default:
 				http.NotFound(w, r)
 			}
@@ -170,14 +174,58 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 		if message := run(t, "message", "show", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
 			t.Fatalf("unexpected message response: %s", message)
 		}
-		if history := run(t, "task", "history", "--cursor=cursor-test", "--limit=7"); !strings.Contains(history, `"resourceId": "project1.task1"`) {
-			t.Fatalf("unexpected history response: %s", history)
+		if history := run(t, "workspace", "history"); !strings.Contains(history, "Resource: workspace\nHistory: (empty)") {
+			t.Fatalf("unexpected Workspace history text: %s", history)
 		}
-		if turn := run(t, "history", "turn", "show", "--ref="+turnRef); !strings.Contains(turn, `"turnId": "turn-1"`) {
-			t.Fatalf("unexpected Turn detail: %s", turn)
+		var projectHistoryJSON map[string]any
+		if err := json.Unmarshal([]byte(run(t, "project", "history", "--project=project1", "--json")), &projectHistoryJSON); err != nil || projectHistoryJSON["resourceId"] != "project1" {
+			t.Fatalf("unexpected Project history JSON: %#v, %v", projectHistoryJSON, err)
 		}
-		if event := run(t, "history", "event", "show", "--ref="+eventRef); !strings.Contains(event, `"id": 1`) {
-			t.Fatalf("unexpected Event detail: %s", event)
+		history := run(t, "task", "history", "--cursor=cursor-test", "--limit=7")
+		for _, want := range []string{"Resource: project1.task1", "Generation #1: Mailbox task (gen #1)", "Turn turn-1: completed", "Trigger: agent", "Next cursor: cursor-next"} {
+			if !strings.Contains(history, want) {
+				t.Fatalf("history text missing %q:\n%s", want, history)
+			}
+		}
+		if json.Valid([]byte(history)) {
+			t.Fatalf("default history output is still JSON: %s", history)
+		}
+		var historyJSON map[string]any
+		if err := json.Unmarshal([]byte(run(t, "task", "history", "--cursor=cursor-test", "--limit=7", "--json")), &historyJSON); err != nil || historyJSON["resourceId"] != "project1.task1" {
+			t.Fatalf("unexpected history JSON: %#v, %v", historyJSON, err)
+		}
+
+		turn := run(t, "history", "turn", "show", "--ref="+turnRef)
+		for _, want := range []string{"Turn turn-1: completed", "Items:", "Text:\n       coordinate now", "Latest event reference: " + eventRef} {
+			if !strings.Contains(turn, want) {
+				t.Fatalf("Turn text missing %q:\n%s", want, turn)
+			}
+		}
+		var turnJSON struct {
+			Turn struct {
+				TurnID string `json:"turnId"`
+			} `json:"turn"`
+		}
+		if err := json.Unmarshal([]byte(run(t, "history", "turn", "show", "--ref="+turnRef, "--json")), &turnJSON); err != nil || turnJSON.Turn.TurnID != "turn-1" {
+			t.Fatalf("unexpected Turn JSON: %#v, %v", turnJSON, err)
+		}
+
+		event := run(t, "history", "event", "show", "--ref="+eventRef)
+		for _, want := range []string{"Event: 1", "Type: message.input", "Generation #1: Mailbox task (gen #1)", `"text": "coordinate now"`} {
+			if !strings.Contains(event, want) {
+				t.Fatalf("Event text missing %q:\n%s", want, event)
+			}
+		}
+		var eventJSON struct {
+			Event struct {
+				ID int64 `json:"id"`
+			} `json:"event"`
+		}
+		if err := json.Unmarshal([]byte(run(t, "history", "event", "show", "--ref="+eventRef, "--json")), &eventJSON); err != nil || eventJSON.Event.ID != 1 {
+			t.Fatalf("unexpected Event JSON: %#v, %v", eventJSON, err)
+		}
+		if _, err := runErr(t, "history", "turn", "show", "--ref="+turnRef, "--json", "--json"); err == nil || !strings.Contains(err.Error(), historyShowUsage) {
+			t.Fatalf("duplicate history --json was accepted: %v", err)
 		}
 		for _, args := range [][]string{{"resource", "status"}, {"resource", "send", "--id=project1.task1", "legacy"}, {"resource", "message", "--id=msg-test"}} {
 			if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), "unknown resource subcommand") {

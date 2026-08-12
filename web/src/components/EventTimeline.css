@@ -111,3 +111,29 @@
   color: #74808c;
   background: #f8fafb;
 }
+
+:where([data-component-owner="event-timeline"]) .turn-working-indicator {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 10px 0;
+  color: #74808c;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-working-indicator svg {
+  width: 14px;
+  height: 14px;
+  animation: turn-working-spin 1s linear infinite;
+}
+
+@keyframes turn-working-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where([data-component-owner="event-timeline"]) .turn-working-indicator svg {
+    animation: none;
+  }
+}

@@ -28,10 +28,10 @@ const (
 	taskStatusUsage       = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
 	messageSendUsage      = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
 	messageShowUsage      = "usage: forge message show --id=<message-id> [--server=<url>]"
-	workspaceHistoryUsage = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
-	projectHistoryUsage   = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
-	taskHistoryUsage      = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
-	historyShowUsage      = "usage: forge history turn|event show --ref=<reference> [--server=<url>]"
+	workspaceHistoryUsage = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	projectHistoryUsage   = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	taskHistoryUsage      = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	historyShowUsage      = "usage: forge history turn|event show --ref=<reference> [--server=<url>] [--json]"
 )
 
 type resourceServerOptions struct {
@@ -46,6 +46,7 @@ type resourceHistoryOptions struct {
 	Limit     int
 	Reference string
 	ServerURL string
+	JSON      bool
 }
 
 type serveLockMetadata struct {
@@ -483,6 +484,13 @@ func parseResourceHistoryArgs(args []string, usage string) ([]string, resourceHi
 			options.ServerURL = value
 			continue
 		}
+		if arg == "--json" {
+			if options.JSON {
+				return nil, resourceHistoryOptions{}, errors.New(usage)
+			}
+			options.JSON = true
+			continue
+		}
 		if strings.HasPrefix(arg, "--cursor") || strings.HasPrefix(arg, "--limit") || strings.HasPrefix(arg, "--server") {
 			return nil, resourceHistoryOptions{}, errors.New(usage)
 		}
@@ -511,7 +519,10 @@ func runResourceHistory(resourceID string, options resourceHistoryOptions) error
 	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
 		return err
 	}
-	return printJSON(response)
+	if options.JSON {
+		return printJSON(response)
+	}
+	return printResourceHistoryText(response)
 }
 
 func runWorkspaceHistory(args []string) error {
@@ -576,6 +587,11 @@ func parseHistoryShowArgs(args []string) (resourceHistoryOptions, error) {
 			}
 			index++
 			options.ServerURL = strings.TrimSpace(args[index])
+		case arg == "--json":
+			if options.JSON {
+				return resourceHistoryOptions{}, errors.New(historyShowUsage)
+			}
+			options.JSON = true
 		default:
 			return resourceHistoryOptions{}, errors.New(historyShowUsage)
 		}
@@ -618,5 +634,8 @@ func runHistory(args []string) error {
 	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
 		return err
 	}
-	return printJSON(response)
+	if options.JSON {
+		return printJSON(response)
+	}
+	return printHistoryDetailText(args[0], response)
 }

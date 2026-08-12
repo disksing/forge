@@ -4,6 +4,7 @@
   import { onDestroy, onMount } from "svelte";
 
   import { ApiClient } from "../api/client";
+  import AgentBindingSelector from "./AgentBindingSelector.svelte";
   import type { ModelChannel } from "./model-channel";
   import DiffModal from "./DiffModal.svelte";
   import FileBrowser from "./FileBrowser.svelte";
@@ -145,18 +146,6 @@
     if (message) model.onToast(message);
   }
 
-  function bindingOptions(kind = bindingKind): Array<{ id: string; label: string }> {
-    return kind === "profile"
-      ? model.agentProfiles.map((profile) => ({ id: profile.key, label: profile.description ? `${profile.key} — ${profile.description}` : profile.key }))
-      : model.agents.map((agent) => ({ id: agent.id, label: agent.label }));
-  }
-
-  function changeBindingKind(kind: "profile" | "agent"): void {
-    bindingKind = kind;
-    const options = bindingOptions(kind);
-    if (!options.some((option) => option.id === bindingName)) bindingName = options[0]?.id || "";
-  }
-
   async function saveBinding(): Promise<void> {
     if (!bindingName || bindingSaving) return;
     bindingSaving = true;
@@ -172,8 +161,7 @@
 
 {#snippet agentBindingControl()}
   <div class="resource-agent-binding" aria-label="Resource agent binding">
-    <select aria-label="Binding kind" value={bindingKind} onchange={(event) => changeBindingKind(event.currentTarget.value as "profile" | "agent")}><option value="profile">Profile</option><option value="agent">Agent</option></select>
-    <select aria-label="Binding target" value={bindingName} onchange={(event) => bindingName = event.currentTarget.value}>{#each bindingOptions() as option}<option value={option.id}>{option.label}</option>{/each}</select>
+    <AgentBindingSelector value={{ kind: bindingKind, name: bindingName }} profiles={model.agentProfiles} agents={model.agents} ariaLabel="Binding target" onSelect={(binding) => { bindingKind = binding.kind; bindingName = binding.name; }} />
     <button type="button" class="secondary" disabled={bindingSaving || !bindingName || (bindingKind === model.agentBinding.kind && bindingName === model.agentBinding.name)} onclick={saveBinding}><Icon name={bindingSaving ? "loader-circle" : "save"} /><span>{bindingSaving ? "Saving" : "Bind"}</span></button>
   </div>
 {/snippet}
