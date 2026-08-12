@@ -44,25 +44,6 @@ func validateResource(resource Resource) error {
 		if !projectTaskName(typed.Parent).MatchString(meta.ID) {
 			return fmt.Errorf("task id %q must match %s.taskN", meta.ID, typed.Parent)
 		}
-		if typed.SelfDriving != nil {
-			if typed.SelfDriving.Revision <= 0 {
-				return fmt.Errorf("Self-Driving revision must be positive")
-			}
-			switch typed.SelfDriving.Condition {
-			case selfDrivingConditionDisabled, selfDrivingConditionReady, selfDrivingConditionWaiting, selfDrivingConditionBlocked, selfDrivingConditionError, selfDrivingConditionNeedsConfiguration:
-			default:
-				return fmt.Errorf("invalid Self-Driving condition %q", typed.SelfDriving.Condition)
-			}
-			if !typed.SelfDriving.Enabled && typed.SelfDriving.Condition != selfDrivingConditionDisabled {
-				return fmt.Errorf("disabled Self-Driving must use condition %q", selfDrivingConditionDisabled)
-			}
-			if typed.SelfDriving.Enabled && typed.SelfDriving.Condition == selfDrivingConditionDisabled {
-				return fmt.Errorf("enabled Self-Driving cannot use condition %q", selfDrivingConditionDisabled)
-			}
-			if typed.SelfDriving.Condition == selfDrivingConditionWaiting && typed.SelfDriving.WakeContext == nil {
-				return fmt.Errorf("waiting Self-Driving requires wake context")
-			}
-		}
 	default:
 		return fmt.Errorf("unsupported resource type %T", resource)
 	}

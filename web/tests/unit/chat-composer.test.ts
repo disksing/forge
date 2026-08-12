@@ -24,7 +24,7 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
     runStatus: "idle", live: true, canResume: false, draft: "", draftKey: "draft-a", draftResetVersion: 0,
     unavailableReason: "", sending: false, externalLocked: false, internalLocked: false, agents: [], selectedAgentId: "",
     chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false,
-    closingSession: false, selfDrivingRemainsEnabled: false, selfDrivingDisabling: false, onDraft: vi.fn(),
+    closingSession: false, onDraft: vi.fn(),
     onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onToggleChooser: vi.fn(),
     onChooseAgent: vi.fn(), onToggleActions: vi.fn(), onResume: vi.fn(), onEndTurn: vi.fn(), onCloseSession: vi.fn(),
     onIconsChanged: vi.fn(), ...overrides,

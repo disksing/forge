@@ -61,7 +61,6 @@
           </div>
         {:else}<small data-preview-edit-hint>Edit the content above to override the template output for this task.</small>{/if}
         {#if preview.slug}<small>Slug: {preview.slug}</small>{/if}
-        <small>Self-Driving: {preview.selfDriving ? `on with ${preview.selfDriving.agentName || "workspace default"}` : "off"}</small>
         {#if templateDigest}<small>Template {draft.templateName} · {templateDigest}</small>{/if}
       </section>
     {:else if previewing}<p class="create-task-preview-hint">Rendering preview...</p>
@@ -72,7 +71,6 @@
       {#if draft.detail.trim()}<p class="create-task-blank-detail">{draft.detail}</p>
       {:else}<p class="create-task-preview-hint">Write the task detail and the preview updates as you type.</p>{/if}
       {#if draft.slug.trim()}<small>Slug: {draft.slug.trim()}</small>{/if}
-      <small>Self-Driving: {draft.selfDriving ? `on with ${draft.agentName || "workspace default"}` : "off"}</small>
     </section>
   {/if}
 </aside>

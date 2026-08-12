@@ -1,48 +1,5 @@
 import type { AgentOption } from "./common";
 
-export interface SelfDrivingDraft {
-  agentName: string;
-  runInstructions: string;
-}
-
-export interface SelfDrivingDialogModel {
-  open: boolean;
-  identity: string;
-  resourceId: string;
-  reuseCurrentSession: boolean;
-  agents: AgentOption[];
-  draft: SelfDrivingDraft;
-  submitting: boolean;
-  error: string;
-  unknown: boolean;
-  onClose: () => void;
-  onSubmit: (draft: SelfDrivingDraft) => Promise<void>;
-  onIconsChanged: () => void;
-}
-
-export interface SelfDrivingBarModel {
-  identity: string;
-  visible: boolean;
-  status: { key: string; label: string; icon: string };
-  summary: string;
-  expanded: boolean;
-  hasProjection: boolean;
-  revision: number;
-  enabled: boolean;
-  preferredProfiles: string[];
-  actualAgent: string;
-  actualReason: string;
-  waitingSummary: string;
-  wakeCondition: string;
-  wakeFallback: boolean;
-  lastOutcome: { status: string; reason: string } | null;
-  statusReason: { label: string; text: string } | null;
-  pending: boolean;
-  onToggleEnabled: () => void;
-  onToggleDetails: () => void;
-  onIconsChanged: () => void;
-}
-
 export interface UploadDialogModel {
   open: boolean;
   identity: string;
@@ -75,8 +32,6 @@ export interface ComposerModel {
   canEndTurn: boolean;
   endingTurn: boolean;
   closingSession: boolean;
-  selfDrivingRemainsEnabled: boolean;
-  selfDrivingDisabling: boolean;
   onDraft: (text: string, context: ComposerContext) => void;
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
@@ -107,10 +62,6 @@ export interface AgentRun {
   status?: string;
   createdAt?: string;
   updatedAt?: string;
-  schedulerTurn?: boolean;
-  schedulerTurnId?: string;
-  schedulerTurnSequence?: number;
-  selfDrivingRevision?: number;
   completionMarker?: string;
   completionSessionId?: string;
   completionEventId?: number;
@@ -139,9 +90,6 @@ export interface AgentNotice {
     lifecycle?: string;
     runId?: string;
     resourceId?: string;
-    selfDrivingRevision?: number;
-    schedulerTurnId?: string;
-    schedulerTurnSequence?: number;
     text?: string;
   };
 }

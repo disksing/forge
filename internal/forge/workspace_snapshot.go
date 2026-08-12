@@ -26,19 +26,12 @@ type WorkspaceWikiView struct {
 }
 
 type ResourceTreeView struct {
-	ID          string               `json:"id"`
-	Type        string               `json:"type"`
-	Title       string               `json:"title"`
-	Path        string               `json:"path"`
-	Archived    bool                 `json:"archived"`
-	SelfDriving *SelfDrivingTreeView `json:"selfDriving,omitempty"`
-	Children    []ResourceTreeView   `json:"children,omitempty"`
-}
-
-type SelfDrivingTreeView struct {
-	Enabled   bool   `json:"enabled"`
-	Revision  int    `json:"revision"`
-	Condition string `json:"condition"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Title    string             `json:"title"`
+	Path     string             `json:"path"`
+	Archived bool               `json:"archived"`
+	Children []ResourceTreeView `json:"children,omitempty"`
 }
 
 type ResourceDetailView struct {
@@ -51,7 +44,6 @@ type ResourceDetailView struct {
 	Path        string                  `json:"path"`
 	Archived    bool                    `json:"archived"`
 	Repos       []TaskRepo              `json:"repos,omitempty"`
-	SelfDriving *SelfDriving            `json:"selfDriving,omitempty"`
 	Logs        []LogEntry              `json:"logs,omitempty"`
 	Files       []ResourceFile          `json:"files,omitempty"`
 	Artifacts   []FileTreeEntry         `json:"artifacts"`
@@ -173,9 +165,6 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Path:     relPath(root, entry.Path),
 		Archived: isArchivedPath(root, entry.Path),
 	}
-	if task, ok := entry.Resource.(*Task); ok && task.SelfDriving != nil {
-		item.SelfDriving = &SelfDrivingTreeView{Enabled: task.SelfDriving.Enabled, Revision: task.SelfDriving.Revision, Condition: task.SelfDriving.Condition}
-	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
 		if err != nil {
@@ -213,7 +202,6 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
-		detail.SelfDriving = typed.SelfDriving
 		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}

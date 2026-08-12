@@ -22,7 +22,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -102,19 +101,12 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID          string               `json:"id"`
-	Type        string               `json:"type"`
-	Title       string               `json:"title"`
-	Path        string               `json:"path"`
-	Archived    bool                 `json:"archived"`
-	SelfDriving *selfDrivingSnapshot `json:"selfDriving,omitempty"`
-	Children    []resourceSnapshot   `json:"children,omitempty"`
-}
-
-type selfDrivingSnapshot struct {
-	Enabled   bool   `json:"enabled"`
-	Revision  int    `json:"revision"`
-	Condition string `json:"condition"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Title    string             `json:"title"`
+	Path     string             `json:"path"`
+	Archived bool               `json:"archived"`
+	Children []resourceSnapshot `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -160,8 +152,6 @@ type guiSession struct {
 	AgentRunStatus           string              `json:"agentRunStatus,omitempty"`
 	AgentRunUpdatedAt        string              `json:"agentRunUpdatedAt,omitempty"`
 	AgentRunLastOutputAt     string              `json:"agentRunLastOutputAt,omitempty"`
-	SchedulerTurn            bool                `json:"schedulerTurn,omitempty"`
-	SelfDrivingRevision      int                 `json:"selfDrivingRevision,omitempty"`
 	ResourceID               string              `json:"resourceId,omitempty"`
 	AgentRunCompletionMarker string              `json:"agentRunCompletionMarker,omitempty"`
 	AgentRunCompletionState  string              `json:"agentRunCompletionState,omitempty"`
@@ -184,11 +174,6 @@ type server struct {
 	config string
 	agents *agentManager
 	locks  *workspaceLockManager
-	// selfDrivingDispatchMu protects short desired-state decisions and the
-	// in-memory per-Task dispatch claim. It is never held across AgentHub I/O,
-	// so Enable/Disable stays independent from Session lifecycle latency.
-	selfDrivingDispatchMu sync.Mutex
-	selfDrivingDispatches map[string]bool
 }
 
 const (
@@ -199,8 +184,8 @@ const (
 
 const serveUsage = `usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]
 
-Start the Forge web service: Workspace API, Self-Driving scheduler, AgentHub
-session orchestration and recovery, and the static web UI.
+Start the Forge web service: Workspace API, AgentHub session orchestration and
+recovery, and the static web UI.
 The service uses the in-process application API rooted at each explicit
 Workspace path; it does not invoke the forge CLI as a child process.
 
@@ -213,7 +198,7 @@ Workspace ownership:
   Each managed Workspace is exclusively owned by one forge serve process via
   an OS advisory lock at <workspace>/.forge/serve.lock. A second instance
   using a different FORGE_GUI_CONFIG cannot manage the same Workspace; it
-  fails at startup before scheduling or recovery begins. The OS releases the
+  fails at startup before session recovery begins. The OS releases the
   lock automatically when the owning process exits.
 
 Environment overrides:
@@ -277,13 +262,12 @@ func Main(args []string) error {
 	} else {
 		s.addCurrentDirectoryIfEmpty(context.Background())
 	}
-	// Every configured Workspace must be owned before the Self-Driving scheduler,
-	// AgentHub recovery, or any writable HTTP endpoint may touch it.
+	// Every configured Workspace must be owned before AgentHub recovery or any
+	// writable HTTP endpoint may touch it.
 	if err := s.acquireConfiguredWorkspaceLocks(); err != nil {
 		return err
 	}
 	s.agents.startAgentRecovery(context.Background())
-	go s.runTaskScheduler(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -471,16 +455,6 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.worktreeDiff(w, r, id)
 	case "ui-state":
 		s.handleUIState(w, r, id)
-	case "self-driving":
-		if len(parts) != 2 {
-			http.NotFound(w, r)
-			return
-		}
-		if r.Method != http.MethodPut {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		s.setSelfDrivingDesiredState(w, r, id)
 	case "agent":
 		s.agents.handle(w, r, id, parts[2:])
 	case "projects":
@@ -583,11 +557,6 @@ type createTaskRequest struct {
 	TemplateFields         map[string]any `json:"templateFields"`
 	ExpectedTemplateDigest string         `json:"expectedTemplateDigest"`
 	Slug                   string         `json:"slug"`
-	SelfDriving            bool           `json:"selfDriving"`
-	AgentName              string         `json:"agentName"`
-	PreferredAgentProfiles []string       `json:"preferredAgentProfiles"`
-	Prompt                 string         `json:"prompt"`
-	CompletionCriteria     string         `json:"completionCriteria"`
 }
 
 func decodeCreateTaskRequest(r *http.Request) (createTaskRequest, error) {
@@ -606,9 +575,6 @@ func decodeCreateTaskRequest(r *http.Request) (createTaskRequest, error) {
 	if strings.TrimSpace(body.TemplateName) != "" && (body.TaskMarkdown != nil || strings.TrimSpace(body.Detail) != "") {
 		return body, errors.New("templateName is mutually exclusive with detail and taskMarkdown")
 	}
-	if !body.SelfDriving && (strings.TrimSpace(body.AgentName) != "" || len(body.PreferredAgentProfiles) > 0 || strings.TrimSpace(body.Prompt) != "" || strings.TrimSpace(body.CompletionCriteria) != "") {
-		return body, errors.New("agentName, preferredAgentProfiles, prompt, and completionCriteria require selfDriving")
-	}
 	return body, nil
 }
 
@@ -616,8 +582,6 @@ func createTaskInputFromRequest(body createTaskRequest) app.CreateTaskInput {
 	input := app.CreateTaskInput{
 		ProjectID: body.Project, Title: body.Title, Detail: body.Detail, Slug: body.Slug,
 		TemplateName: body.TemplateName, TemplateFields: body.TemplateFields, ExpectedTemplateDigest: body.ExpectedTemplateDigest,
-		SelfDriving: body.SelfDriving, AgentName: body.AgentName, PreferredAgentProfiles: body.PreferredAgentProfiles,
-		Prompt: body.Prompt, CompletionCriteria: body.CompletionCriteria,
 	}
 	if body.TaskMarkdown != nil {
 		input.CompleteMarkdown, input.CompleteMarkdownSet = *body.TaskMarkdown, true
@@ -1154,17 +1118,6 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 			return guiWorkspace{}, err
 		}
 	}
-	forgeWorkspace, err := app.OpenWorkspace(tree.Root)
-	if err != nil {
-		return guiWorkspace{}, err
-	}
-	if err := forgeWorkspace.MigrateSelfDrivingData(); err != nil {
-		return guiWorkspace{}, err
-	}
-	tree, err = s.treeAt(ctx, tree.Root)
-	if err != nil {
-		return guiWorkspace{}, err
-	}
 	workspace = guiWorkspace{
 		ID:   workspaceID(tree.Root),
 		Name: workspaceName(tree.Root),
@@ -1303,8 +1256,6 @@ func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) e
 			tree.Sessions[i].AgentRunStatus = run.Status
 			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
 			tree.Sessions[i].AgentRunLastOutputAt = run.LastOutputAt
-			tree.Sessions[i].SchedulerTurn = run.SchedulerTurn
-			tree.Sessions[i].SelfDrivingRevision = run.SelfDrivingRevision
 			tree.Sessions[i].ResourceID = run.ResourceID
 			tree.Sessions[i].AgentRunCompletionMarker = run.CompletionMarker
 			tree.Sessions[i].AgentRunCompletionState = run.CompletionState

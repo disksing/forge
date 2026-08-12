@@ -40,7 +40,6 @@ describe("AgentSessionController", () => {
 			externalLockMessage: "locked",
 			isLive: () => true,
 			isTurnInterruptible: () => true,
-			inputSelfDrivingProjection: () => null,
 			mutate: (action) => action(),
 			request: async <T>() => await request() as T,
 			reloadRuns,

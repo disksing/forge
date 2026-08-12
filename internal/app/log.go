@@ -31,14 +31,10 @@ const (
 var ErrInvalidLogCursor = errors.New("invalid log cursor")
 
 type LogEntry struct {
-	ID                               string `json:"id"`
-	Time                             string `json:"time"`
-	Title                            string `json:"title"`
-	Details                          string `json:"details,omitempty"`
-	SelfDriving                      bool   `json:"selfDriving,omitempty"`
-	SelfDrivingRevision              int    `json:"selfDrivingRevision,omitempty"`
-	SelfDrivingWakeCondition         string `json:"selfDrivingWakeCondition,omitempty"`
-	SelfDrivingWakeConditionFallback bool   `json:"selfDrivingWakeConditionFallback,omitempty"`
+	ID      string `json:"id"`
+	Time    string `json:"time"`
+	Title   string `json:"title"`
+	Details string `json:"details,omitempty"`
 }
 
 // LogPage is the bounded, newest-first result used by GUI resource detail
@@ -48,20 +44,6 @@ type LogPage struct {
 	Entries    []LogEntry `json:"entries"`
 	HasMore    bool       `json:"hasMore"`
 	NextCursor string     `json:"nextCursor,omitempty"`
-}
-
-func newSelfDrivingLogEntry(title, details string, revision int) LogEntry {
-	entry := newLogEntry(title, details)
-	entry.SelfDriving = true
-	entry.SelfDrivingRevision = revision
-	return entry
-}
-
-func newSelfDrivingSuspensionLogEntry(title, summary, wakeCondition string, fallback bool, revision int) LogEntry {
-	entry := newSelfDrivingLogEntry(title, summary, revision)
-	entry.SelfDrivingWakeCondition = strings.TrimSpace(wakeCondition)
-	entry.SelfDrivingWakeConditionFallback = fallback
-	return entry
 }
 
 type logAddOptions struct {

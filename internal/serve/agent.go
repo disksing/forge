@@ -45,10 +45,6 @@ type agentRun struct {
 	CreatedAt                 string `json:"createdAt"`
 	UpdatedAt                 string `json:"updatedAt"`
 	LastOutputAt              string `json:"lastOutputAt,omitempty"`
-	SchedulerTurn             bool   `json:"schedulerTurn,omitempty"`
-	SelfDrivingRevision       int    `json:"selfDrivingRevision,omitempty"`
-	SchedulerTurnID           string `json:"schedulerTurnId,omitempty"`
-	SchedulerTurnSequence     int    `json:"schedulerTurnSequence,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
@@ -83,16 +79,13 @@ type forgeNotice struct {
 }
 
 type forgeNoticeData struct {
-	Level                 string `json:"level"`
-	Method                string `json:"method"`
-	Text                  string `json:"text"`
-	Kind                  string `json:"kind,omitempty"`
-	Lifecycle             string `json:"lifecycle,omitempty"`
-	RunID                 string `json:"runId,omitempty"`
-	ResourceID            string `json:"resourceId,omitempty"`
-	SelfDrivingRevision   int    `json:"selfDrivingRevision,omitempty"`
-	SchedulerTurnID       string `json:"schedulerTurnId,omitempty"`
-	SchedulerTurnSequence int    `json:"schedulerTurnSequence,omitempty"`
+	Level      string `json:"level"`
+	Method     string `json:"method"`
+	Text       string `json:"text"`
+	Kind       string `json:"kind,omitempty"`
+	Lifecycle  string `json:"lifecycle,omitempty"`
+	RunID      string `json:"runId,omitempty"`
+	ResourceID string `json:"resourceId,omitempty"`
 }
 
 type agentStreamMessage struct {
@@ -116,19 +109,11 @@ type startAgentRequest struct {
 	Title                string `json:"title"`
 	Prompt               string `json:"prompt"`
 	Cwd                  string `json:"cwd"`
-	SchedulerTurn        bool   `json:"schedulerTurn,omitempty"`
-	SelfDrivingRevision  int    `json:"selfDrivingRevision,omitempty"`
 }
 
 type agentInputRequest struct {
-	Text                         string `json:"text"`
-	UserName                     string `json:"userName,omitempty"`
-	ResourceID                   string `json:"resourceId,omitempty"`
-	SchedulerTurn                bool   `json:"schedulerTurn,omitempty"`
-	SelfDrivingRevision          int    `json:"selfDrivingRevision,omitempty"`
-	SelfDrivingProjectionSet     bool   `json:"selfDrivingProjectionSet,omitempty"`
-	ExpectedSelfDrivingRevision  int    `json:"expectedSelfDrivingRevision,omitempty"`
-	ExpectedSelfDrivingCondition string `json:"expectedSelfDrivingCondition,omitempty"`
+	Text     string `json:"text"`
+	UserName string `json:"userName,omitempty"`
 }
 
 type agentApprovalRequest struct {
@@ -139,28 +124,26 @@ type agentApprovalRequest struct {
 }
 
 type forgeSessionContext struct {
-	Version             int    `json:"version"`
-	WorkspaceID         string `json:"workspaceId"`
-	ResourceID          string `json:"resourceId,omitempty"`
-	RunID               string `json:"runId"`
-	ForgeSessionID      string `json:"forgeSessionId"`
-	Cwd                 string `json:"cwd"`
-	CreatedAt           string `json:"createdAt"`
-	SelfDrivingRevision int    `json:"selfDrivingRevision,omitempty"`
+	Version        int    `json:"version"`
+	WorkspaceID    string `json:"workspaceId"`
+	ResourceID     string `json:"resourceId,omitempty"`
+	RunID          string `json:"runId"`
+	ForgeSessionID string `json:"forgeSessionId"`
+	Cwd            string `json:"cwd"`
+	CreatedAt      string `json:"createdAt"`
 }
 
 type agentRuntime struct {
-	mu                     sync.Mutex
-	turnActionMu           sync.Mutex
-	forgeSessionReleaseMu  sync.Mutex
-	workspace              guiWorkspace
-	manager                *agentManager
-	run                    agentRun
-	agentHub               *agentHubClient
-	agentHubState          string
-	agentHubStopRequested  bool
-	schedulerTurnFinishing bool
-	archivedProofFailed    bool
+	mu                    sync.Mutex
+	turnActionMu          sync.Mutex
+	forgeSessionReleaseMu sync.Mutex
+	workspace             guiWorkspace
+	manager               *agentManager
+	run                   agentRun
+	agentHub              *agentHubClient
+	agentHubState         string
+	agentHubStopRequested bool
+	archivedProofFailed   bool
 }
 
 type agentManager struct {
@@ -514,29 +497,6 @@ func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorksp
 	return err
 }
 
-func (m *agentManager) validateSelfDrivingStart(ctx context.Context, workspace guiWorkspace, run agentRun) error {
-	_ = ctx
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return err
-	}
-	resource, err := forgeWorkspace.ResourceValue(run.ResourceID)
-	if err != nil {
-		return err
-	}
-	if resource.Task == nil || resource.Task.SelfDriving == nil || !resource.Task.SelfDriving.Enabled {
-		return errors.New("Self-Driving is disabled")
-	}
-	current := resource.Task.SelfDriving
-	if current.Revision != run.SelfDrivingRevision {
-		return fmt.Errorf("stale Self-Driving revision %d; current revision is %d", run.SelfDrivingRevision, current.Revision)
-	}
-	if current.Condition != "ready" {
-		return fmt.Errorf("Self-Driving is not ready: %s", current.Condition)
-	}
-	return nil
-}
-
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
 	_ = ctx
 	sessionID = strings.TrimSpace(sessionID)
@@ -584,14 +544,13 @@ func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace g
 		return "", err
 	}
 	context := forgeSessionContext{
-		Version:             2,
-		WorkspaceID:         run.WorkspaceID,
-		ResourceID:          resourceID,
-		RunID:               run.ID,
-		ForgeSessionID:      sessionID,
-		Cwd:                 run.Cwd,
-		CreatedAt:           time.Now().Format(time.RFC3339),
-		SelfDrivingRevision: run.SelfDrivingRevision,
+		Version:        2,
+		WorkspaceID:    run.WorkspaceID,
+		ResourceID:     resourceID,
+		RunID:          run.ID,
+		ForgeSessionID: sessionID,
+		Cwd:            run.Cwd,
+		CreatedAt:      time.Now().Format(time.RFC3339),
 	}
 	data, err := json.MarshalIndent(context, "", "  ")
 	if err != nil {
@@ -853,41 +812,12 @@ func (m *agentManager) runtimeByID(runID string) *agentRuntime {
 	return m.runtimes[runID]
 }
 
-func (rt *agentRuntime) sendInput(m *agentManager, text string) error {
-	rt.mu.Lock()
-	client := rt.agentHub
-	sessionID := rt.run.AgentHubSessionID
-	hubState := rt.agentHubState
-	rt.mu.Unlock()
-	if client != nil && sessionID != "" {
-		// sendInput currently only delivers scheduler-turn continuation
-		// prompts, so the message is always system-originated.
-		role, sender := agentHubMessageProvenance(true, "")
-		message := agentHubInboundMessage{
-			Text: text, Steer: hubState == "busy" || hubState == "waiting_approval",
-			Role: role, Sender: sender,
-		}
-		session, err := client.Message(context.Background(), sessionID, message)
-		if err != nil {
-			return fmt.Errorf("AgentHub message outcome may be unknown; it was not retried: %w", err)
-		}
-		rt.applyAgentHubSessionState(m, session)
-		return nil
-	}
-	return errors.New("agent run is not attached to AgentHub")
-}
-
-// handleTurnFinished records the durable terminal event before allowing an
-// Self-Driving scheduler turn to decide whether it should continue. This ordering
-// makes a completion observed by the poller, recovery, or an action response
-// use one idempotent path.
+// handleTurnFinished records the durable terminal event through one idempotent
+// path shared by the poller, recovery, and direct action responses.
 func (rt *agentRuntime) handleTurnFinished(m *agentManager, session agentHubSession) {
 	rt.prepareTurnCompletion(session)
 	rt.markTurnCompletionPending()
 	rt.recordTurnCompletion(session)
-	if rt.isSchedulerTurn() {
-		rt.finishSchedulerTurn(m)
-	}
 }
 
 func (rt *agentRuntime) markTurnCompletionPending() {
@@ -1086,97 +1016,6 @@ func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
 	_ = saveAgentRun(rt.workspace.Path, run)
 }
 
-func (rt *agentRuntime) isSchedulerTurn() bool {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return rt.run.SchedulerTurn
-}
-
-func (rt *agentRuntime) finishSchedulerTurn(m *agentManager) {
-	// Serialize the durable Self-Driving decision with enable/disable and dispatch.
-	m.server.selfDrivingDispatchMu.Lock()
-	defer m.server.selfDrivingDispatchMu.Unlock()
-	rt.turnActionMu.Lock()
-	defer rt.turnActionMu.Unlock()
-	rt.mu.Lock()
-	if !rt.run.SchedulerTurn || rt.schedulerTurnFinishing {
-		// Duplicate triggers from the session poller and startup recovery are
-		// expected; only one finish may run per turn.
-		rt.mu.Unlock()
-		return
-	}
-	rt.schedulerTurnFinishing = true
-	run := rt.run
-	rt.mu.Unlock()
-	defer func() {
-		rt.mu.Lock()
-		rt.schedulerTurnFinishing = false
-		rt.mu.Unlock()
-	}()
-	var taskCondition string
-	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
-	if err == nil {
-		resource, resourceErr := forgeWorkspace.ResourceValue(run.ResourceID)
-		err = resourceErr
-		if err == nil && resource.Task != nil && resource.Task.SelfDriving != nil {
-			current := resource.Task.SelfDriving
-			if current.Revision != run.SelfDrivingRevision || !current.Enabled {
-				taskCondition = "stale"
-			} else {
-				taskCondition = current.Condition
-				if current.Condition == "ready" {
-					_, err = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
-						TaskID: run.ResourceID, ExpectedRevision: run.SelfDrivingRevision,
-						Condition: "error", Reason: "agent turn ended without reporting a Self-Driving outcome",
-					})
-					taskCondition = "error"
-				}
-			}
-		}
-	}
-	if err != nil {
-		rt.addSelfDrivingFinishNotice(m, "error", selfDrivingFinishNoticeErrorLifecycle, err.Error())
-		rt.updateStatus(m, "failed")
-	} else {
-		rt.mu.Lock()
-		rt.run.SchedulerTurn = false
-		run = rt.run
-		rt.mu.Unlock()
-		_ = saveAgentRun(rt.workspace.Path, run)
-		switch taskCondition {
-		case "waiting", "blocked", "error":
-			rt.addSelfDrivingFinishNotice(m, "info", selfDrivingFinishNoticeWaitingLifecycle, "Self-Driving turn finished; the Session remains available for chat.")
-		case "stale":
-			// A disable or newer revision won the race. Ignore the old callback.
-		}
-		rt.markIdleUnlessStopped(m)
-	}
-}
-
-func (rt *agentRuntime) recordSchedulerFailure(m *agentManager, reason string) {
-	rt.mu.Lock()
-	run := rt.run
-	rt.mu.Unlock()
-	forgeWorkspace, err := app.OpenWorkspace(rt.workspace.Path)
-	if err == nil {
-		resource, readErr := forgeWorkspace.ResourceValue(run.ResourceID)
-		err = readErr
-		if err == nil && resource.Task != nil && resource.Task.SelfDriving != nil && resource.Task.SelfDriving.Enabled && resource.Task.SelfDriving.Revision == run.SelfDrivingRevision {
-			_, err = forgeWorkspace.SetSelfDrivingCondition(app.SelfDrivingConditionInput{
-				TaskID: run.ResourceID, ExpectedRevision: run.SelfDrivingRevision,
-				Condition: "error", Reason: strings.TrimSpace(reason),
-			})
-		} else if err == nil {
-			// Disable, a terminal result, or a newer revision owns the
-			// task now. Do not append a retry or surface a misleading failure.
-			return
-		}
-	}
-	if err != nil {
-		rt.addForgeNotice(m, "error", "forge/self-driving/reconcile", err.Error())
-	}
-}
-
 func (rt *agentRuntime) setRun(run agentRun) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
@@ -1195,19 +1034,6 @@ func (rt *agentRuntime) markIdle(m *agentManager) {
 	run := rt.run
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, run)
-}
-
-// markIdleUnlessStopped is markIdle for scheduler turn completion: a run with
-// a durable stopped observation must not be resurrected to idle, or the Forge
-// session release keyed on the stopped status would never fire.
-func (rt *agentRuntime) markIdleUnlessStopped(m *agentManager) {
-	rt.mu.Lock()
-	if rt.run.AgentHubStoppedObserved && rt.run.Status == "stopped" {
-		rt.mu.Unlock()
-		return
-	}
-	rt.mu.Unlock()
-	rt.markIdle(m)
 }
 
 func (rt *agentRuntime) snapshotRun() agentRun {
@@ -1244,7 +1070,11 @@ func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
 		}
 		return nil, err
 	}
-	return decodeAndMigrateAgentRuns(workspacePath, data)
+	var runs []agentRun
+	if err := json.Unmarshal(data, &runs); err != nil {
+		return nil, err
+	}
+	return runs, nil
 }
 
 func saveAgentRun(workspacePath string, run agentRun) error {
@@ -1373,29 +1203,6 @@ func newRunID() string {
 		return fmt.Sprintf("run-%d", time.Now().UnixNano())
 	}
 	return "run-" + hex.EncodeToString(b[:])
-}
-
-func newSchedulerTurnID() string {
-	return "turn-" + strings.TrimPrefix(newRunID(), "run-")
-}
-
-// beginSchedulerTurn marks a false-to-true SchedulerTurn transition. The
-// sequence is kept in the local run projection so a late notice from an older
-// turn can be rejected even when the same run and Self-Driving revision is
-// reconsidered repeatedly.
-func beginSchedulerTurn(run *agentRun) {
-	if run == nil {
-		return
-	}
-	if run.SchedulerTurn && strings.TrimSpace(run.SchedulerTurnID) != "" && run.SchedulerTurnSequence > 0 {
-		return
-	}
-	run.SchedulerTurn = true
-	run.SchedulerTurnSequence++
-	if run.SchedulerTurnSequence <= 0 {
-		run.SchedulerTurnSequence = 1
-	}
-	run.SchedulerTurnID = newSchedulerTurnID()
 }
 
 func writeForgeNoticeSSE(w http.ResponseWriter, notice forgeNotice) {

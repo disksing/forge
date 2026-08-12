@@ -24,19 +24,12 @@ type WorkspaceWikiView struct {
 }
 
 type ResourceTreeView struct {
-	ID          string               `json:"id"`
-	Type        string               `json:"type"`
-	Title       string               `json:"title"`
-	Path        string               `json:"path"`
-	Archived    bool                 `json:"archived"`
-	SelfDriving *SelfDrivingTreeView `json:"selfDriving,omitempty"`
-	Children    []ResourceTreeView   `json:"children,omitempty"`
-}
-
-type SelfDrivingTreeView struct {
-	Enabled   bool   `json:"enabled"`
-	Revision  int    `json:"revision"`
-	Condition string `json:"condition"`
+	ID       string             `json:"id"`
+	Type     string             `json:"type"`
+	Title    string             `json:"title"`
+	Path     string             `json:"path"`
+	Archived bool               `json:"archived"`
+	Children []ResourceTreeView `json:"children,omitempty"`
 }
 
 type ResourceDetailView struct {
@@ -49,7 +42,6 @@ type ResourceDetailView struct {
 	Path        string              `json:"path"`
 	Archived    bool                `json:"archived"`
 	Repos       []TaskRepo          `json:"repos,omitempty"`
-	SelfDriving *SelfDriving        `json:"selfDriving,omitempty"`
 	Logs        []LogEntry          `json:"logs,omitempty"`
 	LogPage     *LogPage            `json:"logPage,omitempty"`
 	Files       []ResourceFile      `json:"files,omitempty"`
@@ -76,13 +68,6 @@ type TaskTemplate struct {
 	Valid         bool            `json:"valid"`
 	Errors        []TemplateIssue `json:"errors"`
 	Warnings      []TemplateIssue `json:"warnings"`
-	// Deprecated V1 execution properties are exposed only for diagnostics and
-	// migration. Creation and rendering never apply them.
-	SelfDriving            bool     `json:"selfDriving,omitempty"`
-	AgentName              string   `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string   `json:"prompt,omitempty"`
-	CompletionCriteria     string   `json:"completionCriteria,omitempty"`
 }
 
 type ResourceFile struct {
@@ -211,9 +196,6 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Path:     relPath(root, entry.Path),
 		Archived: isArchivedPath(root, entry.Path),
 	}
-	if task, ok := entry.Resource.(*Task); ok && task.SelfDriving != nil {
-		item.SelfDriving = &SelfDrivingTreeView{Enabled: task.SelfDriving.Enabled, Revision: task.SelfDriving.Revision, Condition: task.SelfDriving.Condition}
-	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
 		if err != nil {
@@ -259,7 +241,6 @@ func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogE
 	case *Task:
 		detail.Description = typed.Description
 		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
-		detail.SelfDriving = typed.SelfDriving
 		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}

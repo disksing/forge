@@ -11,7 +11,6 @@ const components = [
   "ChatComposer",
   "CreateDialog",
   "ProjectCreateForm",
-  "SelfDrivingOptions",
   "TaskCreateForm",
   "TaskPreview",
   "TemplateFieldGroup",
@@ -31,8 +30,6 @@ const components = [
   "PaneResizeHandle",
   "ProfilesSettingsPanel",
   "ProjectTree",
-  "SelfDrivingBar",
-  "SelfDrivingDialog",
   "SessionSwitcher",
   "SettingsModal",
   "SettingsNavigation",
@@ -58,7 +55,6 @@ const owners: Record<(typeof components)[number], string> = {
   ChatComposer: "chat-composer",
   CreateDialog: "create-dialog",
   ProjectCreateForm: "project-create-form",
-  SelfDrivingOptions: "self-driving-options",
   TaskCreateForm: "task-create-form",
   TaskPreview: "task-preview",
   TemplateFieldGroup: "template-field-group",
@@ -78,8 +74,6 @@ const owners: Record<(typeof components)[number], string> = {
   PaneResizeHandle: "pane-resize-handle",
   ProfilesSettingsPanel: "profiles-settings-panel",
   ProjectTree: "project-tree",
-  SelfDrivingBar: "self-driving-bar",
-  SelfDrivingDialog: "self-driving-dialog",
   SessionSwitcher: "session-switcher",
   SettingsModal: "settings",
   SettingsNavigation: "settings-navigation",
@@ -165,7 +159,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "GlobalSessionList", "LayoutSwitcher", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SelfDrivingOptions", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "GlobalSessionList", "LayoutSwitcher", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

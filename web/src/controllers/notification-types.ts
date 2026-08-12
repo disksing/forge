@@ -14,8 +14,6 @@ export interface NotificationSource {
   completionState?: string;
   agentRunCompletionState?: string;
   completionEventId?: number;
-  schedulerTurn?: boolean;
-  selfDrivingRevision?: number;
   controls?: Array<{ resourceId?: string }>;
 }
 
@@ -23,11 +21,6 @@ export interface NotificationResource {
   id?: string;
   title?: string;
   type?: string;
-  selfDriving?: {
-    enabled?: boolean;
-    condition?: string;
-    lastOutcome?: { status?: string };
-  };
 }
 
 export interface NotificationEvent {
@@ -43,8 +36,6 @@ export interface NotificationRecord {
   resourceId: string;
   marker: string;
   completionState: string;
-  selfDriving: boolean;
-  selfDrivingState: string;
   title: string;
   resourceType: string;
   resourceTitle: string;

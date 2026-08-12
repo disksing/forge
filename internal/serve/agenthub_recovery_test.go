@@ -7,8 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-
-	"github.com/disksing/forge/internal/app"
 )
 
 func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
@@ -66,53 +64,6 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
 	}
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
-}
-
-func TestAgentHubRecoveryFinishesSchedulerTurnEndedWhileDownWithoutContinuation(t *testing.T) {
-	fake := newRuntimeFakeAgentHub()
-	hub := httptest.NewServer(fake)
-	defer hub.Close()
-	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-sched", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
-		AgentHubSessionID: "ses_sched", SourceExternalID: workspace.ID + "/run-sched",
-		ForgeSessionID: "session-test", Status: "running", SchedulerTurn: true,
-		SelfDrivingRevision: 1,
-		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
-	}, agentHubSession{ID: "ses_sched", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-
-	// The turn ended while the GUI was down: busy on disk, ready upstream.
-	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	waitForRuntimeTest(t, func() bool {
-		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-		if err != nil {
-			return false
-		}
-		resource, err := forgeWorkspace.ResourceValue("project1.task1")
-		if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
-			return false
-		}
-		return resource.Task.SelfDriving.Condition == "error"
-	})
-	rt := manager.runtimeByID("run-sched")
-	if rt == nil {
-		t.Fatal("scheduler run was not recovered")
-	}
-	// Recovery closes the old autonomous turn but retains the Session; it never
-	// sends an automatic continuation without a reported outcome.
-	waitForRuntimeTest(t, func() bool {
-		rt.mu.Lock()
-		defer rt.mu.Unlock()
-		return !rt.schedulerTurnFinishing
-	})
-	fake.mu.Lock()
-	messageCount := len(fake.messageSteers)
-	fake.mu.Unlock()
-	if messageCount != 0 {
-		t.Fatalf("recovery sent %d continuation messages", messageCount)
-	}
 }
 
 func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {

@@ -266,9 +266,7 @@ func parseV2Template(template *TaskTemplate, root, versionNode *yaml.Node) {
 	allowed := map[string]bool{"schema-version": true, "title": true, "description": true, "task-title": true, "fields": true}
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key := root.Content[i]
-		if legacyTemplateExecutionProperties[key.Value] {
-			template.Errors = append(template.Errors, templateProblem("execution_property_forbidden", fmt.Sprintf("execution property %q is not allowed in content templates", key.Value), key.Value, key))
-		} else if !allowed[key.Value] {
+		if !allowed[key.Value] {
 			template.Errors = append(template.Errors, templateProblem("unknown_property", fmt.Sprintf("unknown property %q", key.Value), key.Value, key))
 		}
 	}

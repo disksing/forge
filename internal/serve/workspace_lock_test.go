@@ -283,39 +283,3 @@ func TestUnownedWorkspaceRejectsManagementAndWrites(t *testing.T) {
 		t.Fatalf("expected write to be rejected, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
-
-func TestSchedulerSkipsUnownedWorkspaces(t *testing.T) {
-	workspace := t.TempDir()
-	outputPath := filepath.Join(t.TempDir(), "args")
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	if _, err := app.Initialize(workspace, "en"); err != nil {
-		t.Fatal(err)
-	}
-	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
-	if err := s.saveConfig(config{
-		Version:       agentHubConfigVersion,
-		Workspaces:    []guiWorkspace{{ID: "workspace-one", Path: workspace}},
-		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "fake-agent"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(outputPath); !os.IsNotExist(err) {
-		data, _ := os.ReadFile(outputPath)
-		t.Fatalf("scheduler must not touch an unowned workspace, unexpected output: %s", data)
-	}
-
-	// Once owned, the scheduler is allowed to query the workspace.
-	if _, err := s.locks.acquire(workspace); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.scheduleRunnableTasks(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if !s.ownsWorkspace(workspace) {
-		t.Fatal("scheduler did not retain ownership for the configured workspace")
-	}
-}

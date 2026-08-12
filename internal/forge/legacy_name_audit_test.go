@@ -40,7 +40,7 @@ func TestRetiredRunNameIsConfinedToMigrationAndFixtures(t *testing.T) {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "bin", "node_modules":
+			case ".git", "bin", "node_modules", "tests":
 				return filepath.SkipDir
 			}
 			return nil
@@ -74,16 +74,11 @@ func TestRetiredRunNameIsConfinedToMigrationAndFixtures(t *testing.T) {
 	}
 }
 
-func TestRetiredSelfDrivingControlPlaneIsConfinedToMigrationsAndTests(t *testing.T) {
+func TestRemovedAutomationSurfaceDoesNotAppearInProductionFiles(t *testing.T) {
 	t.Parallel()
 
 	root := filepath.Clean(filepath.Join("..", ".."))
-	retired := regexp.MustCompile(`(?:Queue|Start|Retry|Resume|Cancel)SelfDriving|ExpectedGeneration|ExpectedState|SelfDrivingGeneration|selfDrivingGeneration|resumeSuspendedSelfDriving|expectedSelfDrivingState|queueSelfDriving|manualSelfDriving|selfDrivingPaused|selfDrivingCancelled|until-resume|/self-driving/(?:start|cancel|pause|resume)`)
-	allowed := map[string]bool{
-		"internal/app/self_driving_migration.go":   true,
-		"internal/forge/self_driving_migration.go": true,
-		"internal/serve/self_driving_migration.go": true,
-	}
+	retired := regexp.MustCompile(`(?i)self[-_ ]?driving|autorun|auto[-_ ]?run|schedulerTurn|schedulerSequence|scheduleRunnableTasks`)
 	textExtensions := map[string]bool{
 		".css": true, ".go": true, ".html": true, ".js": true,
 		".json": true, ".md": true, ".sh": true, ".yaml": true, ".yml": true,
@@ -96,7 +91,7 @@ func TestRetiredSelfDrivingControlPlaneIsConfinedToMigrationsAndTests(t *testing
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".git", "bin", "node_modules":
+			case ".git", "bin", "node_modules", "tests":
 				return filepath.SkipDir
 			}
 			return nil
@@ -116,16 +111,14 @@ func TestRetiredSelfDrivingControlPlaneIsConfinedToMigrationsAndTests(t *testing
 			return relErr
 		}
 		rel = filepath.ToSlash(rel)
-		if !allowed[rel] {
-			unexpected = append(unexpected, rel)
-		}
+		unexpected = append(unexpected, rel)
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("audit retired Self-Driving control plane: %v", err)
+		t.Fatalf("audit removed automation surface: %v", err)
 	}
 	if len(unexpected) != 0 {
 		sort.Strings(unexpected)
-		t.Fatalf("retired Self-Driving control plane escaped migration allowlist:\n%s", strings.Join(unexpected, "\n"))
+		t.Fatalf("removed automation surface appears in production files:\n%s", strings.Join(unexpected, "\n"))
 	}
 }

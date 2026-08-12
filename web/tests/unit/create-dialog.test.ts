@@ -31,10 +31,9 @@ function model(overrides: Partial<CreateDialogModel> = {}): CreateDialogModel {
     workspaceId: "workspace-a",
     draft: {
       type: "task", projectId: "project1", templateName: "", templateFields: {}, title: "", titleOverride: false,
-      description: "", detail: "", slug: "", selfDriving: false, agentName: "", agentProfiles: "", prompt: "",
-      completionCriteria: "", activeTab: "edit", editedMarkdown: null, showOptions: false,
+      description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false,
     },
-    templates: [], agents: [], profileKeys: [], preview: null, previewKey: "", previewing: false,
+    templates: [], preview: null, previewKey: "", previewing: false,
     previewError: "", templateDigest: "", submitting: false, onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
     previewRequestKey: (draft) => JSON.stringify(draft), onConfirmTemplateSwitch: () => true, onIconsChanged: vi.fn(),
     ...overrides,
@@ -172,27 +171,9 @@ describe("CreateDialog", () => {
     expect(target.querySelector("[data-preview-edited-note]")).toBeTruthy();
   });
 
-  it("expands Self-Driving fields from the Automation section without a disclosure", async () => {
-    const { target } = mountDialog(model());
-    await tick();
-
-    expect(target.querySelector(".create-task-automation-fields")).toBeNull();
-    const toggle = target.querySelector<HTMLInputElement>('input[name="selfDriving"]')!;
-    toggle.click();
-    await tick();
-
-    expect(target.querySelector(".create-task-automation-fields")).toBeTruthy();
-    expect(target.querySelector('select[name="agentName"]')).toBeTruthy();
-    expect(target.querySelector('textarea[name="completionCriteria"]')).toBeTruthy();
-  });
-
   it("submits one complete Task draft while a pending publication cannot replace local inputs", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
-    const first = model({
-      agents: [{ id: "codex", label: "Codex", summary: "Reasoning" }],
-      profileKeys: ["reasoning"],
-      onSubmit,
-    });
+    const first = model({ onSubmit });
     const { channel, target } = mountDialog(first);
     await tick();
 
@@ -205,12 +186,6 @@ describe("CreateDialog", () => {
     const title = set('input[name="title"]', "Stable payload");
     set('textarea[name="detail"]', "Keep all fields");
     set('input[name="slug"]', "stable-payload");
-    target.querySelector<HTMLInputElement>('input[name="selfDriving"]')!.click();
-    await tick();
-    set('select[name="agentName"]', "codex");
-    set('textarea[name="prompt"]', "Run autonomously");
-    set('input[name="agentProfiles"]', "reasoning");
-    set('textarea[name="completionCriteria"]', "All checks pass");
     title.focus();
 
     channel.publish({ ...first, submitting: true });
@@ -226,11 +201,6 @@ describe("CreateDialog", () => {
       title: "Stable payload",
       detail: "Keep all fields",
       slug: "stable-payload",
-      selfDriving: true,
-      agentName: "codex",
-      agentProfiles: "reasoning",
-      prompt: "Run autonomously",
-      completionCriteria: "All checks pass",
     });
   });
 });

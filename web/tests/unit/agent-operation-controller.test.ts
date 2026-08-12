@@ -3,17 +3,17 @@ import { describe, expect, it, vi } from "vitest";
 import { createAgentOperationController } from "../../src/controllers/agent-operation-controller";
 
 describe("AgentOperationController", () => {
-	it("tracks Session and Self-Driving operations independently", () => {
+	it("tracks independent Session operations", () => {
 		const changed = vi.fn();
 		const operations = createAgentOperationController(changed);
 		const stop = operations.begin("session-stop", "run-1");
-		const disable = operations.begin("self-driving-disable", "task1");
+		const turn = operations.begin("turn-stop", "run-1");
 
 		expect(operations.begin("session-stop", "run-2")).toBeNull();
 		expect(operations.key("session-stop")).toBe("run-1");
-		expect(operations.active("self-driving-disable")).toBe(true);
+		expect(operations.active("turn-stop")).toBe(true);
 		expect(operations.finish(stop)).toBe(true);
-		expect(operations.finish(disable)).toBe(true);
+		expect(operations.finish(turn)).toBe(true);
 		expect(changed).toHaveBeenCalledTimes(4);
 	});
 

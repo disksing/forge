@@ -69,7 +69,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 		AgentHubAgentName: "review-agent", ForgeSessionID: "session-one", AgentHubSessionID: "ses_one",
 		Title: "Run One", Cwd: workspace, Status: "running",
 		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
-		LastOutputAt: "2026-01-01T00:00:02Z", SchedulerTurn: true, SelfDrivingRevision: 4,
+		LastOutputAt: "2026-01-01T00:00:02Z",
 	}
 	if err := rewriteAgentRuns(workspace, []agentRun{run}); err != nil {
 		t.Fatal(err)
@@ -83,8 +83,7 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 	}
 	internal := tree.Sessions[0]
 	if internal.Source != "internal" || internal.AgentRunID != run.ID || internal.AgentRunAgentName != run.AgentHubAgentName ||
-		internal.AgentRunStatus != run.Status || internal.AgentRunLastOutputAt != run.LastOutputAt ||
-		!internal.SchedulerTurn || internal.SelfDrivingRevision != 4 || internal.ResourceID != run.ResourceID {
+		internal.AgentRunStatus != run.Status || internal.AgentRunLastOutputAt != run.LastOutputAt || internal.ResourceID != run.ResourceID {
 		t.Fatalf("internal session was not enriched: %#v", internal)
 	}
 	if tree.Sessions[1].Source != "external" {
@@ -227,7 +226,6 @@ func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 	run := agentRun{
 		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
 		ForgeSessionID: "session-one", AgentHubSessionID: "ses_one", Cwd: resourceDir,
-		SchedulerTurn: true, SelfDrivingRevision: 3,
 	}
 	contextPath, err := manager.writeForgeSessionContext(context.Background(), guiWorkspace{Path: workspace}, run)
 	if err != nil {
@@ -237,8 +235,7 @@ func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
 	if err := json.Unmarshal(mustReadFile(t, contextPath), &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.ForgeSessionID != "session-one" || saved.RunID != "run-one" ||
-		saved.ResourceID != "project1.task1" || saved.SelfDrivingRevision != 3 {
+	if saved.ForgeSessionID != "session-one" || saved.RunID != "run-one" || saved.ResourceID != "project1.task1" {
 		t.Fatalf("unexpected Forge session context: %#v", saved)
 	}
 }

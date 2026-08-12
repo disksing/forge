@@ -157,25 +157,6 @@ describe("ChatSessionController", () => {
     expect(FakeEventSource.instances).toHaveLength(1);
   });
 
-  it("publishes a same-session activation when run metadata dismisses a notice", async () => {
-    const value = controller(vi.fn<typeof fetch>(async () => response({ events: [], page: {} })));
-    let latest = {} as ChatContextSnapshot;
-    value.subscribe((snapshot) => { latest = snapshot; });
-    const activeRun = { ...run("run-a"), selfDrivingRevision: 2, schedulerTurnSequence: 3, schedulerTurn: false };
-    value.activate("workspace-a", activeRun);
-    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
-    FakeEventSource.instances[0].notice({
-      source: "forge", type: "forge.notice", data: {
-        kind: "self-driving-finish", lifecycle: "until-reconcile", runId: "run-a", resourceId: "task-a",
-        selfDrivingRevision: 2, schedulerTurnSequence: 3,
-      },
-    });
-    expect(latest.notices).toHaveLength(1);
-
-    value.activate("workspace-a", { ...activeRun, schedulerTurn: true });
-    expect(latest.notices).toEqual([]);
-  });
-
   it("uses the raw oldest cursor and merges an overlapping older page once", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {
       const path = String(url);

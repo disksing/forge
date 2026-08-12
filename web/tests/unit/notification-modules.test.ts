@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { notificationDisplayBody, notificationDisplayTitle } from "../../src/controllers/notification-delivery";
-import { createNotificationRecord, notificationEventState, notificationMarkerFor, notificationSelfDrivingContext } from "../../src/controllers/notification-projection";
+import { createNotificationRecord, notificationEventState, notificationMarkerFor } from "../../src/controllers/notification-projection";
 import { normalizeNotificationStore } from "../../src/controllers/notification-store";
 
 describe("notification modules", () => {
@@ -14,20 +14,18 @@ describe("notification modules", () => {
     expect(store.effects).toEqual([{ key: "sound:m1", at: 11 }]);
   });
 
-  it("projects completion identity and final Self-Driving state", () => {
-    const source = { id: "run-1", resourceId: "task1", forgeSessionId: "forge-1", agentHubSessionId: "hub-1", completionEventId: 42, schedulerTurn: true, selfDrivingRevision: 7 };
+  it("projects completion identity and display content", () => {
+    const source = { id: "run-1", resourceId: "task1", forgeSessionId: "forge-1", agentHubSessionId: "hub-1", completionEventId: 42 };
     expect(notificationMarkerFor(source)).toBe("hub-1:42");
     expect(notificationEventState({ id: 42, type: "turn.failed" })).toBe("failed");
-    expect(notificationSelfDrivingContext(source, { selfDriving: { enabled: true, condition: "blocked" } })).toMatchObject({ isSelfDriving: true, state: "blocked", final: true, suppressed: false });
-
     const record = createNotificationRecord(source, {
       workspaceId: "workspace-a", marker: "hub-1:42", completionState: "failed",
       navigationTarget: () => ({ primaryResourceId: "task1" }),
-      findResource: () => ({ id: "task1", type: "task", title: "Build release", selfDriving: { enabled: true, condition: "blocked" } }),
+      findResource: () => ({ id: "task1", type: "task", title: "Build release" }),
       now: () => 100,
     });
-    expect(record).toMatchObject({ workspaceId: "workspace-a", sessionId: "forge-1", resourceId: "task1", selfDriving: true, at: 100 });
+    expect(record).toMatchObject({ workspaceId: "workspace-a", sessionId: "forge-1", resourceId: "task1", at: 100 });
     expect(notificationDisplayTitle(record!)).toBe("Task: Build release");
-    expect(notificationDisplayBody(record!)).toBe("Self-Driving blocked.");
+    expect(notificationDisplayBody(record!)).toBe("Turn failed.");
   });
 });

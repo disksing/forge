@@ -2,25 +2,6 @@ import type { AgentEvent, AgentNotice, AgentRun } from "./chat";
 import type { TaskTemplate } from "./create";
 import type { FileTreeModel, ResourceFileModel, ResourceRepoModel } from "./detail";
 
-export interface SelfDrivingState {
-  enabled?: boolean;
-  revision?: number;
-  condition?: string;
-  agentName?: string;
-  preferredAgentProfiles?: string[];
-  prompt?: string;
-  completionCriteria?: string;
-  summary?: string;
-  wakeCondition?: string;
-  wakeConditionFallback?: boolean;
-  wakeContext?: { summary?: string; condition?: string; fallback?: boolean };
-  conditionReason?: string;
-  notificationError?: string | { message?: string };
-  actualAgent?: string;
-  actualReason?: string;
-  lastOutcome?: { status?: string; reason?: string };
-}
-
 export interface ResourceLogRecord {
   id?: string;
   time?: string;
@@ -39,7 +20,6 @@ export interface ResourceRecord {
   archived?: boolean;
   updatedAt?: string;
   children?: ResourceRecord[];
-  selfDriving?: SelfDrivingState;
   files?: ResourceFileModel[];
   logs?: ResourceLogRecord[];
   logPage?: { entries?: ResourceLogRecord[]; hasMore?: boolean; nextCursor?: string };

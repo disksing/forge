@@ -2,15 +2,6 @@
 
 
 
-:where([data-component-owner="app-shell"]) .self-driving-bar-wrap {
-  padding: 8px 12px;
-  background: #fff;
-}
-
-:where([data-component-owner="app-shell"]) .self-driving-bar-wrap:empty {
-  display: none;
-}
-
 :where([data-component-owner="app-shell"]).app-shell {
   display: grid;
   grid-template-columns: minmax(var(--sidebar-min-width), min(var(--sidebar-width), calc(100vw - var(--pane-handle-width) - var(--details-min-width) - var(--pane-handle-width) - var(--chat-min-width))))

@@ -47,10 +47,6 @@
   resize: vertical;
 }
 
-.self-driving-dialog-form .form-actions {
-  padding-top: 2px;
-}
-
 .create-task-dialog .form-actions {
   padding-top: 10px;
 }
@@ -344,7 +340,6 @@ i[data-lucide] {
 }
 
 .create-dialog-backdrop.modal-enter,
-.self-driving-dialog-backdrop.modal-enter,
 .upload-dialog-backdrop.modal-enter,
 .file-modal-backdrop.modal-enter,
 .settings-overlay.modal-enter {
@@ -352,7 +347,6 @@ i[data-lucide] {
 }
 
 .create-dialog.modal-enter,
-.self-driving-dialog.modal-enter,
 .upload-dialog.modal-enter,
 .file-modal.modal-enter,
 .diff-modal.modal-enter {
@@ -365,12 +359,10 @@ i[data-lucide] {
 
 @media (prefers-reduced-motion:reduce) {
   .create-dialog-backdrop.modal-enter,
-  .self-driving-dialog-backdrop.modal-enter,
   .upload-dialog-backdrop.modal-enter,
   .file-modal-backdrop.modal-enter,
   .settings-overlay.modal-enter,
   .create-dialog.modal-enter,
-  .self-driving-dialog.modal-enter,
   .upload-dialog.modal-enter,
   .file-modal.modal-enter,
   .diff-modal.modal-enter,

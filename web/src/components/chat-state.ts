@@ -24,7 +24,6 @@ interface ChatContext {
   streamGeneration: number;
   events: AgentEvent[];
   notices: AgentNotice[];
-  noticeWatermarks: Map<string, number>;
   beforeId: number;
   hasMoreBefore: boolean;
   loading: boolean;
@@ -83,13 +82,12 @@ export class ChatSessionController {
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, runId);
     context.run = run;
     context.acceptedSessionIds = sessionIdentities(run);
-    const noticesChanged = this.reconcileNotices(context);
     if (!isLiveRun(run) && context.stream) {
       context.streamGeneration++;
       context.stream.close();
       context.stream = null;
     }
-    if (contextChanged || noticesChanged) this.emit();
+    if (contextChanged) this.emit();
     if (!context.loaded && !context.loading) void this.loadInitial(context);
     else this.connect(context);
   }
@@ -159,7 +157,7 @@ export class ChatSessionController {
   private createContext(workspaceId: string, runId: string): ChatContext {
     const context: ChatContext = {
       key: contextKey(workspaceId, runId), workspaceId, runId, acceptedSessionIds: new Set([runId]), run: null,
-      generation: 1, streamGeneration: 0, events: [], notices: [], noticeWatermarks: new Map(), beforeId: 0,
+      generation: 1, streamGeneration: 0, events: [], notices: [], beforeId: 0,
       hasMoreBefore: false, loading: false, loadingOlder: false, loaded: false, error: "", stream: null,
       pendingEvents: [], flushTimer: null,
     };
@@ -241,36 +239,9 @@ export class ChatSessionController {
   }
 
   private appendNotice(context: ChatContext, notice: AgentNotice): void {
-    const key = waitingNoticeKey(notice);
-    if (key) {
-      const sequence = Number(notice.data?.schedulerTurnSequence) || 0;
-      const watermark = context.noticeWatermarks.get(key) || 0;
-      if (watermark && sequence <= watermark) return;
-      context.noticeWatermarks.set(key, Math.max(watermark, sequence));
-      context.notices = context.notices.filter((candidate) => waitingNoticeKey(candidate) !== key);
-    } else if (context.notices.some((candidate) => noticeIdentity(candidate) === noticeIdentity(notice))) {
-      return;
-    }
+    if (context.notices.some((candidate) => noticeIdentity(candidate) === noticeIdentity(notice))) return;
     context.notices.push(notice);
     if (context.notices.length > 20) context.notices.splice(0, context.notices.length - 20);
-  }
-
-  private reconcileNotices(context: ChatContext): boolean {
-    const run = context.run;
-    const previous = context.notices;
-    const next = previous.filter((notice) => {
-      if (!waitingNoticeKey(notice)) return true;
-      const data = notice.data || {};
-      if (!run || String(data.runId || "") !== run.id || String(data.resourceId || "") !== String(run.resourceId || "")) return false;
-      if (Number(data.selfDrivingRevision) !== Number(run.selfDrivingRevision)) return false;
-      const noticeSequence = Number(data.schedulerTurnSequence) || 0;
-      const runSequence = Number(run.schedulerTurnSequence) || 0;
-      if (runSequence > noticeSequence) return false;
-      if (run.schedulerTurn && (!noticeSequence || runSequence >= noticeSequence)) return false;
-      return true;
-    });
-    context.notices = next;
-    return next.length !== previous.length || next.some((notice, index) => notice !== previous[index]);
   }
 
   private scheduleEventFlush(context: ChatContext): void {
@@ -373,15 +344,9 @@ function isLiveRun(run: AgentRun | null): boolean {
   return ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(String(run?.status || ""));
 }
 
-function waitingNoticeKey(notice: AgentNotice): string {
-  const data = notice.data || {};
-  if (data.kind !== "self-driving-finish" || data.lifecycle !== "until-reconcile") return "";
-  return [data.kind, data.runId, data.resourceId, data.selfDrivingRevision].map((value) => String(value ?? "")).join(":");
-}
-
 function noticeIdentity(notice: AgentNotice): string {
   const data = notice.data || {};
-  return [notice.type, data.method, data.kind, data.lifecycle, data.runId, data.schedulerTurnSequence, data.text].map((value) => String(value ?? "")).join(":");
+  return [notice.type, data.method, data.kind, data.lifecycle, data.runId, data.text].map((value) => String(value ?? "")).join(":");
 }
 
 function emptySnapshot(): ChatContextSnapshot {

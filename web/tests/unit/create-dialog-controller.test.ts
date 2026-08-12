@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../../src/components/models";
-import { createCreateDialogController, parseAgentProfiles } from "../../src/controllers/create-dialog-controller";
+import { createCreateDialogController } from "../../src/controllers/create-dialog-controller";
 
 const template: TaskTemplate = {
 	name: "feature",
@@ -23,8 +23,6 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 	const controller = createCreateDialogController({
 		workspaceId: () => "workspace-a",
 		templates: () => [template],
-		agents: () => [{ id: "codex", label: "Codex", summary: "Reasoning" }],
-		profileKeys: () => ["reasoning"],
 		request: async <T>(path: string, init?: RequestInit): Promise<T> => {
 			requests.push({ path, init });
 			return await responder(path, init) as T;
@@ -53,10 +51,6 @@ function body(record: RequestRecord): Record<string, unknown> {
 }
 
 describe("CreateDialogController", () => {
-	it("normalizes and deduplicates preferred Agent profiles", () => {
-		expect(parseAgentProfiles(" Build,review, BUILD, ,Review ")).toEqual(["build", "review"]);
-	});
-
 	it("maps Project drafts to the Project API without Task-only fields", async () => {
 		const test = harness();
 		test.controller.open("project");
@@ -68,7 +62,7 @@ describe("CreateDialogController", () => {
 		expect(test.reloadTree).toHaveBeenCalledOnce();
 	});
 
-	it("renders a template before submit and sends the complete Self-Driving Task payload", async () => {
+	it("renders a template before submit and sends the complete Task payload", async () => {
 		const preview: TaskPreview = { title: "Generated title", markdown: "# Generated title\n", template: { digest: "sha256:template" } };
 		const test = harness((path) => path.endsWith("/preview") ? preview : { id: "project1.task1" });
 		test.controller.open("task", "project1");
@@ -77,11 +71,6 @@ describe("CreateDialogController", () => {
 			templateName: "feature",
 			templateFields: { summary: "Generated title" },
 			slug: "generated-title",
-			selfDriving: true,
-			agentName: "codex",
-			agentProfiles: "Reasoning, review, reasoning",
-			prompt: "Continue until verified",
-			completionCriteria: "All checks pass",
 		};
 
 		await test.current().onSubmit(next);
@@ -97,11 +86,6 @@ describe("CreateDialogController", () => {
 			templateFields: { summary: "Generated title" },
 			expectedTemplateDigest: "sha256:template",
 			slug: "generated-title",
-			selfDriving: true,
-			agentName: "codex",
-			preferredAgentProfiles: ["reasoning", "review"],
-			prompt: "Continue until verified",
-			completionCriteria: "All checks pass",
 		});
 	});
 
@@ -118,11 +102,6 @@ describe("CreateDialogController", () => {
 			title: "Generated title",
 			taskMarkdown: "# Hand edited\n",
 			slug: "",
-			selfDriving: false,
-			agentName: "",
-			preferredAgentProfiles: [],
-			prompt: "",
-			completionCriteria: "",
 		});
 	});
 

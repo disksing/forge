@@ -34,7 +34,6 @@ CreateDialog (channel subscription, modal lifecycle, draft identity, focus trap,
 └── TaskCreateForm (Task coordination and preview debounce)
     ├── TemplatePicker (blank/template selection)
     ├── TemplateFieldGroup × required/optional (schema field rendering)
-    ├── SelfDrivingOptions (automation toggle and parameters)
     └── TaskPreview (blank/rendered preview, edit protection, reset and refresh)
 ```
 
@@ -56,12 +55,11 @@ Each panel receives typed `SettingsModel` callbacks and the smallest relevant sh
 | `agent-draft-store.ts` | Versioned Session draft keys, Workspace/Resource metadata, local persistence, and bounded orphan eviction | Stateless adapter created once; browser storage is resolved lazily |
 | `agent-draft-controller.ts` | Active draft restore/persist/prune coordination against the canonical Session projection | Created once over the application draft runtime |
 | `resource-detail-controller.ts` | Resource detail fetch identity, log pagination, overlap deduplication, and stale page rejection | Created once over the canonical detail/page records; requests are accepted only for the captured Workspace, Resource, and generation |
-| `agent-session-controller.ts` and `agent-operation-controller.ts` | Session/Turn/Self-Driving mutations and their keyed pending state; stale operation leases cannot clear newer state | Created once; pending leases are reset during selection changes and application stop |
+| `agent-session-controller.ts` and `agent-operation-controller.ts` | Session/Turn mutations and their keyed pending state; stale operation leases cannot clear newer state | Created once; pending leases are reset during selection changes and application stop |
 | `create-dialog-controller.ts` | Create Project/Task draft conversion, template preview cancellation, submission, and dialog identity | Created once; pending preview is aborted on close and application stop |
 | `settings-controller.ts` and `user-settings-controller.ts` | Settings loading/mutation plus browser-local User identity persistence | Settings state is application-scoped; the User controller and its storage listener are recreated with each application lifecycle |
 | `route-controller.ts` and `pane-layout-controller.ts` | Typed URL projection and persisted desktop/mobile layout state | Created once; browser state is applied during startup and callbacks publish immutable snapshots |
 | `shell-projection.ts` | Pure ordering, lock, status, and Project/Task/Session presentation | Created once with Tree/resource lookup dependencies and a replaceable clock |
-| `self-driving-view-controller.ts` | Self-Driving bar projection plus configuration-dialog identity, focus, validation, and submission | Created once; private dialog state is reset when Workspace or selection changes |
 
 Dependencies point from `app-controller.ts` into these controllers, and from controllers only into typed component models or small runtime utilities. Cross-domain work such as switching Workspace, reconciling Tree + Session projections, and publishing several view roots remains in `app-controller.ts`; storage formats, request pagination, mutations, and pending-operation state remain inside their domain owner.
 

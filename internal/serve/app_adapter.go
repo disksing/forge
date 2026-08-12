@@ -32,9 +32,6 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 
 func resourceSnapshotFromApp(resource app.ResourceTreeView) resourceSnapshot {
 	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived}
-	if resource.SelfDriving != nil {
-		result.SelfDriving = &selfDrivingSnapshot{Enabled: resource.SelfDriving.Enabled, Revision: resource.SelfDriving.Revision, Condition: resource.SelfDriving.Condition}
-	}
 	for _, child := range resource.Children {
 		result.Children = append(result.Children, resourceSnapshotFromApp(child))
 	}
@@ -47,21 +44,6 @@ func fileTreeEntriesFromApp(entries []app.FileTreeEntry) []fileTreeEntry {
 		converted := fileTreeEntry{Name: entry.Name, Path: entry.Path, Type: entry.Type, Size: entry.Size, Modified: entry.Modified}
 		converted.Children = fileTreeEntriesFromApp(entry.Children)
 		result = append(result, converted)
-	}
-	return result
-}
-
-func runnableTaskCandidatesFromApp(tasks []app.RunnableTask) []runnableTaskCandidate {
-	result := make([]runnableTaskCandidate, 0, len(tasks))
-	for _, task := range tasks {
-		candidate := runnableTaskCandidate{
-			ID: task.ID, Path: task.Path, Title: task.Title, Revision: task.Revision,
-			Condition: task.Condition, AgentName: task.AgentName, Prompt: task.Prompt,
-			PreferredAgentProfiles: append([]string(nil), task.PreferredAgentProfiles...),
-			CompletionCriteria:     task.CompletionCriteria,
-			WakeContext:            task.WakeContext,
-		}
-		result = append(result, candidate)
 	}
 	return result
 }

@@ -1,7 +1,6 @@
 package serve
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -102,60 +101,6 @@ func TestExternalProjectLockBlocksNewAgentRunBeforeForgeOrAgentHubSession(t *tes
 	defer fake.mu.Unlock()
 	if len(fake.sessions) != 0 {
 		t.Fatalf("blocked project session contacted AgentHub: %d sessions", len(fake.sessions))
-	}
-}
-
-func TestExternalResourceLockDoesNotBlockSelfDrivingSwitch(t *testing.T) {
-	fake := newRuntimeFakeAgentHub()
-	hub := httptest.NewServer(fake)
-	defer hub.Close()
-	server, workspace, task := newChatSelfDrivingTestServer(t, hub.URL)
-	createExternalResourceLockForTest(t, workspace.Path, task.ID)
-
-	recorder := chatSelfDrivingStart(t, server, workspace.ID, fmt.Sprintf(`{"resourceId":%q,"agentName":"fake-agent"}`, task.ID))
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("resource lock blocked Self-Driving persistence: %d %s", recorder.Code, recorder.Body.String())
-	}
-	reloaded := reloadTestTask(t, workspace.Path, task.ID)
-	if reloaded.SelfDriving == nil || !reloaded.SelfDriving.Enabled || reloaded.SelfDriving.Revision != 1 {
-		t.Fatalf("Self-Driving switch was not persisted under resource lock: %#v", reloaded.SelfDriving)
-	}
-	fake.mu.Lock()
-	if len(fake.sessions) != 0 {
-		fake.mu.Unlock()
-		t.Fatalf("blocked Chat Self-Driving contacted AgentHub: %d sessions", len(fake.sessions))
-	}
-	fake.mu.Unlock()
-}
-
-func TestExternalResourceLockSkipsSchedulerWithoutChangingTaskState(t *testing.T) {
-	workspace := t.TempDir()
-	requests := 0
-	server := newSchedulerTestServer(t, workspace, nil, func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		http.Error(w, externalResourceLockMessage, http.StatusConflict)
-	})
-	createExternalResourceLockForTest(t, workspace, "project1.task1")
-
-	result, err := server.startRunnableTask(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, runnableTaskCandidate{
-		ID: "project1.task1", Revision: 1, Condition: "ready", AgentName: "fake-agent",
-	})
-	if err != nil || result != runnableTaskSkippedActive {
-		t.Fatalf("external resource lock should defer scheduler dispatch, got result=%q err=%v", result, err)
-	}
-	if requests != 1 {
-		t.Fatalf("scheduler made %d start attempts, want one reconciled conflict", requests)
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resource, err := forgeWorkspace.ResourceValue("project1.task1")
-	if err != nil || resource.Task == nil || resource.Task.SelfDriving == nil {
-		t.Fatalf("reload locked scheduler task: %v", err)
-	}
-	if !resource.Task.SelfDriving.Enabled || resource.Task.SelfDriving.Revision != 1 || resource.Task.SelfDriving.Condition != "ready" || resource.Task.SelfDriving.ConditionReason != "" {
-		t.Fatalf("external lock leaked runtime coordination into Task state: %#v", resource.Task.SelfDriving)
 	}
 }
 

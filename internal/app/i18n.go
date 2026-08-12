@@ -11,16 +11,6 @@ const (
 	languageSimplifiedChinese = "zh-CN"
 )
 
-const selfDrivingAgentGuidanceEnglish = `- Self-Driving suspend is allowed only when the task cannot make meaningful progress and the only remaining action would be repeated polling of a specific, observable external condition. If any in-scope implementation, testing, investigation, review, documentation, repair, or verification remains, continue; do not use suspend for a finished phase, a checkpoint or save-progress step, shortening a turn, or yielding early.
-- Before suspending, exhaust work that does not depend on the external condition. Put completed work, current status, and blocking context in --summary=<text>; put the separate, specific, observable, verifiable wake signal in --wake-condition=<text>. Use complete only after task requirements and appropriate verification, pause for a user decision, authorization, or manual handling, and fail only when no feasible safe path remains. Forge currently stores natural-language conditions without parsing them and uses a 30-minute fallback wake; a future Scheduler may use the condition for proactive wake-up.
-- Every Self-Driving result command must include the revision supplied by the Scheduler. That revision gate, not system-message provenance, is the authority boundary. complete disables Self-Driving; suspend keeps it enabled and waiting; pause and fail keep it enabled but blocked or errored without automatic retry.
-`
-
-const selfDrivingAgentGuidanceChinese = `- Self-Driving suspend 仅适用于任务无法继续推进、剩余唯一有意义的动作是反复轮询一个具体且可观察的外部条件的情况。只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做，就必须继续；不得把 suspend 用于阶段完成、checkpoint 或保存进度、缩短回合或主动让出执行权。
-- 挂起前先穷尽不依赖该外部条件的工作。使用 --summary=<text> 记录已完成工作、当前状态和阻塞上下文；使用 --wake-condition=<text> 单独记录具体、可观察、可验证的外部唤醒信号。只有需求和适当验证完成后才使用 complete；需要用户决定、授权或人工处理时使用 pause；当前约束下没有可行安全路径时才使用 fail。Forge 当前只保存自然语言条件、不解析其含义，并使用 30 分钟 fallback 唤醒；未来 Scheduler 可以据此主动唤醒。
-- 每个 Self-Driving 结果命令都必须携带 Scheduler 提供的 revision；权限边界是 revision gate，而不是系统消息 provenance。complete 会关闭 Self-Driving；suspend 保持开启并等待；pause 和 fail 保持开启但进入 blocked 或 error，且不自动重试。
-`
-
 const crossResourceReadGuidanceEnglish = `- Read-only inspection of other project/task resources does not change them and needs no additional Forge lock. Only when writing to a project/task outside the resource already locked for this session, acquire a temporary lock with explicit ` + "`--project`" + `/` + "`--task`" + ` selectors by running ` + "`forge session lock --id=$FORGE_SESSION_ID`" + `, then release it with ` + "`forge session unlock --id=$FORGE_SESSION_ID`" + ` when finished.
 - To understand another task without writing, inspect its ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, and relevant ` + "`artifacts/`" + `. ` + "`task.json`" + ` contains structured state, ` + "`task.md`" + ` the durable contract, ` + "`work.md`" + ` the current recovery checkpoint, and ` + "`log.jsonl`" + ` the historical timeline. You may use ` + "`sed`" + `, ` + "`rg`" + `, or ` + "`less`" + ` on the resolved paths.
 - For a read-only Forge view of another task, use ` + "`forge task show --project=<project> --task=<task>`" + ` for structured task information, ` + "`forge task log list --project=<project> --task=<task> [--json]`" + ` for its log, and ` + "`forge workspace resource --id=<project.task> --json`" + ` for resource details including common Markdown file contents and logs.
@@ -260,7 +250,7 @@ func taskAgentsPromptZH(resource Resource) string {
 		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Forge session、锁和文件职责规则。"
 		extra = `
 - 项目内容模板位于 templates/*.md。使用 schema-version: 2，并声明 title、可选 description/task-title、fields 和 Markdown 正文；字段类型支持 text、textarea、select、boolean。
-- 模板只组织任务内容，不得包含 self-driving、agent、agent-profiles、prompt 或 completion-criteria；这些运行选项必须在创建任务时显式选择。
+- 模板只组织任务内容，不包含运行时 Agent 或 Session 设置。
 - 创建任务时，如果存在适用的现有模板，应优先使用该模板。
 - 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
 - 模板格式：
@@ -290,9 +280,7 @@ func taskAgentsPromptZH(resource Resource) string {
 - %s
 - %s
 - Forge session 所有权：如果环境变量或注入的 Forge session 上下文中存在 `+"`FORGE_SESSION_ID`"+`，请复用它；外层启动器已注册 session 并锁定此目录对应的资源，因此不要创建新 session，不要锁定/解锁当前资源，也不要自行结束外层 session。
-- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是携带所提供 revision 的 complete、suspend、pause 或 fail 之一。Enable/Disable 属于用户控制面，不能替代回合结果。
-- 如需委派 Self-Driving 工作，使用 `+"`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+` 创建子任务；使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 Self-Driving 时，使用 `+"`--summary=<text>`"+` 记录自然语言上下文，并使用 `+"`--wake-condition=<text>`"+` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
-`+selfDrivingAgentGuidanceChinese+`- 如果环境变量和注入的 session 上下文都没有 `+"`FORGE_SESSION_ID`"+`，请检测当前 agent PID，运行 `+"`forge session new --pid <pid>`"+`，导出返回的 ID 为 `+"`FORGE_SESSION_ID`"+`，并在更新项目/任务数据前只锁定一次当前目录对应的资源。
+- 如果环境变量和注入的 session 上下文都没有 `+"`FORGE_SESSION_ID`"+`，请检测当前 agent PID，运行 `+"`forge session new --pid <pid>`"+`，导出返回的 ID 为 `+"`FORGE_SESSION_ID`"+`，并在更新项目/任务数据前只锁定一次当前目录对应的资源。
 `+crossResourceReadGuidanceChinese+`- %s
 - 将 workspace 的 repos/ checkout 视为共享源码缓存；代码修改应在任务 worktree 中进行。
 - %s
@@ -350,8 +338,6 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 可能改变范围、验收标准或稳定约束的问题应保存在相应 brief 中。短期执行问题放在 ` + "`work.md`" + `；形成长期答案后，将其提升到 brief 并删除临时说明。
 - 使用 ` + "`forge task log add <title> --details <details>`" + ` 或 ` + "`forge project log add <title> --details <details>`" + ` 记录重要执行事件。
 - 创建、列出和归档任务时优先使用 Forge 命令。
-` + selfDrivingAgentGuidanceChinese + `- GUI 调度器启动 Self-Driving 回合后，最后一个有副作用的命令必须且只能是携带所提供 revision 的 complete、suspend、pause 或 fail 之一。Enable/Disable 属于用户控制面，不能替代回合结果。
-- 委派 Self-Driving 工作时，使用 ` + "`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`" + ` 创建子任务。使用 GUI session 上下文提供的 Agent Profiles，不要使用 GUI 私有 Agent ID。挂起当前 Self-Driving 时，使用 ` + "`--summary=<text>`" + ` 记录自然语言上下文，并使用 ` + "`--wake-condition=<text>`" + ` 记录独立的自然语言唤醒条件；Forge 只保存条件并交给下次 agent 检查，不解析其含义。旧版只提供 summary 时会兼容填充两个字段并标记 fallback。
 - 项目和任务的 ` + "`AGENTS.md`" + ` 是简短的启动卡片。全局操作规则放在这里，背景放在 ` + "`project.md`" + `/` + "`task.md`" + `，任务恢复状态放在任务 ` + "`work.md`" + `，时间线历史放在 ` + "`log.jsonl`" + `。
 
 ## forge CLI
@@ -374,8 +360,8 @@ forge project log list [--project=<project>] [--json]
 
 forge template list|show|validate|render|create|migrate ...
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run] [--self-driving] ...
-forge task list [--project=<project>] [--all] [--runnable [--json]]
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
+forge task list [--project=<project>] [--all]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
 forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
@@ -383,8 +369,6 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge task self-driving enable|disable ...
-
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
 forge session heartbeat --id=<id>
@@ -409,7 +393,7 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge project create`" + ` 创建新的开放项目目录。使用 ` + "`--slug <slug>`" + ` 可在不改变项目 ID 的情况下追加可读目录后缀。
 - ` + "`forge project list`" + ` 列出开放项目，传入 ` + "`--all`" + ` 时同时列出归档项目。它不会包含任务；项目任务使用 ` + "`forge task list [--project=<project>]`" + `。
 - ` + "`forge project show`" + ` 和 ` + "`forge project archive`" + ` 接受 ` + "`--project=<project>`" + `；project 可为 ` + "`project22`" + ` 形式的完整 ID 或 ` + "`22`" + ` 形式的数字。省略时使用当前目录所属项目。
-- ` + "`forge template list/show/validate/render/create/migrate`" + ` 管理 schema V2 项目内容模板。模板不选择 Self-Driving 或 Agent，执行设置必须在创建任务时显式指定。
+- ` + "`forge template list/show/validate/render/create/migrate`" + ` 管理 schema V2 项目内容模板；模板只描述任务内容。
 - ` + "`forge task create`" + ` 在项目下创建开放任务目录。使用 ` + "`--template`" + ` 和结构化字段渲染内容，` + "`--dry-run`" + ` 可无副作用预览；原有 ` + "`--detail`" + ` 与 ` + "`--task-markdown`" + ` 形式保持兼容。
 - ` + "`forge task list`" + ` 列出项目下的开放任务，传入 ` + "`--all`" + ` 时同时列出归档任务。使用 ` + "`--project`" + ` 选择项目，省略时使用当前目录所属项目。
 - ` + "`forge task show`" + ` 和 ` + "`forge task archive`" + ` 接受 ` + "`--project`" + ` 及 ` + "`--task`" + `。task 可为 ` + "`task4`" + ` 或 ` + "`4`" + `。省略时使用当前目录所属任务。
@@ -419,5 +403,5 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge session new`" + ` 创建 session 并打印唯一 ID。默认使用 heartbeat 存活方式；也可显式指定 ` + "`--heartbeat [--timeout <duration>]`" + `，或用 ` + "`--pid <pid>`" + ` 绑定进程。Forge GUI 使用持久化 endpoint 与完整 source 的 AgentHub 存活方式，并用 ` + "`forge session bind-agenthub`" + ` 保存最终 AgentHub session ID。普通 CLI 命令不会访问 AgentHub：AgentHub 管理的 session 始终保持活动，直到 ` + "`forge serve`" + ` 对账到 AgentHub 安全终态（durable stopped，或可证明先经过 stopped 的 archived）或用户显式结束它。服务停止或 AgentHub 不可达期间，这些 session 与其锁会被保守保留。` + "`heartbeat`" + ` 刷新时间戳；` + "`lock/unlock`" + ` 记录或释放项目/任务控制权；` + "`end`" + ` 立即结束 session 并释放其锁，也是 AgentHub 管理 session 的人工逃生通道；` + "`list/show`" + ` 用于查看 session。
 - ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
-- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` 是普通 session 启动器：创建 session、锁定资源、运行 agent 并结束 session；它不负责调度或更新 Self-Driving。
+- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` 是普通 session 启动器：创建 session、锁定资源、运行 agent 并结束 session。
 `

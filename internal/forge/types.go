@@ -34,7 +34,6 @@ type Task struct {
 	Parent      string                  `json:"parent"`
 	Description string                  `json:"description,omitempty"`
 	Repos       []TaskRepo              `json:"repos,omitempty"`
-	SelfDriving *SelfDriving            `json:"selfDriving,omitempty"`
 	Template    *app.TaskTemplateSource `json:"template,omitempty"`
 }
 
@@ -70,20 +69,6 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 	project.ResourceMeta = decoded.ResourceMeta
 	project.Description = decoded.Description
 	return nil
-}
-
-type SelfDriving struct {
-	Enabled                bool                              `json:"enabled"`
-	Revision               int                               `json:"revision"`
-	Condition              string                            `json:"condition"`
-	ConditionReason        string                            `json:"conditionReason,omitempty"`
-	AgentName              string                            `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string                          `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string                            `json:"prompt,omitempty"`
-	CompletionCriteria     string                            `json:"completionCriteria,omitempty"`
-	WakeContext            *app.SelfDrivingWakeContext       `json:"wakeContext,omitempty"`
-	LastOutcome            *app.SelfDrivingOutcome           `json:"lastOutcome,omitempty"`
-	NotificationError      *app.SelfDrivingNotificationError `json:"notificationError,omitempty"`
 }
 
 type TaskRepo struct {

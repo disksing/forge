@@ -246,50 +246,6 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	}
 }
 
-func TestCreateTaskMapsSelfDrivingOptions(t *testing.T) {
-	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
-		t.Fatal(err)
-	}
-
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	s := &server{config: configPath}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
-		t.Fatal(err)
-	}
-
-	body := `{"project":"project1","title":"Automated task","detail":"Durable brief","slug":"automated","selfDriving":true,"agentName":"codex-one","preferredAgentProfiles":["kimi","codex"],"prompt":"Do the work","completionCriteria":"The work is verified"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
-	rec := httptest.NewRecorder()
-	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected OK, got %d: %s", rec.Code, rec.Body.String())
-	}
-	resource, err := forgeWorkspace.Resource("project1.task1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resource.SelfDriving == nil || resource.SelfDriving.AgentName != "codex-one" || strings.Join(resource.SelfDriving.PreferredAgentProfiles, ",") != "kimi,codex" || resource.SelfDriving.Prompt != "Do the work" || resource.SelfDriving.CompletionCriteria != "The work is verified" {
-		t.Fatalf("unexpected typed Self-Driving result: %#v", resource.SelfDriving)
-	}
-	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
-	if err != nil || !strings.Contains(string(markdown), "Durable brief") {
-		t.Fatalf("task detail was not persisted by the application API: err=%v content=%q", err, markdown)
-	}
-
-	body = `{"project":"project1","title":"Removed task","selfDriving":true,"agentId":"codex-one"}`
-	req = httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", bytes.NewBufferString(body))
-	rec = httptest.NewRecorder()
-	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "agentId") {
-		t.Fatalf("expected removed agentId to be rejected, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
 func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	workspace := t.TempDir()
 	forgeWorkspace, err := app.Initialize(workspace, "en")
@@ -319,6 +275,33 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 	markdown, err := os.ReadFile(filepath.Join(workspace, filepath.FromSlash(resource.Path), "task.md"))
 	if err != nil || string(markdown) != "# Template task" {
 		t.Fatalf("template body was not written as complete markdown: err=%v content=%q", err, markdown)
+	}
+}
+
+func TestRemovedAutomationHTTPInputsAreRejected(t *testing.T) {
+	workspace := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	recorder := httptest.NewRecorder()
+	s.createTask(recorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","selfDriving":true}`)), "workspace-one")
+	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "unknown field") {
+		t.Fatalf("removed create field was accepted: %d %s", recorder.Code, recorder.Body.String())
+	}
+
+	recorder = httptest.NewRecorder()
+	s.handleWorkspace(recorder, httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/self-driving", strings.NewReader(`{}`)))
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("removed endpoint returned %d: %s", recorder.Code, recorder.Body.String())
 	}
 }
 
@@ -352,39 +335,6 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	}
 	if !strings.Contains(archived["path"], "archive") || len(archived) != 1 {
 		t.Fatalf("unexpected archive response: %#v", archived)
-	}
-}
-
-func TestCreateTaskRejectsRunOptionsWithoutSelfDriving(t *testing.T) {
-	s := &server{}
-	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/tasks", strings.NewReader(`{"project":"project1","title":"Task","prompt":"Do the work"}`))
-	rec := httptest.NewRecorder()
-	s.createTask(rec, req, "workspace-one")
-	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "require selfDriving") {
-		t.Fatalf("expected validation error, got %d: %s", rec.Code, rec.Body.String())
-	}
-}
-
-func TestREADMEDocumentsSelfDrivingSuspendProtocol(t *testing.T) {
-	data, err := os.ReadFile(filepath.Join("..", "..", "README.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	readme := string(data)
-	for _, want := range []string{
-		"`complete` means the task brief, completion criteria, and appropriate verification are done.",
-		"`suspend` is allowed only when the task cannot make meaningful progress",
-		"only remaining meaningful action would be repeated polling of one specific, observable external condition",
-		"It is invalid to suspend after only a milestone",
-		"`pause` is for a user decision, authorization, or other manual handling",
-		"suspensionSummary",
-		"wakeCondition",
-		"fixed 30-minute fallback re-check",
-		"future Scheduler may observe the condition and wake the task proactively",
-	} {
-		if !strings.Contains(readme, want) {
-			t.Fatalf("README is missing Self-Driving protocol guidance %q", want)
-		}
 	}
 }
 

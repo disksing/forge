@@ -11,8 +11,8 @@ import (
 
 const (
 	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json] [--self-driving] [--agent=<agent>] [--agent-profile=<profile>...] [--prompt=<prompt>] [--completion-criteria=<text>]"
-	taskListUsage      = "usage: forge task list [--project=<project>] [--all] [--runnable [--json]]"
+	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]"
+	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
 )
@@ -198,7 +198,7 @@ func runTask(args []string) error {
 				return err
 			}
 		}
-		input := appCreateTaskInput(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug, options.SelfDriving, options.AgentName, options.PreferredAgentProfiles, options.Prompt, options.CompletionCriteria)
+		input := appCreateTaskInput(parentID, options.Title, options.Detail, options.TaskMarkdown, options.TaskMarkdownSet, options.Slug)
 		input.TemplateName, input.TemplateFields = options.TemplateName, fields
 		if options.DryRun {
 			preview, err := workspace.PreviewTask(input)
@@ -230,8 +230,6 @@ func runTask(args []string) error {
 		return runTaskRepo(args[1:])
 	case "log":
 		return runResourceLog("task", args[1:])
-	case "self-driving":
-		return runTaskSelfDriving(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -293,8 +291,8 @@ Usage:
 
   forge resource archive --id=<resource>
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--self-driving] ...
-  forge task list [--project=<project>] [--all] [--runnable [--json]]
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
+  forge task list [--project=<project>] [--all]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
   forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
@@ -302,8 +300,6 @@ Usage:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge task self-driving enable|disable ...
-
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
   forge session heartbeat --id=<id>
@@ -357,7 +353,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run] [--self-driving] ...
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -369,15 +365,15 @@ Commands:
 
   forge template list|show|validate|render|create|migrate ...
     Manage project-local schema V2 content templates. Templates declare typed
-    fields and deterministic title/Markdown rendering but never Self-Driving or
-    agent settings. list and validate include invalid templates. show defaults
+    fields and deterministic title/Markdown rendering. list and validate
+    include invalid templates. show defaults
     to metadata, field requirements, diagnostics, and the complete Markdown
     body; use --raw for the original file, --json for structured template data,
     or --schema for schema metadata and diagnostics. render and task create
     --dry-run have no side effects. migrate previews legacy V1 conversion
     unless --write is provided.
 
-  forge task list [--project=<project>] [--all] [--runnable [--json]]
+  forge task list [--project=<project>] [--all]
     List open tasks in a project. Use --all to include archived tasks.
     <project> may be a full id such as project22 or just a number such as 22.
     When omitted, Forge uses the project containing the current working
@@ -423,10 +419,6 @@ Commands:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
-
-  forge task self-driving enable|disable ...
-    Persist the Task-level desired state. Enable/Disable is independent from
-    Agent Session and Turn lifecycle and is safe while the resource is locked.
 
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
     Create a session and print its unique id. Heartbeat liveness is the
@@ -479,8 +471,8 @@ Commands:
     when the command exits.
 
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
-    Start the Forge web service: Workspace API, Self-Driving scheduler, AgentHub
-    session orchestration and recovery, and the static web UI. Workspace
+    Start the Forge web service: Workspace API, AgentHub session orchestration
+    and recovery, and the static web UI. Workspace
     operations use the in-process application API; FORGE_AGENTHUB_URL
     overrides the persisted AgentHub endpoint; FORGE_GUI_CONFIG selects the
     GUI configuration file.`)
@@ -520,24 +512,19 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 }
 
 type taskCreateOptions struct {
-	ParentID               string
-	Title                  string
-	Detail                 string
-	DetailSet              bool
-	TaskMarkdown           string
-	TaskMarkdownSet        bool
-	Slug                   string
-	SelfDriving            bool
-	AgentName              string
-	PreferredAgentProfiles []string
-	Prompt                 string
-	CompletionCriteria     string
-	TemplateName           string
-	FieldsFile             string
-	Fields                 []string
-	DryRun                 bool
-	TitleSet               bool
-	JSON                   bool
+	ParentID        string
+	Title           string
+	Detail          string
+	DetailSet       bool
+	TaskMarkdown    string
+	TaskMarkdownSet bool
+	Slug            string
+	TemplateName    string
+	FieldsFile      string
+	Fields          []string
+	DryRun          bool
+	TitleSet        bool
+	JSON            bool
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -699,52 +686,6 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 			i++
 			continue
 		}
-		if arg == "--self-driving" {
-			options.SelfDriving = true
-			continue
-		}
-		if strings.HasPrefix(arg, "--agent=") {
-			options.AgentName = strings.TrimSpace(strings.TrimPrefix(arg, "--agent="))
-			if options.AgentName == "" {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			continue
-		}
-		if arg == "--agent" {
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			options.AgentName = strings.TrimSpace(args[i+1])
-			if options.AgentName == "" {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			i++
-			continue
-		}
-		if strings.HasPrefix(arg, "--agent-profile=") {
-			value := strings.TrimSpace(strings.TrimPrefix(arg, "--agent-profile="))
-			if value == "" {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			options.PreferredAgentProfiles = append(options.PreferredAgentProfiles, value)
-			continue
-		}
-		if strings.HasPrefix(arg, "--prompt=") {
-			options.Prompt = strings.TrimSpace(strings.TrimPrefix(arg, "--prompt="))
-			continue
-		}
-		if strings.HasPrefix(arg, "--completion-criteria=") {
-			options.CompletionCriteria = strings.TrimSpace(strings.TrimPrefix(arg, "--completion-criteria="))
-			continue
-		}
-		if arg == "--completion-criteria" {
-			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return taskCreateOptions{}, errors.New(taskCreateUsage)
-			}
-			options.CompletionCriteria = strings.TrimSpace(args[i+1])
-			i++
-			continue
-		}
 		if strings.HasPrefix(arg, "--") {
 			return taskCreateOptions{}, errors.New(taskCreateUsage)
 		}
@@ -865,12 +806,12 @@ func isASCIIInteger(value string) bool {
 }
 
 func resolveTaskListArgs(args []string) (taskListOptions, error) {
-	projectID, includeArchived, runnable, jsonOutput, err := parseTaskListArgs(args)
+	projectID, includeArchived, err := parseTaskListArgs(args)
 	if err != nil {
 		return taskListOptions{}, err
 	}
 	if projectID != "" {
-		return taskListOptions{ProjectID: projectID, IncludeArchived: includeArchived, Runnable: runnable, JSON: jsonOutput}, nil
+		return taskListOptions{ProjectID: projectID, IncludeArchived: includeArchived}, nil
 	}
 	inferred, ok, err := inferCurrentProjectID()
 	if err != nil {
@@ -879,7 +820,7 @@ func resolveTaskListArgs(args []string) (taskListOptions, error) {
 	if !ok {
 		return taskListOptions{}, errors.New("could not infer current project; use forge task list --project=<project>")
 	}
-	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived, Runnable: runnable, JSON: jsonOutput}, nil
+	return taskListOptions{ProjectID: inferred, IncludeArchived: includeArchived}, nil
 }
 
 func resolveTaskArg(args []string, command string) (string, error) {
@@ -988,55 +929,46 @@ func normalizeTaskArg(projectID, task string) (string, error) {
 	return "", fmt.Errorf("invalid task %q: use taskM or M", task)
 }
 
-func parseTaskListArgs(args []string) (string, bool, bool, bool, error) {
+func parseTaskListArgs(args []string) (string, bool, error) {
 	var projectID string
 	includeArchived := false
-	runnable := false
-	jsonOutput := false
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
 		switch {
 		case arg == "--all":
 			if includeArchived {
-				return "", false, false, false, errors.New(taskListUsage)
+				return "", false, errors.New(taskListUsage)
 			}
 			includeArchived = true
-		case arg == "--runnable":
-			runnable = true
-		case arg == "--json":
-			jsonOutput = true
 		case strings.HasPrefix(arg, "--project="):
 			value := strings.TrimPrefix(arg, "--project=")
 			if value == "" {
-				return "", false, false, false, errors.New("project cannot be empty")
+				return "", false, errors.New("project cannot be empty")
 			}
 			if projectID != "" {
-				return "", false, false, false, errors.New(taskListUsage)
+				return "", false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(value)
 			if err != nil {
-				return "", false, false, false, err
+				return "", false, err
 			}
 			projectID = normalized
 		case arg == "--project":
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
-				return "", false, false, false, errors.New(taskListUsage)
+				return "", false, errors.New(taskListUsage)
 			}
 			if projectID != "" {
-				return "", false, false, false, errors.New(taskListUsage)
+				return "", false, errors.New(taskListUsage)
 			}
 			normalized, err := normalizeProjectArg(args[i+1])
 			if err != nil {
-				return "", false, false, false, err
+				return "", false, err
 			}
 			projectID = normalized
 			i++
 		default:
-			return "", false, false, false, errors.New(taskListUsage)
+			return "", false, errors.New(taskListUsage)
 		}
 	}
-	if jsonOutput && !runnable {
-		return "", false, false, false, errors.New(taskListUsage)
-	}
-	return projectID, includeArchived, runnable, jsonOutput, nil
+	return projectID, includeArchived, nil
 }

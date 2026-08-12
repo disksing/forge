@@ -191,7 +191,7 @@
         {/if}
       </div>
     {/each}
-    {#each snapshot.notices as notice, index (`notice:${snapshot.identity}:${index}:${String(notice.data?.schedulerTurnSequence || notice.data?.text || "")}`)}
+    {#each snapshot.notices as notice, index (`notice:${snapshot.identity}:${index}:${String(notice.data?.text || "")}`)}
       <div data-timeline-key={`notice:${index}`}><TimelineNotice title="Forge" text={String(notice.data?.text || "")} error={notice.data?.level === "error"} /></div>
     {/each}
     {#if snapshot.error}<TimelineNotice title="Timeline error" text={snapshot.error} error alert />{/if}

@@ -13,8 +13,8 @@ import (
 
 // This file reconciles local run projections with AgentHub session state by
 // polling one session list per interval instead of replaying event history.
-// Run status follows session state and turn terminal edges drive Self-Driving
-// recovery. Forge session release is owned here and nowhere else: durable
+// Run status follows session state. Forge session release is owned here and
+// nowhere else: durable
 // stopped sessions release directly, while archived sessions require the
 // archived-after-stopped proof in agenthub_reconcile.go, which is the only
 // code path that reads event history. Only changed projections are
@@ -308,10 +308,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		return
 	}
 	if session.State == "archived" {
-		rt.mu.Lock()
-		previousStatus := rt.run.Status
-		rt.mu.Unlock()
-		rt.reconcileArchivedAgentHubSession(m, client, session, previousStatus)
+		rt.reconcileArchivedAgentHubSession(m, client, session)
 		return
 	}
 
@@ -380,10 +377,8 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		_ = saveAgentRun(workspace.Path, updated)
 	}
 
-	// A scheduler turn ends when the session leaves busy/waiting_approval for
-	// ready or stopped. The completion observer runs before the scheduler
-	// decision so an intermediate Self-Driving turn cannot be mistaken for its final
-	// outcome by a consumer of the run projection.
+	// A turn ends when the session leaves busy/waiting_approval for ready or
+	// stopped. Record the durable completion before publishing the final state.
 	if turnFinished {
 		go func() {
 			rt.handleTurnFinished(m, session)

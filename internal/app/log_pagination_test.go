@@ -271,38 +271,3 @@ func readTestLogFile(t *testing.T, path string) string {
 	}
 	return string(data)
 }
-
-func TestResourcePageCarriesCurrentSelfDrivingReasonOutsideLogPage(t *testing.T) {
-	workspace, err := app.Initialize(t.TempDir(), "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := workspace.CreateProject("Self-Driving project", "self-driving")
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Self-Driving task", Slug: "self-driving", SelfDriving: true})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workspace.FailSelfDriving(app.SelfDrivingActionInput{TaskID: task.ID, Summary: "provider failed permanently", ExpectedRevision: task.SelfDriving.Revision}); err != nil {
-		t.Fatal(err)
-	}
-	for index := 0; index < 15; index++ {
-		if _, err := workspace.AddLog(task.ID, fmt.Sprintf("noise %d", index), ""); err != nil {
-			t.Fatal(err)
-		}
-	}
-	detail, err := workspace.ResourcePage(task.ID, "", 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if detail.SelfDriving == nil || detail.SelfDriving.Condition != "error" || detail.SelfDriving.ConditionReason != "provider failed permanently" {
-		t.Fatalf("current Self-Driving reason was not projected in metadata: %+v", detail.SelfDriving)
-	}
-	for _, entry := range detail.Logs {
-		if entry.Title == "Self-Driving failed" {
-			t.Fatal("initial page unexpectedly needed the historical failure log")
-		}
-	}
-}

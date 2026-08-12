@@ -27,8 +27,6 @@ const (
 type taskListOptions struct {
 	ProjectID       string
 	IncludeArchived bool
-	Runnable        bool
-	JSON            bool
 }
 
 type taskListEntry struct {
@@ -145,10 +143,6 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 		return fmt.Errorf("cannot archive %s: cannot verify repo %q worktree %s against target branch %q: %s", task.ID, repo.Name, relPath(root, worktreePath), target, detail)
 	}
 	return nil
-}
-
-func projectTaskCreate(parentID, title string, detail string, completeMarkdown string, completeMarkdownSet bool, slug string, selfDriving bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) error {
-	return applicationTaskCreate(appCreateTaskInput(parentID, title, detail, completeMarkdown, completeMarkdownSet, slug, selfDriving, agentName, preferredAgentProfiles, prompt, completionCriteria))
 }
 
 func projectTaskList(options taskListOptions) error {
@@ -278,11 +272,6 @@ func readResourceAtDir(dir string) (Resource, error) {
 	meta := resource.resourceMeta()
 	if meta.Type != expectedType {
 		return nil, fmt.Errorf("invalid resource metadata %s: file requires type %q, got %q", path, expectedType, meta.Type)
-	}
-	if task, ok := resource.(*Task); ok {
-		if err := migrateSelfDrivingMetadata(dir, task); err != nil {
-			return nil, err
-		}
 	}
 	if err := validateResource(resource); err != nil {
 		return nil, fmt.Errorf("invalid resource metadata %s: %w", path, err)
@@ -868,7 +857,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
 - Project content templates live in templates/*.md. Use schema-version: 2 with title, optional description/task-title, fields, and a Markdown body. Supported field types are text, textarea, select, and boolean.
-- Templates organize task content only. They must not contain Self-Driving or agent execution settings; choose those explicitly when creating a task.
+- Templates organize task content only; runtime Agent and Session settings remain outside templates.
 - When creating a task, prefer an existing suitable template whenever one is available.
 - When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 - Template format:
@@ -898,9 +887,7 @@ You are working inside a %s.
 - %s
 - %s
 - Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- When a GUI scheduler starts a Self-Driving turn, finish it with exactly one of `+"`forge task self-driving complete --revision=<n>`"+`, `+"`forge task self-driving suspend --revision=<n>`"+`, `+"`forge task self-driving pause --revision=<n>`"+`, or `+"`forge task self-driving fail --revision=<n>`"+` as the turn's last side-effecting command. Enable/Disable belongs to the user control plane and never substitutes for a result.
-- To delegate Self-Driving work, create a child with `+"`forge task create --self-driving [--agent-profile=<profile>...] --prompt=<prompt> <title>`"+`; use Agent Profiles supplied by the GUI session context rather than GUI-private Agent IDs. When suspending the current Self-Driving, record a natural-language context with `+"`--summary=<text>`"+` and a separate wake condition with `+"`--wake-condition=<text>`"+`; Forge stores the condition for the next agent but does not interpret it. For compatibility, an old summary-only suspend is treated as both fields and is marked as a fallback.
-`+selfDrivingAgentGuidanceEnglish+`- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
+- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 `+crossResourceReadGuidanceEnglish+`- %s
 - Treat workspace repos/ checkouts as shared source caches; make code changes in task worktrees.
 - %s

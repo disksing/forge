@@ -1,7 +1,7 @@
 import type { NotificationPreferences } from "../models/settings";
 import type { ResourceScope } from "../runtime/resource-scope";
 import { createNotificationDelivery, notificationPermission } from "./notification-delivery";
-import { createNotificationRecord, notificationEventState, notificationMarkerFor, notificationSelfDrivingContext } from "./notification-projection";
+import { createNotificationRecord, notificationEventState, notificationMarkerFor } from "./notification-projection";
 import { createNotificationRepository, defaultNotificationStore, normalizeNotificationRecord, notificationStateKey, NOTIFICATION_SETTINGS_KEY, NOTIFICATION_STORAGE_PREFIX } from "./notification-store";
 import type { NotificationBroadcast, NotificationEvent, NotificationRecord, NotificationResource, NotificationSettings, NotificationSource, NotificationStore } from "./notification-types";
 
@@ -225,27 +225,13 @@ export function createNotificationController(dependencies: NotificationControlle
     const current = store();
     const seen = current.seen.some((entry) => entry.marker === marker);
     const pendingIndex = current.pending.findIndex((entry) => entry.marker === marker);
-    const selfDriving = notificationSelfDrivingContext(item, dependencies.findResource(record.resourceId));
-    if (!state.ready || (selfDriving.isSelfDriving && selfDriving.state === "waiting")) {
+		if (!state.ready) {
       if (!seen) current.seen.push({ marker, at: Date.now() });
       current.pending = current.pending.filter((entry) => entry.marker !== marker);
       writeStore();
       return false;
     }
     if (seen && pendingIndex < 0) return false;
-    if (selfDriving.isSelfDriving && selfDriving.disabledControl) {
-      if (!seen) current.seen.push({ marker, at: Date.now() });
-      current.pending = current.pending.filter((entry) => entry.marker !== marker);
-      current.unread = current.unread.filter((entry) => entry.marker !== marker);
-      writeStore();
-      return false;
-    }
-    if (selfDriving.isSelfDriving && selfDriving.suppressed && !selfDriving.final) {
-      if (!seen) current.seen.push({ marker, at: Date.now() });
-      if (pendingIndex < 0) current.pending.push(record);
-      writeStore();
-      return false;
-    }
     if (!seen) current.seen.push({ marker, at: Date.now() });
     current.pending = current.pending.filter((entry) => entry.marker !== marker);
     if (recordIsCurrentAndVisible(record)) {

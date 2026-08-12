@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -162,28 +161,9 @@ func (w *Workspace) Migrate(language string) error {
 	return nil
 }
 
-// MigrateSelfDrivingData upgrades all open and archived task persistence in
-// this Workspace without changing guidance or configuration. It is safe to
-// call at every service attachment; once migrated, it performs no writes.
-func (w *Workspace) MigrateSelfDrivingData() error {
-	if err := w.require(); err != nil {
-		return err
-	}
-	err := withWorkspaceMutationLock(w.root, func() error {
-		return migrateWorkspaceSelfDrivingData(w.root)
-	})
-	if err != nil {
-		return &APIError{Operation: "migrate Self-Driving data", Kind: "self-driving", Workspace: w.root, Err: err}
-	}
-	return nil
-}
-
 func (w *Workspace) migrate(language string) error {
 	if err := w.require(); err != nil {
 		return err
-	}
-	if err := migrateWorkspaceSelfDrivingData(w.root); err != nil {
-		return &APIError{Operation: "migrate Self-Driving data", Kind: "self-driving", Workspace: w.root, Err: err}
 	}
 	config, err := readWorkspaceConfig(w.root)
 	if err != nil {
@@ -261,34 +241,15 @@ type TaskListEntry struct {
 	Archived bool
 }
 
-// RunnableTask is the typed Self-Driving scheduler projection.
-type RunnableTask struct {
-	ID                     string
-	Path                   string
-	Title                  string
-	Revision               int
-	Condition              string
-	Ready                  bool
-	Reason                 string
-	AgentName              string
-	Prompt                 string
-	PreferredAgentProfiles []string
-	CompletionCriteria     string
-	WakeContext            *SelfDrivingWakeContext
-}
-
 // TaskListOptions controls project task listing.
 type TaskListOptions struct {
 	ProjectID       string
 	IncludeArchived bool
-	Runnable        bool
 }
 
-// TaskListResult preserves both the ordinary typed task list and the runnable
-// Self-Driving projection. Only the relevant slice is populated for a request.
+// TaskListResult contains the ordinary typed task list.
 type TaskListResult struct {
-	Tasks    []TaskListEntry
-	Runnable []RunnableTask
+	Tasks []TaskListEntry
 }
 
 // CreateTaskInput contains all typed inputs needed to create a task.
@@ -302,23 +263,17 @@ type CreateTaskInput struct {
 	TemplateFields         map[string]any
 	ExpectedTemplateDigest string
 	Slug                   string
-	SelfDriving            bool
-	AgentName              string
-	PreferredAgentProfiles []string
-	Prompt                 string
-	CompletionCriteria     string
 }
 
 // TaskPreview is the side-effect-free result of resolving task content and
 // execution settings. It is also the contract shown by GUI and CLI previews.
 type TaskPreview struct {
-	ProjectID   string              `json:"project"`
-	Title       string              `json:"title"`
-	Slug        string              `json:"slug,omitempty"`
-	Markdown    string              `json:"markdown"`
-	Template    *TaskTemplateSource `json:"template,omitempty"`
-	SelfDriving *SelfDriving        `json:"selfDriving"`
-	Warnings    []TemplateIssue     `json:"warnings,omitempty"`
+	ProjectID string              `json:"project"`
+	Title     string              `json:"title"`
+	Slug      string              `json:"slug,omitempty"`
+	Markdown  string              `json:"markdown"`
+	Template  *TaskTemplateSource `json:"template,omitempty"`
+	Warnings  []TemplateIssue     `json:"warnings,omitempty"`
 }
 
 // ArchiveResult describes an archive operation without relying on printed
@@ -443,35 +398,9 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 	if err != nil {
 		return TaskListResult{}, &APIError{Operation: "list tasks", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
 	}
-	if !options.Runnable {
-		result := TaskListResult{Tasks: make([]TaskListEntry, 0, len(entries))}
-		for _, entry := range entries {
-			result.Tasks = append(result.Tasks, TaskListEntry{Task: entry.Task, Path: relPath(w.root, entry.Path), Archived: isArchivedPath(w.root, entry.Path)})
-		}
-		return result, nil
-	}
-	result := TaskListResult{Runnable: make([]RunnableTask, 0, len(entries))}
+	result := TaskListResult{Tasks: make([]TaskListEntry, 0, len(entries))}
 	for _, entry := range entries {
-		if entry.Task.SelfDriving == nil {
-			continue
-		}
-		ready, reason := selfDrivingReady(entry.Task)
-		if isArchivedPath(w.root, entry.Path) {
-			ready, reason = false, "archived"
-		}
-		if !ready {
-			continue
-		}
-		runnable := RunnableTask{
-			ID: entry.Task.ID, Path: relPath(w.root, entry.Path), Title: entry.Task.Title,
-			Ready: ready, Reason: reason, Revision: entry.Task.SelfDriving.Revision,
-			Condition: entry.Task.SelfDriving.Condition, AgentName: entry.Task.SelfDriving.AgentName,
-			Prompt:                 entry.Task.SelfDriving.Prompt,
-			PreferredAgentProfiles: append([]string(nil), entry.Task.SelfDriving.PreferredAgentProfiles...),
-			CompletionCriteria:     entry.Task.SelfDriving.CompletionCriteria,
-			WakeContext:            entry.Task.SelfDriving.WakeContext,
-		}
-		result.Runnable = append(result.Runnable, runnable)
+		result.Tasks = append(result.Tasks, TaskListEntry{Task: entry.Task, Path: relPath(w.root, entry.Path), Archived: isArchivedPath(w.root, entry.Path)})
 	}
 	return result, nil
 }
@@ -547,7 +476,7 @@ func (w *Workspace) CreateTask(input CreateTaskInput) (Task, error) {
 }
 
 // PreviewTask validates and resolves a task creation request without
-// allocating a task id, writing files, appending logs, or queueing Self-Driving.
+// allocating a task id, writing files, or appending logs.
 func (w *Workspace) PreviewTask(input CreateTaskInput) (TaskPreview, error) {
 	if err := w.require(); err != nil {
 		return TaskPreview{}, err
@@ -575,29 +504,7 @@ func (w *Workspace) PreviewTask(input CreateTaskInput) (TaskPreview, error) {
 	if err != nil {
 		return TaskPreview{}, err
 	}
-	selfDriving, err := resolvedTaskSelfDriving(input)
-	if err != nil {
-		return TaskPreview{}, &APIError{Operation: "preview task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
-	}
-	return TaskPreview{ProjectID: parentID, Title: title, Slug: slug, Markdown: markdown, Template: source, SelfDriving: selfDriving, Warnings: warnings}, nil
-}
-
-func resolvedTaskSelfDriving(input CreateTaskInput) (*SelfDriving, error) {
-	if input.SelfDriving {
-		profiles, err := normalizeAgentProfiles(input.PreferredAgentProfiles)
-		if err != nil {
-			return nil, err
-		}
-		return &SelfDriving{
-			Enabled: true, Revision: 1, Condition: selfDrivingConditionReady, AgentName: strings.TrimSpace(input.AgentName),
-			PreferredAgentProfiles: profiles, Prompt: strings.TrimSpace(input.Prompt),
-			CompletionCriteria: strings.TrimSpace(input.CompletionCriteria),
-		}, nil
-	}
-	if strings.TrimSpace(input.AgentName) != "" || len(input.PreferredAgentProfiles) > 0 || strings.TrimSpace(input.Prompt) != "" || strings.TrimSpace(input.CompletionCriteria) != "" {
-		return nil, errors.New("--agent, --agent-profile, --prompt, and --completion-criteria require --self-driving")
-	}
-	return nil, nil
+	return TaskPreview{ProjectID: parentID, Title: title, Slug: slug, Markdown: markdown, Template: source, Warnings: warnings}, nil
 }
 
 func (w *Workspace) resolveTaskContent(input CreateTaskInput) (string, string, *TaskTemplateSource, []TemplateIssue, error) {
@@ -662,10 +569,6 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err != nil {
 		return Task{}, err
 	}
-	selfDriving, err := resolvedTaskSelfDriving(input)
-	if err != nil {
-		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
-	}
 	id, err := nextProjectTaskID(parentPath, parentID)
 	if err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: parentID, Err: err}
@@ -679,14 +582,8 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
 	}
-	task.SelfDriving = selfDriving
 	if err := createResourceFilesWithMarkdown(staging, &task, markdown, language); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
-	}
-	if task.SelfDriving != nil {
-		if err := prependLogEntry(staging, newSelfDrivingLogEntry("Self-Driving enabled", "", task.SelfDriving.Revision)); err != nil {
-			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: err}
-		}
 	}
 	if err := os.Rename(staging, path); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
@@ -742,16 +639,6 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 		if err := ensureTaskRepoWorktreesMerged(w.root, *task); err != nil {
 			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 		}
-		selfDrivingLock, lockErr := acquireSelfDrivingTaskLock(src)
-		if lockErr != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: lockErr}
-		}
-		defer selfDrivingLock.Close()
-		defer syscall.Flock(int(selfDrivingLock.Fd()), syscall.LOCK_UN)
-		if err := disableSelfDrivingForArchive(src, task); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
-		}
-		resource = task
 	}
 	if err := releaseSessionsControllingPath(w.root, relPath(w.root, src)); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}

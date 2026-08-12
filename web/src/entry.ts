@@ -11,8 +11,6 @@ const publisher: ForgeViewPublisher = {
   renderAppShell: channels.appShell.publish,
   renderCreateDialog: channels.create.publish,
   renderSettings: channels.settings.publish,
-  renderSelfDrivingDialog: channels.selfDrivingDialog.publish,
-  renderSelfDrivingBar: channels.selfDrivingBar.publish,
   renderUploadDialog: channels.upload.publish,
   renderComposer: channels.composer.publish,
   renderSessionSwitcher: channels.sessions.publish,

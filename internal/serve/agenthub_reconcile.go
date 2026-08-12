@@ -101,10 +101,7 @@ func agentHubSourceConflicts(run agentRun, session agentHubSession) bool {
 // proves the session passed through stopped; in both cases the release is
 // idempotent. Every other outcome keeps the run in recovering, retains the
 // Forge session lock, and publishes a diagnostic notice.
-//
-// previousStatus is the run status before the archived observation; it drives
-// the same scheduler-turn finish as a directly observed stopped edge.
-func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession, previousStatus string) {
+func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession) {
 	rt.mu.Lock()
 	run := rt.run
 	proofFailed := rt.archivedProofFailed
@@ -165,14 +162,9 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	rt.mu.Unlock()
 	_ = saveAgentRun(rt.workspace.Path, updated)
 	// The archived projection is the recovery equivalent of the observed
-	// ready/stopped edge. Inspect the durable terminal event before finishing
-	// a Self-Driving turn or releasing the Forge session.
+	// ready/stopped edge. Inspect the durable terminal event before releasing
+	// the Forge session.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
-	// The archived session provably stopped, which ends a scheduler turn the
-	// same way a directly observed stopped edge does.
-	if updated.SchedulerTurn && (previousStatus == "running" || previousStatus == "waiting_approval") {
-		go rt.finishSchedulerTurn(m)
-	}
 	rt.releaseForgeSessionAfterStopped(m)
 }

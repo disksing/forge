@@ -21,8 +21,6 @@ export function normalizeNotificationRecord(raw: unknown): NotificationRecord | 
     resourceId: String(record.resourceId || "").trim(),
     marker,
     completionState: String(record.completionState || "completed").trim(),
-    selfDriving: Boolean(record.selfDriving),
-    selfDrivingState: String(record.selfDrivingState || "").trim(),
     title: String(record.title || "").trim(),
     resourceType: String(record.resourceType || "").trim(),
     resourceTitle: String(record.resourceTitle || "").trim(),

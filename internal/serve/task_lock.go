@@ -8,7 +8,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-const externalResourceLockMessage = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available."
+const externalResourceLockMessage = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released."
 
 // externalResourceLockError is deliberately a stable, user-facing conflict. The
 // frontend uses the same message for the optimistic composer state, while

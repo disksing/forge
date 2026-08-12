@@ -1,5 +1,5 @@
 import type { ShellStatusPresentation } from "../models/shell";
-import type { ResourceRecord, SelfDrivingState, WorkspaceSession, WorkspaceTree } from "../models/workspace";
+import type { ResourceRecord, WorkspaceSession, WorkspaceTree } from "../models/workspace";
 
 export interface TaskStatusState {
   kind: string;
@@ -22,7 +22,6 @@ export interface OperationalStatusPresentation {
 }
 
 export interface TaskOperationalState {
-  selfDriving: TaskStatusState | null;
   session: TaskStatusState | null;
   className: string;
   label: string;
@@ -135,16 +134,6 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     }
   }
 
-  function deriveTaskSelfDrivingState(selfDriving: SelfDrivingState | null | undefined): TaskStatusState | null {
-    if (!selfDriving?.enabled) return null;
-    const state = selfDriving.condition || "ready";
-    if (state === "error") return taskStatusState("error", "task-status-danger", "triangle-alert", "Self-Driving error", "self-driving");
-    if (state === "blocked" || state === "needs_configuration") return taskStatusState(state, "task-status-attention", "square", `Self-Driving ${state.replace(/_/g, " ")}`, "self-driving");
-    if (state === "waiting") return taskStatusState("waiting", "task-status-attention", "pause", "Self-Driving waiting", "self-driving");
-    if (state === "ready") return taskStatusState("ready", "task-status-queued", "clock", "Self-Driving ready", "self-driving");
-    return taskStatusState("unknown", "task-status-neutral", "circle-help", `Self-Driving ${state || "unknown"}`, "self-driving");
-  }
-
   function deriveTaskSessionState(sessions: WorkspaceSession[]): TaskStatusState | null {
     for (const status of ["waiting_approval", "starting", "running", "stopping", "recovering", "idle"]) {
       const session = sessions.find((item) => item.agentRunStatus === status);
@@ -190,10 +179,9 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     };
   }
 
-  function taskOperationalLabel(selfDriving: SelfDrivingState | null | undefined, sessions: WorkspaceSession[], lock: TaskLockState | null): string {
+  function taskOperationalLabel(sessions: WorkspaceSession[], lock: TaskLockState | null): string {
     const parts: string[] = [];
-    if (selfDriving) parts.push(`Self-Driving ${selfDriving.enabled ? "on" : "off"}, ${selfDriving.condition}, revision ${selfDriving.revision}`);
-    if (sessions.length === 1) parts.push(`${sessions[0].schedulerTurn ? "Self-Driving session" : "Agent session"} ${(sessions[0].agentRunStatus || "open").replace("waiting_approval", "waiting for approval")}`);
+    if (sessions.length === 1) parts.push(`Agent session ${(sessions[0].agentRunStatus || "open").replace("waiting_approval", "waiting for approval")}`);
     else if (sessions.length > 1) parts.push(`${sessions.length} agent sessions: ${[...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ")}`);
     if (lock) parts.push(lock.label);
     return parts.join(" · ");
@@ -201,15 +189,14 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
 
   function taskOperationalState(item: ResourceRecord): TaskOperationalState {
     const sessions = taskAgentSessions(item.id);
-    const selfDriving = deriveTaskSelfDrivingState(item.selfDriving);
     const session = deriveTaskSessionState(sessions);
     const lock = deriveTaskLockState(resourceLocks(item.id));
-    const statusPresentation = operationalStatusPresentation([selfDriving, session], lock);
-    return { selfDriving, session, lock, statusPresentation, className: statusPresentation.className, label: taskOperationalLabel(item.selfDriving, sessions, lock) };
+    const statusPresentation = operationalStatusPresentation([session], lock);
+    return { session, lock, statusPresentation, className: statusPresentation.className, label: taskOperationalLabel(sessions, lock) };
   }
 
   function noTaskOperationalState(): TaskOperationalState {
-    return { selfDriving: null, session: null, className: "", label: "", lock: null, statusPresentation: operationalStatusPresentation([]) };
+    return { session: null, className: "", label: "", lock: null, statusPresentation: operationalStatusPresentation([]) };
   }
 
   function projectTaskSummary(project: ResourceRecord): ProjectTaskSummary {
@@ -231,21 +218,17 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     for (const project of tree.projects) {
       const state = taskOperationalState(project);
       const summary = projectTaskSummary(project);
-      parts.push(`${project.id}:auto=${taskStatusKey(state.selfDriving)}:session=${taskStatusKey(state.session)}:${state.lock?.kind || "none"}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
+      parts.push(`${project.id}:session=${taskStatusKey(state.session)}:${state.lock?.kind || "none"}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
       for (const task of project.children || []) {
         const taskState = taskOperationalState(task);
-        parts.push(`${task.id}:auto=${taskStatusKey(taskState.selfDriving)}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
+        parts.push(`${task.id}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
       }
     }
     return parts.join("|");
   }
 
-  function sessionOperationalLabel(session: WorkspaceSession, taskResource: ResourceRecord | null, taskState: TaskOperationalState, sessionStatus: TaskStatusState): string {
+  function sessionOperationalLabel(session: WorkspaceSession, _taskResource: ResourceRecord | null, _taskState: TaskOperationalState, sessionStatus: TaskStatusState): string {
     const parts: string[] = [];
-    if (taskResource?.selfDriving && taskState.selfDriving) {
-      const revision = Number.isFinite(taskResource.selfDriving.revision) ? taskResource.selfDriving.revision : "unknown";
-      parts.push(`Self-Driving ${taskResource.selfDriving.condition || "unknown"}, revision ${revision}`);
-    }
     if (sessionStatus) parts.push(sessionStatus.label);
     return parts.length ? parts.join(" · ") : session.source === "external" ? "External session active" : "Session active";
   }

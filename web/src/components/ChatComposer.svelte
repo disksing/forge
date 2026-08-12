@@ -111,8 +111,8 @@
     {#if model.canEndTurn || model.runId}
       <span class="tty-composer-divider" aria-hidden="true"></span>
       <span class="tty-composer-group">
-        {#if model.canEndTurn}<button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" disabled={model.endingTurn || model.closingSession || model.selfDrivingDisabling} title="End current turn; keep the Session open." aria-label="End current turn; keep the Session open." onclick={model.onEndTurn}><Icon name={model.endingTurn ? "loader-circle" : "pause"} /></button>{/if}
-        <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button" disabled={model.endingTurn || model.closingSession || model.selfDrivingDisabling} title={model.selfDrivingRemainsEnabled ? "Close this Session; Self-Driving stays On and may create a replacement." : "Close session; end the entire AgentHub Session."} aria-label={model.selfDrivingRemainsEnabled ? "Close this Session; Self-Driving stays On and may create a replacement." : "Close session; end the entire AgentHub Session."} onclick={model.onCloseSession}><Icon name={model.closingSession ? "loader-circle" : "square"} /></button>
+        {#if model.canEndTurn}<button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" disabled={model.endingTurn || model.closingSession} title="End current turn; keep the Session open." aria-label="End current turn; keep the Session open." onclick={model.onEndTurn}><Icon name={model.endingTurn ? "loader-circle" : "pause"} /></button>{/if}
+        <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button" disabled={model.endingTurn || model.closingSession} title="Close session; end the entire AgentHub Session." aria-label="Close session; end the entire AgentHub Session." onclick={model.onCloseSession}><Icon name={model.closingSession ? "loader-circle" : "square"} /></button>
       </span>
     {/if}
     {#if !model.internalLocked}
@@ -134,7 +134,7 @@
   {/if}
 {:else}
   <div class="tty-session-actions tty-standalone-actions open" role="toolbar" aria-label="Session actions">
-    {#if model.externalLocked}<div class="external-resource-lock">This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.</div>{/if}
+    {#if model.externalLocked}<div class="external-resource-lock">This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.</div>{/if}
     {#if model.canResume}<button type="button" id="agentResumeButton" class="tty-primary-action" title="Resume Session" aria-label="Resume Session" onclick={model.onResume}><Icon name="rotate-ccw" /><span>Resume Session</span></button>{/if}
     {#if !model.internalLocked && !model.externalLocked}
       <div class="tty-new-session-control">

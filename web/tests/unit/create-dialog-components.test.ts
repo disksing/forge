@@ -2,7 +2,6 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import ProjectCreateForm from "../../src/components/ProjectCreateForm.svelte";
-import SelfDrivingOptions from "../../src/components/SelfDrivingOptions.svelte";
 import TaskCreateForm from "../../src/components/TaskCreateForm.svelte";
 import TaskPreview from "../../src/components/TaskPreview.svelte";
 import TemplateFieldGroup from "../../src/components/TemplateFieldGroup.svelte";
@@ -33,8 +32,7 @@ const featureTemplate: TaskTemplate = {
 function draft(overrides: Partial<CreateDraft> = {}): CreateDraft {
   return {
     type: "task", projectId: "project1", templateName: "", templateFields: {}, title: "", titleOverride: false,
-    description: "", detail: "", slug: "", selfDriving: false, agentName: "", agentProfiles: "", prompt: "",
-    completionCriteria: "", activeTab: "edit", editedMarkdown: null, showOptions: false,
+    description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false,
     ...overrides,
   };
 }
@@ -42,7 +40,7 @@ function draft(overrides: Partial<CreateDraft> = {}): CreateDraft {
 function model(currentDraft: CreateDraft, overrides: Partial<CreateDialogModel> = {}): CreateDialogModel {
   return {
     open: true, identity: "dialog-1:task:project1", workspaceId: "workspace-a", draft: currentDraft,
-    templates: [featureTemplate], agents: [], profileKeys: [], preview: null, previewKey: "", previewing: false,
+    templates: [featureTemplate], preview: null, previewKey: "", previewing: false,
     previewError: "", templateDigest: "", submitting: false, onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
     previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: () => true, onIconsChanged: vi.fn(),
     ...overrides,
@@ -107,35 +105,6 @@ describe("CreateDialog child components", () => {
 
     expect(values).toMatchObject({ summary: "Typed summary", priority: "high", ready: true });
     expect(host.querySelector("textarea")).toBeTruthy();
-  });
-
-  it("owns the Self-Driving disclosure and edits every option", async () => {
-    const current = draft();
-    const onChange = vi.fn();
-    const host = target();
-    const component = mount(SelfDrivingOptions, { target: host, props: {
-      draft: current,
-      agents: [{ id: "codex", label: "Codex", summary: "Reasoning" }],
-      profileKeys: ["reasoning"],
-      onChange,
-    } });
-    cleanups.push(() => unmount(component));
-
-    host.querySelector<HTMLInputElement>('input[name="selfDriving"]')!.click();
-    await tick();
-    const agent = host.querySelector<HTMLSelectElement>('select[name="agentName"]')!;
-    agent.value = "codex";
-    agent.dispatchEvent(new Event("change", { bubbles: true }));
-    const prompt = host.querySelector<HTMLTextAreaElement>('textarea[name="prompt"]')!;
-    prompt.value = "Keep going";
-    prompt.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    const profiles = host.querySelector<HTMLInputElement>('input[name="agentProfiles"]')!;
-    profiles.value = "reasoning";
-    profiles.dispatchEvent(new InputEvent("input", { bubbles: true }));
-
-    expect(current).toMatchObject({ selfDriving: true, agentName: "codex", prompt: "Keep going", agentProfiles: "reasoning" });
-    expect(host.textContent).toContain("Available: reasoning");
-    expect(onChange).toHaveBeenCalledTimes(4);
   });
 
   it("protects preview edits and resets them to the latest rendered Markdown", async () => {

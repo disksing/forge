@@ -136,7 +136,7 @@ fields:
 			t.Fatalf("unexpected issue severity: %#v", issue)
 		}
 	}
-	for _, code := range []string{"execution_property_forbidden", "invalid_options"} {
+	for _, code := range []string{"unknown_property", "invalid_options"} {
 		if !codes[code] {
 			t.Fatalf("missing %s in %#v", code, templates[0].Errors)
 		}
@@ -200,7 +200,7 @@ func TestTemplateRenderRejectsMissingUnknownAndTypedFields(t *testing.T) {
 	}
 }
 
-func TestCreateTaskFromTemplateRecordsSourceAndKeepsSelfDrivingExplicit(t *testing.T) {
+func TestCreateTaskFromTemplateRecordsSource(t *testing.T) {
 	workspace, root, project := templateWorkspace(t)
 	writeTemplate(t, root, project, "request", v2Template)
 	fields := map[string]any{"summary": "Structured task", "behavior": "Create it safely"}
@@ -208,15 +208,15 @@ func TestCreateTaskFromTemplateRecordsSourceAndKeepsSelfDrivingExplicit(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if preview.SelfDriving != nil || preview.Template == nil {
-		t.Fatalf("template enabled execution implicitly: %#v", preview)
+	if preview.Template == nil {
+		t.Fatalf("template source missing from preview: %#v", preview)
 	}
 	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, TemplateName: "request", TemplateFields: fields, ExpectedTemplateDigest: preview.Template.Digest})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if task.SelfDriving != nil || task.Template == nil || task.Template.Name != "request" || task.Template.SchemaVersion != 2 || task.Template.Digest != preview.Template.Digest {
-		t.Fatalf("unexpected template source or Self-Driving: %#v", task)
+	if task.Template == nil || task.Template.Name != "request" || task.Template.SchemaVersion != 2 || task.Template.Digest != preview.Template.Digest {
+		t.Fatalf("unexpected template source: %#v", task)
 	}
 	detail, err := workspace.Resource(task.ID)
 	if err != nil {
@@ -232,13 +232,6 @@ func TestCreateTaskFromTemplateRecordsSourceAndKeepsSelfDrivingExplicit(t *testi
 	metadata, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(detail.Path), "task.json"))
 	if err != nil || strings.Contains(string(metadata), `"path"`) || !strings.Contains(string(metadata), `"template"`) {
 		t.Fatalf("task source persistence is incorrect: %v %s", err, metadata)
-	}
-	automatic, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Override title", TemplateName: "request", TemplateFields: fields, SelfDriving: true, AgentName: "codex"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if automatic.Title != "Override title" || automatic.SelfDriving == nil || automatic.SelfDriving.AgentName != "codex" {
-		t.Fatalf("explicit override or Self-Driving was lost: %#v", automatic)
 	}
 }
 
@@ -265,30 +258,6 @@ func TestTemplateDigestConflictAndValidationAreAtomic(t *testing.T) {
 		if strings.HasPrefix(entry.Name(), "task") || strings.HasPrefix(entry.Name(), ".forge-create-") {
 			t.Fatalf("failed template creation left side effects: %s", entry.Name())
 		}
-	}
-}
-
-func TestTemplateMigrationIsPreviewOnlyUntilWrite(t *testing.T) {
-	workspace, root, project := templateWorkspace(t)
-	legacy := "---\ntitle: Legacy\nautorun: true\nprompt: Run it\n---\n# Legacy\n\nKeep this body.\n"
-	path := writeTemplate(t, root, project, "legacy", legacy)
-	results, err := workspace.MigrateTemplates(project.ID, []string{"legacy"}, false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(results) != 1 || !results[0].Changed || results[0].Written || !strings.Contains(results[0].Content, "schema-version: 2") || strings.Contains(results[0].Content, "autorun") {
-		t.Fatalf("unexpected migration preview: %#v", results)
-	}
-	if current, _ := os.ReadFile(path); string(current) != legacy {
-		t.Fatal("preview modified the template")
-	}
-	results, err = workspace.MigrateTemplates(project.ID, []string{"legacy"}, true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	current, _ := os.ReadFile(path)
-	if !results[0].Written || !strings.Contains(string(current), "fields: []") || !strings.Contains(string(current), "Keep this body.") {
-		t.Fatalf("migration did not preserve static body: %#v %q", results, current)
 	}
 }
 

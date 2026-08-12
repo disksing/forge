@@ -177,7 +177,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "Self-Driving suspend 仅适用于任务无法继续推进") || !strings.Contains(got, "--summary=<text>") || !strings.Contains(got, "--wake-condition=<text>") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") {
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") {
 			t.Fatalf("expected Chinese workspace prompt, got:\n%s", got)
 		}
 
@@ -188,7 +188,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
 		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "不得把 suspend 用于阶段完成、checkpoint 或保存进度") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
 		var projectLogs []LogEntry
@@ -210,7 +210,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
 			t.Fatalf("expected Chinese work template, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "只要还有任何范围内的实现、测试、调查、评审、文档、修复或验证工作可做") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
 		var taskLogs []LogEntry
@@ -458,7 +458,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(projectAgents, "workspace root AGENTS.md (../AGENTS.md)") {
 			t.Fatalf("project AGENTS.md should reference workspace AGENTS.md by relative path, got:\n%s", projectAgents)
 		}
-		templateContent := "---\ntitle: Daily inspection\nautorun: true\nagent-profiles: [kimi, codex]\nprompt: |\n  Inspect the project.\n  Report findings.\n---\n# Daily inspection\n\nCheck current state.\n"
+		templateContent := "---\nschema-version: 2\ntitle: Daily inspection\nfields: []\n---\n# Daily inspection\n\nCheck current state.\n"
 		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "daily.md"), []byte(templateContent), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -477,7 +477,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected one task template, got: %+v", projectDetail.Templates)
 		}
 		template := projectDetail.Templates[0]
-		if template.Name != "daily" || template.Title != "Daily inspection" || !template.SelfDriving || strings.Join(template.PreferredAgentProfiles, ",") != "kimi,codex" || template.Prompt != "Inspect the project.\nReport findings." || !strings.Contains(template.Detail, "Check current state.") {
+		if template.Name != "daily" || template.Title != "Daily inspection" || !strings.Contains(template.Detail, "Check current state.") {
 			t.Fatalf("unexpected parsed task template: %+v", template)
 		}
 
@@ -525,9 +525,6 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(subtaskAgents, "forge session new --pid <pid>") || !strings.Contains(subtaskAgents, "lock this directory's resource once") {
 			t.Fatalf("expected subtask AGENTS.md to include direct-start session ownership guidance, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "forge task self-driving complete") || !strings.Contains(subtaskAgents, "forge task create --self-driving") || !strings.Contains(subtaskAgents, "Self-Driving suspend is allowed only when the task cannot make meaningful progress") || !strings.Contains(subtaskAgents, "--summary=<text>") || !strings.Contains(subtaskAgents, "--wake-condition=<text>") || !strings.Contains(subtaskAgents, "do not use suspend for a finished phase") {
-			t.Fatalf("expected subtask AGENTS.md to teach Self-Driving protocol, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
 			t.Fatalf("expected subtask AGENTS.md to prevent relative worktree destination mistakes, got:\n%s", subtaskAgents)
@@ -660,105 +657,7 @@ func TestTaskLifecycle(t *testing.T) {
 	})
 }
 
-func TestSelfDrivingLifecycleAndSuspend(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		childJSON := run(t, "task", "create", "--project=project1", "--self-driving", "--prompt=Investigate", "Child")
-		if !strings.Contains(childJSON, `"selfDriving"`) || !strings.Contains(childJSON, `"enabled": true`) || !strings.Contains(childJSON, `"condition": "ready"`) {
-			t.Fatalf("expected Self-Driving metadata, got:\n%s", childJSON)
-		}
-		secondJSON := run(t, "task", "create", "--project=project1", "--self-driving", "--prompt=Review", "Second")
-		if !strings.Contains(secondJSON, `"enabled": true`) || !strings.Contains(secondJSON, `"revision": 1`) {
-			t.Fatalf("expected enabled second task metadata, got:\n%s", secondJSON)
-		}
-		detailJSON := run(t, "workspace", "resource", "--id=project1.task1", "--json")
-		var detail ResourceDetailView
-		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
-			t.Fatal(err)
-		}
-		if detail.SelfDriving == nil || !detail.SelfDriving.Enabled || detail.SelfDriving.Condition != "ready" {
-			t.Fatalf("task detail should expose Self-Driving state, got: %+v", detail.SelfDriving)
-		}
-		treeJSON := run(t, "workspace", "tree", "--json")
-		var tree WorkspaceTree
-		if err := json.Unmarshal([]byte(treeJSON), &tree); err != nil {
-			t.Fatal(err)
-		}
-		if got := tree.Projects[0].Children[0].SelfDriving; got == nil || got.Revision != 1 || !got.Enabled || got.Condition != "ready" {
-			t.Fatalf("task tree should expose lightweight Self-Driving state, got: %+v", got)
-		}
-
-		listed := run(t, "task", "list", "--project=project1", "--runnable", "--json")
-		var ready struct {
-			Tasks []runnableTask `json:"tasks"`
-		}
-		if err := json.Unmarshal([]byte(listed), &ready); err != nil {
-			t.Fatal(err)
-		}
-		if len(ready.Tasks) != 2 || ready.Tasks[0].ID != "project1.task1" || !ready.Tasks[0].Ready {
-			t.Fatalf("expected both queued tasks runnable, got: %+v", ready.Tasks)
-		}
-
-		suspended := run(t, "task", "self-driving", "suspend", "--project=project1", "--task=task1", "--revision=1", "--summary=waiting for review", "--wake-condition=the review is approved")
-		if !strings.Contains(suspended, `"condition": "waiting"`) || !strings.Contains(suspended, `"waitingAt"`) || !strings.Contains(suspended, `"summary": "waiting for review"`) || !strings.Contains(suspended, `"condition": "the review is approved"`) {
-			t.Fatalf("expected suspended metadata, got:\n%s", suspended)
-		}
-		disabled := run(t, "task", "self-driving", "disable", "--project=project1", "--task=task1")
-		if !strings.Contains(disabled, `"enabled": false`) || !strings.Contains(disabled, `"revision": 2`) {
-			t.Fatalf("expected disabled revision 2, got:\n%s", disabled)
-		}
-		enabled := run(t, "task", "self-driving", "enable", "--project=project1", "--task=task1")
-		if !strings.Contains(enabled, `"enabled": true`) || !strings.Contains(enabled, `"revision": 3`) || strings.Contains(enabled, `"wakeContext"`) {
-			t.Fatalf("expected clean enabled revision 3, got:\n%s", enabled)
-		}
-		completed := run(t, "task", "self-driving", "complete", "--project=project1", "--task=task1", "--revision=3", "--summary=done")
-		if !strings.Contains(completed, `"enabled": false`) || !strings.Contains(completed, `"status": "completed"`) || !strings.Contains(completed, `"revision": 4`) {
-			t.Fatalf("expected completion to disable, got:\n%s", completed)
-		}
-		logs := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
-		if !strings.Contains(logs, `"selfDriving": true`) || !strings.Contains(logs, `"selfDrivingRevision": 1`) {
-			t.Fatalf("expected marked Self-Driving history, got:\n%s", logs)
-		}
-	})
-}
-
-func TestSelfDrivingPreferredAgentProfiles(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		created := run(t, "task", "create", "--project=project1", "--self-driving", "--agent-profile=Kimi", "--agent-profile=codex", "--agent-profile=kimi", "Profile task")
-		var task Task
-		if err := json.Unmarshal([]byte(created), &task); err != nil {
-			t.Fatal(err)
-		}
-		if task.SelfDriving == nil || strings.Join(task.SelfDriving.PreferredAgentProfiles, ",") != "kimi,codex" {
-			t.Fatalf("unexpected preferred Agent Profiles: %+v", task.SelfDriving)
-		}
-		runnable := run(t, "task", "list", "--project=project1", "--runnable", "--json")
-		if !strings.Contains(runnable, `"preferredAgentProfiles": [`) || !strings.Contains(runnable, `"kimi"`) {
-			t.Fatalf("runnable output is missing Agent Profiles:\n%s", runnable)
-		}
-		disabled := run(t, "task", "self-driving", "disable", "--project=project1", "--task=task1")
-		if !strings.Contains(disabled, `"preferredAgentProfiles"`) || !strings.Contains(disabled, `"codex"`) {
-			t.Fatalf("disable did not preserve Agent Profiles:\n%s", disabled)
-		}
-
-		createdWithAgent := run(t, "task", "create", "--project=project1", "--self-driving", "--agent=local-agent", "--completion-criteria=All checks pass", "Configured task")
-		var configured Task
-		if err := json.Unmarshal([]byte(createdWithAgent), &configured); err != nil {
-			t.Fatal(err)
-		}
-		if configured.SelfDriving == nil || configured.SelfDriving.AgentName != "local-agent" || configured.SelfDriving.CompletionCriteria != "All checks pass" {
-			t.Fatalf("new Self-Driving parameters were not persisted: %+v", configured.SelfDriving)
-		}
-		if _, err := runErr(t, "task", "create", "--project=project1", "--self-driving", "--agent-profile=not valid", "Invalid"); err == nil || !strings.Contains(err.Error(), "invalid agent profile") {
-			t.Fatalf("expected invalid Profile to fail, got %v", err)
-		}
-	})
-}
-
-func TestOldRunNamingIsRejected(t *testing.T) {
+func TestRemovedAutomationCommandsAreRejected(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Automation")
@@ -774,47 +673,14 @@ func TestOldRunNamingIsRejected(t *testing.T) {
 		if _, err := runErr(t, "task", "autorun", "queue", "--project=project1", "--task=task1"); err == nil {
 			t.Fatal("expected the retired task subcommand to be rejected")
 		}
-	})
-}
-
-func TestSelfDrivingRevisionRejectsStaleOutcome(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--self-driving", "Task")
-		run(t, "task", "self-driving", "disable", "--project=project1", "--task=task1")
-		run(t, "task", "self-driving", "enable", "--project=project1", "--task=task1")
-		if _, err := runErr(t, "task", "self-driving", "complete", "--project=project1", "--task=task1", "--revision=1"); err == nil || !strings.Contains(err.Error(), "revision changed") {
-			t.Fatalf("expected stale revision to fail, got %v", err)
+		if _, err := runErr(t, "task", "create", "--project=project1", "--self-driving", "Task"); err == nil {
+			t.Fatal("expected the removed creation flag to be rejected")
 		}
-	})
-}
-
-func TestSelfDrivingRejectsDependencyFlags(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--self-driving", "First")
-		if _, err := runErr(t, "task", "create", "--project=project1", "--self-driving", "--after=project1.task1@1", "Second"); err == nil || !strings.Contains(err.Error(), "task create") {
-			t.Fatalf("expected --after to be rejected on task create, got %v", err)
+		if _, err := runErr(t, "task", "self-driving", "enable", "--project=project1", "--task=task1"); err == nil {
+			t.Fatal("expected the removed task subcommand to be rejected")
 		}
-		if _, err := runErr(t, "task", "self-driving", "wait", "--project=project1", "--task=task1"); err == nil || !strings.Contains(err.Error(), "unknown task self-driving subcommand") {
-			t.Fatalf("expected removed self-driving wait subcommand to be rejected, got %v", err)
-		}
-		if _, err := runErr(t, "task", "self-driving", "suspend", "--project=project1", "--task=task1", "--revision=1", "--after=project1.task2@1"); err == nil || !strings.Contains(err.Error(), "usage: forge task self-driving") {
-			t.Fatalf("expected removed --after flag on suspend to be rejected, got %v", err)
-		}
-	})
-}
-
-func TestForgeStartDoesNotScheduleSelfDriving(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Automation")
-		run(t, "task", "create", "--project=project1", "--self-driving", "--prompt=Do work", "Task")
-		shown := run(t, "task", "show", "--project=project1", "--task=task1")
-		if !strings.Contains(shown, `"enabled": true`) || !strings.Contains(shown, `"condition": "ready"`) {
-			t.Fatalf("ordinary commands should leave Self-Driving enabled, got:\n%s", shown)
+		if _, err := runErr(t, "task", "list", "--project=project1", "--runnable"); err == nil {
+			t.Fatal("expected the removed runnable filter to be rejected")
 		}
 	})
 }
@@ -854,14 +720,6 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 			t.Fatalf("expected help marker %q after offset %d, got:\n%s", marker, offset, help)
 		}
 		offset += index + len(marker)
-	}
-	for _, marker := range []string{
-		"  forge task self-driving enable|disable ...",
-		"Persist the Task-level desired state.",
-	} {
-		if !strings.Contains(help, marker) {
-			t.Fatalf("expected Self-Driving help marker %q, got:\n%s", marker, help)
-		}
 	}
 }
 
@@ -2567,9 +2425,6 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
 			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
 		}
-		if !strings.Contains(first, "forge task create --self-driving") || !strings.Contains(first, "forge task self-driving suspend --revision=<n>") || !strings.Contains(first, "Self-Driving suspend is allowed only when the task cannot make meaningful progress") || !strings.Contains(first, "pause for a user decision, authorization, or manual handling") || !strings.Contains(first, "fail only when no feasible safe path remains") || !strings.Contains(first, "revision gate, not system-message provenance") {
-			t.Fatalf("expected workspace AGENTS.md to teach Self-Driving delegation, got:\n%s", first)
-		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
 			if !strings.Contains(first, want) {
 				t.Fatalf("expected workspace AGENTS.md to include Wiki guidance %q, got:\n%s", want, first)
@@ -2823,7 +2678,7 @@ Enabled: {{ enabled }}
 			t.Fatalf("unexpected rendered template:\n%s", rendered)
 		}
 		preview := run(t, "task", "create", "--project=project1", "--template=request", "--field", "summary=CLI task", "--field", "body=Created from CLI", "--dry-run")
-		if !strings.Contains(preview, `"title": "CLI task"`) || !strings.Contains(preview, `"selfDriving"`) {
+		if !strings.Contains(preview, `"title": "CLI task"`) || strings.Contains(preview, `"selfDriving"`) {
 			t.Fatalf("unexpected dry-run preview:\n%s", preview)
 		}
 		if matches, _ := filepath.Glob(filepath.Join(root, "project1", "task*")); len(matches) != 0 {
@@ -2831,7 +2686,7 @@ Enabled: {{ enabled }}
 		}
 		created := run(t, "task", "create", "--project=project1", "--template=request", "--field", "summary=CLI task", "--field", "body=Created from CLI")
 		if !strings.Contains(created, `"template"`) || strings.Contains(created, `"selfDriving"`) {
-			t.Fatalf("content template implicitly enabled Self-Driving: %s", created)
+			t.Fatalf("content template exposed removed execution metadata: %s", created)
 		}
 		var createdTask Task
 		if err := json.Unmarshal([]byte(created), &createdTask); err != nil {
@@ -2844,10 +2699,6 @@ Enabled: {{ enabled }}
 		if detail.Template == nil || createdTask.Template == nil || detail.Template.Digest != createdTask.Template.Digest {
 			t.Fatalf("workspace resource omitted template source: %#v", detail)
 		}
-		automatic := run(t, "task", "create", "Explicit title", "--project=project1", "--template=request", "--field", "summary=Ignored title", "--field", "body=Automatic", "--self-driving", "--agent=codex")
-		if !strings.Contains(automatic, `"title": "Explicit title"`) || !strings.Contains(automatic, `"enabled": true`) || !strings.Contains(automatic, `"condition": "ready"`) {
-			t.Fatalf("explicit Self-Driving or title override missing: %s", automatic)
-		}
 		if _, err := runErr(t, "task", "create", "Bad", "--project=project1", "--template=request", "--detail=conflict"); err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
 			t.Fatalf("expected mutually exclusive template inputs, got %v", err)
 		}
@@ -2859,7 +2710,7 @@ func TestTemplateValidateAndMigrateCLI(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Migration project")
 		dir := filepath.Join(root, "project1", "templates")
-		legacy := "---\ntitle: Legacy\nautorun: true\nprompt: Do it\n---\n# Legacy\n"
+		legacy := "---\ntitle: Legacy\n---\n# Legacy\n"
 		if err := os.WriteFile(filepath.Join(dir, "legacy.md"), []byte(legacy), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -2872,14 +2723,14 @@ func TestTemplateValidateAndMigrateCLI(t *testing.T) {
 		}
 		run(t, "template", "migrate", "--project=project1", "--write", "legacy")
 		migrated := readFile(t, filepath.Join(dir, "legacy.md"))
-		if !strings.Contains(migrated, "schema-version: 2") || strings.Contains(migrated, "self-driving") || strings.Contains(migrated, "prompt:") {
-			t.Fatalf("legacy execution properties survived migration:\n%s", migrated)
+		if !strings.Contains(migrated, "schema-version: 2") {
+			t.Fatalf("legacy template was not migrated:\n%s", migrated)
 		}
 		if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\nschema-version: 2\ntitle: Broken\nautorun: true\nfields: []\n---\nBody\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		output, err := runErr(t, "template", "validate", "--project=project1", "--all", "--json")
-		if err == nil || !strings.Contains(output, "execution_property_forbidden") {
+		if err == nil || !strings.Contains(output, "unknown_property") {
 			t.Fatalf("expected invalid template and non-zero exit: err=%v output=%s", err, output)
 		}
 	})
@@ -2941,7 +2792,7 @@ func TestTemplateShowIncludesBodyAndPreservesOutputModes(t *testing.T) {
 			t.Fatal(err)
 		}
 		invalid := run(t, "template", "show", "--project=project1", "broken")
-		for _, marker := range []string{"Status: invalid", "execution_property_forbidden", "Markdown body:\n" + brokenBody} {
+		for _, marker := range []string{"Status: invalid", "unknown_property", "Markdown body:\n" + brokenBody} {
 			if !strings.Contains(invalid, marker) {
 				t.Fatalf("invalid template show output is missing %q:\n%s", marker, invalid)
 			}

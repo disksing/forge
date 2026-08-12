@@ -7,7 +7,6 @@ interface Harness {
   taskBodies: Array<Record<string, unknown>>;
   previewBodies: Array<Record<string, unknown>>;
   settingsBodies: Array<Record<string, unknown>>;
-  selfDrivingBodies: Array<Record<string, unknown>>;
   uploadNames: string[];
   streamRequests: string[];
   treeRequests: number;
@@ -94,7 +93,6 @@ function detail(id: string) {
     artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
     repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
     templates: resource?.type === "project" ? templates : [],
-    ...(resource?.type === "task" ? { selfDriving: { enabled: false, revision: 0, condition: "disabled", agentName: "" } } : {}),
   };
 }
 
@@ -117,7 +115,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], selfDrivingBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [] };
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -223,11 +221,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
       const templateName = String(body.templateName || "");
       await new Promise((resolve) => setTimeout(resolve, templateName === "feature-a" ? 350 : 20));
       const summary = String((body.templateFields as Record<string, unknown>)?.summary || "Untitled");
-      return json(route, { title: `${templateName}:${summary}`, markdown: `# ${templateName}:${summary}\n`, slug: "", selfDriving: null, template: { digest: `digest-${templateName}` } });
-    }
-    if (path === "/api/workspaces/ws-test/self-driving" && method === "PUT") {
-      harness.selfDrivingBodies.push(request.postDataJSON());
-      return json(route, {});
+      return json(route, { title: `${templateName}:${summary}`, markdown: `# ${templateName}:${summary}\n`, slug: "", template: { digest: `digest-${templateName}` } });
     }
     if (path === "/api/workspaces/ws-test/agent/runs" && method === "GET") {
       const resourceId = url.searchParams.get("resourceId");
@@ -609,7 +603,7 @@ test("keeps the Create Task split usable across desktop and mobile layouts", asy
   expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(844);
 });
 
-test("preserves composer draft through upload and supports Settings and Self-Driving dialogs", async ({ page }) => {
+test("preserves composer draft through upload and Settings", async ({ page }) => {
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
 
@@ -643,12 +637,6 @@ test("preserves composer draft through upload and supports Settings and Self-Dri
   await expect(settings.locator(".settings-save-hint")).toBeHidden();
   await settings.getByRole("button", { name: "Close" }).click();
 
-  await page.locator("#selfDrivingSwitch").click();
-  const selfDriving = page.getByRole("dialog", { name: "Configure Self-Driving" });
-  await selfDriving.getByLabel("Run instructions (optional)").fill("Continue until verified");
-  await selfDriving.getByRole("button", { name: "Save and Enable" }).click();
-  await expect.poll(() => harness.selfDrivingBodies.length).toBe(1);
-  expect(harness.selfDrivingBodies[0]).toMatchObject({ resourceId: "project1.task1", enabled: true, agentName: "test-agent", prompt: "Continue until verified" });
   await expect(input).toHaveValue("Keep this draft\nartifacts/upload/notes.txt");
 });
 

@@ -13,10 +13,6 @@ export interface AgentRunRecord {
 	title?: string;
 	createdAt?: string;
 	updatedAt?: string;
-	schedulerTurn?: boolean;
-	schedulerTurnId?: string;
-	schedulerTurnSequence?: number;
-	selfDrivingRevision?: number;
 	agentProfile?: string;
 	agentSelectionReason?: string;
 	wakeContext?: { summary?: string; wakeCondition?: string; fallback?: boolean };
@@ -59,7 +55,6 @@ export interface AgentSessionDependencies {
 	externalLockMessage: string;
 	isLive(run: AgentRunRecord | null): boolean;
 	isTurnInterruptible(run: AgentRunRecord | null): boolean;
-	inputSelfDrivingProjection(run: AgentRunRecord): Record<string, unknown> | null;
 	mutate<T>(action: () => Promise<T>): Promise<T>;
 	request<T>(path: string, init?: RequestInit): Promise<T>;
 	reloadRuns(): Promise<void>;
@@ -74,54 +69,11 @@ export interface AgentSessionDependencies {
 	toast(message: string): void;
 }
 
-export interface SelfDrivingMutationOptions {
-	enabled?: boolean;
-	configured?: boolean;
-	agentName?: string;
-	runInstructions?: string;
-	completionCriteria?: string;
-}
-
 export function createAgentSessionController(dependencies: AgentSessionDependencies) {
 	const { operations } = dependencies;
 
 	async function refreshSessionProjection(): Promise<void> {
 		await Promise.all([dependencies.reloadRuns(), dependencies.refreshTree()]);
-	}
-
-	async function setSelfDriving(options: SelfDrivingMutationOptions = {}): Promise<void> {
-		return dependencies.mutate(async () => {
-			const detail = dependencies.taskDetail();
-			if (!detail || detail.type !== "task") throw new Error("Select a task first.");
-			const resourceId = detail.id;
-			const enabled = options.enabled ?? true;
-			const operation = operations.begin("self-driving-save", resourceId);
-			if (!operation) return;
-			try {
-				const body: Record<string, unknown> = { resourceId, enabled };
-				if (options.configured) {
-					body.agentName = String(options.agentName || "").trim();
-					body.prompt = String(options.runInstructions || "");
-					body.completionCriteria = String(options.completionCriteria || "");
-				}
-				const response = await dependencies.request<{ notificationError?: string }>(`/api/workspaces/${dependencies.workspaceId()}/self-driving`, {
-					method: "PUT", body: JSON.stringify(body)
-				});
-				const workspaceId = dependencies.workspaceId();
-				await Promise.all([
-					refreshSessionProjection(),
-					dependencies.fetchDetail(resourceId, workspaceId).then((fresh) => dependencies.applyDetail(fresh))
-				]);
-				dependencies.publish();
-				dependencies.toast(enabled
-					? "Self-Driving enabled. The Scheduler will reconcile asynchronously."
-					: response.notificationError
-						? `Self-Driving disabled. ${response.notificationError}`
-						: "Self-Driving disabled. The current Turn and Session were left open.");
-			} finally {
-				operations.finish(operation);
-			}
-		});
 	}
 
 	async function start(agentName = ""): Promise<void> {
@@ -178,30 +130,7 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 				await closeRun(runId);
 				await refreshSessionProjection();
 				dependencies.publish();
-				dependencies.toast("Agent session closed. Self-Driving desired state was not changed.");
-			} catch (error) {
-				try { await refreshSessionProjection(); dependencies.publish(); } catch (_) {}
-				throw error;
-			} finally {
-				operations.finish(operation);
-			}
-		});
-	}
-
-	async function disableSelfDriving(): Promise<void> {
-		if (operations.active("self-driving-disable")) return;
-		const detail = dependencies.taskDetail();
-		if (!detail || detail.type !== "task") return;
-		return dependencies.mutate(async () => {
-			const operation = operations.begin("self-driving-disable", detail.id);
-			if (!operation) return;
-			try {
-				const response = await dependencies.request<{ notificationError?: string }>(`/api/workspaces/${dependencies.workspaceId()}/self-driving`, {
-					method: "PUT", body: JSON.stringify({ resourceId: detail.id, enabled: false })
-				});
-				await refreshSessionProjection();
-				dependencies.publish();
-				dependencies.toast(response.notificationError ? `Self-Driving disabled. ${response.notificationError}` : "Self-Driving disabled. The Agent Session remains open.");
+				dependencies.toast("Agent session closed.");
 			} catch (error) {
 				try { await refreshSessionProjection(); dependencies.publish(); } catch (_) {}
 				throw error;
@@ -245,7 +174,7 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 			if (nextRun) dependencies.restoreDraft(nextRun);
 			dependencies.publish();
 			try {
-				if (previousRun && dependencies.isLive(previousRun) && !previousRun.schedulerTurn) try {
+				if (previousRun && dependencies.isLive(previousRun)) try {
 					await closeRun(previousRun.id);
 				} catch (error) {
 					if (workspaceId === dependencies.workspaceId() && dependencies.activeRunId() === runId) {
@@ -309,7 +238,6 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 			const run = dependencies.currentRun();
 			if (!run || context.runId !== run.id || context.resourceId !== (run.resourceId || "")) throw new Error("The selected Workspace or Session changed before the message could be sent.");
 			const body: Record<string, unknown> = { text: rawText, userName: dependencies.userName() };
-			Object.assign(body, dependencies.inputSelfDrivingProjection(run) || {});
 			const result = await dependencies.request<{ status?: string }>(`/api/workspaces/${context.workspaceId}/agent/runs/${context.runId}/input`, {
 				method: "POST", body: JSON.stringify(body)
 			});
@@ -326,5 +254,5 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 		}
 	}
 
-	return { setSelfDriving, start, stopSession, disableSelfDriving, stopTurn, switchRun, closeRun, resume, resolveApproval, send };
+	return { start, stopSession, stopTurn, switchRun, closeRun, resume, resolveApproval, send };
 }

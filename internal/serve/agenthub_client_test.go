@@ -102,8 +102,8 @@ func TestAgentHubClientContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := client.Message(ctx, "ses_1", agentHubInboundMessage{
-		Text: "steer", Steer: true, Role: "system",
-		Sender: &agentHubMessageSender{Name: agentHubSchedulerSenderName},
+		Text: "steer", Steer: true, Role: "user",
+		Sender: &agentHubMessageSender{Name: "Browser User"},
 	}); err != nil {
 		t.Fatal(err)
 	}

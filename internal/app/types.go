@@ -32,7 +32,6 @@ type Task struct {
 	Parent      string              `json:"parent"`
 	Description string              `json:"description,omitempty"`
 	Repos       []TaskRepo          `json:"repos,omitempty"`
-	SelfDriving *SelfDriving        `json:"selfDriving,omitempty"`
 	Template    *TaskTemplateSource `json:"template,omitempty"`
 	// Path is populated on create responses but is not persisted in task.json.
 	Path string `json:"path,omitempty"`
@@ -76,39 +75,6 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 	project.ResourceMeta = decoded.ResourceMeta
 	project.Description = decoded.Description
 	return nil
-}
-
-type SelfDriving struct {
-	Enabled                bool                          `json:"enabled"`
-	Revision               int                           `json:"revision"`
-	Condition              string                        `json:"condition"`
-	ConditionReason        string                        `json:"conditionReason,omitempty"`
-	AgentName              string                        `json:"agentName,omitempty"`
-	PreferredAgentProfiles []string                      `json:"preferredAgentProfiles,omitempty"`
-	Prompt                 string                        `json:"prompt,omitempty"`
-	CompletionCriteria     string                        `json:"completionCriteria,omitempty"`
-	WakeContext            *SelfDrivingWakeContext       `json:"wakeContext,omitempty"`
-	LastOutcome            *SelfDrivingOutcome           `json:"lastOutcome,omitempty"`
-	NotificationError      *SelfDrivingNotificationError `json:"notificationError,omitempty"`
-}
-
-type SelfDrivingWakeContext struct {
-	Summary   string `json:"summary"`
-	Condition string `json:"condition"`
-	WaitingAt string `json:"waitingAt"`
-	Fallback  bool   `json:"fallback,omitempty"`
-}
-
-type SelfDrivingOutcome struct {
-	Status   string `json:"status"`
-	Reason   string `json:"reason,omitempty"`
-	At       string `json:"at"`
-	Revision int    `json:"revision"`
-}
-
-type SelfDrivingNotificationError struct {
-	Message string `json:"message"`
-	At      string `json:"at"`
 }
 
 type TaskRepo struct {

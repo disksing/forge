@@ -1,5 +1,3 @@
-import type { AgentOption } from "./common";
-
 export interface TemplateField {
   name: string;
   type: "text" | "textarea" | "select" | "boolean";
@@ -30,7 +28,6 @@ export interface TaskPreview {
   title: string;
   markdown: string;
   slug?: string;
-  selfDriving?: { agentName?: string } | null;
   template?: { digest?: string };
 }
 
@@ -44,11 +41,6 @@ export interface CreateDraft {
   description: string;
   detail: string;
   slug: string;
-  selfDriving: boolean;
-  agentName: string;
-  agentProfiles: string;
-  prompt: string;
-  completionCriteria: string;
   activeTab: "edit" | "preview";
   editedMarkdown: string | null;
   showOptions: boolean;
@@ -60,8 +52,6 @@ export interface CreateDialogModel {
   workspaceId: string;
   draft: CreateDraft;
   templates: TaskTemplate[];
-  agents: AgentOption[];
-  profileKeys: string[];
   preview: TaskPreview | null;
   previewKey: string;
   previewing: boolean;

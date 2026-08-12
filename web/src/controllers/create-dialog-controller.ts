@@ -1,7 +1,7 @@
-import type { AgentOption, CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../components/models";
+import type { CreateDialogModel, CreateDraft, TaskPreview, TaskTemplate } from "../components/models";
 import { errorMessage } from "../runtime/errors";
 
-interface CreateDialogState extends Omit<CreateDraft, "agentProfiles"> {
+interface CreateDialogState extends CreateDraft {
 	identity: number;
 	open: boolean;
 	templateDirty: boolean;
@@ -10,15 +10,12 @@ interface CreateDialogState extends Omit<CreateDraft, "agentProfiles"> {
 	previewing: boolean;
 	previewError: string;
 	previewKey: string;
-	preferredAgentProfiles: string[];
 	submitting: boolean;
 }
 
 export interface CreateDialogDependencies {
 	workspaceId(): string;
 	templates(projectId: string): TaskTemplate[];
-	agents(): AgentOption[];
-	profileKeys(): string[];
 	request<T>(path: string, init?: RequestInit): Promise<T>;
 	publish(model: CreateDialogModel): void;
 	toast(message: string): void;
@@ -27,15 +24,6 @@ export interface CreateDialogDependencies {
 	onOpen(): void;
 	onIconsChanged(): void;
 	confirmTemplateSwitch(): boolean;
-}
-
-export function parseAgentProfiles(value: unknown): string[] {
-	const seen = new Set<string>();
-	return String(value || "").split(",").map((item) => item.trim().toLowerCase()).filter((item) => {
-		if (!item || seen.has(item)) return false;
-		seen.add(item);
-		return true;
-	});
 }
 
 function emptyState(identity: number): CreateDialogState {
@@ -60,11 +48,6 @@ function emptyState(identity: number): CreateDialogState {
 		description: "",
 		detail: "",
 		slug: "",
-		selfDriving: false,
-		agentName: "",
-		preferredAgentProfiles: [],
-		prompt: "",
-		completionCriteria: "",
 		submitting: false
 	};
 }
@@ -78,12 +61,7 @@ export function createTaskRequest(dialog: CreateDialogState) {
 			templateFields: dialog.templateFields,
 			...(dialog.templateDigest ? { expectedTemplateDigest: dialog.templateDigest } : {})
 		} : { detail: dialog.detail }),
-		slug: dialog.slug,
-		selfDriving: dialog.selfDriving,
-		agentName: dialog.selfDriving ? dialog.agentName : "",
-		preferredAgentProfiles: dialog.selfDriving ? dialog.preferredAgentProfiles : [],
-		prompt: dialog.selfDriving ? dialog.prompt : "",
-		completionCriteria: dialog.selfDriving ? dialog.completionCriteria : ""
+		slug: dialog.slug
 	};
 }
 
@@ -105,11 +83,6 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			description: dialog.description,
 			detail: dialog.detail,
 			slug: dialog.slug,
-			selfDriving: dialog.selfDriving,
-			agentName: dialog.agentName,
-			agentProfiles: dialog.preferredAgentProfiles.join(", "),
-			prompt: dialog.prompt,
-			completionCriteria: dialog.completionCriteria,
 			activeTab: dialog.activeTab,
 			editedMarkdown: dialog.editedMarkdown,
 			showOptions: dialog.showOptions
@@ -119,8 +92,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 	function stateFromDraft(next: CreateDraft): Partial<CreateDialogState> {
 		return {
 			...next,
-			templateFields: { ...next.templateFields },
-			preferredAgentProfiles: parseAgentProfiles(next.agentProfiles)
+			templateFields: { ...next.templateFields }
 		};
 	}
 
@@ -152,8 +124,6 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 			workspaceId: dependencies.workspaceId(),
 			draft: draft(),
 			templates: dialog.type === "task" ? dependencies.templates(dialog.projectId) : [],
-			agents: dependencies.agents(),
-			profileKeys: dependencies.profileKeys(),
 			preview: dialog.preview,
 			previewKey: dialog.previewKey,
 			previewing: dialog.previewing,
@@ -258,14 +228,7 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 				if (editedMarkdown != null) {
 					const editedTitle = String(state.titleOverride ? state.title : state.preview?.title || "").trim();
 					if (!editedTitle) throw new Error("Task title is required when creating from edited preview content.");
-					requestBody = {
-						project: state.projectId, title: editedTitle, taskMarkdown: editedMarkdown, slug: state.slug,
-						selfDriving: state.selfDriving,
-						agentName: state.selfDriving ? state.agentName : "",
-						preferredAgentProfiles: state.selfDriving ? state.preferredAgentProfiles : [],
-						prompt: state.selfDriving ? state.prompt : "",
-						completionCriteria: state.selfDriving ? state.completionCriteria : ""
-					};
+					requestBody = { project: state.projectId, title: editedTitle, taskMarkdown: editedMarkdown, slug: state.slug };
 				} else {
 					if (state.templateName && !state.templateDigest) {
 						await refreshPreview(draft());

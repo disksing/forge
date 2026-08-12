@@ -1,10 +1,10 @@
-import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, SelfDrivingBarModel, SelfDrivingDialogModel, SessionSwitcherModel, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, SessionSwitcherModel, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
 import type { AppShellModel, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
-import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, SelfDrivingState, WorkspaceConfig, WorkspaceFileRecord, WorkspaceSession, WorkspaceTree } from "./models/workspace";
+import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceSession, WorkspaceTree } from "./models/workspace";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
 import { createAgentSessionController, type AgentRunRecord } from "./controllers/agent-session-controller";
@@ -14,7 +14,6 @@ import { createPaneLayoutController } from "./controllers/pane-layout-controller
 import { createResourceDetailController, type ResourceLogPageState } from "./controllers/resource-detail-controller";
 import { createRouteController } from "./controllers/route-controller";
 import { createSettingsController, type AgentHubData } from "./controllers/settings-controller";
-import { createSelfDrivingViewController } from "./controllers/self-driving-view-controller";
 import { createShellProjection, type TaskOperationalState, type TaskStatusState } from "./controllers/shell-projection";
 import { createUserSettingsController } from "./controllers/user-settings-controller";
 import { ApiError } from "./api/client";
@@ -25,8 +24,6 @@ export interface ForgeViewPublisher {
   renderAppShell(model: AppShellModel): void;
   renderCreateDialog(model: CreateDialogModel): void;
   renderSettings(model: SettingsModel): void;
-  renderSelfDrivingBar(model: SelfDrivingBarModel): void;
-  renderSelfDrivingDialog(model: SelfDrivingDialogModel): void;
   renderUploadDialog(model: UploadDialogModel): void;
   renderComposer(model: ComposerModel): void;
   renderSessionSwitcher(model: SessionSwitcherModel): void;
@@ -99,14 +96,12 @@ interface ControllerState {
 		optionsOpen: boolean;
 		agentChooserOpen: boolean;
 		historyOpen: boolean;
-		selfDrivingExpanded: boolean;
 		sessionActionsOpen: boolean;
 		eventsHasMore: boolean;
 		historyBeforeId: number;
 		loadingOlder: boolean;
 		toolGroupOpen: Map<string, boolean>;
 		approvalDrafts: Map<string, Record<string, unknown>>;
-		selfDrivingFinishNoticeWatermarks: Map<string, number>;
 		renderDeferredForSelection: boolean;
 	};
 	tty: Array<{ type: string; text: string }>;
@@ -179,14 +174,12 @@ const controllerState: ControllerState = {
 		optionsOpen: false,
 		agentChooserOpen: false,
 		historyOpen: false,
-		selfDrivingExpanded: false,
 		sessionActionsOpen: false,
 		eventsHasMore: false,
 		historyBeforeId: 0,
 		loadingOlder: false,
 		toolGroupOpen: /* @__PURE__ */ new Map<string, boolean>(),
 		approvalDrafts: /* @__PURE__ */ new Map<string, Record<string, unknown>>(),
-		selfDrivingFinishNoticeWatermarks: /* @__PURE__ */ new Map<string, number>(),
 		renderDeferredForSelection: false
 	},
 	tty: [{
@@ -256,10 +249,9 @@ const agentSessionController = createAgentSessionController({
 	workspaceName,
 	defaultCwd: agentDefaultCwd,
 	hasExternalLock: selectedResourceHasExternalLock,
-	externalLockMessage: "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.",
+	externalLockMessage: "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.",
 	isLive: isLiveAgentRun,
 	isTurnInterruptible: isAgentTurnInterruptible,
-	inputSelfDrivingProjection: agentInputSelfDrivingProjection,
 	mutate: (action) => mutateAgentSession(action),
 	request: (path, init) => api(path, init),
 	reloadRuns: async () => { await loadAgentRuns(); },
@@ -293,8 +285,6 @@ const resourceDetailController = createResourceDetailController({
 const createDialogController = createCreateDialogController({
 	workspaceId: () => controllerState.activeWorkspaceId,
 	templates: (projectId) => controllerState.details[projectId]?.templates || [],
-	agents: svelteAgentOptions,
-	profileKeys: () => (controllerState.config?.agentProfiles || []).map((profile) => profile.key),
 	request: (path, init) => api(path, init),
 	publish: (model) => publisher.renderCreateDialog(model),
 	toast,
@@ -312,14 +302,7 @@ const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string):
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
 const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const RESOURCE_LOG_MORE_LIMIT = 20;
-const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released; the Self-Driving switch remains available.";
-const SELF_DRIVING_FINISH_NOTICE_KIND = "self-driving-finish";
-const SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE = "until-reconcile";
-const SELF_DRIVING_RESUMABLE_STATES = /* @__PURE__ */ new Set([
-	"waiting",
-	"blocked",
-	"error"
-]);
+const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.";
 const AGENT_HIDDEN_EVENT_TYPES = /* @__PURE__ */ new Set(["session.launch-environment"]);
 interface LoadTreeOptions { updateURL?: boolean; replaceURL?: boolean }
 interface LoadDetailOptions { force?: boolean }
@@ -327,7 +310,6 @@ interface FetchDetailOptions { logsCursor?: string | number; cursor?: string | n
 interface WorkspaceAgentsOptions { force?: boolean }
 interface SelectResourceOptions { clearUnread?: boolean; forceDetail?: boolean }
 interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; rethrow?: boolean }
-interface AgentMetadataOptions { refreshSelfDrivingProjection?: boolean }
 interface RenderOptions { skipDraftSync?: boolean }
 interface UploadContext { workspaceId?: string; runId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
@@ -450,29 +432,6 @@ const {
 	findResource: (id) => findResource(id),
 	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "Forge GUI",
 });
-const selfDrivingViewController = createSelfDrivingViewController({
-	workspaceId: () => controllerState.activeWorkspaceId,
-	selectedId: () => controllerState.selectedId,
-	selectedResource: () => findResource(controllerState.selectedId),
-	detail: (resourceId) => controllerState.details[resourceId] || findResource(resourceId),
-	currentRun: () => currentAgentRun(),
-	runs: () => controllerState.agent.runs,
-	agents: () => enabledAgentConfigs(),
-	agentOptions: svelteAgentOptions,
-	selectedAgent: () => selectedAgentConfig(),
-	expanded: () => controllerState.agent.selfDrivingExpanded,
-	setExpanded: (expanded) => { controllerState.agent.selfDrivingExpanded = expanded; },
-	operationActive: (kind) => agentOperations.active(kind),
-	setDesired: (options) => agentSessionController.setSelfDriving(options),
-	disable: () => agentSessionController.disableSelfDriving(),
-	publishDialog: (model) => publisher.renderSelfDrivingDialog(model),
-	refreshBar: renderAgent,
-	refreshIcons,
-	toast: (message) => toast(message),
-});
-const selfDrivingBarModel = selfDrivingViewController.barModel;
-const openSelfDrivingConfigDialog = selfDrivingViewController.openDialog;
-const renderSelfDrivingConfigDialog = selfDrivingViewController.renderDialog;
 let uploadDialogIdentity = 0;
 const settingsController = createSettingsController({
 	config: () => controllerState.config || { workspaces: [], agents: [], agentProfiles: [] },
@@ -516,7 +475,6 @@ function publishAllViewModels() {
 	renderAppShell();
 	renderDetails();
 	renderCreateDialog();
-	renderSelfDrivingConfigDialog();
 	renderAgentUploadDialog();
 	renderTTYComposer();
 	renderAgent();
@@ -751,12 +709,10 @@ async function autoRefresh() {
 			changed = true;
 		}
 		if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
-		if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
 		if (reconcileActiveAgentRun(runs)) {
 			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) || agentRunProjectionVersion !== controllerState.agentRunProjectionVersion) return;
 			changed = true;
 		}
-		if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 		if (taskOperationalStateKey() !== controllerState.taskOperationalStateKey) changed = true;
 		if (changed) publishViewModels();
 	} finally {
@@ -770,7 +726,6 @@ function publishViewModels() {
 	renderTTY();
 	refreshIcons();
 	renderCreateDialog();
-	renderSelfDrivingConfigDialog();
 	renderSettingsModal();
 }
 function renderSelectionPanels() {
@@ -780,7 +735,6 @@ function renderSelectionPanels() {
 	renderTTY();
 	refreshIcons();
 	renderCreateDialog();
-	renderSelfDrivingConfigDialog();
 }
 function isCurrentWorkspaceView(workspaceId: string, navigationVersion: number, treeRequestVersion: number | null = null): boolean {
 	return workspaceId === controllerState.activeWorkspaceId && navigationVersion === controllerState.navigationVersion && (treeRequestVersion == null || treeRequestVersion === controllerState.treeRequestVersion);
@@ -842,7 +796,7 @@ function appShellSessionModel(session: WorkspaceSession): AppShellModel["session
 	const status = isInternal ? sessionStatusPresentation(session) : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
 	const taskResource = sessionTaskResource(session);
 	const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
-	const presentation = operationalStatusPresentation(isInternal && taskState.selfDriving ? [taskState.selfDriving, status] : [status]);
+	const presentation = operationalStatusPresentation([status]);
 	const unread = hasUnreadNotificationForSession(session.id);
 	const statusLabel = `${sessionOperationalLabel(session, taskResource, taskState, status)}${unread ? ". Unread turn completion." : ""}`;
 	const agent = isInternal ? (controllerState.config?.agents || []).find((item) => item.id === session.agentRunAgentName) : null;
@@ -942,7 +896,6 @@ async function switchWorkspace(id: string): Promise<void> {
 	resetWorkspaceAgentsDraft();
 	controllerState.workspaceAgentsSaving = false;
 	closeCreateDialog();
-	selfDrivingViewController.closeIfIdle();
 	resetAgentState();
 	renderWorkspaceSelect();
 	if (!await loadUIState(id, navigationVersion)) return;
@@ -1020,7 +973,6 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		}
 	}
 	if (selectionChanged) {
-		selfDrivingViewController.closeIfIdle();
 		controllerState.workspaceAgentsSaving = false;
 		flushAgentDraft();
 		discardAgentUploadDialog();
@@ -1124,12 +1076,12 @@ function sessionNavigationTarget(session: WorkspaceSession): SessionNavigationTa
 function sessionTaskResource(session: WorkspaceSession): ResourceRecord | null {
 	if (!session || session.source !== "internal") return null;
 	const explicitResourceId = String(session.resourceId || "").trim();
-	if (explicitResourceId) return taskResourceForSelfDriving(explicitResourceId);
+	if (explicitResourceId) return activeTaskResource(explicitResourceId);
 	const controls = sessionControls(session);
 	if (controls.length !== 1) return null;
-	return taskResourceForSelfDriving(controls[0].resourceId);
+	return activeTaskResource(controls[0].resourceId);
 }
-function taskResourceForSelfDriving(resourceId: string): ResourceRecord | null {
+function activeTaskResource(resourceId: string): ResourceRecord | null {
 	const resource = findResource(resourceId);
 	return resource && resource.type === "task" && !resource.archived ? resource : null;
 }
@@ -1297,47 +1249,6 @@ function closeDiff(): void {
 function filePreviewURL(section: string, path: string, workspaceId = controllerState.activeWorkspaceId): string {
 	return `/api/workspaces/${workspaceId}/${section === "Wiki" ? "wiki/files" : "files"}?path=${encodeURIComponent(path)}`;
 }
-function isSelfDrivingWaitingFinishNotice(notice: AgentNotice): boolean {
-	const data = notice?.data;
-	return data?.method === "forge/self-driving/finish" && data?.kind === SELF_DRIVING_FINISH_NOTICE_KIND && data?.lifecycle === SELF_DRIVING_FINISH_NOTICE_WAITING_LIFECYCLE && data?.level !== "error" && String(data.runId || "").trim() !== "" && String(data.resourceId || "").trim() !== "" && Number(data.selfDrivingRevision) > 0;
-}
-function selfDrivingWaitingNoticeSequence(notice: AgentNotice): number {
-	return Number(notice?.data?.schedulerTurnSequence) || 0;
-}
-function selfDrivingProjectionForRun(run: AgentRunRecord): { revision: number; state: string } | null {
-	const resourceId = String(run?.resourceId || "").trim();
-	if (!resourceId) return null;
-	const candidates = [controllerState.details?.[resourceId], findResource(resourceId)].map((resource) => resource?.selfDriving).filter((selfDriving): selfDriving is SelfDrivingState => Boolean(selfDriving)).map((selfDriving) => ({
-		revision: Number(selfDriving.revision) || 0,
-		state: String(selfDriving.condition || "").trim().toLowerCase()
-	}));
-	if (!candidates.length) return null;
-	const statePriority = (stateName: string) => SELF_DRIVING_RESUMABLE_STATES.has(stateName) ? 0 : 1;
-	candidates.sort((left, right) => right.revision - left.revision || statePriority(right.state) - statePriority(left.state));
-	return candidates[0];
-}
-function currentSelfDrivingWaitingNotice(notice: AgentNotice, runs = controllerState.agent.runs): boolean {
-	if (!isSelfDrivingWaitingFinishNotice(notice)) return true;
-	const data = notice.data;
-	if (!data) return true;
-	if (!controllerState.agent.activeRunId || String(data.runId).trim() !== controllerState.agent.activeRunId) return false;
-	const run = (runs || []).find((candidate) => candidate.id === controllerState.agent.activeRunId);
-	if (!run || String(run.resourceId || "").trim() !== String(data.resourceId).trim() || Number(run.selfDrivingRevision) !== Number(data.selfDrivingRevision)) return false;
-	const noticeSequence = selfDrivingWaitingNoticeSequence(notice);
-	const runSequence = Number(run.schedulerTurnSequence) || 0;
-	if (runSequence > noticeSequence && runSequence > 0) return false;
-	if (runSequence === noticeSequence && run.schedulerTurnId && data.schedulerTurnId && run.schedulerTurnId !== data.schedulerTurnId) return false;
-	if (run.schedulerTurn && (runSequence === 0 || runSequence >= noticeSequence)) return false;
-	const projection = selfDrivingProjectionForRun(run);
-	if (!projection) return true;
-	if (projection.revision !== Number(data.selfDrivingRevision)) return false;
-	return SELF_DRIVING_RESUMABLE_STATES.has(projection.state);
-}
-function reconcileAgentNotices(runs = controllerState.agent.runs): boolean {
-	const before = controllerState.agent.notices.length;
-	controllerState.agent.notices = controllerState.agent.notices.filter((notice) => currentSelfDrivingWaitingNotice(notice, runs));
-	return controllerState.agent.notices.length !== before;
-}
 async function loadAgentRuns(): Promise<boolean | void> {
 	if (!controllerState.activeWorkspaceId) {
 		resetAgentState();
@@ -1350,13 +1261,11 @@ async function loadAgentRuns(): Promise<boolean | void> {
 	controllerState.agent.runs = runs;
 	observeCompletionProjections(controllerState.agent.runs);
 	reconcileActiveAgentRun(controllerState.agent.runs);
-	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 	if (!controllerState.agent.activeRunId) controllerState.agent.historyBeforeId = 0;
 	if (projectionVersion !== controllerState.agentRunProjectionVersion) return false;
-	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 	return true;
 }
-async function refreshAgentRunMetadata(options: AgentMetadataOptions = {}): Promise<boolean | void> {
+async function refreshAgentRunMetadata(): Promise<boolean | void> {
 	if (!controllerState.activeWorkspaceId) return;
 	controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
 	const projectionVersion = controllerState.agentRunProjectionVersion;
@@ -1365,19 +1274,9 @@ async function refreshAgentRunMetadata(options: AgentMetadataOptions = {}): Prom
 	if (projectionVersion !== controllerState.agentRunProjectionVersion || controllerState.activeWorkspaceId !== workspaceId) return false;
 	controllerState.agent.runs = runs;
 	observeCompletionProjections(runs);
-	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(runs);
 	if (reconcileActiveAgentRun(runs)) {
 		if (projectionVersion !== controllerState.agentRunProjectionVersion || controllerState.activeWorkspaceId !== workspaceId) return false;
 	}
-	if (options.refreshSelfDrivingProjection && controllerState.agent.activeRunId) {
-		const activeRun = currentAgentRun();
-		const resourceId = String(activeRun?.resourceId || "").trim();
-		const [tree, detail] = await Promise.all([fetchCurrentTree(workspaceId), resourceId ? fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }) : Promise.resolve(null)]);
-		if (projectionVersion !== controllerState.agentRunProjectionVersion || controllerState.activeWorkspaceId !== workspaceId) return false;
-		if (tree) controllerState.tree = tree;
-		if (detail && controllerState.activeWorkspaceId === workspaceId) applyResourceDetail(detail, "head");
-	}
-	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 	return true;
 }
 function reconcileActiveAgentRun(runs: AgentRunRecord[]): boolean {
@@ -1400,8 +1299,6 @@ function reconcileActiveAgentRun(runs: AgentRunRecord[]): boolean {
 	return true;
 }
 function preferredAgentRunID(runs: AgentRunRecord[]): string {
-	const selfDriving = runs.find((run) => run.schedulerTurn && isLiveAgentRun(run));
-	if (selfDriving) return selfDriving.id;
 	if (runs.some((run) => run.id === controllerState.agent.activeRunId)) return controllerState.agent.activeRunId;
 	return runs[0]?.id || "";
 }
@@ -1426,7 +1323,6 @@ async function refreshAgentInputProjection(workspaceId: string, resourceId: stri
 		}) : Promise.resolve()
 	]);
 	if (controllerState.activeWorkspaceId === workspaceId) {
-		if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 		publishViewModels();
 	}
 }
@@ -1457,7 +1353,6 @@ async function reloadAgentRunsForSelection(): Promise<void> {
 	await loadAgentRuns();
 }
 function resetAgentState(): void {
-	selfDrivingViewController.closeIfIdle();
 	flushAgentDraft();
 	discardAgentUploadDialog();
 	closeAgentStream();
@@ -1476,7 +1371,6 @@ function resetAgentState(): void {
 	agentOperations.reset();
 	controllerState.agent.toolGroupOpen.clear();
 	controllerState.agent.approvalDrafts.clear();
-	if (controllerState.agent.selfDrivingFinishNoticeWatermarks instanceof Map) controllerState.agent.selfDrivingFinishNoticeWatermarks.clear();
 	controllerState.agent.renderDeferredForSelection = false;
 	clearAgentRenderTimer();
 }
@@ -1500,17 +1394,9 @@ function handleSvelteAgentEvent(workspaceId: string, runId: string, event: Agent
 		"session.state",
 		"approval.requested",
 		"approval.resolved"
-	].includes(event.type)) refreshAgentRunMetadata({ refreshSelfDrivingProjection: [
-		"turn.completed",
-		"turn.failed",
-		"turn.cancelled",
-		"session.state"
-	].includes(event.type) }).then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
+	].includes(event.type)) refreshAgentRunMetadata().then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
 }
-function handleSvelteForgeNotice(workspaceId: string, runId: string, notice: AgentNotice): void {
-	if (workspaceId !== controllerState.activeWorkspaceId || runId !== controllerState.agent.activeRunId) return;
-	if (notice?.data?.kind === SELF_DRIVING_FINISH_NOTICE_KIND) refreshAgentRunMetadata({ refreshSelfDrivingProjection: true }).then(publishViewModels).catch((err) => console.warn("Self-Driving notice projection refresh failed", err));
-}
+function handleSvelteForgeNotice(_workspaceId: string, _runId: string, _notice: AgentNotice): void {}
 function clearAgentRenderTimer(): void {
 	if (controllerState.agent.renderTimer) window.clearTimeout(controllerState.agent.renderTimer);
 	controllerState.agent.renderTimer = null;
@@ -1521,10 +1407,7 @@ function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
 	return window.AgentHubEventTimeline.buildTimeline(visibleEvents) as TimelineItem[];
 }
 function renderAgent(): void {
-	if (typeof reconcileAgentNotices === "function") reconcileAgentNotices(controllerState.agent.runs);
 	const activeRun = currentAgentRun();
-	const detail = controllerState.details[controllerState.selectedId];
-	publisher.renderSelfDrivingBar(selfDrivingBarModel(detail));
 	publisher.renderSessionSwitcher({
 		identity: `${controllerState.activeWorkspaceId}:${selectedAgentResourceId()}`,
 		workspaceId: controllerState.activeWorkspaceId,
@@ -1605,8 +1488,6 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending)),
 		endingTurn: stopTurnPending,
 		closingSession: sessionStopping,
-		selfDrivingRemainsEnabled: isSelfDrivingSessionCloseTarget(activeRun),
-		selfDrivingDisabling: agentOperations.active("self-driving-disable"),
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
@@ -1652,30 +1533,10 @@ function updateAgentDraftFromSvelte(text: string, context: ComposerContext): voi
 	updateAgentDraft(text);
 }
 function closeCurrentAgentSession(): void {
-	if (!isSelfDrivingSessionCloseTarget(currentAgentRun())) {
-		stopAgentRun().catch((err) => toast(err.message));
-		return;
-	}
-	if (window.confirm("Self-Driving is On. Close this Session while keeping Self-Driving On? The Scheduler may create a replacement Session.")) {
-		stopAgentRun().catch((err) => toast(err.message));
-		return;
-	}
-	if (window.confirm("Disable Self-Driving and close this Session instead?")) disableSelectedSelfDriving().then(() => stopAgentRun()).catch((err) => toast(err.message));
+	stopAgentRun().catch((err) => toast(err.message));
 }
 async function startAgentRun(agentName = "") {
 	return agentSessionController.start(agentName);
-}
-function agentInputSelfDrivingProjection(run: AgentRunRecord): Record<string, unknown> | null {
-	const selected = findResource(controllerState.selectedId);
-	const detail = selected ? controllerState.details[selected.id] || selected : null;
-	if (!selected || selected.type !== "task" || !run || run.resourceId !== selected.id) return null;
-	const selfDriving = detail?.selfDriving || null;
-	return {
-		resourceId: selected.id,
-		selfDrivingProjectionSet: true,
-		expectedSelfDrivingRevision: Number(selfDriving?.revision) || 0,
-		expectedSelfDrivingCondition: String(selfDriving?.condition || "").trim().toLowerCase()
-	};
 }
 function openAgentUploadDialog(): void {
 	const run = currentAgentRun();
@@ -1740,9 +1601,6 @@ function renderAgentUploadDialog(): void {
 async function stopAgentRun(): Promise<void> {
 	return agentSessionController.stopSession();
 }
-async function disableSelectedSelfDriving(): Promise<void> {
-	return agentSessionController.disableSelfDriving();
-}
 async function stopAgentTurn(): Promise<void> {
 	return agentSessionController.stopTurn();
 }
@@ -1773,12 +1631,6 @@ function isLiveAgentRun(run: AgentRunRecord | null): boolean {
 }
 function isAgentTurnInterruptible(run: AgentRunRecord | null): boolean {
 	return ["running", "waiting_approval"].includes(run?.status || "");
-}
-function isSelfDrivingSessionCloseTarget(run: AgentRunRecord | null): boolean {
-	const resourceID = String(run?.resourceId || "").trim();
-	if (!resourceID) return false;
-	const selfDriving = findResource(resourceID)?.selfDriving;
-	return Boolean(selfDriving?.enabled);
 }
 function isAgentTurnStopping(run: AgentRunRecord | null): boolean {
 	return agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === run?.id;

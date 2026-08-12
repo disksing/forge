@@ -16,28 +16,10 @@ import (
 const logJSONLFile = "log.jsonl"
 
 type LogEntry struct {
-	ID                               string `json:"id"`
-	Time                             string `json:"time"`
-	Title                            string `json:"title"`
-	Details                          string `json:"details,omitempty"`
-	SelfDriving                      bool   `json:"selfDriving,omitempty"`
-	SelfDrivingRevision              int    `json:"selfDrivingRevision,omitempty"`
-	SelfDrivingWakeCondition         string `json:"selfDrivingWakeCondition,omitempty"`
-	SelfDrivingWakeConditionFallback bool   `json:"selfDrivingWakeConditionFallback,omitempty"`
-}
-
-func newSelfDrivingLogEntry(title, details string, revision int) LogEntry {
-	entry := newLogEntry(title, details)
-	entry.SelfDriving = true
-	entry.SelfDrivingRevision = revision
-	return entry
-}
-
-func newSelfDrivingSuspensionLogEntry(title, details, wakeCondition string, fallback bool, revision int) LogEntry {
-	entry := newSelfDrivingLogEntry(title, details, revision)
-	entry.SelfDrivingWakeCondition = strings.TrimSpace(wakeCondition)
-	entry.SelfDrivingWakeConditionFallback = fallback
-	return entry
+	ID      string `json:"id"`
+	Time    string `json:"time"`
+	Title   string `json:"title"`
+	Details string `json:"details,omitempty"`
 }
 
 type logAddOptions struct {

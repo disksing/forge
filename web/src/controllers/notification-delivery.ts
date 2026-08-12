@@ -21,7 +21,6 @@ export function notificationDisplayTitle(record: NotificationRecord): string {
 }
 
 export function notificationDisplayBody(record: NotificationRecord): string {
-  if (record.selfDriving) return `Self-Driving ${record.selfDrivingState || "finished"}.`;
   if (record.completionState === "failed") return "Turn failed.";
   if (record.completionState === "cancelled") return "Turn cancelled.";
   return "Turn completed.";

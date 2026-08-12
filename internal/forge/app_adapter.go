@@ -110,12 +110,10 @@ func applicationTaskCreate(input app.CreateTaskInput) error {
 	return printJSON(task)
 }
 
-func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string, selfDriving bool, agentName string, preferredAgentProfiles []string, prompt string, completionCriteria string) app.CreateTaskInput {
+func appCreateTaskInput(parentID, title, detail, completeMarkdown string, completeMarkdownSet bool, slug string) app.CreateTaskInput {
 	return app.CreateTaskInput{
 		ProjectID: parentID, Title: title, Detail: detail, CompleteMarkdown: completeMarkdown,
-		CompleteMarkdownSet: completeMarkdownSet, Slug: slug, SelfDriving: selfDriving,
-		AgentName: agentName, PreferredAgentProfiles: append([]string(nil), preferredAgentProfiles...), Prompt: prompt,
-		CompletionCriteria: completionCriteria,
+		CompleteMarkdownSet: completeMarkdownSet, Slug: slug,
 	}
 }
 
@@ -126,32 +124,12 @@ func applicationTaskList(options taskListOptions) error {
 	}
 	result, err := workspace.Tasks(app.TaskListOptions{
 		ProjectID: options.ProjectID, IncludeArchived: options.IncludeArchived,
-		Runnable: options.Runnable,
 	})
 	if err != nil {
 		return err
 	}
-	if !options.Runnable {
-		for _, entry := range result.Tasks {
-			fmt.Printf("%s\t%s\n", taskDirectoryName(entry.Task.ID), entry.Task.Title)
-		}
-		return nil
-	}
-	runnable := make([]runnableTask, 0, len(result.Runnable))
-	for _, entry := range result.Runnable {
-		runnable = append(runnable, runnableTask{
-			ID: entry.ID, Path: entry.Path, Title: entry.Title, Revision: entry.Revision,
-			Condition: entry.Condition, Ready: entry.Ready, Reason: entry.Reason, AgentName: entry.AgentName, Prompt: entry.Prompt,
-			PreferredAgentProfiles: append([]string(nil), entry.PreferredAgentProfiles...),
-			CompletionCriteria:     entry.CompletionCriteria,
-			WakeContext:            entry.WakeContext,
-		})
-	}
-	if options.JSON {
-		return printJSON(map[string]any{"tasks": runnable})
-	}
-	for _, entry := range runnable {
-		fmt.Printf("%s\t%d\t%s\t%s\n", entry.ID, entry.Revision, entry.Reason, entry.Title)
+	for _, entry := range result.Tasks {
+		fmt.Printf("%s\t%s\n", taskDirectoryName(entry.Task.ID), entry.Task.Title)
 	}
 	return nil
 }
@@ -196,62 +174,6 @@ func applicationLogList(kind, projectID, taskID string, jsonOutput bool) error {
 		fmt.Println()
 	}
 	return nil
-}
-
-func applicationSelfDrivingEnable(opts selfDrivingCommandOptions) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.EnableSelfDriving(app.SelfDrivingDesiredStateInput{
-		TaskID: opts.TaskID, AgentName: opts.AgentName, AgentNameSet: opts.AgentNameSet,
-		PreferredAgentProfiles: opts.PreferredAgentProfiles, ProfilesSet: opts.ProfilesSet, Prompt: opts.Prompt, PromptSet: opts.PromptSet,
-		CompletionCriteria: opts.CompletionCriteria, CompletionCriteriaSet: opts.CompletionCriteriaSet,
-	})
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
-func applicationSelfDrivingDisable(opts selfDrivingCommandOptions) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.DisableSelfDriving(opts.TaskID)
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
-func applicationSelfDrivingAction(action string, opts selfDrivingCommandOptions) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	input := app.SelfDrivingActionInput{
-		TaskID: opts.TaskID, Summary: opts.Summary, WakeCondition: opts.WakeCondition, Reason: opts.Reason,
-		ExpectedRevision: opts.ExpectedRevision,
-	}
-	var task app.Task
-	switch action {
-	case "complete":
-		task, err = workspace.CompleteSelfDriving(input)
-	case "suspend":
-		task, err = workspace.SuspendSelfDriving(input)
-	case "pause":
-		task, err = workspace.PauseSelfDriving(input)
-	case "fail":
-		task, err = workspace.FailSelfDriving(input)
-	default:
-		return fmt.Errorf("unknown Self-Driving action %q", action)
-	}
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
 }
 
 func applicationSessionNew(liveness app.SessionLiveness) error {

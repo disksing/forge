@@ -2,9 +2,7 @@ export type AgentOperationKind =
 	| "session-start"
 	| "session-switch"
 	| "session-stop"
-	| "turn-stop"
-	| "self-driving-save"
-	| "self-driving-disable";
+	| "turn-stop";
 
 export interface AgentOperationLease {
 	kind: AgentOperationKind;

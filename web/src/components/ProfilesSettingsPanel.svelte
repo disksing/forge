@@ -65,7 +65,7 @@
 </script>
 
 <div class="settings-panel settings-agent-panel" data-component-owner="profiles-settings-panel" data-settings-panel data-settings-section="profiles">
-  <div class="settings-panel-header"><h2>Agent Profiles</h2><p>Profiles map chat and Self-Driving preferences to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div>
+  <div class="settings-panel-header"><h2>Agent Profiles</h2><p>Profiles map Forge workflows to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div>
   <section class="settings-agent-section">
     <div class="settings-section-heading"><h3>Profile Routes</h3><span>{draft.profiles.length} routes</span></div>
     <div class="settings-profile-table">

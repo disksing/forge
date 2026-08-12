@@ -3,7 +3,6 @@
 
   import { onDestroy } from "svelte";
 
-  import SelfDrivingOptions from "./SelfDrivingOptions.svelte";
   import TaskPreview from "./TaskPreview.svelte";
   import TemplateFieldGroup from "./TemplateFieldGroup.svelte";
   import TemplatePicker from "./TemplatePicker.svelte";
@@ -112,7 +111,6 @@
       </section>
     {/if}
 
-    <SelfDrivingOptions {draft} agents={model.agents} profileKeys={model.profileKeys} onChange={() => schedulePreview()} />
   </div>
 
   <TaskPreview {draft} {selectedTemplate} preview={model.preview} previewing={model.previewing} previewError={model.previewError} stale={previewStale} templateDigest={model.templateDigest} submitting={model.submitting} onRefresh={refreshPreview} />

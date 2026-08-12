@@ -4,8 +4,6 @@
   import CreateDialog from "./components/CreateDialog.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
   import EventTimeline from "./components/EventTimeline.svelte";
-  import SelfDrivingBar from "./components/SelfDrivingBar.svelte";
-  import SelfDrivingDialog from "./components/SelfDrivingDialog.svelte";
   import SessionSwitcher from "./components/SessionSwitcher.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import Toast from "./components/Toast.svelte";
@@ -17,7 +15,6 @@
 
 <AppShell channel={channels.appShell}>
   {#snippet details()}<DetailPanel channel={channels.detail} />{/snippet}
-  {#snippet selfDrivingBar()}<SelfDrivingBar channel={channels.selfDrivingBar} />{/snippet}
   {#snippet sessions()}<SessionSwitcher channel={channels.sessions} />{/snippet}
   {#snippet timeline()}<EventTimeline channel={channels.timeline} />{/snippet}
   {#snippet composer()}<ChatComposer channel={channels.composer} />{/snippet}
@@ -25,5 +22,4 @@
 <div data-component-owner="toast" style="display: contents"><Toast channel={channels.toast} /></div>
 <div data-component-owner="upload-dialog" style="display: contents"><UploadDialog channel={channels.upload} /></div>
 <div data-component-owner="create-dialog" style="display: contents"><CreateDialog channel={channels.create} /></div>
-<div data-component-owner="self-driving-dialog" style="display: contents"><SelfDrivingDialog channel={channels.selfDrivingDialog} /></div>
 <div data-component-owner="settings" style="display: contents"><SettingsModal channel={channels.settings} /></div>

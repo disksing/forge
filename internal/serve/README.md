@@ -1,105 +1,30 @@
-# Forge GUI 与 AgentHub
+# Forge Web 服务
 
-Forge GUI 只通过 AgentHub 执行 agent 和维护会话。Forge 自身不再内置 Codex app-server、ACP、Kimi、OpenCode 或 Pi runner，也不会查找、探测、启动、复用或停止这些 provider CLI。
+`internal/serve` 提供静态 Web UI、Workspace HTTP API，以及 AgentHub Session 的创建、输入、审批、停止、恢复和对账。Workspace 文件操作直接调用 `internal/app`，不会启动 `forge` 子进程。
 
-## 职责边界
+## 配置与所有权
 
-Forge 保留以下控制面：
+持久化 GUI 配置使用 schema version 3，包含 Workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 Forge 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
 
-- AgentWorkspace、project、task、artifact、Wiki 与 Git worktree 展示；
-- Forge session、资源锁和 Task 级 Self-Driving revision；
-- 系统和用户 Profile 到 AgentHub `agentName` 的路由；
-- AgentHub durable session 的创建、消息、审批、恢复、停止和 canonical event 投影。
+可用环境变量：
 
-AgentHub 拥有以下执行面：
-
-- provider 与 agent catalog；
-- provider CLI 路径、环境变量、模型、mode、sandbox 和 approval 等 provider 专属配置；
-- provider 进程生命周期与 provider-native session/event 适配；
-- durable agent session 和 canonical event history。
-
-Forge 设置页只读展示 AgentHub catalog。用户只能设置 AgentHub endpoint 和 Forge Profile 路由，不可在 Forge 中新增、编辑、启用或关闭 provider/agent 定义。
-
-## 配置
-
-持久化 GUI 配置使用 schema version 3，仅包含 workspace、AgentHub endpoint、Forge instance ID 和 Profile 路由。每个 workspace 可保存一个可选的内置图标键；缺失、空值或未知值在界面中都回退为 Forge 默认图标，当前 workspace 的图标同时用于浏览器 favicon。配置始终包含不可删除、不可改名或改描述的系统 Profile：`default`、`fast`、`reasoning`、`scheduler`；用户只能为它们选择目标 AgentHub agent，另外可以管理自定义 Profile。`scheduler` 是为未来调度工作预留的系统路由，当前不会自动启动 Scheduler Agent，也不会改变现有 Self-Driving 路由。Settings 的 `User` 页签另行把用户名保存在当前浏览器的 `localStorage` 中，不进入此配置或任何 Workspace、Task、Session 数据；空值、损坏数据和旧客户端请求都回退为 `User`，同源页面之间通过 storage event 同步。可用环境变量：
-
-- `FORGE_AGENTHUB_URL`：覆盖持久化的 AgentHub endpoint。
-- `FORGE_GUI_CONFIG`：GUI 配置文件路径。
-
-Workspace 读写由可复用的 `internal/app` API 完成。服务为每个请求显式打开配置中的 Workspace root，API 返回类型化资源和结构化错误，不通过子进程、argv 或 stdout JSON 传递内部结果。升级时请删除旧的 `FORGE_CLI` 配置；服务不再读取它。
-
-结构化任务模板同样由 `internal/app` 负责。`GET /api/workspaces/<id>/templates?project=<project>` 列出合法和非法模板；单模板读取、未保存内容校验和字段渲染位于对应 `templates` 路由。`POST .../tasks/preview` 返回最终标题、Markdown、模板来源/digest 与本次 Self-Driving 配置；创建请求提交 `templateName`、`templateFields` 和可选 `expectedTemplateDigest`，服务端重新加载模板。digest 变化返回 409，所有模板校验错误保留稳定 code、field path 和 issue 数组。
-
-GUI 只读取 schema version 3 配置。缺少 `scheduler` 的既有 version 3 配置会在加载/规范化时自动补齐；若已有 `default` 目标，新的路由会继承该目标，否则沿用系统 Profile 的第一个可用 Agent fallback。规范化结果会持久化，显式保存的目标（包括暂时不可用的目标）会保留。旧版本配置不会被降级展示、自动重写或通过设置页迁移；升级前请先完成一次性转换或备份。目标 Agent 即使暂时不可用也可以保存，实际运行时由 AgentHub 返回错误。
-
-## 会话与锁
-
-新 chat 和 Self-Driving 都可创建或恢复 AgentHub Session。Forge 使用完整 `source.app=forge`、instance ID 和 external ID 对账，并把原始 `FORGE_SESSION_ID` 传入 AgentHub launch environment。`PUT /api/workspaces/<id>/self-driving` 只持久化 Task 级期望状态；Scheduler 随后按 revision 异步 reconcile，优先粘性复用同一 Task、Agent 匹配的最近 Session。busy、审批、恢复中、资源被占用或已有 Turn 时只静默跳过本次派发，不写入 Task condition、不向前端投影 reconcile 状态，也不会 fan-out。缺少 Agent 配置时保持 Enabled 并进入 `needs_configuration`，不忙循环。
-
-Chat composer 底部只有一个 New Session 按钮。点击后展开当前启用的 AgentHub Agent 列表，并显示 Agent 名称与模型摘要；选择列表项立即为当前资源创建新 Session。没有可用 Agent 时按钮禁用并说明原因，创建过程中显示进行中状态并忽略重复点击，创建失败时保留当前 Session 和选择列表供重试；列表支持 Escape 与点击控件外关闭。
-
-浏览器在新 Session 的初始消息和后续 Chat 输入中都提交当前用户名。Forge 转发为 AgentHub provenance `role=user` 和 `sender.name=<用户名>`，timeline 使用该名字并附加 `USER` 标签；字段只描述消息来源，不参与认证或授权。Self-Driving 调度、定时唤醒和 continuation prompt 继续使用 `role=system`、`sender.name=Forge Scheduler`，不会继承浏览器用户名。
-
-当当前选中的 Project 或 Task 存在 `source=external` 的有效 Session 锁时，composer 按通用 Resource 文案显示锁定提示，隐藏 New/Resume Session，并暂停输入与上传。Self-Driving 开关仍可使用：它通过独立 Task 文件锁和原子读改写持久化，不依赖资源锁；Scheduler 若无法获得创建 Session 所需资源，只跳过当前扫描，不改变 Self-Driving condition。
-
-当当前选中的 Project 或 Task 存在 `source=internal` 的有效 Forge GUI Session 锁时，composer 隐藏 New Session 并关闭已展开的 Agent 选择列表；判定依据是该 Resource 的所有 `sessionControls` 锁投影，不依赖当前查看的 Agent Run 或其状态。当前 Session 的输入、审批、Close Session 和 idle Task Self-Driving 复用入口保持可用；下一次 tree 刷新观察到锁释放后恢复 New Session。Self-Driving 仍只适用于 Task。
-
-Self-Driving `complete` 会自动关闭 Task 开关；`waiting`、`blocked` 和 `error` 只结束当前调度 Turn，保留 Enabled 期望和 AgentHub Session 的普通聊天能力。Session、Forge session 和资源锁会保留到用户明确点击 Close Session；已关闭并释放原 Forge session 的历史 run 由 Scheduler 按当前 revision 决定是否创建替代 Session。
-
-当前 Turn 处于 AgentHub `busy` 或 `waiting_approval` 时，Chat composer 提供 End Turn 和 Close Session 两个正交操作。End Turn 只调用 AgentHub interrupt；Close Session 只调用 stop，并在 durable stopped 后释放 Forge 锁。两者都不改变 Task 级开关。Enabled Task 的 Session 被关闭后，Scheduler 可创建替代 Session；UI 会明确提示并另行提供 Disable and Close。Disable 先持久化并推进 revision，再 best-effort 发送 Forge Scheduler 来源的 system steer；它不调用 interrupt/stop/close，steer 失败只记录为 `notificationError`。
-
-只有观察到 AgentHub durable `stopped` 后，Forge 才结束对应 Forge session 并释放资源锁；服务错过 stopped 边沿、只看到 archived 时，必须依据连续 durable event history 证明该 session 先经过 stopped 才可释放。AgentHub 不可达、状态未知、event cursor gap、重复或冲突 source、未证明先经过 stopped 的 archived 状态都保守持锁。
-
-`forge serve` 是 AgentHub session 对账和 Forge 锁释放的唯一 owner。普通 Forge CLI（`forge session list/show`、`forge workspace tree`、`forge start`、session create/lock/unlock/heartbeat/end、资源归档等）不会访问 AgentHub；AgentHub 管理的 Forge session 在普通 CLI 看来始终活动，直到服务安全对账或用户显式执行 `forge session end --id=<id>`。服务停止期间这些锁会保守保留。
-
-旧 run 索引和本地 JSONL event 可以由用户自行备份，但当前 Forge 不再读取、展示、迁移或写入这些文件，也不会列出或控制未绑定 AgentHub 的 direct run。
-
-## Event Timeline
-
-REST、历史分页与 SSE 都向浏览器传递 AgentHub API v1 canonical event。浏览器使用 vendored `@agenthub/event-timeline` IIFE 的 `buildTimeline` 进行唯一的过滤、delta 合并、tool payload 解释、call 关联和终态收敛，再由 Forge 的 DOM renderer 展示。
-
-当前固定版本为 1.0.0，AgentHub timeline source revision 为 `e48ab944c4709501ef666212b50df04cae539fd7`，IIFE SHA-256 为 `3b7c02d4e9e1afa9216d5979f677174175c022d9cc2df8eadedc79e7798bab78`。该构建使用 `agentName` 作为唯一 Agent 身份，不再回退到旧 `agentId`。来源信息、上游 manifest 和 BSD-3-Clause 许可证位于 `web/static/vendor/agenthub-event-timeline/`。从 AgentHub checkout 重建并校验：
-
-```sh
-scripts/update-agenthub-event-timeline /path/to/agenthub
+```text
+FORGE_AGENTHUB_URL  AgentHub endpoint override
+FORGE_GUI_CONFIG    GUI configuration file path
 ```
 
-Forge recovery 和 Self-Driving 诊断使用独立 `forge.notice` SSE event，不伪装成 canonical event，也不进入共享 timeline projector。
+每个被管理的 Workspace 同时只能由一个 `forge serve` 进程持有。服务启动时为配置中的每个 Workspace 获取 `<workspace>/.forge/serve.lock` 的 OS advisory 独占锁，并在整个生命周期内保持文件描述符打开。锁冲突会让启动整体失败并释放本轮已取得的锁。
 
-## Workspace 独占所有权
+## Workspace 与模板 API
 
-每个被管理的 Workspace 同时只能由一个 `forge serve` 进程管理。服务在启动 Self-Driving scheduler、AgentHub recovery/poller 和 HTTP 写入能力之前，对配置中的每个 Workspace 获取 `<workspace>/.forge/serve.lock` 的 OS advisory 独占锁（flock），并在整个生命周期内保持文件描述符打开。锁冲突时启动整体失败并释放本轮已取得的锁（全有或全无），错误中包含规范 Workspace 路径和 owner 诊断（PID、监听地址、配置路径）。
+项目、任务、日志、归档、文件预览、Wiki、diff 和模板路由都以显式 Workspace ID 为作用域。结构化模板由 `internal/app` 校验和渲染；`POST .../tasks/preview` 返回最终标题、Markdown 和模板来源/digest，创建时可提交 `expectedTemplateDigest` 防止预览后模板发生变化。
 
-- 不同 `FORGE_GUI_CONFIG` 不能绕过限制：配置文件锁防止同一配置被两个实例使用，Workspace 锁提供跨配置的资源所有权。
-- Workspace 路径在锁定前转为绝对规范路径并解析符号链接，相对路径、`..` 和 symlink 别名指向同一 Workspace 时同样冲突。
-- 通过 HTTP API 动态添加 Workspace 时先取锁再持久化配置；保存失败会回滚锁；动态移除会释放锁。重复添加同一 Workspace 不会重复取锁或丢失现有锁。
-- 进程正常退出或崩溃后由 OS 自动释放锁，后续实例可直接接管；不会通过删除 lock 文件伪造解锁。
-- 未持有锁的实例不会调度、恢复或控制该 Workspace 的 Session，所有管理和写入入口都会验证所有权。
-- 普通 `forge project/task/session/workspace/start` CLI 不获取 `serve.lock`，仍按现有 Forge session/resource lock 规则工作。
+## AgentHub Session
 
-## 隔离验证
+Forge 使用完整 `source.app=forge`、instance ID 和 external ID 创建或恢复 AgentHub Session，并把 `FORGE_SESSION_ID` 通过 launch environment 传入 AgentHub。浏览器的新 Session 初始消息与后续输入都携带 provenance `role=user` 和当前用户名；该字段只描述来源，不参与认证或授权。
 
-不要用开发构建连接真实 workspace 或修改真实 GUI 配置。测试第二个 GUI 时必须隔离配置、端口和 workspace，并使用 fake AgentHub 或专用测试 AgentHub。第二个实例即使误指向真实 Workspace，也会在启动调度前因 `serve.lock` 冲突明确失败，但测试仍必须使用隔离 Workspace，避免产生真实业务写入：
+Forge 定期从 AgentHub 拉取 Session 状态并更新本地 run 投影。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才释放 Forge Session 和资源锁。AgentHub 不可达或状态未知时保守保留锁。普通 CLI 命令不会访问 AgentHub。
 
-```sh
-FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
-FORGE_AGENTHUB_URL=http://127.0.0.1:14646 \
-  forge serve --addr 127.0.0.1:14936 \
-  --workspace /tmp/forge-workspace-test
-```
+当 Project 或 Task 存在有效外部 Session 锁时，composer 显示统一的资源锁提示，隐藏 New/Resume Session，并暂停输入与上传。内部 GUI Session 锁会阻止为同一资源再建 Session；当前 Session 的输入、审批、End Turn 和 Close Session 仍按其状态可用。
 
-常用验证：
-
-```sh
-go test ./...
-go vet ./...
-npm --prefix web run check
-npm --prefix web test
-npm --prefix web run build
-node --check web/static/assets/forge-app.js
-node --check web/static/vendor/agenthub-event-timeline/event-timeline.iife.js
-git diff --check
-```
-
-仓库的静态防回归测试会阻止生产代码重新引入 provider CLI 启动、direct runner selector/fallback、旧设置 API 或新 run 的 legacy provider 字段。
+`GET .../events` 支持 `after`、`before` 和 limit 游标；SSE 只发送 canonical AgentHub events。恢复诊断使用独立 `forge.notice`，不伪装成 canonical event，也不进入共享 timeline projector。
