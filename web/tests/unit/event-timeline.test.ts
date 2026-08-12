@@ -41,6 +41,36 @@ function history(resourceId: string) {
 }
 
 describe("EventTimeline", () => {
+  it("shows working only while a Turn is actively running", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const active = model("task-a");
+    active.status!.state = "working";
+    active.status!.session = { ...active.status!.session, state: "running", currentTurnId: "turn-1" };
+    const channel = createModelChannel(active);
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.querySelector(".turn-working-indicator")?.textContent).toBe("working..."));
+    expect(target.querySelector(".turn-working-indicator")?.getAttribute("role")).toBe("status");
+    expect(target.querySelector(".turn-working-indicator [data-lucide='loader-circle']")).not.toBeNull();
+
+    const awaitingApproval = model("task-a");
+    awaitingApproval.status!.state = "attention_required";
+    awaitingApproval.status!.session = { ...awaitingApproval.status!.session, state: "waiting_approval", currentTurnId: "turn-1" };
+    channel.publish(awaitingApproval);
+    await tick();
+    expect(target.querySelector(".turn-working-indicator")).toBeNull();
+
+    channel.publish(model("task-a"));
+    await tick();
+    expect(target.querySelector(".turn-working-indicator")).toBeNull();
+  });
+
   it("renders resource history with a generation boundary and visible Turn detail", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);

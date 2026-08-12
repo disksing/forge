@@ -142,7 +142,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, turnRunning = false): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [], bindingBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   await page.route("**/api/**", async (route) => {
@@ -222,7 +222,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, {
         resourceId, state: "working", exists: true, archived: false, acceptsMessages: true,
         canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length },
-        ...(resourceId === "project1.task1" ? { generation: { runId: "run-1", generation: 1, generationId: "gen-1", status: "idle" }, session: { id: "run-1", state: "idle" } } : {}),
+        ...(resourceId === "project1.task1" ? {
+          generation: { runId: "run-1", generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle" },
+          session: { id: "run-1", state: turnRunning ? "running" : "idle", ...(turnRunning ? { currentTurnId: "turn-stream" } : {}) },
+        } : {}),
       });
     }
     const steerMatch = path.match(/^\/api\/workspaces\/ws-test\/messages\/(.+)\/steer$/);
@@ -574,6 +577,13 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
   expect(harness.agentsBodies[0]).toMatchObject({ content: editorDraft, expectedContentHash: "agents-v1" });
   await panel.getByRole("button", { name: /index\.md/ }).click();
   await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
+});
+
+test("shows a working indicator for the active Turn", async ({ page }) => {
+  await installMockApi(page, "project1.task1", false, true);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await expect(page.locator(".turn-working-indicator")).toHaveText("working...");
 });
 
 test("pages resource history, sends input, receives SSE, and preserves active reading state during refresh", async ({ page }) => {
