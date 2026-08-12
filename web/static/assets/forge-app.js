@@ -1,4 +1,4 @@
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/shared/utils.js
+//#region node_modules/svelte/src/internal/shared/utils.js
 var e = Array.isArray, t = Array.prototype.indexOf, n = Array.prototype.includes, r = Array.from, i = Object.defineProperty, a = Object.getOwnPropertyDescriptor, o = Object.getOwnPropertyDescriptors, s = Object.prototype, c = Array.prototype, l = Object.getPrototypeOf, u = Object.isExtensible, d = () => {};
 function f(e) {
 	for (var t = 0; t < e.length; t++) e[t]();
@@ -21,7 +21,7 @@ function fe(e) {
 	throw Error("https://svelte.dev/e/lifecycle_outside_component");
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/errors.js
+//#region node_modules/svelte/src/internal/client/errors.js
 function pe() {
 	throw Error("https://svelte.dev/e/async_derived_orphan");
 }
@@ -56,7 +56,7 @@ function Ce() {
 	throw Error("https://svelte.dev/e/svelte_boundary_reset_onerror");
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/constants.js
+//#region node_modules/svelte/src/constants.js
 var we = {}, Te = Symbol("uninitialized"), Ee = "http://www.w3.org/1999/xhtml", De = "http://www.w3.org/2000/svg", Oe = "http://www.w3.org/1998/Math/MathML";
 function ke() {
 	console.warn("https://svelte.dev/e/derived_inert");
@@ -71,7 +71,7 @@ function Me() {
 	console.warn("https://svelte.dev/e/svelte_boundary_reset_noop");
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/hydration.js
+//#region node_modules/svelte/src/internal/client/dom/hydration.js
 var D = !1;
 function Ne(e) {
 	D = e;
@@ -114,7 +114,7 @@ function Le(e) {
 	return e.data;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/equality.js
+//#region node_modules/svelte/src/internal/client/reactivity/equality.js
 function Re(e) {
 	return e === this.v;
 }
@@ -125,7 +125,7 @@ function Be(e) {
 	return !ze(e, this.v);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/context.js
+//#region node_modules/svelte/src/internal/client/context.js
 var Ve = null;
 function He(e) {
 	Ve = e;
@@ -154,7 +154,7 @@ function Ue() {
 	return !0;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/task.js
+//#region node_modules/svelte/src/internal/client/dom/task.js
 var We = [];
 function Ge() {
 	var e = We;
@@ -196,7 +196,7 @@ function Ye(e, t) {
 	}
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/status.js
+//#region node_modules/svelte/src/internal/client/reactivity/status.js
 var Xe = ~(h | g | m);
 function Ze(e, t) {
 	e.f = e.f & Xe | t;
@@ -205,7 +205,7 @@ function Qe(e) {
 	e.f & 512 || e.deps === null ? Ze(e, m) : Ze(e, g);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/utils.js
+//#region node_modules/svelte/src/internal/client/reactivity/utils.js
 function $e(e) {
 	if (e !== null) for (let t of e) !(t.f & 2) || !(t.f & 65536) || (t.f ^= T, $e(t.deps));
 }
@@ -213,7 +213,7 @@ function et(e, t, n) {
 	e.f & 2048 ? t.add(e) : e.f & 4096 && n.add(e), $e(e.deps), Ze(e, m);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/store.js
+//#region node_modules/svelte/src/internal/client/reactivity/store.js
 var tt = !1;
 function nt(e) {
 	var t = tt;
@@ -224,7 +224,7 @@ function nt(e) {
 	}
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/misc.js
+//#region node_modules/svelte/src/internal/client/dom/elements/misc.js
 function rt(e) {
 	D && /* @__PURE__ */ cn(e) !== null && un(e);
 }
@@ -237,7 +237,7 @@ function at() {
 	}, { capture: !0 }));
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
+//#region node_modules/svelte/src/internal/client/dom/elements/bindings/shared.js
 function ot(e) {
 	var t = V, n = H;
 	Un(null), Wn(null);
@@ -255,7 +255,7 @@ function st(e, t, n, r = n) {
 	} : () => r(!0), at();
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/reactivity/create-subscriber.js
+//#region node_modules/svelte/src/reactivity/create-subscriber.js
 function ct(e) {
 	let t = 0, n = Kt(0), r;
 	return () => {
@@ -267,7 +267,7 @@ function ct(e) {
 	};
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/boundary.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/boundary.js
 var lt = x | S;
 function ut(e, t, n, r) {
 	new dt(e, t, n, r);
@@ -444,7 +444,7 @@ var dt = class {
 	}
 };
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/async.js
+//#region node_modules/svelte/src/internal/client/reactivity/async.js
 function ft(e, t, n, r) {
 	let i = Ue() ? gt : yt;
 	var a = e.filter((e) => !e.settled), o = t.map(i);
@@ -593,7 +593,7 @@ function wt(e) {
 	if (e.effects !== null) for (let t of e.effects) t.teardown && t.fn !== null && sr(t);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/batch.js
+//#region node_modules/svelte/src/internal/client/reactivity/batch.js
 var Tt = null, P = null, Et = null, Dt = null, Ot = null, kt = !1, At = !1, jt = null, Mt = null, Nt = 0, Pt = 1, Ft = class e {
 	id = Pt++;
 	#e = !1;
@@ -888,7 +888,7 @@ function Ht(e) {
 	for (var t = e.first; t !== null;) Ht(t), t = t.next;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/sources.js
+//#region node_modules/svelte/src/internal/client/reactivity/sources.js
 var Ut = /* @__PURE__ */ new Set(), Wt = /* @__PURE__ */ new Map(), Gt = !1;
 function Kt(e, t) {
 	return {
@@ -1135,7 +1135,7 @@ function pn(e) {
 	for (; t !== null && t.nodeType === 3;) t.remove(), e.nodeValue += t.nodeValue, t = e.nextSibling;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/effects.js
+//#region node_modules/svelte/src/internal/client/reactivity/effects.js
 function mn(e) {
 	H === null && (V === null && _e(e), ge()), Bn && he(e);
 }
@@ -1323,7 +1323,7 @@ function Ln(e, t) {
 	}
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/legacy.js
+//#region node_modules/svelte/src/internal/client/legacy.js
 var Rn = null, zn = !1, Bn = !1;
 function Vn(e) {
 	Bn = e;
@@ -1512,7 +1512,7 @@ function hr(e) {
 	return mr.includes(e);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/events.js
+//#region node_modules/svelte/src/internal/client/dom/elements/events.js
 var gr = Symbol("events"), _r = /* @__PURE__ */ new Set(), vr = /* @__PURE__ */ new Set();
 function yr(e, t, n, r = {}) {
 	function i(e) {
@@ -1585,7 +1585,7 @@ function Cr(e) {
 	}
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/reconciler.js
+//#region node_modules/svelte/src/internal/client/dom/reconciler.js
 var wr = globalThis?.window?.trustedTypes && /* @__PURE__ */ globalThis.window.trustedTypes.createPolicy("svelte-trusted-html", { createHTML: (e) => e });
 function Tr(e) {
 	return wr?.createHTML(e) ?? e;
@@ -1595,7 +1595,7 @@ function Er(e) {
 	return t.innerHTML = Tr(e.replaceAll("<!>", "<!---->")), t.content;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/template.js
+//#region node_modules/svelte/src/internal/client/dom/template.js
 function Dr(e, t) {
 	var n = H;
 	n.nodes === null && (n.nodes = {
@@ -1689,7 +1689,7 @@ function Pr(e, t) {
 	return n ? (Nr.delete(e), n(t)) : Promise.resolve();
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/branches.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/branches.js
 var Fr = class {
 	anchor;
 	#e = /* @__PURE__ */ new Map();
@@ -1753,7 +1753,7 @@ var Fr = class {
 	}
 };
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/if.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/if.js
 function J(e, t, n = !1) {
 	var r;
 	D && (r = O, Fe());
@@ -1777,7 +1777,7 @@ function J(e, t, n = !1) {
 	}, a);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/key.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/key.js
 var Ir = Symbol("NaN");
 function Lr(e, t, n) {
 	D && Fe();
@@ -1788,7 +1788,7 @@ function Lr(e, t, n) {
 	});
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/each.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/each.js
 function Rr(e, t) {
 	return t;
 }
@@ -1982,7 +1982,7 @@ function Jr(e, t, n = !1, r = !1, i = !1, a = !1) {
 	});
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/blocks/snippet.js
+//#region node_modules/svelte/src/internal/client/dom/blocks/snippet.js
 function Yr(e, t, ...n) {
 	var r = new Fr(e);
 	Tn(() => {
@@ -1991,7 +1991,7 @@ function Yr(e, t, ...n) {
 	}, x);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/actions.js
+//#region node_modules/svelte/src/internal/client/dom/elements/actions.js
 function Xr(e, t, n) {
 	Sn(() => {
 		var r = dr(() => t(e, n?.()) || {});
@@ -2006,7 +2006,7 @@ function Xr(e, t, n) {
 	});
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/clsx/dist/clsx.mjs
+//#region node_modules/clsx/dist/clsx.mjs
 function Zr(e) {
 	var t, n, r = "";
 	if (typeof e == "string" || typeof e == "number") r += e;
@@ -2023,7 +2023,7 @@ function Qr() {
 	return r;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/shared/attributes.js
+//#region node_modules/svelte/src/internal/shared/attributes.js
 function $r(e) {
 	return typeof e == "object" ? Qr(e) : e ?? "";
 }
@@ -2082,7 +2082,7 @@ function ii(e, t) {
 	return e == null ? null : String(e);
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/class.js
+//#region node_modules/svelte/src/internal/client/dom/elements/class.js
 function ai(e, t, n, r, i, a) {
 	var o = e[oe];
 	if (D || o !== n || o === void 0) {
@@ -2095,7 +2095,7 @@ function ai(e, t, n, r, i, a) {
 	return a;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/style.js
+//#region node_modules/svelte/src/internal/client/dom/elements/style.js
 function oi(e, t = {}, n, r) {
 	for (var i in n) {
 		var a = n[i];
@@ -2111,7 +2111,7 @@ function si(e, t, n, r) {
 	return r;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
+//#region node_modules/svelte/src/internal/client/dom/elements/bindings/select.js
 function ci(t, n, r = !1) {
 	if (t.multiple) {
 		if (n == null) return;
@@ -2165,7 +2165,7 @@ function di(e) {
 	return "__value" in e ? e.__value : e.value;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/attributes.js
+//#region node_modules/svelte/src/internal/client/dom/elements/attributes.js
 var fi = Symbol("is custom element"), pi = Symbol("is html"), mi = de ? "link" : "LINK", hi = de ? "progress" : "PROGRESS";
 function gi(e) {
 	if (D) {
@@ -2214,7 +2214,7 @@ function xi(e) {
 	return n;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
+//#region node_modules/svelte/src/internal/client/dom/elements/bindings/input.js
 function Si(e, t, n = t) {
 	var r = /* @__PURE__ */ new WeakSet();
 	st(e, "input", async (i) => {
@@ -2250,7 +2250,7 @@ function Ti(e) {
 	return e === "" ? null : +e;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/dom/elements/bindings/this.js
+//#region node_modules/svelte/src/internal/client/dom/elements/bindings/this.js
 function Ei(e, t) {
 	return e === t || e?.[ne] === t;
 }
@@ -2275,7 +2275,7 @@ function Di(e = {}, t, n, r) {
 	}), e;
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/client/reactivity/props.js
+//#region node_modules/svelte/src/internal/client/reactivity/props.js
 function Oi(e, t, n, r) {
 	var i = !0, o = !!(n & 8), s = !!(n & 16), c = r, l = !0, u = void 0, d = () => s && i ? (u ??= /* @__PURE__ */ gt(r), U(u)) : (l && (l = !1, c = s ? dr(r) : r), c);
 	let f;
@@ -2320,7 +2320,7 @@ function Ai(e) {
 	Ve === null && fe("onDestroy"), ki(() => () => dr(e));
 }
 //#endregion
-//#region ../../../../../repos/forge/web/node_modules/svelte/src/internal/disclose-version.js
+//#region node_modules/svelte/src/internal/disclose-version.js
 typeof window < "u" && ((window.__svelte ??= {}).v ??= /* @__PURE__ */ new Set()).add("5");
 //#endregion
 //#region src/components/Icon.svelte
@@ -3877,11 +3877,11 @@ function xo(e) {
 }
 //#endregion
 //#region src/components/FileBrowser.svelte
-var So = /* @__PURE__ */ G("<a class=\"artifact-download\"><!></a>"), Co = /* @__PURE__ */ G("<div class=\"artifact-node\"><button type=\"button\"><span class=\"artifact-main\"><span class=\"artifact-chevron\"><!></span><!><span class=\"artifact-name\"> </span></span> <span class=\"artifact-side\"><!><small> </small></span></button></div>"), wo = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span> </span></div>"), To = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"file-browser\"><h3><!><span> </span></h3> <div class=\"artifact-browser\"><div class=\"artifact-tree\" role=\"tree\"><!></div></div></div>");
-function Eo(e, t) {
+var So = /* @__PURE__ */ G("<h3><!><span> </span></h3>"), Co = /* @__PURE__ */ G("<a class=\"artifact-download\"><!></a>"), wo = /* @__PURE__ */ G("<div class=\"artifact-node\"><button type=\"button\"><span class=\"artifact-main\"><span class=\"artifact-chevron\"><!></span><!><span class=\"artifact-name\"> </span></span> <span class=\"artifact-side\"><!><small> </small></span></button></div>"), To = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span> </span></div>"), Eo = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"file-browser\"><!> <div class=\"artifact-browser\"><div class=\"artifact-tree\" role=\"tree\"><!></div></div></div>");
+function Do(e, t) {
 	j(t, !0);
-	let n = Oi(t, "entries", 19, () => []), r = Oi(t, "emptyMessage", 3, "No files."), i = Oi(t, "activePath", 3, ""), a = /* @__PURE__ */ N(() => bo(n(), t.expanded, t.title)), o = /* @__PURE__ */ N(() => t.title === "Wiki" ? "book-open" : "paperclip");
-	function s(e) {
+	let n = Oi(t, "entries", 19, () => []), r = Oi(t, "emptyMessage", 3, "No files."), i = Oi(t, "activePath", 3, ""), a = Oi(t, "showHeading", 3, !0), o = /* @__PURE__ */ N(() => bo(n(), t.expanded, t.title)), s = /* @__PURE__ */ N(() => t.title === "Wiki" ? "book-open" : "paperclip");
+	function c(e) {
 		let t = e.includes(".") && e.split(".").pop()?.toLowerCase() || "";
 		return [
 			"js",
@@ -3922,19 +3922,24 @@ function Eo(e, t) {
 			"7z"
 		].includes(t) ? "archive" : "file";
 	}
-	var c = To(), l = L(c), u = L(l);
-	X(u, { get name() {
-		return U(o);
-	} });
-	var d = z(u), f = L(d, !0);
-	k(d), k(l);
-	var p = z(l, 2), m = L(p), h = L(m), g = (e) => {
+	var l = Eo(), u = L(l), d = (e) => {
+		var n = So(), r = L(n);
+		X(r, { get name() {
+			return U(s);
+		} });
+		var i = z(r), a = L(i, !0);
+		k(i), k(n), B(() => q(a, t.title)), K(e, n);
+	};
+	J(u, (e) => {
+		a() && e(d);
+	});
+	var f = z(u, 2), p = L(f), m = L(p), h = (e) => {
 		var n = kr();
-		Hr(R(n), 17, () => U(a), (e) => `${t.title}:${e.entry.path}`, (e, n) => {
+		Hr(R(n), 17, () => U(o), (e) => `${t.title}:${e.entry.path}`, (e, n) => {
 			let r = /* @__PURE__ */ N(() => U(n).entry.type === "directory"), a = /* @__PURE__ */ N(() => t.expanded.has(`${t.title}:${U(n).entry.path}`));
-			var o = Co(), c = L(o);
+			var o = wo(), s = L(o);
 			let l;
-			var u = L(c), d = L(u), f = L(d), p = (e) => {
+			var u = L(s), d = L(u), f = L(d), p = (e) => {
 				{
 					let t = /* @__PURE__ */ N(() => U(a) ? "chevron-down" : "chevron-right");
 					X(e, { get name() {
@@ -3947,7 +3952,7 @@ function Eo(e, t) {
 			}), k(d);
 			var m = z(d);
 			{
-				let e = /* @__PURE__ */ N(() => U(r) ? U(a) ? "folder-open" : "folder" : s(U(n).entry.name)), t = /* @__PURE__ */ N(() => U(r) ? "artifact-icon artifact-icon-dir" : "artifact-icon");
+				let e = /* @__PURE__ */ N(() => U(r) ? U(a) ? "folder-open" : "folder" : c(U(n).entry.name)), t = /* @__PURE__ */ N(() => U(r) ? "artifact-icon artifact-icon-dir" : "artifact-icon");
 				X(m, {
 					get name() {
 						return U(e);
@@ -3960,7 +3965,7 @@ function Eo(e, t) {
 			var h = z(m), g = L(h, !0);
 			k(h), k(u);
 			var _ = z(u, 2), v = L(_), y = (e) => {
-				var r = So();
+				var r = Co();
 				X(L(r), {
 					name: "download",
 					className: "artifact-download-icon"
@@ -3972,16 +3977,16 @@ function Eo(e, t) {
 				U(r) || e(y);
 			});
 			var b = z(v), x = L(b, !0);
-			k(b), k(_), k(c), k(o), B((e) => {
-				l = ai(c, 1, "artifact-row", null, l, {
+			k(b), k(_), k(s), k(o), B((e) => {
+				l = ai(s, 1, "artifact-row", null, l, {
 					directory: U(r),
 					file: !U(r),
 					active: i() === `${t.title}:${U(n).entry.path}`
-				}), si(c, `--depth: ${U(n).depth}`), Y(h, "title", U(n).entry.path), q(g, U(n).entry.name), q(x, e);
-			}, [() => U(r) ? `${(U(n).entry.children || []).length} items` : yo(U(n).entry.size || 0)]), W("click", c, () => U(r) ? t.onToggle(`${t.title}:${U(n).entry.path}`) : t.onPreview(t.title, U(n).entry.path)), K(e, o);
+				}), si(s, `--depth: ${U(n).depth}`), Y(h, "title", U(n).entry.path), q(g, U(n).entry.name), q(x, e);
+			}, [() => U(r) ? `${(U(n).entry.children || []).length} items` : yo(U(n).entry.size || 0)]), W("click", s, () => U(r) ? t.onToggle(`${t.title}:${U(n).entry.path}`) : t.onPreview(t.title, U(n).entry.path)), K(e, o);
 		}), K(e, n);
-	}, _ = (e) => {
-		var n = wo(), i = L(n);
+	}, g = (e) => {
+		var n = To(), i = L(n);
 		{
 			let e = /* @__PURE__ */ N(() => t.title === "Artifacts" ? "archive" : "inbox");
 			X(i, { get name() {
@@ -3991,15 +3996,15 @@ function Eo(e, t) {
 		var a = z(i), o = L(a, !0);
 		k(a), k(n), B(() => q(o, r())), K(e, n);
 	};
-	J(h, (e) => {
-		U(a).length ? e(g) : e(_, -1);
-	}), k(m), k(p), k(c), B(() => q(f, t.title)), K(e, c), M();
+	J(m, (e) => {
+		U(o).length ? e(h) : e(g, -1);
+	}), k(p), k(f), k(l), K(e, l), M();
 }
 xr(["click"]);
 //#endregion
 //#region src/components/FilePreviewModal.svelte
-var Do = /* @__PURE__ */ G("<div class=\"file-modal-empty\"><!><strong>Loading preview</strong><span> </span></div>"), Oo = /* @__PURE__ */ G("<div class=\"file-modal-empty error-preview\"><!><strong>Preview unavailable</strong><span> </span></div>"), ko = /* @__PURE__ */ G("<div class=\"image-preview\" data-preview-scroll=\"\"><img/></div>"), Ao = /* @__PURE__ */ G("<div class=\"file-modal-empty\"><!><strong> </strong><span> </span></div>"), jo = /* @__PURE__ */ G("<div class=\"modal-markdown markdown-rendered\" data-preview-scroll=\"\"></div>"), Mo = /* @__PURE__ */ G("<pre class=\"modal-preview-content\" data-preview-scroll=\"\"> </pre>"), No = /* @__PURE__ */ G("<div class=\"file-modal-layer\" data-component-owner=\"file-preview-modal\" role=\"presentation\"><button class=\"file-modal-backdrop modal-enter\" type=\"button\" aria-label=\"Close file preview\"></button> <div class=\"file-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"File preview\"><header class=\"file-modal-header\"><div><strong> </strong><span> </span></div><div class=\"file-modal-actions\"><a class=\"secondary-button file-modal-open\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a><button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></div></header> <!></div></div>");
-function Po(e, t) {
+var Oo = /* @__PURE__ */ G("<div class=\"file-modal-empty\"><!><strong>Loading preview</strong><span> </span></div>"), ko = /* @__PURE__ */ G("<div class=\"file-modal-empty error-preview\"><!><strong>Preview unavailable</strong><span> </span></div>"), Ao = /* @__PURE__ */ G("<div class=\"image-preview\" data-preview-scroll=\"\"><img/></div>"), jo = /* @__PURE__ */ G("<div class=\"file-modal-empty\"><!><strong> </strong><span> </span></div>"), Mo = /* @__PURE__ */ G("<div class=\"modal-markdown markdown-rendered\" data-preview-scroll=\"\"></div>"), No = /* @__PURE__ */ G("<pre class=\"modal-preview-content\" data-preview-scroll=\"\"> </pre>"), Po = /* @__PURE__ */ G("<div class=\"file-modal-layer\" data-component-owner=\"file-preview-modal\" role=\"presentation\"><button class=\"file-modal-backdrop modal-enter\" type=\"button\" aria-label=\"Close file preview\"></button> <div class=\"file-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"File preview\"><header class=\"file-modal-header\"><div><strong> </strong><span> </span></div><div class=\"file-modal-actions\"><a class=\"secondary-button file-modal-open\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a><button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></div></header> <!></div></div>");
+function Fo(e, t) {
 	j(t, !0);
 	let n = /* @__PURE__ */ F(null), r = /* @__PURE__ */ F(!1), i = /* @__PURE__ */ F(""), a = /* @__PURE__ */ N(() => `detail-preview:${t.workspaceId}:${t.resourceId}`), o = /* @__PURE__ */ N(() => t.selection ? `/api/workspaces/${encodeURIComponent(t.workspaceId)}/${t.selection.section === "Wiki" ? "wiki/files/raw" : "files/raw"}?path=${encodeURIComponent(t.selection.path)}` : "");
 	yn(() => {
@@ -4019,7 +4024,7 @@ function Po(e, t) {
 		});
 	}), Ai(() => t.client.requests.abort(U(a)));
 	var s = kr(), c = R(s), l = (e) => {
-		var a = No(), s = L(a), c = z(s, 2), l = L(c), u = L(l), d = L(u), f = L(d, !0);
+		var a = Po(), s = L(a), c = z(s, 2), l = L(c), u = L(l), d = L(u), f = L(d, !0);
 		k(d);
 		var p = z(d), m = L(p);
 		k(p), k(u);
@@ -4028,22 +4033,22 @@ function Po(e, t) {
 		var _ = z(g);
 		X(L(_), { name: "x" }), k(_), k(h), k(l);
 		var v = z(l, 2), y = (e) => {
-			var n = Do(), r = L(n);
+			var n = Oo(), r = L(n);
 			X(r, { name: "loader-circle" });
 			var i = z(r, 2), a = L(i, !0);
 			k(i), k(n), B(() => q(a, t.selection.path)), K(e, n);
 		}, b = (e) => {
-			var t = Oo(), n = L(t);
+			var t = ko(), n = L(t);
 			X(n, { name: "triangle-alert" });
 			var r = z(n, 2), a = L(r, !0);
 			k(r), k(t), B(() => q(a, U(i))), K(e, t);
 		}, x = (e) => {
-			var r = ko(), i = L(r);
+			var r = Ao(), i = L(r);
 			k(r), B(() => {
 				Y(i, "src", U(o)), Y(i, "alt", U(n).name || t.selection.path);
 			}), K(e, r);
 		}, S = (e) => {
-			var r = Ao(), i = L(r);
+			var r = jo(), i = L(r);
 			X(i, { name: "file-warning" });
 			var a = z(i), o = L(a, !0);
 			k(a);
@@ -4052,10 +4057,10 @@ function Po(e, t) {
 				q(o, U(n).name || t.selection.path), q(c, `Binary file, ${e ?? ""}.`);
 			}, [() => yo(U(n).size || 0)]), K(e, r);
 		}, C = (e) => {
-			var t = jo();
+			var t = Mo();
 			Jr(t, () => ho(U(n)?.content || ""), !0), k(t), K(e, t);
 		}, w = /* @__PURE__ */ N(() => mo(U(n)?.path || t.selection.path)), T = (e) => {
-			var t = Mo(), r = L(t, !0);
+			var t = No(), r = L(t, !0);
 			k(t), B(() => q(r, U(n)?.content || "")), K(e, t);
 		};
 		J(v, (e) => {
@@ -4075,8 +4080,8 @@ function Po(e, t) {
 xr(["click"]);
 //#endregion
 //#region src/components/LogTimeline.svelte
-var Fo = /* @__PURE__ */ G("<div class=\"markdown-rendered\"></div>"), Io = /* @__PURE__ */ G("<details class=\"log-entry\"><summary><span class=\"log-time\"><strong> </strong><small> </small></span> <span class=\"log-title\"> </span> <span class=\"log-chevron\" aria-hidden=\"true\"><!></span></summary> <div><!></div></details>"), Lo = /* @__PURE__ */ G("<p class=\"log-load-error\" role=\"alert\"> </p>"), Ro = /* @__PURE__ */ G("<div class=\"log-load-actions\"><button type=\"button\" class=\"secondary-button log-load-more\"><!><span> </span></button></div>"), zo = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"log-timeline\"><h3><!><span>Log</span></h3> <div class=\"log-timeline\"></div> <!> <!></div>");
-function Bo(e, t) {
+var Io = /* @__PURE__ */ G("<div class=\"markdown-rendered\"></div>"), Lo = /* @__PURE__ */ G("<details class=\"log-entry\"><summary><span class=\"log-time\"><strong> </strong><small> </small></span> <span class=\"log-title\"> </span> <span class=\"log-chevron\" aria-hidden=\"true\"><!></span></summary> <div><!></div></details>"), Ro = /* @__PURE__ */ G("<p class=\"log-load-error\" role=\"alert\"> </p>"), zo = /* @__PURE__ */ G("<div class=\"log-load-actions\"><button type=\"button\" class=\"secondary-button log-load-more\"><!><span> </span></button></div>"), Bo = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"log-timeline\"><div class=\"log-timeline\"></div> <!> <!></div>");
+function Vo(e, t) {
 	j(t, !0);
 	let n = /* @__PURE__ */ N(() => [...t.logs || []].sort(_o)), r = /* @__PURE__ */ F(!1);
 	async function i() {
@@ -4090,11 +4095,9 @@ function Bo(e, t) {
 		}
 	}
 	var a = kr(), o = R(a), s = (e) => {
-		var a = zo(), o = L(a);
-		X(L(o), { name: "history" }), A(), k(o);
-		var s = z(o, 2);
-		Hr(s, 21, () => U(n), (e) => e.id, (e, t) => {
-			var n = Io(), r = L(n), i = L(r), a = L(i), o = L(a, !0);
+		var a = Bo(), o = L(a);
+		Hr(o, 21, () => U(n), (e) => e.id, (e, t) => {
+			var n = Lo(), r = L(n), i = L(r), a = L(i), o = L(a, !0);
 			k(a);
 			var s = z(a), c = L(s, !0);
 			k(s), k(i);
@@ -4105,7 +4108,7 @@ function Bo(e, t) {
 			var f = z(r, 2);
 			let p;
 			var m = L(f), h = (e) => {
-				var n = Fo();
+				var n = Io();
 				Jr(n, () => ho(U(t).details), !0), k(n), K(e, n);
 			}, g = (e) => {
 				K(e, Or("No details."));
@@ -4115,16 +4118,16 @@ function Bo(e, t) {
 			}), k(f), k(n), B((e) => {
 				Y(n, "data-log-id", U(t).id), Y(i, "title", U(t).time), q(o, e), q(c, U(t).time), q(u, U(t).title || "Untitled log entry"), p = ai(f, 1, "log-details", null, p, { empty: !U(t).details });
 			}, [() => vo(U(t).time)]), K(e, n);
-		}), k(s);
-		var c = z(s, 2), l = (e) => {
-			var n = Lo(), r = L(n, !0);
+		}), k(o);
+		var s = z(o, 2), c = (e) => {
+			var n = Ro(), r = L(n, !0);
 			k(n), B(() => q(r, t.error)), K(e, n);
 		};
-		J(c, (e) => {
-			t.error && e(l);
+		J(s, (e) => {
+			t.error && e(c);
 		});
-		var u = z(c, 2), d = (e) => {
-			var n = Ro(), a = L(n), o = L(a);
+		var l = z(s, 2), u = (e) => {
+			var n = zo(), a = L(n), o = L(a);
 			{
 				let e = /* @__PURE__ */ N(() => t.loading || U(r) ? "loader-circle" : "chevron-down"), n = /* @__PURE__ */ N(() => t.loading || U(r) ? "spin" : "");
 				X(o, {
@@ -4141,8 +4144,8 @@ function Bo(e, t) {
 				a.disabled = t.loading || U(r), Y(a, "aria-busy", t.loading || U(r)), q(c, t.loading || U(r) ? "Loading older logs..." : t.error ? "Retry" : "Load More");
 			}), W("click", a, i), K(e, n);
 		};
-		J(u, (e) => {
-			t.hasMore && e(d);
+		J(l, (e) => {
+			t.hasMore && e(u);
 		}), k(a), B(() => Y(a, "data-log-resource", t.resourceId)), K(e, a);
 	};
 	J(o, (e) => {
@@ -4152,35 +4155,22 @@ function Bo(e, t) {
 xr(["click"]);
 //#endregion
 //#region src/components/MarkdownDocument.svelte
-var Vo = /* @__PURE__ */ G("<a class=\"markdown-open-file\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a>"), Ho = /* @__PURE__ */ G("<div class=\"markdown-preview\"><div class=\"markdown-view markdown-rendered\"></div></div>"), Uo = /* @__PURE__ */ G("<pre class=\"markdown-view\"> </pre>"), Wo = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"markdown-document\"><h3><!><span> </span> <!></h3> <!></div>");
+var Ho = /* @__PURE__ */ G("<div class=\"markdown-preview\"><div class=\"markdown-view markdown-rendered\"></div></div>"), Uo = /* @__PURE__ */ G("<pre class=\"markdown-view\"> </pre>"), Wo = /* @__PURE__ */ G("<div class=\"content-section\" data-component-owner=\"markdown-document\"><!></div>");
 function Go(e, t) {
 	j(t, !0);
-	let n = /* @__PURE__ */ N(() => mo(t.file.name)), r = /* @__PURE__ */ N(() => `/api/workspaces/${encodeURIComponent(t.workspaceId)}/files/raw?path=${encodeURIComponent(t.file.path || "")}`);
-	var i = Wo(), a = L(i), o = L(a);
-	X(o, { name: "file-text" });
-	var s = z(o), c = L(s, !0);
-	k(s);
-	var l = z(s, 2), u = (e) => {
-		var n = Vo();
-		X(L(n), { name: "external-link" }), A(), k(n), B(() => {
-			Y(n, "href", U(r)), Y(n, "aria-label", `Open ${t.file.name} in new window`);
-		}), K(e, n);
-	};
-	J(l, (e) => {
-		U(n) && t.file.path && e(u);
-	}), k(a);
-	var d = z(a, 2), f = (e) => {
+	let n = /* @__PURE__ */ N(() => mo(t.file.name));
+	var r = Wo(), i = L(r), a = (e) => {
 		var n = Ho(), r = L(n);
 		Jr(r, () => ho(t.file.content || ""), !0), k(r), k(n), K(e, n);
-	}, p = (e) => {
+	}, o = (e) => {
 		var n = Uo(), r = L(n, !0);
 		k(n), B(() => q(r, t.file.content || "")), K(e, n);
 	};
-	J(d, (e) => {
-		U(n) ? e(f) : e(p, -1);
-	}), k(i), B(() => {
-		Y(i, "data-doc-file", t.file.name), Y(i, "data-document-identity", `${t.workspaceId}:${t.file.path || t.file.name}:preview:${t.file.contentHash || "unversioned"}`), q(c, t.file.name);
-	}), K(e, i), M();
+	J(i, (e) => {
+		U(n) ? e(a) : e(o, -1);
+	}), k(r), B(() => {
+		Y(r, "data-doc-file", t.file.name), Y(r, "data-document-identity", `${t.workspaceId}:${t.file.path || t.file.name}:preview:${t.file.contentHash || "unversioned"}`);
+	}), K(e, r), M();
 }
 //#endregion
 //#region src/components/WorkspaceAgentsEditor.svelte
@@ -4253,7 +4243,7 @@ function Qo(e, t) {
 }
 //#endregion
 //#region src/components/DetailPanel.svelte
-var $o = /* @__PURE__ */ G("<option> </option>"), es = /* @__PURE__ */ G("<div class=\"resource-agent-binding\" aria-label=\"Resource agent binding\"><select aria-label=\"Binding kind\"><option>Profile</option><option>Agent</option></select> <select aria-label=\"Binding target\"></select> <button type=\"button\" class=\"secondary\"><!><span> </span></button></div>"), ts = /* @__PURE__ */ G("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), ns = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), rs = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), is = /* @__PURE__ */ G("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav><div class=\"title-row\"><h1> </h1><!></div></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!></div>", 1), as = /* @__PURE__ */ G("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), os = /* @__PURE__ */ G("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), ss = /* @__PURE__ */ G("<div class=\"details-actions\"><!><!><button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button></div>"), cs = /* @__PURE__ */ G("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), ls = /* @__PURE__ */ G("<span class=\"details-tab-count\"> </span>"), us = /* @__PURE__ */ G("<button type=\"button\" role=\"tab\"><span> </span><!></button>"), ds = /* @__PURE__ */ G("<div><!></div>"), fs = /* @__PURE__ */ G("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), ps = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ms = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Task Templates</span></h3><div class=\"template-list\"><!></div></div>"), hs = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Template</span></h3><div class=\"template-list\"><div class=\"template-row\"><!><span><strong> </strong><small> </small></span></div></div></div>"), gs = /* @__PURE__ */ G("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), _s = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), vs = /* @__PURE__ */ G("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <div><!></div> <div><!></div> <div><!></div> <div><div class=\"content-section\"><h3><!><span>Worktrees</span></h3><div class=\"worktree-list\"><!></div></div></div></div>", 1), ys = /* @__PURE__ */ G("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!> <span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav> <div class=\"title-row\"><h1> <code class=\"resource-ref-badge\"> </code></h1><!></div></div> <!>", 1), bs = /* @__PURE__ */ G("<!> <!> <!>", 1);
+var $o = /* @__PURE__ */ G("<option> </option>"), es = /* @__PURE__ */ G("<div class=\"resource-agent-binding\" aria-label=\"Resource agent binding\"><select aria-label=\"Binding kind\"><option>Profile</option><option>Agent</option></select> <select aria-label=\"Binding target\"></select> <button type=\"button\" class=\"secondary\"><!><span> </span></button></div>"), ts = /* @__PURE__ */ G("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), ns = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), rs = /* @__PURE__ */ G("<div class=\"content-section\"><h3><!><span>Wiki</span></h3><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), is = /* @__PURE__ */ G("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav><div class=\"title-row\"><h1> </h1><!></div></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!></div>", 1), as = /* @__PURE__ */ G("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), os = /* @__PURE__ */ G("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), ss = /* @__PURE__ */ G("<div class=\"details-actions\"><!><!><button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button></div>"), cs = /* @__PURE__ */ G("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), ls = /* @__PURE__ */ G("<span class=\"details-tab-count\"> </span>"), us = /* @__PURE__ */ G("<button type=\"button\" role=\"tab\"><!><span> </span><!></button>"), ds = /* @__PURE__ */ G("<div><!></div>"), fs = /* @__PURE__ */ G("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), ps = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ms = /* @__PURE__ */ G("<div class=\"content-section\"><div class=\"template-list\"><!></div></div>"), hs = /* @__PURE__ */ G("<div class=\"content-section\"><div class=\"template-list\"><div class=\"template-row\"><!><span><strong> </strong><small> </small></span></div></div></div>"), gs = /* @__PURE__ */ G("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), _s = /* @__PURE__ */ G("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), vs = /* @__PURE__ */ G("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <div><!></div> <div><!></div> <div><!></div> <div><div class=\"content-section\"><div class=\"worktree-list\"><!></div></div></div></div>", 1), ys = /* @__PURE__ */ G("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!> <span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link current\"> </button></nav> <div class=\"title-row\"><h1> <code class=\"resource-ref-badge\"> </code></h1><!></div></div> <!>", 1), bs = /* @__PURE__ */ G("<!> <!> <!>", 1);
 function xs(e, t) {
 	j(t, !0);
 	let n = (e) => {
@@ -4308,25 +4298,32 @@ function xs(e, t) {
 		let e = [];
 		return U(h).has("project.md") && e.push({
 			id: "project",
-			label: "Project"
+			label: "Project",
+			icon: "file-text"
 		}), U(h).has("task.md") && e.push({
 			id: "task",
-			label: "Task"
+			label: "Task",
+			icon: "file-text"
 		}), U(h).has("work.md") && e.push({
 			id: "work",
-			label: "Work"
+			label: "Work",
+			icon: "file-text"
 		}), (U(r).resourceType === "project" || U(r).detail.template) && e.push({
 			id: "template",
-			label: "Template"
+			label: "Template",
+			icon: "layout-template"
 		}), e.push({
 			id: "logs",
-			label: "Logs"
+			label: "Logs",
+			icon: "history"
 		}, {
 			id: "artifacts",
-			label: "Artifacts"
+			label: "Artifacts",
+			icon: "paperclip"
 		}), U(r).resourceType === "task" && e.push({
 			id: "worktrees",
-			label: "Worktrees"
+			label: "Worktrees",
+			icon: "folder-git-2"
 		}), e;
 	}
 	function b(e) {
@@ -4435,7 +4432,7 @@ function xs(e, t) {
 		}, y = (e) => {
 			{
 				let t = /* @__PURE__ */ N(() => U(r).wiki.entries || []);
-				Eo(e, {
+				Do(e, {
 					title: "Wiki",
 					get entries() {
 						return U(t);
@@ -4499,16 +4496,20 @@ function xs(e, t) {
 			Hr(n, 21, () => U(g), (e) => e.id, (e, t) => {
 				var n = us();
 				let i;
-				var o = L(n), s = L(o, !0);
-				k(o);
-				var c = z(o), l = (e) => {
+				var o = L(n);
+				X(o, { get name() {
+					return U(t).icon;
+				} });
+				var s = z(o), c = L(s, !0);
+				k(s);
+				var l = z(s), u = (e) => {
 					var t = ls(), n = L(t, !0);
 					k(t), B(() => q(n, U(r).detail.logs.length)), K(e, t);
 				};
-				J(c, (e) => {
-					U(t).id === "logs" && U(r).detail.logs?.length && e(l);
+				J(l, (e) => {
+					U(t).id === "logs" && U(r).detail.logs?.length && e(u);
 				}), k(n), B(() => {
-					i = ai(n, 1, "details-tab", null, i, { active: U(a) === U(t).id }), Y(n, "aria-selected", U(a) === U(t).id), q(s, U(t).label);
+					i = ai(n, 1, "details-tab", null, i, { active: U(a) === U(t).id }), Y(n, "aria-selected", U(a) === U(t).id), q(c, U(t).label);
 				}), W("click", n, () => x(U(t).id)), K(e, n);
 			}), k(n);
 			var i = z(n, 2), s = L(i);
@@ -4524,9 +4525,7 @@ function xs(e, t) {
 				}), k(n), B((e) => Y(n, "hidden", e), [() => U(a) !== b(U(t))]), K(e, n);
 			});
 			var l = z(s, 2), u = L(l), d = (e) => {
-				var t = ms(), n = L(t);
-				X(L(n), { name: "layout-template" }), A(), k(n);
-				var i = z(n), a = L(i), o = (e) => {
+				var t = ms(), n = L(t), i = L(n), a = (e) => {
 					var t = kr();
 					Hr(R(t), 17, () => U(r).detail.templates, (e) => e.name, (e, t) => {
 						var n = fs();
@@ -4540,23 +4539,21 @@ function xs(e, t) {
 							r = ai(n, 1, "template-row", null, r, { invalid: !U(t).valid }), q(s, U(t).title || U(t).name), q(l, `${U(t).name ?? ""} · v${(U(t).schemaVersion || "?") ?? ""} · ${U(t).valid ? `${(U(t).fields || []).length} fields` : `invalid${U(t).errors?.[0]?.message ? `: ${U(t).errors[0].message}` : ""}`}${U(t).legacy ? " · legacy" : ""}`);
 						}), W("click", n, () => U(t).path && T("Templates", U(t).path)), K(e, n);
 					}), K(e, t);
-				}, s = (e) => {
+				}, o = (e) => {
 					var t = ps();
 					X(L(t), { name: "layout-template" }), A(), k(t), K(e, t);
 				};
-				J(a, (e) => {
-					U(r).detail.templates?.length ? e(o) : e(s, -1);
-				}), k(i), k(t), K(e, t);
+				J(i, (e) => {
+					U(r).detail.templates?.length ? e(a) : e(o, -1);
+				}), k(n), k(t), K(e, t);
 			}, f = (e) => {
-				var t = hs(), n = L(t);
-				X(L(n), { name: "layout-template" }), A(), k(n);
-				var i = z(n), a = L(i), o = L(a);
-				X(o, { name: "file-text" });
-				var s = z(o), c = L(s), l = L(c, !0);
-				k(c);
-				var u = z(c), d = L(u);
-				k(u), k(s), k(a), k(i), k(t), B(() => {
-					q(l, U(r).detail.template.name), q(d, `Created from template · v${(U(r).detail.template.schemaVersion || "?") ?? ""} · ${(U(r).detail.template.digest || "") ?? ""}`);
+				var t = hs(), n = L(t), i = L(n), a = L(i);
+				X(a, { name: "file-text" });
+				var o = z(a), s = L(o), c = L(s, !0);
+				k(s);
+				var l = z(s), u = L(l);
+				k(l), k(o), k(i), k(n), k(t), B(() => {
+					q(c, U(r).detail.template.name), q(u, `Created from template · v${(U(r).detail.template.schemaVersion || "?") ?? ""} · ${(U(r).detail.template.digest || "") ?? ""}`);
 				}), K(e, t);
 			};
 			J(u, (e) => {
@@ -4565,7 +4562,7 @@ function xs(e, t) {
 			var p = z(l, 2), h = L(p);
 			{
 				let e = /* @__PURE__ */ N(() => U(r).detail.logs || []);
-				Bo(h, {
+				Vo(h, {
 					get resourceId() {
 						return U(r).resourceId;
 					},
@@ -4591,7 +4588,7 @@ function xs(e, t) {
 			var v = z(p, 2), y = L(v);
 			{
 				let e = /* @__PURE__ */ N(() => U(r).detail.artifacts || []);
-				Eo(y, {
+				Do(y, {
 					title: "Artifacts",
 					get entries() {
 						return U(e);
@@ -4605,13 +4602,12 @@ function xs(e, t) {
 					},
 					onToggle: C,
 					onPreview: T,
-					rawURL: w
+					rawURL: w,
+					showHeading: !1
 				});
 			}
 			k(v);
-			var S = z(v, 2), E = L(S), ee = L(E);
-			X(L(ee), { name: "folder-git-2" }), A(), k(ee);
-			var te = z(ee), ne = L(te), re = (e) => {
+			var S = z(v, 2), E = L(S), ee = L(E), te = L(ee), ne = (e) => {
 				var t = kr();
 				Hr(R(t), 17, () => U(r).detail.repos, (e) => `${e.name}:${e.worktreePath}`, (e, t) => {
 					var n = gs(), r = L(n), i = L(r);
@@ -4630,13 +4626,13 @@ function xs(e, t) {
 						q(s, U(t).branch || "HEAD"), q(u, `${(U(t).name || "repository") ?? ""}${U(t).targetBranch || U(t).baseBranch ? ` · base ${U(t).targetBranch || U(t).baseBranch}` : ""}`), q(f, U(t).worktreePath || "");
 					}), W("click", p, () => I(c, U(t), !0)), K(e, n);
 				}), K(e, t);
-			}, ie = (e) => {
+			}, re = (e) => {
 				var t = _s();
 				X(L(t), { name: "git-branch" }), A(), k(t), K(e, t);
 			};
-			J(ne, (e) => {
-				U(r).detail.repos?.length ? e(re) : e(ie, -1);
-			}), k(te), k(E), k(S), k(i), B(() => {
+			J(te, (e) => {
+				U(r).detail.repos?.length ? e(ne) : e(re, -1);
+			}), k(ee), k(E), k(S), k(i), B(() => {
 				Y(l, "hidden", U(a) !== "template"), Y(p, "hidden", U(a) !== "logs"), Y(v, "hidden", U(a) !== "artifacts"), Y(S, "hidden", U(a) !== "worktrees");
 			}), K(e, t);
 		};
@@ -4650,7 +4646,7 @@ function xs(e, t) {
 		U(r).workspaceId ? U(r).resourceType === "workspace" ? e(oe, 1) : e(se, -1) : e(ae);
 	});
 	var ce = z(ie, 2);
-	Po(ce, {
+	Fo(ce, {
 		get client() {
 			return p;
 		},

@@ -5,7 +5,7 @@
   import { flattenFiles, formatBytes } from "./detail";
   import type { FileTreeModel } from "./models";
 
-  let { title, entries = [], emptyMessage = "No files.", expanded, activePath = "", onToggle, onPreview, rawURL }: { title: string; entries?: FileTreeModel[]; emptyMessage?: string; expanded: Set<string>; activePath?: string; onToggle: (key: string) => void; onPreview: (section: string, path: string) => void; rawURL: (section: string, path: string, download?: boolean) => string } = $props();
+  let { title, entries = [], emptyMessage = "No files.", expanded, activePath = "", onToggle, onPreview, rawURL, showHeading = true }: { title: string; entries?: FileTreeModel[]; emptyMessage?: string; expanded: Set<string>; activePath?: string; onToggle: (key: string) => void; onPreview: (section: string, path: string) => void; rawURL: (section: string, path: string, download?: boolean) => string; showHeading?: boolean } = $props();
   const rows = $derived(flattenFiles(entries, expanded, title));
   const headingIcon = $derived(title === "Wiki" ? "book-open" : "paperclip");
 
@@ -20,7 +20,7 @@
 </script>
 
 <div class="content-section" data-component-owner="file-browser">
-  <h3><Icon name={headingIcon} /><span>{title}</span></h3>
+  {#if showHeading}<h3><Icon name={headingIcon} /><span>{title}</span></h3>{/if}
   <div class="artifact-browser"><div class="artifact-tree" role="tree">
     {#if rows.length}
       {#each rows as row (`${title}:${row.entry.path}`)}

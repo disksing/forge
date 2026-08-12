@@ -89,6 +89,28 @@ describe("DetailPanel", () => {
     expect(content.querySelector('[data-doc-file="task.md"]')).not.toBeNull();
   });
 
+  it("moves body headings into tab icons instead of repeating titles", async () => {
+    const { target } = mountModel(resourceModel());
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+    expect(tabs.length).toBeGreaterThan(0);
+    for (const tab of tabs) expect(tab.querySelector("i[data-lucide]")).not.toBeNull();
+    const taskTab = tabs.find((tab) => tab.textContent?.includes("Task"))!;
+    expect(taskTab.querySelector('i[data-lucide="file-text"]')).not.toBeNull();
+
+    const documentSection = target.querySelector('[data-doc-file="task.md"]')!;
+    expect(documentSection.querySelector("h3")).toBeNull();
+    expect(documentSection.querySelector(".markdown-open-file")).toBeNull();
+
+    const artifactsSection = target.querySelector('[data-component-owner="file-browser"]')!;
+    expect(artifactsSection.querySelector("h3")).toBeNull();
+    const worktreesSection = target.querySelector(".worktree-list")!.closest(".content-section")!;
+    expect(worktreesSection.querySelector("h3")).toBeNull();
+    const logsSection = target.querySelector('[data-component-owner="log-timeline"]')!;
+    expect(logsSection.querySelector("h3")).toBeNull();
+  });
+
   it("uses the Project number for a Project detail reference", async () => {
     const initial = resourceModel();
     const projectFile = { ...initial.detail!.files![0], name: "project.md", path: "project12/project.md" };

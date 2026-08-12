@@ -18,7 +18,6 @@
 
 {#if ordered.length || error || hasMore}
   <div class="content-section" data-component-owner="log-timeline" data-log-resource={resourceId}>
-    <h3><Icon name="history" /><span>Log</span></h3>
     <div class="log-timeline">
       {#each ordered as entry (entry.id)}
         <details class="log-entry" data-log-id={entry.id}>
