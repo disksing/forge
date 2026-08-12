@@ -141,6 +141,16 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 	if err := m.profileRoutesChanged(ctx, profileConfig, profileConfig); err != nil {
 		failures = append(failures, err.Error())
 	}
+	m.resourceMu.Lock()
+	for _, workspace := range cfg.Workspaces {
+		if !m.server.ownsWorkspace(workspace.Path) {
+			continue
+		}
+		if err := m.reconcileWorkspaceMailboxes(ctx, workspace); err != nil {
+			failures = append(failures, fmt.Sprintf("%s mailbox: %v", workspace.ID, err))
+		}
+	}
+	m.resourceMu.Unlock()
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}

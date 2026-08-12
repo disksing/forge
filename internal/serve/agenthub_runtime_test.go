@@ -590,8 +590,13 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	}
 
 	secondRecorder, second := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
-	if secondRecorder.Code != http.StatusOK || second.Run.ID != first.Run.ID || len(second.Run.PendingMessages) != 1 {
-		t.Fatalf("running non-steer generation did not retain the durable message: code=%d run=%#v", secondRecorder.Code, second.Run)
+	if secondRecorder.Code != http.StatusOK || second.Run.ID != first.Run.ID || len(second.Run.PendingMessages) != 0 {
+		t.Fatalf("running non-steer generation did not use the Workspace mailbox: code=%d run=%#v", secondRecorder.Code, second.Run)
+	}
+	mailbox, err := loadResourceMailbox(workspace.Path)
+	if err != nil || len(mailbox.Messages) != 2 || mailbox.Messages[1].Status != resourceMessageQueued ||
+		mailbox.Messages[1].ActualMode != resourceMessageModeEnqueue || mailbox.Messages[1].DowngradeReason != resourceMessageReasonSteerUnsupported {
+		t.Fatalf("running non-steer message was not durably queued: mailbox=%#v err=%v", mailbox, err)
 	}
 	fake.mu.Lock()
 	if len(fake.messageIDs) != 1 || fake.messageIDs[0] == "" {
@@ -599,6 +604,8 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 		t.Fatalf("first resource message lacked a stable id: %#v", fake.messageIDs)
 	}
 	session := fake.sessions[first.Run.AgentHubSessionID]
+	session.State = "ready"
+	session.CurrentTurnID = ""
 	session.InputCapabilities.Steer = true
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
@@ -608,29 +615,25 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	var recovered agentRun
+	var recovered resourceMailboxMessage
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		runs, err := loadAgentRuns(workspace.Path)
+		recovered, _, err = mailboxMessageByID(workspace.Path, mailbox.Messages[1].ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, run := range runs {
-			if run.ID == first.Run.ID {
-				recovered = run
-			}
-		}
-		if len(recovered.PendingMessages) == 0 {
+		if recovered.Status == resourceMessageDelivered {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(recovered.PendingMessages) != 0 {
-		t.Fatalf("restart did not drain queued message: %#v", recovered.PendingMessages)
+	if recovered.Status != resourceMessageDelivered {
+		t.Fatalf("restart did not drain queued message: %#v", recovered)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.messageIDs) != 2 || fake.messageIDs[1] == "" || fake.messageIDs[1] == fake.messageIDs[0] || !fake.messageSteers[1] {
+	if len(fake.messageIDs) != 2 || fake.messageIDs[1] == "" || fake.messageIDs[1] == fake.messageIDs[0] || fake.messageSteers[1] ||
+		recovered.ActualMode != resourceMessageModeEnqueue || recovered.DowngradeReason != resourceMessageReasonSteerUnsupported {
 		t.Fatalf("queued message delivery metadata mismatch: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
 	}
 }
@@ -650,7 +653,7 @@ func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved, nil, false)
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -670,13 +673,13 @@ func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t 
 		fake.mu.Unlock()
 		t.Fatalf("expected the synthetic unknown delivery outcome: ids=%#v steers=%#v fail=%v", ids, steers, fail)
 	}
-	created = rt.snapshotRun()
-	if len(created.PendingMessages) != 1 {
-		t.Fatalf("ambiguous delivery was not retained: %#v", created.PendingMessages)
+	mailbox, err := loadResourceMailbox(workspace.Path)
+	if err != nil || len(mailbox.Messages) != 1 {
+		t.Fatalf("ambiguous delivery was not retained: mailbox=%#v err=%v", mailbox, err)
 	}
-	pending := created.PendingMessages[0]
-	if pending.Steer == nil || *pending.Steer {
-		t.Fatalf("first delivery mode was not durably frozen as non-steer: %#v", pending)
+	pending := mailbox.Messages[0]
+	if pending.Status != resourceMessageDelivering || pending.ActualMode != resourceMessageModeEnqueue {
+		t.Fatalf("first delivery mode was not durably frozen as enqueue: %#v", pending)
 	}
 
 	restarted := newAgentManager(manager.server)
@@ -684,23 +687,9 @@ func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t 
 	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		recovered, err := loadAgentRun(workspace.Path, created.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(recovered.PendingMessages) == 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	recovered, err := loadAgentRun(workspace.Path, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recovered.PendingMessages) != 0 {
-		t.Fatalf("restart did not accept the stable retry: %#v", recovered.PendingMessages)
+	recovered, found, err := mailboxMessageByID(workspace.Path, pending.ID)
+	if err != nil || !found || recovered.Status != resourceMessageDelivered {
+		t.Fatalf("restart did not accept the stable retry: found=%v err=%v message=%#v", found, err, recovered)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -727,7 +716,7 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved, nil, false)
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -747,16 +736,15 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 		fake.mu.Unlock()
 		t.Fatalf("expected the synthetic unknown delivery outcome: ids=%#v steers=%#v fail=%v", ids, steers, fail)
 	}
-	created = rt.snapshotRun()
-	if len(created.PendingMessages) != 1 {
-		t.Fatalf("ambiguous delivery was not retained: %#v", created.PendingMessages)
+	mailbox, err := loadResourceMailbox(workspace.Path)
+	if err != nil || len(mailbox.Messages) != 1 {
+		t.Fatalf("ambiguous delivery was not retained: mailbox=%#v err=%v", mailbox, err)
 	}
-	legacy, err := loadAgentRun(workspace.Path, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	legacy.PendingMessages[0].Steer = nil
-	if err := saveAgentRun(workspace.Path, legacy); err != nil {
+	legacy := mailbox.Messages[0]
+	if _, err := updateMailboxMessage(workspace.Path, legacy.ID, func(message *resourceMailboxMessage) {
+		message.ActualMode = resourceMessageModeSteer
+		message.DowngradeReason = ""
+	}); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
@@ -770,30 +758,17 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		recovered, err := loadAgentRun(workspace.Path, created.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(recovered.PendingMessages) == 0 {
-			break
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	recovered, err := loadAgentRun(workspace.Path, created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(recovered.PendingMessages) != 0 {
-		t.Fatalf("legacy retry did not recover from the id conflict: %#v", recovered.PendingMessages)
+	recovered, found, err := mailboxMessageByID(workspace.Path, legacy.ID)
+	if err != nil || !found || recovered.Status != resourceMessageDelivered || recovered.ActualMode != resourceMessageModeEnqueue ||
+		recovered.DowngradeReason != resourceMessageReasonRecoveredCanonical {
+		t.Fatalf("legacy retry did not recover canonical delivery: found=%v err=%v message=%#v", found, err, recovered)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.messageIDs) != 3 || fake.messageIDs[0] == "" || fake.messageIDs[0] != fake.messageIDs[1] || fake.messageIDs[1] != fake.messageIDs[2] {
+	if len(fake.messageIDs) != 2 || fake.messageIDs[0] == "" || fake.messageIDs[0] != fake.messageIDs[1] {
 		t.Fatalf("legacy recovery did not preserve the stable message id: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
 	}
-	if !reflect.DeepEqual(fake.messageSteers, []bool{false, true, false}) {
+	if !reflect.DeepEqual(fake.messageSteers, []bool{false, true}) {
 		t.Fatalf("legacy recovery did not restore canonical steer: %#v", fake.messageSteers)
 	}
 }
@@ -830,8 +805,12 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(persisted.PendingMessages) != messages || persisted.CompletionCursor != messages {
-		t.Fatalf("serialized generation lost an update: messages=%d cursor=%d", len(persisted.PendingMessages), persisted.CompletionCursor)
+	mailbox, err := loadResourceMailbox(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mailbox.Messages) != messages || len(persisted.PendingMessages) != 0 || persisted.CompletionCursor != messages {
+		t.Fatalf("serialized runtime lost an update: mailbox=%d generationMessages=%d cursor=%d", len(mailbox.Messages), len(persisted.PendingMessages), persisted.CompletionCursor)
 	}
 }
 
@@ -894,7 +873,7 @@ func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
 	}
 }
 
-func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T) {
+func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.extraAgents = []string{"replacement-agent"}
 	hub := httptest.NewServer(fake)
@@ -916,9 +895,13 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T
 		t.Fatal(err)
 	}
 	queuedRecorder, queued := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"after binding change"}`)
-	if queuedRecorder.Code != http.StatusOK || queued.Run.ID != first.Run.ID || len(queued.Run.PendingMessages) != 1 || !queued.Run.ReplacementPending {
+	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
+	if queuedRecorder.Code != http.StatusOK || queued.Run.ID != first.Run.ID || len(queued.Run.PendingMessages) != 0 || !queued.Run.ReplacementPending ||
+		mailboxErr != nil || len(mailbox.Messages) != 2 || mailbox.Messages[1].Status != resourceMessageQueued ||
+		mailbox.Messages[1].DowngradeReason != resourceMessageReasonGenerationReplacing {
 		t.Fatalf("message crossed the replacement boundary early: code=%d run=%#v", queuedRecorder.Code, queued.Run)
 	}
+	replacementMessageID := mailbox.Messages[1].ID
 	fake.mu.Lock()
 	oldSession := fake.sessions[first.Run.AgentHubSessionID]
 	oldSession.State = "ready"
@@ -930,21 +913,17 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T
 
 	deadline := time.Now().Add(3 * time.Second)
 	var runs []agentRun
+	var replacementMessage resourceMailboxMessage
+	var found bool
+	var messageErr error
 	for time.Now().Before(deadline) {
 		runs, err = loadAgentRuns(workspace.Path)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(runs) >= 2 && runs[0].Generation == 2 && len(runs[0].PendingMessages) == 0 {
-			transferred := true
-			for _, candidate := range runs {
-				if candidate.Generation == 1 && len(candidate.PendingMessages) != 0 {
-					transferred = false
-				}
-			}
-			if transferred {
-				break
-			}
+		replacementMessage, found, messageErr = mailboxMessageByID(workspace.Path, replacementMessageID)
+		if messageErr == nil && found && replacementMessage.Status == resourceMessageDelivered && len(runs) >= 2 && runs[0].Generation == 2 {
+			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -952,23 +931,19 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T
 		t.Fatalf("replacement generation mismatch: %#v", runs)
 	}
 	if len(runs[1].PendingMessages) != 0 || runs[1].Status != "stopped" {
-		t.Fatalf("old generation retained transferred work: %#v", runs[1])
+		t.Fatalf("old generation retained mailbox work: %#v", runs[1])
 	}
-	replacementID := ""
-	for _, run := range runs {
-		if run.Generation == 2 {
-			replacementID = run.ID
-		}
+	if replacementMessage.ActualMode != resourceMessageModeEnqueue ||
+		replacementMessage.DowngradeReason != resourceMessageReasonGenerationReplacing {
+		t.Fatalf("replacement downgrade decision drifted: %#v", replacementMessage)
 	}
 	late := sendRuntimeAgentInput(t, manager, workspace, first.Run.ID, `{"text":"late old-run input"}`)
-	var lateResult struct {
-		RunID string `json:"runId"`
-	}
+	var lateResult resourceMessageResponse
 	if err := json.Unmarshal(late.Body.Bytes(), &lateResult); err != nil {
 		t.Fatal(err)
 	}
-	if late.Code != http.StatusOK || lateResult.RunID != replacementID {
-		t.Fatalf("late old-generation input was not redirected to %s (runs=%#v): %d %s", replacementID, runs, late.Code, late.Body.String())
+	if late.Code != http.StatusOK || lateResult.ResourceID != "project1.task1" || lateResult.Status != "accepted" {
+		t.Fatalf("late old-generation input was not redirected to the resource mailbox (runs=%#v): %d %s", runs, late.Code, late.Body.String())
 	}
 	redirected, err := loadAgentRuns(workspace.Path)
 	newPending, oldPending := -1, -1
@@ -979,7 +954,8 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T
 			oldPending = len(run.PendingMessages)
 		}
 	}
-	if err != nil || len(redirected) < 2 || newPending != 1 || oldPending != 0 {
+	mailbox, mailboxErr = loadResourceMailbox(workspace.Path)
+	if err != nil || mailboxErr != nil || len(redirected) < 2 || newPending != 0 || oldPending != 0 || len(mailbox.Messages) != 3 || mailbox.Messages[2].Status != resourceMessageQueued {
 		t.Fatalf("redirected queue mismatch: runs=%#v err=%v", redirected, err)
 	}
 	fake.mu.Lock()

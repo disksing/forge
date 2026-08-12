@@ -1065,6 +1065,10 @@ func saveAgentRun(workspacePath string, run agentRun) error {
 
 func sortAgentRunsNewestFirst(runs []agentRun) {
 	sort.SliceStable(runs, func(i, j int) bool {
+		if normalizedResourceID(runs[i].ResourceID) == normalizedResourceID(runs[j].ResourceID) &&
+			runs[i].Generation > 0 && runs[j].Generation > 0 && runs[i].Generation != runs[j].Generation {
+			return runs[i].Generation > runs[j].Generation
+		}
 		left := agentRunRecency(runs[i])
 		right := agentRunRecency(runs[j])
 		if !left.Equal(right) {

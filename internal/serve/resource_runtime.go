@@ -4,10 +4,8 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"strings"
 	"time"
 
@@ -198,14 +196,32 @@ func newResourceMessage(text, userName string) resourceInboundMessage {
 }
 
 func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) error {
-	_, err := rt.mutateRun(func(run *agentRun) {
-		for _, pending := range run.PendingMessages {
-			if pending.ID == message.ID {
-				return
+	if err := migrateLegacyResourceMailbox(rt.workspace.Path); err != nil {
+		return err
+	}
+	run := rt.snapshotRun()
+	_, err := mutateResourceMailbox(rt.workspace.Path, func(mailbox *resourceMailbox) error {
+		for _, existing := range mailbox.Messages {
+			if existing.ID == message.ID {
+				return nil
 			}
 		}
-		run.PendingMessages = append(run.PendingMessages, message)
-		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		mailbox.NextSequence++
+		actual := resourceMessageModeSteer
+		if message.Steer != nil && !*message.Steer {
+			actual = resourceMessageModeEnqueue
+		}
+		acceptedAt := strings.TrimSpace(message.AcceptedAt)
+		if acceptedAt == "" {
+			acceptedAt = time.Now().Format(time.RFC3339Nano)
+		}
+		mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+			ID: message.ID, Sequence: mailbox.NextSequence, ResourceID: normalizedResourceID(run.ResourceID),
+			Text: message.Text, Role: message.Role, Sender: message.Sender,
+			RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: message.Steer != nil, Status: resourceMessageQueued,
+			AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
+		})
+		return nil
 	})
 	return err
 }
@@ -214,153 +230,15 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 // AgentHub's at-least-once capability makes an unknown response safe: Forge
 // retains the same stable ID until AgentHub durably accepts retry ownership.
 func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *agentManager) error {
-	rt.turnActionMu.Lock()
-	defer rt.turnActionMu.Unlock()
-	for {
-		rt.mu.Lock()
-		if len(rt.run.PendingMessages) == 0 {
-			rt.mu.Unlock()
-			return nil
-		}
-		run, client, state := rt.run, rt.agentHub, rt.agentHubState
-		message := run.PendingMessages[0]
-		rt.mu.Unlock()
-		if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
-			return errors.New("resource generation is not attached to AgentHub")
-		}
-		if run.ReplacementPending {
-			return nil
-		}
-		if state == "starting" || state == "stopping" || state == "stopped" || state == "archived" {
-			return nil
-		}
-		steer := false
-		if message.Steer != nil {
-			steer = *message.Steer
-		} else {
-			steer = state == "running" || state == "waiting_approval"
-			if steer {
-				session, err := client.GetSession(ctx, run.AgentHubSessionID)
-				if err != nil {
-					return err
-				}
-				if !session.InputCapabilities.Steer {
-					return nil
-				}
-			}
-			// Freeze the routing decision before the request. AgentHub includes
-			// steer in the canonical input identified by MessageID, so a retry
-			// after an unknown response must reuse the original value even when
-			// the accepted message has since changed the Session to running.
-			updated, err := rt.mutateRun(func(run *agentRun) {
-				if len(run.PendingMessages) == 0 || run.PendingMessages[0].ID != message.ID || run.PendingMessages[0].Steer != nil {
-					return
-				}
-				selected := steer
-				run.PendingMessages[0].Steer = &selected
-				run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-			})
-			if err != nil {
-				return fmt.Errorf("persist queued message delivery mode: %w", err)
-			}
-			if len(updated.PendingMessages) == 0 || updated.PendingMessages[0].ID != message.ID || updated.PendingMessages[0].Steer == nil {
-				return errors.New("queued message changed while selecting its delivery mode")
-			}
-			message = updated.PendingMessages[0]
-			steer = *message.Steer
-		}
-		session, err := client.Message(ctx, run.AgentHubSessionID, agentHubInboundMessage{
-			Text: message.Text, Role: message.Role, Sender: message.Sender,
-			Steer: steer, MessageID: message.ID,
-		})
-		if err != nil {
-			repaired, repairErr := rt.repairLegacyQueuedMessageSteer(ctx, client, run.AgentHubSessionID, message, err)
-			if repairErr != nil {
-				return repairErr
-			}
-			if repaired {
-				continue
-			}
-			return err
-		}
-		updated, err := rt.mutateRun(func(run *agentRun) {
-			if len(run.PendingMessages) > 0 && run.PendingMessages[0].ID == message.ID {
-				run.PendingMessages = append([]resourceInboundMessage(nil), run.PendingMessages[1:]...)
-			}
-			run.Status = forgeStatusForAgentHubState(session.State)
-			run.AgentHubSessionID = session.ID
-			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-		})
-		if err != nil {
-			return err
-		}
-		rt.mu.Lock()
-		rt.agentHubState = session.State
-		rt.run = updated
-		rt.mu.Unlock()
-	}
-}
-
-// repairLegacyQueuedMessageSteer migrates pending messages written before
-// Forge persisted their first-delivery routing decision. Those records can
-// already have a canonical AgentHub input with steer=false while a restart
-// observes the resulting running Session and retries with steer=true. On the
-// exact idempotency-conflict response, recover the original value from the
-// durable event log only when every other canonical field still matches.
-func (rt *agentRuntime) repairLegacyQueuedMessageSteer(ctx context.Context, client *agentHubClient, sessionID string, message resourceInboundMessage, deliveryErr error) (bool, error) {
-	var apiErr *agentHubAPIError
-	if !errors.As(deliveryErr, &apiErr) || apiErr.StatusCode != 409 ||
-		apiErr.Code != "runtime_operation_failed" || !strings.Contains(apiErr.Message, "message id conflicts with an existing input") {
-		return false, nil
-	}
-	cursor := int64(0)
-	for {
-		events, latest, err := client.SessionEvents(ctx, sessionID, cursor, agentHubEventMaxCount)
-		if err != nil {
-			return false, fmt.Errorf("recover canonical queued message after id conflict: %w", err)
-		}
-		for _, event := range events {
-			if event.Type != "message.input" {
-				continue
-			}
-			var canonical agentHubInboundMessage
-			if json.Unmarshal(event.Data, &canonical) != nil || canonical.MessageID != message.ID {
-				continue
-			}
-			if canonical.Role == "" {
-				canonical.Role = "user"
-			}
-			if canonical.Text != message.Text || canonical.Role != message.Role || !reflect.DeepEqual(canonical.Sender, message.Sender) {
-				return false, nil
-			}
-			if message.Steer != nil && *message.Steer == canonical.Steer {
-				return false, nil
-			}
-			updated, err := rt.mutateRun(func(run *agentRun) {
-				if len(run.PendingMessages) == 0 || run.PendingMessages[0].ID != message.ID {
-					return
-				}
-				steer := canonical.Steer
-				run.PendingMessages[0].Steer = &steer
-				run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
-			})
-			if err != nil {
-				return false, fmt.Errorf("persist recovered queued message delivery mode: %w", err)
-			}
-			return len(updated.PendingMessages) > 0 && updated.PendingMessages[0].ID == message.ID &&
-				updated.PendingMessages[0].Steer != nil && *updated.PendingMessages[0].Steer == canonical.Steer, nil
-		}
-		if len(events) == 0 || events[len(events)-1].ID <= cursor || events[len(events)-1].ID >= latest {
-			return false, nil
-		}
-		cursor = events[len(events)-1].ID
-	}
+	m.resourceMu.Lock()
+	defer m.resourceMu.Unlock()
+	return m.reconcileResourceMailboxLocked(ctx, rt.workspace, rt.snapshotRun().ResourceID)
 }
 
 // createResourceGeneration creates one durable generation while resourceMu is
-// held by the caller. Pending inputs already carry their stable message IDs,
-// so a replacement can transfer them without changing retry identity.
-func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, title, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent, pending []resourceInboundMessage, deliverPending bool) (agentRun, error) {
+// held by the caller. Pending inputs remain owned by the Workspace mailbox;
+// generation creation never transfers or rewrites them.
+func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, title, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
 		return agentRun{}, err
@@ -384,7 +262,6 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		Status:            "starting",
 		CreatedAt:         now,
 		UpdatedAt:         now,
-		PendingMessages:   append([]resourceInboundMessage(nil), pending...),
 	}
 	if run.Title == "" {
 		run.Title = resolved.AgentName + " resource generation"
@@ -448,11 +325,6 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		return rt.snapshotRun(), err
 	}
 	rt.applyAgentHubSessionState(m, session)
-	if deliverPending {
-		if err := rt.deliverPendingResourceMessages(ctx, m); err != nil {
-			rt.addForgeNotice(m, "warning", "resource/message", "Message is durable and queued for retry: "+err.Error())
-		}
-	}
 	return rt.snapshotRun(), nil
 }
 
@@ -647,7 +519,12 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		rt.setRecoveryError(m, fmt.Errorf("persist retired generation: %w", err))
 		return
 	}
-	if len(updated.PendingMessages) == 0 {
+	pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, updated.ResourceID)
+	if pendingErr != nil {
+		rt.addForgeNotice(m, "warning", "resource/replacement", "Inspect Workspace mailbox: "+pendingErr.Error())
+		return
+	}
+	if !pending {
 		return
 	}
 	cfg, replacementClient, err := m.agentHubRuntimeConfig()
@@ -663,76 +540,18 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())
 		return
 	}
-	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Title, updated.Cwd, cfg, replacementClient, resolved, nil, false)
+	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Title, updated.Cwd, cfg, replacementClient, resolved)
 	if err != nil {
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement generation failed: "+err.Error())
 		return
 	}
 	replacementRuntime := m.runtimeByID(replacement.ID)
 	if replacementRuntime == nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement runtime disappeared before mailbox transfer")
+		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement runtime disappeared before mailbox delivery")
 		return
 	}
-	if err := transferGenerationMailbox(rt, replacementRuntime); err != nil {
-		rt.addForgeNotice(m, "warning", "resource/replacement", "Replacement started but atomic mailbox transfer will be retried: "+err.Error())
-		return
-	}
-	if err := replacementRuntime.deliverPendingResourceMessages(ctx, m); err != nil {
-		replacementRuntime.addForgeNotice(m, "warning", "resource/message", "Transferred message is durable and queued for retry: "+err.Error())
+	if err := m.reconcileResourceMailboxLocked(ctx, rt.workspace, updated.ResourceID); err != nil {
+		replacementRuntime.addForgeNotice(m, "warning", "resource/message", "Workspace mailbox delivery remains queued: "+err.Error())
 	}
 	rt.addForgeNotice(m, "info", "resource/replacement", "Started replacement resource generation "+replacement.GenerationID)
-}
-
-// transferGenerationMailbox publishes the old-empty/new-populated mailbox in
-// one atomic generations.json replacement. A crash can observe either side of
-// the transfer, never a state where accepted inputs exist in neither run.
-func transferGenerationMailbox(from, to *agentRuntime) error {
-	fromID, toID := from.snapshotRun().ID, to.snapshotRun().ID
-	first, second := from, to
-	if fromID > toID {
-		first, second = second, first
-	}
-	first.mu.Lock()
-	second.mu.Lock()
-	defer second.mu.Unlock()
-	defer first.mu.Unlock()
-
-	agentIndexMu.Lock()
-	defer agentIndexMu.Unlock()
-	runs, err := loadAgentRunsLocked(from.workspace.Path)
-	if err != nil {
-		return err
-	}
-	fromIndex, toIndex := -1, -1
-	for index := range runs {
-		switch runs[index].ID {
-		case fromID:
-			fromIndex = index
-		case toID:
-			toIndex = index
-		}
-	}
-	if fromIndex < 0 || toIndex < 0 {
-		return errors.New("generation disappeared during mailbox transfer")
-	}
-	pending := append([]resourceInboundMessage(nil), runs[fromIndex].PendingMessages...)
-	seen := make(map[string]bool, len(pending)+len(runs[toIndex].PendingMessages))
-	for _, message := range runs[toIndex].PendingMessages {
-		seen[message.ID] = true
-	}
-	for _, message := range pending {
-		if !seen[message.ID] {
-			runs[toIndex].PendingMessages = append(runs[toIndex].PendingMessages, message)
-			seen[message.ID] = true
-		}
-	}
-	runs[fromIndex].PendingMessages = nil
-	runs[fromIndex].UpdatedAt = time.Now().Format(time.RFC3339Nano)
-	runs[toIndex].UpdatedAt = runs[fromIndex].UpdatedAt
-	if err := writeAgentRunsIndexLocked(from.workspace.Path, runs); err != nil {
-		return err
-	}
-	from.run = cloneAgentRun(runs[fromIndex])
-	to.run = cloneAgentRun(runs[toIndex])
-	return nil
 }

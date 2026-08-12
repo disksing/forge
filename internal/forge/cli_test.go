@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,6 +48,63 @@ func TestVersion(t *testing.T) {
 	if out != "forge branch=task-branch sha=abc123\n" {
 		t.Fatalf("unexpected version output: %q", out)
 	}
+}
+
+func TestResourceCommandsUseOwningServerAndAgentProvenance(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Mailbox project")
+		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "task", "create", "Mailbox task")
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+			t.Fatal(err)
+		}
+		var requestBody map[string]any
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/agent"):
+				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+					t.Error(err)
+				}
+				_, _ = io.WriteString(w, `{"messageId":"msg-test","resourceId":"project1.task1","requestedMode":"interrupt","actualMode":"interrupt","status":"delivered","reference":"messages/msg-test"}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/agent"):
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","exists":true,"acceptsMessages":true}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/messages/msg-test"):
+				_, _ = io.WriteString(w, `{"messageId":"msg-test","status":"delivered"}`)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+		lock := map[string]any{"pid": os.Getpid(), "address": server.URL, "workspacePath": root}
+		data, err := json.Marshal(lock)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, ".forge", "serve.lock"), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		sent := run(t, "resource", "send", "--id=project1.task1", "--mode=interrupt", "coordinate now")
+		if !strings.Contains(sent, `"messageId": "msg-test"`) {
+			t.Fatalf("unexpected send response: %s", sent)
+		}
+		if requestBody["text"] != "coordinate now" || requestBody["mode"] != "interrupt" || requestBody["role"] != "agent" {
+			t.Fatalf("unexpected resource message request: %#v", requestBody)
+		}
+		sender, _ := requestBody["sender"].(map[string]any)
+		if sender["id"] != "project1.task1" || sender["name"] != "project1.task1" {
+			t.Fatalf("sender provenance did not use current resource: %#v", sender)
+		}
+		if status := run(t, "resource", "status"); !strings.Contains(status, `"acceptsMessages": true`) {
+			t.Fatalf("unexpected inferred status response: %s", status)
+		}
+		if message := run(t, "resource", "message", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
+			t.Fatalf("unexpected message response: %s", message)
+		}
+	})
 }
 
 func TestRemovedStartAndServeSubcommands(t *testing.T) {

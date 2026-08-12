@@ -74,6 +74,12 @@ func runResource(args []string) error {
 		return errors.New("resource requires a subcommand")
 	}
 	switch args[0] {
+	case "status":
+		return runResourceStatus(args[1:])
+	case "send":
+		return runResourceSend(args[1:])
+	case "message":
+		return runResourceMessage(args[1:])
 	case "archive":
 		if len(args) != 2 || !strings.HasPrefix(args[1], "--id=") {
 			return errors.New("usage: forge resource archive --id=<resource>")
@@ -290,6 +296,9 @@ Usage:
   forge template create [--project=<project>] [--title=<title>] <name>
   forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
 
+  forge resource status [--id=<resource>] [--server=<url>]
+  forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+  forge resource message --id=<message-id> [--server=<url>]
   forge resource archive --id=<resource>
 
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
@@ -413,6 +422,23 @@ Commands:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
+
+  forge resource status [--id=<resource>] [--server=<url>]
+    Query the owning forge serve process for a Workspace, Project, or Task
+    Agent's binding, generation, Session/Turn state, steer capability, mailbox
+    counts, and recent delivery error. The current resource is inferred when
+    --id is omitted.
+
+  forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+    Persist a message in the target resource mailbox through the owning
+    forge serve process. steer is the default. The current directory's stable
+    resource id is sent as role=agent provenance; provenance is not
+    authentication or instruction priority.
+
+  forge resource message --id=<message-id> [--server=<url>]
+    Query the current delivery record for a stable mailbox message id.
+    Resource commands discover the owner from <workspace>/.forge/serve.lock;
+    --server explicitly overrides its diagnostic address.
 
   forge session list
     List the transient AgentHub Session projections managed by forge serve.

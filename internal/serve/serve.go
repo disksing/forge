@@ -395,6 +395,10 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, tree)
 	case "resources":
+		if len(parts) == 4 && parts[3] == "agent" {
+			s.agents.handleResourceAgent(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "agent-binding" {
 			if r.Method != http.MethodPut {
 				w.WriteHeader(http.StatusMethodNotAllowed)
@@ -422,6 +426,12 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, detail)
+	case "messages":
+		if len(parts) != 3 || parts[2] == "" {
+			writeError(w, &resourceAPIError{Code: "invalid_request", Message: "message id is required"}, http.StatusBadRequest)
+			return
+		}
+		s.agents.handleResourceMessage(w, r, id, parts[2])
 	case "files":
 		if len(parts) == 3 && parts[2] == "raw" {
 			if r.Method != http.MethodGet {
@@ -849,6 +859,10 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 	result, err := forgeWorkspace.ArchiveResource(resourceID)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := markResourceMailboxArchived(workspace.Path, resourceID); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	// Keep the existing HTTP response contract while the application layer
@@ -1287,6 +1301,9 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
 		}); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
+		}
+		if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
+			return fmt.Errorf("migrate Workspace %s resource mailbox: %w", workspace.ID, err)
 		}
 	}
 	return nil
@@ -1841,6 +1858,10 @@ func writeError(w http.ResponseWriter, err error, status int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	payload := map[string]any{"error": err.Error()}
+	var resourceErr *resourceAPIError
+	if errors.As(err, &resourceErr) {
+		payload["code"] = resourceErr.Code
+	}
 	var validation *app.TemplateValidationError
 	if errors.As(err, &validation) {
 		payload["code"] = "template_validation"

@@ -7414,7 +7414,7 @@ function Xl(e) {
 				return i.workspaceId !== e.workspaceId() || i.resourceId !== (e.selectedResource()?.id || "workspace") ? {
 					accepted: !0,
 					clear: !1
-				} : (e.resetDraft(), e.setActiveRun(a.run.id), await n(), e.publish(), {
+				} : (e.resetDraft(), a.run?.id && e.setActiveRun(a.run.id), await n(), e.publish(), a.run?.id || e.toast(a.lastError ? `Message accepted and queued: ${a.lastError}` : "Message accepted and queued until the resource Agent is available."), {
 					accepted: !0,
 					clear: !0
 				});

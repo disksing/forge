@@ -103,7 +103,21 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge persists resource generation metadata and its minimal inbound retry queue under `<workspace>/.forge/runtime/` through one atomic serialization boundary. One logical resource conversation may span multiple immutable AgentHub Sessions; stable Workspace instance, resource, generation, binding, and Profile-revision identifiers are carried in AgentHub source metadata. Messages have durable IDs and AgentHub assumes durable at-least-once delivery responsibility before Forge dequeues them. When an active Provider cannot steer, Forge retains the message until a safe ready boundary. The periodic desired-state reconciler also converges Profile changes and every generation of archived Tasks or Projects through Stop, confirmed `stopped`, and Archive. `forge session list` and `forge session show` are read-only local diagnostics and never contact AgentHub.
+Forge persists generation projections in `<workspace>/.forge/runtime/generations.json` and a Workspace-wide, resource-owned mailbox in `<workspace>/.forge/runtime/mailbox.json`. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Session/Turn association. Upgrading migrates stage-one `pendingMessages` by writing the mailbox first, deduplicating by stable ID, and only then clearing legacy generation queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
+
+Resource messages use `steer` (default), `enqueue`, or `interrupt`. A supported active Turn receives steer immediately; an unsupported steer is durably downgraded to enqueue. Enqueue waits for a ready boundary. Interrupt first persists its mailbox item, records the exact active Turn, interrupts only that Turn, waits for terminal state, and then opens a new Turn. Already-delivering messages resolve first; otherwise interrupt outranks steer, and steer outranks queued enqueue, with acceptance order preserved inside each class. A live steer or interrupt may therefore bypass older enqueue work. Generation replacement never moves mailbox ownership: delivered steer remains with the old Turn, enqueue waits for the new generation, and interrupt terminates the old Turn before replacement delivery. The periodic reconciler recovers all modes after Server or AgentHub failures. Archived resources reject new messages: items not yet sent become `undeliverable`, while an already-attempted item whose AgentHub outcome cannot be confirmed becomes `delivery_unknown`; both remain queryable by message ID.
+
+Agents can address resources without run or Session IDs:
+
+```bash
+forge resource status --id=project1.task2
+forge resource send --id=project1.task2 "Please review the current API design."
+forge resource send --id=project1.task2 --mode=enqueue "Handle this in a new Turn."
+forge resource send --id=project1.task2 --mode=interrupt "Stop the current approach and investigate this instead."
+forge resource message --id=msg-run-0123456789abcdef
+```
+
+These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. They never write `mailbox.json` directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` remain read-only local diagnostics and never contact AgentHub.
 
 Useful overrides:
 
@@ -253,6 +267,9 @@ forge project log add|list ...
 
 forge template list|show|validate|render|create|migrate ...
 
+forge resource status [--id=<resource>] [--server=<url>]
+forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+forge resource message --id=<message-id> [--server=<url>]
 forge resource archive --id=<resource>
 
 forge task create [<title>] [--project=<project>] [--slug <slug>]

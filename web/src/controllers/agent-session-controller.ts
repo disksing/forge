@@ -228,7 +228,7 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 			if (!operations.startSending(sendingKey)) return { accepted: false, clear: false };
 			try {
 				const selected = dependencies.selectedResource();
-				const response = await dependencies.request<{ run: AgentRunRecord }>(`/api/workspaces/${context.workspaceId}/agent/runs`, {
+				const response = await dependencies.request<{ run?: AgentRunRecord; status?: string; messageId?: string; lastError?: string }>(`/api/workspaces/${context.workspaceId}/agent/runs`, {
 					method: "POST",
 					body: JSON.stringify({
 						userName: dependencies.userName(),
@@ -240,9 +240,10 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 				});
 				if (context.workspaceId !== dependencies.workspaceId() || context.resourceId !== (dependencies.selectedResource()?.id || "workspace")) return { accepted: true, clear: false };
 				dependencies.resetDraft();
-				dependencies.setActiveRun(response.run.id);
+				if (response.run?.id) dependencies.setActiveRun(response.run.id);
 				await refreshSessionProjection();
 				dependencies.publish();
+				if (!response.run?.id) dependencies.toast(response.lastError ? `Message accepted and queued: ${response.lastError}` : "Message accepted and queued until the resource Agent is available.");
 				return { accepted: true, clear: true };
 			} finally {
 				operations.stopSending(sendingKey);
