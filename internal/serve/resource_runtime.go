@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -232,21 +234,53 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 		if state == "starting" || state == "stopping" || state == "stopped" || state == "archived" {
 			return nil
 		}
-		steer := state == "running" || state == "waiting_approval"
-		if steer {
-			session, err := client.GetSession(ctx, run.AgentHubSessionID)
+		steer := false
+		if message.Steer != nil {
+			steer = *message.Steer
+		} else {
+			steer = state == "running" || state == "waiting_approval"
+			if steer {
+				session, err := client.GetSession(ctx, run.AgentHubSessionID)
+				if err != nil {
+					return err
+				}
+				if !session.InputCapabilities.Steer {
+					return nil
+				}
+			}
+			// Freeze the routing decision before the request. AgentHub includes
+			// steer in the canonical input identified by MessageID, so a retry
+			// after an unknown response must reuse the original value even when
+			// the accepted message has since changed the Session to running.
+			updated, err := rt.mutateRun(func(run *agentRun) {
+				if len(run.PendingMessages) == 0 || run.PendingMessages[0].ID != message.ID || run.PendingMessages[0].Steer != nil {
+					return
+				}
+				selected := steer
+				run.PendingMessages[0].Steer = &selected
+				run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+			})
 			if err != nil {
-				return err
+				return fmt.Errorf("persist queued message delivery mode: %w", err)
 			}
-			if !session.InputCapabilities.Steer {
-				return nil
+			if len(updated.PendingMessages) == 0 || updated.PendingMessages[0].ID != message.ID || updated.PendingMessages[0].Steer == nil {
+				return errors.New("queued message changed while selecting its delivery mode")
 			}
+			message = updated.PendingMessages[0]
+			steer = *message.Steer
 		}
 		session, err := client.Message(ctx, run.AgentHubSessionID, agentHubInboundMessage{
 			Text: message.Text, Role: message.Role, Sender: message.Sender,
 			Steer: steer, MessageID: message.ID,
 		})
 		if err != nil {
+			repaired, repairErr := rt.repairLegacyQueuedMessageSteer(ctx, client, run.AgentHubSessionID, message, err)
+			if repairErr != nil {
+				return repairErr
+			}
+			if repaired {
+				continue
+			}
 			return err
 		}
 		updated, err := rt.mutateRun(func(run *agentRun) {
@@ -264,6 +298,62 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 		rt.agentHubState = session.State
 		rt.run = updated
 		rt.mu.Unlock()
+	}
+}
+
+// repairLegacyQueuedMessageSteer migrates pending messages written before
+// Forge persisted their first-delivery routing decision. Those records can
+// already have a canonical AgentHub input with steer=false while a restart
+// observes the resulting running Session and retries with steer=true. On the
+// exact idempotency-conflict response, recover the original value from the
+// durable event log only when every other canonical field still matches.
+func (rt *agentRuntime) repairLegacyQueuedMessageSteer(ctx context.Context, client *agentHubClient, sessionID string, message resourceInboundMessage, deliveryErr error) (bool, error) {
+	var apiErr *agentHubAPIError
+	if !errors.As(deliveryErr, &apiErr) || apiErr.StatusCode != 409 ||
+		apiErr.Code != "runtime_operation_failed" || !strings.Contains(apiErr.Message, "message id conflicts with an existing input") {
+		return false, nil
+	}
+	cursor := int64(0)
+	for {
+		events, latest, err := client.SessionEvents(ctx, sessionID, cursor, agentHubEventMaxCount)
+		if err != nil {
+			return false, fmt.Errorf("recover canonical queued message after id conflict: %w", err)
+		}
+		for _, event := range events {
+			if event.Type != "message.input" {
+				continue
+			}
+			var canonical agentHubInboundMessage
+			if json.Unmarshal(event.Data, &canonical) != nil || canonical.MessageID != message.ID {
+				continue
+			}
+			if canonical.Role == "" {
+				canonical.Role = "user"
+			}
+			if canonical.Text != message.Text || canonical.Role != message.Role || !reflect.DeepEqual(canonical.Sender, message.Sender) {
+				return false, nil
+			}
+			if message.Steer != nil && *message.Steer == canonical.Steer {
+				return false, nil
+			}
+			updated, err := rt.mutateRun(func(run *agentRun) {
+				if len(run.PendingMessages) == 0 || run.PendingMessages[0].ID != message.ID {
+					return
+				}
+				steer := canonical.Steer
+				run.PendingMessages[0].Steer = &steer
+				run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+			})
+			if err != nil {
+				return false, fmt.Errorf("persist recovered queued message delivery mode: %w", err)
+			}
+			return len(updated.PendingMessages) > 0 && updated.PendingMessages[0].ID == message.ID &&
+				updated.PendingMessages[0].Steer != nil && *updated.PendingMessages[0].Steer == canonical.Steer, nil
+		}
+		if len(events) == 0 || events[len(events)-1].ID <= cursor || events[len(events)-1].ID >= latest {
+			return false, nil
+		}
+		cursor = events[len(events)-1].ID
 	}
 }
 

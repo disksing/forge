@@ -23,7 +23,7 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 每个 Workspace、Project、Task 都持久化显式 `{kind: profile|agent, name}` 绑定，不做父级继承。资源聊天在首条消息到达时懒创建代际；Forge 使用 Workspace 稳定 instance ID、资源 ID、代际编号/ID、绑定与 Profile revision 组成 AgentHub source metadata，并用代际 ID 幂等建会。浏览器输入携带稳定 `messageId`、provenance `role=user` 和当前用户名；这些来源字段不参与认证或授权。
 
-资源代际与最小入站重试队列保存在 `<workspace>/.forge/runtime/generations.json`，所有字段和 mailbox 都通过同一个原子串行更新边界保存。Provider 支持 steer 时活动 Turn 输入可立即投递；不支持时消息保持排队，等到 ready 边界或服务重启恢复后再投递。绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后旧 Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。
+资源代际与最小入站重试队列保存在 `<workspace>/.forge/runtime/generations.json`，所有字段和 mailbox 都通过同一个原子串行更新边界保存。每条消息首次请求前会把 `steer` 选择随稳定 message ID 一起落盘，响应丢失或重启后的重试不会因 Session 状态变化而改写规范输入；旧队列缺少该字段且已被 AgentHub 接受时，可从持久 `message.input` Event 恢复原值。Provider 支持 steer 时活动 Turn 输入可立即投递；不支持时消息保持排队，等到 ready 边界或服务重启恢复后再投递。绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后旧 Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。
 
 Forge 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新本地 run 投影、Profile 解析和全部资源 generation。Task 或 Project 归档会收敛其所有 generation；活动 Turn 默认拒绝 GUI 归档，外部归档也会等待 Turn 自然结束，随后执行 Stop、确认 `stopped`、Archive。未知 Stop/Archive 响应、服务重启和中间状态均由重复 reconcile 恢复。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才删除对应的瞬态 Forge Session 投影。
 
