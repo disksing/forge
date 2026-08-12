@@ -18,9 +18,9 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 Forge separates concerns deliberately:
 
 ```text
-forge CLI ────────────────────┐
+forge CLI ───── internal/app ─┐
                               ├── AgentWorkspace files (source of truth)
-forge serve ── internal/app ──┤
+forge serve ─── internal/app ─┤
   (Web UI)  ├── AgentHub client │
             └── Git diff viewer ┘
 

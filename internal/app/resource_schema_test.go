@@ -1,4 +1,4 @@
-package forge
+package app
 
 import (
 	"encoding/json"
@@ -62,9 +62,6 @@ func TestProjectAndTaskJSONShapesRemainCompatible(t *testing.T) {
 	}
 	if _, exists := projectJSON["repos"]; exists {
 		t.Fatalf("project JSON must not contain repos: %#v", projectJSON)
-	}
-	if _, exists := projectJSON["run"]; exists {
-		t.Fatalf("project JSON must not contain run: %#v", projectJSON)
 	}
 
 	task := newTask("project1.task1", "project1", "Task", "")

@@ -1,7 +1,6 @@
 package app
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -25,11 +24,6 @@ const (
 	taskMDFile      = "task.md"
 )
 
-type taskListOptions struct {
-	ProjectID       string
-	IncludeArchived bool
-}
-
 type taskListEntry struct {
 	Task Task
 	Path string
@@ -38,112 +32,6 @@ type taskListEntry struct {
 type projectListEntry struct {
 	Project Project
 	Path    string
-}
-
-func projectCreate(description, slug string) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	description = strings.TrimSpace(description)
-	if description == "" {
-		return fmt.Errorf("description cannot be empty")
-	}
-	slug, err = normalizeResourceSlug(slug)
-	if err != nil {
-		return err
-	}
-	id, err := nextProjectID(root)
-	if err != nil {
-		return err
-	}
-	projectPath := filepath.Join(root, projectDirectoryName(id, slug))
-	project := newProject(id, titleFromDescription(description), description)
-	language, err := workspaceLanguage(root)
-	if err != nil {
-		return err
-	}
-	if err := createResourceFiles(projectPath, &project, language); err != nil {
-		return err
-	}
-	_ = project
-	return nil
-}
-
-func projectList(options taskListOptions) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	dirs := []string{root}
-	if options.IncludeArchived {
-		dirs = append(dirs, filepath.Join(root, archiveDir))
-	}
-	entries, err := readProjectEntriesInDirs(dirs)
-	if err != nil {
-		return err
-	}
-	_ = entries
-	return nil
-}
-
-func showResource(id string) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	resourcePath, err := findResourceDir(root, cleanID(id))
-	if err != nil {
-		return err
-	}
-	resource, err := readResourceAtDir(resourcePath)
-	if err != nil {
-		return err
-	}
-	_ = resource
-	return nil
-}
-
-func archiveResource(id string) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	id = cleanID(id)
-
-	src, task, err := loadOpenResource(root, id)
-	if err != nil {
-		return err
-	}
-	dst, err := resourceArchiveDestination(root, src, task)
-	if err != nil {
-		return err
-	}
-	if pathExists(dst) {
-		return fmt.Errorf("archive destination already exists: %s", relPath(root, dst))
-	}
-	if isProject(task) {
-		if err := ensureProjectTasksArchived(src, task.(*Project)); err != nil {
-			return err
-		}
-	}
-	if typed, ok := task.(*Task); ok {
-		if err := ensureTaskRepoWorktreesMerged(root, *typed); err != nil {
-			return err
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	if err := os.Rename(src, dst); err != nil {
-		return err
-	}
-	if typed, ok := task.(*Task); ok {
-		if err := rewriteArchivedTaskReferences(root, dst, *typed, relPath(root, src), relPath(root, dst)); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, newRel string) error {
@@ -565,14 +453,6 @@ func findResourceDir(root, id string) (string, error) {
 	return matches[0], nil
 }
 
-func inferCurrentProjectID() (string, bool, error) {
-	return "", false, errors.New("application API requires an explicit project or task")
-}
-
-func inferCurrentTaskID() (string, bool, error) {
-	return "", false, errors.New("application API requires an explicit task")
-}
-
 func isArchivedPath(root, path string) bool {
 	rel := relPath(root, path)
 	if rel == archiveDir || strings.HasPrefix(rel, archiveDir+"/") {
@@ -724,10 +604,6 @@ func titleFromDescription(description string) string {
 		return description
 	}
 	return string(runes[:77]) + "..."
-}
-
-func printTaskJSON(task Task) error {
-	return printJSON(task)
 }
 
 func defaultTaskMD(resource Resource, language string) string {

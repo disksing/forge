@@ -1,11 +1,8 @@
 package forge
 
 import (
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/disksing/forge/internal/app"
 )
@@ -15,11 +12,11 @@ import (
 // delegated to the explicit-root application API so CLI and serve share the
 // same typed implementation.
 func openApplicationWorkspace() (*app.Workspace, error) {
-	root, err := findWorkspaceRoot()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return nil, err
 	}
-	return app.OpenWorkspace(root)
+	return app.OpenWorkspaceFrom(cwd)
 }
 
 func applicationWorkspaceTreeJSON() error {
@@ -129,7 +126,7 @@ func applicationTaskList(options taskListOptions) error {
 		return err
 	}
 	for _, entry := range result.Tasks {
-		fmt.Printf("%s\t%s\n", taskDirectoryName(entry.Task.ID), entry.Task.Title)
+		fmt.Printf("%s\t%s\n", app.TaskShortID(entry.Task.ID), entry.Task.Title)
 	}
 	return nil
 }
@@ -260,7 +257,11 @@ func applicationTaskRepoList(taskID string) error {
 		return err
 	}
 	for _, repo := range entries {
-		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, taskRepoStoragePath(TaskRepo(repo)), repo.WorktreePath, repo.Branch, repo.TargetBranch)
+		storagePath := repo.RepoPath
+		if storagePath == "" {
+			storagePath = repo.BarePath
+		}
+		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, storagePath, repo.WorktreePath, repo.Branch, repo.TargetBranch)
 		if repo.BaseBranch != "" {
 			fmt.Printf("\t%s", repo.BaseBranch)
 		}
@@ -303,22 +304,4 @@ func applicationMigrate(language string) error {
 	}
 	fmt.Printf("migrated AgentWorkspace at %s\n", workspace.Root())
 	return nil
-}
-
-func applicationResourceIDForTask(projectID, taskID string) (string, error) {
-	projectID, err := normalizeProjectArg(projectID)
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(taskID) == "" {
-		return "", errors.New("task id is required")
-	}
-	return normalizeTaskArg(projectID, taskID)
-}
-
-func applicationAbsoluteOrWorkspaceRelative(root, value string) string {
-	if filepath.IsAbs(value) {
-		return filepath.Clean(value)
-	}
-	return filepath.Join(root, filepath.FromSlash(value))
 }

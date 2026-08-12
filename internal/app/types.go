@@ -6,12 +6,9 @@ import (
 )
 
 type Config struct {
-	Version      int          `json:"version"`
-	Language     string       `json:"language"`
-	AgentCommand AgentCommand `json:"agentCommand,omitempty"`
+	Version  int    `json:"version"`
+	Language string `json:"language"`
 }
-
-type AgentCommand []string
 
 type ResourceMeta struct {
 	SchemaVersion int    `json:"schemaVersion"`

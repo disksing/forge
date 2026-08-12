@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/disksing/forge/internal/app"
 	"github.com/disksing/forge/internal/buildinfo"
 	"github.com/disksing/forge/internal/serve"
 )
@@ -20,6 +21,11 @@ const (
 type createResourceOptions struct {
 	Slug        string
 	Description string
+}
+
+type taskListOptions struct {
+	ProjectID       string
+	IncludeArchived bool
 }
 
 func Run(args []string) error {
@@ -76,7 +82,7 @@ func runResource(args []string) error {
 		if id == "" {
 			return errors.New("resource id cannot be empty")
 		}
-		return archiveResource(id)
+		return applicationArchiveResource(id)
 	default:
 		return fmt.Errorf("unknown resource subcommand %q", args[0])
 	}
@@ -133,25 +139,25 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		return projectCreate(options.Description, options.Slug)
+		return applicationProjectCreate(options.Description, options.Slug)
 	case "list":
 		options, err := parseProjectListArgs(args[1:])
 		if err != nil {
 			return err
 		}
-		return projectList(options)
+		return applicationProjectList(options.IncludeArchived)
 	case "show":
 		projectID, err := resolveProjectArg(args[1:], "show")
 		if err != nil {
 			return err
 		}
-		return showResource(projectID)
+		return applicationShowResource(projectID)
 	case "archive":
 		projectID, err := resolveProjectArg(args[1:], "archive")
 		if err != nil {
 			return err
 		}
-		return archiveResource(projectID)
+		return applicationArchiveResource(projectID)
 	case "log":
 		return runResourceLog("project", args[1:])
 	case "repo":
@@ -211,19 +217,19 @@ func runTask(args []string) error {
 		if err != nil {
 			return err
 		}
-		return projectTaskList(options)
+		return applicationTaskList(options)
 	case "show":
 		taskID, err := resolveTaskArg(args[1:], "show")
 		if err != nil {
 			return err
 		}
-		return showResource(taskID)
+		return applicationShowResource(taskID)
 	case "archive":
 		taskID, err := resolveTaskArg(args[1:], "archive")
 		if err != nil {
 			return err
 		}
-		return archiveResource(taskID)
+		return applicationArchiveResource(taskID)
 	case "repo":
 		return runTaskRepo(args[1:])
 	case "log":
@@ -734,29 +740,7 @@ func parseProjectArg(args []string, command string) (string, error) {
 }
 
 func normalizeProjectArg(project string) (string, error) {
-	project = strings.TrimSpace(project)
-	if project == "" {
-		return "", nil
-	}
-	if topProjectName.MatchString(project) {
-		return project, nil
-	}
-	if isASCIIInteger(project) {
-		return "project" + project, nil
-	}
-	return "", fmt.Errorf("invalid project %q: use projectN or N", project)
-}
-
-func isASCIIInteger(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
-			return false
-		}
-	}
-	return true
+	return app.NormalizeProjectID(project)
 }
 
 func resolveTaskListArgs(args []string) (taskListOptions, error) {
@@ -857,12 +841,9 @@ func parseTaskArg(args []string, command string) (string, string, error) {
 }
 
 func normalizeTaskArg(projectID, task string) (string, error) {
-	task = strings.TrimSpace(task)
-	if task == "" {
-		return "", errors.New("task cannot be empty")
-	}
-	if strings.Contains(task, ".") {
-		return "", fmt.Errorf("invalid task %q: use taskM or M", task)
+	normalizedTask, err := app.NormalizeTaskName(task)
+	if err != nil {
+		return "", err
 	}
 	if projectID == "" {
 		inferred, ok, err := inferCurrentProjectID()
@@ -874,13 +855,7 @@ func normalizeTaskArg(projectID, task string) (string, error) {
 		}
 		projectID = inferred
 	}
-	if taskDirName.MatchString(task) {
-		return projectID + "." + task, nil
-	}
-	if isASCIIInteger(task) {
-		return projectID + ".task" + task, nil
-	}
-	return "", fmt.Errorf("invalid task %q: use taskM or M", task)
+	return app.NormalizeTaskID(projectID, normalizedTask)
 }
 
 func parseTaskListArgs(args []string) (string, bool, error) {

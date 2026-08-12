@@ -9,9 +9,27 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 	"unicode"
 
+	"github.com/disksing/forge/internal/app"
 	"github.com/disksing/forge/internal/buildinfo"
+)
+
+const (
+	testConfigFile       = "forge.json"
+	testReposDir         = "repos"
+	testArchiveDir       = "archive"
+	testWikiDir          = "wiki"
+	testProjectJSONFile  = "project.json"
+	testProjectMDFile    = "project.md"
+	testTaskMDFile       = "task.md"
+	testDefaultLanguage  = "en"
+	testChineseLanguage  = "zh-CN"
+	testDefaultWikiIndex = "# Workspace Wiki\n\n此索引是 workspace 长期知识的入口。随着 Wiki 内容增长，请在这里添加主题页面链接及简短摘要。\n"
+	defaultWikiIndex     = "# Workspace Wiki\n\nThis index is the entry point for long-lived workspace knowledge. Add links to topic pages with short summaries as the Wiki grows.\n"
+	forgePromptStart     = "<!-- managed by forge cli -->"
+	forgePromptEnd       = "<!-- end of forge cli prompt -->"
 )
 
 func TestVersion(t *testing.T) {
@@ -65,12 +83,12 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 func TestInitDefaultsToEnglishAndPersistsLanguage(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		var config Config
-		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.Language != defaultLanguage {
-			t.Fatalf("expected default language %q, got %+v", defaultLanguage, config)
+		if config.Language != testDefaultLanguage {
+			t.Fatalf("expected default language %q, got %+v", testDefaultLanguage, config)
 		}
 		if !strings.Contains(readFile(t, filepath.Join(root, "AGENTS.md")), "This directory is an AgentWorkspace managed by forge.") {
 			t.Fatal("default workspace prompt should remain English")
@@ -82,14 +100,14 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init", "--language", "zh-CN")
 
-		var config Config
-		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.Language != languageSimplifiedChinese {
+		if config.Language != testChineseLanguage {
 			t.Fatalf("expected zh-CN workspace config, got %+v", config)
 		}
-		if got := readFile(t, filepath.Join(root, wikiDir, "index.md")); got != defaultWikiIndexZH {
+		if got := readFile(t, filepath.Join(root, testWikiDir, "index.md")); got != testDefaultWikiIndex {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
@@ -99,7 +117,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 
 		run(t, "project", "create", "中文项目")
 		projectPath := filepath.Join(root, "project1")
-		projectMD := readFile(t, filepath.Join(projectPath, projectMDFile))
+		projectMD := readFile(t, filepath.Join(projectPath, testProjectMDFile))
 		if !strings.Contains(projectMD, "## 背景") || !strings.Contains(projectMD, "## 范围") || !strings.Contains(projectMD, "## 验收标准") {
 			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
 		}
@@ -107,7 +125,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
-		var projectLogs []LogEntry
+		var projectLogs []app.LogEntry
 		if err := json.Unmarshal([]byte(run(t, "project", "log", "list", "--project=project1", "--json")), &projectLogs); err != nil {
 			t.Fatal(err)
 		}
@@ -117,7 +135,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 
 		run(t, "task", "create", "--project=project1", "中文任务")
 		taskPath := filepath.Join(projectPath, "task1")
-		taskMDPath := filepath.Join(taskPath, taskMDFile)
+		taskMDPath := filepath.Join(taskPath, testTaskMDFile)
 		workMDPath := filepath.Join(taskPath, "work.md")
 		taskAgentsPath := filepath.Join(taskPath, "AGENTS.md")
 		if got := readFile(t, taskMDPath); !strings.Contains(got, "## 背景") || !strings.Contains(got, "长期有效的任务约定") {
@@ -129,7 +147,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
-		var taskLogs []LogEntry
+		var taskLogs []app.LogEntry
 		if err := json.Unmarshal([]byte(run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")), &taskLogs); err != nil {
 			t.Fatal(err)
 		}
@@ -143,10 +161,10 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 		run(t, "migrate", "--language=en")
-		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.Language != defaultLanguage {
+		if config.Language != testDefaultLanguage {
 			t.Fatalf("expected migration to persist English, got %+v", config)
 		}
 		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "This directory is an AgentWorkspace managed by forge.") || strings.Contains(got, "此目录是由 Forge 管理") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") {
@@ -163,7 +181,7 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		}
 
 		run(t, "task", "create", "--project=project1", "English task")
-		if got := readFile(t, filepath.Join(projectPath, "task2", taskMDFile)); !strings.Contains(got, "## Background") {
+		if got := readFile(t, filepath.Join(projectPath, "task2", testTaskMDFile)); !strings.Contains(got, "## Background") {
 			t.Fatalf("expected new task to use migrated language, got:\n%s", got)
 		}
 
@@ -263,14 +281,14 @@ func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 		if _, err := runErr(t, "init", "--language=fr"); err == nil || !strings.Contains(err.Error(), "unsupported language") {
 			t.Fatalf("expected unsupported init language error, got %v", err)
 		}
-		assertMissing(t, filepath.Join(root, configFile))
+		assertMissing(t, filepath.Join(root, testConfigFile))
 
 		run(t, "init", "--language=zh_CN")
-		var config Config
-		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.Language != languageSimplifiedChinese {
+		if config.Language != testChineseLanguage {
 			t.Fatalf("expected language alias to normalize to zh-CN, got %+v", config)
 		}
 		if _, err := runErr(t, "migrate", "--language"); err == nil || !strings.Contains(err.Error(), "--language requires a value") {
@@ -279,19 +297,19 @@ func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 	})
 
 	withTempCwd(t, func(root string) {
-		if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, testReposDir), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.MkdirAll(filepath.Join(root, archiveDir), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Join(root, testArchiveDir), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		writeFile(t, filepath.Join(root, configFile), `{"version":1}`+"\n")
+		writeFile(t, filepath.Join(root, testConfigFile), `{"version":1}`+"\n")
 		run(t, "migrate")
-		var config Config
-		if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
-		if config.Language != defaultLanguage {
+		if config.Language != testDefaultLanguage {
 			t.Fatalf("expected legacy workspace to migrate to explicit English, got %+v", config)
 		}
 	})
@@ -300,12 +318,12 @@ func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 func TestTaskLifecycle(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		assertDir(t, filepath.Join(root, reposDir))
-		assertDir(t, filepath.Join(root, archiveDir))
-		assertFile(t, filepath.Join(root, configFile))
+		assertDir(t, filepath.Join(root, testReposDir))
+		assertDir(t, filepath.Join(root, testArchiveDir))
+		assertFile(t, filepath.Join(root, testConfigFile))
 		assertFile(t, filepath.Join(root, "AGENTS.md"))
-		assertDir(t, filepath.Join(root, wikiDir))
-		assertFile(t, filepath.Join(root, wikiDir, "index.md"))
+		assertDir(t, filepath.Join(root, testWikiDir))
+		assertFile(t, filepath.Join(root, testWikiDir, "index.md"))
 
 		created := run(t, "project", "create", "Implement the forge MVP")
 		if !strings.Contains(created, `"id": "project1"`) {
@@ -325,7 +343,7 @@ func TestTaskLifecycle(t *testing.T) {
 		assertFile(t, filepath.Join(root, "project1", "log.jsonl"))
 		assertMissing(t, filepath.Join(root, "project1", "log.md"))
 		projectLogJSON := run(t, "project", "log", "list", "--project=project1", "--json")
-		var projectLogs []LogEntry
+		var projectLogs []app.LogEntry
 		if err := json.Unmarshal([]byte(projectLogJSON), &projectLogs); err != nil {
 			t.Fatalf("project log list should print JSON, got error %v and output:\n%s", err, projectLogJSON)
 		}
@@ -380,7 +398,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		projectDetailJSON := run(t, "workspace", "resource", "--id", "project1", "--json")
-		var projectDetail ResourceDetailView
+		var projectDetail app.ResourceDetailView
 		if err := json.Unmarshal([]byte(projectDetailJSON), &projectDetail); err != nil {
 			t.Fatalf("workspace project resource should print JSON, got error %v and output:\n%s", err, projectDetailJSON)
 		}
@@ -464,7 +482,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		emptyDetailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
-		var emptyDetail ResourceDetailView
+		var emptyDetail app.ResourceDetailView
 		if err := json.Unmarshal([]byte(emptyDetailJSON), &emptyDetail); err != nil {
 			t.Fatalf("workspace task resource should print JSON, got error %v and output:\n%s", err, emptyDetailJSON)
 		}
@@ -482,11 +500,11 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatal(err)
 		}
 		treeJSON := run(t, "workspace", "tree", "--json")
-		var tree WorkspaceTree
+		var tree app.WorkspaceTree
 		if err := json.Unmarshal([]byte(treeJSON), &tree); err != nil {
 			t.Fatalf("workspace tree should print JSON, got error %v and output:\n%s", err, treeJSON)
 		}
-		if tree.Root != slash(realPath(t, root)) || len(tree.Projects) != 1 {
+		if tree.Root != filepath.ToSlash(realPath(t, root)) || len(tree.Projects) != 1 {
 			t.Fatalf("unexpected workspace tree root/projects: %+v", tree)
 		}
 		if tree.Projects[0].ID != "project1" || tree.Projects[0].Path != "project1" || len(tree.Projects[0].Children) != 1 {
@@ -497,7 +515,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("unexpected task tree item: %+v", taskItem)
 		}
 		detailJSON := run(t, "workspace", "resource", "--id", "project1.task1", "--json")
-		var detail ResourceDetailView
+		var detail app.ResourceDetailView
 		if err := json.Unmarshal([]byte(detailJSON), &detail); err != nil {
 			t.Fatalf("workspace resource should print JSON, got error %v and output:\n%s", err, detailJSON)
 		}
@@ -518,7 +536,7 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 
 		addedLog := run(t, "task", "log", "add", "--project=project1", "--task=task1", "--details", "go test ./... passed", "Ran checks")
-		var addedEntry LogEntry
+		var addedEntry app.LogEntry
 		if err := json.Unmarshal([]byte(addedLog), &addedEntry); err != nil {
 			t.Fatalf("task log add should print JSON, got error %v and output:\n%s", err, addedLog)
 		}
@@ -526,7 +544,7 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("unexpected added log entry: %+v", addedEntry)
 		}
 		taskLogJSON := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
-		var taskLogs []LogEntry
+		var taskLogs []app.LogEntry
 		if err := json.Unmarshal([]byte(taskLogJSON), &taskLogs); err != nil {
 			t.Fatalf("task log list should print JSON, got error %v and output:\n%s", err, taskLogJSON)
 		}
@@ -551,7 +569,7 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(archived, "archive/project1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "project1"))
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1"))
 		if pathExists(filepath.Join(root, "project1")) {
 			t.Fatal("project1 should have moved out of the open workspace")
 		}
@@ -640,7 +658,7 @@ func TestTaskCreateUsesTitleAndDetail(t *testing.T) {
 		run(t, "project", "create", "Parent project")
 
 		created := run(t, "task", "create", "Task title", "--project=project1", "--slug=task-title", "--detail=Line one\n\nLine two")
-		var task Task
+		var task app.Task
 		if err := json.Unmarshal([]byte(created), &task); err != nil {
 			t.Fatalf("task create should print task JSON, got error %v and output:\n%s", err, created)
 		}
@@ -763,7 +781,7 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 		if !strings.Contains(archivedTask, "project1-forge-dev/archive/task1-develop-forge") {
 			t.Fatalf("expected task archive to preserve slugged directory name, got:\n%s", archivedTask)
 		}
-		assertDir(t, filepath.Join(projectPath, archiveDir, "task1-develop-forge"))
+		assertDir(t, filepath.Join(projectPath, testArchiveDir, "task1-develop-forge"))
 
 		nextChild := run(t, "task", "create", "--project=project1", "Next task")
 		if !strings.Contains(nextChild, `"id": "project1.task2"`) {
@@ -783,17 +801,16 @@ func TestSluggedProjectAndTaskDirectories(t *testing.T) {
 		if !strings.Contains(archivedProject, "archive/project1-forge-dev") {
 			t.Fatalf("expected project archive to preserve slugged directory name, got:\n%s", archivedProject)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "project1-forge-dev"))
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1-forge-dev"))
 	})
 }
 
 func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		malformedProject := newProject("project9", "Malformed project", "Malformed project")
-		if err := createResourceFiles(filepath.Join(root, "project9--bad"), &malformedProject); err != nil {
-			t.Fatal(err)
-		}
+		now := time.Now().Format(time.RFC3339)
+		malformedProject := app.Project{ResourceMeta: app.ResourceMeta{SchemaVersion: 1, ID: "project9", Type: "project", Title: "Malformed project", CreatedAt: now, UpdatedAt: now}, Description: "Malformed project"}
+		writeTestResourceJSON(t, filepath.Join(root, "project9--bad", testProjectJSONFile), malformedProject)
 		listed := run(t, "project", "list")
 		if strings.Contains(listed, "project9") {
 			t.Fatalf("malformed project directory should not be listed, got:\n%s", listed)
@@ -810,10 +827,8 @@ func TestMalformedSluggedDirectoriesAreIgnored(t *testing.T) {
 
 		parentPath := filepath.Join(root, "project1")
 		parentID := "project1"
-		malformedTask := newTask("project1.task8", parentID, "Malformed task", "Malformed task")
-		if err := createResourceFiles(filepath.Join(parentPath, "task8--bad"), &malformedTask); err != nil {
-			t.Fatal(err)
-		}
+		malformedTask := app.Task{ResourceMeta: app.ResourceMeta{SchemaVersion: 1, ID: "project1.task8", Type: "task", Title: "Malformed task", CreatedAt: now, UpdatedAt: now}, Parent: parentID, Description: "Malformed task"}
+		writeTestResourceJSON(t, filepath.Join(parentPath, "task8--bad", "task.json"), malformedTask)
 		children := run(t, "task", "list", "--project=project1", "--all")
 		if strings.Contains(children, "task8\tMalformed task") {
 			t.Fatalf("malformed task directory should not be listed, got:\n%s", children)
@@ -830,16 +845,17 @@ func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Project")
-		duplicate := filepath.Join(root, archiveDir, "project1-copy")
+		duplicate := filepath.Join(root, testArchiveDir, "project1-copy")
 		if err := os.MkdirAll(duplicate, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		data := readFile(t, filepath.Join(root, "project1", projectJSONFile))
-		if err := os.WriteFile(filepath.Join(duplicate, projectJSONFile), []byte(data), 0o644); err != nil {
+		data := readFile(t, filepath.Join(root, "project1", testProjectJSONFile))
+		if err := os.WriteFile(filepath.Join(duplicate, testProjectJSONFile), []byte(data), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := findResourceDir(root, "project1"); err == nil || !strings.Contains(err.Error(), "multiple resource directories") {
-			t.Fatalf("expected duplicate resource error, got %v", err)
+		out, err := runErr(t, "project", "show", "--project=project1")
+		if err == nil || !strings.Contains(err.Error(), "multiple resource directories") {
+			t.Fatalf("expected duplicate resource error, got stdout %q and error %v", out, err)
 		}
 	})
 }
@@ -905,7 +921,7 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive after merge")
 		run(t, "task", "create", "--project=project1", "Code task")
-		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
 		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
@@ -915,9 +931,9 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
-		var archivedTask Task
-		if err := readJSON(filepath.Join(root, "project1", archiveDir, "task1", "task.json"), &archivedTask); err != nil {
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		var archivedTask app.Task
+		if err := readJSON(filepath.Join(root, "project1", testArchiveDir, "task1", "task.json"), &archivedTask); err != nil {
 			t.Fatal(err)
 		}
 		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/task1/worktree/forge" {
@@ -931,7 +947,7 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive before merge")
 		run(t, "task", "create", "--project=project1", "Code task")
-		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
 		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
@@ -950,7 +966,7 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", archiveDir, "task1")) {
+		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
 			t.Fatal("project1.task1 should not have been archived")
 		}
 	})
@@ -961,14 +977,14 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Archive without a checkout")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
 	})
 }
 
@@ -982,8 +998,8 @@ func TestTaskArchiveSubtaskMovesToParentArchive(t *testing.T) {
 		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected parent-local archive path, got:\n%s", archived)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
-		if pathExists(filepath.Join(root, archiveDir, "project1.task1")) {
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		if pathExists(filepath.Join(root, testArchiveDir, "project1.task1")) {
 			t.Fatal("subtask should not have moved to the workspace archive")
 		}
 		if pathExists(filepath.Join(root, "project1", "task1")) {
@@ -1020,7 +1036,7 @@ func TestResourceArchiveDispatchesByStoredType(t *testing.T) {
 		if !strings.Contains(projectOut, "archive/project1") {
 			t.Fatalf("unexpected project archive path: %s", projectOut)
 		}
-		assertDir(t, filepath.Join(root, archiveDir, "project1"))
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1"))
 	})
 }
 
@@ -1233,9 +1249,9 @@ func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 		for _, id := range []string{"1", "2", "3"} {
 			run(t, "task", "archive", "--project=project1", "--task="+id)
 		}
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task1"))
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task2"))
-		assertDir(t, filepath.Join(root, "project1", archiveDir, "task3"))
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task2"))
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task3"))
 		assertDir(t, filepath.Join(root, "project1", "task4"))
 		assertDir(t, filepath.Join(root, "project1", "task5"))
 
@@ -1252,7 +1268,7 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Parent project")
 		run(t, "task", "create", "--project=project1", "Child task")
-		repoPath := filepath.Join(root, reposDir, "disksing", "forge")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
 		writeGitRepo(t, repoPath, "master")
 		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
@@ -1271,7 +1287,7 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", archiveDir, "task1")) {
+		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
 			t.Fatal("unmerged subtask should not have been archived")
 		}
 	})
@@ -1295,9 +1311,9 @@ func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 		if !strings.Contains(added, "repos/disksing/forge") {
 			t.Fatalf("expected normal repo path, got:\n%s", added)
 		}
-		assertDir(t, filepath.Join(root, reposDir, "disksing", "forge", ".git"))
-		assertFile(t, filepath.Join(root, reposDir, "disksing", "forge", "README.md"))
-		if pathExists(filepath.Join(root, reposDir, "disksing", "forge.git")) {
+		assertDir(t, filepath.Join(root, testReposDir, "disksing", "forge", ".git"))
+		assertFile(t, filepath.Join(root, testReposDir, "disksing", "forge", "README.md"))
+		if pathExists(filepath.Join(root, testReposDir, "disksing", "forge.git")) {
 			t.Fatal("default repo add should not create a bare .git repository")
 		}
 
@@ -1305,15 +1321,15 @@ func TestRepoAddClonesNormalCheckoutByDefaultAndBareWithFlag(t *testing.T) {
 		if !strings.Contains(bare, "repos/disksing/forge-bare.git") {
 			t.Fatalf("expected bare repo path, got:\n%s", bare)
 		}
-		assertFile(t, filepath.Join(root, reposDir, "disksing", "forge-bare.git", "HEAD"))
+		assertFile(t, filepath.Join(root, testReposDir, "disksing", "forge-bare.git", "HEAD"))
 	})
 }
 
 func TestRepoListFindsRepositories(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
-		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "legacy.git"), "master")
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
+		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "legacy.git"), "master")
 
 		listed := run(t, "repo", "list")
 		if !strings.Contains(listed, "disksing/forge\trepos/disksing/forge") {
@@ -1330,7 +1346,7 @@ func TestTaskRepoLifecycle(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Wire repo metadata into task json")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, reposDir, "disksing", "forge"))
+		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "forge"))
 
 		out, err := runErr(t, "project", "repo", "add", "project1", "disksing/forge")
 		if err == nil {
@@ -1398,7 +1414,7 @@ func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
 		run(t, "init")
 		run(t, "project", "create", "Wire legacy bare repo metadata into task json")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeBareRepo(t, filepath.Join(root, reposDir, "disksing", "forge.git"), "master")
+		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "forge.git"), "master")
 
 		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--branch", "agent/project1.task1")
 		if !strings.Contains(added, `"barePath": "repos/disksing/forge.git"`) {
@@ -1472,7 +1488,7 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		indexPath := filepath.Join(root, wikiDir, "index.md")
+		indexPath := filepath.Join(root, testWikiDir, "index.md")
 		if got := readFile(t, indexPath); got != defaultWikiIndex {
 			t.Fatalf("unexpected default Wiki index:\n%s", got)
 		}
@@ -1481,7 +1497,7 @@ func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 		if err := os.WriteFile(indexPath, []byte(customIndex), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		guideDir := filepath.Join(root, wikiDir, "guides", "operations")
+		guideDir := filepath.Join(root, testWikiDir, "guides", "operations")
 		if err := os.MkdirAll(guideDir, 0o755); err != nil {
 			t.Fatal(err)
 		}
@@ -1524,7 +1540,7 @@ func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 			t.Fatalf("Wiki snapshot did not reflect a modified file: before=%d after=%d", originalSize, refreshedPage.Size)
 		}
 
-		if err := os.RemoveAll(filepath.Join(root, wikiDir)); err != nil {
+		if err := os.RemoveAll(filepath.Join(root, testWikiDir)); err != nil {
 			t.Fatal(err)
 		}
 		tree, err = buildWorkspaceTree()
@@ -1550,10 +1566,10 @@ func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 			t.Fatalf("empty Wiki should remain distinguishable from a missing Wiki: %+v", tree.Wiki)
 		}
 
-		if err := os.Remove(filepath.Join(root, wikiDir)); err != nil {
+		if err := os.Remove(filepath.Join(root, testWikiDir)); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, wikiDir), []byte("not a directory"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, testWikiDir), []byte("not a directory"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		tree, err = buildWorkspaceTree()
@@ -1584,7 +1600,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		rootAgents := filepath.Join(root, "AGENTS.md")
 		taskAgents := filepath.Join(root, "project1", "AGENTS.md")
 		subtaskAgents := filepath.Join(root, "project1", "task1", "AGENTS.md")
-		archivedAgents := filepath.Join(root, "project1", archiveDir, "task2", "AGENTS.md")
+		archivedAgents := filepath.Join(root, "project1", testArchiveDir, "task2", "AGENTS.md")
 
 		writeStaleManagedBlock(t, rootAgents, "This directory is an AgentWorkspace managed by forge.", "old workspace prompt")
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
@@ -1600,13 +1616,13 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		assertFile(t, legacyProjectWork)
 		assertFile(t, filepath.Join(root, "project1", "task1", "work.md"))
 
-		if pathExists(filepath.Join(root, "project1", "task1", configFile)) {
+		if pathExists(filepath.Join(root, "project1", "task1", testConfigFile)) {
 			t.Fatal("migrate from task should not create nested forge.json")
 		}
-		if pathExists(filepath.Join(root, "project1", "task1", reposDir)) {
+		if pathExists(filepath.Join(root, "project1", "task1", testReposDir)) {
 			t.Fatal("migrate from task should not create nested repos directory")
 		}
-		if pathExists(filepath.Join(root, "project1", "task1", archiveDir)) {
+		if pathExists(filepath.Join(root, "project1", "task1", testArchiveDir)) {
 			t.Fatal("migrate from task should not create nested archive directory")
 		}
 
@@ -1705,11 +1721,11 @@ Enabled: {{ enabled }}
 		if !strings.Contains(created, `"template"`) || strings.Contains(created, `"selfDriving"`) {
 			t.Fatalf("content template exposed removed execution metadata: %s", created)
 		}
-		var createdTask Task
+		var createdTask app.Task
 		if err := json.Unmarshal([]byte(created), &createdTask); err != nil {
 			t.Fatal(err)
 		}
-		var detail ResourceDetailView
+		var detail app.ResourceDetailView
 		if err := json.Unmarshal([]byte(run(t, "workspace", "resource", "--id=project1.task1", "--json")), &detail); err != nil {
 			t.Fatal(err)
 		}
@@ -1920,6 +1936,45 @@ func readFile(t *testing.T, path string) string {
 		t.Fatal(err)
 	}
 	return string(data)
+}
+
+func readJSON(path string, value any) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, value)
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func buildWorkspaceTree() (app.WorkspaceTree, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return app.WorkspaceTree{}, err
+	}
+	workspace, err := app.OpenWorkspaceFrom(cwd)
+	if err != nil {
+		return app.WorkspaceTree{}, err
+	}
+	return workspace.Tree()
+}
+
+func writeTestResourceJSON(t *testing.T, path string, value any) {
+	t.Helper()
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func stripHTMLComments(s string) string {

@@ -1,26 +1,12 @@
 package forge
 
 import (
-	"bufio"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"sort"
 	"strings"
-	"time"
 )
-
-const logJSONLFile = "log.jsonl"
-
-type LogEntry struct {
-	ID      string `json:"id"`
-	Time    string `json:"time"`
-	Title   string `json:"title"`
-	Details string `json:"details,omitempty"`
-}
 
 type logAddOptions struct {
 	projectID string
@@ -33,25 +19,6 @@ type logListOptions struct {
 	projectID string
 	task      string
 	json      bool
-}
-
-func defaultLogJSONL(title string) string {
-	entry := newLogEntry(title, "")
-	data, err := json.Marshal(entry)
-	if err != nil {
-		panic(err)
-	}
-	return string(data) + "\n"
-}
-
-func newLogEntry(title, details string) LogEntry {
-	now := time.Now()
-	return LogEntry{
-		ID:      "log-" + now.Format("20060102T150405.000000000Z0700"),
-		Time:    now.Format(time.RFC3339),
-		Title:   strings.TrimSpace(title),
-		Details: strings.TrimSpace(details),
-	}
 }
 
 func runResourceLog(kind string, args []string) error {
@@ -76,75 +43,12 @@ func resourceLogAdd(kind string, args []string) error {
 	return applicationLogAdd(kind, opts.projectID, opts.task, opts.title, opts.details)
 }
 
-func legacyResourceLogAdd(kind string, args []string) error {
-	opts, err := parseLogAddArgs(kind, args)
-	if err != nil {
-		return err
-	}
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	resourceID, err := resolveLogResource(kind, opts.projectID, opts.task)
-	if err != nil {
-		return err
-	}
-	dir, resource, err := loadOpenResource(root, resourceID)
-	if err != nil {
-		return err
-	}
-	entry := newLogEntry(opts.title, opts.details)
-	if err := prependLogEntry(dir, entry); err != nil {
-		return err
-	}
-	resource.resourceMeta().UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := writeResourceMetadata(dir, resource); err != nil {
-		return err
-	}
-	return printJSON(entry)
-}
-
 func resourceLogList(kind string, args []string) error {
 	opts, err := parseLogListArgs(kind, args)
 	if err != nil {
 		return err
 	}
 	return applicationLogList(kind, opts.projectID, opts.task, opts.json)
-}
-
-func legacyResourceLogList(kind string, args []string) error {
-	opts, err := parseLogListArgs(kind, args)
-	if err != nil {
-		return err
-	}
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	resourceID, err := resolveLogResource(kind, opts.projectID, opts.task)
-	if err != nil {
-		return err
-	}
-	dir, _, err := loadResource(root, resourceID)
-	if err != nil {
-		return err
-	}
-	entries, err := readLogEntries(dir)
-	if err != nil {
-		return err
-	}
-	sortLogEntries(entries)
-	if opts.json {
-		return printJSON(entries)
-	}
-	for _, entry := range entries {
-		fmt.Printf("%s\t%s", entry.Time, entry.Title)
-		if entry.Details != "" {
-			fmt.Printf("\t%s", entry.Details)
-		}
-		fmt.Println()
-	}
-	return nil
 }
 
 func parseLogAddArgs(kind string, args []string) (logAddOptions, error) {
@@ -357,65 +261,4 @@ func logListUsage(kind string) string {
 		return "usage: forge project log list [--project=<project>] [--json]"
 	}
 	return "usage: forge task log list [--project=<project>] [--task=<task>] [--json]"
-}
-
-func prependLogEntry(dir string, entry LogEntry) error {
-	if entry.Title == "" {
-		return errors.New("log title cannot be empty")
-	}
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, logJSONLFile)
-	existing, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	var next []byte
-	next = append(next, data...)
-	next = append(next, '\n')
-	next = append(next, existing...)
-	return os.WriteFile(path, next, 0o644)
-}
-
-func readLogEntries(dir string) ([]LogEntry, error) {
-	path := filepath.Join(dir, logJSONLFile)
-	file, err := os.Open(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	defer file.Close()
-
-	var entries []LogEntry
-	scanner := bufio.NewScanner(file)
-	for line := 1; scanner.Scan(); line++ {
-		text := strings.TrimSpace(scanner.Text())
-		if text == "" {
-			continue
-		}
-		var entry LogEntry
-		if err := json.Unmarshal([]byte(text), &entry); err != nil {
-			return nil, fmt.Errorf("%s:%d: %w", path, line, err)
-		}
-		entries = append(entries, entry)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return entries, nil
-}
-
-func sortLogEntries(entries []LogEntry) {
-	sort.SliceStable(entries, func(i, j int) bool {
-		left, leftErr := time.Parse(time.RFC3339, entries[i].Time)
-		right, rightErr := time.Parse(time.RFC3339, entries[j].Time)
-		if leftErr == nil && rightErr == nil && !left.Equal(right) {
-			return left.After(right)
-		}
-		return entries[i].Time > entries[j].Time
-	})
 }

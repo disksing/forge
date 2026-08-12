@@ -16,10 +16,6 @@ const (
 	wikiDir    = "wiki"
 )
 
-func findWorkspaceRoot() (string, error) {
-	return "", errors.New("application API requires an explicit Workspace root")
-}
-
 func pathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
@@ -65,18 +61,6 @@ func readJSON(path string, value any) error {
 		return err
 	}
 	return json.Unmarshal(data, value)
-}
-
-func printJSON(value any) error {
-	_ = value
-	return errors.New("application API does not write user-facing output")
-}
-
-func writeFileIfMissing(path, content string) error {
-	if pathExists(path) {
-		return nil
-	}
-	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 func cleanID(id string) string {

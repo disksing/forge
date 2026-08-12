@@ -32,37 +32,9 @@ func normalizeLanguage(language string) (string, error) {
 	}
 }
 
-func parseLanguageOption(args []string, fallback string) (string, error) {
-	language, err := normalizeLanguage(fallback)
-	if err != nil {
-		return "", err
-	}
-	seen := false
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		value := ""
-		switch {
-		case strings.HasPrefix(arg, "--language="):
-			value = strings.TrimPrefix(arg, "--language=")
-		case arg == "--language":
-			i++
-			if i >= len(args) {
-				return "", fmt.Errorf("--language requires a value")
-			}
-			value = args[i]
-		default:
-			return "", fmt.Errorf("unexpected argument %q", arg)
-		}
-		if seen {
-			return "", fmt.Errorf("--language may only be specified once")
-		}
-		seen = true
-		language, err = normalizeLanguage(value)
-		if err != nil {
-			return "", err
-		}
-	}
-	return language, nil
+// NormalizeLanguage returns Forge's canonical language identifier.
+func NormalizeLanguage(language string) (string, error) {
+	return normalizeLanguage(language)
 }
 
 func readWorkspaceConfig(root string) (Config, error) {

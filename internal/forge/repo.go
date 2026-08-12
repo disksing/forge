@@ -2,7 +2,6 @@ package forge
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -47,20 +46,4 @@ func parseRepoAdd(args []string) (repoAddOptions, error) {
 
 func repoList() error {
 	return applicationRepoList()
-}
-
-func repoPath(root, name string, bare bool) string {
-	suffix := ""
-	if bare {
-		suffix = ".git"
-	}
-	return filepath.Join(root, reposDir, filepath.FromSlash(name)+suffix)
-}
-
-func isGitCheckout(path string) bool {
-	gitPath := filepath.Join(path, ".git")
-	if pathExists(gitPath) {
-		return true
-	}
-	return false
 }

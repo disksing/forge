@@ -3,7 +3,6 @@ package app
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -96,30 +95,6 @@ const (
 	maxFileTreeEntries = 200
 )
 
-func workspaceTreeJSON() error {
-	tree, err := buildWorkspaceTree()
-	if err != nil {
-		return err
-	}
-	return printJSON(tree)
-}
-
-func workspaceResourceJSON(id string) error {
-	detail, err := buildResourceDetail(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(detail)
-}
-
-func buildWorkspaceTree() (WorkspaceTree, error) {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return WorkspaceTree{}, err
-	}
-	return buildWorkspaceTreeAt(root)
-}
-
 func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 	projectEntries, err := readProjectEntriesInDirs([]string{root})
 	if err != nil {
@@ -169,22 +144,6 @@ func readWorkspaceWiki(root string) WorkspaceWikiView {
 		entries = []FileTreeEntry{}
 	}
 	return WorkspaceWikiView{Exists: true, Entries: entries}
-}
-
-func buildResourceDetail(id string) (ResourceDetailView, error) {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return ResourceDetailView{}, err
-	}
-	return buildResourceDetailAtRoot(root, id)
-}
-
-func buildResourceDetailAtRoot(root, id string) (ResourceDetailView, error) {
-	path, resource, err := loadResource(root, cleanID(id))
-	if err != nil {
-		return ResourceDetailView{}, err
-	}
-	return buildResourceDetailAt(root, resourceEntry{Resource: resource, Path: path})
 }
 
 func buildResourceTreeItem(root string, entry resourceEntry, includeChildren bool) (ResourceTreeView, error) {
@@ -270,41 +229,6 @@ func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView
 		children = append(children, item)
 	}
 	return children, nil
-}
-
-func parseWorkspaceResourceArgs(args []string) (string, error) {
-	if len(args) < 2 || len(args) > 3 {
-		return "", errors.New("usage: forge workspace resource --id=<resource> --json")
-	}
-	var id string
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case strings.HasPrefix(arg, "--id="):
-			id = strings.TrimSpace(strings.TrimPrefix(arg, "--id="))
-		case arg == "--id":
-			value, ok := nextFlagValue(args, &i)
-			if !ok {
-				return "", errors.New("usage: forge workspace resource --id=<resource> --json")
-			}
-			id = strings.TrimSpace(value)
-		case arg == "--json":
-		default:
-			return "", errors.New("usage: forge workspace resource --id=<resource> --json")
-		}
-	}
-	if id == "" {
-		return "", errors.New("usage: forge workspace resource --id=<resource> --json")
-	}
-	return id, nil
-}
-
-func nextFlagValue(args []string, i *int) (string, bool) {
-	if *i+1 >= len(args) || strings.HasPrefix(args[*i+1], "--") {
-		return "", false
-	}
-	*i = *i + 1
-	return args[*i], true
 }
 
 func readResourceFiles(root, dir string, resource Resource) []ResourceFile {

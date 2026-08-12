@@ -7,16 +7,6 @@ import (
 	"strings"
 )
 
-func runInit(args []string) error {
-	_ = args
-	return fmt.Errorf("application API init requires Initialize(root, language)")
-}
-
-func runWorkspaceMigrate(args []string) error {
-	_ = args
-	return fmt.Errorf("application API migrate requires Workspace.Migrate(language)")
-}
-
 func ensureWorkspaceWiki(root, language string) error {
 	dir := filepath.Join(root, wikiDir)
 	info, err := os.Lstat(dir)
