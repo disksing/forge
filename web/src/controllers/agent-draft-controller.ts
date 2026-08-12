@@ -1,5 +1,5 @@
 import { agentDraftResourceScope, agentDraftSessionIdentity, createAgentDraftStore, type AgentDraftContext } from "./agent-draft-store";
-import type { AgentRunRecord } from "./agent-session-controller";
+import type { AgentRun as AgentRunRecord } from "../models/chat";
 
 export interface AgentDraftRuntime {
   ttyDraft: string;
@@ -89,6 +89,27 @@ export function createAgentDraftController(dependencies: AgentDraftControllerDep
     prune(runtime.ttyDraftWorkspaceId, runtime.ttyDraftResourceId);
   }
 
+  function restoreResource(resourceId: string, workspaceId = dependencies.workspaceId()): void {
+    const resource = agentDraftResourceScope(resourceId);
+    const key = store.keyForResource(workspaceId, resource);
+    if (!key) return clearMemory();
+    if (runtime.ttyDraftKey === key) return;
+    runtime.ttyDraftKey = key;
+    runtime.ttyDraftWorkspaceId = workspaceId.trim();
+    runtime.ttyDraftResourceId = resource;
+    runtime.ttyDraftRunId = "";
+    runtime.ttyDraft = store.read(key);
+    runtime.ttyMultiline = runtime.ttyDraft.includes("\n");
+    runtime.ttyDraftVersion++;
+  }
+
+  function clearResourceAfterAccepted(context: { workspaceId: string; resourceId: string; key: string; text: string; version: number }): boolean {
+    if (dependencies.workspaceId() !== context.workspaceId || runtime.ttyDraftResourceId !== agentDraftResourceScope(context.resourceId) || runtime.ttyDraftKey !== context.key || runtime.ttyDraft !== context.text || runtime.ttyDraftVersion !== context.version) return false;
+    store.remove(context.key);
+    update("", false);
+    return true;
+  }
+
   function clearAfterAccepted(context: { workspaceId: string; runId: string; key: string; text: string; version: number }): boolean {
     if (dependencies.workspaceId() !== context.workspaceId || dependencies.currentRun()?.id !== context.runId || runtime.ttyDraftKey !== context.key || runtime.ttyDraft !== context.text || runtime.ttyDraftVersion !== context.version) return false;
     store.remove(context.key);
@@ -96,5 +117,5 @@ export function createAgentDraftController(dependencies: AgentDraftControllerDep
     return true;
   }
 
-  return { clearAfterAccepted, clearMemory, flush: persist, restore, update };
+  return { clearAfterAccepted, clearResourceAfterAccepted, clearMemory, flush: persist, restore, restoreResource, update };
 }

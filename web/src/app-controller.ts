@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, SessionSwitcherModel, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, AgentNotice, AgentRun as AgentRunRecord, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -7,7 +7,6 @@ import type { AppShellModel, ShellDragTarget, ShellResourceItem, ShellStatusPres
 import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceSession, WorkspaceTree } from "./models/workspace";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
-import { createAgentSessionController, type AgentRunRecord } from "./controllers/agent-session-controller";
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
 import { createNotificationController } from "./controllers/notification-controller";
 import { createPaneLayoutController } from "./controllers/pane-layout-controller";
@@ -19,6 +18,7 @@ import { createUserSettingsController } from "./controllers/user-settings-contro
 import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
+import { buildTimeline as buildAgentHubTimeline } from "../vendor/agenthub-event-timeline";
 
 export interface ForgeViewPublisher {
   renderAppShell(model: AppShellModel): void;
@@ -26,7 +26,6 @@ export interface ForgeViewPublisher {
   renderSettings(model: SettingsModel): void;
   renderUploadDialog(model: UploadDialogModel): void;
   renderComposer(model: ComposerModel): void;
-  renderSessionSwitcher(model: SessionSwitcherModel): void;
   renderEventTimeline(model: EventTimelineModel): void;
   renderDetailPanel(model: DetailPanelModel): void;
   renderToast(model: ToastModel): void;
@@ -61,7 +60,7 @@ interface ControllerState {
 	modalEnter: string;
 	sessionMenu: WorkspaceSession | null;
 	taskOperationalStateKey: string;
-	uploadDialog: { open: boolean; identity: number; runId: string; items: unknown[]; nextId: number };
+	uploadDialog: { open: boolean; identity: number; resourceId: string; items: unknown[]; nextId: number };
 	autoRefreshTimer: number | null;
 	autoRefreshInFlight: boolean;
 	autoRefreshVersion: number;
@@ -140,7 +139,7 @@ const controllerState: ControllerState = {
 	uploadDialog: {
 		open: false,
 		identity: 0,
-		runId: "",
+			resourceId: "",
 		items: [],
 		nextId: 1
 	},
@@ -210,10 +209,10 @@ const agentDraftController = createAgentDraftController({
 	runs: () => controllerState.agent.runs,
 	currentRun: () => currentAgentRun(),
 });
-const clearAgentDraftAfterAccepted = agentDraftController.clearAfterAccepted;
+const clearResourceDraftAfterAccepted = agentDraftController.clearResourceAfterAccepted;
 const clearAgentDraftMemory = agentDraftController.clearMemory;
 const flushAgentDraft = agentDraftController.flush;
-const restoreAgentDraftForRun = agentDraftController.restore;
+const restoreAgentDraftForResource = agentDraftController.restoreResource;
 const updateAgentDraft = agentDraftController.update;
 
 const agentOperations = createAgentOperationController(() => {
@@ -221,55 +220,6 @@ const agentOperations = createAgentOperationController(() => {
 	renderAgent();
 	renderTTYComposer();
 	refreshIcons();
-});
-const agentSessionController = createAgentSessionController({
-	operations: agentOperations,
-	workspaceId: () => controllerState.activeWorkspaceId,
-	selectedResource: () => findResource(controllerState.selectedId),
-	taskDetail: () => {
-		const selected = findResource(controllerState.selectedId);
-		return selected ? controllerState.details[selected.id] || selected : null;
-	},
-	currentRun: () => currentAgentRun(),
-	runs: () => controllerState.agent.runs,
-	activeRunId: () => controllerState.agent.activeRunId,
-	selectedAgent: () => selectedAgentConfig(),
-	enabledAgents: () => enabledAgentConfigs(),
-	setAgentName: (name) => { controllerState.agent.agentName = name; },
-	setActiveRun: (id) => { controllerState.agent.activeRunId = id; },
-	setHistoryOpen: (open) => { controllerState.agent.historyOpen = open; },
-	closeAgentMenus: () => {
-		controllerState.agent.optionsOpen = false;
-		controllerState.agent.agentChooserOpen = false;
-		controllerState.agent.historyOpen = false;
-	},
-	resetDraft: () => {
-		controllerState.agent.draftPrompt = "";
-		clearAgentDraftMemory();
-	},
-	flushDraft: flushAgentDraft,
-	restoreDraft: (run) => restoreAgentDraftForRun(run),
-	currentDraft: () => ({ key: controllerState.agent.ttyDraftKey, text: controllerState.agent.ttyDraft, version: controllerState.agent.ttyDraftVersion }),
-	updateDraft: (text) => updateAgentDraft(text),
-	clearDraftAfterAccepted: (context) => clearAgentDraftAfterAccepted(context),
-	bumpDraftResetVersion: () => { controllerState.agent.ttyDraftResetVersion++; },
-	userName: currentUserName,
-	workspaceName,
-	defaultCwd: agentDefaultCwd,
-	isLive: isLiveAgentRun,
-	isTurnInterruptible: isAgentTurnInterruptible,
-	mutate: (action) => mutateAgentSession(action),
-	request: (path, init) => api(path, init),
-	reloadRuns: async () => { await loadAgentRuns(); },
-	refreshTree: async () => { await refreshTreeAfterAgentSessionMutation(); },
-	fetchDetail: (resourceId, workspaceId) => fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }),
-	applyDetail: (detail) => { applyResourceDetail(detail, "head"); },
-	refreshInputProjection: async (workspaceId, resourceId) => { await refreshAgentInputProjection(workspaceId, resourceId); },
-	publish: publishViewModels,
-	renderAgent,
-	renderComposer: renderTTYComposer,
-	refreshIcons,
-	toast
 });
 const paneLayoutController = createPaneLayoutController(() => renderAppShell());
 const routeController = createRouteController(() => renderAppShell());
@@ -316,7 +266,7 @@ interface WorkspaceAgentsOptions { force?: boolean }
 interface SelectResourceOptions { clearUnread?: boolean; forceDetail?: boolean }
 interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; rethrow?: boolean }
 interface RenderOptions { skipDraftSync?: boolean }
-interface UploadContext { workspaceId?: string; runId?: string }
+interface UploadContext { workspaceId?: string; resourceId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
 interface SessionNavigationTarget {
 	kind: string;
@@ -1247,20 +1197,12 @@ async function refreshAgentRunMetadata(): Promise<boolean | void> {
 }
 function reconcileActiveAgentRun(runs: AgentRunRecord[]): boolean {
 	const nextRunId = preferredAgentRunID(runs);
-	if (controllerState.agent.activeRunId === nextRunId) {
-		const activeRun = runs.find((run) => run.id === nextRunId);
-		if (activeRun) restoreAgentDraftForRun(activeRun);
-		return false;
-	}
-	flushAgentDraft();
+	if (controllerState.agent.activeRunId === nextRunId) return false;
 	controllerState.agent.activeRunId = nextRunId;
 	controllerState.agent.events = [];
 	controllerState.agent.notices = [];
 	controllerState.agent.eventsHasMore = false;
 	controllerState.agent.historyBeforeId = 0;
-	clearAgentDraftMemory();
-	const activeRun = runs.find((run) => run.id === nextRunId);
-	if (activeRun) restoreAgentDraftForRun(activeRun);
 	controllerState.agent.approvalDrafts.clear();
 	return true;
 }
@@ -1388,9 +1330,9 @@ function closeAgentStream(): void {
 	controllerState.agent.stream = null;
 	controllerState.agent.streamRunId = "";
 }
-function handleSvelteAgentEvent(workspaceId: string, runId: string, event: AgentEvent): void {
-	if (workspaceId !== controllerState.activeWorkspaceId || runId !== controllerState.agent.activeRunId || !event) return;
-	const run = controllerState.agent.runs.find((candidate) => candidate.id === runId) || null;
+function handleSvelteAgentEvent(workspaceId: string, resourceId: string, event: AgentEvent): void {
+	if (workspaceId !== controllerState.activeWorkspaceId || resourceId !== selectedAgentResourceId() || !event) return;
+	const run = currentAgentRun();
 	if ([
 		"turn.completed",
 		"turn.failed",
@@ -1403,17 +1345,16 @@ function handleSvelteAgentEvent(workspaceId: string, runId: string, event: Agent
 		"session.state",
 		"approval.requested",
 		"approval.resolved"
-	].includes(event.type)) Promise.all([refreshAgentRunMetadata(), refreshResourceMessageStatus()]).then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
+	].includes(event.type)) refreshResourceMessageStatus().then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
 }
-function handleSvelteForgeNotice(_workspaceId: string, _runId: string, _notice: AgentNotice): void {}
+function handleSvelteForgeNotice(_workspaceId: string, _resourceId: string, _notice: AgentNotice): void {}
 function clearAgentRenderTimer(): void {
 	if (controllerState.agent.renderTimer) window.clearTimeout(controllerState.agent.renderTimer);
 	controllerState.agent.renderTimer = null;
 }
 function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
-	if (!window.AgentHubEventTimeline?.buildTimeline) throw new Error("AgentHub Event Timeline library is unavailable");
 	const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
-	const items = window.AgentHubEventTimeline.buildTimeline(visibleEvents) as TimelineItem[];
+	const items = buildAgentHubTimeline(visibleEvents) as TimelineItem[];
 	const byID = new Map(visibleEvents.map((event) => [Number(event.id), event]));
 	for (const item of items) {
 		const event = byID.get(Number(item.key));
@@ -1425,20 +1366,7 @@ function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
 	}
 	return items;
 }
-function renderAgent(): void {
-	const activeRun = currentAgentRun();
-	publisher.renderSessionSwitcher({
-		identity: `${controllerState.activeWorkspaceId}:${selectedAgentResourceId()}`,
-		workspaceId: controllerState.activeWorkspaceId,
-		resourceId: selectedAgentResourceId(),
-		activeRunId: activeRun?.id || "",
-		runs: controllerState.agent.runs,
-		switchingRunId: agentOperations.key("session-switch"),
-		onSelect: switchAgentRun,
-		onToast: toast,
-		onIconsChanged: refreshIcons
-	});
-}
+function renderAgent(): void {}
 function agentConfigSummary(agent: AgentConfig | null | undefined): string {
 	if (!agent) return "";
 	const parts = [providerName(agent.providerId)];
@@ -1455,92 +1383,53 @@ function ttyLogHasActiveSelection(log: HTMLElement): boolean {
 }
 function renderTTY(_options: RenderOptions = {}): void {
 	renderTTYComposer();
-	const run = currentAgentRun();
-	const configured = (controllerState.config?.agents || []).find((agent) => agent.id === run?.agentHubAgentName);
+	const resourceId = selectedAgentResourceId();
+	const status = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
+	const configured = (controllerState.config?.agents || []).find((agent) => agent.id === status?.resolvedAgent);
 	publisher.renderEventTimeline({
-		identity: `${controllerState.activeWorkspaceId}:${run?.id || ""}`,
+		identity: `${controllerState.activeWorkspaceId}:${resourceId}`,
 		workspaceId: controllerState.activeWorkspaceId,
-		activeRunId: run?.id || "",
-		activeRun: run,
-		runCount: controllerState.agent.runs.length,
+		resourceId,
+		status,
 		agentName: agentDisplayName(configured || selectedAgentConfig()),
 		project: projectAgentEvents,
 		onEvent: handleSvelteAgentEvent,
 		onNotice: handleSvelteForgeNotice,
-		onApproval: resolveAgentApprovalForRun,
+		onApproval: resolveResourceApproval,
 		onToast: toast,
 		onIconsChanged: refreshIcons
 	});
 }
-function agentSessionMutationKey(workspaceId: string, runId: string): string {
-	return `${workspaceId || "workspace"}:${runId || "run"}`;
+function resourceMutationKey(workspaceId: string, resourceId: string): string {
+	return `${workspaceId || "workspace"}:${resourceId || "resource"}`;
 }
 function renderTTYComposer(_options: RenderOptions = {}): void {
 	controllerState.agent.skipTTYDraftSync = false;
-	const activeRun = currentAgentRun();
-	if (activeRun) restoreAgentDraftForRun(activeRun);
-	const live = isLiveAgentRun(activeRun);
-	const resourceId = activeRun?.resourceId || selectedAgentResourceId();
-	const stopTurnPending = isAgentTurnStopping(activeRun);
-	const sessionStopping = isAgentSessionStopping(activeRun) || activeRun?.status === "stopping";
+	const resourceId = selectedAgentResourceId();
+	if (controllerState.activeWorkspaceId && resourceId) restoreAgentDraftForResource(resourceId);
+	const stopTurnPending = agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === resourceId;
 	const messageStatus = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	publisher.renderComposer({
-		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${activeRun?.id || "none"}:${controllerState.agent.ttyDraftKey || ""}`,
+		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.ttyDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
 		resourceId,
-		runId: activeRun?.id || "",
-		runStatus: activeRun?.status || "",
-		live,
-		canResume: Boolean(activeRun && !live && (activeRun.agentHubSessionId || activeRun.sourceExternalId)),
 		draft: controllerState.agent.ttyDraft || "",
 		draftKey: controllerState.agent.ttyDraftKey || "",
 		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
-		unavailableReason: !messageStatus ? "Loading work status." : live && activeRun ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
-		sending: Boolean(activeRun && agentOperations.isSending(agentSessionMutationKey(controllerState.activeWorkspaceId, activeRun.id))),
-		agents: svelteAgentOptions(),
-		selectedAgentId: selectedAgentConfig()?.id || "",
-		chooserOpen: Boolean(controllerState.agent.agentChooserOpen),
-		sessionStarting: agentOperations.active("session-start"),
-		actionsOpen: Boolean(controllerState.agent.sessionActionsOpen),
-		canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending)),
+		unavailableReason: !messageStatus ? "Loading work status." : !messageStatus.acceptsMessages ? (messageStatus.archived ? "This resource is archived." : messageStatus.configError || "This resource cannot accept messages.") : "",
+		sending: agentOperations.isSending(resourceMutationKey(controllerState.activeWorkspaceId, resourceId)),
+		canEndTurn: Boolean(stopTurnPending || ["running", "waiting_approval"].includes(String(messageStatus?.session?.state || ""))),
 		endingTurn: stopTurnPending,
-		closingSession: sessionStopping,
 		waitingMessages: messageStatus?.waitingMessages || [],
 		canSteerWaiting: Boolean(messageStatus?.canSteerWaiting),
 		steeringMessageId: controllerState.steeringMessageId,
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
-		onToggleChooser: () => {
-			if (agentOperations.active("session-start") || !enabledAgentConfigs().length) return;
-			controllerState.agent.agentChooserOpen = !controllerState.agent.agentChooserOpen;
-			renderTTYComposer();
-		},
-		onChooseAgent: (id) => startAgentRun(id).catch((err) => toast(err.message)),
-		onToggleActions: () => {
-			controllerState.agent.sessionActionsOpen = !controllerState.agent.sessionActionsOpen;
-			renderTTYComposer();
-		},
-		onResume: () => resumeAgentRun().catch((err) => toast(err.message)),
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
-		onCloseSession: closeCurrentAgentSession,
 		onSteerWaiting: steerWaitingMessage,
 		onIconsChanged: refreshIcons
 	});
-}
-function isAgentSessionReady(run: AgentRunRecord | null): boolean {
-	if (!run || !isLiveAgentRun(run)) return false;
-	if (run.status !== "starting") return true;
-	if (controllerState.agent.events.some((event) => event.type === "session.state" && event.data?.state === "ready")) return true;
-	return controllerState.agent.eventsHasMore && run.status !== "starting";
-}
-function agentInputUnavailableReason(run: AgentRunRecord, sessionReady = isAgentSessionReady(run)): string {
-	if (isAgentTurnStopping(run)) return "Ending the current turn.";
-	if (!sessionReady) return "Agent session is starting.";
-	if (run.status === "stopping") return "AgentHub is stopping the provider.";
-	if (run.status === "recovering") return "AgentHub event recovery is in progress.";
-	if (run.status === "waiting_approval") return "Resolve the pending approval before sending input.";
-	return "";
 }
 function agentDisplayName(agent: AgentConfig | null | undefined): string {
 	return agent?.name || agent?.id || "Agent";
@@ -1549,19 +1438,13 @@ function renderSettingsModal(): void {
 	settingsController.render();
 }
 function updateAgentDraftFromSvelte(text: string, context: ComposerContext): void {
-	if (!context || context.workspaceId !== controllerState.activeWorkspaceId || context.runId !== controllerState.agent.activeRunId || context.draftKey !== controllerState.agent.ttyDraftKey) return;
+	if (!context || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.ttyDraftKey) return;
 	updateAgentDraft(text);
 }
-function closeCurrentAgentSession(): void {
-	stopAgentRun().catch((err) => toast(err.message));
-}
-async function startAgentRun(agentName = "") {
-	return agentSessionController.start(agentName);
-}
 function openAgentUploadDialog(): void {
-	const run = currentAgentRun();
-	if (!run || !isLiveAgentRun(run)) {
-		toast("Start or resume an agent session before uploading files.");
+	const resourceId = selectedAgentResourceId();
+	if (!resourceId || controllerState.messageStatus?.archived) {
+		toast("Select an active resource before uploading files.");
 		return;
 	}
 	const input = elementById<HTMLInputElement>("ttyInput");
@@ -1570,7 +1453,7 @@ function openAgentUploadDialog(): void {
 	controllerState.uploadDialog = {
 		open: true,
 		identity: ++uploadDialogIdentity,
-		runId: run.id,
+		resourceId,
 		items: [],
 		nextId: 1
 	};
@@ -1578,8 +1461,9 @@ function openAgentUploadDialog(): void {
 }
 function closeAgentUploadDialog(paths: string[] = [], context: UploadContext = {}): void {
 	if (!controllerState.uploadDialog.open) return;
-	const sameContext = context.workspaceId === controllerState.activeWorkspaceId && context.runId === controllerState.agent.activeRunId;
-	const shouldSkipDraftSync = paths.length > 0 && sameContext && controllerState.uploadDialog.runId === controllerState.agent.activeRunId;
+	const sameResource = controllerState.uploadDialog.resourceId === selectedAgentResourceId();
+	const sameWorkspace = !context.workspaceId || context.workspaceId === controllerState.activeWorkspaceId;
+	const shouldSkipDraftSync = paths.length > 0 && sameWorkspace && sameResource;
 	if (shouldSkipDraftSync) {
 		updateAgentDraft(appendUploadedPaths(controllerState.agent.ttyDraft, paths));
 		controllerState.agent.ttyDraftResetVersion++;
@@ -1595,7 +1479,7 @@ function discardAgentUploadDialog(): void {
 	controllerState.uploadDialog = {
 		open: false,
 		identity: ++uploadDialogIdentity,
-		runId: "",
+		resourceId: "",
 		items: [],
 		nextId: 1
 	};
@@ -1611,30 +1495,36 @@ function renderAgentUploadDialog(): void {
 	const dialog = controllerState.uploadDialog;
 	publisher.renderUploadDialog({
 		open: Boolean(dialog.open),
-		identity: `${dialog.identity || 0}:${controllerState.activeWorkspaceId}:${dialog.runId || ""}`,
+		identity: `${dialog.identity || 0}:${controllerState.activeWorkspaceId}:${dialog.resourceId || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
-		runId: dialog.runId || "",
+		resourceId: dialog.resourceId || "",
 		onDone: closeAgentUploadDialog,
 		onIconsChanged: refreshIcons
 	});
 }
-async function stopAgentRun(): Promise<void> {
-	return agentSessionController.stopSession();
-}
 async function stopAgentTurn(): Promise<void> {
-	return agentSessionController.stopTurn();
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = selectedAgentResourceId();
+	const generationId = controllerState.messageStatus?.generation?.generationId || "";
+	const operation = agentOperations.begin("turn-stop", resourceId);
+	if (!operation) return;
+	try {
+		const query = generationId ? `?generationId=${encodeURIComponent(generationId)}` : "";
+		await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/turn/end${query}`, { method: "POST" });
+		await refreshResourceMessageStatus(workspaceId, resourceId);
+		publishViewModels();
+	} finally {
+		agentOperations.finish(operation);
+	}
 }
-async function switchAgentRun(runId: string): Promise<void> {
-	return agentSessionController.switchRun(runId);
-}
-async function closeAgentRun(runId: string): Promise<void> {
-	await agentSessionController.closeRun(runId);
-}
-async function resumeAgentRun(): Promise<void> {
-	return agentSessionController.resume();
-}
-async function resolveAgentApprovalForRun(runId: string, requestId: string, reply: Parameters<EventTimelineModel["onApproval"]>[2]): Promise<void> {
-	return agentSessionController.resolveApproval(runId, requestId, reply);
+async function resolveResourceApproval(generationId: string, requestId: string, reply: Parameters<EventTimelineModel["onApproval"]>[2]): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = selectedAgentResourceId();
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/approval?generationId=${encodeURIComponent(generationId)}`, {
+		method: "POST", body: JSON.stringify({ requestId, ...reply })
+	});
+	await refreshResourceMessageStatus(workspaceId, resourceId);
+	publishViewModels();
 }
 function currentAgentRun(): AgentRunRecord | null {
 	return controllerState.agent.runs.find((run) => run.id === controllerState.agent.activeRunId) || null;
@@ -1652,19 +1542,24 @@ function isLiveAgentRun(run: AgentRunRecord | null): boolean {
 function isAgentTurnInterruptible(run: AgentRunRecord | null): boolean {
 	return ["running", "waiting_approval"].includes(run?.status || "");
 }
-function isAgentTurnStopping(run: AgentRunRecord | null): boolean {
-	return agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === run?.id;
-}
-function isAgentSessionStopping(run: AgentRunRecord | null): boolean {
-	return agentOperations.active("session-stop") && agentOperations.key("session-stop") === run?.id;
-}
 async function submitTTYInput(rawText: string, context: ComposerContext): Promise<{ accepted: boolean; clear: boolean }> {
-	return agentSessionController.send(rawText, context);
-}
-function agentDefaultCwd(): string {
-	const selected = findResource(controllerState.selectedId);
-	if (!selected) return "";
-	return selected.path || "";
+	if (!rawText.trim() || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.ttyDraftKey) return { accepted: false, clear: false };
+	const key = resourceMutationKey(context.workspaceId, context.resourceId);
+	if (!agentOperations.startSending(key)) return { accepted: false, clear: false };
+	const version = controllerState.agent.ttyDraftVersion;
+	try {
+		await api(`/api/workspaces/${encodeURIComponent(context.workspaceId)}/resources/${encodeURIComponent(context.resourceId)}/messages`, {
+			method: "POST", body: JSON.stringify({ text: rawText, role: "user", sender: { name: currentUserName() } })
+		});
+		const accepted = true;
+		const clear = clearResourceDraftAfterAccepted({ workspaceId: context.workspaceId, resourceId: context.resourceId, key: context.draftKey, text: rawText, version });
+		if (clear) controllerState.agent.ttyDraftResetVersion++;
+		await Promise.all([refreshResourceMessageStatus(context.workspaceId, context.resourceId), refreshTreeAfterAgentSessionMutation()]);
+		publishViewModels();
+		return { accepted, clear };
+	} finally {
+		agentOperations.stopSending(key);
+	}
 }
 function selectedAgentResourceId(): string {
 	if (controllerState.selectedId === "workspace") return "workspace";
@@ -1860,7 +1755,7 @@ function installControllerListeners(): void {
 		return;
 	}
 	const outsideAgentChooser = controllerState.agent.agentChooserOpen && target && !target.closest(".tty-new-session-control");
-	const outsideAgentPanelMenu = (controllerState.agent.optionsOpen || controllerState.agent.historyOpen) && target && !target.closest(".agent-actions") && !target.closest(".agent-sessions") && !target.closest(".tty-composer");
+	const outsideAgentPanelMenu = (controllerState.agent.optionsOpen || controllerState.agent.historyOpen) && target && !target.closest(".tty-composer");
 	if (outsideAgentChooser || outsideAgentPanelMenu) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.agentChooserOpen = false;

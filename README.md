@@ -92,7 +92,7 @@ The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, expand the project/task tree, and monitor active or external sessions.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** select a Workspace, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported. Ordinary Session start/close/resume/history controls remain available for diagnostics and explicit sessions.
+- **Chat:** select a Workspace, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
@@ -113,6 +113,9 @@ Commands address Workspace, Project, and Task directly without exposing a separa
 
 ```bash
 forge task status --project=project1 --task=task2
+forge task history --project=project1 --task=task2
+forge history turn show --ref=<opaque-turn-reference>
+forge history event show --ref=<opaque-event-reference>
 forge message send --to=project1.task2 "Please review the current API design."
 forge message send --to=project1.task2 --mode=enqueue "Handle this in a new Turn."
 forge message send --to=project1.task2 --mode=interrupt "Stop the current approach and investigate this instead."
@@ -270,8 +273,13 @@ forge project log add|list ...
 forge template list|show|validate|render|create|migrate ...
 
 forge workspace status [--server=<url>]
+forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
 forge project status [--project=<project>] [--server=<url>]
+forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
 forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+forge history turn show --ref=<reference> [--server=<url>]
+forge history event show --ref=<reference> [--server=<url>]
 forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
 forge message show --id=<message-id> [--server=<url>]
 forge resource archive --id=<resource>

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAgentDraftController, type AgentDraftRuntime } from "../../src/controllers/agent-draft-controller";
-import type { AgentRunRecord } from "../../src/controllers/agent-session-controller";
+import type { AgentRun as AgentRunRecord } from "../../src/models/chat";
 import { MemoryStorage } from "../fixtures/memory-storage";
 
 describe("agent draft controller", () => {

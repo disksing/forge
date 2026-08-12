@@ -1,11 +1,9 @@
-import type { AgentOption } from "./common";
-
 export interface UploadDialogModel {
   open: boolean;
   identity: string;
   workspaceId: string;
-  runId: string;
-  onDone: (paths: string[], context: { workspaceId: string; runId: string }) => void;
+  resourceId: string;
+  onDone: (paths: string[], context: { workspaceId: string; resourceId: string }) => void;
   onIconsChanged: () => void;
 }
 
@@ -13,35 +11,20 @@ export interface ComposerModel {
   identity: string;
   workspaceId: string;
   resourceId: string;
-  runId: string;
-  runStatus: string;
-  live: boolean;
-  canResume: boolean;
   draft: string;
   draftKey: string;
   draftResetVersion: number;
   unavailableReason: string;
   sending: boolean;
-  agents: AgentOption[];
-  selectedAgentId: string;
-  chooserOpen: boolean;
-  sessionStarting: boolean;
-  actionsOpen: boolean;
   canEndTurn: boolean;
   endingTurn: boolean;
-  closingSession: boolean;
   waitingMessages: WaitingMessage[];
   canSteerWaiting: boolean;
   steeringMessageId: string;
   onDraft: (text: string, context: ComposerContext) => void;
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
-  onToggleChooser: () => void;
-  onChooseAgent: (id: string) => void;
-  onToggleActions: () => void;
-  onResume: () => void;
   onEndTurn: () => void;
-  onCloseSession: () => void;
   onSteerWaiting: (messageId: string) => Promise<void>;
   onIconsChanged: () => void;
 }
@@ -59,6 +42,15 @@ export interface ResourceMessageStatus {
   resourceId: string;
   state: "idle" | "working" | "attention_required" | "unavailable" | "archived";
   canSteerWaiting: boolean;
+  exists?: boolean;
+  archived?: boolean;
+  acceptsMessages?: boolean;
+  resolvedAgent?: string;
+  resolvedProfile?: string;
+  configError?: string;
+  lastError?: string;
+  generation?: ResourceGenerationStatus;
+  session?: ResourceSessionStatus;
   waitingMessages: WaitingMessage[];
   messages?: { waiting?: number; delivering?: number; interrupting?: number; delivered?: number; undeliverable?: number; deliveryUnknown?: number };
 }
@@ -66,8 +58,23 @@ export interface ResourceMessageStatus {
 export interface ComposerContext {
   workspaceId: string;
   resourceId: string;
-  runId: string;
   draftKey: string;
+}
+
+export interface ResourceGenerationStatus {
+  runId: string;
+  generation: number;
+  generationId: string;
+  status: string;
+  replacementPending?: boolean;
+  agentHubSessionId?: string;
+}
+
+export interface ResourceSessionStatus {
+  id?: string;
+  state?: string;
+  currentTurnId?: string;
+  inputCapabilities?: { prompt?: boolean; steer?: boolean };
 }
 
 export interface AgentRun {
@@ -128,6 +135,73 @@ export interface AgentTurn {
   items: AgentTurnItem[];
 }
 
+export interface ResourceHistoryGeneration {
+  generation: number;
+  generationId: string;
+  title: string;
+  binding?: { kind?: string; name?: string };
+  resolvedProfile?: string;
+  agentName?: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  replacementPending?: boolean;
+}
+
+export interface ResourceHistoryGap {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export interface ResourceHistoryTurnSummary {
+  reference: string;
+  turnId: string;
+  status: string;
+  closed: boolean;
+  startedAt: string;
+  endedAt?: string;
+  durationMs: number;
+  triggerPreview?: string;
+  finalReplyPreview?: string;
+  eventCount: number;
+  toolEventCount: number;
+  startEventId: number;
+  lastEventId: number;
+  endEventId?: number;
+  generation: ResourceHistoryGeneration;
+}
+
+export interface ResourceHistoryTurnDetail {
+  turn: ResourceHistoryTurnSummary;
+  items: AgentTurnItem[];
+  latestEventId: number;
+}
+
+export interface ResourceHistorySegment {
+  generation: ResourceHistoryGeneration;
+  turns: ResourceHistoryTurnSummary[];
+  gap?: ResourceHistoryGap;
+}
+
+export interface ResourceHistoryPage {
+  resourceId: string;
+  segments: ResourceHistorySegment[];
+  page: { limit: number; nextCursor?: string; hasMore: boolean };
+}
+
+export interface ConversationBlock {
+  kind: "turn" | "gap";
+  key: string;
+  generation: ResourceHistoryGeneration;
+  turn?: ResourceHistoryTurnSummary;
+  items?: TimelineItem[];
+  events?: AgentEvent[];
+  loading?: boolean;
+  error?: string;
+  gap?: ResourceHistoryGap;
+}
+
 export interface AgentNotice {
   source?: string;
   type?: string;
@@ -145,6 +219,7 @@ export interface AgentNotice {
 export interface TimelineItem {
   kind: string;
   key?: string | number;
+  generationId?: string;
   role?: string;
   text?: string;
   time?: string;
@@ -172,8 +247,9 @@ export interface TimelineItem {
 export interface ChatContextSnapshot {
   identity: string;
   workspaceId: string;
-  runId: string;
-  events: AgentEvent[];
+  resourceId: string;
+  generationId: string;
+  blocks: ConversationBlock[];
   notices: AgentNotice[];
   hasMoreBefore: boolean;
   loading: boolean;
@@ -182,29 +258,16 @@ export interface ChatContextSnapshot {
   error: string;
 }
 
-export interface SessionSwitcherModel {
-  identity: string;
-  workspaceId: string;
-  resourceId: string;
-  activeRunId: string;
-  runs: AgentRun[];
-  switchingRunId: string;
-  onSelect: (runId: string) => Promise<void>;
-  onToast: (message: string) => void;
-  onIconsChanged: () => void;
-}
-
 export interface EventTimelineModel {
   identity: string;
   workspaceId: string;
-  activeRunId: string;
-  activeRun: AgentRun | null;
-  runCount: number;
+  resourceId: string;
+  status: ResourceMessageStatus | null;
   agentName: string;
   project: (events: AgentEvent[]) => TimelineItem[];
-  onEvent: (workspaceId: string, runId: string, event: AgentEvent) => void;
-  onNotice: (workspaceId: string, runId: string, notice: AgentNotice) => void;
-  onApproval: (runId: string, approvalId: string, reply: { decision?: string; optionId?: string; text?: string }) => Promise<void>;
+  onEvent: (workspaceId: string, resourceId: string, event: AgentEvent) => void;
+  onNotice: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;
+  onApproval: (generationId: string, approvalId: string, reply: { decision?: string; optionId?: string; text?: string }) => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
 }

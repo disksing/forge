@@ -1215,17 +1215,17 @@ func resourceErrorStatus(err error) int {
 		return http.StatusInternalServerError
 	}
 	switch apiErr.Code {
-	case "invalid_request":
+	case "invalid_request", "invalid_history_cursor", "invalid_history_reference":
 		return http.StatusBadRequest
-	case "resource_not_found", "message_not_found":
+	case "resource_not_found", "message_not_found", "history_reference_not_found", "history_turn_not_found", "history_event_not_found", "session_missing":
 		return http.StatusNotFound
-	case "resource_archived", "message_not_waiting", "steer_unavailable":
+	case "resource_archived", "message_not_waiting", "steer_unavailable", "generation_unavailable", "generation_changed":
 		return http.StatusConflict
 	case "workspace_not_owned":
 		return http.StatusConflict
 	case "binding_unavailable":
 		return http.StatusUnprocessableEntity
-	case "temporarily_undeliverable":
+	case "temporarily_undeliverable", "history_unavailable":
 		return http.StatusServiceUnavailable
 	case "message_conflict":
 		return http.StatusConflict

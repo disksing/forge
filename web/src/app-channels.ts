@@ -1,5 +1,5 @@
 import { createModelChannel, type ModelChannel } from "./components/model-channel";
-import type { EventTimelineModel, SessionSwitcherModel, UploadDialogModel, ComposerModel } from "./models/chat";
+import type { EventTimelineModel, UploadDialogModel, ComposerModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -13,7 +13,6 @@ export interface ForgeAppChannels {
   upload: ModelChannel<UploadDialogModel>;
   composer: ModelChannel<ComposerModel>;
   detail: ModelChannel<DetailPanelModel>;
-  sessions: ModelChannel<SessionSwitcherModel>;
   timeline: ModelChannel<EventTimelineModel>;
   toast: ModelChannel<ToastModel>;
 }
@@ -44,11 +43,10 @@ export function createForgeAppChannels(): ForgeAppChannels {
       onClose: noop, onAddWorkspace: noopAsync, onRemoveWorkspace: noopAsync, onWorkspaceIcon: noopAsync, onSaveUser: async (name) => name, onSaveAgentHub: noopAsync,
       onBrowserNotifications: noop, onCompletionSound: noop, onToast: noop, onIconsChanged: noop,
     }),
-    upload: createModelChannel<UploadDialogModel>({ open: false, identity: "", workspaceId: "", runId: "", onDone: noop, onIconsChanged: noop }),
-    composer: createModelChannel<ComposerModel>({ identity: "", workspaceId: "", resourceId: "", runId: "", runStatus: "", live: false, canResume: false, draft: "", draftKey: "", draftResetVersion: 0, unavailableReason: "Loading work status.", sending: false, agents: [], selectedAgentId: "", chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false, closingSession: false, waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: noop, onSend: async () => ({ accepted: false, clear: false }), onOpenUpload: noop, onToggleChooser: noop, onChooseAgent: noop, onToggleActions: noop, onResume: noop, onEndTurn: noop, onCloseSession: noop, onSteerWaiting: noopAsync, onIconsChanged: noop }),
+    upload: createModelChannel<UploadDialogModel>({ open: false, identity: "", workspaceId: "", resourceId: "", onDone: noop, onIconsChanged: noop }),
+    composer: createModelChannel<ComposerModel>({ identity: "", workspaceId: "", resourceId: "", draft: "", draftKey: "", draftResetVersion: 0, unavailableReason: "Loading work status.", sending: false, canEndTurn: false, endingTurn: false, waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: noop, onSend: async () => ({ accepted: false, clear: false }), onOpenUpload: noop, onEndTurn: noop, onSteerWaiting: noopAsync, onIconsChanged: noop }),
     detail: createModelChannel<DetailPanelModel>({ identity: "", workspaceId: "", workspaceName: "", resourceId: "", resourceType: "", resourceTitle: "", parent: null, loading: false, detail: null, wiki: null, workspaceAgents: null, agentBinding: { kind: "profile", name: "default" }, agentProfiles: [], agents: [], logs: { hasMore: false, loading: false, error: "" }, onNavigate: noop, onCreateTask: noop, onArchive: noop, onLoadMoreLogs: noopAsync, onSaveWorkspaceAgents: async () => ({ path: "AGENTS.md" }), onSaveAgentBinding: noopAsync, onToast: noop, onIconsChanged: noop }),
-    sessions: createModelChannel<SessionSwitcherModel>({ identity: "", workspaceId: "", resourceId: "", activeRunId: "", runs: [], switchingRunId: "", onSelect: noopAsync, onToast: noop, onIconsChanged: noop }),
-    timeline: createModelChannel<EventTimelineModel>({ identity: "", workspaceId: "", activeRunId: "", activeRun: null, runCount: 0, agentName: "Agent", project: () => [], onEvent: noop, onNotice: noop, onApproval: noopAsync, onToast: noop, onIconsChanged: noop }),
+    timeline: createModelChannel<EventTimelineModel>({ identity: "", workspaceId: "", resourceId: "", status: null, agentName: "Agent", project: () => [], onEvent: noop, onNotice: noop, onApproval: noopAsync, onToast: noop, onIconsChanged: noop }),
     toast: createModelChannel<ToastModel>({ message: "", revision: 0 }),
   };
 }

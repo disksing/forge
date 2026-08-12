@@ -128,19 +128,6 @@
   background: var(--panel);
 }
 
-:where([data-component-owner="app-shell"]) .agent-actions,
-:where([data-component-owner="app-shell"]) .agent-sessions {
-  border-bottom: 1px solid var(--line);
-  background: #fff;
-}
-
-:where([data-component-owner="app-shell"]) .agent-sessions {
-  flex: 0 0 auto;
-  min-height: 0;
-  overflow: visible;
-  background: #fff;
-}
-
 :where([data-component-owner="app-shell"]) .tty-panel {
   flex: 1;
   min-height: 0;
@@ -175,14 +162,6 @@
 :where([data-component-owner="app-shell"]) .agent-panel {
   grid-column: 3;
   border-left: 0;
-}
-
-:where([data-component-owner="app-shell"]) .agent-actions {
-  padding: 12px;
-}
-
-:where([data-component-owner="app-shell"]) .agent-sessions {
-  padding: 8px 12px;
 }
 
 :where([data-component-owner="app-shell"]) .tty-panel {
@@ -373,9 +352,6 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .agent-pane
   :where([data-component-owner="app-shell"]) .tty-composer {
     padding-bottom: env(safe-area-inset-bottom, 0px);
     background: #fff;
-  }
-  :where(body).chat-immersive :where([data-component-owner="app-shell"]) .agent-sessions {
-    display: none;
   }
 }
 

@@ -196,6 +196,56 @@ type agentHubEvent struct {
 	Data      json.RawMessage `json:"data,omitempty"`
 }
 
+type agentHubTurnItem struct {
+	Type         string                 `json:"type"`
+	Role         string                 `json:"role,omitempty"`
+	Sender       *agentHubMessageSender `json:"sender,omitempty"`
+	Steer        bool                   `json:"steer,omitempty"`
+	Text         string                 `json:"text,omitempty"`
+	StartEventID int64                  `json:"startEventId"`
+	EndEventID   int64                  `json:"endEventId"`
+	StartedAt    string                 `json:"startedAt"`
+	EndedAt      string                 `json:"endedAt"`
+	DurationMS   int64                  `json:"durationMs"`
+	Count        int                    `json:"count"`
+	Data         json.RawMessage        `json:"data,omitempty"`
+}
+
+type agentHubTurn struct {
+	ID                 string                 `json:"id"`
+	TurnID             string                 `json:"turnId"`
+	Status             string                 `json:"status"`
+	Closed             bool                   `json:"closed"`
+	StartedAt          string                 `json:"startedAt"`
+	EndedAt            string                 `json:"endedAt,omitempty"`
+	DurationMS         int64                  `json:"durationMs"`
+	StartEventID       int64                  `json:"startEventId"`
+	TurnStartedEventID int64                  `json:"turnStartedEventId,omitempty"`
+	EndEventID         int64                  `json:"endEventId,omitempty"`
+	CompletedAt        string                 `json:"completedAt,omitempty"`
+	FirstEventID       int64                  `json:"firstEventId"`
+	LastEventID        int64                  `json:"lastEventId"`
+	TriggerEventID     int64                  `json:"triggerEventId,omitempty"`
+	FinalReplyEventID  int64                  `json:"finalReplyEventId,omitempty"`
+	TriggerPreview     string                 `json:"triggerPreview,omitempty"`
+	TriggerRole        string                 `json:"triggerRole,omitempty"`
+	TriggerSender      *agentHubMessageSender `json:"triggerSender,omitempty"`
+	FinalReplyPreview  string                 `json:"finalReplyPreview,omitempty"`
+	EventCount         int                    `json:"eventCount"`
+	ToolEventCount     int                    `json:"toolEventCount"`
+	Items              []agentHubTurnItem     `json:"items,omitempty"`
+}
+
+type agentHubTurnPage struct {
+	Turns []agentHubTurn `json:"turns"`
+	Page  struct {
+		NextBefore    int64 `json:"nextBefore"`
+		HasMoreBefore bool  `json:"hasMoreBefore"`
+	} `json:"page"`
+	LatestCursor  int64 `json:"latestCursor"`
+	LatestEventID int64 `json:"latestEventId"`
+}
+
 func newAgentHubClient(endpoint string, httpClient *http.Client) (*agentHubClient, error) {
 	normalized, err := normalizeAgentHubEndpoint(endpoint)
 	if err != nil {
@@ -292,6 +342,48 @@ func (c *agentHubClient) SessionEvents(ctx context.Context, sessionID string, af
 	}
 	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID)+"/events?"+query.Encode(), nil, &response)
 	return response.Events, response.LatestCursor, err
+}
+
+func (c *agentHubClient) SessionTurns(ctx context.Context, sessionID string, before int64, latest bool, limit int) (agentHubTurnPage, error) {
+	query := make(url.Values)
+	if latest {
+		query.Set("latest", "true")
+	} else if before > 0 {
+		query.Set("before", strconv.FormatInt(before, 10))
+	}
+	if limit > 0 {
+		query.Set("limit", strconv.Itoa(limit))
+	}
+	var response agentHubTurnPage
+	path := sessionPath(sessionID) + "/turns"
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	err := c.doJSON(ctx, http.MethodGet, path, nil, &response)
+	return response, err
+}
+
+func (c *agentHubClient) SessionTurn(ctx context.Context, sessionID, turnID string) (agentHubTurn, int64, error) {
+	var response struct {
+		Turn          agentHubTurn `json:"turn"`
+		LatestEventID int64        `json:"latestEventId"`
+	}
+	err := c.doJSON(ctx, http.MethodGet, sessionPath(sessionID)+"/turns/"+url.PathEscape(turnID), nil, &response)
+	return response.Turn, response.LatestEventID, err
+}
+
+func (c *agentHubClient) SessionEvent(ctx context.Context, sessionID string, eventID int64) (agentHubEvent, error) {
+	if eventID <= 0 {
+		return agentHubEvent{}, errors.New("event id must be positive")
+	}
+	events, _, err := c.SessionEvents(ctx, sessionID, eventID-1, 1)
+	if err != nil {
+		return agentHubEvent{}, err
+	}
+	if len(events) != 1 || events[0].ID != eventID {
+		return agentHubEvent{}, &agentHubAPIError{StatusCode: http.StatusNotFound, Code: "event_not_found", Message: "event not found"}
+	}
+	return events[0], nil
 }
 
 func (c *agentHubClient) ListSessions(ctx context.Context, filter agentHubSessionFilter) ([]agentHubSession, error) {

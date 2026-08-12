@@ -123,6 +123,20 @@ function historyTurns(runId: string) {
   }));
 }
 
+const resourceGeneration = {
+  generation: 1, generationId: "gen-1", title: "Infrastructure task", status: "idle",
+  agentName: "test-agent", createdAt: now, updatedAt: now,
+};
+
+function resourceTurnSummaries() {
+  return historyTurns("run-1").map((turn) => ({
+    reference: `ref-${turn.turnId}`, turnId: turn.turnId, status: turn.status, closed: turn.closed,
+    startedAt: turn.items[0].startedAt, durationMs: 0, triggerPreview: turn.items[0].text,
+    eventCount: 1, toolEventCount: 0, startEventId: turn.startEventId, lastEventId: turn.lastEventId,
+    endEventId: turn.endEventId, generation: resourceGeneration,
+  }));
+}
+
 async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
@@ -204,7 +218,11 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     if (statusMatch && method === "GET") {
       const resourceId = decodeURIComponent(statusMatch[1]);
       const visible = waitingMessages.filter((message) => message.resourceId === resourceId);
-      return json(route, { resourceId, state: "working", canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length } });
+      return json(route, {
+        resourceId, state: "working", exists: true, archived: false, acceptsMessages: true,
+        canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length },
+        ...(resourceId === "project1.task1" ? { generation: { runId: "run-1", generation: 1, generationId: "gen-1", status: "idle" }, session: { id: "run-1", state: "idle" } } : {}),
+      });
     }
     const steerMatch = path.match(/^\/api\/workspaces\/ws-test\/messages\/(.+)\/steer$/);
     if (steerMatch && method === "POST") {
@@ -213,6 +231,42 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       waitingMessages = waitingMessages.filter((message) => message.messageId !== messageId);
       return json(route, { messageId, status: "delivered", actualMode: "steer" });
     }
+    const historyTurnDetailMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/project1\.task1\/history\/turns\/(.+)$/);
+    if (historyTurnDetailMatch && method === "GET") {
+      const reference = decodeURIComponent(historyTurnDetailMatch[1]);
+      const summary = resourceTurnSummaries().find((turn) => turn.reference === reference);
+      if (!summary) return json(route, { error: "turn not found" }, 404);
+      const source = historyTurns("run-1").find((turn) => turn.turnId === summary.turnId)!;
+      return json(route, { turn: summary, items: source.items, latestEventId: 64 });
+    }
+    if (path === "/api/workspaces/ws-test/resources/project1.task1/history/turns" && method === "GET") {
+      if (url.searchParams.has("cursor")) {
+        const summary = {
+          reference: "ref-turn-older", turnId: "turn-older", status: "completed", closed: true,
+          startedAt: now, durationMs: 0, triggerPreview: "run-1 older history", eventCount: 2, toolEventCount: 0,
+          startEventId: 1, lastEventId: 32, endEventId: 32, generation: resourceGeneration,
+        };
+        return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: [summary] }], page: { limit: 20, hasMore: false } });
+      }
+      return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: resourceTurnSummaries() }], page: { limit: 20, nextCursor: "older", hasMore: true } });
+    }
+    if (path === "/api/workspaces/ws-test/resources/project1.task1/stream" && method === "GET") {
+      harness.streamRequests.push("project1.task1");
+      const event = { id: 100, time: now, type: "message.assistant.delta", sessionId: "run-1", turnId: "turn-stream", data: { text: "SSE update for project1.task1" } };
+      return route.fulfill({ status: 200, contentType: "text/event-stream", headers: { "cache-control": "no-cache" }, body: `id: 100\ndata: ${JSON.stringify(event)}\n\n` });
+    }
+    if (path === "/api/workspaces/ws-test/resources/project1.task1/messages" && method === "POST") {
+      harness.inputBodies.push(request.postDataJSON());
+      return json(route, { status: "delivered", messageId: "msg-e2e" });
+    }
+    if (path === "/api/workspaces/ws-test/resources/project1.task1/uploads" && method === "POST") {
+      const multipart = request.postData() || "";
+      const name = multipart.match(/filename="([^"]+)"/)?.[1] || "upload.txt";
+      harness.uploadNames.push(name);
+      return json(route, { name, path: `artifacts/upload/${name}` }, 201);
+    }
+    const emptyHistoryMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/history\/turns$/);
+    if (emptyHistoryMatch && method === "GET") return json(route, { resourceId: decodeURIComponent(emptyHistoryMatch[1]), segments: [], page: { limit: 20, hasMore: false } });
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
     if (resourceMatch) {
       const value = detail(decodeURIComponent(resourceMatch[1]));
@@ -379,7 +433,9 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     const treeMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/tree$/);
     if (treeMatch) return json(route, trees[treeMatch[1] as keyof typeof trees]);
     const statusMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)\/status$/);
-    if (statusMatch) return json(route, { resourceId: decodeURIComponent(statusMatch[2]), state: "idle", canSteerWaiting: false, waitingMessages: [], messages: { waiting: 0 } });
+    if (statusMatch) return json(route, { resourceId: decodeURIComponent(statusMatch[2]), state: "idle", exists: true, archived: false, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], messages: { waiting: 0 } });
+    const historyMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)\/history\/turns$/);
+    if (historyMatch) return json(route, { resourceId: decodeURIComponent(historyMatch[2]), segments: [], page: { limit: 20, hasMore: false } });
     const detailMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)$/);
     if (detailMatch) {
       const id = decodeURIComponent(detailMatch[2]);
@@ -502,33 +558,19 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
   await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
 });
 
-test("switches sessions, sends input, receives SSE, and preserves active reading state during refresh", async ({ page }) => {
+test("pages resource history, sends input, receives SSE, and preserves active reading state during refresh", async ({ page }) => {
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  await expect(page.locator(".agent-current-run strong")).toHaveText("Primary session");
-  await expect(page.locator("#ttyLog")).toContainText("SSE update for run-1");
-  const historyAnchor = page.locator('[data-timeline-key="message:33"]');
+  await expect(page.locator("#ttyLog")).toContainText("SSE update for project1.task1");
+  await expect(page.locator("#ttyLog")).toContainText("run-1 baseline message 1");
+  const historyAnchor = page.locator(".conversation-turn").filter({ hasText: "run-1 baseline message 1" }).first();
   await expect(historyAnchor).toBeVisible();
   await historyAnchor.evaluate((node) => node.setAttribute("data-history-anchor", "stable"));
   await page.locator("#loadOlderAgentEventsButton, .load-older-events").click();
   await expect(page.locator("#ttyLog")).toContainText("run-1 older history");
   await expect(historyAnchor).toHaveAttribute("data-history-anchor", "stable");
-  await expect(page.locator('[data-timeline-key="message:33"]')).toHaveCount(1);
   const input = page.locator("#ttyInput");
-  await input.fill("draft for run one");
-  await page.locator(".agent-current-run").click();
-  await page.locator('[data-agent-run="run-2"]').last().click();
-  await expect(page.locator(".agent-current-run strong")).toHaveText("Secondary session");
-  await expect(page.locator("#ttyLog")).not.toContainText("run-1 baseline message");
-  await expect(page.locator("#ttyLog")).toContainText("run-2 baseline message");
-  await expect(input).toHaveValue("");
-  await input.fill("draft for run two");
-  await page.locator(".agent-current-run").click();
-  await page.locator('[data-agent-run="run-1"]').last().click();
-  await expect(page.locator(".agent-current-run strong")).toHaveText("Primary session");
-  await expect(input).toHaveValue("draft for run one");
-
   await input.fill("Preserve this draft until accepted");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
@@ -562,7 +604,7 @@ test("switches sessions, sends input, receives SSE, and preserves active reading
   expect(after.selection).toBe(before.selection);
   expect(after.selection).not.toBe("");
   expect(harness.treeRequests).toBeGreaterThan(1);
-  expect(harness.streamRequests).toContain("run-1");
+  expect(harness.streamRequests).toContain("project1.task1");
 });
 
 test("shows waiting messages above the composer and inserts one through steer", async ({ page }) => {
@@ -585,19 +627,12 @@ test("shows waiting messages above the composer and inserts one through steer", 
   await expect(page.locator("#toast")).toContainText("Message inserted into the current turn");
 });
 
-test("uses the AgentHub catalog to enable the New Session agent chooser", async ({ page }) => {
-  const harness = await installMockApi(page);
+test("keeps resource chat free of AgentHub Session lifecycle controls", async ({ page }) => {
+  await installMockApi(page);
   await page.goto("/w/ws-test/r/project1");
-
-  const start = page.locator("#agentStartButton");
-  await expect(start).toBeEnabled();
-  await start.click();
-  await expect(page.locator("#ttyAgentMenu")).toBeVisible();
-  await expect(page.locator('[data-agent-choice="test-agent"]')).toBeVisible();
-  await page.locator('[data-agent-choice="test-agent"]').click();
-
-  await expect.poll(() => harness.startBodies.length).toBe(1);
-  expect(harness.startBodies[0]).toMatchObject({ agentName: "test-agent", resourceId: "project1" });
+  await expect(page.locator("#agentStartButton")).toHaveCount(0);
+  await expect(page.locator("#agentResumeButton")).toHaveCount(0);
+  await expect(page.locator("#agentCloseSessionButton")).toHaveCount(0);
 });
 
 test("keeps the Svelte template editor stable and ignores an older preview response", async ({ page }) => {

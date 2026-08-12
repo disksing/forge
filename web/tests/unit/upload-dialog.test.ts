@@ -19,8 +19,9 @@ class FakeXHR {
   statusText = "";
   responseType: XMLHttpRequestResponseType = "";
   aborted = false;
+  url = "";
   constructor() { FakeXHR.instances.push(this); }
-  open(): void {}
+  open(_method: string, url: string): void { this.url = url; }
   send(): void {}
   abort(): void { this.aborted = true; }
   addEventListener(name: string, listener: EventListener): void { this.listeners.set(name, listener); }
@@ -36,11 +37,11 @@ afterEach(async () => {
 });
 
 function model(overrides: Partial<UploadDialogModel> = {}): UploadDialogModel {
-  return { open: true, identity: "upload-1:workspace-a:run-a", workspaceId: "workspace-a", runId: "run-a", onDone: vi.fn(), onIconsChanged: vi.fn(), ...overrides };
+  return { open: true, identity: "upload-1:workspace-a:task-a", workspaceId: "workspace-a", resourceId: "task-a", onDone: vi.fn(), onIconsChanged: vi.fn(), ...overrides };
 }
 
 describe("UploadDialog", () => {
-  it("aborts in-flight uploads when the Workspace or Session identity changes", async () => {
+  it("uploads to the resource endpoint and aborts when the resource identity changes", async () => {
     globalThis.XMLHttpRequest = FakeXHR as unknown as typeof XMLHttpRequest;
     const first = model();
     const channel = createModelChannel(first);
@@ -55,8 +56,9 @@ describe("UploadDialog", () => {
     await tick();
     expect(FakeXHR.instances).toHaveLength(1);
     expect(FakeXHR.instances[0].aborted).toBe(false);
+    expect(FakeXHR.instances[0].url).toContain("/resources/task-a/uploads");
 
-    channel.publish(model({ open: false, identity: "upload-2:workspace-b:run-b", workspaceId: "workspace-b", runId: "run-b" }));
+    channel.publish(model({ open: false, identity: "upload-2:workspace-b:task-b", workspaceId: "workspace-b", resourceId: "task-b" }));
     await tick();
     expect(FakeXHR.instances[0].aborted).toBe(true);
   });

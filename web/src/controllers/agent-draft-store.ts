@@ -63,6 +63,13 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 		return `${STORAGE_PREFIX}.session.${storagePart(workspace)}.${storagePart(session)}`;
 	}
 
+	function keyForResource(workspaceId: unknown, resourceId: unknown): string {
+		const workspace = String(workspaceId || "").trim();
+		const resource = agentDraftResourceScope(resourceId);
+		if (!workspace || !resource) return "";
+		return `${STORAGE_PREFIX}.resource.${storagePart(workspace)}.${storagePart(resource)}`;
+	}
+
 	function decode(raw: string | null): AgentDraftRecord | null {
 		if (!raw) return null;
 		try {
@@ -160,5 +167,5 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 		} catch (_) {}
 	}
 
-	return { keyForRun, read, remove, write, prune };
+	return { keyForRun, keyForResource, read, remove, write, prune };
 }

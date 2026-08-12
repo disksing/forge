@@ -17,141 +17,68 @@ class FakeEventSource {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   closed = false;
-  private listeners = new Map<string, (event: MessageEvent) => void>();
-
-  constructor(readonly url: string) {
-    FakeEventSource.instances.push(this);
-  }
-
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void {
-    this.listeners.set(type, listener as (event: MessageEvent) => void);
-  }
-
+  constructor(readonly url: string) { FakeEventSource.instances.push(this); }
+  addEventListener(): void {}
   close(): void { this.closed = true; }
-  emit(event: AgentEvent): void { this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(event) })); }
 }
 
 function project(events: AgentEvent[]): TimelineItem[] {
-  return events.map((event) => event.type === "tool"
-    ? { kind: "tools", key: event.id, calls: [{ key: event.id, callId: `call-${event.id}`, name: "Read", summary: "fixture", status: String(event.data?.status || "running") }] }
-    : { kind: "message", key: event.id, role: "user", text: String(event.data?.text || ""), time: event.time });
+  return events.map((event) => ({ kind: "message", key: event.id, role: "assistant", text: String(event.data?.text || "") }));
 }
 
-function model(runId: string): EventTimelineModel {
+function model(resourceId: string): EventTimelineModel {
   return {
-    identity: `workspace-a:${runId}`, workspaceId: "workspace-a", activeRunId: runId,
-    activeRun: { id: runId, agentHubSessionId: `session-${runId}`, status: "idle" }, runCount: 2, agentName: "Test Agent",
-    project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
+    status: { resourceId, state: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { runId: "run", generation: 1, generationId: `gen-${resourceId}`, status: "idle" }, session: { id: `session-${resourceId}`, state: "idle" } },
+    agentName: "Test Agent", project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
   };
 }
 
+function history(resourceId: string) {
+  const generation = { generation: 1, generationId: `gen-${resourceId}`, title: resourceId, status: "idle", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+  const turn = { reference: `ref-${resourceId}`, turnId: "turn-1", status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation };
+  return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] } };
+}
+
 describe("EventTimeline", () => {
-  it("does not reproject unchanged events when only model metadata is republished", async () => {
+  it("renders resource history with a generation boundary and visible Turn detail", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      events: [{ id: 1, type: "message", sessionId: "session-run-a", data: { text: "message A" } }],
-      page: { hasMoreBefore: false },
-    }), { status: 200, headers: { "content-type": "application/json" } })));
-    const projector = vi.fn(project);
-    const initial = { ...model("run-a"), project: projector };
-    const channel = createModelChannel(initial);
+    const fixture = history("task-a");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
     target.className = "tty-log";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
-    await vi.waitFor(() => expect(target.textContent).toContain("message A"));
-    const projections = projector.mock.calls.length;
-    channel.publish({ ...initial, agentName: "Renamed Agent", runCount: 3 });
-    await tick();
-    expect(projector).toHaveBeenCalledTimes(projections);
+    await vi.waitFor(() => expect(target.textContent).toContain("message task-a"));
+    expect(target.textContent).toContain("Generation 1");
+    expect(target.querySelector("[data-generation-id='gen-task-a']")).not.toBeNull();
+    expect(FakeEventSource.instances[0].url).toContain("/resources/task-a/stream?");
   });
 
-  it("keeps keyed nodes and expansion stable, while a session switch invalidates the old view immediately", async () => {
+  it("invalidates the old resource view and stream immediately on resource switch", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      const path = String(input);
-      const runId = path.includes("run-b") ? "run-b" : "run-a";
-      return new Response(JSON.stringify({
-        events: runId === "run-a"
-          ? [{ id: 1, type: "message", sessionId: "session-run-a", data: { text: "message A" } }, { id: 2, type: "tool", sessionId: "session-run-a", data: { status: "running" } }]
-          : [{ id: 10, type: "message", sessionId: "session-run-b", data: { text: "message B" } }],
-        page: { hasMoreBefore: false },
-      }), { status: 200, headers: { "content-type": "application/json" } });
+      const resource = String(input).includes("task-b") ? "task-b" : "task-a";
+      const fixture = history(resource);
+      return new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } });
     }));
-
-    const channel = createModelChannel(model("run-a"));
+    const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
     target.className = "tty-log";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
-
-    await vi.waitFor(() => expect(target.textContent).toContain("message A"));
-    const message = target.querySelector<HTMLElement>('[data-timeline-key="message:1"]')!;
-    message.dataset.identityProbe = "stable";
-    const tools = target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')!;
-    tools.open = true;
-    tools.dispatchEvent(new Event("toggle"));
-    await tick();
-
+    await vi.waitFor(() => expect(target.textContent).toContain("message task-a"));
     const oldStream = FakeEventSource.instances[0];
-    oldStream.emit({ id: 3, type: "message", sessionId: "session-run-a", data: { text: "live A" } });
-    await vi.waitFor(() => expect(target.textContent).toContain("live A"));
-    expect(target.querySelector('[data-timeline-key="message:1"]')).toBe(message);
-    expect(message.dataset.identityProbe).toBe("stable");
-    expect(tools.open).toBe(true);
 
-    channel.publish(model("run-b"));
+    channel.publish(model("task-b"));
     await tick();
-    expect(target.querySelector('[data-chat-context="workspace-a:run-b"]')).not.toBeNull();
-    expect(target.textContent).not.toContain("message A");
-    await vi.waitFor(() => expect(target.textContent).toContain("message B"));
+    expect(target.querySelector('[data-chat-context="workspace-a:task-b"]')).not.toBeNull();
+    expect(target.textContent).not.toContain("message task-a");
+    await vi.waitFor(() => expect(target.textContent).toContain("message task-b"));
     expect(oldStream.closed).toBe(true);
-    oldStream.emit({ id: 4, type: "message", sessionId: "session-run-a", data: { text: "late A" } });
-    await tick();
-    expect(target.textContent).not.toContain("late A");
-
-    channel.publish(model("run-a"));
-    await vi.waitFor(() => expect(target.textContent).toContain("message A"));
-    expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')?.open).toBe(true);
-  });
-
-  it("keeps tool groups collapsed by default, including trailing live groups", async () => {
-    FakeEventSource.instances = [];
-    vi.stubGlobal("EventSource", FakeEventSource);
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
-      events: [
-        { id: 1, type: "message", sessionId: "session-run-a", data: { text: "message A" } },
-        { id: 2, type: "tool", sessionId: "session-run-a", data: { status: "running" } },
-      ],
-      page: { hasMoreBefore: false },
-    }), { status: 200, headers: { "content-type": "application/json" } })));
-
-    const channel = createModelChannel(model("run-a"));
-    const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
-    const component = mount(EventTimeline, { target, props: { channel } });
-    cleanups.push(() => unmount(component));
-
-    // Even as the last timeline item with a running call, the group starts collapsed.
-    await vi.waitFor(() => expect(target.querySelector('[data-timeline-key="tools:2"]')).not.toBeNull());
-    expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')?.open).toBe(false);
-
-    // Live tool events append new groups without opening them.
-    const stream = FakeEventSource.instances[0];
-    stream.emit({ id: 3, type: "tool", sessionId: "session-run-a", data: { status: "completed" } });
-    await vi.waitFor(() => expect(target.querySelector('[data-timeline-key="tools:3"]')).not.toBeNull());
-    expect(target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:3"] .agent-tool-group')?.open).toBe(false);
-
-    // A manual toggle is still honored and survives later live updates.
-    const tools = target.querySelector<HTMLDetailsElement>('[data-timeline-key="tools:2"] .agent-tool-group')!;
-    tools.open = true;
-    tools.dispatchEvent(new Event("toggle"));
-    await tick();
-    stream.emit({ id: 4, type: "message", sessionId: "session-run-a", data: { text: "live A" } });
-    await vi.waitFor(() => expect(target.textContent).toContain("live A"));
-    expect(tools.open).toBe(true);
   });
 });

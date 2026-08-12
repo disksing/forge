@@ -55,6 +55,8 @@ func Run(args []string) error {
 		return runResource(args[1:])
 	case "message":
 		return runMessage(args[1:])
+	case "history":
+		return runHistory(args[1:])
 	case "session":
 		return runSession(args[1:])
 	case "workspace":
@@ -97,6 +99,8 @@ func runWorkspace(args []string) error {
 	switch args[0] {
 	case "status":
 		return runWorkspaceStatus(args[1:])
+	case "history":
+		return runWorkspaceHistory(args[1:])
 	case "tree":
 		if len(args) != 2 || args[1] != "--json" {
 			return errors.New("usage: forge workspace tree --json")
@@ -158,6 +162,8 @@ func runProject(args []string) error {
 		return applicationShowResource(projectID)
 	case "status":
 		return runProjectStatus(args[1:])
+	case "history":
+		return runProjectHistory(args[1:])
 	case "archive":
 		projectID, err := resolveProjectArg(args[1:], "archive")
 		if err != nil {
@@ -238,6 +244,8 @@ func runTask(args []string) error {
 			return err
 		}
 		return applicationArchiveResource(taskID)
+	case "history":
+		return runTaskHistory(args[1:])
 	case "repo":
 		return runTaskRepo(args[1:])
 	case "log":
@@ -301,6 +309,11 @@ Usage:
   forge workspace status [--server=<url>]
   forge project status [--project=<project>] [--server=<url>]
   forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+  forge history turn show --ref=<turn-ref> [--server=<url>]
+  forge history event show --ref=<event-ref> [--server=<url>]
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
   forge message show --id=<message-id> [--server=<url>]
   forge resource archive --id=<resource>
@@ -432,6 +445,18 @@ Commands:
     public state, generation and Session diagnostics, message counts, waiting
     messages, steer capability, and recent delivery error. Selection follows
     the corresponding show command; Workspace status selects the Workspace.
+
+  forge workspace|project|task history ... [--cursor=<cursor>] [--limit=<n>] [--server=<url>]
+    Read one bounded newest-first page of the selected resource's long-lived
+    conversation through the owning forge serve process. Results are grouped
+    into ordered generation segments. Explicit gap segments identify missing,
+    unavailable, or damaged AgentHub history without hiding older generations.
+
+  forge history turn|event show --ref=<reference> [--server=<url>]
+    Expand a stable opaque reference returned by a resource history page or
+    Turn detail. Turn details contain complete compact messages and Event
+    ranges; Event details read one canonical AgentHub Event on demand. Neither
+    command requires or accepts a run or AgentHub Session id.
 
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
     Persist a message in the target resource mailbox through the owning

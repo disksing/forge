@@ -45,3 +45,69 @@
 :where([data-component-owner="event-timeline"]) .tty-empty span {
   display: block;
 }
+
+:where([data-component-owner="event-timeline"]) .conversation-generation {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 18px 0 10px;
+  color: #6c7885;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-generation::before,
+:where([data-component-owner="event-timeline"]) .conversation-generation::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #dfe4e8;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-generation strong {
+  color: #344150;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-generation small {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-gap,
+:where([data-component-owner="event-timeline"]) .turn-loading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px dashed #d6a857;
+  border-radius: 8px;
+  color: #72521c;
+  background: #fffaf0;
+  font-size: 12px;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-gap span,
+:where([data-component-owner="event-timeline"]) .conversation-gap small {
+  display: block;
+}
+
+:where([data-component-owner="event-timeline"]) .conversation-turn {
+  min-height: 1px;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-summary-preview {
+  margin: 8px 0;
+  color: #7c8792;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+:where([data-component-owner="event-timeline"]) .turn-loading {
+  border-color: #dfe4e8;
+  color: #74808c;
+  background: #f8fafb;
+}

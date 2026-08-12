@@ -243,6 +243,11 @@ func TestResourceMailboxInterruptRetiresReplacingGeneration(t *testing.T) {
 		message, found, err = mailboxMessageByID(workspace.Path, message.ID)
 		current, currentFound, currentErr := currentResourceGeneration(workspace.Path, "project1.task1")
 		if err == nil && found && currentErr == nil && currentFound && current.Generation > oldRun.Generation && message.Status == resourceMessageDelivered {
+			// The generation and mailbox files become observable before the
+			// retirement goroutine publishes its final notice. Join that bounded
+			// critical section so TempDir cleanup cannot race the last disk write.
+			manager.resourceMu.Lock()
+			manager.resourceMu.Unlock()
 			if message.GenerationID == oldRun.GenerationID {
 				t.Fatalf("interrupt message was delivered to the retired generation: %#v", message)
 			}

@@ -20,13 +20,11 @@ function deferred<T>() {
 
 function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
   return {
-    identity: "workspace-a:task-a:run-a:draft-a", workspaceId: "workspace-a", resourceId: "task-a", runId: "run-a",
-    runStatus: "idle", live: true, canResume: false, draft: "", draftKey: "draft-a", draftResetVersion: 0,
-    unavailableReason: "", sending: false, agents: [], selectedAgentId: "",
-    chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false,
-    closingSession: false, waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
-    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onToggleChooser: vi.fn(),
-    onChooseAgent: vi.fn(), onToggleActions: vi.fn(), onResume: vi.fn(), onEndTurn: vi.fn(), onCloseSession: vi.fn(),
+    identity: "workspace-a:task-a:draft-a", workspaceId: "workspace-a", resourceId: "task-a",
+    draft: "", draftKey: "draft-a", draftResetVersion: 0,
+    unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false,
+    waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
+    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(),
     onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(), ...overrides,
   };
 }
@@ -45,8 +43,8 @@ describe("ChatComposer", () => {
     expect(input.value).toBe("typed immediately");
   });
 
-  it("preserves a resource draft when the initial run projection arrives", async () => {
-    const channel = createModelChannel(model({ identity: "workspace-a:task-a:none:", runId: "", draftKey: "" }));
+  it("keeps an in-progress resource draft when metadata is republished", async () => {
+    const channel = createModelChannel(model());
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ChatComposer, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -55,15 +53,13 @@ describe("ChatComposer", () => {
     const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
     input.value = "typed while runs load";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    const onDraft = vi.fn();
-    channel.publish(model({ onDraft }));
+    channel.publish(model({ unavailableReason: "" }));
     await tick();
 
     expect(input.value).toBe("typed while runs load");
-    expect(onDraft).toHaveBeenCalledWith("typed while runs load", expect.objectContaining({ runId: "run-a", draftKey: "draft-a" }));
   });
 
-  it("does not let a late accepted send clear a different session draft", async () => {
+  it("does not let a late accepted send clear a different resource draft", async () => {
     const result = deferred<{ accepted: boolean; clear: boolean }>();
     const first = model({ onSend: vi.fn(() => result.promise) });
     const channel = createModelChannel(first);
@@ -78,13 +74,13 @@ describe("ChatComposer", () => {
     target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await tick();
 
-    channel.publish(model({ identity: "workspace-a:task-a:run-b:draft-b", runId: "run-b", draftKey: "draft-b", draft: "draft for run b" }));
+    channel.publish(model({ identity: "workspace-a:task-b:draft-b", resourceId: "task-b", draftKey: "draft-b", draft: "draft for task b" }));
     await tick();
     result.resolve({ accepted: true, clear: true });
     await result.promise;
     await tick();
 
-    expect(target.querySelector<HTMLTextAreaElement>("#ttyInput")?.value).toBe("draft for run b");
+    expect(target.querySelector<HTMLTextAreaElement>("#ttyInput")?.value).toBe("draft for task b");
   });
 
   it("keeps failed text and offers an explicit retry", async () => {

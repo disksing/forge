@@ -4,7 +4,6 @@
   import CreateDialog from "./components/CreateDialog.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
   import EventTimeline from "./components/EventTimeline.svelte";
-  import SessionSwitcher from "./components/SessionSwitcher.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import Toast from "./components/Toast.svelte";
   import UploadDialog from "./components/UploadDialog.svelte";
@@ -15,7 +14,6 @@
 
 <AppShell channel={channels.appShell}>
   {#snippet details()}<DetailPanel channel={channels.detail} />{/snippet}
-  {#snippet sessions()}<SessionSwitcher channel={channels.sessions} />{/snippet}
   {#snippet timeline()}<EventTimeline channel={channels.timeline} />{/snippet}
   {#snippet composer()}<ChatComposer channel={channels.composer} />{/snippet}
 </AppShell>

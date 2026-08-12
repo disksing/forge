@@ -36,6 +36,14 @@ GET  /api/workspaces/{workspaceId}/resources/{resourceId}/status
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/messages
 GET  /api/workspaces/{workspaceId}/messages/{messageId}
 POST /api/workspaces/{workspaceId}/messages/{messageId}/steer
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/turns
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/turns/{turnRef}
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/history/events/{eventRef}
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/events
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/stream
+POST /api/workspaces/{workspaceId}/resources/{resourceId}/approval
+POST /api/workspaces/{workspaceId}/resources/{resourceId}/turn/end
+POST /api/workspaces/{workspaceId}/resources/{resourceId}/uploads
 ```
 
 发送正文示例：
@@ -66,6 +74,8 @@ curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESS
 
 Forge 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconciler 更新本地 run 投影、Profile 解析和全部资源 generation。Task 或 Project 归档会收敛其所有 generation；活动 Turn 默认拒绝 GUI 归档，外部归档也会等待 Turn 自然结束，随后执行 Stop、确认 `stopped`、Archive。未知 Stop/Archive 响应、服务重启和中间状态均由重复 reconcile 恢复。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才删除对应的瞬态 Forge Session 投影。
 
-Session 投影的创建、AgentHub ID 绑定与安全删除只通过 `internal/app` 的 Server 内部 API 完成。公共 CLI 只保留 `forge session list/show` 作为只读诊断，不提供手工创建、绑定、心跳或结束入口，也不会访问 AgentHub。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，普通显式 GUI Session 控制仍保留作诊断和兼容用途。
+Session 投影的创建、AgentHub ID 绑定与安全删除只通过 `internal/app` 的 Server 内部 API 完成。公共 CLI 只保留 `forge session list/show` 作为只读诊断，不提供手工创建、绑定、心跳或结束入口，也不会访问 AgentHub。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，GUI 不再提供 Session 新建、切换、恢复或关闭控件。
 
-`GET .../turns` 和 `GET .../turns/{turnId}` 代理 AgentHub 的紧凑 Turn 投影；`GET .../events` 另支持稳定 `start`/`end` 有界范围。浏览器先反向读取最新 Turn，只为开放 Turn 补齐原始 Events，再从响应的 `latestEventId` 无缺口接入 SSE；terminal 后用物化 Turn 替换直播区间，thinking/tool 展开时再读取范围 Events。恢复诊断使用独立 `forge.notice`，不伪装成 canonical event。
+资源历史接口以版本化 base64url opaque reference/cursor 绑定 Workspace instance、资源和 generation。列表跨 generation 反向分页，保留创建时标题、绑定与解析结果；缺失、损坏或暂时不可读的 Session 形成显式 gap，单个 gap 不阻断更旧历史。浏览器先加载 Turn 摘要，由视口按需请求详情；只有当前 generation 的开放 Turn 通过资源级 `events` 补齐原始事件并接入 SSE，terminal 后替换为紧凑 Turn。跨 generation 的复合 key、滚动锚点、未读与草稿由 Forge 管理。
+
+AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；Forge 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。恢复诊断使用独立 `forge.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。

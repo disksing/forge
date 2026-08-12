@@ -4,7 +4,8 @@ set -eu
 repo=${1:?usage: scripts/update-agenthub-event-timeline /path/to/agenthub [revision]}
 revision=${2:-fca6c780b58b7af9134252a9354cf8f60bb8801e}
 expected_revision=fca6c780b58b7af9134252a9354cf8f60bb8801e
-expected_sha=bd5bbd4229e147c64efca1ac516670ac4134c71e4ce882118d40d645d20ac847
+expected_iife_sha=bd5bbd4229e147c64efca1ac516670ac4134c71e4ce882118d40d645d20ac847
+expected_esm_sha=1849280f8ef700a226284a239d9a83999628a145fd51940d5de86077e6f09bd8
 
 resolved=$(git -C "$repo" rev-parse "$revision^{commit}")
 if [ "$resolved" != "$expected_revision" ]; then
@@ -18,22 +19,27 @@ git -C "$repo" archive "$resolved" packages/event-timeline | tar -x -C "$tmp"
 package="$tmp/packages/event-timeline"
 (cd "$package" && npm run build && npm test)
 
-actual_sha=$(shasum -a 256 "$package/dist/event-timeline.iife.js" | awk '{print $1}')
-if [ "$actual_sha" != "$expected_sha" ]; then
-  echo "IIFE SHA-256 mismatch: got $actual_sha, want $expected_sha" >&2
+actual_iife_sha=$(shasum -a 256 "$package/dist/event-timeline.iife.js" | awk '{print $1}')
+actual_esm_sha=$(shasum -a 256 "$package/dist/event-timeline.mjs" | awk '{print $1}')
+if [ "$actual_iife_sha" != "$expected_iife_sha" ]; then
+  echo "IIFE SHA-256 mismatch: got $actual_iife_sha, want $expected_iife_sha" >&2
+  exit 1
+fi
+if [ "$actual_esm_sha" != "$expected_esm_sha" ]; then
+  echo "ESM SHA-256 mismatch: got $actual_esm_sha, want $expected_esm_sha" >&2
   exit 1
 fi
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-vendor="$root/web/static/vendor/agenthub-event-timeline"
+module="$root/web/vendor/agenthub-event-timeline"
 fixtures="$root/internal/serve/testdata/agenthub-event-timeline"
-mkdir -p "$vendor" "$fixtures"
-cp "$package/dist/event-timeline.iife.js" "$vendor/event-timeline.iife.js"
-cp "$package/dist/manifest.json" "$vendor/upstream-manifest.json"
-cp "$package/LICENSE" "$vendor/LICENSE"
+mkdir -p "$module" "$fixtures"
+cp "$package/dist/event-timeline.mjs" "$module/index.mjs"
+cp "$package/dist/manifest.json" "$module/upstream-manifest.json"
+cp "$package/LICENSE" "$module/LICENSE"
 cp "$package/fixtures/canonical-events.json" "$fixtures/canonical-events.json"
 cp "$package/fixtures/pagination-fragments.json" "$fixtures/pagination-fragments.json"
 cp "$package/snapshots/canonical-events.timeline.json" "$fixtures/canonical-events.timeline.json"
 cp "$package/snapshots/pagination-fragments.timeline.json" "$fixtures/pagination-fragments.timeline.json"
 
-echo "updated @agenthub/event-timeline 1.0.0 from $resolved ($actual_sha)"
+echo "updated @agenthub/event-timeline 1.0.0 from $resolved ($actual_esm_sha)"

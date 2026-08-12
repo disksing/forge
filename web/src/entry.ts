@@ -13,7 +13,6 @@ const publisher: ForgeViewPublisher = {
   renderSettings: channels.settings.publish,
   renderUploadDialog: channels.upload.publish,
   renderComposer: channels.composer.publish,
-  renderSessionSwitcher: channels.sessions.publish,
   renderEventTimeline: channels.timeline.publish,
   renderDetailPanel: channels.detail.publish,
   renderToast: channels.toast.publish,

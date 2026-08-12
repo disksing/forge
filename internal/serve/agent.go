@@ -286,6 +286,10 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
 		return
 	}
+	storeAgentUpload(w, r, workspace.Path, run.Cwd)
+}
+
+func storeAgentUpload(w http.ResponseWriter, r *http.Request, workspacePath, cwd string) {
 	r.Body = http.MaxBytesReader(w, r.Body, agentUploadMaxBytes)
 	file, header, err := r.FormFile("file")
 	if r.MultipartForm != nil {
@@ -302,7 +306,7 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 	}
 	defer file.Close()
 
-	uploadDir, err := secureAgentUploadDir(workspace.Path, run.Cwd)
+	uploadDir, err := secureAgentUploadDir(workspacePath, cwd)
 	if err != nil {
 		writeError(w, fmt.Errorf("prepare upload directory: %w", err), http.StatusBadRequest)
 		return

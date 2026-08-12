@@ -89,18 +89,18 @@
       progress: 0, status: "queued", path: "", error: "",
     }));
     items = [...items, ...added];
-    for (const item of added) upload(item, model.identity, model.workspaceId, model.runId);
+    for (const item of added) upload(item, model.identity, model.workspaceId, model.resourceId);
   }
 
   function updateItem(id: number, update: Partial<UploadItem>): void {
     items = items.map((item) => item.id === id ? { ...item, ...update } : item);
   }
 
-  function upload(item: UploadItem, requestIdentity: string, workspaceId: string, runId: string): void {
+  function upload(item: UploadItem, requestIdentity: string, workspaceId: string, resourceId: string): void {
     updateItem(item.id, { status: "uploading" });
     const request = new XMLHttpRequest();
     requests.set(item.id, request);
-    request.open("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/agent/runs/${encodeURIComponent(runId)}/uploads`);
+    request.open("POST", `/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/uploads`);
     request.responseType = "json";
     request.upload.addEventListener("progress", (event) => {
       if (model.identity !== requestIdentity || !event.lengthComputable) return;
@@ -108,7 +108,7 @@
     });
     request.addEventListener("load", () => {
       requests.delete(item.id);
-      if (model.identity !== requestIdentity || model.workspaceId !== workspaceId || model.runId !== runId) return;
+      if (model.identity !== requestIdentity || model.workspaceId !== workspaceId || model.resourceId !== resourceId) return;
       const response = request.response || {};
       if (request.status >= 200 && request.status < 300) updateItem(item.id, { status: "success", progress: 100, path: response.path || "", name: response.name || item.name });
       else updateItem(item.id, { status: "error", error: response.error || `${request.status} ${request.statusText}` });
@@ -124,7 +124,7 @@
 
   function close(): void {
     if (busy) return;
-    model.onDone(items.filter((item) => item.status === "success" && item.path).map((item) => item.path), { workspaceId: model.workspaceId, runId: model.runId });
+    model.onDone(items.filter((item) => item.status === "success" && item.path).map((item) => item.path), { workspaceId: model.workspaceId, resourceId: model.resourceId });
   }
 
   function formatBytes(size: number): string {
@@ -146,7 +146,7 @@
     <button class="upload-dialog-backdrop modal-enter" type="button" aria-label="Close" onclick={close}></button>
     <div class="upload-dialog modal-enter" role="dialog" aria-modal="true" aria-label="Upload files">
       <header class="upload-dialog-header">
-        <div><strong>Upload files</strong><span>Files are saved in this session's artifacts/upload/ directory.</span></div>
+        <div><strong>Upload files</strong><span>Files are saved in this resource's artifacts/upload/ directory.</span></div>
         <button class="icon-button" type="button" title="Close" aria-label="Close" disabled={busy} onclick={close}><Icon name="x" /></button>
       </header>
       <div class="upload-dialog-content">

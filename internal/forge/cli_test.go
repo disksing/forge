@@ -2,6 +2,7 @@ package forge
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -62,6 +63,8 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 			t.Fatal(err)
 		}
 		var requestBody map[string]any
+		turnRef := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"k":"turn","w":"instance","r":"project1.task1","g":"gen-1","t":"turn-1"}`))
+		eventRef := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"k":"event","w":"instance","r":"project1.task1","g":"gen-1","e":1}`))
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
 			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/messages"):
@@ -73,6 +76,15 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"idle","exists":true,"acceptsMessages":true}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/messages/msg-test"):
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","status":"delivered"}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/turns"):
+				if r.URL.Query().Get("cursor") != "cursor-test" || r.URL.Query().Get("limit") != "7" {
+					t.Errorf("unexpected history query: %s", r.URL.RawQuery)
+				}
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","segments":[],"page":{"limit":7,"hasMore":false}}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/turns/"+turnRef):
+				_, _ = io.WriteString(w, `{"turn":{"turnId":"turn-1"},"items":[]}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/history/events/"+eventRef):
+				_, _ = io.WriteString(w, `{"event":{"id":1}}`)
 			default:
 				http.NotFound(w, r)
 			}
@@ -109,6 +121,15 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 		}
 		if message := run(t, "message", "show", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
 			t.Fatalf("unexpected message response: %s", message)
+		}
+		if history := run(t, "task", "history", "--cursor=cursor-test", "--limit=7"); !strings.Contains(history, `"resourceId": "project1.task1"`) {
+			t.Fatalf("unexpected history response: %s", history)
+		}
+		if turn := run(t, "history", "turn", "show", "--ref="+turnRef); !strings.Contains(turn, `"turnId": "turn-1"`) {
+			t.Fatalf("unexpected Turn detail: %s", turn)
+		}
+		if event := run(t, "history", "event", "show", "--ref="+eventRef); !strings.Contains(event, `"id": 1`) {
+			t.Fatalf("unexpected Event detail: %s", event)
 		}
 		for _, args := range [][]string{{"resource", "status"}, {"resource", "send", "--id=project1.task1", "legacy"}, {"resource", "message", "--id=msg-test"}} {
 			if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), "unknown resource subcommand") {

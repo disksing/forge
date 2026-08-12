@@ -8,7 +8,7 @@
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
-  import type { ChatContextSnapshot, EventTimelineModel, TimelineItem } from "./models";
+  import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, TimelineItem } from "./models";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
@@ -18,13 +18,9 @@
   let { channel }: { channel: ModelChannel<EventTimelineModel> } = $props();
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
-  // Keep projection independent from model metadata updates. The application
-  // republishes the model when tree or run metadata changes, but its projector
-  // is stable and the event history has not necessarily changed.
   // svelte-ignore state_referenced_locally
   let projector = $state(channel.current().project);
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
-  let projected = $derived(projector(snapshot.events));
   let root: HTMLDivElement | undefined = $state();
   let controller: ChatSessionController | undefined;
   let deferredSnapshot: ChatContextSnapshot | null = null;
@@ -36,10 +32,10 @@
   onMount(() => {
     const scroll = scroller();
     controller = new ChatSessionController({
-      onEvent: (workspaceId, runId, event) => model.onEvent(workspaceId, runId, event),
-      onNotice: (workspaceId, runId, notice) => model.onNotice(workspaceId, runId, notice),
+      onEvent: (workspaceId, resourceId, event) => model.onEvent(workspaceId, resourceId, event),
+      onNotice: (workspaceId, resourceId, notice) => model.onNotice(workspaceId, resourceId, notice),
     });
-    const unsubscribeSnapshot = controller.subscribe((next) => receive(next));
+    const unsubscribeSnapshot = controller.subscribe(receive);
     const unsubscribeModel = channel.subscribe((next) => {
       const previousIdentity = model.identity;
       model = next;
@@ -49,7 +45,7 @@
         deferredSnapshot = null;
         openTools = new Map(openCache.get(next.identity) ?? []);
       }
-      controller?.activate(next.workspaceId, next.activeRun);
+      controller?.activate(next.workspaceId, next.resourceId, next.status);
       queueMicrotask(next.onIconsChanged);
     });
     const selectionChanged = () => {
@@ -65,7 +61,7 @@
       document.removeEventListener("selectionchange", selectionChanged);
       controller?.dispose();
       controller = undefined;
-      if (scroll) scroll.removeAttribute("data-agent-run-id");
+      if (scroll) scroll.removeAttribute("data-agent-resource-id");
     };
   });
 
@@ -83,12 +79,32 @@
     followAfterUpdate = changed || contextChanged || isNearBottom(scroll);
     contextChanged = false;
     snapshot = next;
-    if (scroll) scroll.dataset.agentRunId = next.runId;
+    if (scroll) scroll.dataset.agentResourceId = next.resourceId;
     void tick().then(() => {
       if (followAfterUpdate && !hasActiveSelection()) scrollToBottom();
       model.onIconsChanged();
       if (next.loaded && next.hasMoreBefore) void autoFill(next.identity);
     });
+  }
+
+  function observeTurn(node: HTMLElement, reference: string) {
+    let current = reference;
+    if (typeof IntersectionObserver === "undefined") {
+      if (current) void controller?.loadTurn(current);
+      return { update(next: string) { current = next; if (current) void controller?.loadTurn(current); }, destroy() {} };
+    }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting) && current) void controller?.loadTurn(current);
+    }, { root: scroller(), rootMargin: "240px 0px" });
+    observer.observe(node);
+    return {
+      update(next: string) { current = next; },
+      destroy() { observer.disconnect(); },
+    };
+  }
+
+  function blockItems(block: ConversationBlock): TimelineItem[] {
+    return block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
   }
 
   async function autoFill(identity: string): Promise<void> {
@@ -123,24 +139,19 @@
     const key = timelineKey(item);
     openTools = new Map(openTools).set(key, open);
     openCache.set(snapshot.identity, new Map(openTools));
-	if (open) void expandCompact(item);
+    if (open) void expandCompact(item);
   }
 
   function expandCompact(item: TimelineItem): Promise<void> | undefined {
-    if (!item.compact || !item.rangeStartEventId || !item.rangeEndEventId) return;
-    return controller?.expandRange(item.rangeStartEventId, item.rangeEndEventId);
+    if (!item.compact || !item.generationId || !item.rangeStartEventId || !item.rangeEndEventId) return;
+    return controller?.expandRange(item.generationId, item.rangeStartEventId, item.rangeEndEventId);
   }
 
-  // Tool groups always start collapsed, whether loaded from history or
-  // streamed live. Only an explicit user toggle opens a group; the choice is
-  // remembered per context so live updates and session switches preserve it.
   function toolOpen(item: TimelineItem): boolean {
     return openTools.get(timelineKey(item)) ?? false;
   }
 
-  function scroller(): HTMLElement | null {
-    return root?.parentElement ?? null;
-  }
+  function scroller(): HTMLElement | null { return root?.parentElement ?? null; }
 
   function hasActiveSelection(): boolean {
     const scroll = scroller();
@@ -163,47 +174,63 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    return `${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
+    return `${item.generationId || snapshot.generationId}:${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
   }
 
   function emptySnapshot(): ChatContextSnapshot {
-    return { identity: "", workspaceId: "", runId: "", events: [], notices: [], hasMoreBefore: false, loading: false, loadingOlder: false, loaded: false, error: "" };
+    return { identity: "", workspaceId: "", resourceId: "", generationId: "", blocks: [], notices: [], hasMoreBefore: false, loading: false, loadingOlder: false, loaded: false, error: "" };
   }
 </script>
 
 <div bind:this={root} data-component-owner="event-timeline" class="event-timeline-root" data-chat-context={snapshot.identity}>
-  {#if snapshot.runId}
+  {#if snapshot.resourceId}
     {#if snapshot.hasMoreBefore}
       <button type="button" class="load-older-events" disabled={snapshot.loadingOlder} onclick={loadOlder}>
         <Icon name={snapshot.loadingOlder ? "loader-circle" : "chevrons-up"} /><span>{snapshot.loadingOlder ? "Loading..." : "Load older messages"}</span>
       </button>
     {/if}
-    {#each projected as item (timelineKey(item))}
-      <div data-timeline-key={timelineKey(item)}>
-        {#if item.kind === "message"}
-          <TimelineMessage {item} agentName={model.agentName} />
-        {:else if item.kind === "thinking"}
-          <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
-        {:else if item.kind === "tools"}
-          <ToolGroup {item} runId={snapshot.runId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
-        {:else if item.kind === "approval"}
-          <ApprovalCard {item} runId={snapshot.runId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
-        {:else if item.kind === "lifecycle"}
-          <LifecycleNotice {item} />
-        {:else if item.kind === "error"}
-          <TimelineNotice title="Provider error" text={item.text || ""} error />
-        {:else}
-          <UnknownEvent {item} />
-        {/if}
-      </div>
+    {#each snapshot.blocks as block, index (block.key)}
+      {#if index === 0 || snapshot.blocks[index - 1].generation.generationId !== block.generation.generationId}
+        <div class="conversation-generation" data-generation-id={block.generation.generationId}>
+          <span>Generation {block.generation.generation}</span><strong>{block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"}</strong><small>{block.generation.status}</small>
+        </div>
+      {/if}
+      {#if block.kind === "gap"}
+        <div class="conversation-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History unavailable</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+      {:else}
+        <section class="conversation-turn" class:conversation-turn-loading={block.loading} data-timeline-key={block.key} use:observeTurn={block.turn?.reference || ""}>
+          {#if block.turn?.triggerPreview && !block.items && !block.events}<div class="turn-summary-preview">{block.turn.triggerPreview}</div>{/if}
+          {#each blockItems(block) as item (timelineKey(item))}
+            <div data-timeline-key={timelineKey(item)}>
+              {#if item.kind === "message"}
+                <TimelineMessage {item} agentName={model.agentName} />
+              {:else if item.kind === "thinking"}
+                <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
+              {:else if item.kind === "tools"}
+                <ToolGroup {item} runId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+              {:else if item.kind === "approval"}
+                <ApprovalCard {item} runId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
+              {:else if item.kind === "lifecycle"}
+                <LifecycleNotice {item} />
+              {:else if item.kind === "error"}
+                <TimelineNotice title="Provider error" text={item.text || ""} error />
+              {:else}
+                <UnknownEvent {item} />
+              {/if}
+            </div>
+          {/each}
+          {#if block.loading && !block.items && !block.events}<div class="turn-loading"><Icon name="loader-circle" /><span>Loading turn details</span></div>{/if}
+          {#if block.error}<TimelineNotice title="Turn unavailable" text={block.error} error />{/if}
+        </section>
+      {/if}
     {/each}
     {#each snapshot.notices as notice, index (`notice:${snapshot.identity}:${index}:${String(notice.data?.text || "")}`)}
       <div data-timeline-key={`notice:${index}`}><TimelineNotice title="Forge" text={String(notice.data?.text || "")} error={notice.data?.level === "error"} /></div>
     {/each}
     {#if snapshot.error}<TimelineNotice title="Timeline error" text={snapshot.error} error alert />{/if}
-    {#if snapshot.loading && !projected.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Loading agent events</strong></div>{/if}
-    {#if snapshot.loaded && !snapshot.loading && !projected.length && !snapshot.notices.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Waiting for agent events</strong></div>{/if}
+    {#if snapshot.loading && !snapshot.blocks.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Loading resource history</strong></div>{/if}
+    {#if snapshot.loaded && !snapshot.loading && !snapshot.blocks.length && !snapshot.notices.length}<div class="tty-empty"><Icon name="bot" /><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>{/if}
   {:else}
-    <div class="tty-empty"><Icon name="bot" /><strong>No agent run selected</strong><span>{model.runCount ? "Select an Agent Run to view its events." : "Start an agent session."}</span></div>
+    <div class="tty-empty"><Icon name="bot" /><strong>No resource selected</strong></div>
   {/if}
 </div>

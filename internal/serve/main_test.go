@@ -442,16 +442,15 @@ func TestVendoredAgentHubTimelineMatchesSharedFixtures(t *testing.T) {
 	}
 	script := `
 const fs = require("node:fs");
-const vm = require("node:vm");
+const { pathToFileURL } = require("node:url");
 const [bundlePath, fixturePath, snapshotPath] = process.argv.slice(1);
-const context = {};
-vm.createContext(context);
-vm.runInContext(fs.readFileSync(bundlePath, "utf8"), context);
+(async () => {
+const { buildTimeline } = await import(pathToFileURL(bundlePath).href);
 const fixture = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
 const snapshot = JSON.parse(fs.readFileSync(snapshotPath, "utf8"));
 if (Array.isArray(fixture.scenarios)) {
   for (const scenario of fixture.scenarios) {
-    const actual = context.AgentHubEventTimeline.buildTimeline(scenario.events);
+    const actual = buildTimeline(scenario.events);
     const expected = snapshot.scenarios[scenario.name];
     if (JSON.stringify(actual) !== JSON.stringify(expected)) {
       throw new Error("timeline snapshot mismatch: " + scenario.name);
@@ -461,18 +460,19 @@ if (Array.isArray(fixture.scenarios)) {
   const events = [];
   fixture.pages.forEach((page, index) => {
     events.push(...page);
-    const actual = context.AgentHubEventTimeline.buildTimeline(events);
+    const actual = buildTimeline(events);
     if (JSON.stringify(actual) !== JSON.stringify(snapshot.stages[index])) {
       throw new Error("pagination timeline snapshot mismatch at stage " + index);
     }
   });
   }
+})().catch((error) => { console.error(error); process.exit(1); });
 `
 	for _, fixture := range []string{"canonical-events", "pagination-fragments"} {
 		t.Run(fixture, func(t *testing.T) {
 			args := []string{
 				"-e", script,
-				frontendAssetPath("vendor", "agenthub-event-timeline", "event-timeline.iife.js"),
+				frontendSourcePath("vendor", "agenthub-event-timeline", "index.mjs"),
 				filepath.Join("testdata", "agenthub-event-timeline", fixture+".json"),
 				filepath.Join("testdata", "agenthub-event-timeline", fixture+".timeline.json"),
 			}
@@ -490,11 +490,10 @@ func TestVendoredAgentHubTimelineProjectsQuestionsAndThinkingStart(t *testing.T)
 	}
 	script := `
 const fs = require("node:fs");
-const vm = require("node:vm");
-const context = {};
-vm.createContext(context);
-vm.runInContext(fs.readFileSync(process.argv[1], "utf8"), context);
-const timeline = context.AgentHubEventTimeline.buildTimeline([
+const { pathToFileURL } = require("node:url");
+(async () => {
+const { buildTimeline } = await import(pathToFileURL(process.argv[1]).href);
+const timeline = buildTimeline([
   { id: 1, time: "2026-01-01T00:00:00Z", type: "message.reasoning.delta", data: { text: "first" } },
   { id: 2, time: "2026-01-01T00:01:02Z", type: "message.reasoning.delta", data: { text: " second" } },
   { id: 3, time: "2026-01-01T00:01:03Z", type: "approval.requested", data: {
@@ -511,7 +510,7 @@ const approval = timeline.find((item) => item.kind === "approval");
 if (thinking.startTime !== "2026-01-01T00:00:00Z" || thinking.time !== "2026-01-01T00:01:02Z") {
   throw new Error("thinking timestamps were not projected");
 }
-const folded = context.AgentHubEventTimeline.buildTimeline([
+const folded = buildTimeline([
   { id: 10, time: "2026-01-01T00:02:03Z", startTime: "2026-01-01T00:02:00Z", type: "message.reasoning.delta", data: { text: "folded" } },
   { id: 11, time: "2026-01-01T00:02:04Z", type: "message.assistant.delta", data: { text: "answer" } },
 ]);
@@ -522,19 +521,20 @@ if (foldedThinking.startTime !== "2026-01-01T00:02:00Z" || foldedThinking.time !
 if (approval.question !== "Choose one" || approval.options.length !== 1 || approval.options[0].optionId !== "a") {
   throw new Error("question approval was not projected");
 }
+})().catch((error) => { console.error(error); process.exit(1); });
 `
-	bundlePath := frontendAssetPath("vendor", "agenthub-event-timeline", "event-timeline.iife.js")
+	bundlePath := frontendSourcePath("vendor", "agenthub-event-timeline", "index.mjs")
 	if output, err := exec.Command(node, "-e", script, bundlePath).CombinedOutput(); err != nil {
 		t.Fatalf("shared timeline feature conformance failed: %v\n%s", err, output)
 	}
 }
 
 func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
-	bundle, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/event-timeline.iife.js")
+	bundle, err := os.ReadFile(frontendSourcePath("vendor", "agenthub-event-timeline", "index.mjs"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceData, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/SOURCE.json")
+	sourceData, err := os.ReadFile(frontendSourcePath("vendor", "agenthub-event-timeline", "SOURCE.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -553,7 +553,7 @@ func TestVendoredAgentHubTimelineSourceAndSHA256ArePinned(t *testing.T) {
 		source.Revision == "" || source.SHA256 != actual {
 		t.Fatalf("unexpected vendored timeline source: source=%#v actualSHA=%s", source, actual)
 	}
-	if _, err := staticFiles.ReadFile("static/vendor/agenthub-event-timeline/LICENSE"); err != nil {
+	if _, err := os.ReadFile(frontendSourcePath("vendor", "agenthub-event-timeline", "LICENSE")); err != nil {
 		t.Fatal("vendored BSD-3-Clause license is missing")
 	}
 }

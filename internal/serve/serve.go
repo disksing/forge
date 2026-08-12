@@ -395,6 +395,30 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, tree)
 	case "resources":
+		if len(parts) >= 5 && parts[3] == "history" {
+			s.agents.handleResourceHistory(w, r, id, parts[2], parts[4:])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "events" {
+			s.agents.handleResourceEvents(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "stream" {
+			s.agents.handleResourceStream(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "approval" {
+			s.agents.handleResourceApproval(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 5 && parts[3] == "turn" && parts[4] == "end" {
+			s.agents.handleResourceEndTurn(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "uploads" {
+			s.agents.handleResourceUpload(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "status" {
 			s.agents.handleResourceStatus(w, r, id, parts[2])
 			return

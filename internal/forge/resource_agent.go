@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -14,16 +15,21 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
 
 const (
-	workspaceStatusUsage = "usage: forge workspace status [--server=<url>]"
-	projectStatusUsage   = "usage: forge project status [--project=<project>] [--server=<url>]"
-	taskStatusUsage      = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
-	messageSendUsage     = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
-	messageShowUsage     = "usage: forge message show --id=<message-id> [--server=<url>]"
+	workspaceStatusUsage  = "usage: forge workspace status [--server=<url>]"
+	projectStatusUsage    = "usage: forge project status [--project=<project>] [--server=<url>]"
+	taskStatusUsage       = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	messageSendUsage      = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
+	messageShowUsage      = "usage: forge message show --id=<message-id> [--server=<url>]"
+	workspaceHistoryUsage = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
+	projectHistoryUsage   = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
+	taskHistoryUsage      = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>]"
+	historyShowUsage      = "usage: forge history turn|event show --ref=<reference> [--server=<url>]"
 )
 
 type resourceServerOptions struct {
@@ -31,6 +37,13 @@ type resourceServerOptions struct {
 	Mode      string
 	ServerURL string
 	Text      string
+}
+
+type resourceHistoryOptions struct {
+	Cursor    string
+	Limit     int
+	Reference string
+	ServerURL string
 }
 
 type serveLockMetadata struct {
@@ -258,7 +271,7 @@ func (client *resourceServerClient) request(ctx context.Context, method, path st
 		return fmt.Errorf("contact Forge Server %s: %w; verify the owner is running or use --server=<url>", client.baseURL, err)
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, 4*1024*1024))
+	data, err := io.ReadAll(io.LimitReader(response.Body, 64*1024*1024))
 	if err != nil {
 		return err
 	}
@@ -387,6 +400,182 @@ func runMessageShow(args []string) error {
 	}
 	var response map[string]any
 	path := fmt.Sprintf("/api/workspaces/%s/messages/%s", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
+	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
+		return err
+	}
+	return printJSON(response)
+}
+
+func parseResourceHistoryArgs(args []string, usage string) ([]string, resourceHistoryOptions, error) {
+	remaining := make([]string, 0, len(args))
+	var options resourceHistoryOptions
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		readValue := func(name string) (string, bool) {
+			prefix := "--" + name + "="
+			if strings.HasPrefix(arg, prefix) {
+				return strings.TrimSpace(strings.TrimPrefix(arg, prefix)), true
+			}
+			if arg == "--"+name && index+1 < len(args) && !strings.HasPrefix(args[index+1], "--") {
+				index++
+				return strings.TrimSpace(args[index]), true
+			}
+			return "", false
+		}
+		if value, ok := readValue("cursor"); ok {
+			if value == "" || options.Cursor != "" {
+				return nil, resourceHistoryOptions{}, errors.New(usage)
+			}
+			options.Cursor = value
+			continue
+		}
+		if value, ok := readValue("limit"); ok {
+			limit, err := strconv.Atoi(value)
+			if err != nil || limit <= 0 || limit > 100 || options.Limit != 0 {
+				return nil, resourceHistoryOptions{}, errors.New("history limit must be between 1 and 100")
+			}
+			options.Limit = limit
+			continue
+		}
+		if value, ok := readValue("server"); ok {
+			if value == "" || options.ServerURL != "" {
+				return nil, resourceHistoryOptions{}, errors.New(usage)
+			}
+			options.ServerURL = value
+			continue
+		}
+		if strings.HasPrefix(arg, "--cursor") || strings.HasPrefix(arg, "--limit") || strings.HasPrefix(arg, "--server") {
+			return nil, resourceHistoryOptions{}, errors.New(usage)
+		}
+		remaining = append(remaining, arg)
+	}
+	return remaining, options, nil
+}
+
+func runResourceHistory(resourceID string, options resourceHistoryOptions) error {
+	client, _, err := newResourceServerClient(options.ServerURL)
+	if err != nil {
+		return err
+	}
+	query := make(url.Values)
+	if options.Cursor != "" {
+		query.Set("cursor", options.Cursor)
+	}
+	if options.Limit > 0 {
+		query.Set("limit", strconv.Itoa(options.Limit))
+	}
+	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/history/turns", url.PathEscape(client.workspaceID), url.PathEscape(resourceID))
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var response map[string]any
+	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
+		return err
+	}
+	return printJSON(response)
+}
+
+func runWorkspaceHistory(args []string) error {
+	remaining, options, err := parseResourceHistoryArgs(args, workspaceHistoryUsage)
+	if err != nil || len(remaining) != 0 {
+		if err != nil {
+			return err
+		}
+		return errors.New(workspaceHistoryUsage)
+	}
+	return runResourceHistory("workspace", options)
+}
+
+func runProjectHistory(args []string) error {
+	remaining, options, err := parseResourceHistoryArgs(args, projectHistoryUsage)
+	if err != nil {
+		return err
+	}
+	projectID, err := resolveProjectArg(remaining, "history")
+	if err != nil {
+		return err
+	}
+	return runResourceHistory(projectID, options)
+}
+
+func runTaskHistory(args []string) error {
+	remaining, options, err := parseResourceHistoryArgs(args, taskHistoryUsage)
+	if err != nil {
+		return err
+	}
+	taskID, err := resolveTaskArg(remaining, "history")
+	if err != nil {
+		return err
+	}
+	return runResourceHistory(taskID, options)
+}
+
+func parseHistoryShowArgs(args []string) (resourceHistoryOptions, error) {
+	var options resourceHistoryOptions
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case strings.HasPrefix(arg, "--ref="):
+			if options.Reference != "" {
+				return resourceHistoryOptions{}, errors.New(historyShowUsage)
+			}
+			options.Reference = strings.TrimSpace(strings.TrimPrefix(arg, "--ref="))
+		case arg == "--ref":
+			if options.Reference != "" || index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				return resourceHistoryOptions{}, errors.New(historyShowUsage)
+			}
+			index++
+			options.Reference = strings.TrimSpace(args[index])
+		case strings.HasPrefix(arg, "--server="):
+			if options.ServerURL != "" {
+				return resourceHistoryOptions{}, errors.New(historyShowUsage)
+			}
+			options.ServerURL = strings.TrimSpace(strings.TrimPrefix(arg, "--server="))
+		case arg == "--server":
+			if options.ServerURL != "" || index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				return resourceHistoryOptions{}, errors.New(historyShowUsage)
+			}
+			index++
+			options.ServerURL = strings.TrimSpace(args[index])
+		default:
+			return resourceHistoryOptions{}, errors.New(historyShowUsage)
+		}
+	}
+	if options.Reference == "" {
+		return resourceHistoryOptions{}, errors.New(historyShowUsage)
+	}
+	return options, nil
+}
+
+func runHistory(args []string) error {
+	if len(args) < 2 || (args[0] != "turn" && args[0] != "event") || args[1] != "show" {
+		return errors.New(historyShowUsage)
+	}
+	options, err := parseHistoryShowArgs(args[2:])
+	if err != nil {
+		return err
+	}
+	data, err := base64.RawURLEncoding.DecodeString(options.Reference)
+	if err != nil {
+		return errors.New("history reference is malformed")
+	}
+	var reference struct {
+		ResourceID string `json:"r"`
+	}
+	if err := json.Unmarshal(data, &reference); err != nil || strings.TrimSpace(reference.ResourceID) == "" {
+		return errors.New("history reference is malformed")
+	}
+	client, _, err := newResourceServerClient(options.ServerURL)
+	if err != nil {
+		return err
+	}
+	plural := "turns"
+	if args[0] == "event" {
+		plural = "events"
+	}
+	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/history/%s/%s",
+		url.PathEscape(client.workspaceID), url.PathEscape(reference.ResourceID), plural, url.PathEscape(options.Reference))
+	var response map[string]any
 	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
 		return err
 	}
