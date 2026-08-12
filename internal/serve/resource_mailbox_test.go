@@ -104,6 +104,28 @@ func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 	}
 }
 
+func TestResourceMailboxVersionOneUpgradesWithoutLosingMessages(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(agentRoot(root), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"version":1,"nextSequence":1,"messages":[{"id":"msg-v1","sequence":1,"resourceId":"workspace","text":"legacy","role":"user","requestedMode":"enqueue","actualMode":"enqueue","status":"delivered","acceptedAt":"2026-08-12T00:00:00Z","updatedAt":"2026-08-12T00:00:00Z"}]}`
+	if err := os.WriteFile(resourceMailboxPath(root), []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	mailbox, err := loadResourceMailbox(root)
+	if err != nil || mailbox.Version != resourceMailboxVersion || len(mailbox.Messages) != 1 || mailbox.Messages[0].ID != "msg-v1" {
+		t.Fatalf("v1 mailbox upgrade = %#v, %v", mailbox, err)
+	}
+	if _, err := mutateResourceMailbox(root, func(*resourceMailbox) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(resourceMailboxPath(root))
+	if err != nil || !strings.Contains(string(data), `"version": 2`) || !strings.Contains(string(data), `"msg-v1"`) {
+		t.Fatalf("persisted mailbox upgrade = %s, %v", data, err)
+	}
+}
+
 func TestResourceMailboxModesAndPriority(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	fake.enforceMessageIDs = true
@@ -121,8 +143,22 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("current generation missing: found=%v err=%v", found, err)
 	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
 	fake.mu.Lock()
 	session := fake.sessions[run.AgentHubSessionID]
+	if session.LaunchEnvironment["FORGE_WORKSPACE_ROOT"] != workspace.Path ||
+		session.LaunchEnvironment["FORGE_WORKSPACE_INSTANCE_ID"] != runtimeConfig.InstanceID ||
+		session.LaunchEnvironment["FORGE_RESOURCE_ID"] != "project1.task1" {
+		fake.mu.Unlock()
+		t.Fatalf("resource generation creator environment = %#v", session.LaunchEnvironment)
+	}
 	session.InputCapabilities.Steer = true
 	session.CurrentTurnID = "turn-first"
 	fake.sessions[session.ID] = session
@@ -460,7 +496,8 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 {
+	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 ||
+		status.Creator == nil || status.Creator.Kind != app.CreatorKindUser {
 		t.Fatalf("resource status mismatch: %#v", status)
 	}
 

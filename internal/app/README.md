@@ -8,21 +8,27 @@ if err != nil {
 	return err
 }
 
-project, err := workspace.CreateProject("Example", "example")
+project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{
+	Description: "Example",
+	Slug: "example",
+	Creator: app.UserCreator(),
+})
 ```
 
 `Workspace` 保存规范化后的 root，可安全地在并发请求之间复用。API 不读取或修改进程 cwd；`OpenWorkspaceFrom` 的起点同样由调用方显式传入。应用层不启动 `forge` 子进程，也不向 stdout/stderr 写入协议或用户输出。返回值使用 `Project`、`Task`、`Session`、`WorkspaceTree`、`ResourceDetailView` 等类型；失败时使用 `APIError`，可通过 `errors.As` 或 `app.IsKind` 检查操作类别。
 
 主要入口：
 
-- `OpenWorkspace`、`OpenWorkspaceFrom`、`Initialize`、`Migrate`：打开、发现、初始化或迁移 Workspace；
+- `OpenWorkspace`、`OpenWorkspaceFrom`、`Initialize`、`InitializeWithOptions`、`Migrate`：打开、发现、初始化或迁移 Workspace；
 - `NormalizeProjectID`、`NormalizeTaskName`、`NormalizeTaskID`、`InferProjectID`、`InferTaskID`：集中实现 CLI 使用的资源选择规则；
 - `Tree`、`Resource`、`Projects`、`Tasks`：读取 Workspace 资源视图；
 - `Templates`、`Template`、`RenderTemplate`、`ValidateTemplateContent`、`CreateTemplate`、`MigrateTemplates`：模板发现、结构化校验、确定性渲染、脚手架和 V1 内容迁移；
 - `PreviewTask`：无副作用地计算最终标题、Markdown 与模板 digest；
-- `CreateProject`、`CreateTask`、`ArchiveResource`：资源生命周期；
+- `CreateProject`、`CreateProjectWithInput`、`CreateTask`、`ArchiveResource`：资源生命周期；
 - `CreateSession`、`BindAgentHubSession`、`EndSession`：仅供 `forge serve` 使用的瞬态 AgentHub Session 运行投影；
 - `Sessions`、`Session`：供 CLI、Server 和 Workspace 视图使用的只读 Session 诊断；
 - `AddLog`、`Logs`、`Repositories`、`CloneRepository` 及 Task repository 方法：历史和仓库数据。
 
 跨进程写入使用 Workspace mutation lock。模板任务在同一 mutation lock 中重新读取并渲染；可选 digest 不匹配会在分配任务编号和创建 staging 目录前失败。CLI、HTTP handler 和 GUI 只负责适配输入输出，不解析 YAML、替换占位符或自行读写资源 schema。
+
+Workspace、Project 和 Task 的新建接口把规范化 creator 与 ID 分配、全部资源文件一起放在 mutation lock 的同一提交边界内。Project/Task 先写同文件系统 staging 目录，再原子 rename；Workspace 初始化使用 `.forge/initializing.json` 作为可恢复标记。旧资源缺少 creator 时保持未知，不推断或回填。默认兼容入口记录 `{kind:"user"}`，显式 Agent 来源记录 `{kind:"resource", workspaceInstanceId, resourceId}`。

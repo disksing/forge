@@ -87,6 +87,7 @@ const (
 
 type workspaceTree struct {
 	Root         string             `json:"root"`
+	Creator      *app.Creator       `json:"creator,omitempty"`
 	AgentBinding app.AgentBinding   `json:"agentBinding"`
 	Projects     []resourceSnapshot `json:"projects"`
 	Sessions     []guiSession       `json:"sessions"`
@@ -114,6 +115,7 @@ type resourceSnapshot struct {
 	Title        string             `json:"title"`
 	Path         string             `json:"path"`
 	Archived     bool               `json:"archived"`
+	Creator      *app.Creator       `json:"creator,omitempty"`
 	AgentBinding app.AgentBinding   `json:"agentBinding"`
 	Children     []resourceSnapshot `json:"children,omitempty"`
 }

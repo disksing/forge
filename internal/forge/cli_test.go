@@ -110,6 +110,13 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 		if sender["id"] != "project1.task1" || sender["name"] != "project1.task1" {
 			t.Fatalf("sender provenance did not use current resource: %#v", sender)
 		}
+		var config app.Config
+		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
+			t.Fatal(err)
+		}
+		if requestBody["senderWorkspaceInstanceId"] != config.InstanceID {
+			t.Fatalf("sender Workspace provenance = %#v, want %q", requestBody["senderWorkspaceInstanceId"], config.InstanceID)
+		}
 		if status := run(t, "task", "status"); !strings.Contains(status, `"acceptsMessages": true`) {
 			t.Fatalf("unexpected inferred status response: %s", status)
 		}
@@ -136,6 +143,53 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 				t.Fatalf("legacy resource command still exists: %v", args)
 			}
 		}
+	})
+}
+
+func TestCreateCreatorFlagAndInjectedAgentContext(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Source project")
+		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "task", "create", "Source task")
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+			t.Fatal(err)
+		}
+		workspace, err := app.OpenWorkspace(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtime, err := workspace.RuntimeConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Setenv(forgeWorkspaceRootEnvironment, root)
+		t.Setenv(forgeWorkspaceInstanceEnvironment, runtime.InstanceID)
+		t.Setenv(forgeResourceIDEnvironment, "project1.task1")
+
+		run(t, "project", "create", "Agent delegated project")
+		delegated, err := workspace.ResourceValue("project2")
+		if err != nil || delegated.Project == nil || delegated.Project.Creator == nil {
+			t.Fatalf("delegated project = %#v, %v", delegated, err)
+		}
+		want, _ := app.ResourceCreator(runtime.InstanceID, "project1.task1")
+		if *delegated.Project.Creator != want {
+			t.Fatalf("delegated creator = %#v, want %#v", delegated.Project.Creator, want)
+		}
+
+		run(t, "project", "create", "--creator=user", "Explicit user project")
+		explicitUser, err := workspace.ResourceValue("project3")
+		if err != nil || explicitUser.Project.Creator == nil || explicitUser.Project.Creator.Kind != app.CreatorKindUser {
+			t.Fatalf("explicit user creator = %#v, %v", explicitUser.Project, err)
+		}
+
+		t.Setenv(forgeWorkspaceInstanceEnvironment, "wrong-instance")
+		if _, err := runErr(t, "project", "create", "Invalid Agent project"); err == nil || !strings.Contains(err.Error(), "does not match") {
+			t.Fatalf("invalid injected Agent context was accepted: %v", err)
+		}
+		run(t, "project", "create", "--creator=user", "User ignores invalid Agent context")
 	})
 }
 
@@ -716,19 +770,19 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"Agents may inspect\n  other resources, but write only the Workspace files owned by their starting\n  resource and its task worktrees.",
 		"The web service is provided by forge serve.",
 		"Usage:",
-		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
+		"  forge init [--language=<language>] [--creator=user|agent]\n  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
-		"  forge project create [--slug <slug>] <description>",
+		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge template list [--project=<project>] [--json]",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
 		"  forge session list\n  forge session show --id=<id>",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
-		"  forge init [--language=<language>]",
+		"  forge init [--language=<language>] [--creator=user|agent]",
 		"  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>",
-		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
+		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
 		"  forge template list|show|validate|render|create|migrate ...",
 		"  forge session list\n    List the transient AgentHub Session projections managed by forge serve.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",

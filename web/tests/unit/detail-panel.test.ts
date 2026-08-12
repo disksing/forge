@@ -15,6 +15,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     resourceId: "project1.task1",
     resourceType: "task",
     resourceTitle: "Stable detail",
+    creator: { kind: "resource", workspaceInstanceId: "ws-source", resourceId: "project2.task3" },
     parent: { id: "project1", title: "Project" },
     loading: false,
     detail: {
@@ -84,6 +85,8 @@ describe("DetailPanel", () => {
     const tabs = target.querySelector(".details-tabs")!;
     const content = target.querySelector("#detailsContent")!;
     expect(target.querySelector(".resource-ref-badge")?.textContent).toBe("#1");
+    expect(target.querySelector(".resource-creator-badge")?.textContent).toBe("Created by project2.task3");
+    expect(target.querySelector(".resource-creator-badge")?.getAttribute("title")).toContain("ws-source / project2.task3");
     expect(header.contains(content)).toBe(false);
     expect(tabs.contains(content)).toBe(false);
     expect(content.querySelector('[data-doc-file="task.md"]')).not.toBeNull();
@@ -109,6 +112,12 @@ describe("DetailPanel", () => {
     expect(worktreesSection.querySelector("h3")).toBeNull();
     const logsSection = target.querySelector('[data-component-owner="log-timeline"]')!;
     expect(logsSection.querySelector("h3")).toBeNull();
+  });
+
+  it("labels legacy resources without inventing creator provenance", async () => {
+    const { target } = mountModel(resourceModel({ creator: undefined }));
+    await tick();
+    expect(target.querySelector(".resource-creator-badge")?.textContent).toBe("Creator unknown (legacy)");
   });
 
   it("uses the Project number for a Project detail reference", async () => {

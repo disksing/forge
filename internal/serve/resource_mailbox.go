@@ -16,7 +16,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-const resourceMailboxVersion = 1
+const resourceMailboxVersion = 2
 
 const (
 	resourceMessageModeSteer     = "steer"
@@ -29,6 +29,16 @@ const (
 	resourceMessageDelivered       = "delivered"
 	resourceMessageUndeliverable   = "undeliverable"
 	resourceMessageDeliveryUnknown = "delivery_unknown"
+)
+
+const (
+	resourceMessageTypeCreatorTurnResult = "creator_turn_result"
+	resourceMessageTypeDeliveryTerminal  = "delivery_terminal_notice"
+
+	resourceNotificationWaiting   = "waiting"
+	resourceNotificationAccepted  = "accepted"
+	resourceNotificationDelivered = "delivered"
+	resourceNotificationTerminal  = "terminal"
 )
 
 const (
@@ -50,31 +60,64 @@ type resourceMailbox struct {
 // accepted the stable message id and assumed its at-least-once responsibility;
 // it does not mean the resulting Turn has completed.
 type resourceMailboxMessage struct {
-	ID                string                 `json:"id"`
-	Sequence          uint64                 `json:"sequence"`
-	ResourceID        string                 `json:"resourceId"`
-	Text              string                 `json:"text"`
-	Role              string                 `json:"role"`
-	Sender            *agentHubMessageSender `json:"sender,omitempty"`
-	RequestedMode     string                 `json:"requestedMode"`
-	ActualMode        string                 `json:"actualMode"`
-	ModeFrozen        bool                   `json:"modeFrozen,omitempty"`
-	DowngradeReason   string                 `json:"downgradeReason,omitempty"`
-	Status            string                 `json:"status"`
-	AcceptedAt        string                 `json:"acceptedAt"`
-	UpdatedAt         string                 `json:"updatedAt"`
-	DeliveredAt       string                 `json:"deliveredAt,omitempty"`
-	TerminalAt        string                 `json:"terminalAt,omitempty"`
-	GenerationID      string                 `json:"generationId,omitempty"`
-	AgentHubSessionID string                 `json:"agentHubSessionId,omitempty"`
-	TurnID            string                 `json:"turnId,omitempty"`
-	InterruptTurnID   string                 `json:"interruptTurnId,omitempty"`
-	InterruptAt       string                 `json:"interruptAt,omitempty"`
-	PromotedAt        string                 `json:"promotedAt,omitempty"`
-	AttemptCount      int                    `json:"attemptCount,omitempty"`
-	LastAttemptAt     string                 `json:"lastAttemptAt,omitempty"`
-	LastError         string                 `json:"lastError,omitempty"`
-	LastErrorCode     string                 `json:"lastErrorCode,omitempty"`
+	ID                        string                       `json:"id"`
+	Sequence                  uint64                       `json:"sequence"`
+	ResourceID                string                       `json:"resourceId"`
+	Text                      string                       `json:"text"`
+	Role                      string                       `json:"role"`
+	Sender                    *agentHubMessageSender       `json:"sender,omitempty"`
+	SenderWorkspaceInstanceID string                       `json:"senderWorkspaceInstanceId,omitempty"`
+	Type                      string                       `json:"type,omitempty"`
+	Causation                 *resourceMessageCausation    `json:"causation,omitempty"`
+	Notification              *resourceNotificationReceipt `json:"notification,omitempty"`
+	RequestedMode             string                       `json:"requestedMode"`
+	ActualMode                string                       `json:"actualMode"`
+	ModeFrozen                bool                         `json:"modeFrozen,omitempty"`
+	DowngradeReason           string                       `json:"downgradeReason,omitempty"`
+	Status                    string                       `json:"status"`
+	AcceptedAt                string                       `json:"acceptedAt"`
+	UpdatedAt                 string                       `json:"updatedAt"`
+	DeliveredAt               string                       `json:"deliveredAt,omitempty"`
+	TerminalAt                string                       `json:"terminalAt,omitempty"`
+	GenerationID              string                       `json:"generationId,omitempty"`
+	AgentHubSessionID         string                       `json:"agentHubSessionId,omitempty"`
+	TurnID                    string                       `json:"turnId,omitempty"`
+	InterruptTurnID           string                       `json:"interruptTurnId,omitempty"`
+	InterruptAt               string                       `json:"interruptAt,omitempty"`
+	PromotedAt                string                       `json:"promotedAt,omitempty"`
+	AttemptCount              int                          `json:"attemptCount,omitempty"`
+	LastAttemptAt             string                       `json:"lastAttemptAt,omitempty"`
+	LastError                 string                       `json:"lastError,omitempty"`
+	LastErrorCode             string                       `json:"lastErrorCode,omitempty"`
+}
+
+type resourceMessageCausation struct {
+	Type                      string `json:"type"`
+	SourceWorkspaceInstanceID string `json:"sourceWorkspaceInstanceId"`
+	SourceResourceID          string `json:"sourceResourceId"`
+	MessageID                 string `json:"messageId,omitempty"`
+	GenerationID              string `json:"generationId,omitempty"`
+	TurnID                    string `json:"turnId,omitempty"`
+	TurnReference             string `json:"turnReference,omitempty"`
+	TurnStatus                string `json:"turnStatus,omitempty"`
+	HistoryUnavailable        bool   `json:"historyUnavailable,omitempty"`
+	TerminalCode              string `json:"terminalCode,omitempty"`
+}
+
+type resourceNotificationReceipt struct {
+	ID                        string `json:"id"`
+	Type                      string `json:"type"`
+	Status                    string `json:"status"`
+	TargetWorkspaceInstanceID string `json:"targetWorkspaceInstanceId"`
+	TargetResourceID          string `json:"targetResourceId"`
+	CreatedAt                 string `json:"createdAt"`
+	UpdatedAt                 string `json:"updatedAt"`
+	AcceptedAt                string `json:"acceptedAt,omitempty"`
+	DeliveryStatus            string `json:"deliveryStatus,omitempty"`
+	DeliveredAt               string `json:"deliveredAt,omitempty"`
+	TerminalAt                string `json:"terminalAt,omitempty"`
+	LastError                 string `json:"lastError,omitempty"`
+	LastErrorCode             string `json:"lastErrorCode,omitempty"`
 }
 
 type resourceMailboxCounts struct {
@@ -109,6 +152,7 @@ type resourceStatusResponse struct {
 	Archived        bool                      `json:"archived"`
 	AcceptsMessages bool                      `json:"acceptsMessages"`
 	Binding         app.AgentBinding          `json:"binding"`
+	Creator         *app.Creator              `json:"creator,omitempty"`
 	ResolvedAgent   string                    `json:"resolvedAgent,omitempty"`
 	ResolvedProfile string                    `json:"resolvedProfile,omitempty"`
 	ConfigError     string                    `json:"configError,omitempty"`
@@ -122,28 +166,32 @@ type resourceStatusResponse struct {
 }
 
 type resourceMessageRequest struct {
-	Text   string                 `json:"text"`
-	Mode   string                 `json:"mode,omitempty"`
-	Role   string                 `json:"role,omitempty"`
-	Sender *agentHubMessageSender `json:"sender,omitempty"`
+	Text                      string                 `json:"text"`
+	Mode                      string                 `json:"mode,omitempty"`
+	Role                      string                 `json:"role,omitempty"`
+	Sender                    *agentHubMessageSender `json:"sender,omitempty"`
+	SenderWorkspaceInstanceID string                 `json:"senderWorkspaceInstanceId,omitempty"`
 }
 
 type resourceMessageResponse struct {
-	MessageID         string `json:"messageId"`
-	ResourceID        string `json:"resourceId"`
-	Text              string `json:"text"`
-	RequestedMode     string `json:"requestedMode"`
-	ActualMode        string `json:"actualMode"`
-	DowngradeReason   string `json:"downgradeReason,omitempty"`
-	Status            string `json:"status"`
-	AcceptedAt        string `json:"acceptedAt"`
-	PromotedAt        string `json:"promotedAt,omitempty"`
-	Reference         string `json:"reference"`
-	GenerationID      string `json:"generationId,omitempty"`
-	AgentHubSessionID string `json:"agentHubSessionId,omitempty"`
-	TurnID            string `json:"turnId,omitempty"`
-	LastError         string `json:"lastError,omitempty"`
-	LastErrorCode     string `json:"lastErrorCode,omitempty"`
+	MessageID         string                       `json:"messageId"`
+	ResourceID        string                       `json:"resourceId"`
+	Text              string                       `json:"text"`
+	RequestedMode     string                       `json:"requestedMode"`
+	ActualMode        string                       `json:"actualMode"`
+	DowngradeReason   string                       `json:"downgradeReason,omitempty"`
+	Status            string                       `json:"status"`
+	AcceptedAt        string                       `json:"acceptedAt"`
+	PromotedAt        string                       `json:"promotedAt,omitempty"`
+	Reference         string                       `json:"reference"`
+	GenerationID      string                       `json:"generationId,omitempty"`
+	AgentHubSessionID string                       `json:"agentHubSessionId,omitempty"`
+	TurnID            string                       `json:"turnId,omitempty"`
+	LastError         string                       `json:"lastError,omitempty"`
+	LastErrorCode     string                       `json:"lastErrorCode,omitempty"`
+	Type              string                       `json:"type,omitempty"`
+	Causation         *resourceMessageCausation    `json:"causation,omitempty"`
+	Notification      *resourceNotificationReceipt `json:"notification,omitempty"`
 }
 
 type resourceAPIError struct {
@@ -189,6 +237,14 @@ func cloneMailboxMessage(message resourceMailboxMessage) resourceMailboxMessage 
 		sender := *message.Sender
 		cloned.Sender = &sender
 	}
+	if message.Causation != nil {
+		causation := *message.Causation
+		cloned.Causation = &causation
+	}
+	if message.Notification != nil {
+		notification := *message.Notification
+		cloned.Notification = &notification
+	}
 	return cloned
 }
 
@@ -204,9 +260,10 @@ func loadResourceMailboxLocked(workspacePath string) (resourceMailbox, error) {
 	if err := json.Unmarshal(data, &mailbox); err != nil {
 		return resourceMailbox{}, fmt.Errorf("read resource mailbox: %w", err)
 	}
-	if mailbox.Version != resourceMailboxVersion {
+	if mailbox.Version != 1 && mailbox.Version != resourceMailboxVersion {
 		return resourceMailbox{}, fmt.Errorf("unsupported resource mailbox version %d", mailbox.Version)
 	}
+	mailbox.Version = resourceMailboxVersion
 	if mailbox.Messages == nil {
 		mailbox.Messages = []resourceMailboxMessage{}
 	}
@@ -383,6 +440,7 @@ func mailboxMessageResponse(message resourceMailboxMessage) resourceMessageRespo
 		Reference: "messages/" + message.ID, GenerationID: message.GenerationID,
 		AgentHubSessionID: message.AgentHubSessionID, TurnID: message.TurnID,
 		LastError: message.LastError, LastErrorCode: message.LastErrorCode,
+		Type: message.Type, Causation: message.Causation, Notification: message.Notification,
 	}
 }
 
@@ -492,7 +550,7 @@ func acceptMailboxMessage(workspacePath, resourceID string, request resourceMess
 	now := time.Now().Format(time.RFC3339Nano)
 	message := resourceMailboxMessage{
 		ID: "msg-" + newRunID(), ResourceID: resourceID, Text: text,
-		Role: role, Sender: request.Sender, RequestedMode: mode, ActualMode: mode,
+		Role: role, Sender: request.Sender, SenderWorkspaceInstanceID: strings.TrimSpace(request.SenderWorkspaceInstanceID), RequestedMode: mode, ActualMode: mode,
 		Status: resourceMessageQueued, AcceptedAt: now, UpdatedAt: now,
 	}
 	_, err = mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
@@ -502,6 +560,50 @@ func acceptMailboxMessage(workspacePath, resourceID string, request resourceMess
 		return nil
 	})
 	return message, err
+}
+
+// acceptGeneratedMailboxMessage persists a Server-generated system message
+// using a deterministic id. Replays are accepted only when every immutable
+// field matches, so a crash between target acceptance and source receipt
+// update is both retryable and conflict-safe.
+func acceptGeneratedMailboxMessage(workspacePath string, expected resourceMailboxMessage) (resourceMailboxMessage, error) {
+	expected.ID = strings.TrimSpace(expected.ID)
+	expected.ResourceID = normalizedResourceID(expected.ResourceID)
+	expected.Text = strings.TrimSpace(expected.Text)
+	expected.Role = "system"
+	expected.RequestedMode = resourceMessageModeEnqueue
+	expected.ActualMode = resourceMessageModeEnqueue
+	expected.ModeFrozen = true
+	expected.Status = resourceMessageQueued
+	if expected.ID == "" || expected.Text == "" || expected.Type == "" || expected.Causation == nil {
+		return resourceMailboxMessage{}, errors.New("generated mailbox message is incomplete")
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	if expected.AcceptedAt == "" {
+		expected.AcceptedAt = now
+	}
+	expected.UpdatedAt = now
+	var result resourceMailboxMessage
+	_, err := mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
+		for _, current := range mailbox.Messages {
+			if current.ID != expected.ID {
+				continue
+			}
+			if current.ResourceID != expected.ResourceID || current.Text != expected.Text || current.Role != expected.Role ||
+				current.Type != expected.Type || current.SenderWorkspaceInstanceID != expected.SenderWorkspaceInstanceID ||
+				!reflect.DeepEqual(current.Sender, expected.Sender) || !reflect.DeepEqual(current.Causation, expected.Causation) {
+				return &resourceAPIError{Code: "message_conflict", Message: "stable generated message id conflicts with a different mailbox message"}
+			}
+			result = cloneMailboxMessage(current)
+			return nil
+		}
+		mailbox.NextSequence++
+		expected.Sequence = mailbox.NextSequence
+		mailbox.Messages = append(mailbox.Messages, cloneMailboxMessage(expected))
+		result = cloneMailboxMessage(expected)
+		return nil
+	})
+	return result, err
 }
 
 func markResourceMailboxArchived(workspacePath, resourceID string) error {
@@ -554,6 +656,32 @@ func resourceExistsAndArchived(workspacePath, resourceID string) (bool, bool, ap
 	return true, value.Archived, binding, nil
 }
 
+func resourceCreator(workspacePath, resourceID string) (*app.Creator, error) {
+	resourceID = normalizedResourceID(resourceID)
+	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	if err != nil {
+		return nil, err
+	}
+	if resourceID == "workspace" {
+		runtime, err := forgeWorkspace.RuntimeConfig()
+		if err != nil {
+			return nil, err
+		}
+		return runtime.Creator, nil
+	}
+	value, err := forgeWorkspace.ResourceValue(resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if value.Project != nil {
+		return value.Project.Creator, nil
+	}
+	if value.Task != nil {
+		return value.Task.Creator, nil
+	}
+	return nil, fmt.Errorf("resource creator is unavailable: %s", resourceID)
+}
+
 func waitingMailboxMessages(mailbox resourceMailbox, resourceID string) []resourceMessageResponse {
 	resourceID = normalizedResourceID(resourceID)
 	messages := make([]resourceMessageResponse, 0)
@@ -603,6 +731,10 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		return resourceStatusResponse{}, &resourceAPIError{Code: "resource_not_found", Message: err.Error()}
 	}
 	status := resourceStatusResponse{ResourceID: resourceID, Exists: exists, Archived: archived, AcceptsMessages: exists && !archived, Binding: binding}
+	status.Creator, err = resourceCreator(workspace.Path, resourceID)
+	if err != nil {
+		return resourceStatusResponse{}, err
+	}
 	mailbox, err := loadResourceMailbox(workspace.Path)
 	if err != nil {
 		return resourceStatusResponse{}, err

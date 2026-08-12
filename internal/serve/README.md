@@ -53,18 +53,19 @@ POST /api/workspaces/{workspaceId}/resources/{resourceId}/uploads
   "text": "Review the current implementation.",
   "mode": "steer",
   "role": "agent",
-  "sender": { "id": "project1.task1", "name": "project1.task1" }
+  "sender": { "id": "project1.task1", "name": "project1.task1" },
+  "senderWorkspaceInstanceId": "ws-0123456789abcdef"
 }
 ```
 
-发送响应包含 `messageId`、`resourceId`、正文、`requestedMode`、`actualMode`、`downgradeReason`、对外消息状态、接受/提升时间、可再次 GET 的 `reference`、当前关联以及可选的 `lastErrorCode`/`lastError`。内部 `queued` 对外映射为 `waiting`。状态响应的公共状态只会是 `idle`、`working`、`attention_required`、`unavailable` 或 `archived`；消息等待数与 `waitingMessages` 单列，不会把 Task 标成 queued。状态还包含显式绑定、当前 generation/replacement、Session/Turn/steer capability 和最近错误。`POST .../steer` 仅在活动 Turn 支持 steer 时把同一个 waiting mailbox 项立即插入，不创建新消息。稳定错误 code 还包括 `message_not_waiting` 和 `steer_unavailable`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
+发送响应包含 `messageId`、`resourceId`、正文、`requestedMode`、`actualMode`、`downgradeReason`、对外消息状态、接受/提升时间、可再次 GET 的 `reference`、当前关联以及可选的 `lastErrorCode`/`lastError`。结构化回传还包含 `type`、`causation` 和源消息上的 `notification` receipt。内部 `queued` 对外映射为 `waiting`。状态响应的公共状态只会是 `idle`、`working`、`attention_required`、`unavailable` 或 `archived`；消息等待数与 `waitingMessages` 单列，不会把 Task 标成 queued。状态还包含不可变 creator、显式绑定、当前 generation/replacement、Session/Turn/steer capability 和最近错误。`POST .../steer` 仅在活动 Turn 支持 steer 时把同一个 waiting mailbox 项立即插入，不创建新消息。稳定错误 code 还包括 `message_not_waiting` 和 `steer_unavailable`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
 
 curl 示例：
 
 ```bash
 curl -sS http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/status
 curl -sS -X POST -H 'Content-Type: application/json' \
-  -d '{"text":"Please review this.","mode":"enqueue","role":"agent","sender":{"id":"project1.task1"}}' \
+  -d '{"text":"Please review this.","mode":"enqueue","role":"agent","sender":{"id":"project1.task1"},"senderWorkspaceInstanceId":"ws-0123456789abcdef"}' \
   http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/messages
 curl -sS http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESSAGE_ID
 curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESSAGE_ID/steer
@@ -79,3 +80,7 @@ Session 投影的创建、AgentHub ID 绑定与安全删除只通过 `internal/a
 资源历史接口以版本化 base64url opaque reference/cursor 绑定 Workspace instance、资源和 generation。列表跨 generation 反向分页，保留创建时标题、绑定与解析结果；缺失、损坏或暂时不可读的 Session 形成显式 gap，单个 gap 不阻断更旧历史。浏览器先加载 Turn 摘要，由视口按需请求详情；只有当前 generation 的开放 Turn 通过资源级 `events` 补齐原始事件并接入 SSE，terminal 后替换为紧凑 Turn。跨 generation 的复合 key、滚动锚点、未读与草稿由 Forge 管理。
 
 AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；Forge 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。恢复诊断使用独立 `forge.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
+
+资源 generation 向 AgentHub Session 注入 `FORGE_WORKSPACE_ROOT`、`FORGE_WORKSPACE_INSTANCE_ID` 和 `FORGE_RESOURCE_ID`，供本地 CLI 验证 Agent creator/sender provenance。创建仍由 CLI 或 GUI 委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。仅 creator 资源触发的 terminal Turn 会生成 `creator_turn_result`，`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两者使用源 mailbox message 上的持久 receipt 和推导稳定 ID 投递到目标 mailbox；目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息失败不会再生成通知。
+
+持久 schema 升级是无损的：Workspace/Project/Task 的 `creator` 为可选字段，缺失表示旧数据；mailbox reader 接受 v1 并在下一次写入升级为 v2，保留所有原消息、sequence、generation/Turn 关联与错误。`.forge/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `forge init`。发布前可备份 Workspace；若需回滚到不识别 mailbox v2 的旧 Forge，应先停止新 Server 写入并继续使用新版本导出/保留 mailbox，不能用旧版本直接覆盖 v2。代码回滚不要求改写资源 JSON，但 creator 回传必须暂停到再次升级。

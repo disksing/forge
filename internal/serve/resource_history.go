@@ -48,14 +48,17 @@ type resourceHistoryGeneration struct {
 }
 
 type resourceHistoryDelivery struct {
-	MessageID       string                 `json:"messageId"`
-	RequestedMode   string                 `json:"requestedMode"`
-	ActualMode      string                 `json:"actualMode"`
-	DowngradeReason string                 `json:"downgradeReason,omitempty"`
-	Role            string                 `json:"role"`
-	Sender          *agentHubMessageSender `json:"sender,omitempty"`
-	AcceptedAt      string                 `json:"acceptedAt"`
-	DeliveredAt     string                 `json:"deliveredAt,omitempty"`
+	MessageID                 string                    `json:"messageId"`
+	RequestedMode             string                    `json:"requestedMode"`
+	ActualMode                string                    `json:"actualMode"`
+	DowngradeReason           string                    `json:"downgradeReason,omitempty"`
+	Role                      string                    `json:"role"`
+	Sender                    *agentHubMessageSender    `json:"sender,omitempty"`
+	SenderWorkspaceInstanceID string                    `json:"senderWorkspaceInstanceId,omitempty"`
+	Type                      string                    `json:"type,omitempty"`
+	Causation                 *resourceMessageCausation `json:"causation,omitempty"`
+	AcceptedAt                string                    `json:"acceptedAt"`
+	DeliveredAt               string                    `json:"deliveredAt,omitempty"`
 }
 
 type resourceHistoryTurnSummary struct {
@@ -223,6 +226,7 @@ func historyDeliveries(mailbox resourceMailbox, generationID, turnID string) []r
 		result = append(result, resourceHistoryDelivery{
 			MessageID: message.ID, RequestedMode: message.RequestedMode, ActualMode: message.ActualMode,
 			DowngradeReason: message.DowngradeReason, Role: message.Role, Sender: message.Sender,
+			SenderWorkspaceInstanceID: message.SenderWorkspaceInstanceID, Type: message.Type, Causation: message.Causation,
 			AcceptedAt: message.AcceptedAt, DeliveredAt: message.DeliveredAt,
 		})
 	}

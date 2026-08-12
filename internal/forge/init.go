@@ -8,11 +8,15 @@ import (
 )
 
 func runInit(args []string) error {
-	language, err := parseLanguageOption(args)
+	language, creatorOption, err := parseInitOptions(args)
 	if err != nil {
-		return fmt.Errorf("usage: forge init [--language=<language>]: %w", err)
+		return fmt.Errorf("usage: forge init [--language=<language>] [--creator=user|agent]: %w", err)
 	}
-	return applicationInit(language)
+	creator, err := resolveCreationCreator(creatorOption)
+	if err != nil {
+		return err
+	}
+	return applicationInit(language, creator)
 }
 
 func runWorkspaceMigrate(args []string) error {
@@ -52,4 +56,54 @@ func parseLanguageOption(args []string) (string, error) {
 		language = normalized
 	}
 	return language, nil
+}
+
+func parseInitOptions(args []string) (string, string, error) {
+	var language, creator string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case strings.HasPrefix(arg, "--language="):
+			if language != "" {
+				return "", "", fmt.Errorf("--language may only be specified once")
+			}
+			value, err := app.NormalizeLanguage(strings.TrimPrefix(arg, "--language="))
+			if err != nil {
+				return "", "", err
+			}
+			language = value
+		case arg == "--language":
+			if language != "" || i+1 >= len(args) {
+				return "", "", fmt.Errorf("--language requires one value")
+			}
+			i++
+			value, err := app.NormalizeLanguage(args[i])
+			if err != nil {
+				return "", "", err
+			}
+			language = value
+		case strings.HasPrefix(arg, "--creator="):
+			if creator != "" {
+				return "", "", fmt.Errorf("--creator may only be specified once")
+			}
+			value, err := normalizeCreationCreatorOption(strings.TrimPrefix(arg, "--creator="))
+			if err != nil {
+				return "", "", err
+			}
+			creator = value
+		case arg == "--creator":
+			if creator != "" || i+1 >= len(args) {
+				return "", "", fmt.Errorf("--creator requires one value")
+			}
+			i++
+			value, err := normalizeCreationCreatorOption(args[i])
+			if err != nil {
+				return "", "", err
+			}
+			creator = value
+		default:
+			return "", "", fmt.Errorf("unexpected argument %q", arg)
+		}
+	}
+	return language, creator, nil
 }

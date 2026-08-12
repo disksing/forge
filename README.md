@@ -258,13 +258,13 @@ Run `forge help` for full command descriptions. The current command surface is:
 
 ```text
 forge --version
-forge init [--language=<language>]
+forge init [--language=<language>] [--creator=user|agent]
 forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--slug <slug>] <description>
+forge project create [--slug <slug>] [--creator=user|agent] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
@@ -284,7 +284,7 @@ forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<u
 forge message show --id=<message-id> [--server=<url>]
 forge resource archive --id=<resource>
 
-forge task create [<title>] [--project=<project>] [--slug <slug>]
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]
                   [--detail <detail>|--task-markdown <markdown>|--template=<name>]
                   [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
 forge task list [--project=<project>] [--all]
@@ -306,6 +306,10 @@ The selected language is stored in `forge.json` and controls generated Markdown
 templates and Forge-managed `AGENTS.md` prompts. Existing workspaces without a
 language setting default to English. Use `forge migrate --language=zh-CN` (or
 `--language=en`) to switch languages.
+
+Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. `--creator=user` records generic user provenance; `--creator=agent` requires the verified `FORGE_WORKSPACE_ROOT`, `FORGE_WORKSPACE_INSTANCE_ID`, and `FORGE_RESOURCE_ID` context injected into resource generations. With no flag, a valid injected context selects Agent provenance and every other invocation selects user. Creator metadata is immutable provenance, not authorization. Creation sends no initial message and creates no generation; call `forge message send` separately, which lazily creates the first generation. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
+
+Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the existing durable mailbox as structured system messages with stable `type`, `causation`, and receipt metadata. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
 `forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
 

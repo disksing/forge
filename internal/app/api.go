@@ -62,6 +62,13 @@ type Workspace struct {
 	root string
 }
 
+// InitializeOptions contains the immutable metadata written when a Workspace
+// is first created.
+type InitializeOptions struct {
+	Language string
+	Creator  Creator
+}
+
 // OpenWorkspace validates and canonicalizes root without consulting cwd.
 func OpenWorkspace(root string) (*Workspace, error) {
 	root = strings.TrimSpace(root)
@@ -73,6 +80,9 @@ func OpenWorkspace(root string) (*Workspace, error) {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Path: root, Err: err}
 	}
 	abs = filepath.Clean(abs)
+	if pathExists(workspaceInitializationMarker(abs)) {
+		return nil, &APIError{Operation: "open Workspace", Kind: "workspace_initializing", Workspace: abs, Path: abs, Err: errors.New("Workspace initialization is incomplete; rerun forge init to recover it")}
+	}
 	canonical, err := canonicalWorkspaceRoot(abs)
 	if err != nil {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Path: abs, Err: err}
@@ -101,6 +111,14 @@ func canonicalWorkspaceRoot(root string) (string, error) {
 // change the process working directory and returns an opened handle after the
 // durable files have been written.
 func Initialize(root, language string) (*Workspace, error) {
+	return InitializeWithOptions(root, InitializeOptions{Language: language, Creator: UserCreator()})
+}
+
+// InitializeWithOptions creates a Workspace with explicit immutable creator
+// provenance. Initialization is serialized by the Workspace application lock;
+// an on-disk marker makes an interrupted initialization recognizable and
+// safely retryable.
+func InitializeWithOptions(root string, options InitializeOptions) (*Workspace, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Err: errors.New("workspace root is required")}
@@ -112,47 +130,102 @@ func Initialize(root, language string) (*Workspace, error) {
 	abs = filepath.Clean(abs)
 	if existing, err := findEnclosingWorkspaceRoot(abs); err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
-	} else if existing != "" {
+	} else if existing != "" && !(filepath.Clean(existing) == abs && pathExists(workspaceInitializationMarker(abs))) {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Workspace: existing, Path: abs, Err: fmt.Errorf("cannot initialize workspace inside existing workspace: %s", existing)}
 	}
-	language, err = normalizeLanguage(strings.TrimSpace(language))
+	language, err := normalizeLanguage(strings.TrimSpace(options.Language))
 	if err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
-	if err := os.MkdirAll(filepath.Join(abs, reposDir), 0o755); err != nil {
+	creator, err := creatorOrUser(options.Creator)
+	if err != nil {
+		return nil, &APIError{Operation: "initialize Workspace", Kind: "creator", Path: abs, Err: err}
+	}
+	if err := withWorkspaceMutationLock(abs, func() error {
+		var existingMarker struct {
+			Creator *Creator `json:"creator"`
+		}
+		if err := readJSON(workspaceInitializationMarker(abs), &existingMarker); err == nil && existingMarker.Creator != nil {
+			existingCreator, normalizeErr := NormalizeCreator(*existingMarker.Creator)
+			if normalizeErr != nil {
+				return normalizeErr
+			}
+			if existingCreator != creator {
+				return errors.New("incomplete Workspace was created with different creator provenance")
+			}
+		} else if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		marker := map[string]any{"version": 1, "creator": creator, "updatedAt": time.Now().Format(time.RFC3339Nano)}
+		if err := writeJSON(workspaceInitializationMarker(abs), marker); err != nil {
+			return err
+		}
+		if err := initializeWorkspaceLocked(abs, language, creator); err != nil {
+			return err
+		}
+		if err := os.Remove(workspaceInitializationMarker(abs)); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return syncDirectory(filepath.Join(abs, ".forge"))
+	}); err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
-	if err := os.MkdirAll(filepath.Join(abs, archiveDir), 0o755); err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	return OpenWorkspace(abs)
+}
+
+func initializeWorkspaceLocked(root, language string, creator Creator) error {
+	if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(root, archiveDir), 0o755); err != nil {
+		return err
 	}
 	instanceID, err := newWorkspaceInstanceID()
 	if err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+		return err
 	}
-	config := Config{Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding()}
-	if err := readJSON(filepath.Join(abs, configFile), &config); err != nil && !os.IsNotExist(err) {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	config := Config{Version: 1, Language: language, InstanceID: instanceID, Creator: &creator, AgentBinding: defaultAgentBinding()}
+	if err := readJSON(filepath.Join(root, configFile), &config); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	config.Version, config.Language = 1, language
 	if strings.TrimSpace(config.InstanceID) == "" {
 		config.InstanceID = instanceID
 	}
+	if config.Creator == nil {
+		config.Creator = &creator
+	} else {
+		existingCreator, normalizeErr := NormalizeCreator(*config.Creator)
+		if normalizeErr != nil {
+			return normalizeErr
+		}
+		if existingCreator != creator {
+			return errors.New("incomplete Workspace was created with different creator provenance")
+		}
+		config.Creator = &existingCreator
+	}
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
 	}
-	if err := writeJSON(filepath.Join(abs, configFile), config); err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
+		return err
 	}
-	if err := ensureWorkspaceWiki(abs, language); err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	if err := ensureWorkspaceWiki(root, language); err != nil {
+		return err
 	}
-	if err := updateAgentsMD(filepath.Join(abs, "AGENTS.md"), language); err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	if err := updateAgentsMD(filepath.Join(root, "AGENTS.md"), language); err != nil {
+		return err
 	}
-	if err := updateOpenTaskAgentsMD(abs, language); err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	return updateOpenTaskAgentsMD(root, language)
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
 	}
-	return OpenWorkspace(abs)
+	defer directory.Close()
+	return directory.Sync()
 }
 
 // Migrate refreshes managed Workspace guidance using an explicit root.
@@ -274,6 +347,13 @@ type TaskListResult struct {
 	Tasks []TaskListEntry
 }
 
+// CreateProjectInput contains all typed inputs needed to create a project.
+type CreateProjectInput struct {
+	Description string
+	Slug        string
+	Creator     Creator
+}
+
 // CreateTaskInput contains all typed inputs needed to create a task.
 type CreateTaskInput struct {
 	ProjectID              string
@@ -286,6 +366,7 @@ type CreateTaskInput struct {
 	ExpectedTemplateDigest string
 	Slug                   string
 	AgentBinding           AgentBinding
+	Creator                Creator
 }
 
 // TaskPreview is the side-effect-free result of resolving task content and
@@ -430,13 +511,18 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 
 // CreateProject creates and returns a typed Project.
 func (w *Workspace) CreateProject(description, slug string) (Project, error) {
+	return w.CreateProjectWithInput(CreateProjectInput{Description: description, Slug: slug, Creator: UserCreator()})
+}
+
+// CreateProjectWithInput creates a project with explicit creator provenance.
+func (w *Workspace) CreateProjectWithInput(input CreateProjectInput) (Project, error) {
 	if err := w.require(); err != nil {
 		return Project{}, err
 	}
 	var project Project
 	err := withWorkspaceMutationLock(w.root, func() error {
 		var err error
-		project, err = w.createProject(description, slug)
+		project, err = w.createProject(input)
 		return err
 	})
 	if err != nil {
@@ -449,15 +535,20 @@ func (w *Workspace) CreateProject(description, slug string) (Project, error) {
 	return project, nil
 }
 
-func (w *Workspace) createProject(description, slug string) (Project, error) {
+func (w *Workspace) createProject(input CreateProjectInput) (Project, error) {
 	if err := w.require(); err != nil {
 		return Project{}, err
 	}
+	creator, err := creatorOrUser(input.Creator)
+	if err != nil {
+		return Project{}, &APIError{Operation: "create project", Kind: "creator", Workspace: w.root, Err: err}
+	}
+	description, slug := input.Description, input.Slug
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: errors.New("description cannot be empty")}
 	}
-	slug, err := normalizeResourceSlug(slug)
+	slug, err = normalizeResourceSlug(slug)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
@@ -466,6 +557,7 @@ func (w *Workspace) createProject(description, slug string) (Project, error) {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
 	project := newProject(id, titleFromDescription(description), description)
+	project.Creator = &creator
 	cfg, err := readWorkspaceConfig(w.root)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
@@ -476,7 +568,15 @@ func (w *Workspace) createProject(description, slug string) (Project, error) {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
 	path := filepath.Join(w.root, projectDirectoryName(id, slug))
-	if err := createResourceFiles(path, &project, language); err != nil {
+	staging := filepath.Join(w.root, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
+	defer os.RemoveAll(staging)
+	if err := createResourceFiles(staging, &project, language); err != nil {
+		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
+	}
+	if err := os.Rename(staging, path); err != nil {
+		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
+	}
+	if err := syncDirectory(w.root); err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
 	return project, nil
@@ -574,6 +674,10 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err := w.require(); err != nil {
 		return Task{}, err
 	}
+	creator, err := creatorOrUser(input.Creator)
+	if err != nil {
+		return Task{}, &APIError{Operation: "create task", Kind: "creator", Workspace: w.root, Err: err}
+	}
 	parentID := strings.TrimSpace(input.ProjectID)
 	if parentID == "" {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, Err: errors.New("project id is required")}
@@ -605,6 +709,7 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	staging := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	task := newTask(id, parentID, title, "")
+	task.Creator = &creator
 	if strings.TrimSpace(input.AgentBinding.Name) != "" || strings.TrimSpace(input.AgentBinding.Kind) != "" {
 		task.AgentBinding, err = NormalizeAgentBinding(input.AgentBinding)
 	} else {
@@ -623,6 +728,9 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
 	if err := os.Rename(staging, path); err != nil {
+		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
+	}
+	if err := syncDirectory(parentPath); err != nil {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
 	task.Path = relPath(w.root, path)

@@ -49,6 +49,13 @@ func readWorkspaceConfig(root string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid workspace language: %w", err)
 	}
 	config.Language = language
+	if config.Creator != nil {
+		creator, err := NormalizeCreator(*config.Creator)
+		if err != nil {
+			return Config{}, fmt.Errorf("invalid Workspace creator: %w", err)
+		}
+		config.Creator = &creator
+	}
 	return config, nil
 }
 
@@ -312,13 +319,13 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 使用 Forge 执行确定性的 workspace 操作：
 
 ` + "```bash" + `
-forge init [--language=<language>]
+forge init [--language=<language>] [--creator=user|agent]
 forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--slug <slug>] <description>
+forge project create [--slug <slug>] [--creator=user|agent] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
@@ -327,7 +334,7 @@ forge project log list [--project=<project>] [--json]
 
 forge template list|show|validate|render|create|migrate ...
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
 forge task list [--project=<project>] [--all]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -350,6 +357,8 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge init`" + ` 在当前目录创建新 workspace；在已有 workspace 内执行会失败。使用 ` + "`--language`" + ` 选择 ` + "`en`" + ` 或 ` + "`zh-CN`" + `。
 - ` + "`forge migrate`" + ` 刷新 workspace 中由 Forge 管理的 ` + "`AGENTS.md`" + ` 提示词；使用 ` + "`--language`" + ` 可切换 workspace 语言。
 - ` + "`forge repo add`" + ` 默认创建普通 checkout；需要使用 bare repository layout 时传入 ` + "`--bare`" + `。
+- ` + "`forge init`" + `、` + "`forge project create`" + ` 和 ` + "`forge task create`" + ` 接受 ` + "`--creator=user|agent`" + `。有效的 Forge 资源环境默认记录 Agent 来源，其他调用默认记录 user；creator 只表示来源，不代表权限。
+- 资源创建仅在本地完成，不附带初始消息，也不创建 generation。创建成功后应单独使用 ` + "`forge message send --to=<resource> ...`" + ` 发送第一条消息；消息被接受后才按需创建 generation。若创建命令输出结果不明，应先查询资源，再决定是否再次创建。
 - ` + "`forge project create`" + ` 创建新的开放项目目录。使用 ` + "`--slug <slug>`" + ` 可在不改变项目 ID 的情况下追加可读目录后缀。
 - ` + "`forge project list`" + ` 列出开放项目，传入 ` + "`--all`" + ` 时同时列出归档项目。它不会包含任务；项目任务使用 ` + "`forge task list [--project=<project>]`" + `。
 - ` + "`forge project show`" + ` 和 ` + "`forge project archive`" + ` 接受 ` + "`--project=<project>`" + `；project 可为 ` + "`project22`" + ` 形式的完整 ID 或 ` + "`22`" + ` 形式的数字。省略时使用当前目录所属项目。
@@ -363,4 +372,5 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge session list`" + ` 和 ` + "`forge session show --id=<id>`" + ` 仅用于只读诊断 ` + "`forge serve`" + ` 管理的瞬态 AgentHub Session 投影；它们不会创建、修改、结束、接管或访问 AgentHub Session。
 - ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
+- creator Turn 结果和消息投递终态通知会作为持久、结构化的 system 消息进入资源 mailbox。诊断时使用 ` + "`forge message show`" + `，并用稳定引用调用 ` + "`forge history turn show`" + `。
 `

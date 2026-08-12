@@ -9,6 +9,7 @@ import (
 func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 	result := workspaceTree{
 		Root:     tree.Root,
+		Creator:  tree.Creator,
 		Projects: make([]resourceSnapshot, 0, len(tree.Projects)),
 		Sessions: make([]guiSession, 0, len(tree.Sessions)),
 		Wiki:     workspaceWiki{Exists: tree.Wiki.Exists, Entries: fileTreeEntriesFromApp(tree.Wiki.Entries), Error: tree.Wiki.Error},
@@ -27,7 +28,7 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 }
 
 func resourceSnapshotFromApp(resource app.ResourceTreeView) resourceSnapshot {
-	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived, AgentBinding: resource.AgentBinding}
+	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived, Creator: resource.Creator, AgentBinding: resource.AgentBinding}
 	for _, child := range resource.Children {
 		result.Children = append(result.Children, resourceSnapshotFromApp(child))
 	}

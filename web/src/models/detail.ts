@@ -6,6 +6,12 @@ export interface ResourceAgentBindingModel {
   name: string;
 }
 
+export interface ResourceCreatorModel {
+  kind: "user" | "resource";
+  workspaceInstanceId?: string;
+  resourceId?: string;
+}
+
 export interface ResourceFileModel {
   name: string;
   path?: string;
@@ -44,6 +50,7 @@ export interface ResourceDetailModel {
   description?: string;
   path: string;
   archived?: boolean;
+  creator?: ResourceCreatorModel;
   agentBinding?: ResourceAgentBindingModel;
   files?: ResourceFileModel[];
   logs?: ResourceLogModel[];
@@ -88,6 +95,7 @@ export interface DetailPanelModel {
   resourceId: string;
   resourceType: "workspace" | "project" | "task" | "";
   resourceTitle: string;
+  creator?: ResourceCreatorModel;
   parent?: { id: string; title: string } | null;
   loading: boolean;
   detail: ResourceDetailModel | null;

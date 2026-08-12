@@ -11,6 +11,7 @@ import (
 
 type WorkspaceTree struct {
 	Root     string             `json:"root"`
+	Creator  *Creator           `json:"creator,omitempty"`
 	Projects []ResourceTreeView `json:"projects"`
 	Sessions []Session          `json:"sessions"`
 	Wiki     WorkspaceWikiView  `json:"wiki"`
@@ -28,6 +29,7 @@ type ResourceTreeView struct {
 	Title        string             `json:"title"`
 	Path         string             `json:"path"`
 	Archived     bool               `json:"archived"`
+	Creator      *Creator           `json:"creator,omitempty"`
 	AgentBinding AgentBinding       `json:"agentBinding"`
 	Children     []ResourceTreeView `json:"children,omitempty"`
 }
@@ -41,6 +43,7 @@ type ResourceDetailView struct {
 	UpdatedAt    string              `json:"updatedAt"`
 	Path         string              `json:"path"`
 	Archived     bool                `json:"archived"`
+	Creator      *Creator            `json:"creator,omitempty"`
 	AgentBinding AgentBinding        `json:"agentBinding"`
 	Repos        []TaskRepo          `json:"repos,omitempty"`
 	Logs         []LogEntry          `json:"logs,omitempty"`
@@ -98,6 +101,10 @@ const (
 )
 
 func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
+	config, err := readWorkspaceConfig(root)
+	if err != nil {
+		return WorkspaceTree{}, err
+	}
 	projectEntries, err := readProjectEntriesInDirs([]string{root})
 	if err != nil {
 		return WorkspaceTree{}, err
@@ -116,6 +123,7 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 	}
 	return WorkspaceTree{
 		Root:     slash(root),
+		Creator:  config.Creator,
 		Projects: projects,
 		Sessions: sessions,
 		Wiki:     readWorkspaceWiki(root),
@@ -156,6 +164,7 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Title:        meta.Title,
 		Path:         relPath(root, entry.Path),
 		Archived:     isArchivedPath(root, entry.Path),
+		Creator:      meta.Creator,
 		AgentBinding: meta.AgentBinding,
 	}
 	if includeChildren && isProject(entry.Resource) {
@@ -187,6 +196,7 @@ func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogE
 		UpdatedAt:    meta.UpdatedAt,
 		Path:         relPath(root, entry.Path),
 		Archived:     isArchivedPath(root, entry.Path),
+		Creator:      meta.Creator,
 		AgentBinding: meta.AgentBinding,
 		Logs:         logs,
 		Files:        readResourceFiles(root, entry.Path, entry.Resource),

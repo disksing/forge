@@ -369,7 +369,7 @@ func runMessageSend(args []string) error {
 	if err != nil {
 		return err
 	}
-	senderID, err := inferCurrentResourceID()
+	senderID, senderInstanceID, err := resolveMessageSender()
 	if err != nil {
 		return err
 	}
@@ -379,7 +379,8 @@ func runMessageSend(args []string) error {
 	}
 	body := map[string]any{
 		"text": options.Text, "mode": options.Mode, "role": "agent",
-		"sender": map[string]string{"id": senderID, "name": senderID},
+		"sender":                    map[string]string{"id": senderID, "name": senderID},
+		"senderWorkspaceInstanceId": senderInstanceID,
 	}
 	var response map[string]any
 	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/messages", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
@@ -387,6 +388,31 @@ func runMessageSend(args []string) error {
 		return err
 	}
 	return printJSON(response)
+}
+
+func resolveMessageSender() (string, string, error) {
+	if strings.TrimSpace(os.Getenv(forgeWorkspaceRootEnvironment)) != "" ||
+		strings.TrimSpace(os.Getenv(forgeWorkspaceInstanceEnvironment)) != "" ||
+		strings.TrimSpace(os.Getenv(forgeResourceIDEnvironment)) != "" {
+		creator, err := resolveCreationCreator(creationCreatorAgent)
+		if err != nil {
+			return "", "", err
+		}
+		return creator.ResourceID, creator.WorkspaceInstanceID, nil
+	}
+	senderID, err := inferCurrentResourceID()
+	if err != nil {
+		return "", "", err
+	}
+	workspace, err := openApplicationWorkspace()
+	if err != nil {
+		return "", "", err
+	}
+	runtime, err := workspace.RuntimeConfig()
+	if err != nil {
+		return "", "", err
+	}
+	return senderID, runtime.InstanceID, nil
 }
 
 func runMessageShow(args []string) error {

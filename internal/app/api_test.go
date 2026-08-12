@@ -2,8 +2,10 @@ package app_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/disksing/forge/internal/app"
@@ -79,6 +81,162 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	archivedProject, err := workspace.ArchiveResource(project.ID)
 	if err != nil || archivedProject.Path != "archive/project1-application" {
 		t.Fatalf("archive project = %#v, %v", archivedProject, err)
+	}
+}
+
+func TestCreatorProvenancePersistsAcrossWorkspaceProjectAndTask(t *testing.T) {
+	root := t.TempDir()
+	creator, err := app.ResourceCreator("ws-source", "project7.task3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: creator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := workspace.RuntimeConfig()
+	if err != nil || runtime.Creator == nil || *runtime.Creator != creator {
+		t.Fatalf("Workspace creator = %#v, %v", runtime.Creator, err)
+	}
+	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: "Delegated project", Slug: "delegated", Creator: creator})
+	if err != nil || project.Creator == nil || *project.Creator != creator {
+		t.Fatalf("project creator = %#v, %v", project.Creator, err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Delegated task", Slug: "delegated", Creator: creator})
+	if err != nil || task.Creator == nil || *task.Creator != creator {
+		t.Fatalf("task creator = %#v, %v", task.Creator, err)
+	}
+	reloaded, err := app.OpenWorkspace(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := reloaded.ResourceValue(task.ID)
+	if err != nil || value.Task == nil || value.Task.Creator == nil || *value.Task.Creator != creator {
+		t.Fatalf("reloaded task creator = %#v, %v", value.Task, err)
+	}
+	if _, err := reloaded.ArchiveResource(task.ID); err != nil {
+		t.Fatal(err)
+	}
+	archived, err := reloaded.ResourceValue(task.ID)
+	if err != nil || !archived.Archived || archived.Task == nil || archived.Task.Creator == nil || *archived.Task.Creator != creator {
+		t.Fatalf("archived task creator = %#v, %v", archived, err)
+	}
+}
+
+func TestConcurrentResourceCreationAllocatesUniqueAtomicIDs(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const count = 12
+	projects := make(chan app.Project, count)
+	errors := make(chan error, count)
+	var wait sync.WaitGroup
+	for index := 0; index < count; index++ {
+		wait.Add(1)
+		go func(index int) {
+			defer wait.Done()
+			project, createErr := workspace.CreateProject(fmt.Sprintf("Concurrent project %d", index), fmt.Sprintf("concurrent-%d", index))
+			if createErr != nil {
+				errors <- createErr
+				return
+			}
+			projects <- project
+		}(index)
+	}
+	wait.Wait()
+	close(errors)
+	for createErr := range errors {
+		t.Fatal(createErr)
+	}
+	close(projects)
+	seen := make(map[string]bool)
+	for project := range projects {
+		if seen[project.ID] {
+			t.Fatalf("duplicate project id %s", project.ID)
+		}
+		seen[project.ID] = true
+		if project.Creator == nil || project.Creator.Kind != app.CreatorKindUser {
+			t.Fatalf("default creator missing from %#v", project)
+		}
+	}
+	if len(seen) != count {
+		t.Fatalf("created %d projects, want %d", len(seen), count)
+	}
+	matches, err := filepath.Glob(filepath.Join(workspace.Root(), ".forge-create-*"))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("partial staging directories = %#v, %v", matches, err)
+	}
+}
+
+func TestInterruptedInitializationPreservesOriginalCreator(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, ".forge"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	creator, err := app.ResourceCreator("ws-source", "project1.task1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	marker, _ := json.Marshal(map[string]any{"version": 1, "creator": creator})
+	if err := os.WriteFile(filepath.Join(root, ".forge", "initializing.json"), append(marker, '\n'), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.OpenWorkspace(root); err == nil {
+		t.Fatal("incomplete Workspace unexpectedly opened")
+	}
+	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: app.UserCreator()}); err == nil {
+		t.Fatal("recovery changed creator provenance")
+	}
+	workspace, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: creator})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := workspace.RuntimeConfig()
+	if err != nil || runtime.Creator == nil || *runtime.Creator != creator {
+		t.Fatalf("recovered creator = %#v, %v", runtime.Creator, err)
+	}
+}
+
+func TestConcurrentWorkspaceInitializationConvergesOnOneInstance(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "workspace")
+	type result struct {
+		workspace *app.Workspace
+		err       error
+	}
+	results := make(chan result, 2)
+	start := make(chan struct{})
+	for index := 0; index < 2; index++ {
+		go func() {
+			<-start
+			workspace, err := app.Initialize(root, "en")
+			results <- result{workspace: workspace, err: err}
+		}()
+	}
+	close(start)
+	instanceIDs := make(map[string]bool)
+	for index := 0; index < 2; index++ {
+		current := <-results
+		if current.err != nil {
+			continue
+		}
+		runtime, err := current.workspace.RuntimeConfig()
+		if err != nil {
+			t.Fatal(err)
+		}
+		instanceIDs[runtime.InstanceID] = true
+	}
+	opened, err := app.OpenWorkspace(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := opened.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	instanceIDs[runtime.InstanceID] = true
+	if len(instanceIDs) != 1 {
+		t.Fatalf("concurrent initialization created multiple logical instances: %#v", instanceIDs)
 	}
 }
 

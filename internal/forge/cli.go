@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	projectCreateUsage = "usage: forge project create [--slug <slug>] <description>"
-	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]"
+	projectCreateUsage = "usage: forge project create [--slug <slug>] [--creator=user|agent] <description>"
+	taskCreateUsage    = "usage: forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]"
 	taskListUsage      = "usage: forge task list [--project=<project>] [--all]"
 	taskShowUsage      = "usage: forge task show [--project=<project>] [--task=<task>]"
 	taskArchiveUsage   = "usage: forge task archive [--project=<project>] [--task=<task>]"
@@ -21,6 +21,7 @@ const (
 type createResourceOptions struct {
 	Slug        string
 	Description string
+	Creator     string
 }
 
 type taskListOptions struct {
@@ -147,7 +148,11 @@ func runProject(args []string) error {
 		if err != nil {
 			return err
 		}
-		return applicationProjectCreate(options.Description, options.Slug)
+		creator, err := resolveCreationCreator(options.Creator)
+		if err != nil {
+			return err
+		}
+		return applicationProjectCreate(options.Description, options.Slug, creator)
 	case "list":
 		options, err := parseProjectListArgs(args[1:])
 		if err != nil {
@@ -223,6 +228,11 @@ func runTask(args []string) error {
 			}
 			return printJSON(preview)
 		}
+		creator, err := resolveCreationCreator(options.Creator)
+		if err != nil {
+			return err
+		}
+		input.Creator = creator
 		return applicationTaskCreate(input)
 	case "list":
 		options, err := resolveTaskListArgs(args[1:])
@@ -286,13 +296,13 @@ How Forge works:
 
 Usage:
   forge --version
-  forge init [--language=<language>]
+  forge init [--language=<language>] [--creator=user|agent]
   forge migrate [--language=<language>]
 
   forge repo add [--bare] <name> <url>
   forge repo list
 
-  forge project create [--slug <slug>] <description>
+  forge project create [--slug <slug>] [--creator=user|agent] <description>
   forge project list [--all]
   forge project show [--project=<project>]
   forge project archive [--project=<project>]
@@ -318,7 +328,7 @@ Usage:
   forge message show --id=<message-id> [--server=<url>]
   forge resource archive --id=<resource>
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
   forge task list [--project=<project>] [--all]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
@@ -339,9 +349,11 @@ Commands:
   forge --version
     Print the build-time branch and sha.
 
-  forge init [--language=<language>]
+  forge init [--language=<language>] [--creator=user|agent]
     Initialize the current directory as a new AgentWorkspace. Fails when run
     from inside an existing workspace. Supported languages: en, zh-CN.
+    --creator records immutable provenance; a verified injected resource
+    context defaults to agent, and every other invocation defaults to user.
 
   forge migrate [--language=<language>]
     Refresh forge-managed AGENTS.md blocks in the enclosing workspace. Pass
@@ -355,10 +367,11 @@ Commands:
   forge repo list
     List repositories known to the workspace.
 
-  forge project create [--slug <slug>] <description>
+  forge project create [--slug <slug>] [--creator=user|agent] <description>
     Create the next top-level project directory, including project.json,
     project.md, log.jsonl, artifacts/, templates/, and project-local AGENTS.md.
     Use --slug <slug> to append a human-readable suffix to the directory name.
+    Creation is local and does not create a generation or send a message.
 
   forge project list [--all]
     List open projects. Use --all to include archived projects.
@@ -373,7 +386,7 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
@@ -381,7 +394,9 @@ Commands:
     default task.md scaffold. --task-markdown writes the complete task.md file
     and is mutually exclusive with --detail. <project> may be a full id such as
     project22 or just a number such as 22. When omitted, Forge uses the project
-    containing the current working directory.
+    containing the current working directory. Send the first message
+    separately with forge message send; that delivery creates a generation
+    lazily. If CLI output is ambiguous, query before attempting another create.
 
   forge template list|show|validate|render|create|migrate ...
     Manage project-local schema V2 content templates. Templates declare typed
@@ -461,8 +476,9 @@ Commands:
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
     Persist a message in the target resource mailbox through the owning
     forge serve process. steer is the default. The current directory's stable
-    work-subject id is sent as role=agent provenance; provenance is not
-    authentication or instruction priority.
+    work-subject id and Workspace instance id are sent as role=agent
+    provenance. A valid injected Forge resource environment takes precedence
+    over cwd; provenance is not authentication or instruction priority.
 
   forge message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id.
@@ -506,6 +522,29 @@ func parseProjectCreateArgs(args []string) (createResourceOptions, error) {
 			options.Slug = value
 			continue
 		}
+		if strings.HasPrefix(arg, "--creator=") {
+			if options.Creator != "" {
+				return createResourceOptions{}, errors.New(projectCreateUsage)
+			}
+			value, err := normalizeCreationCreatorOption(strings.TrimPrefix(arg, "--creator="))
+			if err != nil {
+				return createResourceOptions{}, err
+			}
+			options.Creator = value
+			continue
+		}
+		if arg == "--creator" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") || options.Creator != "" {
+				return createResourceOptions{}, errors.New(projectCreateUsage)
+			}
+			value, err := normalizeCreationCreatorOption(args[i+1])
+			if err != nil {
+				return createResourceOptions{}, err
+			}
+			options.Creator = value
+			i++
+			continue
+		}
 		if arg == "--slug" {
 			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") {
 				return createResourceOptions{}, errors.New(projectCreateUsage)
@@ -540,6 +579,7 @@ type taskCreateOptions struct {
 	DryRun          bool
 	TitleSet        bool
 	JSON            bool
+	Creator         string
 }
 
 func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
@@ -586,6 +626,29 @@ func parseTaskCreateArgs(args []string) (taskCreateOptions, error) {
 				return taskCreateOptions{}, errors.New("slug cannot be empty")
 			}
 			options.Slug = value
+			continue
+		}
+		if strings.HasPrefix(arg, "--creator=") {
+			if options.Creator != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			value, err := normalizeCreationCreatorOption(strings.TrimPrefix(arg, "--creator="))
+			if err != nil {
+				return taskCreateOptions{}, err
+			}
+			options.Creator = value
+			continue
+		}
+		if arg == "--creator" {
+			if i+1 >= len(args) || strings.HasPrefix(args[i+1], "--") || options.Creator != "" {
+				return taskCreateOptions{}, errors.New(taskCreateUsage)
+			}
+			value, err := normalizeCreationCreatorOption(args[i+1])
+			if err != nil {
+				return taskCreateOptions{}, err
+			}
+			options.Creator = value
+			i++
 			continue
 		}
 		if arg == "--slug" {

@@ -330,9 +330,14 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 			"profileRevision": run.ProfileRevision,
 		},
 	}
+	launchEnvironment := map[string]string{
+		"FORGE_WORKSPACE_ROOT":        workspace.Path,
+		"FORGE_WORKSPACE_INSTANCE_ID": run.SourceInstanceID,
+		"FORGE_RESOURCE_ID":           resourceKey,
+	}
 	session, err := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
 		Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
-		Source: &source, IdempotencyKey: run.GenerationID,
+		Source: &source, IdempotencyKey: run.GenerationID, LaunchEnvironment: launchEnvironment,
 	})
 	if err != nil {
 		rt.setRecoveryError(m, err)

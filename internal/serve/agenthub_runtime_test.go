@@ -23,6 +23,7 @@ type runtimeFakeAgentHub struct {
 	mu                 sync.Mutex
 	sessions           map[string]agentHubSession
 	events             map[string][]agentHubEvent
+	turns              map[string]map[string]agentHubTurn
 	nextSession        int
 	abortNextCreate    bool
 	duplicateSource    bool
@@ -56,6 +57,7 @@ func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
 	return &runtimeFakeAgentHub{
 		sessions:      make(map[string]agentHubSession),
 		events:        make(map[string][]agentHubEvent),
+		turns:         make(map[string]map[string]agentHubTurn),
 		messageInputs: make(map[string]agentHubInboundMessage),
 	}
 }
@@ -127,6 +129,18 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	if len(parts) == 4 && parts[3] == "events" {
 		f.serveEvents(w, r, id)
+		return
+	}
+	if len(parts) == 5 && parts[3] == "turns" && r.Method == http.MethodGet {
+		turnID, _ := url.PathUnescape(parts[4])
+		f.mu.Lock()
+		turn, ok := f.turns[id][turnID]
+		f.mu.Unlock()
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeRuntimeFakeJSON(w, map[string]any{"turn": turn, "latestEventId": turn.LastEventID})
 		return
 	}
 	if len(parts) == 4 && parts[3] == "messages" {

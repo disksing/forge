@@ -112,7 +112,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 		if err := os.MkdirAll(filepath.Join(w.root, ".forge", "runtime"), 0o700); err != nil {
 			return err
 		}
-		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults}
+		result = WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, Creator: cfg.Creator, AgentBinding: cfg.AgentBinding, ResourceDefaults: cfg.ResourceDefaults}
 		return nil
 	})
 	if err != nil {
@@ -169,7 +169,7 @@ func (w *Workspace) RuntimeConfig() (WorkspaceRuntimeConfig, error) {
 	if strings.TrimSpace(cfg.InstanceID) == "" {
 		return WorkspaceRuntimeConfig{}, fmt.Errorf("Workspace resource runtime is not initialized")
 	}
-	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, AgentBinding: binding, ResourceDefaults: normalizeResourceDefaults(cfg.ResourceDefaults)}, nil
+	return WorkspaceRuntimeConfig{InstanceID: cfg.InstanceID, Creator: cfg.Creator, AgentBinding: binding, ResourceDefaults: normalizeResourceDefaults(cfg.ResourceDefaults)}, nil
 }
 
 func (w *Workspace) ResourceAgentBinding(id string) (AgentBinding, error) {

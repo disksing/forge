@@ -7,6 +7,11 @@ import (
 )
 
 const workspaceMutationLockFile = "application.lock"
+const workspaceInitializationMarkerFile = "initializing.json"
+
+func workspaceInitializationMarker(root string) string {
+	return filepath.Join(root, ".forge", workspaceInitializationMarkerFile)
+}
 
 // withWorkspaceMutationLock serializes mutations which allocate resource ids
 // or update files that do not have a narrower file-mutation lock. The lock lives

@@ -995,6 +995,9 @@ function detailPanelModel(): DetailPanelModel {
 		resourceId: controllerState.selectedId || "",
 		resourceType: "",
 		resourceTitle: "",
+		creator: controllerState.selectedId === "workspace"
+			? controllerState.tree?.creator
+			: controllerState.details[controllerState.selectedId]?.creator || findResource(controllerState.selectedId)?.creator,
 		parent: null,
 		loading: false,
 		detail: null,

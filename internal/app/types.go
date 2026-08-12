@@ -9,6 +9,7 @@ type Config struct {
 	Version          int                   `json:"version"`
 	Language         string                `json:"language"`
 	InstanceID       string                `json:"instanceId,omitempty"`
+	Creator          *Creator              `json:"creator,omitempty"`
 	AgentBinding     AgentBinding          `json:"agentBinding,omitempty"`
 	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults,omitempty"`
 }
@@ -26,6 +27,7 @@ type ResourceAgentDefaults struct {
 
 type WorkspaceRuntimeConfig struct {
 	InstanceID       string                `json:"instanceId"`
+	Creator          *Creator              `json:"creator,omitempty"`
 	AgentBinding     AgentBinding          `json:"agentBinding"`
 	ResourceDefaults ResourceAgentDefaults `json:"resourceDefaults"`
 }
@@ -37,6 +39,7 @@ type ResourceMeta struct {
 	Title         string       `json:"title"`
 	CreatedAt     string       `json:"createdAt"`
 	UpdatedAt     string       `json:"updatedAt"`
+	Creator       *Creator     `json:"creator,omitempty"`
 	AgentBinding  AgentBinding `json:"agentBinding,omitempty"`
 }
 
