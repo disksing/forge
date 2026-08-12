@@ -24,14 +24,45 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
     runStatus: "idle", live: true, canResume: false, draft: "", draftKey: "draft-a", draftResetVersion: 0,
     unavailableReason: "", sending: false, agents: [], selectedAgentId: "",
     chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false,
-    closingSession: false, onDraft: vi.fn(),
+    closingSession: false, waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
     onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onToggleChooser: vi.fn(),
     onChooseAgent: vi.fn(), onToggleActions: vi.fn(), onResume: vi.fn(), onEndTurn: vi.fn(), onCloseSession: vi.fn(),
-    onIconsChanged: vi.fn(), ...overrides,
+    onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(), ...overrides,
   };
 }
 
 describe("ChatComposer", () => {
+  it("does not overwrite input entered before the mount subscription settles", async () => {
+    const channel = createModelChannel(model());
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "typed immediately";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    await tick();
+    expect(input.value).toBe("typed immediately");
+  });
+
+  it("preserves a resource draft when the initial run projection arrives", async () => {
+    const channel = createModelChannel(model({ identity: "workspace-a:task-a:none:", runId: "", draftKey: "" }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "typed while runs load";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    const onDraft = vi.fn();
+    channel.publish(model({ onDraft }));
+    await tick();
+
+    expect(input.value).toBe("typed while runs load");
+    expect(onDraft).toHaveBeenCalledWith("typed while runs load", expect.objectContaining({ runId: "run-a", draftKey: "draft-a" }));
+  });
+
   it("does not let a late accepted send clear a different session draft", async () => {
     const result = deferred<{ accepted: boolean; clear: boolean }>();
     const first = model({ onSend: vi.fn(() => result.promise) });
@@ -75,5 +106,36 @@ describe("ChatComposer", () => {
     await vi.waitFor(() => expect(onSend).toHaveBeenCalledTimes(2));
     await tick();
     expect(input.value).toBe("");
+  });
+
+  it("shows waiting messages above the input and steers the same message id", async () => {
+    const onSteerWaiting = vi.fn(async () => undefined);
+    const channel = createModelChannel(model({
+      canSteerWaiting: true,
+      waitingMessages: [{ messageId: "msg-waiting", text: "Please check the failing test", status: "waiting", acceptedAt: "2026-08-12T12:00:00Z", requestedMode: "enqueue", actualMode: "enqueue" }],
+      onSteerWaiting,
+    }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const queue = target.querySelector<HTMLElement>(".tty-message-queue")!;
+    expect(queue.textContent).toContain("Please check the failing test");
+    expect(queue.compareDocumentPosition(target.querySelector("#ttyForm")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    queue.querySelector<HTMLButtonElement>(".tty-message-steer")!.click();
+    await vi.waitFor(() => expect(onSteerWaiting).toHaveBeenCalledWith("msg-waiting"));
+  });
+
+  it("keeps insert disabled when the current turn cannot steer", async () => {
+    const channel = createModelChannel(model({
+      waitingMessages: [{ messageId: "msg-waiting", text: "Wait here", status: "waiting", acceptedAt: "", requestedMode: "enqueue", actualMode: "enqueue" }],
+    }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector<HTMLButtonElement>(".tty-message-steer")?.disabled).toBe(true);
   });
 });

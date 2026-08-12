@@ -50,7 +50,7 @@ func TestVersion(t *testing.T) {
 	}
 }
 
-func TestResourceCommandsUseOwningServerAndAgentProvenance(t *testing.T) {
+func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Mailbox project")
@@ -64,13 +64,13 @@ func TestResourceCommandsUseOwningServerAndAgentProvenance(t *testing.T) {
 		var requestBody map[string]any
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {
-			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/agent"):
+			case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/messages"):
 				if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
 					t.Error(err)
 				}
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","resourceId":"project1.task1","requestedMode":"interrupt","actualMode":"interrupt","status":"delivered","reference":"messages/msg-test"}`)
-			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/agent"):
-				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","exists":true,"acceptsMessages":true}`)
+			case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/resources/") && strings.HasSuffix(r.URL.Path, "/status"):
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"idle","exists":true,"acceptsMessages":true}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/messages/msg-test"):
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","status":"delivered"}`)
 			default:
@@ -87,7 +87,7 @@ func TestResourceCommandsUseOwningServerAndAgentProvenance(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		sent := run(t, "resource", "send", "--id=project1.task1", "--mode=interrupt", "coordinate now")
+		sent := run(t, "message", "send", "--to=project1.task1", "--mode=interrupt", "coordinate now")
 		if !strings.Contains(sent, `"messageId": "msg-test"`) {
 			t.Fatalf("unexpected send response: %s", sent)
 		}
@@ -98,11 +98,22 @@ func TestResourceCommandsUseOwningServerAndAgentProvenance(t *testing.T) {
 		if sender["id"] != "project1.task1" || sender["name"] != "project1.task1" {
 			t.Fatalf("sender provenance did not use current resource: %#v", sender)
 		}
-		if status := run(t, "resource", "status"); !strings.Contains(status, `"acceptsMessages": true`) {
+		if status := run(t, "task", "status"); !strings.Contains(status, `"acceptsMessages": true`) {
 			t.Fatalf("unexpected inferred status response: %s", status)
 		}
-		if message := run(t, "resource", "message", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
+		if status := run(t, "project", "status", "--project=1"); !strings.Contains(status, `"state": "idle"`) {
+			t.Fatalf("unexpected project status response: %s", status)
+		}
+		if status := run(t, "workspace", "status"); !strings.Contains(status, `"state": "idle"`) {
+			t.Fatalf("unexpected workspace status response: %s", status)
+		}
+		if message := run(t, "message", "show", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
 			t.Fatalf("unexpected message response: %s", message)
+		}
+		for _, args := range [][]string{{"resource", "status"}, {"resource", "send", "--id=project1.task1", "legacy"}, {"resource", "message", "--id=msg-test"}} {
+			if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), "unknown resource subcommand") {
+				t.Fatalf("legacy resource command still exists: %v", args)
+			}
 		}
 	})
 }

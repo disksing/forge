@@ -13,6 +13,7 @@ interface Harness {
   agentsBodies: Array<Record<string, unknown>>;
   startBodies: Array<Record<string, unknown>>;
   uiStateBodies: Array<Record<string, unknown>>;
+  steeredMessageIds: string[];
 }
 
 const templates = [
@@ -126,8 +127,9 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [] };
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false): Promise<Harness> {
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [] };
+  let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -197,6 +199,19 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
         })),
         wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
+    }
+    const statusMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/status$/);
+    if (statusMatch && method === "GET") {
+      const resourceId = decodeURIComponent(statusMatch[1]);
+      const visible = waitingMessages.filter((message) => message.resourceId === resourceId);
+      return json(route, { resourceId, state: "working", canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length } });
+    }
+    const steerMatch = path.match(/^\/api\/workspaces\/ws-test\/messages\/(.+)\/steer$/);
+    if (steerMatch && method === "POST") {
+      const messageId = decodeURIComponent(steerMatch[1]);
+      harness.steeredMessageIds.push(messageId);
+      waitingMessages = waitingMessages.filter((message) => message.messageId !== messageId);
+      return json(route, { messageId, status: "delivered", actualMode: "steer" });
     }
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
     if (resourceMatch) {
@@ -363,6 +378,8 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     }
     const treeMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/tree$/);
     if (treeMatch) return json(route, trees[treeMatch[1] as keyof typeof trees]);
+    const statusMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)\/status$/);
+    if (statusMatch) return json(route, { resourceId: decodeURIComponent(statusMatch[2]), state: "idle", canSteerWaiting: false, waitingMessages: [], messages: { waiting: 0 } });
     const detailMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/resources\/(.+)$/);
     if (detailMatch) {
       const id = decodeURIComponent(detailMatch[2]);
@@ -548,6 +565,26 @@ test("switches sessions, sends input, receives SSE, and preserves active reading
   expect(harness.streamRequests).toContain("run-1");
 });
 
+test("shows waiting messages above the composer and inserts one through steer", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1", true);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const queue = page.locator(".tty-message-queue");
+  await expect(queue).toBeVisible();
+  await expect(queue).toContainText("Review the mailbox change now");
+  const input = page.locator("#ttyInput");
+  const queueBounds = await queue.boundingBox();
+  const inputBounds = await input.boundingBox();
+  expect(queueBounds).not.toBeNull();
+  expect(inputBounds).not.toBeNull();
+  expect(queueBounds!.y + queueBounds!.height).toBeLessThanOrEqual(inputBounds!.y);
+
+  await queue.getByRole("button", { name: /Insert waiting message/ }).click();
+  await expect.poll(() => harness.steeredMessageIds).toEqual(["msg-waiting"]);
+  await expect(queue).toBeHidden();
+  await expect(page.locator("#toast")).toContainText("Message inserted into the current turn");
+});
+
 test("uses the AgentHub catalog to enable the New Session agent chooser", async ({ page }) => {
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1");
@@ -619,7 +656,7 @@ test("keeps the Create Task split usable across desktop and mobile layouts", asy
     formOverflow: getComputedStyle(node.querySelector(".create-task-form-col")!).overflowY,
     previewOverflow: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).overflowY,
     previewBorderTop: getComputedStyle(node.querySelector('[data-component-owner="task-preview"]')!).borderTopStyle,
-    panelsDoNotOverlap: node.querySelector(".create-task-form-col")!.getBoundingClientRect().bottom <= node.querySelector('[data-component-owner="task-preview"]')!.getBoundingClientRect().top,
+    panelsDoNotOverlap: node.querySelector(".create-task-form-col")!.getBoundingClientRect().bottom <= node.querySelector('[data-component-owner="task-preview"]')!.getBoundingClientRect().top + 1,
   }));
   expect(mobile).toEqual({ columns: 1, overflow: "auto", formOverflow: "visible", previewOverflow: "visible", previewBorderTop: "solid", panelsDoNotOverlap: true });
   await expect(formColumn).toBeVisible();

@@ -30,6 +30,9 @@ export interface ComposerModel {
   canEndTurn: boolean;
   endingTurn: boolean;
   closingSession: boolean;
+  waitingMessages: WaitingMessage[];
+  canSteerWaiting: boolean;
+  steeringMessageId: string;
   onDraft: (text: string, context: ComposerContext) => void;
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
@@ -39,7 +42,25 @@ export interface ComposerModel {
   onResume: () => void;
   onEndTurn: () => void;
   onCloseSession: () => void;
+  onSteerWaiting: (messageId: string) => Promise<void>;
   onIconsChanged: () => void;
+}
+
+export interface WaitingMessage {
+  messageId: string;
+  text: string;
+  status: string;
+  acceptedAt: string;
+  requestedMode: string;
+  actualMode: string;
+}
+
+export interface ResourceMessageStatus {
+  resourceId: string;
+  state: "idle" | "working" | "attention_required" | "unavailable" | "archived";
+  canSteerWaiting: boolean;
+  waitingMessages: WaitingMessage[];
+  messages?: { waiting?: number; delivering?: number; interrupting?: number; delivered?: number; undeliverable?: number; deliveryUnknown?: number };
 }
 
 export interface ComposerContext {

@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, SessionSwitcherModel, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, SessionSwitcherModel, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -73,6 +73,10 @@ interface ControllerState {
 	previewRequestVersion: number;
 	diffRequestVersion: number;
 	agentSessionMutationCount: number;
+	messageStatus: ResourceMessageStatus | null;
+	messageStatusKey: string;
+	messageStatusRequestVersion: number;
+	steeringMessageId: string;
 	iconRefreshScheduled: boolean;
 	agent: {
 		runs: AgentRunRecord[];
@@ -151,6 +155,10 @@ const controllerState: ControllerState = {
 	previewRequestVersion: 0,
 	diffRequestVersion: 0,
 	agentSessionMutationCount: 0,
+	messageStatus: null,
+	messageStatusKey: "",
+	messageStatusRequestVersion: 0,
+	steeringMessageId: "",
 	iconRefreshScheduled: false,
 	agent: {
 		runs: [],
@@ -573,6 +581,8 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	await loadAgentRuns();
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
+	await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId());
+	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	establishNotificationBaseline();
 	controllerState.navigationLoading = false;
 	controllerState.navigationError = "";
@@ -706,6 +716,7 @@ async function autoRefresh() {
 			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) || agentRunProjectionVersion !== controllerState.agentRunProjectionVersion) return;
 			changed = true;
 		}
+		if (await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId())) changed = true;
 		if (taskOperationalStateKey() !== controllerState.taskOperationalStateKey) changed = true;
 		if (changed) publishViewModels();
 	} finally {
@@ -950,6 +961,10 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		controllerState.agent.notices = [];
 		controllerState.agent.historyBeforeId = 0;
 		clearAgentDraftMemory();
+		controllerState.messageStatus = null;
+		controllerState.messageStatusKey = "";
+		controllerState.messageStatusRequestVersion++;
+		controllerState.steeringMessageId = "";
 	}
 	controllerState.selectedId = id;
 	controllerState.sessionMenu = null;
@@ -958,7 +973,11 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 	syncURL();
 	saveUIState().catch((err) => console.warn("failed to save UI state", err));
 	renderSelectionPanels();
-	await Promise.all([id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: forceDetail }), selectionChanged ? loadAgentRuns() : Promise.resolve()]);
+	await Promise.all([
+		id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: forceDetail }),
+		selectionChanged ? loadAgentRuns() : Promise.resolve(),
+		refreshResourceMessageStatus(controllerState.activeWorkspaceId, id)
+	]);
 	if (!isCurrentWorkspaceView(controllerState.activeWorkspaceId, controllerState.navigationVersion)) return;
 	renderSelectionPanels();
 }
@@ -1265,6 +1284,7 @@ async function refreshAgentInputProjection(workspaceId: string, resourceId: stri
 	await Promise.all([
 		loadAgentRuns(),
 		refreshTreeAfterAgentSessionMutation(),
+		refreshResourceMessageStatus(workspaceId, resourceId),
 		resourceId && resourceId !== "workspace" ? fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }).then((detail) => {
 			if (controllerState.activeWorkspaceId === workspaceId && detail) applyResourceDetail(detail, "head");
 		}) : Promise.resolve()
@@ -1288,6 +1308,41 @@ function fetchAgentRuns(): Promise<AgentRunRecord[]> {
 	const query = resourceId ? `?resourceId=${encodeURIComponent(resourceId)}` : "";
 	return api<{ runs?: AgentRunRecord[] }>(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs${query}`).then((body) => body.runs || []);
 }
+async function refreshResourceMessageStatus(workspaceId = controllerState.activeWorkspaceId, resourceId = selectedAgentResourceId()): Promise<boolean> {
+	if (!workspaceId || !resourceId) return false;
+	const requestVersion = ++controllerState.messageStatusRequestVersion;
+	const key = `${workspaceId}:${resourceId}`;
+	const status = await api<ResourceMessageStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/status`);
+	if (requestVersion !== controllerState.messageStatusRequestVersion || workspaceId !== controllerState.activeWorkspaceId || resourceId !== selectedAgentResourceId()) return false;
+	const changed = controllerState.messageStatusKey !== key || !sameJSON(controllerState.messageStatus, status);
+	controllerState.messageStatusKey = key;
+	controllerState.messageStatus = status;
+	return changed;
+}
+
+async function steerWaitingMessage(messageId: string): Promise<void> {
+	if (!messageId || controllerState.steeringMessageId) return;
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = selectedAgentResourceId();
+	controllerState.steeringMessageId = messageId;
+	renderTTYComposer();
+	try {
+		await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(messageId)}/steer`, { method: "POST" });
+		await refreshResourceMessageStatus(workspaceId, resourceId);
+		if (workspaceId === controllerState.activeWorkspaceId && resourceId === selectedAgentResourceId()) {
+			publishViewModels();
+			toast("Message inserted into the current turn.");
+		}
+	} catch (error) {
+		try { await refreshResourceMessageStatus(workspaceId, resourceId); } catch (_) {}
+		throw error;
+	} finally {
+		if (controllerState.steeringMessageId === messageId) {
+			controllerState.steeringMessageId = "";
+			renderTTYComposer();
+		}
+	}
+}
 async function reloadAgentRunsForSelection(): Promise<void> {
 	flushAgentDraft();
 	closeAgentStream();
@@ -1297,7 +1352,10 @@ async function reloadAgentRunsForSelection(): Promise<void> {
 	controllerState.agent.notices = [];
 	controllerState.agent.historyBeforeId = 0;
 	clearAgentDraftMemory();
-	await loadAgentRuns();
+	controllerState.messageStatus = null;
+	controllerState.messageStatusKey = "";
+	controllerState.messageStatusRequestVersion++;
+	await Promise.all([loadAgentRuns(), refreshResourceMessageStatus()]);
 }
 function resetAgentState(): void {
 	flushAgentDraft();
@@ -1316,6 +1374,10 @@ function resetAgentState(): void {
 	controllerState.agent.historyOpen = false;
 	clearAgentDraftMemory();
 	agentOperations.reset();
+	controllerState.messageStatus = null;
+	controllerState.messageStatusKey = "";
+	controllerState.messageStatusRequestVersion++;
+	controllerState.steeringMessageId = "";
 	controllerState.agent.toolGroupOpen.clear();
 	controllerState.agent.approvalDrafts.clear();
 	controllerState.agent.renderDeferredForSelection = false;
@@ -1341,7 +1403,7 @@ function handleSvelteAgentEvent(workspaceId: string, runId: string, event: Agent
 		"session.state",
 		"approval.requested",
 		"approval.resolved"
-	].includes(event.type)) refreshAgentRunMetadata().then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
+	].includes(event.type)) Promise.all([refreshAgentRunMetadata(), refreshResourceMessageStatus()]).then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
 }
 function handleSvelteForgeNotice(_workspaceId: string, _runId: string, _notice: AgentNotice): void {}
 function clearAgentRenderTimer(): void {
@@ -1421,6 +1483,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 	const resourceId = activeRun?.resourceId || selectedAgentResourceId();
 	const stopTurnPending = isAgentTurnStopping(activeRun);
 	const sessionStopping = isAgentSessionStopping(activeRun) || activeRun?.status === "stopping";
+	const messageStatus = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	publisher.renderComposer({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${activeRun?.id || "none"}:${controllerState.agent.ttyDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
@@ -1432,7 +1495,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		draft: controllerState.agent.ttyDraft || "",
 		draftKey: controllerState.agent.ttyDraftKey || "",
 		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
-		unavailableReason: live && activeRun ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
+		unavailableReason: !messageStatus ? "Loading work status." : live && activeRun ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
 		sending: Boolean(activeRun && agentOperations.isSending(agentSessionMutationKey(controllerState.activeWorkspaceId, activeRun.id))),
 		agents: svelteAgentOptions(),
 		selectedAgentId: selectedAgentConfig()?.id || "",
@@ -1442,6 +1505,9 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		canEndTurn: Boolean(activeRun && (isAgentTurnInterruptible(activeRun) || stopTurnPending)),
 		endingTurn: stopTurnPending,
 		closingSession: sessionStopping,
+		waitingMessages: messageStatus?.waitingMessages || [],
+		canSteerWaiting: Boolean(messageStatus?.canSteerWaiting),
+		steeringMessageId: controllerState.steeringMessageId,
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
@@ -1458,6 +1524,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		onResume: () => resumeAgentRun().catch((err) => toast(err.message)),
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
 		onCloseSession: closeCurrentAgentSession,
+		onSteerWaiting: steerWaitingMessage,
 		onIconsChanged: refreshIcons
 	});
 }

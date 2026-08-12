@@ -27,14 +27,15 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 三种模式共享同一 reconciler：`steer` 默认在支持能力的活动 Turn 中插入，不支持时持久降级为 `enqueue`；`enqueue` 只在 ready 边界作为新 Turn 投递；`interrupt` 先记录被中断的稳定 Turn ID，只重试同一 Turn 的中断，确认其 terminal 后再开启新 Turn。已经处于 delivering/interrupting 的结果不明项最先收敛；其余项按 interrupt、steer、enqueue 优先级处理，同一类保持接受顺序，因此显式 steer/interrupt 可以越过早先等待的 enqueue。AgentHub 成功承担至少一次投递责任后状态才变为 delivered；这不表示 Turn 已完成。绑定替换不再搬运消息：steer 成功后留在旧 Turn，enqueue 等新 generation，interrupt 终止旧 Turn 后再随 replacement 收敛。归档资源拒收新消息；尚未开始发送的项进入 `undeliverable`，已开始发送但无法确认结果的项进入 `delivery_unknown`，两种终态都可按 message ID 查询。
 
-### 资源 Agent API
+### 工作对象状态与消息 API
 
 公共资源入口仍以 Server 已拥有的 Workspace ID 为作用域，但目标只使用稳定资源 ID `workspace`、`projectN` 或 `projectN.taskN`，不要求 run/generation/AgentHub Session ID：
 
 ```text
-GET  /api/workspaces/{workspaceId}/resources/{resourceId}/agent
-POST /api/workspaces/{workspaceId}/resources/{resourceId}/agent
+GET  /api/workspaces/{workspaceId}/resources/{resourceId}/status
+POST /api/workspaces/{workspaceId}/resources/{resourceId}/messages
 GET  /api/workspaces/{workspaceId}/messages/{messageId}
+POST /api/workspaces/{workspaceId}/messages/{messageId}/steer
 ```
 
 发送正文示例：
@@ -48,16 +49,17 @@ GET  /api/workspaces/{workspaceId}/messages/{messageId}
 }
 ```
 
-发送响应包含 `messageId`、`resourceId`、`requestedMode`、`actualMode`、`downgradeReason`、`status`、可再次 GET 的 `reference`、当前关联以及可选的 `lastErrorCode`/`lastError`。状态响应包含资源存在/归档/接收状态、显式绑定、解析后的 Agent/Profile 与配置错误、当前 generation/replacement、Session/Turn/steer capability、mailbox 分类计数和最近错误。稳定错误 code 包括 `invalid_request`、`resource_not_found`、`resource_archived`、`workspace_not_owned`、`message_not_found`、`binding_unavailable` 和 `temporarily_undeliverable`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
+发送响应包含 `messageId`、`resourceId`、正文、`requestedMode`、`actualMode`、`downgradeReason`、对外消息状态、接受/提升时间、可再次 GET 的 `reference`、当前关联以及可选的 `lastErrorCode`/`lastError`。内部 `queued` 对外映射为 `waiting`。状态响应的公共状态只会是 `idle`、`working`、`attention_required`、`unavailable` 或 `archived`；消息等待数与 `waitingMessages` 单列，不会把 Task 标成 queued。状态还包含显式绑定、当前 generation/replacement、Session/Turn/steer capability 和最近错误。`POST .../steer` 仅在活动 Turn 支持 steer 时把同一个 waiting mailbox 项立即插入，不创建新消息。稳定错误 code 还包括 `message_not_waiting` 和 `steer_unavailable`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
 
 curl 示例：
 
 ```bash
-curl -sS http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/agent
+curl -sS http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/status
 curl -sS -X POST -H 'Content-Type: application/json' \
   -d '{"text":"Please review this.","mode":"enqueue","role":"agent","sender":{"id":"project1.task1"}}' \
-  http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/agent
+  http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/resources/project1.task2/messages
 curl -sS http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESSAGE_ID
+curl -sS -X POST http://127.0.0.1:4936/api/workspaces/WORKSPACE_ID/messages/MESSAGE_ID/steer
 ```
 
 绑定或 Profile 映射变化会标记旧代际替换：活动 Turn 先完成，之后旧 Session stop 并 archive，新代际按需创建。删除仍被引用的自定义 Profile 不会改写资源显式绑定；解析按资源类型默认、再按全局 `default` 回退，同时在 generation 暴露 `agentConfigError` 和实际 `resolvedProfile`。原 Profile 恢复后周期 reconciler 会重新收敛。

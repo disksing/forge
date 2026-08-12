@@ -9,12 +9,14 @@
 
   let { channel }: { channel: ModelChannel<ComposerModel> } = $props();
   // svelte-ignore state_referenced_locally
-  let model = $state(channel.current());
-  let identity = $state("");
-  let resetVersion = $state(-1);
-  let draft = $state("");
+  const initialModel = channel.current();
+  let model = $state(initialModel);
+  let identity = $state(initialModel.identity);
+  let resetVersion = $state(initialModel.draftResetVersion);
+  let draft = $state(initialModel.draft);
   let sending = $state(false);
   let error = $state("");
+  let queueError = $state("");
   let multiline = $state(false);
   let input: HTMLTextAreaElement | undefined = $state();
 
@@ -22,13 +24,17 @@
   const newSessionTitle = $derived(model.sessionStarting ? "Creating a new AgentHub session..." : model.agents.length ? "Choose an Agent to start a new session." : "No enabled agents are available. Configure an AgentHub Agent in Settings.");
 
   onMount(() => channel.subscribe((next) => {
+    const previous = model;
     model = next;
     if (next.identity !== identity) {
+      const preserveInitialRunDraft = !previous.runId && Boolean(next.runId) && previous.workspaceId === next.workspaceId && previous.resourceId === next.resourceId && Boolean(draft);
       identity = next.identity;
       resetVersion = next.draftResetVersion;
-      draft = next.draft;
+      if (preserveInitialRunDraft) next.onDraft(draft, context());
+      else draft = next.draft;
       sending = false;
       error = "";
+      queueError = "";
       multiline = false;
     } else if (next.draftResetVersion !== resetVersion) {
       resetVersion = next.draftResetVersion;
@@ -75,6 +81,16 @@
     }
   }
 
+  async function steerWaiting(messageId: string): Promise<void> {
+    if (!model.canSteerWaiting || model.steeringMessageId) return;
+    queueError = "";
+    try {
+      await model.onSteerWaiting(messageId);
+    } catch (reason) {
+      queueError = reason instanceof Error ? reason.message : String(reason);
+    }
+  }
+
   function keydown(event: KeyboardEvent): void {
     if (event.key !== "Enter" || event.isComposing || event.keyCode === 229) return;
     if (event.metaKey || event.ctrlKey) {
@@ -100,6 +116,24 @@
   }
 </script>
 
+{#if model.waitingMessages.length}
+  <section class="tty-message-queue" aria-label="Waiting messages">
+    <div class="tty-message-queue-header"><span>Waiting messages</span><span class="tty-message-count">{model.waitingMessages.length}</span></div>
+    <div class="tty-message-list">
+      {#each model.waitingMessages as message (message.messageId)}
+        <div class="tty-message-item" data-message-id={message.messageId}>
+          <span class="tty-message-text" title={message.text}>{message.text}</span>
+          <span class="tty-message-mode">{message.actualMode || message.requestedMode}</span>
+          <button type="button" class="tty-message-steer" disabled={!model.canSteerWaiting || Boolean(model.steeringMessageId)} title={model.canSteerWaiting ? "Insert this waiting message into the current turn" : "Available when the current turn supports steer"} aria-label={`Insert waiting message into current turn: ${message.text}`} onclick={() => steerWaiting(message.messageId)}>
+            {#if model.steeringMessageId === message.messageId}<Icon name="loader-circle" />{:else}<Icon name="corner-up-left" />{/if}
+            <span>Insert now</span>
+          </button>
+        </div>
+      {/each}
+    </div>
+    {#if queueError}<div class="tty-message-queue-error" role="alert">{queueError}</div>{/if}
+  </section>
+{/if}
 <form id="ttyForm" class="tty-input" onsubmit={send}>
     <span>&gt;</span>
     <textarea id="ttyInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || (model.live ? "Send input to the selected agent session" : "Message this resource")} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>

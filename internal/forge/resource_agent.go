@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	resourceStatusUsage  = "usage: forge resource status [--id=<resource>] [--server=<url>]"
-	resourceSendUsage    = "usage: forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
-	resourceMessageUsage = "usage: forge resource message --id=<message-id> [--server=<url>]"
+	workspaceStatusUsage = "usage: forge workspace status [--server=<url>]"
+	projectStatusUsage   = "usage: forge project status [--project=<project>] [--server=<url>]"
+	taskStatusUsage      = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	messageSendUsage     = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
+	messageShowUsage     = "usage: forge message show --id=<message-id> [--server=<url>]"
 )
 
 type resourceServerOptions struct {
@@ -43,24 +45,33 @@ type resourceServerClient struct {
 	http        *http.Client
 }
 
-func parseResourceServerArgs(args []string, command string) (resourceServerOptions, error) {
-	usage := resourceStatusUsage
-	if command == "send" {
-		usage = resourceSendUsage
-	} else if command == "message" {
-		usage = resourceMessageUsage
+func parseMessageServerArgs(args []string, command string) (resourceServerOptions, error) {
+	usage := messageSendUsage
+	if command == "show" {
+		usage = messageShowUsage
 	}
 	var options resourceServerOptions
 	var text []string
 	for index := 0; index < len(args); index++ {
 		arg := args[index]
 		switch {
-		case strings.HasPrefix(arg, "--id="):
+		case strings.HasPrefix(arg, "--to=") && command == "send":
+			if options.ID != "" {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			options.ID = strings.TrimSpace(strings.TrimPrefix(arg, "--to="))
+		case arg == "--to" && command == "send":
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") || options.ID != "" {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			index++
+			options.ID = strings.TrimSpace(args[index])
+		case strings.HasPrefix(arg, "--id=") && command == "show":
 			if options.ID != "" {
 				return resourceServerOptions{}, errors.New(usage)
 			}
 			options.ID = strings.TrimSpace(strings.TrimPrefix(arg, "--id="))
-		case arg == "--id":
+		case arg == "--id" && command == "show":
 			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") || options.ID != "" {
 				return resourceServerOptions{}, errors.New(usage)
 			}
@@ -108,10 +119,40 @@ func parseResourceServerArgs(args []string, command string) (resourceServerOptio
 		if options.Mode != "steer" && options.Mode != "enqueue" && options.Mode != "interrupt" {
 			return resourceServerOptions{}, errors.New("mode must be steer, enqueue, or interrupt")
 		}
-	} else if command == "message" && options.ID == "" {
+	} else if command == "show" && options.ID == "" {
 		return resourceServerOptions{}, errors.New(usage)
 	}
 	return options, nil
+}
+
+func splitServerArg(args []string, usage string) ([]string, string, error) {
+	filtered := make([]string, 0, len(args))
+	serverURL := ""
+	for index := 0; index < len(args); index++ {
+		arg := args[index]
+		switch {
+		case strings.HasPrefix(arg, "--server="):
+			if serverURL != "" {
+				return nil, "", errors.New(usage)
+			}
+			serverURL = strings.TrimSpace(strings.TrimPrefix(arg, "--server="))
+			if serverURL == "" {
+				return nil, "", errors.New(usage)
+			}
+		case arg == "--server":
+			if serverURL != "" || index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") {
+				return nil, "", errors.New(usage)
+			}
+			index++
+			serverURL = strings.TrimSpace(args[index])
+			if serverURL == "" {
+				return nil, "", errors.New(usage)
+			}
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	return filtered, serverURL, nil
 }
 
 func inferCurrentResourceID() (string, error) {
@@ -248,31 +289,70 @@ func (client *resourceServerClient) request(ctx context.Context, method, path st
 	return nil
 }
 
-func runResourceStatus(args []string) error {
-	options, err := parseResourceServerArgs(args, "status")
-	if err != nil {
-		return err
-	}
-	if options.ID == "" {
-		options.ID, err = inferCurrentResourceID()
-		if err != nil {
-			return err
-		}
-	}
-	client, _, err := newResourceServerClient(options.ServerURL)
+func runResourceStatus(resourceID, serverURL string) error {
+	client, _, err := newResourceServerClient(serverURL)
 	if err != nil {
 		return err
 	}
 	var response map[string]any
-	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/agent", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
+	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/status", url.PathEscape(client.workspaceID), url.PathEscape(resourceID))
 	if err := client.request(context.Background(), http.MethodGet, path, nil, &response); err != nil {
 		return err
 	}
 	return printJSON(response)
 }
 
-func runResourceSend(args []string) error {
-	options, err := parseResourceServerArgs(args, "send")
+func runWorkspaceStatus(args []string) error {
+	remaining, serverURL, err := splitServerArg(args, workspaceStatusUsage)
+	if err != nil || len(remaining) != 0 {
+		if err != nil {
+			return err
+		}
+		return errors.New(workspaceStatusUsage)
+	}
+	return runResourceStatus("workspace", serverURL)
+}
+
+func runProjectStatus(args []string) error {
+	remaining, serverURL, err := splitServerArg(args, projectStatusUsage)
+	if err != nil {
+		return err
+	}
+	projectID, err := resolveProjectArg(remaining, "status")
+	if err != nil {
+		return err
+	}
+	return runResourceStatus(projectID, serverURL)
+}
+
+func runTaskStatus(args []string) error {
+	remaining, serverURL, err := splitServerArg(args, taskStatusUsage)
+	if err != nil {
+		return err
+	}
+	taskID, err := resolveTaskArg(remaining, "status")
+	if err != nil {
+		return err
+	}
+	return runResourceStatus(taskID, serverURL)
+}
+
+func runMessage(args []string) error {
+	if len(args) == 0 {
+		return errors.New("message requires a subcommand")
+	}
+	switch args[0] {
+	case "send":
+		return runMessageSend(args[1:])
+	case "show":
+		return runMessageShow(args[1:])
+	default:
+		return fmt.Errorf("unknown message subcommand %q", args[0])
+	}
+}
+
+func runMessageSend(args []string) error {
+	options, err := parseMessageServerArgs(args, "send")
 	if err != nil {
 		return err
 	}
@@ -289,15 +369,15 @@ func runResourceSend(args []string) error {
 		"sender": map[string]string{"id": senderID, "name": senderID},
 	}
 	var response map[string]any
-	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/agent", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
+	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/messages", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
 	if err := client.request(context.Background(), http.MethodPost, path, body, &response); err != nil {
 		return err
 	}
 	return printJSON(response)
 }
 
-func runResourceMessage(args []string) error {
-	options, err := parseResourceServerArgs(args, "message")
+func runMessageShow(args []string) error {
+	options, err := parseMessageServerArgs(args, "show")
 	if err != nil {
 		return err
 	}

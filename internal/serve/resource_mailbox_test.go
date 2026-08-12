@@ -28,6 +28,33 @@ func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace gu
 	return message
 }
 
+func TestPublicResourceStateKeepsWaitingOutOfTaskState(t *testing.T) {
+	tests := []struct {
+		name         string
+		archived     bool
+		unavailable  string
+		generation   *resourceGenerationStatus
+		session      *resourceSessionStatus
+		runtimeError string
+		want         string
+	}{
+		{name: "idle", want: "idle"},
+		{name: "working generation", generation: &resourceGenerationStatus{Status: "starting"}, want: "working"},
+		{name: "working turn", session: &resourceSessionStatus{State: "running"}, want: "working"},
+		{name: "approval", session: &resourceSessionStatus{State: "waiting_approval"}, want: "attention_required"},
+		{name: "configuration", unavailable: "missing route", want: "unavailable"},
+		{name: "runtime", runtimeError: "unreachable", want: "unavailable"},
+		{name: "archived wins", archived: true, unavailable: "missing route", want: "archived"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := publicResourceState(test.archived, test.unavailable, test.generation, test.session, test.runtimeError); got != test.want {
+				t.Fatalf("public state = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
@@ -109,25 +136,19 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 	if steered.Status != resourceMessageDelivered || steered.ActualMode != resourceMessageModeSteer {
 		t.Fatalf("steer did not bypass the queued enqueue: %#v", steered)
 	}
-	fake.mu.Lock()
-	session = fake.sessions[run.AgentHubSessionID]
-	session.State = "ready"
-	session.CurrentTurnID = ""
-	fake.sessions[session.ID] = session
-	fake.mu.Unlock()
 	manager.resourceMu.Lock()
-	err = manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
+	promoted, err := manager.promoteWaitingMessage(context.Background(), workspace, enqueued.ID)
 	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	enqueued, found, err = mailboxMessageByID(workspace.Path, enqueued.ID)
-	if err != nil || !found || enqueued.Status != resourceMessageDelivered {
-		t.Fatalf("enqueue did not start after the ready boundary: found=%v err=%v message=%#v", found, err, enqueued)
+	if promoted.ID != enqueued.ID || promoted.Status != resourceMessageDelivered || promoted.ActualMode != resourceMessageModeSteer ||
+		promoted.RequestedMode != resourceMessageModeEnqueue || promoted.PromotedAt == "" {
+		t.Fatalf("waiting message was not promoted in place: %#v", promoted)
 	}
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if len(fake.messageSteers) != 3 || fake.messageSteers[0] || !fake.messageSteers[1] || fake.messageSteers[2] {
+	if len(fake.messageSteers) != 3 || fake.messageSteers[0] || !fake.messageSteers[1] || !fake.messageSteers[2] {
 		t.Fatalf("AgentHub delivery order/modes mismatch: %#v", fake.messageSteers)
 	}
 	if fake.messageSenders[0] == nil || fake.messageSenders[0].ID != "project1.task2" || fake.messageRoles[0] != "agent" {
@@ -403,13 +424,13 @@ func TestResourceMailboxSeparatesTargetsAndRejectsPersistenceFailure(t *testing.
 	}
 }
 
-func TestResourceAgentServerAPIStatusSendAndMessageQuery(t *testing.T) {
+func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 
-	sendRequest := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/agent", strings.NewReader(`{"text":"coordinate","mode":"steer","role":"agent","sender":{"id":"project1.task2","name":"Task two"}}`))
+	sendRequest := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/messages", strings.NewReader(`{"text":"coordinate","mode":"steer","role":"agent","sender":{"id":"project1.task2","name":"Task two"}}`))
 	sendRecorder := httptest.NewRecorder()
 	manager.server.handleWorkspace(sendRecorder, sendRequest)
 	if sendRecorder.Code != http.StatusOK {
@@ -424,17 +445,17 @@ func TestResourceAgentServerAPIStatusSendAndMessageQuery(t *testing.T) {
 		t.Fatalf("send response mismatch: %#v", sent)
 	}
 
-	statusRequest := httptest.NewRequest(http.MethodGet, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/agent", nil)
+	statusRequest := httptest.NewRequest(http.MethodGet, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/status", nil)
 	statusRecorder := httptest.NewRecorder()
 	manager.server.handleWorkspace(statusRecorder, statusRequest)
 	if statusRecorder.Code != http.StatusOK {
 		t.Fatalf("resource status failed: %d %s", statusRecorder.Code, statusRecorder.Body.String())
 	}
-	var status resourceAgentStatus
+	var status resourceStatusResponse
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if !status.Exists || !status.AcceptsMessages || status.Archived || status.Generation == nil || status.Session == nil || status.Mailbox.Delivered != 1 {
+	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 {
 		t.Fatalf("resource status mismatch: %#v", status)
 	}
 
@@ -453,7 +474,79 @@ func TestResourceAgentServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	}
 }
 
-func TestResourceAgentServerAPIStructuredErrors(t *testing.T) {
+func TestResourceServerAPIListsAndSteersWaitingMessageInPlace(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	_ = acceptTestResourceMessage(t, manager, workspace, "project1.task1", "start", resourceMessageModeSteer, nil)
+	run, found, err := currentResourceGeneration(workspace.Path, "project1.task1")
+	if err != nil || !found {
+		t.Fatalf("generation missing: found=%v err=%v", found, err)
+	}
+	fake.mu.Lock()
+	session := fake.sessions[run.AgentHubSessionID]
+	session.State = "running"
+	session.CurrentTurnID = "turn-active"
+	session.InputCapabilities.Steer = true
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	waiting := acceptTestResourceMessage(t, manager, workspace, "project1.task1", "move this now", resourceMessageModeEnqueue, nil)
+	statusRecorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(statusRecorder, httptest.NewRequest(http.MethodGet, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/status", nil))
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("status failed: %d %s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	var status resourceStatusResponse
+	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.State != "working" || !status.CanSteerWaiting || status.Messages.Waiting != 1 || len(status.WaitingMessages) != 1 ||
+		status.WaitingMessages[0].MessageID != waiting.ID || status.WaitingMessages[0].Text != "move this now" || status.WaitingMessages[0].Status != "waiting" {
+		t.Fatalf("waiting projection mismatch: %#v", status)
+	}
+
+	steerRecorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(steerRecorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/messages/"+waiting.ID+"/steer", nil))
+	if steerRecorder.Code != http.StatusOK {
+		t.Fatalf("steer failed: %d %s", steerRecorder.Code, steerRecorder.Body.String())
+	}
+	var promoted resourceMessageResponse
+	if err := json.Unmarshal(steerRecorder.Body.Bytes(), &promoted); err != nil {
+		t.Fatal(err)
+	}
+	if promoted.MessageID != waiting.ID || promoted.RequestedMode != resourceMessageModeEnqueue || promoted.ActualMode != resourceMessageModeSteer ||
+		promoted.Status != resourceMessageDelivered || promoted.PromotedAt == "" {
+		t.Fatalf("promoted response mismatch: %#v", promoted)
+	}
+}
+
+func TestResourceServerAPISteerUnavailableLeavesWaitingMessageUnchanged(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	_ = acceptTestResourceMessage(t, manager, workspace, "project1.task1", "start", resourceMessageModeSteer, nil)
+	waiting := acceptTestResourceMessage(t, manager, workspace, "project1.task1", "keep waiting", resourceMessageModeEnqueue, nil)
+	recorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(recorder, httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/messages/"+waiting.ID+"/steer", nil))
+	var response map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusConflict || response["code"] != "steer_unavailable" {
+		t.Fatalf("unexpected unavailable response: status=%d body=%#v", recorder.Code, response)
+	}
+	unchanged, found, err := mailboxMessageByID(workspace.Path, waiting.ID)
+	if err != nil || !found || unchanged.Status != resourceMessageQueued || unchanged.ActualMode != resourceMessageModeEnqueue || unchanged.PromotedAt != "" {
+		t.Fatalf("failed steer mutated the waiting item: found=%v err=%v message=%#v", found, err, unchanged)
+	}
+}
+
+func TestResourceServerAPIStructuredErrors(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -462,10 +555,11 @@ func TestResourceAgentServerAPIStructuredErrors(t *testing.T) {
 		name, method, path, body, code string
 		status                         int
 	}{
-		{name: "invalid request", method: http.MethodPost, path: "/api/workspaces/" + workspace.ID + "/resources/project1.task1/agent", body: `{"text":"hello","mode":"later"}`, code: "invalid_request", status: http.StatusBadRequest},
-		{name: "missing resource", method: http.MethodPost, path: "/api/workspaces/" + workspace.ID + "/resources/project9.task9/agent", body: `{"text":"hello"}`, code: "resource_not_found", status: http.StatusNotFound},
+		{name: "invalid request", method: http.MethodPost, path: "/api/workspaces/" + workspace.ID + "/resources/project1.task1/messages", body: `{"text":"hello","mode":"later"}`, code: "invalid_request", status: http.StatusBadRequest},
+		{name: "missing resource", method: http.MethodPost, path: "/api/workspaces/" + workspace.ID + "/resources/project9.task9/messages", body: `{"text":"hello"}`, code: "resource_not_found", status: http.StatusNotFound},
 		{name: "missing message", method: http.MethodGet, path: "/api/workspaces/" + workspace.ID + "/messages/msg-missing", code: "message_not_found", status: http.StatusNotFound},
-		{name: "workspace not owned", method: http.MethodGet, path: "/api/workspaces/not-owned/resources/workspace/agent", code: "workspace_not_owned", status: http.StatusNotFound},
+		{name: "steer missing message", method: http.MethodPost, path: "/api/workspaces/" + workspace.ID + "/messages/msg-missing/steer", code: "message_not_found", status: http.StatusNotFound},
+		{name: "workspace not owned", method: http.MethodGet, path: "/api/workspaces/not-owned/resources/workspace/status", code: "workspace_not_owned", status: http.StatusNotFound},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

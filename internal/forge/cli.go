@@ -53,6 +53,8 @@ func Run(args []string) error {
 		return runTemplate(args[1:])
 	case "resource":
 		return runResource(args[1:])
+	case "message":
+		return runMessage(args[1:])
 	case "session":
 		return runSession(args[1:])
 	case "workspace":
@@ -74,12 +76,6 @@ func runResource(args []string) error {
 		return errors.New("resource requires a subcommand")
 	}
 	switch args[0] {
-	case "status":
-		return runResourceStatus(args[1:])
-	case "send":
-		return runResourceSend(args[1:])
-	case "message":
-		return runResourceMessage(args[1:])
 	case "archive":
 		if len(args) != 2 || !strings.HasPrefix(args[1], "--id=") {
 			return errors.New("usage: forge resource archive --id=<resource>")
@@ -99,6 +95,8 @@ func runWorkspace(args []string) error {
 		return errors.New("workspace requires a subcommand")
 	}
 	switch args[0] {
+	case "status":
+		return runWorkspaceStatus(args[1:])
 	case "tree":
 		if len(args) != 2 || args[1] != "--json" {
 			return errors.New("usage: forge workspace tree --json")
@@ -158,6 +156,8 @@ func runProject(args []string) error {
 			return err
 		}
 		return applicationShowResource(projectID)
+	case "status":
+		return runProjectStatus(args[1:])
 	case "archive":
 		projectID, err := resolveProjectArg(args[1:], "archive")
 		if err != nil {
@@ -230,6 +230,8 @@ func runTask(args []string) error {
 			return err
 		}
 		return applicationShowResource(taskID)
+	case "status":
+		return runTaskStatus(args[1:])
 	case "archive":
 		taskID, err := resolveTaskArg(args[1:], "archive")
 		if err != nil {
@@ -296,9 +298,11 @@ Usage:
   forge template create [--project=<project>] [--title=<title>] <name>
   forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
 
-  forge resource status [--id=<resource>] [--server=<url>]
-  forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
-  forge resource message --id=<message-id> [--server=<url>]
+  forge workspace status [--server=<url>]
+  forge project status [--project=<project>] [--server=<url>]
+  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+  forge message show --id=<message-id> [--server=<url>]
   forge resource archive --id=<resource>
 
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
@@ -423,21 +427,21 @@ Commands:
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
 
-  forge resource status [--id=<resource>] [--server=<url>]
-    Query the owning forge serve process for a Workspace, Project, or Task
-    Agent's binding, generation, Session/Turn state, steer capability, mailbox
-    counts, and recent delivery error. The current resource is inferred when
-    --id is omitted.
+  forge workspace|project|task status ... [--server=<url>]
+    Query the owning forge serve process for the selected work subject's
+    public state, generation and Session diagnostics, message counts, waiting
+    messages, steer capability, and recent delivery error. Selection follows
+    the corresponding show command; Workspace status selects the Workspace.
 
-  forge resource send --id=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
     Persist a message in the target resource mailbox through the owning
     forge serve process. steer is the default. The current directory's stable
-    resource id is sent as role=agent provenance; provenance is not
+    work-subject id is sent as role=agent provenance; provenance is not
     authentication or instruction priority.
 
-  forge resource message --id=<message-id> [--server=<url>]
+  forge message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id.
-    Resource commands discover the owner from <workspace>/.forge/serve.lock;
+    Status and message commands discover the owner from <workspace>/.forge/serve.lock;
     --server explicitly overrides its diagnostic address.
 
   forge session list
@@ -809,6 +813,8 @@ func parseTaskArg(args []string, command string) (string, string, error) {
 	usage := taskShowUsage
 	if command == "archive" {
 		usage = taskArchiveUsage
+	} else if command == "status" {
+		usage = taskStatusUsage
 	}
 	var projectID string
 	var task string

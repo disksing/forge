@@ -395,8 +395,12 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, tree)
 	case "resources":
-		if len(parts) == 4 && parts[3] == "agent" {
-			s.agents.handleResourceAgent(w, r, id, parts[2])
+		if len(parts) == 4 && parts[3] == "status" {
+			s.agents.handleResourceStatus(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "messages" {
+			s.agents.handleResourceMessages(w, r, id, parts[2])
 			return
 		}
 		if len(parts) == 4 && parts[3] == "agent-binding" {
@@ -427,8 +431,16 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, detail)
 	case "messages":
-		if len(parts) != 3 || parts[2] == "" {
+		if (len(parts) != 3 && len(parts) != 4) || parts[2] == "" {
 			writeError(w, &resourceAPIError{Code: "invalid_request", Message: "message id is required"}, http.StatusBadRequest)
+			return
+		}
+		if len(parts) == 4 {
+			if parts[3] != "steer" {
+				http.NotFound(w, r)
+				return
+			}
+			s.agents.handleResourceMessageSteer(w, r, id, parts[2])
 			return
 		}
 		s.agents.handleResourceMessage(w, r, id, parts[2])

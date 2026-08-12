@@ -70,6 +70,7 @@ type resourceMailboxMessage struct {
 	TurnID            string                 `json:"turnId,omitempty"`
 	InterruptTurnID   string                 `json:"interruptTurnId,omitempty"`
 	InterruptAt       string                 `json:"interruptAt,omitempty"`
+	PromotedAt        string                 `json:"promotedAt,omitempty"`
 	AttemptCount      int                    `json:"attemptCount,omitempty"`
 	LastAttemptAt     string                 `json:"lastAttemptAt,omitempty"`
 	LastError         string                 `json:"lastError,omitempty"`
@@ -77,7 +78,7 @@ type resourceMailboxMessage struct {
 }
 
 type resourceMailboxCounts struct {
-	Queued          int `json:"queued"`
+	Waiting         int `json:"waiting"`
 	Delivering      int `json:"delivering"`
 	Interrupting    int `json:"interrupting"`
 	Delivered       int `json:"delivered"`
@@ -101,18 +102,21 @@ type resourceSessionStatus struct {
 	InputCapabilities agentHubInputCapabilities `json:"inputCapabilities"`
 }
 
-type resourceAgentStatus struct {
+type resourceStatusResponse struct {
 	ResourceID      string                    `json:"resourceId"`
+	State           string                    `json:"state"`
 	Exists          bool                      `json:"exists"`
 	Archived        bool                      `json:"archived"`
 	AcceptsMessages bool                      `json:"acceptsMessages"`
-	AgentBinding    app.AgentBinding          `json:"agentBinding"`
+	Binding         app.AgentBinding          `json:"binding"`
 	ResolvedAgent   string                    `json:"resolvedAgent,omitempty"`
 	ResolvedProfile string                    `json:"resolvedProfile,omitempty"`
 	ConfigError     string                    `json:"configError,omitempty"`
 	Generation      *resourceGenerationStatus `json:"generation,omitempty"`
 	Session         *resourceSessionStatus    `json:"session,omitempty"`
-	Mailbox         resourceMailboxCounts     `json:"mailbox"`
+	Messages        resourceMailboxCounts     `json:"messages"`
+	WaitingMessages []resourceMessageResponse `json:"waitingMessages"`
+	CanSteerWaiting bool                      `json:"canSteerWaiting"`
 	LastError       string                    `json:"lastError,omitempty"`
 	LastErrorCode   string                    `json:"lastErrorCode,omitempty"`
 }
@@ -127,10 +131,13 @@ type resourceMessageRequest struct {
 type resourceMessageResponse struct {
 	MessageID         string `json:"messageId"`
 	ResourceID        string `json:"resourceId"`
+	Text              string `json:"text"`
 	RequestedMode     string `json:"requestedMode"`
 	ActualMode        string `json:"actualMode"`
 	DowngradeReason   string `json:"downgradeReason,omitempty"`
 	Status            string `json:"status"`
+	AcceptedAt        string `json:"acceptedAt"`
+	PromotedAt        string `json:"promotedAt,omitempty"`
 	Reference         string `json:"reference"`
 	GenerationID      string `json:"generationId,omitempty"`
 	AgentHubSessionID string `json:"agentHubSessionId,omitempty"`
@@ -369,12 +376,21 @@ func normalizedResourceID(resourceID string) string {
 func mailboxMessageResponse(message resourceMailboxMessage) resourceMessageResponse {
 	return resourceMessageResponse{
 		MessageID: message.ID, ResourceID: message.ResourceID,
+		Text:          message.Text,
 		RequestedMode: message.RequestedMode, ActualMode: message.ActualMode,
-		DowngradeReason: message.DowngradeReason, Status: message.Status,
+		DowngradeReason: message.DowngradeReason, Status: publicResourceMessageStatus(message.Status),
+		AcceptedAt: message.AcceptedAt, PromotedAt: message.PromotedAt,
 		Reference: "messages/" + message.ID, GenerationID: message.GenerationID,
 		AgentHubSessionID: message.AgentHubSessionID, TurnID: message.TurnID,
 		LastError: message.LastError, LastErrorCode: message.LastErrorCode,
 	}
+}
+
+func publicResourceMessageStatus(status string) string {
+	if status == resourceMessageQueued {
+		return "waiting"
+	}
+	return status
 }
 
 func mailboxCounts(mailbox resourceMailbox, resourceID string) (resourceMailboxCounts, string, string) {
@@ -387,7 +403,7 @@ func mailboxCounts(mailbox resourceMailbox, resourceID string) (resourceMailboxC
 		}
 		switch message.Status {
 		case resourceMessageQueued:
-			counts.Queued++
+			counts.Waiting++
 		case resourceMessageDelivering:
 			counts.Delivering++
 		case resourceMessageInterrupting:
@@ -538,22 +554,63 @@ func resourceExistsAndArchived(workspacePath, resourceID string) (bool, bool, ap
 	return true, value.Archived, binding, nil
 }
 
-func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspace, resourceID string) (resourceAgentStatus, error) {
+func waitingMailboxMessages(mailbox resourceMailbox, resourceID string) []resourceMessageResponse {
+	resourceID = normalizedResourceID(resourceID)
+	messages := make([]resourceMessageResponse, 0)
+	for _, message := range mailbox.Messages {
+		if normalizedResourceID(message.ResourceID) == resourceID && message.Status == resourceMessageQueued {
+			messages = append(messages, mailboxMessageResponse(message))
+		}
+	}
+	return messages
+}
+
+func publicResourceState(archived bool, unavailableReason string, generation *resourceGenerationStatus, session *resourceSessionStatus, runtimeError string) string {
+	if archived {
+		return "archived"
+	}
+	if strings.TrimSpace(unavailableReason) != "" || strings.TrimSpace(runtimeError) != "" {
+		return "unavailable"
+	}
+	if session != nil {
+		if session.State == "waiting_approval" {
+			return "attention_required"
+		}
+		if session.State == "running" {
+			return "working"
+		}
+	}
+	if generation != nil {
+		switch generation.Status {
+		case "starting", "running", "stopping", "recovering":
+			return "working"
+		case "waiting_approval":
+			return "attention_required"
+		case "failed":
+			return "unavailable"
+		}
+	}
+	return "idle"
+}
+
+func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspace, resourceID string) (resourceStatusResponse, error) {
 	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
-		return resourceAgentStatus{}, err
+		return resourceStatusResponse{}, err
 	}
 	resourceID = normalizedResourceID(resourceID)
 	exists, archived, binding, err := resourceExistsAndArchived(workspace.Path, resourceID)
 	if err != nil {
-		return resourceAgentStatus{}, &resourceAPIError{Code: "resource_not_found", Message: err.Error()}
+		return resourceStatusResponse{}, &resourceAPIError{Code: "resource_not_found", Message: err.Error()}
 	}
-	status := resourceAgentStatus{ResourceID: resourceID, Exists: exists, Archived: archived, AcceptsMessages: exists && !archived, AgentBinding: binding}
+	status := resourceStatusResponse{ResourceID: resourceID, Exists: exists, Archived: archived, AcceptsMessages: exists && !archived, Binding: binding}
 	mailbox, err := loadResourceMailbox(workspace.Path)
 	if err != nil {
-		return resourceAgentStatus{}, err
+		return resourceStatusResponse{}, err
 	}
-	status.Mailbox, status.LastError, status.LastErrorCode = mailboxCounts(mailbox, resourceID)
+	status.Messages, status.LastError, status.LastErrorCode = mailboxCounts(mailbox, resourceID)
+	status.WaitingMessages = waitingMailboxMessages(mailbox, resourceID)
 	cfg, client, cfgErr := m.agentHubRuntimeConfig()
+	unavailableReason := ""
 	if cfgErr == nil {
 		resolved, resolveErr := m.resolveResourceAgent(workspace, resourceID, cfg)
 		status.ResolvedAgent = resolved.AgentName
@@ -562,14 +619,19 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		if resolveErr != nil && status.ConfigError == "" {
 			status.ConfigError = resolveErr.Error()
 		}
+		if resolveErr != nil {
+			unavailableReason = resolveErr.Error()
+		}
 	} else {
 		status.ConfigError = cfgErr.Error()
+		unavailableReason = cfgErr.Error()
 	}
 	run, found, loadErr := currentResourceGeneration(workspace.Path, resourceID)
 	if loadErr != nil {
-		return resourceAgentStatus{}, loadErr
+		return resourceStatusResponse{}, loadErr
 	}
 	if !found {
+		status.State = publicResourceState(archived, unavailableReason, nil, nil, "")
 		return status, nil
 	}
 	status.Generation = &resourceGenerationStatus{
@@ -578,6 +640,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		AgentHubSessionID: run.AgentHubSessionID,
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" || cfgErr != nil {
+		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, "")
 		return status, nil
 	}
 	session, sessionErr := client.GetSession(ctx, run.AgentHubSessionID)
@@ -585,12 +648,15 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		if status.LastError == "" {
 			status.LastError = sessionErr.Error()
 		}
+		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, sessionErr.Error())
 		return status, nil
 	}
 	status.Session = &resourceSessionStatus{
 		ID: session.ID, State: session.State, CurrentTurnID: session.CurrentTurnID,
 		InputCapabilities: session.InputCapabilities,
 	}
+	status.CanSteerWaiting = !archived && !run.ReplacementPending && (session.State == "running" || session.State == "waiting_approval") && session.InputCapabilities.Steer
+	status.State = publicResourceState(archived, unavailableReason, status.Generation, status.Session, "")
 	return status, nil
 }
 
@@ -601,13 +667,16 @@ func mailboxPriority(message resourceMailboxMessage) int {
 	if message.Status == resourceMessageInterrupting {
 		return -1
 	}
+	if message.PromotedAt != "" {
+		return 1
+	}
 	switch message.RequestedMode {
 	case resourceMessageModeInterrupt:
 		return 0
 	case resourceMessageModeSteer:
-		return 1
-	default:
 		return 2
+	default:
+		return 3
 	}
 }
 
@@ -774,6 +843,71 @@ func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiW
 		return message, nil
 	}
 	if found {
+		return updated, nil
+	}
+	return message, nil
+}
+
+func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace guiWorkspace, messageID string) (resourceMailboxMessage, error) {
+	if err := m.server.requireWorkspaceOwnership(workspace.Path); err != nil {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
+	}
+	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
+		return resourceMailboxMessage{}, err
+	}
+	message, found, err := mailboxMessageByID(workspace.Path, messageID)
+	if err != nil {
+		return resourceMailboxMessage{}, err
+	}
+	if !found {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "message_not_found", Message: fmt.Sprintf("mailbox message not found: %s", messageID)}
+	}
+	if message.Status != resourceMessageQueued {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "message_not_waiting", Message: fmt.Sprintf("message %s is not waiting", messageID)}
+	}
+	_, archived, _, resourceErr := resourceExistsAndArchived(workspace.Path, message.ResourceID)
+	if resourceErr != nil {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_not_found", Message: resourceErr.Error()}
+	}
+	if archived {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived", message.ResourceID)}
+	}
+	run, runFound, err := currentResourceGeneration(workspace.Path, message.ResourceID)
+	if err != nil {
+		return resourceMailboxMessage{}, err
+	}
+	if !runFound || run.ReplacementPending || strings.TrimSpace(run.AgentHubSessionID) == "" {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: "the target task does not have an active steer-capable turn"}
+	}
+	_, client, err := m.agentHubRuntimeConfig()
+	if err != nil {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: err.Error()}
+	}
+	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	if err != nil {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: err.Error()}
+	}
+	active := session.State == "running" || session.State == "waiting_approval"
+	if !active || !session.InputCapabilities.Steer {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "steer_unavailable", Message: "the target task does not have an active steer-capable turn"}
+	}
+	now := time.Now().Format(time.RFC3339Nano)
+	message, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
+		current.ActualMode = resourceMessageModeSteer
+		current.ModeFrozen = true
+		current.DowngradeReason = ""
+		current.PromotedAt = now
+		current.LastError = ""
+		current.LastErrorCode = ""
+	})
+	if err != nil {
+		return resourceMailboxMessage{}, err
+	}
+	if err := m.reconcileResourceMailboxLocked(ctx, workspace, message.ResourceID); err != nil {
+		recordMailboxFailure(workspace.Path, message.ID, err)
+	}
+	updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID)
+	if loadErr == nil && found {
 		return updated, nil
 	}
 	return message, nil
@@ -1085,7 +1219,7 @@ func resourceErrorStatus(err error) int {
 		return http.StatusBadRequest
 	case "resource_not_found", "message_not_found":
 		return http.StatusNotFound
-	case "resource_archived":
+	case "resource_archived", "message_not_waiting", "steer_unavailable":
 		return http.StatusConflict
 	case "workspace_not_owned":
 		return http.StatusConflict
@@ -1100,50 +1234,60 @@ func resourceErrorStatus(err error) int {
 	}
 }
 
-func (m *agentManager) handleResourceAgent(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+func (m *agentManager) handleResourceStatus(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
 		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
 		return
 	}
 	resourceID = normalizedResourceID(resourceID)
-	switch r.Method {
-	case http.MethodGet:
-		m.resourceMu.Lock()
-		status, statusErr := m.resourceStatus(r.Context(), workspace, resourceID)
-		m.resourceMu.Unlock()
-		if statusErr != nil {
-			writeError(w, statusErr, resourceErrorStatus(statusErr))
-			return
-		}
-		writeJSON(w, status)
-	case http.MethodPost:
-		var request resourceMessageRequest
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&request); err != nil {
-			writeError(w, &resourceAPIError{Code: "invalid_request", Message: err.Error()}, http.StatusBadRequest)
-			return
-		}
-		m.resourceMu.Lock()
-		message, sendErr := m.acceptResourceMessage(r.Context(), workspace, resourceID, request)
-		m.resourceMu.Unlock()
-		if sendErr != nil {
-			writeError(w, sendErr, resourceErrorStatus(sendErr))
-			return
-		}
-		response := mailboxMessageResponse(message)
-		response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)
-		if message.Status != resourceMessageDelivered {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusAccepted)
-			_ = json.NewEncoder(w).Encode(response)
-			return
-		}
-		writeJSON(w, response)
-	default:
+	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
 	}
+	m.resourceMu.Lock()
+	status, statusErr := m.resourceStatus(r.Context(), workspace, resourceID)
+	m.resourceMu.Unlock()
+	if statusErr != nil {
+		writeError(w, statusErr, resourceErrorStatus(statusErr))
+		return
+	}
+	writeJSON(w, status)
+}
+
+func (m *agentManager) handleResourceMessages(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := m.server.workspace(workspaceID)
+	if err != nil {
+		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
+		return
+	}
+	var request resourceMessageRequest
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&request); err != nil {
+		writeError(w, &resourceAPIError{Code: "invalid_request", Message: err.Error()}, http.StatusBadRequest)
+		return
+	}
+	m.resourceMu.Lock()
+	message, sendErr := m.acceptResourceMessage(r.Context(), workspace, normalizedResourceID(resourceID), request)
+	m.resourceMu.Unlock()
+	if sendErr != nil {
+		writeError(w, sendErr, resourceErrorStatus(sendErr))
+		return
+	}
+	response := mailboxMessageResponse(message)
+	response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)
+	if message.Status != resourceMessageDelivered {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+	writeJSON(w, response)
 }
 
 func (m *agentManager) handleResourceMessage(w http.ResponseWriter, r *http.Request, workspaceID, messageID string) {
@@ -1172,5 +1316,33 @@ func (m *agentManager) handleResourceMessage(w http.ResponseWriter, r *http.Requ
 	}
 	response := mailboxMessageResponse(message)
 	response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)
+	writeJSON(w, response)
+}
+
+func (m *agentManager) handleResourceMessageSteer(w http.ResponseWriter, r *http.Request, workspaceID, messageID string) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	workspace, err := m.server.workspace(workspaceID)
+	if err != nil {
+		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
+		return
+	}
+	m.resourceMu.Lock()
+	message, promoteErr := m.promoteWaitingMessage(r.Context(), workspace, messageID)
+	m.resourceMu.Unlock()
+	if promoteErr != nil {
+		writeError(w, promoteErr, resourceErrorStatus(promoteErr))
+		return
+	}
+	response := mailboxMessageResponse(message)
+	response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)
+	if message.Status != resourceMessageDelivered {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusAccepted)
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
 	writeJSON(w, response)
 }
