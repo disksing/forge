@@ -562,6 +562,31 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	return manager, workspace, configPath
 }
 
+func TestResourceGenerationTitleUsesResourceTitleAndGeneration(t *testing.T) {
+	_, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+
+	tests := []struct {
+		resourceID string
+		generation int
+		want       string
+	}{
+		{resourceID: "workspace", generation: 2, want: "Test (gen #2)"},
+		{resourceID: "project1", generation: 4, want: "Runtime test project (gen #4)"},
+		{resourceID: "project1.task1", generation: 10, want: "Runtime test task (gen #10)"},
+	}
+	for _, test := range tests {
+		t.Run(test.resourceID, func(t *testing.T) {
+			got, err := resourceGenerationTitle(workspace, test.resourceID, test.generation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("resource generation title = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
 func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorkspace, body string) (*httptest.ResponseRecorder, agentRunDetail) {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/agent/runs", strings.NewReader(body))
@@ -585,6 +610,9 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	if first.Run.Generation != 1 || first.Run.GenerationID == "" || first.Run.BindingKind != "profile" || first.Run.BindingName != "default" || first.Run.SourceInstanceID == "" {
 		t.Fatalf("resource generation metadata mismatch: %#v", first.Run)
 	}
+	if first.Run.Title != "Runtime test task (gen #1)" {
+		t.Fatalf("resource generation title = %q", first.Run.Title)
+	}
 	if len(first.Run.PendingMessages) != 0 {
 		t.Fatalf("ready generation did not deliver first message: %#v", first.Run.PendingMessages)
 	}
@@ -604,6 +632,10 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 		t.Fatalf("first resource message lacked a stable id: %#v", fake.messageIDs)
 	}
 	session := fake.sessions[first.Run.AgentHubSessionID]
+	if session.Title != first.Run.Title {
+		fake.mu.Unlock()
+		t.Fatalf("AgentHub session title = %q, want %q", session.Title, first.Run.Title)
+	}
 	session.State = "ready"
 	session.CurrentTurnID = ""
 	session.InputCapabilities.Steer = true
@@ -653,7 +685,7 @@ func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t 
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved)
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", workspace.Path, cfg, client, resolved)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -716,7 +748,7 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", "Resource chat", workspace.Path, cfg, client, resolved)
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", workspace.Path, cfg, client, resolved)
 	if err != nil {
 		t.Fatal(err)
 	}

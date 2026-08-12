@@ -787,7 +787,7 @@ func (m *agentManager) ensureMailboxGeneration(ctx context.Context, workspace gu
 	if err != nil {
 		return agentRun{}, nil, client, err
 	}
-	created, err := m.createResourceGeneration(ctx, workspace, resourceID, "", cwd, cfg, client, resolved)
+	created, err := m.createResourceGeneration(ctx, workspace, resourceID, cwd, cfg, client, resolved)
 	if err != nil {
 		return created, m.runtimeByID(created.ID), client, err
 	}

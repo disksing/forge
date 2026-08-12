@@ -171,6 +171,35 @@ func nextResourceGeneration(workspacePath, resourceID string) (int, error) {
 	return next, nil
 }
 
+func resourceGenerationTitle(workspace guiWorkspace, resourceID string, generation int) (string, error) {
+	resourceID = normalizedResourceID(resourceID)
+	title := strings.TrimSpace(workspace.Name)
+	if resourceID != "workspace" {
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			return "", err
+		}
+		resource, err := forgeWorkspace.ResourceValue(resourceID)
+		if err != nil {
+			return "", err
+		}
+		switch {
+		case resource.Project != nil:
+			title = strings.TrimSpace(resource.Project.Title)
+		case resource.Task != nil:
+			title = strings.TrimSpace(resource.Task.Title)
+		}
+	}
+	if title == "" {
+		if resourceID == "workspace" {
+			title = workspaceName(workspace.Path)
+		} else {
+			title = resourceID
+		}
+	}
+	return fmt.Sprintf("%s (gen #%d)", title, generation), nil
+}
+
 func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool, error) {
 	runs, err := loadAgentRuns(workspacePath)
 	if err != nil {
@@ -238,8 +267,12 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 // createResourceGeneration creates one durable generation while resourceMu is
 // held by the caller. Pending inputs remain owned by the Workspace mailbox;
 // generation creation never transfers or rewrites them.
-func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, title, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
+func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
+	if err != nil {
+		return agentRun{}, err
+	}
+	title, err := resourceGenerationTitle(workspace, resourceID, generation)
 	if err != nil {
 		return agentRun{}, err
 	}
@@ -257,14 +290,11 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		ResolvedProfile:   resolved.ResolvedProfile,
 		AgentConfigError:  resolved.ConfigError,
 		AgentHubAgentName: resolved.AgentName,
-		Title:             strings.TrimSpace(title),
+		Title:             title,
 		Cwd:               cwd,
 		Status:            "starting",
 		CreatedAt:         now,
 		UpdatedAt:         now,
-	}
-	if run.Title == "" {
-		run.Title = resolved.AgentName + " resource generation"
 	}
 	resourceKey := run.ResourceID
 	if resourceKey == "" {
@@ -540,7 +570,7 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement could not resolve its Agent: "+err.Error())
 		return
 	}
-	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Title, updated.Cwd, cfg, replacementClient, resolved)
+	replacement, err := m.createResourceGeneration(ctx, rt.workspace, updated.ResourceID, updated.Cwd, cfg, replacementClient, resolved)
 	if err != nil {
 		rt.addForgeNotice(m, "warning", "resource/replacement", "Queued replacement generation failed: "+err.Error())
 		return
