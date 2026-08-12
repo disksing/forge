@@ -125,11 +125,21 @@ func Initialize(root, language string) (*Workspace, error) {
 	if err := os.MkdirAll(filepath.Join(abs, archiveDir), 0o755); err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
-	config := Config{Version: 1, Language: language}
+	instanceID, err := newWorkspaceInstanceID()
+	if err != nil {
+		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
+	}
+	config := Config{Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding()}
 	if err := readJSON(filepath.Join(abs, configFile), &config); err != nil && !os.IsNotExist(err) {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
 	config.Version, config.Language = 1, language
+	if strings.TrimSpace(config.InstanceID) == "" {
+		config.InstanceID = instanceID
+	}
+	if strings.TrimSpace(config.AgentBinding.Name) == "" {
+		config.AgentBinding = defaultAgentBinding()
+	}
 	if err := writeJSON(filepath.Join(abs, configFile), config); err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
@@ -186,7 +196,19 @@ func (w *Workspace) migrate(language string) error {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
 	config.Version, config.Language = 1, language
+	if strings.TrimSpace(config.InstanceID) == "" {
+		config.InstanceID, err = newWorkspaceInstanceID()
+		if err != nil {
+			return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+		}
+	}
+	if strings.TrimSpace(config.AgentBinding.Name) == "" {
+		config.AgentBinding = defaultAgentBinding()
+	}
 	if err := writeJSON(filepath.Join(w.root, configFile), config); err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+	}
+	if err := ensureOpenResourceBindings(w.root, ResourceAgentDefaults{Project: "default", Task: "default"}); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
 	return nil

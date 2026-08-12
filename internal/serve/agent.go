@@ -26,6 +26,13 @@ type agentRun struct {
 	ID                      string `json:"id"`
 	WorkspaceID             string `json:"workspaceId"`
 	ResourceID              string `json:"resourceId,omitempty"`
+	Generation              int    `json:"generation,omitempty"`
+	GenerationID            string `json:"generationId,omitempty"`
+	SourceInstanceID        string `json:"sourceInstanceId,omitempty"`
+	BindingKind             string `json:"bindingKind,omitempty"`
+	BindingName             string `json:"bindingName,omitempty"`
+	ProfileRevision         string `json:"profileRevision,omitempty"`
+	ReplacementPending      bool   `json:"replacementPending,omitempty"`
 	AgentProfile            string `json:"agentProfile,omitempty"`
 	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
@@ -36,14 +43,15 @@ type agentRun struct {
 	// ArchivedTaskStopRequested is a durable ambiguity guard for the
 	// reconciliation-owned stop action. It prevents a failed or interrupted
 	// request from being retried after a poll or Forge restart.
-	ArchivedTaskStopRequested bool   `json:"archivedTaskStopRequested,omitempty"`
-	PendingInitialMessage     string `json:"pendingInitialMessage,omitempty"`
-	Title                     string `json:"title"`
-	Cwd                       string `json:"cwd"`
-	Status                    string `json:"status"`
-	CreatedAt                 string `json:"createdAt"`
-	UpdatedAt                 string `json:"updatedAt"`
-	LastOutputAt              string `json:"lastOutputAt,omitempty"`
+	ArchivedTaskStopRequested bool                     `json:"archivedTaskStopRequested,omitempty"`
+	PendingInitialMessage     string                   `json:"pendingInitialMessage,omitempty"`
+	PendingMessages           []resourceInboundMessage `json:"pendingMessages,omitempty"`
+	Title                     string                   `json:"title"`
+	Cwd                       string                   `json:"cwd"`
+	Status                    string                   `json:"status"`
+	CreatedAt                 string                   `json:"createdAt"`
+	UpdatedAt                 string                   `json:"updatedAt"`
+	LastOutputAt              string                   `json:"lastOutputAt,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
@@ -57,6 +65,14 @@ type agentRun struct {
 	CompletionTurnID    string `json:"completionTurnId,omitempty"`
 	CompletionAt        string `json:"completionAt,omitempty"`
 	CompletionPending   bool   `json:"completionPending,omitempty"`
+}
+
+type resourceInboundMessage struct {
+	ID         string                 `json:"id"`
+	Text       string                 `json:"text"`
+	Role       string                 `json:"role"`
+	Sender     *agentHubMessageSender `json:"sender,omitempty"`
+	AcceptedAt string                 `json:"acceptedAt"`
 }
 
 // agentRunDetail carries run metadata only. Event history is served by the
@@ -138,6 +154,7 @@ type agentRuntime struct {
 type agentManager struct {
 	server      *server
 	mu          sync.Mutex
+	resourceMu  sync.Mutex
 	runtimes    map[string]*agentRuntime
 	subscribers map[string]map[chan agentStreamMessage]bool
 }
@@ -421,7 +438,8 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 		return true
 	}
 	if resourceID == "workspace" {
-		return strings.TrimSpace(run.ResourceID) == ""
+		stored := strings.TrimSpace(run.ResourceID)
+		return stored == "" || stored == "workspace"
 	}
 	return run.ResourceID == resourceID
 }
@@ -442,7 +460,7 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 	}
 	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
 		Type: "agenthub", Endpoint: endpoint, SourceApp: "forge",
-		SourceInstanceID: cfg.AgentHubInstanceID, SourceExternalID: sourceExternalID,
+		SourceInstanceID: runSourceInstanceID(cfg, run), SourceExternalID: sourceExternalID,
 	})
 	if err != nil {
 		return "", err
@@ -488,7 +506,7 @@ func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, 
 	if strings.TrimSpace(requested) != "" {
 		return agentCwd(workspace.Path, requested)
 	}
-	if strings.TrimSpace(resourceID) == "" {
+	if strings.TrimSpace(resourceID) == "" || strings.TrimSpace(resourceID) == "workspace" {
 		return agentCwd(workspace.Path, "")
 	}
 	return m.resourceDir(ctx, workspace, resourceID)
@@ -949,7 +967,22 @@ func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
 	data, err := os.ReadFile(agentIndexPath(workspacePath))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return []agentRun{}, nil
+			legacyPath := filepath.Join(workspacePath, ".forge", "gui-agent", "runs.json")
+			legacy, legacyErr := os.ReadFile(legacyPath)
+			if os.IsNotExist(legacyErr) {
+				return []agentRun{}, nil
+			}
+			if legacyErr != nil {
+				return nil, legacyErr
+			}
+			var migrated []agentRun
+			if err := json.Unmarshal(legacy, &migrated); err != nil {
+				return nil, fmt.Errorf("read legacy Agent run index: %w", err)
+			}
+			if err := writeAgentRunsIndexLocked(workspacePath, migrated); err != nil {
+				return nil, fmt.Errorf("migrate legacy Agent run index: %w", err)
+			}
+			return migrated, nil
 		}
 		return nil, err
 	}
@@ -979,9 +1012,6 @@ func saveAgentRun(workspacePath string, run agentRun) error {
 		runs = append(runs, run)
 	}
 	sortAgentRunsNewestFirst(runs)
-	if len(runs) > 50 {
-		runs = runs[:50]
-	}
 	return writeAgentRunsIndexLocked(workspacePath, runs)
 }
 
@@ -1051,15 +1081,15 @@ func loadAgentRun(workspacePath, runID string) (agentRun, error) {
 }
 
 func ensureAgentDirs(workspacePath string) error {
-	return os.MkdirAll(agentRoot(workspacePath), 0o755)
+	return os.MkdirAll(agentRoot(workspacePath), 0o700)
 }
 
 func agentRoot(workspacePath string) string {
-	return filepath.Join(workspacePath, ".forge", "gui-agent")
+	return filepath.Join(workspacePath, ".forge", "runtime")
 }
 
 func agentIndexPath(workspacePath string) string {
-	return filepath.Join(agentRoot(workspacePath), "runs.json")
+	return filepath.Join(agentRoot(workspacePath), "generations.json")
 }
 
 func agentCwd(workspacePath, requested string) (string, error) {

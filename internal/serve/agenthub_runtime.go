@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -93,7 +94,21 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		writeError(w, err, http.StatusServiceUnavailable)
 		return
 	}
-	agentName, err := resolveAgentHubRunAgent(cfg, req)
+	resourceManaged := strings.TrimSpace(req.AgentName) == ""
+	var resolvedResource resolvedResourceAgent
+	if resourceManaged {
+		m.resourceMu.Lock()
+		defer m.resourceMu.Unlock()
+		resolvedResource, err = m.resolveResourceAgent(workspace, req.ResourceID, cfg)
+	}
+	var agentName string
+	if err == nil {
+		if resourceManaged {
+			agentName = resolvedResource.AgentName
+		} else {
+			agentName, err = resolveAgentHubRunAgent(cfg, req)
+		}
+	}
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
@@ -101,6 +116,44 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 	agentName, err = validateAgentHubRunAgent(r.Context(), client, agentName)
 	if err != nil {
 		writeError(w, err, http.StatusBadGateway)
+		return
+	}
+	if resourceManaged {
+		if strings.TrimSpace(req.Prompt) == "" {
+			writeError(w, errors.New("a first resource message is required"), http.StatusBadRequest)
+			return
+		}
+		if current, found, currentErr := currentResourceGeneration(workspace.Path, strings.TrimSpace(req.ResourceID)); currentErr != nil {
+			writeError(w, currentErr, http.StatusInternalServerError)
+			return
+		} else if found {
+			rt := m.runtimeByID(current.ID)
+			if rt == nil {
+				rt = newAgentHubRuntime(m, workspace, current, client)
+				rt.agentHubState = agentHubStateForForgeStatus(current.Status)
+				m.registerRuntime(rt)
+			}
+			if err := rt.enqueueResourceMessage(newResourceMessage(req.Prompt, req.UserName)); err != nil {
+				writeError(w, err, http.StatusInternalServerError)
+				return
+			}
+			if err := rt.deliverPendingResourceMessages(r.Context(), m); err != nil {
+				rt.addForgeNotice(m, "warning", "resource/message", "Message is durable and queued for retry: "+err.Error())
+			}
+			writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
+			return
+		}
+		cwd, cwdErr := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
+		if cwdErr != nil {
+			writeError(w, cwdErr, http.StatusBadRequest)
+			return
+		}
+		createdRun, createErr := m.createResourceGeneration(r.Context(), workspace, req.ResourceID, req.Title, cwd, cfg, client, resolvedResource, []resourceInboundMessage{newResourceMessage(req.Prompt, req.UserName)})
+		if createErr != nil {
+			writeError(w, createErr, http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, agentRunDetail{Run: createdRun})
 		return
 	}
 	cwd, err := m.agentRunCwd(r.Context(), workspace, req.ResourceID, req.Cwd)
@@ -149,13 +202,14 @@ func (m *agentManager) startRun(w http.ResponseWriter, r *http.Request, workspac
 		return
 	}
 
-	source := agentHubSource{
-		App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID,
+	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
+	request := agentHubCreateSessionRequest{
+		Title: run.Title, Cwd: run.Cwd, AgentName: agentName, Source: &source,
+		InitialMessage: agentHubInitialMessage(strings.TrimSpace(req.Prompt), req.UserName),
 	}
 	session, err := m.findOrCreateAgentHubSession(r.Context(), client, source, agentHubCreateSessionRequest{
-		Title: run.Title, Cwd: run.Cwd, AgentName: agentName,
-		Source:         &source,
-		InitialMessage: agentHubInitialMessage(strings.TrimSpace(req.Prompt), req.UserName),
+		Title: request.Title, Cwd: request.Cwd, AgentName: request.AgentName,
+		Source: request.Source, IdempotencyKey: request.IdempotencyKey, InitialMessage: request.InitialMessage,
 	})
 	if err != nil {
 		cleanup = false
@@ -381,6 +435,70 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 }
 
 func (m *agentManager) sendAgentHubInput(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentInputRequest, text string) {
+	rt.mu.Lock()
+	resourceManaged := strings.TrimSpace(rt.run.GenerationID) != ""
+	rt.mu.Unlock()
+	if resourceManaged {
+		m.resourceMu.Lock()
+		defer m.resourceMu.Unlock()
+		message := newResourceMessage(text, req.UserName)
+		rt.mu.Lock()
+		original := rt.run
+		rt.mu.Unlock()
+		target := rt
+		if current, found, err := currentResourceGeneration(rt.workspace.Path, original.ResourceID); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		} else if found && current.ID != original.ID {
+			target = m.runtimeByID(current.ID)
+			if target == nil {
+				_, client, configErr := m.agentHubRuntimeConfig()
+				if configErr != nil {
+					writeError(w, configErr, http.StatusServiceUnavailable)
+					return
+				}
+				target = newAgentHubRuntime(m, rt.workspace, current, client)
+				target.agentHubState = agentHubStateForForgeStatus(current.Status)
+				m.registerRuntime(target)
+			}
+		} else if !found {
+			cfg, client, configErr := m.agentHubRuntimeConfig()
+			if configErr != nil {
+				writeError(w, configErr, http.StatusServiceUnavailable)
+				return
+			}
+			resolved, resolveErr := m.resolveResourceAgent(rt.workspace, original.ResourceID, cfg)
+			if resolveErr == nil {
+				resolved.AgentName, resolveErr = validateAgentHubRunAgent(r.Context(), client, resolved.AgentName)
+			}
+			if resolveErr != nil {
+				writeError(w, resolveErr, http.StatusBadGateway)
+				return
+			}
+			created, createErr := m.createResourceGeneration(r.Context(), rt.workspace, original.ResourceID, original.Title, original.Cwd, cfg, client, resolved, []resourceInboundMessage{message})
+			if createErr != nil {
+				writeError(w, createErr, http.StatusBadGateway)
+				return
+			}
+			writeJSON(w, map[string]any{"status": "accepted", "messageId": message.ID, "queued": len(created.PendingMessages) > 0, "runId": created.ID})
+			return
+		}
+		if err := target.enqueueResourceMessage(message); err != nil {
+			writeError(w, err, http.StatusInternalServerError)
+			return
+		}
+		queued := false
+		if err := target.deliverPendingResourceMessages(r.Context(), m); err != nil {
+			queued = true
+			target.addForgeNotice(m, "warning", "resource/message", "Message is durable and queued for retry: "+err.Error())
+		} else {
+			target.mu.Lock()
+			queued = len(target.run.PendingMessages) > 0
+			target.mu.Unlock()
+		}
+		writeJSON(w, map[string]any{"status": "accepted", "messageId": message.ID, "queued": queued, "runId": target.snapshotRun().ID})
+		return
+	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
@@ -649,7 +767,7 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 	}
 	source := session.Source
 	expectedExternalID := strings.TrimSpace(run.SourceExternalID)
-	if source == nil || source.App != agentHubSourceApp || source.InstanceID != cfg.AgentHubInstanceID ||
+	if source == nil || source.App != agentHubSourceApp || source.InstanceID != runSourceInstanceID(cfg, run) ||
 		expectedExternalID == "" || source.ExternalID != expectedExternalID {
 		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session does not belong to the current Forge run"}
 	}
@@ -838,7 +956,7 @@ func (m *agentManager) resumeAgentHubRun(w http.ResponseWriter, r *http.Request,
 		m.resumeStoppedAgentHubRun(w, r, rt)
 		return
 	}
-	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
+	source := agentHubSource{App: agentHubSourceApp, InstanceID: runSourceInstanceID(cfg, run), ExternalID: run.SourceExternalID}
 	sessions, err := findAgentHubSourceSessions(r.Context(), client, source)
 	if err != nil {
 		writeError(w, err, http.StatusBadGateway)
@@ -879,7 +997,7 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 		return err
 	}
 	sessions, err := client.ListSessions(ctx, agentHubSessionFilter{
-		IncludeArchived: true, SourceApp: agentHubSourceApp, SourceInstanceID: cfg.AgentHubInstanceID,
+		IncludeArchived: true, SourceApp: agentHubSourceApp,
 	})
 	if err != nil {
 		return err
@@ -889,7 +1007,7 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 	for _, session := range sessions {
 		byID[session.ID] = session
 		if session.Source != nil && strings.TrimSpace(session.Source.ExternalID) != "" {
-			byExternalID[session.Source.ExternalID] = session
+			byExternalID[sourceLookupKey(session.Source.InstanceID, session.Source.ExternalID)] = session
 		}
 	}
 	var failures []string
@@ -908,7 +1026,7 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 				continue
 			}
 			candidates := []agentHubSession{}
-			if session, ok := byExternalID[strings.TrimSpace(run.SourceExternalID)]; ok {
+			if session, ok := byExternalID[sourceLookupKey(runSourceInstanceID(cfg, run), run.SourceExternalID)]; ok {
 				candidates = []agentHubSession{session}
 			} else if session, ok := byID[strings.TrimSpace(run.AgentHubSessionID)]; ok {
 				candidates = []agentHubSession{session}
@@ -931,14 +1049,26 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 // carries the sessions found by the single instance-wide startup query.
 // Live runs may recreate a missing AgentHub session from the source tuple.
 func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
-	source := agentHubSource{App: agentHubSourceApp, InstanceID: cfg.AgentHubInstanceID, ExternalID: run.SourceExternalID}
+	source := agentHubSource{App: agentHubSourceApp, InstanceID: runSourceInstanceID(cfg, run), ExternalID: run.SourceExternalID}
 	live := isLiveAgentStatus(run.Status)
 	if len(candidates) == 0 && live {
-		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, agentHubCreateSessionRequest{
+		request := agentHubCreateSessionRequest{
 			Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
 			Source:         &source,
 			InitialMessage: agentHubInitialMessage(run.PendingInitialMessage, ""),
-		})
+		}
+		if run.GenerationID != "" {
+			source.Metadata = map[string]string{
+				"workspaceInstanceId": run.SourceInstanceID, "resourceId": run.ResourceID,
+				"generation": strconv.Itoa(run.Generation), "generationId": run.GenerationID,
+				"bindingKind": run.BindingKind, "bindingName": run.BindingName,
+				"profileRevision": run.ProfileRevision,
+			}
+			request.Source = &source
+			request.IdempotencyKey = run.GenerationID
+			request.InitialMessage = nil
+		}
+		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, request)
 		if createErr != nil {
 			m.markAgentRunRecovering(workspace, run)
 			return createErr
@@ -962,7 +1092,9 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 	if strings.TrimSpace(session.AgentName) != "" {
 		run.AgentHubAgentName = session.AgentName
 	}
-	run.PendingInitialMessage = ""
+	if run.GenerationID == "" {
+		run.PendingInitialMessage = ""
+	}
 	rt := newAgentHubRuntime(m, workspace, run, client)
 	// Let applyAgentHubSessionState compare the recovered state with the
 	// persisted projection. This preserves a busy -> ready/stopped edge across
@@ -990,6 +1122,15 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 		}
 	}
 	rt.applyAgentHubSessionState(m, session)
+	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
+		go m.retireResourceGeneration(context.Background(), rt)
+	} else if (session.State == "ready" || session.State == "busy" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
+		go func() {
+			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+				rt.addForgeNotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
+			}
+		}()
+	}
 	if session.State == "archived" {
 		// The service missed the stopped edge while it was down. Release the
 		// Forge session only when the archived session provably passed

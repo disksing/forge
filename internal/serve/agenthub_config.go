@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	agentHubConfigVersion = 3
+	agentHubConfigVersion = 4
 	agentHubSourceApp     = "forge"
 )
 
@@ -33,6 +33,7 @@ type agentHubGUIConfig struct {
 	AgentHubEndpoint   string                 `json:"agentHubEndpoint"`
 	AgentHubInstanceID string                 `json:"agentHubInstanceId"`
 	AgentProfiles      []agentHubProfileRoute `json:"agentProfiles,omitempty"`
+	ResourceDefaults   resourceAgentDefaults  `json:"resourceDefaults"`
 }
 
 type agentHubProfileRoute struct {
@@ -67,6 +68,7 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 	}
 	cfg.AgentHubEndpoint = endpoint
 	cfg.AgentHubInstanceID = strings.TrimSpace(cfg.AgentHubInstanceID)
+	cfg.ResourceDefaults = normalizeResourceAgentDefaults(cfg.ResourceDefaults)
 	if cfg.AgentHubInstanceID == "" {
 		cfg.AgentHubInstanceID, err = newAgentHubInstanceID()
 		if err != nil {
@@ -77,7 +79,41 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 	if err != nil {
 		return agentHubGUIConfig{}, err
 	}
+	if err := validateResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles); err != nil {
+		return agentHubGUIConfig{}, err
+	}
 	return cfg, nil
+}
+
+func validateResourceAgentDefaults(defaults resourceAgentDefaults, profiles []agentHubProfileRoute) error {
+	known := make(map[string]bool, len(profiles))
+	for _, profile := range profiles {
+		known[strings.ToLower(strings.TrimSpace(profile.Key))] = true
+	}
+	for kind, name := range map[string]string{"Workspace": defaults.Workspace, "Project": defaults.Project, "Task": defaults.Task} {
+		if !known[strings.ToLower(strings.TrimSpace(name))] {
+			return fmt.Errorf("%s resource default references unknown Agent Profile %q", kind, name)
+		}
+	}
+	return nil
+}
+
+func defaultResourceAgentDefaults() resourceAgentDefaults {
+	return resourceAgentDefaults{Workspace: "default", Project: "default", Task: "default"}
+}
+
+func normalizeResourceAgentDefaults(value resourceAgentDefaults) resourceAgentDefaults {
+	defaults := defaultResourceAgentDefaults()
+	if normalized := strings.ToLower(strings.TrimSpace(value.Workspace)); normalized != "" {
+		defaults.Workspace = normalized
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(value.Project)); normalized != "" {
+		defaults.Project = normalized
+	}
+	if normalized := strings.ToLower(strings.TrimSpace(value.Task)); normalized != "" {
+		defaults.Task = normalized
+	}
+	return defaults
 }
 
 func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agentHubCatalog) ([]agentHubProfileRoute, error) {

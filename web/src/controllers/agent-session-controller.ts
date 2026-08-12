@@ -219,10 +219,35 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 	}
 
 	async function send(rawText: string, context: AgentInputContext): Promise<{ accepted: boolean; clear: boolean }> {
-		const sendingKey = `${context?.workspaceId || "workspace"}:${context?.runId || "run"}`;
+		const sendingKey = `${context?.workspaceId || "workspace"}:${context?.runId || context?.resourceId || "resource"}`;
 		if (operations.isSending(sendingKey) || !String(rawText || "").trim()) return { accepted: false, clear: false };
 		const sendingRun = dependencies.currentRun();
-		if (!sendingRun) return { accepted: false, clear: false };
+		if (!sendingRun || !dependencies.isLive(sendingRun)) {
+			const selectedResourceID = dependencies.selectedResource()?.id || "workspace";
+			if (context.workspaceId !== dependencies.workspaceId() || context.resourceId !== selectedResourceID) throw new Error("The selected Workspace or resource changed before the message could be sent.");
+			if (!operations.startSending(sendingKey)) return { accepted: false, clear: false };
+			try {
+				const selected = dependencies.selectedResource();
+				const response = await dependencies.request<{ run: AgentRunRecord }>(`/api/workspaces/${context.workspaceId}/agent/runs`, {
+					method: "POST",
+					body: JSON.stringify({
+						userName: dependencies.userName(),
+						resourceId: context.resourceId,
+						title: selected?.title || dependencies.workspaceName(),
+						prompt: rawText,
+						cwd: dependencies.defaultCwd()
+					})
+				});
+				if (context.workspaceId !== dependencies.workspaceId() || context.resourceId !== (dependencies.selectedResource()?.id || "workspace")) return { accepted: true, clear: false };
+				dependencies.resetDraft();
+				dependencies.setActiveRun(response.run.id);
+				await refreshSessionProjection();
+				dependencies.publish();
+				return { accepted: true, clear: true };
+			} finally {
+				operations.stopSending(sendingKey);
+			}
+		}
 		dependencies.restoreDraft(sendingRun);
 		const draft = dependencies.currentDraft();
 		if (context.workspaceId !== dependencies.workspaceId() || context.runId !== dependencies.activeRunId() || context.draftKey !== draft.key) throw new Error("The selected Workspace or Session changed before the message could be sent.");

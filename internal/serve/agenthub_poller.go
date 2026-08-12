@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"strings"
 	"time"
 
@@ -72,7 +73,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 		return err
 	}
 	sessions, err := client.ListSessions(ctx, agentHubSessionFilter{
-		SourceApp: agentHubSourceApp, SourceInstanceID: cfg.AgentHubInstanceID,
+		SourceApp: agentHubSourceApp,
 	})
 	if err != nil {
 		return err
@@ -82,7 +83,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 	for _, session := range sessions {
 		byID[session.ID] = session
 		if session.Source != nil && strings.TrimSpace(session.Source.ExternalID) != "" {
-			byExternalID[session.Source.ExternalID] = session
+			byExternalID[sourceLookupKey(session.Source.InstanceID, session.Source.ExternalID)] = session
 		}
 	}
 	var failures []string
@@ -108,21 +109,27 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			}
 			resourceID := strings.TrimSpace(run.ResourceID)
 			archiveState, isTask := taskArchiveStates[resourceID]
+			if !isTask && resourceID != "" && resourceID != "workspace" {
+				resource, resourceErr := forgeWorkspace.ResourceValue(resourceID)
+				archiveState = taskArchiveState{archived: resource.Archived, err: resourceErr}
+			}
 			if isTask && archiveState.err != nil {
 				// A missing or unreadable resource is not proof that Forge
 				// intentionally reclaimed the task. Keep the AgentHub session
 				// open and surface the failed inspection instead.
 				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
-			} else if isTask && archiveState.archived {
+			} else if !isTask && resourceID != "" && resourceID != "workspace" && archiveState.err != nil {
+				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
+			} else if archiveState.archived {
 				// Reclaim only the session id already bound to this run. Source
 				// lookup is deliberately not used here: duplicate or stale
 				// external ids must never make archival stop the wrong session.
 				if session, found := byID[strings.TrimSpace(run.AgentHubSessionID)]; found &&
-					m.stopAgentHubSessionForArchivedTask(ctx, cfg, workspace, run, session, client) {
+					m.stopAgentHubSessionForArchivedResource(ctx, cfg, workspace, run, session, client) {
 					continue
 				}
 			}
-			m.reconcileAgentHubRun(ctx, workspace, run, byExternalID, byID, client)
+			m.reconcileAgentHubRun(ctx, cfg, workspace, run, byExternalID, byID, client)
 		}
 	}
 	if len(failures) > 0 {
@@ -186,11 +193,25 @@ func inspectTaskArchiveStates(workspace *app.Workspace, runs []agentRun) map[str
 	return states
 }
 
-// stopAgentHubSessionForArchivedTask starts a single fail-closed stop for an
-// active AgentHub session whose owning Forge task is archived. It returns true
+// stopAgentHubSessionForArchivedResource starts a single fail-closed stop for an
+// active AgentHub session whose owning Forge resource is archived. Resource
+// generations are also archived after the durable stopped edge. It returns true
 // when normal reconciliation should be skipped for this poll.
-func (m *agentManager) stopAgentHubSessionForArchivedTask(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
-	if !activeAgentHubSessionState(session.State) || !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
+	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+		return false
+	}
+	if session.State == "stopped" && run.GenerationID != "" {
+		go func() {
+			if _, err := client.Archive(context.WithoutCancel(ctx), session.ID); err != nil {
+				if rt := m.runtimeByID(run.ID); rt != nil {
+					rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
+				}
+			}
+		}()
+		return true
+	}
+	if !activeAgentHubSessionState(session.State) {
 		return false
 	}
 	rt := m.runtimeByID(run.ID)
@@ -236,6 +257,11 @@ func (m *agentManager) stopAgentHubSessionForArchivedTask(ctx context.Context, c
 			return
 		}
 		rt.applyAgentHubSessionState(m, stopped)
+		if stopped.State == "stopped" && run.GenerationID != "" {
+			if _, err := client.Archive(context.WithoutCancel(ctx), stopped.ID); err != nil {
+				rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
+			}
+		}
 	}()
 	return true
 }
@@ -254,7 +280,7 @@ func agentHubSessionExactlyMatchesRun(cfg config, run agentRun, session agentHub
 	externalID := strings.TrimSpace(run.SourceExternalID)
 	return sessionID != "" && externalID != "" && session.ID == sessionID && session.Source != nil &&
 		session.Source.App == agentHubSourceApp &&
-		session.Source.InstanceID == cfg.AgentHubInstanceID &&
+		session.Source.InstanceID == runSourceInstanceID(cfg, run) &&
 		session.Source.ExternalID == externalID
 }
 
@@ -265,8 +291,8 @@ func agentHubSessionExactlyMatchesRun(cfg config, run agentRun, session agentHub
 // archived-after-stopped reconciliation, while a session that is truly gone
 // conservatively moves live runs to recovering and keeps terminal runs
 // untouched.
-func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
-	session, found := byExternalID[strings.TrimSpace(run.SourceExternalID)]
+func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+	session, found := byExternalID[sourceLookupKey(runSourceInstanceID(cfg, run), run.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(run.AgentHubSessionID)]
 	}
@@ -282,7 +308,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		// reconciliation owns.
 		if id := strings.TrimSpace(run.AgentHubSessionID); id != "" {
 			if fetched, err := client.GetSession(ctx, id); err == nil {
-				if agentHubSourceConflicts(run, fetched) {
+				if agentHubSourceConflicts(cfg, run, fetched) {
 					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted Forge run source; transient Forge session retained", id))
 					return
 				}
@@ -291,6 +317,12 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		}
 	}
 	if !found {
+		if run.GenerationID != "" && isLiveAgentStatus(run.Status) {
+			if err := m.recoverAgentHubRun(context.WithoutCancel(ctx), cfg, client, workspace, run, nil); err != nil {
+				rt.addForgeNotice(m, "warning", "agenthub/recovery", "Recreate missing resource generation: "+err.Error())
+			}
+			return
+		}
 		rt.mu.Lock()
 		if rt.run.Status != "recovering" && isLiveAgentStatus(rt.run.Status) {
 			rt.run.Status = "recovering"
@@ -363,7 +395,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 			updated.LastOutputAt = session.UpdatedAt
 		}
 	}
-	changed := updated != current
+	changed := !reflect.DeepEqual(updated, current)
 	rt.run = updated
 	rt.agentHubState = session.State
 	if session.State == "stopped" {
@@ -398,6 +430,15 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		// Idempotent: releases the Forge session on the stopped edge and
 		// retries a release that failed on an earlier poll.
 		go rt.releaseForgeSessionAfterStopped(m)
+	}
+	if updated.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
+		go m.retireResourceGeneration(context.Background(), rt)
+	} else if (session.State == "ready" || session.State == "busy" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
+		go func() {
+			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
+			}
+		}()
 	}
 }
 
@@ -486,6 +527,15 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		}()
 	} else if run.Status == "stopped" && run.AgentHubStoppedObserved {
 		go rt.releaseForgeSessionAfterStopped(m)
+	}
+	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
+		go m.retireResourceGeneration(context.Background(), rt)
+	} else if (session.State == "ready" || session.State == "busy" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
+		go func() {
+			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
+			}
+		}()
 	}
 }
 

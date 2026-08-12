@@ -6,17 +6,36 @@ import (
 )
 
 type Config struct {
-	Version  int    `json:"version"`
-	Language string `json:"language"`
+	Version      int          `json:"version"`
+	Language     string       `json:"language"`
+	InstanceID   string       `json:"instanceId,omitempty"`
+	AgentBinding AgentBinding `json:"agentBinding,omitempty"`
+}
+
+type AgentBinding struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+type ResourceAgentDefaults struct {
+	Workspace string `json:"workspace"`
+	Project   string `json:"project"`
+	Task      string `json:"task"`
+}
+
+type WorkspaceRuntimeConfig struct {
+	InstanceID   string       `json:"instanceId"`
+	AgentBinding AgentBinding `json:"agentBinding"`
 }
 
 type ResourceMeta struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	ID            string `json:"id"`
-	Type          string `json:"type"`
-	Title         string `json:"title"`
-	CreatedAt     string `json:"createdAt"`
-	UpdatedAt     string `json:"updatedAt"`
+	SchemaVersion int          `json:"schemaVersion"`
+	ID            string       `json:"id"`
+	Type          string       `json:"type"`
+	Title         string       `json:"title"`
+	CreatedAt     string       `json:"createdAt"`
+	UpdatedAt     string       `json:"updatedAt"`
+	AgentBinding  AgentBinding `json:"agentBinding,omitempty"`
 }
 
 type Project struct {

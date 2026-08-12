@@ -127,7 +127,7 @@ func ensureTaskRepoWorktreesMerged(root string, task Task) error {
 func newProject(id, title, description string) Project {
 	now := time.Now().Format(time.RFC3339)
 	return Project{
-		ResourceMeta: ResourceMeta{SchemaVersion: resourceSchemaVersion, ID: id, Type: resourceTypeProject, Title: strings.TrimSpace(title), CreatedAt: now, UpdatedAt: now},
+		ResourceMeta: ResourceMeta{SchemaVersion: resourceSchemaVersion, ID: id, Type: resourceTypeProject, Title: strings.TrimSpace(title), CreatedAt: now, UpdatedAt: now, AgentBinding: defaultAgentBinding()},
 		Description:  description,
 	}
 }
@@ -142,6 +142,7 @@ func newTask(id, parent, title, description string) Task {
 			Title:         strings.TrimSpace(title),
 			CreatedAt:     now,
 			UpdatedAt:     now,
+			AgentBinding:  defaultAgentBinding(),
 		},
 		Parent:      parent,
 		Description: description,

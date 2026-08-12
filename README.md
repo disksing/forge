@@ -92,18 +92,18 @@ The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, expand the project/task tree, and monitor active or external sessions.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** start, close, resume, or revisit sessions; end the current turn while keeping the Session open; stream responses and tool activity; answer approvals; and upload files.
-- **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map the `default`, `fast`, and `reasoning` system Profiles or ordinary custom Profiles to catalog agents. The user name defaults to `User` and is not written to server configuration or workspace data.
+- **Chat:** select a Workspace, Project, or Task and send a message directly; Forge lazily creates or reuses that resource's current generation. Ordinary Session start/close/resume/history controls remain available for diagnostics and explicit sessions.
+- **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
 ### AgentHub execution
 
-Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. New chat sessions resolve a Forge Profile to an AgentHub `agentName` and project canonical AgentHub events into the GUI.
+Forge does not import provider adapters, spawn provider CLIs, probe provider health, or keep a direct-runner fallback. Agent and provider definitions in the AgentHub catalog are read-only in Forge. Every Workspace, Project, and Task stores an explicit binding to either a Forge Profile or an AgentHub Agent. Profile bindings resolve to an `agentName`; changing a binding or a referenced Profile retires the old generation at a turn boundary and creates the next generation lazily.
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge retains workspace/task/Profile control and a minimal transient record for active GUI sessions. `forge serve` is the only component that creates, binds, and removes those records while reconciling AgentHub lifecycle state. It removes a record only after observing a durable terminal state, or proving through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the record for later reconciliation. `forge session list` and `forge session show` are read-only local diagnostics and never contact AgentHub; there are no public commands for manually creating, binding, heartbeating, ending, or taking over a Session. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
+Forge persists resource generation metadata and its minimal inbound retry queue under `<workspace>/.forge/runtime/`. One logical resource conversation may span multiple immutable AgentHub Sessions; stable Workspace instance, resource, generation, binding, and Profile-revision identifiers are carried in AgentHub source metadata. Messages have durable IDs, so an ambiguous response or Forge restart can retry safely. When an active Provider cannot steer, Forge retains the message until a safe ready boundary. `forge serve` remains the only component that creates, binds, and removes transient Forge Session records while reconciling AgentHub lifecycle state. `forge session list` and `forge session show` are read-only local diagnostics and never contact AgentHub.
 
 Useful overrides:
 
@@ -143,7 +143,7 @@ Use an absolute destination with `git worktree add`, especially when combining i
 
 ## Interactive Agent Sessions
 
-Interactive agents are launched through the Forge web UI and AgentHub. A resource may have multiple active sessions. Archiving a resource does not delete a running session record synchronously; `forge serve` requests the corresponding AgentHub stop and removes the transient record only after safe terminal-state reconciliation.
+Interactive agents are launched through the Forge web UI and AgentHub. A resource-managed conversation has one current generation; explicit diagnostic Sessions may still coexist. Archiving a resource does not delete a running session record synchronously; `forge serve` requests the corresponding AgentHub stop and removes the transient record only after safe terminal-state reconciliation.
 
 ## Task Templates
 

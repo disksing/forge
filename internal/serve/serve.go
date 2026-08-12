@@ -33,12 +33,19 @@ import (
 var staticFiles = web.Assets
 
 type config struct {
-	Version            int                 `json:"version"`
-	ActiveID           string              `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace      `json:"workspaces"`
-	AgentHubEndpoint   string              `json:"agentHubEndpoint,omitempty"`
-	AgentHubInstanceID string              `json:"agentHubInstanceId,omitempty"`
-	AgentProfiles      []agentProfileRoute `json:"agentProfiles,omitempty"`
+	Version            int                   `json:"version"`
+	ActiveID           string                `json:"activeId,omitempty"`
+	Workspaces         []guiWorkspace        `json:"workspaces"`
+	AgentHubEndpoint   string                `json:"agentHubEndpoint,omitempty"`
+	AgentHubInstanceID string                `json:"agentHubInstanceId,omitempty"`
+	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
+	ResourceDefaults   resourceAgentDefaults `json:"resourceDefaults"`
+}
+
+type resourceAgentDefaults struct {
+	Workspace string `json:"workspace"`
+	Project   string `json:"project"`
+	Task      string `json:"task"`
 }
 
 type agentProfileRoute struct {
@@ -79,10 +86,11 @@ const (
 )
 
 type workspaceTree struct {
-	Root     string             `json:"root"`
-	Projects []resourceSnapshot `json:"projects"`
-	Sessions []guiSession       `json:"sessions"`
-	Wiki     workspaceWiki      `json:"wiki"`
+	Root         string             `json:"root"`
+	AgentBinding app.AgentBinding   `json:"agentBinding"`
+	Projects     []resourceSnapshot `json:"projects"`
+	Sessions     []guiSession       `json:"sessions"`
+	Wiki         workspaceWiki      `json:"wiki"`
 }
 
 type workspaceWiki struct {
@@ -101,12 +109,13 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Title    string             `json:"title"`
-	Path     string             `json:"path"`
-	Archived bool               `json:"archived"`
-	Children []resourceSnapshot `json:"children,omitempty"`
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	Title        string             `json:"title"`
+	Path         string             `json:"path"`
+	Archived     bool               `json:"archived"`
+	AgentBinding app.AgentBinding   `json:"agentBinding"`
+	Children     []resourceSnapshot `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -261,6 +270,9 @@ func Main(args []string) error {
 	if err := s.acquireConfiguredWorkspaceLocks(); err != nil {
 		return err
 	}
+	if err := s.ensureConfiguredResourceRuntimes(); err != nil {
+		return err
+	}
 	s.agents.startAgentRecovery(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
@@ -383,6 +395,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, tree)
 	case "resources":
+		if len(parts) == 4 && parts[3] == "agent-binding" {
+			if r.Method != http.MethodPut {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			s.updateResourceAgentBinding(w, r, id, parts[2])
+			return
+		}
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -484,6 +504,54 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *server) updateResourceAgentBinding(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	var binding app.AgentBinding
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&binding); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	binding, err := app.NormalizeAgentBinding(binding)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if binding.Kind == "profile" {
+		cfg, cfgErr := s.loadConfig()
+		if cfgErr != nil {
+			writeError(w, cfgErr, http.StatusInternalServerError)
+			return
+		}
+		if configuredAgentProfileName(cfg.AgentProfiles, binding.Name) == "" {
+			writeError(w, fmt.Errorf("unknown or unconfigured Agent Profile %q", binding.Name), http.StatusBadRequest)
+			return
+		}
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := forgeWorkspace.SetResourceAgentBinding(resourceID, binding)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if s.agents != nil {
+		if err := s.agents.resourceBindingChanged(r.Context(), workspace, resourceID, updated); err != nil {
+			writeError(w, err, http.StatusBadGateway)
+			return
+		}
+	}
+	writeJSON(w, map[string]any{"agentBinding": updated})
+}
+
 func (s *server) handleUIState(w http.ResponseWriter, r *http.Request, id string) {
 	switch r.Method {
 	case http.MethodGet:
@@ -538,6 +606,17 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Project})
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	result.AgentBinding = binding
 	writeJSON(w, result)
 }
 
@@ -608,6 +687,17 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, status)
 		return
 	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Task})
+	if err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
+	result.AgentBinding = binding
 	writeJSON(w, result)
 }
 
@@ -1099,6 +1189,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 			s.locks.release(canonical)
 		}
 	}()
+	initializedNow := false
 	tree, err := s.treeAt(ctx, canonical)
 	if err != nil {
 		if !create {
@@ -1107,6 +1198,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		if _, initErr := app.Initialize(canonical, ""); initErr != nil {
 			return guiWorkspace{}, initErr
 		}
+		initializedNow = true
 		tree, err = s.treeAt(ctx, canonical)
 		if err != nil {
 			return guiWorkspace{}, err
@@ -1120,6 +1212,20 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	cfg, err := s.loadConfig()
 	if err != nil {
 		return guiWorkspace{}, err
+	}
+	forgeWorkspace, err := app.OpenWorkspace(tree.Root)
+	if err != nil {
+		return guiWorkspace{}, err
+	}
+	if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+		Workspace: cfg.ResourceDefaults.Workspace, Project: cfg.ResourceDefaults.Project, Task: cfg.ResourceDefaults.Task,
+	}); err != nil {
+		return guiWorkspace{}, err
+	}
+	if initializedNow {
+		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: "profile", Name: cfg.ResourceDefaults.Workspace}); err != nil {
+			return guiWorkspace{}, err
+		}
 	}
 	replaced := false
 	for i := range cfg.Workspaces {
@@ -1138,6 +1244,28 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		return guiWorkspace{}, err
 	}
 	return workspace, nil
+}
+
+func (s *server) ensureConfiguredResourceRuntimes() error {
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return err
+	}
+	for _, workspace := range cfg.Workspaces {
+		if !s.ownsWorkspace(workspace.Path) {
+			continue
+		}
+		forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+		if err != nil {
+			return fmt.Errorf("open Workspace %s for resource runtime: %w", workspace.ID, err)
+		}
+		if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+			Workspace: cfg.ResourceDefaults.Workspace, Project: cfg.ResourceDefaults.Project, Task: cfg.ResourceDefaults.Task,
+		}); err != nil {
+			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
+		}
+	}
+	return nil
 }
 
 func (s *server) updateWorkspaceIcon(id, icon string) (guiWorkspace, error) {
@@ -1223,6 +1351,12 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 		return workspaceTree{}, err
 	}
 	tree := workspaceTreeFromApp(typedTree)
+	runtimeConfig, runtimeErr := forgeWorkspace.RuntimeConfig()
+	if runtimeErr == nil {
+		tree.AgentBinding = runtimeConfig.AgentBinding
+	} else {
+		tree.AgentBinding = app.AgentBinding{Kind: "profile", Name: "default"}
+	}
 	if err := s.enrichTreeSessions(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
@@ -1445,6 +1579,7 @@ func (s *server) loadConfig() (config, error) {
 				Workspaces:       []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
 				AgentProfiles:    []agentProfileRoute{},
+				ResourceDefaults: defaultResourceAgentDefaults(),
 			}
 			normalized, normalizeErr := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
 			if normalizeErr != nil {
@@ -1461,9 +1596,12 @@ func (s *server) loadConfig() (config, error) {
 	if cfg.Workspaces == nil {
 		cfg.Workspaces = []guiWorkspace{}
 	}
-	if cfg.Version < agentHubConfigVersion {
+	if cfg.Version < 3 {
 		return config{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", cfg.Version)
 	}
+	needsUpgrade := cfg.Version != agentHubConfigVersion || cfg.ResourceDefaults != normalizeResourceAgentDefaults(cfg.ResourceDefaults)
+	cfg.Version = agentHubConfigVersion
+	cfg.ResourceDefaults = normalizeResourceAgentDefaults(cfg.ResourceDefaults)
 	cfg.AgentHubEndpoint, err = normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return config{}, err
@@ -1474,6 +1612,16 @@ func (s *server) loadConfig() (config, error) {
 	}
 	if !agentProfileRoutesEqual(cfg.AgentProfiles, normalizedProfiles) {
 		cfg.AgentProfiles = normalizedProfiles
+		needsUpgrade = true
+	}
+	profileRoutes := make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles))
+	for _, route := range cfg.AgentProfiles {
+		profileRoutes = append(profileRoutes, agentHubProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
+	}
+	if err := validateResourceAgentDefaults(cfg.ResourceDefaults, profileRoutes); err != nil {
+		return config{}, err
+	}
+	if needsUpgrade {
 		if err := s.saveConfig(cfg); err != nil {
 			return config{}, err
 		}
@@ -1502,6 +1650,7 @@ func (s *server) saveConfig(cfg config) error {
 		AgentHubEndpoint:   cfg.AgentHubEndpoint,
 		AgentHubInstanceID: cfg.AgentHubInstanceID,
 		AgentProfiles:      routes,
+		ResourceDefaults:   normalizeResourceAgentDefaults(cfg.ResourceDefaults),
 	}, "", "  ")
 	if err != nil {
 		return err

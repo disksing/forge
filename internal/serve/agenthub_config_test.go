@@ -23,6 +23,27 @@ func TestReadAgentHubConfigRejectsRemovedVersion(t *testing.T) {
 	}
 }
 
+func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gui.json")
+	if err := os.WriteFile(path, []byte(`{"version":3,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := readAgentHubConfigFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Version != 4 || cfg.ResourceDefaults != defaultResourceAgentDefaults() {
+		t.Fatalf("upgraded config = %#v", cfg)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"version": 4`)) || !bytes.Contains(data, []byte(`"workspace": "default"`)) {
+		t.Fatalf("version three config was not written back: %s", data)
+	}
+}
+
 func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
@@ -61,7 +82,7 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(saved, []byte(`"version": 3`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) {
+	if !bytes.Contains(saved, []byte(`"version": 4`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) || !bytes.Contains(saved, []byte(`"resourceDefaults"`)) {
 		t.Fatalf("unexpected persisted config: %s", saved)
 	}
 	if bytes.Contains(saved, []byte(`"agentProviders"`)) || bytes.Contains(saved, []byte(`"defaultChatAgentId"`)) {

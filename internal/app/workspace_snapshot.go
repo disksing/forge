@@ -23,32 +23,34 @@ type WorkspaceWikiView struct {
 }
 
 type ResourceTreeView struct {
-	ID       string             `json:"id"`
-	Type     string             `json:"type"`
-	Title    string             `json:"title"`
-	Path     string             `json:"path"`
-	Archived bool               `json:"archived"`
-	Children []ResourceTreeView `json:"children,omitempty"`
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	Title        string             `json:"title"`
+	Path         string             `json:"path"`
+	Archived     bool               `json:"archived"`
+	AgentBinding AgentBinding       `json:"agentBinding"`
+	Children     []ResourceTreeView `json:"children,omitempty"`
 }
 
 type ResourceDetailView struct {
-	ID          string              `json:"id"`
-	Type        string              `json:"type"`
-	Title       string              `json:"title"`
-	Description string              `json:"description,omitempty"`
-	CreatedAt   string              `json:"createdAt"`
-	UpdatedAt   string              `json:"updatedAt"`
-	Path        string              `json:"path"`
-	Archived    bool                `json:"archived"`
-	Repos       []TaskRepo          `json:"repos,omitempty"`
-	Logs        []LogEntry          `json:"logs,omitempty"`
-	LogPage     *LogPage            `json:"logPage,omitempty"`
-	Files       []ResourceFile      `json:"files,omitempty"`
-	Artifacts   []FileTreeEntry     `json:"artifacts"`
-	Worktrees   []FileTreeEntry     `json:"worktrees"`
-	Children    []ResourceTreeView  `json:"children,omitempty"`
-	Templates   []TaskTemplate      `json:"templates,omitempty"`
-	Template    *TaskTemplateSource `json:"template,omitempty"`
+	ID           string              `json:"id"`
+	Type         string              `json:"type"`
+	Title        string              `json:"title"`
+	Description  string              `json:"description,omitempty"`
+	CreatedAt    string              `json:"createdAt"`
+	UpdatedAt    string              `json:"updatedAt"`
+	Path         string              `json:"path"`
+	Archived     bool                `json:"archived"`
+	AgentBinding AgentBinding        `json:"agentBinding"`
+	Repos        []TaskRepo          `json:"repos,omitempty"`
+	Logs         []LogEntry          `json:"logs,omitempty"`
+	LogPage      *LogPage            `json:"logPage,omitempty"`
+	Files        []ResourceFile      `json:"files,omitempty"`
+	Artifacts    []FileTreeEntry     `json:"artifacts"`
+	Worktrees    []FileTreeEntry     `json:"worktrees"`
+	Children     []ResourceTreeView  `json:"children,omitempty"`
+	Templates    []TaskTemplate      `json:"templates,omitempty"`
+	Template     *TaskTemplateSource `json:"template,omitempty"`
 }
 
 type TaskTemplate struct {
@@ -149,11 +151,12 @@ func readWorkspaceWiki(root string) WorkspaceWikiView {
 func buildResourceTreeItem(root string, entry resourceEntry, includeChildren bool) (ResourceTreeView, error) {
 	meta := entry.Resource.resourceMeta()
 	item := ResourceTreeView{
-		ID:       meta.ID,
-		Type:     meta.Type,
-		Title:    meta.Title,
-		Path:     relPath(root, entry.Path),
-		Archived: isArchivedPath(root, entry.Path),
+		ID:           meta.ID,
+		Type:         meta.Type,
+		Title:        meta.Title,
+		Path:         relPath(root, entry.Path),
+		Archived:     isArchivedPath(root, entry.Path),
+		AgentBinding: meta.AgentBinding,
 	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry)
@@ -177,17 +180,18 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogEntry) (ResourceDetailView, error) {
 	meta := entry.Resource.resourceMeta()
 	detail := ResourceDetailView{
-		ID:        meta.ID,
-		Type:      meta.Type,
-		Title:     meta.Title,
-		CreatedAt: meta.CreatedAt,
-		UpdatedAt: meta.UpdatedAt,
-		Path:      relPath(root, entry.Path),
-		Archived:  isArchivedPath(root, entry.Path),
-		Logs:      logs,
-		Files:     readResourceFiles(root, entry.Path, entry.Resource),
-		Artifacts: readFileTree(root, filepath.Join(entry.Path, "artifacts")),
-		Worktrees: []FileTreeEntry{},
+		ID:           meta.ID,
+		Type:         meta.Type,
+		Title:        meta.Title,
+		CreatedAt:    meta.CreatedAt,
+		UpdatedAt:    meta.UpdatedAt,
+		Path:         relPath(root, entry.Path),
+		Archived:     isArchivedPath(root, entry.Path),
+		AgentBinding: meta.AgentBinding,
+		Logs:         logs,
+		Files:        readResourceFiles(root, entry.Path, entry.Resource),
+		Artifacts:    readFileTree(root, filepath.Join(entry.Path, "artifacts")),
+		Worktrees:    []FileTreeEntry{},
 	}
 	switch typed := entry.Resource.(type) {
 	case *Project:

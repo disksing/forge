@@ -39,6 +39,7 @@ type runtimeFakeAgentHub struct {
 	messageSteers      []bool
 	messageRoles       []string
 	messageSenders     []*agentHubMessageSender
+	messageIDs         []string
 	actions            []string
 	resumeEnvironments []map[string]string
 	listCalls          int
@@ -105,6 +106,21 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writeRuntimeFakeJSON(w, map[string]any{"session": session})
 		return
 	}
+	if len(parts) == 3 && r.Method == http.MethodDelete {
+		f.mu.Lock()
+		session, ok := f.sessions[id]
+		if ok && session.State == "stopped" {
+			session.State = "archived"
+			f.sessions[id] = session
+		}
+		f.mu.Unlock()
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		writeRuntimeFakeJSON(w, map[string]any{"session": session})
+		return
+	}
 	if len(parts) == 4 && parts[3] == "events" {
 		f.serveEvents(w, r, id)
 		return
@@ -116,6 +132,7 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		f.messageSteers = append(f.messageSteers, body.Steer)
 		f.messageRoles = append(f.messageRoles, body.Role)
 		f.messageSenders = append(f.messageSenders, body.Sender)
+		f.messageIDs = append(f.messageIDs, body.MessageID)
 		f.appendLocked(id, "message.input", fakeMessageInputData(body.Text, body.Role, body.Sender, body.Steer))
 		f.appendLocked(id, "turn.started", map[string]any{"text": body.Text})
 		session := f.sessions[id]
@@ -531,6 +548,180 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	return recorder, detail
 }
 
+func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	firstRecorder, first := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"first","userName":"Ada"}`)
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("first resource message failed: %d %s", firstRecorder.Code, firstRecorder.Body.String())
+	}
+	if first.Run.Generation != 1 || first.Run.GenerationID == "" || first.Run.BindingKind != "profile" || first.Run.BindingName != "default" || first.Run.SourceInstanceID == "" {
+		t.Fatalf("resource generation metadata mismatch: %#v", first.Run)
+	}
+	if len(first.Run.PendingMessages) != 0 {
+		t.Fatalf("ready generation did not deliver first message: %#v", first.Run.PendingMessages)
+	}
+
+	secondRecorder, second := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
+	if secondRecorder.Code != http.StatusOK || second.Run.ID != first.Run.ID || len(second.Run.PendingMessages) != 1 {
+		t.Fatalf("busy non-steer generation did not retain the durable message: code=%d run=%#v", secondRecorder.Code, second.Run)
+	}
+	fake.mu.Lock()
+	if len(fake.messageIDs) != 1 || fake.messageIDs[0] == "" {
+		fake.mu.Unlock()
+		t.Fatalf("first resource message lacked a stable id: %#v", fake.messageIDs)
+	}
+	session := fake.sessions[first.Run.AgentHubSessionID]
+	session.InputCapabilities.Steer = true
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	restarted := newAgentManager(manager.server)
+	manager.server.agents = restarted
+	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var recovered agentRun
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		runs, err := loadAgentRuns(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, run := range runs {
+			if run.ID == first.Run.ID {
+				recovered = run
+			}
+		}
+		if len(recovered.PendingMessages) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(recovered.PendingMessages) != 0 {
+		t.Fatalf("restart did not drain queued message: %#v", recovered.PendingMessages)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if len(fake.messageIDs) != 2 || fake.messageIDs[1] == "" || fake.messageIDs[1] == fake.messageIDs[0] || !fake.messageSteers[1] {
+		t.Fatalf("queued message delivery metadata mismatch: ids=%#v steers=%#v", fake.messageIDs, fake.messageSteers)
+	}
+}
+
+func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
+	workspacePath := t.TempDir()
+	legacyDir := filepath.Join(workspacePath, ".forge", "gui-agent")
+	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []agentRun{{ID: "run-legacy", WorkspaceID: "workspace", Title: "Legacy", Status: "idle"}}
+	data, _ := json.Marshal(legacy)
+	legacyPath := filepath.Join(legacyDir, "runs.json")
+	if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	runs, err := loadAgentRuns(workspacePath)
+	if err != nil || len(runs) != 1 || runs[0].ID != "run-legacy" {
+		t.Fatalf("migrated runs=%#v err=%v", runs, err)
+	}
+	if _, err := os.Stat(agentIndexPath(workspacePath)); err != nil {
+		t.Fatalf("new runtime index missing: %v", err)
+	}
+	if _, err := os.Stat(legacyPath); err != nil {
+		t.Fatalf("legacy rollback copy was removed: %v", err)
+	}
+}
+
+func TestResourceBindingChangeWaitsForTurnBoundaryAndTransfersQueue(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.extraAgents = []string{"replacement-agent"}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	firstRecorder, first := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"first"}`)
+	if firstRecorder.Code != http.StatusOK {
+		t.Fatalf("first message failed: %d %s", firstRecorder.Code, firstRecorder.Body.String())
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := app.AgentBinding{Kind: "agent", Name: "replacement-agent"}
+	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", binding); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.resourceBindingChanged(context.Background(), workspace, "project1.task1", binding); err != nil {
+		t.Fatal(err)
+	}
+	queuedRecorder, queued := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"after binding change"}`)
+	if queuedRecorder.Code != http.StatusOK || queued.Run.ID != first.Run.ID || len(queued.Run.PendingMessages) != 1 || !queued.Run.ReplacementPending {
+		t.Fatalf("message crossed the replacement boundary early: code=%d run=%#v", queuedRecorder.Code, queued.Run)
+	}
+	fake.mu.Lock()
+	oldSession := fake.sessions[first.Run.AgentHubSessionID]
+	oldSession.State = "ready"
+	fake.sessions[oldSession.ID] = oldSession
+	fake.mu.Unlock()
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	deadline := time.Now().Add(3 * time.Second)
+	var runs []agentRun
+	for time.Now().Before(deadline) {
+		runs, err = loadAgentRuns(workspace.Path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(runs) >= 2 && runs[0].Generation == 2 && len(runs[0].PendingMessages) == 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(runs) < 2 || runs[0].Generation != 2 || runs[0].AgentHubAgentName != "replacement-agent" || len(runs[0].PendingMessages) != 0 {
+		t.Fatalf("replacement generation mismatch: %#v", runs)
+	}
+	if len(runs[1].PendingMessages) != 0 || runs[1].Status != "stopped" {
+		t.Fatalf("old generation retained transferred work: %#v", runs[1])
+	}
+	replacementID := ""
+	for _, run := range runs {
+		if run.Generation == 2 {
+			replacementID = run.ID
+		}
+	}
+	late := sendRuntimeAgentInput(t, manager, workspace, first.Run.ID, `{"text":"late old-run input"}`)
+	var lateResult struct {
+		RunID string `json:"runId"`
+	}
+	if err := json.Unmarshal(late.Body.Bytes(), &lateResult); err != nil {
+		t.Fatal(err)
+	}
+	if late.Code != http.StatusOK || lateResult.RunID != replacementID {
+		t.Fatalf("late old-generation input was not redirected to %s (runs=%#v): %d %s", replacementID, runs, late.Code, late.Body.String())
+	}
+	redirected, err := loadAgentRuns(workspace.Path)
+	newPending, oldPending := -1, -1
+	for _, run := range redirected {
+		if run.Generation == 2 {
+			newPending = len(run.PendingMessages)
+		} else if run.Generation == 1 {
+			oldPending = len(run.PendingMessages)
+		}
+	}
+	if err != nil || len(redirected) < 2 || newPending != 1 || oldPending != 0 {
+		t.Fatalf("redirected queue mismatch: runs=%#v err=%v", redirected, err)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if fake.sessions[first.Run.AgentHubSessionID].State != "archived" || len(fake.messageIDs) != 2 {
+		t.Fatalf("replacement lifecycle mismatch: old=%#v messageIDs=%#v", fake.sessions[first.Run.AgentHubSessionID], fake.messageIDs)
+	}
+}
+
 func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWorkspace, runID, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	recorder := httptest.NewRecorder()
@@ -666,7 +857,7 @@ func TestAgentHubRuntimeCreateLostResponseRecoveryAndProjectionOnly(t *testing.T
 	if session.Source == nil || session.Source.App != "forge" || session.Source.InstanceID != "forge-runtime-test" || len(session.LaunchEnvironment) != 0 {
 		t.Fatalf("source metadata or launch environment mismatch: %#v", session)
 	}
-	localEventPath := filepath.Join(workspace.Path, ".forge", "gui-agent", "runs", detail.Run.ID+".jsonl")
+	localEventPath := filepath.Join(workspace.Path, ".forge", "runtime", "runs", detail.Run.ID+".jsonl")
 	if _, err := os.Stat(localEventPath); !os.IsNotExist(err) {
 		t.Fatalf("AgentHub run must not create a local event fact log: %v", err)
 	}
