@@ -5014,6 +5014,7 @@ var Vs = 20, Hs = 250, Us = 80, Ws = /* @__PURE__ */ new Set(["session.launch-en
 			stream: null,
 			pendingEvents: [],
 			headRefreshing: !1,
+			terminalMaterializing: /* @__PURE__ */ new Set(),
 			flushTimer: null
 		};
 		return this.contexts.set(n.key, n), n;
@@ -5140,24 +5141,38 @@ var Vs = 20, Hs = 250, Us = 80, Ws = /* @__PURE__ */ new Set(["session.launch-en
 		return o;
 	}
 	async materializeTerminalTurn(e, t, n) {
-		this.flushEvents(e, !1);
-		for (let r = 0; r < 3; r++) try {
-			let r = await this.api.latest($s(e), { scope: Zs(e, "terminal-head") });
-			if (!e.stream || !this.isActiveStream(e, e.stream, n)) return;
-			this.mergePage(e, r);
-			let i = [...e.segments.values()].flatMap((e) => e.turns || []).find((n) => n.turnId === t && n.generation.generationId === e.generationId);
-			if (!i?.closed) throw Error("Turn projection is not closed yet");
-			let a = await this.api.latest(ec(e, i.reference), { scope: Zs(e, `terminal:${t}`) });
-			if (!this.isActiveStream(e, e.stream, n)) return;
-			e.details.set(i.reference, a), e.liveEvents.delete(i.reference), this.emit();
-			return;
-		} catch (t) {
-			if (!this.isActive(e)) return;
-			if (r === 2) {
-				e.error = lc(t), this.emit();
-				return;
+		if (!t) return;
+		let r = e.generationId, i = `${r}:${t}`;
+		if (!e.terminalMaterializing.has(i)) {
+			e.terminalMaterializing.add(i);
+			try {
+				this.flushEvents(e, !1);
+				let i = this.findTurnById(e, r, t);
+				if (i?.closed && e.details.has(i.reference)) {
+					e.liveEvents.delete(i.reference);
+					return;
+				}
+				for (let i = 0; i < 3; i++) try {
+					let i = await this.api.latest($s(e), { scope: Zs(e, `terminal-head:${r}:${t}`) });
+					if (!e.stream || !this.isActiveStream(e, e.stream, n)) return;
+					this.mergePage(e, i);
+					let a = this.findTurnById(e, r, t);
+					if (!a?.closed) throw Error("Turn projection is not closed yet");
+					let o = await this.api.latest(ec(e, a.reference), { scope: Zs(e, `terminal:${r}:${t}`) });
+					if (!e.stream || !this.isActiveStream(e, e.stream, n)) return;
+					this.flushEvents(e, !1), e.details.set(a.reference, o), e.liveEvents.delete(a.reference), this.emit();
+					return;
+				} catch (t) {
+					if (t instanceof no || !e.stream || !this.isActiveStream(e, e.stream, n)) return;
+					if (i === 2) {
+						e.error = lc(t), this.emit();
+						return;
+					}
+					await sc(50 * (i + 1));
+				}
+			} finally {
+				e.terminalMaterializing.delete(i);
 			}
-			await sc(50 * (r + 1));
 		}
 	}
 	async refreshHead(e) {
@@ -5173,6 +5188,9 @@ var Vs = 20, Hs = 250, Us = 80, Ws = /* @__PURE__ */ new Set(["session.launch-en
 	}
 	findTurn(e, t) {
 		return [...e.segments.values()].flatMap((e) => e.turns || []).find((e) => e.reference === t);
+	}
+	findTurnById(e, t, n) {
+		return [...e.segments.values()].flatMap((e) => e.turns || []).find((e) => e.turnId === n && e.generation.generationId === t);
 	}
 	turnReferenceForEvent(e, t, n) {
 		return [...e.segments.values()].filter((e) => e.generation.generationId === t).flatMap((e) => e.turns || []).find((e) => n >= e.startEventId && n <= e.lastEventId)?.reference || "";
@@ -5198,7 +5216,7 @@ var Vs = 20, Hs = 250, Us = 80, Ws = /* @__PURE__ */ new Set(["session.launch-en
 			if (n) e.liveEvents.set(n, Ps(Ms(e.liveEvents.get(n) || [], [t])));
 			else {
 				let n = String(t.turnId || "current");
-				e.orphanEvents.set(n, Ps(Ms(e.orphanEvents.get(n) || [], [t]))), this.refreshHead(e);
+				e.orphanEvents.set(n, Ps(Ms(e.orphanEvents.get(n) || [], [t]))), oc(t) || this.refreshHead(e);
 			}
 		}
 		t && this.isActive(e) && this.emit();

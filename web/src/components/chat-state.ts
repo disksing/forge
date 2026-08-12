@@ -43,6 +43,7 @@ interface ResourceChatContext {
   stream: EventSource | null;
   pendingEvents: AgentEvent[];
   headRefreshing: boolean;
+  terminalMaterializing: Set<string>;
   flushTimer: ReturnType<typeof setTimeout> | null;
 }
 
@@ -219,7 +220,8 @@ export class ChatSessionController {
       key: contextKey(workspaceId, resourceId), workspaceId, resourceId, status: null, generationId: "",
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
       detailErrors: new Map(), liveEvents: new Map(), orphanEvents: new Map(), notices: [], nextCursor: "", hasMoreBefore: false,
-      loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false, flushTimer: null,
+      loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
+      terminalMaterializing: new Set(), flushTimer: null,
     };
     this.contexts.set(context.key, context);
     return context;
@@ -391,29 +393,48 @@ export class ChatSessionController {
   }
 
   private async materializeTerminalTurn(context: ResourceChatContext, turnId: string, streamGeneration: number): Promise<void> {
-    this.flushEvents(context, false);
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, "terminal-head") });
-        if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
-        this.mergePage(context, page);
-        const summary = [...context.segments.values()].flatMap((segment) => segment.turns || []).find((turn) => turn.turnId === turnId && turn.generation.generationId === context.generationId);
-        if (!summary?.closed) throw new Error("Turn projection is not closed yet");
-        const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${turnId}`) });
-        if (!this.isActiveStream(context, context.stream, streamGeneration)) return;
-        context.details.set(summary.reference, detail);
-        context.liveEvents.delete(summary.reference);
-        this.emit();
+    if (!turnId) return;
+    const generationId = context.generationId;
+    const materializationKey = `${generationId}:${turnId}`;
+    if (context.terminalMaterializing.has(materializationKey)) return;
+    context.terminalMaterializing.add(materializationKey);
+    try {
+      this.flushEvents(context, false);
+      const existing = this.findTurnById(context, generationId, turnId);
+      if (existing?.closed && context.details.has(existing.reference)) {
+        context.liveEvents.delete(existing.reference);
         return;
-      } catch (error) {
-        if (!this.isActive(context)) return;
-        if (attempt === 2) {
-          context.error = errorMessage(error);
+      }
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const page = await this.api.latest<ResourceHistoryPage>(historyPath(context), { scope: requestScope(context, `terminal-head:${generationId}:${turnId}`) });
+          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
+          this.mergePage(context, page);
+          const summary = this.findTurnById(context, generationId, turnId);
+          if (!summary?.closed) throw new Error("Turn projection is not closed yet");
+          const detail = await this.api.latest<ResourceHistoryTurnDetail>(turnPath(context, summary.reference), { scope: requestScope(context, `terminal:${generationId}:${turnId}`) });
+          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
+          // A repeated terminal frame may arrive while the history requests are
+          // in flight. Fold it before replacing the raw live view with the
+          // canonical compact detail so a later batch flush cannot regress it.
+          this.flushEvents(context, false);
+          context.details.set(summary.reference, detail);
+          context.liveEvents.delete(summary.reference);
           this.emit();
           return;
+        } catch (error) {
+          if (error instanceof StaleResponseError) return;
+          if (!context.stream || !this.isActiveStream(context, context.stream, streamGeneration)) return;
+          if (attempt === 2) {
+            context.error = errorMessage(error);
+            this.emit();
+            return;
+          }
+          await delay(50 * (attempt + 1));
         }
-        await delay(50 * (attempt + 1));
       }
+    } finally {
+      context.terminalMaterializing.delete(materializationKey);
     }
   }
 
@@ -437,6 +458,11 @@ export class ChatSessionController {
 
   private findTurn(context: ResourceChatContext, reference: string): ResourceHistoryTurnSummary | undefined {
     return [...context.segments.values()].flatMap((segment) => segment.turns || []).find((turn) => turn.reference === reference);
+  }
+
+  private findTurnById(context: ResourceChatContext, generationId: string, turnId: string): ResourceHistoryTurnSummary | undefined {
+    return [...context.segments.values()].flatMap((segment) => segment.turns || [])
+      .find((turn) => turn.turnId === turnId && turn.generation.generationId === generationId);
   }
 
   private turnReferenceForEvent(context: ResourceChatContext, generationId: string, eventId: number): string {
@@ -474,7 +500,10 @@ export class ChatSessionController {
       else {
         const turnId = String(event.turnId || "current");
         context.orphanEvents.set(turnId, compactTimelineEvents(mergeCanonicalEventBatch(context.orphanEvents.get(turnId) || [], [event])));
-        void this.refreshHead(context);
+        // Terminal events have a dedicated materialization path that retries
+        // until the canonical Turn projection closes. Starting the generic
+        // stream-head refresh as well only duplicates the same request.
+        if (!isTurnTerminal(event)) void this.refreshHead(context);
       }
     }
     if (publish && this.isActive(context)) this.emit();

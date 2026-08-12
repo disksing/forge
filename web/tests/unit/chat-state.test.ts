@@ -11,6 +11,12 @@ function response(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
 }
 
+function deferredResponse(): { promise: Promise<Response>; resolve: (value: Response) => void } {
+  let resolve!: (value: Response) => void;
+  const promise = new Promise<Response>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 function generation(number: number): ResourceHistoryGeneration {
   return { generation: number, generationId: `gen-${number}`, title: `Generation ${number}`, status: number === 3 ? "idle" : "archived", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
 }
@@ -95,6 +101,56 @@ describe("resource conversation controller", () => {
     expect(FakeEventSource.instances[0].url).toContain("/resources/task-a/stream?");
     expect(FakeEventSource.instances[0].url).toContain("generationId=gen-3");
     expect(fetchImpl.mock.calls.some(([url]) => String(url).includes("/resources/task-a/events?"))).toBe(true);
+  });
+
+  it("coalesces repeated terminal events while the canonical Turn is materializing", async () => {
+    const open = turn(3, "turn-a", 5, 7, false);
+    const closed = turn(3, "turn-a", 5, 8);
+    const terminalHead = deferredResponse();
+    let historyCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(detail(closed));
+      historyCalls++;
+      if (historyCalls === 1) return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
+      return terminalHead.promise;
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    const terminal = { id: 8, type: "turn.completed", turnId: "turn-a", sessionId: "session-3" };
+    FakeEventSource.instances[0].emit(terminal);
+    FakeEventSource.instances[0].emit(terminal);
+    await vi.waitFor(() => expect(historyCalls).toBe(2));
+    terminalHead.resolve(response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closed] }], page: { limit: 20, hasMore: false } }));
+
+    await vi.waitFor(() => expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a"));
+    expect(historyCalls).toBe(2);
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("/history/turns/ref-")).length).toBe(1);
+    expect(latest.error).toBe("");
+  });
+
+  it("still surfaces a real terminal history failure after bounded retries", async () => {
+    const open = turn(3, "turn-a", 5, 7, false);
+    let historyCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      historyCalls++;
+      if (historyCalls === 1) return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
+      return new Response(JSON.stringify({ error: "history unavailable" }), { status: 503, headers: { "content-type": "application/json" } });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    FakeEventSource.instances[0].emit({ id: 8, type: "turn.completed", turnId: "turn-a", sessionId: "session-3" });
+
+    await vi.waitFor(() => expect(latest.error).toBe("history unavailable"));
+    expect(historyCalls).toBe(4);
   });
 
   it("invalidates the old resource immediately and closes its stream", async () => {
