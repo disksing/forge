@@ -248,8 +248,6 @@ const agentSessionController = createAgentSessionController({
 	userName: currentUserName,
 	workspaceName,
 	defaultCwd: agentDefaultCwd,
-	hasExternalLock: selectedResourceHasExternalLock,
-	externalLockMessage: "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.",
 	isLive: isLiveAgentRun,
 	isTurnInterruptible: isAgentTurnInterruptible,
 	mutate: (action) => mutateAgentSession(action),
@@ -302,7 +300,6 @@ const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string):
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
 const RESOURCE_LOG_INITIAL_LIMIT = 10;
 const RESOURCE_LOG_MORE_LIMIT = 20;
-const EXTERNAL_RESOURCE_LOCK_MESSAGE = "This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.";
 const AGENT_HIDDEN_EVENT_TYPES = /* @__PURE__ */ new Set(["session.launch-environment"]);
 interface LoadTreeOptions { updateURL?: boolean; replaceURL?: boolean }
 interface LoadDetailOptions { force?: boolean }
@@ -315,12 +312,10 @@ interface UploadContext { workspaceId?: string; runId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
 interface SessionNavigationTarget {
 	kind: string;
-	primaryResourceId: string;
+	resourceId: string;
 	displayResourceId: string;
 	navigationResourceId: string;
 	selectedResourceIds: string[];
-	controls: Array<{ resourceId: string; path: string }>;
-	menu: boolean;
 }
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconOption = {
 	id: "",
@@ -417,7 +412,6 @@ const {
 	noTaskOperationalState,
 	operationalStatusPresentation,
 	projectTaskSummary,
-	resourceLocks,
 	resourceRefText,
 	sessionOperationalLabel,
 	sessionStatusPresentation,
@@ -428,7 +422,6 @@ const {
 	taskStatusState,
 } = createShellProjection({
 	tree: () => controllerState.tree,
-	controls: (session) => sessionControls(session),
 	findResource: (id) => findResource(id),
 	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "Forge GUI",
 });
@@ -801,8 +794,7 @@ function appShellSessionModel(session: WorkspaceSession): AppShellModel["session
 	const statusLabel = `${sessionOperationalLabel(session, taskResource, taskState, status)}${unread ? ". Unread turn completion." : ""}`;
 	const agent = isInternal ? (controllerState.config?.agents || []).find((item) => item.id === session.agentRunAgentName) : null;
 	const metaParts = [isInternal ? "AgentHub" : "External"];
-	if (navigation.controls.length > 1) metaParts.push(`${navigation.controls.length} locks`);
-	else if (resourceId) metaParts.push(resourceId);
+	if (resourceId) metaParts.push(resourceId);
 	if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
 	return {
 		id: session.id,
@@ -814,14 +806,8 @@ function appShellSessionModel(session: WorkspaceSession): AppShellModel["session
 		status: appShellStatusModel(presentation),
 		unread,
 		current: Boolean(controllerState.selectedId && controllerState.selectedId !== "workspace" && navigation.selectedResourceIds.includes(controllerState.selectedId)),
-		clickable: Boolean(navigation.navigationResourceId || navigation.menu),
+		clickable: Boolean(navigation.navigationResourceId),
 		navigationResourceId: navigation.navigationResourceId,
-		menu: navigation.menu,
-		controls: navigation.controls.map((control) => ({
-			resourceId: control.resourceId,
-			path: control.path || "",
-			navigable: Boolean(sessionNavigableResourceId(control.resourceId))
-		}))
 	};
 }
 function renderAppShell() {
@@ -934,27 +920,6 @@ async function commitListDrag(drag: ShellDragTarget, target: ShellDragTarget, af
 		throw err;
 	}
 }
-function selectedLockableResource(): ResourceRecord | null {
-	const selected = findResource(controllerState.selectedId);
-	if (!selected || selected.type !== "project" && selected.type !== "task") return null;
-	const detail = controllerState.details?.[selected.id];
-	if (detail && detail.type !== selected.type) return null;
-	return selected;
-}
-function selectedResourceHasExternalLock() {
-	const selected = selectedLockableResource();
-	return Boolean(selected && resourceLocks(selected.id).some((session) => session.source === "external"));
-}
-function selectedResourceHasInternalLock() {
-	const selected = selectedLockableResource();
-	return Boolean(selected && resourceLocks(selected.id).some((session) => session.source === "internal"));
-}
-function selectedResourceHasNewSessionLock() {
-	return selectedResourceHasExternalLock() || selectedResourceHasInternalLock();
-}
-function closeNewSessionChooserForResourceLock() {
-	if (selectedResourceHasNewSessionLock()) controllerState.agent.agentChooserOpen = false;
-}
 async function selectResource(id: string, options: SelectResourceOptions = {}): Promise<void> {
 	const selectionChanged = controllerState.selectedId !== id;
 	if (options.clearUnread !== false) clearUnreadForResource(id);
@@ -1019,20 +984,6 @@ function sessionDisplayTitle(session: WorkspaceSession, resource: SessionNavigat
 	if (session.source === "internal") return session.agentRunTitle || resourceTitle || displayResourceId || session.id;
 	return resourceTitle || displayResourceId || session.id;
 }
-function sessionControls(session: WorkspaceSession): Array<{ resourceId: string; path: string }> {
-	const controls = (session?.controls || []).map((control) => ({
-		resourceId: String(control?.resourceId || "").trim(),
-		path: String(control?.path || "")
-	})).filter((control) => control.resourceId);
-	if (controls.length === 0) {
-		const resourceId = String(session?.resourceId || "").trim();
-		if (resourceId) return [{
-			resourceId,
-			path: ""
-		}];
-	}
-	return controls;
-}
 function sessionNavigableResourceId(resourceId: string): string {
 	const value = String(resourceId || "").trim();
 	if (!value) return "";
@@ -1040,46 +991,27 @@ function sessionNavigableResourceId(resourceId: string): string {
 	return resource && resource.archived !== true ? value : "";
 }
 function sessionNavigationTarget(session: WorkspaceSession): SessionNavigationTarget {
-	const controls = sessionControls(session);
 	const runResourceId = String(session?.resourceId || "").trim();
 	if (session?.source === "internal" && runResourceId) return {
 		kind: "run",
-		primaryResourceId: runResourceId,
+		resourceId: runResourceId,
 		displayResourceId: runResourceId,
 		navigationResourceId: sessionNavigableResourceId(runResourceId),
-		selectedResourceIds: [runResourceId],
-		controls,
-		menu: false
+		selectedResourceIds: [runResourceId]
 	};
-	if (controls.length === 1) {
-		const resourceId = controls[0].resourceId;
-		return {
-			kind: "single-control",
-			primaryResourceId: resourceId,
-			displayResourceId: resourceId,
-			navigationResourceId: sessionNavigableResourceId(resourceId),
-			selectedResourceIds: [resourceId],
-			controls,
-			menu: false
-		};
-	}
 	return {
-		kind: controls.length > 1 ? "controls" : "none",
-		primaryResourceId: "",
-		displayResourceId: controls[0]?.resourceId || "",
+		kind: "none",
+		resourceId: "",
+		displayResourceId: "",
 		navigationResourceId: "",
-		selectedResourceIds: controls.map((control) => control.resourceId),
-		controls,
-		menu: controls.length > 1
+		selectedResourceIds: []
 	};
 }
 function sessionTaskResource(session: WorkspaceSession): ResourceRecord | null {
 	if (!session || session.source !== "internal") return null;
 	const explicitResourceId = String(session.resourceId || "").trim();
 	if (explicitResourceId) return activeTaskResource(explicitResourceId);
-	const controls = sessionControls(session);
-	if (controls.length !== 1) return null;
-	return activeTaskResource(controls[0].resourceId);
+	return null;
 }
 function activeTaskResource(resourceId: string): ResourceRecord | null {
 	const resource = findResource(resourceId);
@@ -1458,7 +1390,6 @@ function agentSessionMutationKey(workspaceId: string, runId: string): string {
 }
 function renderTTYComposer(_options: RenderOptions = {}): void {
 	controllerState.agent.skipTTYDraftSync = false;
-	closeNewSessionChooserForResourceLock();
 	const activeRun = currentAgentRun();
 	if (activeRun) restoreAgentDraftForRun(activeRun);
 	const live = isLiveAgentRun(activeRun);
@@ -1478,8 +1409,6 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
 		unavailableReason: live && activeRun ? agentInputUnavailableReason(activeRun, isAgentSessionReady(activeRun)) : "",
 		sending: Boolean(activeRun && agentOperations.isSending(agentSessionMutationKey(controllerState.activeWorkspaceId, activeRun.id))),
-		externalLocked: selectedResourceHasExternalLock(),
-		internalLocked: selectedResourceHasInternalLock(),
 		agents: svelteAgentOptions(),
 		selectedAgentId: selectedAgentConfig()?.id || "",
 		chooserOpen: Boolean(controllerState.agent.agentChooserOpen),
@@ -1492,7 +1421,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
 		onToggleChooser: () => {
-			if (agentOperations.active("session-start") || !enabledAgentConfigs().length || selectedResourceHasExternalLock()) return;
+			if (agentOperations.active("session-start") || !enabledAgentConfigs().length) return;
 			controllerState.agent.agentChooserOpen = !controllerState.agent.agentChooserOpen;
 			renderTTYComposer();
 		},
@@ -1514,7 +1443,6 @@ function isAgentSessionReady(run: AgentRunRecord | null): boolean {
 	return controllerState.agent.eventsHasMore && run.status !== "starting";
 }
 function agentInputUnavailableReason(run: AgentRunRecord, sessionReady = isAgentSessionReady(run)): string {
-	if (selectedResourceHasExternalLock()) return EXTERNAL_RESOURCE_LOCK_MESSAGE;
 	if (isAgentTurnStopping(run)) return "Ending the current turn.";
 	if (!sessionReady) return "Agent session is starting.";
 	if (run.status === "stopping") return "AgentHub is stopping the provider.";

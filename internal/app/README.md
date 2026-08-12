@@ -20,7 +20,7 @@ project, err := workspace.CreateProject("Example", "example")
 - `Templates`、`Template`、`RenderTemplate`、`ValidateTemplateContent`、`CreateTemplate`、`MigrateTemplates`：模板发现、结构化校验、确定性渲染、脚手架和 V1 内容迁移；
 - `PreviewTask`：无副作用地计算最终标题、Markdown 与模板 digest；
 - `CreateProject`、`CreateTask`、`ArchiveResource`：资源生命周期；
-- `CreateSession`、`BindAgentHubSession`、`Heartbeat`、`LockSession`、`UnlockSession`、`EndSession`：Session 与资源控制；
+- `CreateSession`、`BindAgentHubSession`、`Heartbeat`、`EndSession`：Session 运行记录；
 - `AddLog`、`Logs`、`Repositories`、`CloneRepository` 及 Task repository 方法：历史和仓库数据。
 
 跨进程写入使用 Workspace mutation lock。模板任务在同一 mutation lock 中重新读取并渲染；可选 digest 不匹配会在分配任务编号和创建 staging 目录前失败。CLI、HTTP handler 和 GUI 只负责适配输入输出，不解析 YAML 或替换占位符。

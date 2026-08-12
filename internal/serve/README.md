@@ -21,7 +21,7 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 ## AgentHub Session
 
-Forge 使用完整 `source.app=forge`、instance ID 和 external ID 创建或恢复 AgentHub Session，并把 `FORGE_SESSION_ID` 通过 launch environment 传入 AgentHub。浏览器的新 Session 初始消息与后续输入都携带 provenance `role=user` 和当前用户名；该字段只描述来源，不参与认证或授权。
+Forge 使用完整 `source.app=forge`、instance ID 和 external ID 创建或恢复 AgentHub Session。浏览器的新 Session 初始消息与后续输入都携带 provenance `role=user` 和当前用户名；该字段只描述来源，不参与认证或授权。
 
 Forge 定期从 AgentHub 拉取 Session 状态并更新本地 run 投影。只有观察到 durable `stopped`，或从连续事件历史证明 archived Session 曾进入 `stopped`，才释放 Forge Session 和资源锁。AgentHub 不可达或状态未知时保守保留锁。普通 CLI 命令不会访问 AgentHub。
 

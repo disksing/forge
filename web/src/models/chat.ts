@@ -22,8 +22,6 @@ export interface ComposerModel {
   draftResetVersion: number;
   unavailableReason: string;
   sending: boolean;
-  externalLocked: boolean;
-  internalLocked: boolean;
   agents: AgentOption[];
   selectedAgentId: string;
   chooserOpen: boolean;

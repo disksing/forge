@@ -29,7 +29,6 @@ type agentRun struct {
 	AgentProfile            string `json:"agentProfile,omitempty"`
 	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
-	ForgeSessionContextPath string `json:"forgeSessionContextPath,omitempty"`
 	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
@@ -121,16 +120,6 @@ type agentApprovalRequest struct {
 	Decision  string `json:"decision"`
 	OptionID  string `json:"optionId"`
 	Text      string `json:"text"`
-}
-
-type forgeSessionContext struct {
-	Version        int    `json:"version"`
-	WorkspaceID    string `json:"workspaceId"`
-	ResourceID     string `json:"resourceId,omitempty"`
-	RunID          string `json:"runId"`
-	ForgeSessionID string `json:"forgeSessionId"`
-	Cwd            string `json:"cwd"`
-	CreatedAt      string `json:"createdAt"`
 }
 
 type agentRuntime struct {
@@ -262,11 +251,6 @@ func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, worksp
 		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
 		return
 	}
-	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeResourceOperationError(w, err, http.StatusBadRequest)
-		return
-	}
-
 	r.Body = http.MaxBytesReader(w, r.Body, agentUploadMaxBytes)
 	file, header, err := r.FormFile("file")
 	if r.MultipartForm != nil {
@@ -484,19 +468,6 @@ func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace g
 	return err
 }
 
-func (m *agentManager) lockForgeSession(ctx context.Context, workspace guiWorkspace, sessionID, resourceID string) error {
-	_ = ctx
-	if resourceID == "" {
-		return nil
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return err
-	}
-	_, err = forgeWorkspace.LockSession(sessionID, resourceID)
-	return err
-}
-
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
 	_ = ctx
 	sessionID = strings.TrimSpace(sessionID)
@@ -512,55 +483,6 @@ func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspa
 		return nil
 	}
 	return err
-}
-
-func (m *agentManager) writeForgeSessionContext(ctx context.Context, workspace guiWorkspace, run agentRun) (string, error) {
-	sessionID := strings.TrimSpace(run.ForgeSessionID)
-	if sessionID == "" {
-		return "", nil
-	}
-	dir := run.Cwd
-	resourceID := strings.TrimSpace(run.ResourceID)
-	if resourceID != "" {
-		resourceDir, err := m.resourceDir(ctx, workspace, resourceID)
-		if err != nil {
-			return "", err
-		}
-		dir = resourceDir
-	}
-	workspaceAbs, err := filepath.Abs(workspace.Path)
-	if err != nil {
-		return "", err
-	}
-	dirAbs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
-	}
-	if err := ensurePathInside(workspaceAbs, dirAbs); err != nil {
-		return "", err
-	}
-	contextPath := filepath.Join(dirAbs, ".forge", "codex-session.json")
-	if err := os.MkdirAll(filepath.Dir(contextPath), 0o755); err != nil {
-		return "", err
-	}
-	context := forgeSessionContext{
-		Version:        2,
-		WorkspaceID:    run.WorkspaceID,
-		ResourceID:     resourceID,
-		RunID:          run.ID,
-		ForgeSessionID: sessionID,
-		Cwd:            run.Cwd,
-		CreatedAt:      time.Now().Format(time.RFC3339),
-	}
-	data, err := json.MarshalIndent(context, "", "  ")
-	if err != nil {
-		return "", err
-	}
-	data = append(data, '\n')
-	if err := os.WriteFile(contextPath, data, 0o600); err != nil {
-		return "", err
-	}
-	return contextPath, nil
 }
 
 func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, resourceID, requested string) (string, error) {
@@ -592,31 +514,6 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 		return "", err
 	}
 	return dirAbs, nil
-}
-
-func removeForgeSessionContextFile(contextPath, sessionID string) error {
-	contextPath = strings.TrimSpace(contextPath)
-	if contextPath == "" {
-		return nil
-	}
-	data, err := os.ReadFile(contextPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("read Forge session context: %w", err)
-	}
-	var context forgeSessionContext
-	if err := json.Unmarshal(data, &context); err != nil {
-		return fmt.Errorf("decode Forge session context: %w", err)
-	}
-	if strings.TrimSpace(context.ForgeSessionID) != strings.TrimSpace(sessionID) {
-		return fmt.Errorf("Forge session context belongs to %q, not %q", strings.TrimSpace(context.ForgeSessionID), strings.TrimSpace(sessionID))
-	}
-	if err := os.Remove(contextPath); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove Forge session context: %w", err)
-	}
-	return nil
 }
 
 func rewriteAgentRuns(workspacePath string, runs []agentRun) error {
@@ -659,14 +556,9 @@ func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceI
 }
 
 func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
+	_, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil || rt == nil {
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
-		return
-	}
-	run := rt.snapshotRun()
-	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	var req agentInputRequest
@@ -716,10 +608,6 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if rt != nil {
 		run := rt.snapshotRun()
-		if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
-			writeResourceOperationError(w, err, http.StatusBadRequest)
-			return
-		}
 		if strings.TrimSpace(run.AgentHubSessionID) != "" {
 			m.resumeAttachedAgentHubRun(w, r, rt)
 			return
@@ -734,10 +622,6 @@ func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspa
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" {
 		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
-	}
-	if err := m.server.requireResourceNotExternallyLocked(workspace, run.ResourceID); err != nil {
-		writeResourceOperationError(w, err, http.StatusBadRequest)
 		return
 	}
 	m.resumeAgentHubRun(w, r, workspace, run)

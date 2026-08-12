@@ -105,7 +105,7 @@
     <span>&gt;</span>
     <textarea id="ttyInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || "Send input to the selected agent session"} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>
     <span class="tty-composer-group">
-      {#if !model.externalLocked}<button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files" onclick={model.onOpenUpload}><Icon name="plus" /></button>{/if}
+      <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files" onclick={model.onOpenUpload}><Icon name="plus" /></button>
       <button type="submit" class="tty-send-button" title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><Icon name={sending ? "loader-circle" : "send"} /></button>
     </span>
     {#if model.canEndTurn || model.runId}
@@ -115,12 +115,10 @@
         <button type="button" id="agentCloseSessionButton" class="tty-composer-action tty-close-session-button" disabled={model.endingTurn || model.closingSession} title="Close session; end the entire AgentHub Session." aria-label="Close session; end the entire AgentHub Session." onclick={model.onCloseSession}><Icon name={model.closingSession ? "loader-circle" : "square"} /></button>
       </span>
     {/if}
-    {#if !model.internalLocked}
-      <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded={model.actionsOpen} onclick={model.onToggleActions}><Icon name="ellipsis" /></button>
-    {/if}
+    <button type="button" id="agentActionsToggle" class="tty-actions-toggle" title="Session actions" aria-label="Session actions" aria-expanded={model.actionsOpen} onclick={model.onToggleActions}><Icon name="ellipsis" /></button>
   </form>
   {#if error}<div class="tty-composer-error" role="alert"><span>{error}</span><button type="button" class="secondary-button" disabled={sending} onclick={() => send()}>Retry</button></div>{/if}
-  {#if model.actionsOpen && !model.internalLocked}
+  {#if model.actionsOpen}
     <div class="tty-session-actions collapsible open">
       <div class="tty-new-session-control">
         <button type="button" id="agentStartButton" class="tty-new-session-button" title={newSessionTitle} aria-label={newSessionTitle} disabled={model.sessionStarting || !model.agents.length} aria-haspopup="menu" aria-controls="ttyAgentMenu" aria-expanded={model.chooserOpen} onclick={model.onToggleChooser}><Icon name={model.sessionStarting ? "loader-circle" : "plus"} /><span>{model.sessionStarting ? "Creating Session..." : "New Session"}</span></button>
@@ -134,13 +132,10 @@
   {/if}
 {:else}
   <div class="tty-session-actions tty-standalone-actions open" role="toolbar" aria-label="Session actions">
-    {#if model.externalLocked}<div class="external-resource-lock">This resource is locked by an external session. New sessions and session input are unavailable until the lock is released.</div>{/if}
     {#if model.canResume}<button type="button" id="agentResumeButton" class="tty-primary-action" title="Resume Session" aria-label="Resume Session" onclick={model.onResume}><Icon name="rotate-ccw" /><span>Resume Session</span></button>{/if}
-    {#if !model.internalLocked && !model.externalLocked}
-      <div class="tty-new-session-control">
+    <div class="tty-new-session-control">
         <button type="button" id="agentStartButton" class="tty-new-session-button" title={newSessionTitle} aria-label={newSessionTitle} disabled={model.sessionStarting || !model.agents.length} aria-haspopup="menu" aria-controls="ttyAgentMenu" aria-expanded={model.chooserOpen} onclick={model.onToggleChooser}><Icon name={model.sessionStarting ? "loader-circle" : "plus"} /><span>{model.sessionStarting ? "Creating Session..." : "New Session"}</span></button>
         {#if model.chooserOpen}<div id="ttyAgentMenu" class="tty-agent-menu" role="menu" aria-label="Choose an Agent">{#each model.agents as agent (agent.id)}<button type="button" role="menuitem" class:active={agent.id === model.selectedAgentId} data-agent-choice={agent.id} onclick={() => model.onChooseAgent(agent.id)}><span>{agent.label}</span><small>{agent.summary}</small></button>{/each}</div>{/if}
-      </div>
-    {/if}
+    </div>
   </div>
 {/if}

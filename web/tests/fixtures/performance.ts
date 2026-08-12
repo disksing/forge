@@ -11,7 +11,7 @@ export const performanceBudgets = {
 } as const;
 
 const emptyStatus: ShellStatusPresentation = {
-  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [], lock: null,
+  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [],
 };
 
 function resource(id: string, type: "project" | "task", children: ShellResourceItem[] = []): ShellResourceItem {

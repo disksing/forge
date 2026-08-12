@@ -121,6 +121,9 @@ func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 1 {
+		t.Fatalf("archiving must retain the transient session record until AgentHub reconciliation: %#v", sessions)
+	}
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
@@ -140,6 +143,9 @@ func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 		run := pollerRunState(manager.runtimeByID("run-archived-task"))
 		return run.Status == "stopped" && run.AgentHubStoppedObserved && run.ForgeSessionID == ""
 	})
+	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
+		t.Fatalf("terminal reconciliation did not remove the transient session record: %#v", sessions)
+	}
 }
 
 func TestAgentHubPollerKeepsSessionForOpenTask(t *testing.T) {

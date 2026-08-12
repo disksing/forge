@@ -75,8 +75,8 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	tree := workspaceTree{Sessions: []guiSession{
-		{ID: "session-one", Controls: []guiSessionControl{{ResourceID: "project1.task2"}}},
-		{ID: "external", Controls: []guiSessionControl{{ResourceID: "project1.task2"}}},
+		{ID: "session-one"},
+		{ID: "external"},
 	}}
 	if err := (&server{}).enrichTreeSessions(workspace, &tree); err != nil {
 		t.Fatal(err)
@@ -198,45 +198,6 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 	want, _ := filepath.Abs(filepath.Join(workspace, filepath.FromSlash(detail.Path)))
 	if got != want {
 		t.Fatalf("expected resource cwd %s, got %s", want, got)
-	}
-}
-
-func TestForgeSessionContextFileCarriesAgentHubLaunchIdentity(t *testing.T) {
-	workspace := t.TempDir()
-	forgeWorkspace, err := app.Initialize(workspace, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	project, err := forgeWorkspace.CreateProject("Context project", "context")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Context task", Slug: "context"}); err != nil {
-		t.Fatal(err)
-	}
-	server := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := server.saveConfig(config{
-		Version: agentHubConfigVersion, AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-test",
-		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "default-agent"}},
-	}); err != nil {
-		t.Fatal(err)
-	}
-	manager := newAgentManager(server)
-	resourceDir := filepath.Join(workspace, "project1", "task1")
-	run := agentRun{
-		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
-		ForgeSessionID: "session-one", AgentHubSessionID: "ses_one", Cwd: resourceDir,
-	}
-	contextPath, err := manager.writeForgeSessionContext(context.Background(), guiWorkspace{Path: workspace}, run)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var saved forgeSessionContext
-	if err := json.Unmarshal(mustReadFile(t, contextPath), &saved); err != nil {
-		t.Fatal(err)
-	}
-	if saved.ForgeSessionID != "session-one" || saved.RunID != "run-one" || saved.ResourceID != "project1.task1" {
-		t.Fatalf("unexpected Forge session context: %#v", saved)
 	}
 }
 

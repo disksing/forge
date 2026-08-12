@@ -9,7 +9,7 @@ import (
 const workspaceMutationLockFile = "application.lock"
 
 // withWorkspaceMutationLock serializes mutations which allocate resource ids
-// or update files that do not have a narrower resource lock. The lock lives
+// or update files that do not have a narrower file-mutation lock. The lock lives
 // under the explicit Workspace root and is therefore shared by independent
 // Workspace handles and processes without any package-global state.
 func withWorkspaceMutationLock(root string, update func() error) error {

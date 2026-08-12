@@ -1,15 +1,12 @@
 <script lang="ts">
   import "./GlobalSessionList.css";
 
-  import { onMount } from "svelte";
-
   import Icon from "./Icon.svelte";
   import StatusPresentation from "./StatusPresentation.svelte";
   import type { ShellDragTarget, ShellSessionItem, ShellStatusPresentation } from "./models";
 
   let {
     identity,
-    mobileSidebarOpen,
     sessions,
     onSelect,
     onReorder,
@@ -17,14 +14,12 @@
     onToast,
   }: {
     identity: string;
-    mobileSidebarOpen: boolean;
     sessions: ShellSessionItem[];
     onSelect: (id: string) => Promise<void>;
     onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
     onDragState: (drag: ShellDragTarget | null) => void;
     onToast: (message: string) => void;
   } = $props();
-  let menuId = $state("");
   let drag = $state<ShellDragTarget | null>(null);
   let drop = $state<{ id: string; after: boolean } | null>(null);
   // svelte-ignore state_referenced_locally
@@ -33,25 +28,7 @@
   $effect(() => {
     if (identity === previousIdentity) return;
     previousIdentity = identity;
-    menuId = "";
     finishDrag();
-  });
-
-  onMount(() => {
-    const outside = (event: MouseEvent) => {
-      const target = event.target instanceof Element ? event.target : null;
-      if (menuId && !target?.closest(".session-row") && !target?.closest(".session-resource-menu")) menuId = "";
-    };
-    const keydown = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !mobileSidebarOpen) menuId = "";
-    };
-    document.addEventListener("mousedown", outside);
-    document.addEventListener("keydown", keydown);
-    return () => {
-      finishDrag();
-      document.removeEventListener("mousedown", outside);
-      document.removeEventListener("keydown", keydown);
-    };
   });
 
   function statusClass(status: ShellStatusPresentation): string {
@@ -104,7 +81,6 @@
 
   async function selectResource(id: string): Promise<void> {
     if (!id) return;
-    menuId = "";
     try {
       await onSelect(id);
     } catch (reason) {
@@ -116,7 +92,6 @@
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".drag-handle")) return;
     if (session.navigationResourceId) void selectResource(session.navigationResourceId);
-    else if (session.menu) menuId = menuId === session.id ? "" : session.id;
   }
 </script>
 
@@ -135,13 +110,6 @@
           <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span class="drag-handle" draggable="true" title="Drag to reorder" ondragstart={(event) => beginDrag(event, session.id)} ondragend={finishDrag}><Icon name="grip-vertical" className="drag-handle-icon" /></span>
         </button>
-        {#if menuId === session.id && session.menu}
-          <div class="session-resource-menu" data-session-menu={session.id}>
-            {#each session.controls as control (control.resourceId)}
-              <button type="button" disabled={!control.navigable} onclick={() => selectResource(control.resourceId)}><Icon name="corner-down-right" /><span><strong>{control.resourceId}</strong><small>{control.path}</small></span></button>
-            {/each}
-          </div>
-        {/if}
       {/each}
     {/if}
   </div>

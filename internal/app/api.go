@@ -283,7 +283,7 @@ type ArchiveResult struct {
 	Path       string
 }
 
-// Tree returns the complete Workspace tree using the persistent session lock
+// Tree returns the complete Workspace tree using the persistent session-store lock
 // and the same pruning semantics as the CLI.
 func (w *Workspace) Tree() (WorkspaceTree, error) {
 	if err := w.require(); err != nil {
@@ -639,9 +639,6 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 		if err := ensureTaskRepoWorktreesMerged(w.root, *task); err != nil {
 			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 		}
-	}
-	if err := releaseSessionsControllingPath(w.root, relPath(w.root, src)); err != nil {
-		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}

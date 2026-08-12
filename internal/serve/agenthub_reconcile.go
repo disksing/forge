@@ -12,8 +12,8 @@ import (
 // This file owns the forge serve side of AgentHub session reconciliation for
 // the one case the session poller cannot see in a live list: archived
 // sessions. The plain Forge CLI never probes AgentHub, so serve is the only
-// owner that may release a Forge session and its resource locks for an
-// AgentHub-managed run. Release requires either a locally observed durable
+// owner that releases a transient Forge session for an AgentHub-managed run.
+// Release requires either a locally observed durable
 // stopped edge or a continuous durable event history proving the archived
 // session passed through stopped. Every doubt stays fail closed.
 
@@ -86,7 +86,7 @@ func proveAgentHubArchivedAfterStopped(ctx context.Context, client *agentHubClie
 // agentHubSourceConflicts reports whether a session fetched by id belongs to
 // a different Forge source than the persisted run. A conflict means the
 // AgentHub session id no longer identifies this run's session, so no state
-// from it may drive lock release.
+// from it may drive terminal reconciliation.
 func agentHubSourceConflicts(run agentRun, session agentHubSession) bool {
 	externalID := strings.TrimSpace(run.SourceExternalID)
 	if externalID == "" || session.Source == nil {
@@ -100,7 +100,7 @@ func agentHubSourceConflicts(run agentRun, session agentHubSession) bool {
 // was already observed locally or the archived event history continuously
 // proves the session passed through stopped; in both cases the release is
 // idempotent. Every other outcome keeps the run in recovering, retains the
-// Forge session lock, and publishes a diagnostic notice.
+// transient Forge session record, and publishes a diagnostic notice.
 func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client *agentHubClient, session agentHubSession) {
 	rt.mu.Lock()
 	run := rt.run
@@ -109,7 +109,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 
 	if run.AgentHubStoppedObserved {
 		// The durable stopped edge was observed before the archive, so the
-		// lock may be released without proving the stopped transition again.
+		// transient Forge session may be released without proving it again.
 		// Completion history still needs to be reconciled because a transient
 		// event read may have happened after the stopped projection was saved.
 		rt.mu.Lock()
@@ -142,14 +142,14 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 			rt.archivedProofFailed = true
 			rt.mu.Unlock()
 		}
-		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; Forge session lock retained", session.ID, err))
+		rt.setRecoveryError(m, fmt.Errorf("cannot prove archived AgentHub session %s passed through durable stopped: %v; transient Forge session retained", session.ID, err))
 		return
 	}
 	if !proven {
 		rt.mu.Lock()
 		rt.archivedProofFailed = true
 		rt.mu.Unlock()
-		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; Forge session lock retained", session.ID))
+		rt.setRecoveryError(m, fmt.Errorf("archived AgentHub session %s has no continuous durable stopped history; transient Forge session retained", session.ID))
 		return
 	}
 

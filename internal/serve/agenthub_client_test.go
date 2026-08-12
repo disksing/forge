@@ -159,7 +159,7 @@ func TestAgentHubClientResumeLaunchEnvironmentOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Resume(context.Background(), "ses_1", map[string]string{"FORGE_SESSION_ID": "session-new"}); err != nil {
+	if _, err := client.Resume(context.Background(), "ses_1", map[string]string{"CUSTOM_ENV": "value"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := client.Resume(context.Background(), "ses_1", nil); err != nil {
@@ -168,7 +168,7 @@ func TestAgentHubClientResumeLaunchEnvironmentOverlay(t *testing.T) {
 	if len(bodies) != 2 {
 		t.Fatalf("expected two resume requests, got %d", len(bodies))
 	}
-	if bodies[0] != `{"launchEnvironment":{"FORGE_SESSION_ID":"session-new"}}` {
+	if bodies[0] != `{"launchEnvironment":{"CUSTOM_ENV":"value"}}` {
 		t.Fatalf("resume overlay was not sent: %s", bodies[0])
 	}
 	if bodies[1] != `{}` {

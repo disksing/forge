@@ -22,7 +22,7 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
   return {
     identity: "workspace-a:task-a:run-a:draft-a", workspaceId: "workspace-a", resourceId: "task-a", runId: "run-a",
     runStatus: "idle", live: true, canResume: false, draft: "", draftKey: "draft-a", draftResetVersion: 0,
-    unavailableReason: "", sending: false, externalLocked: false, internalLocked: false, agents: [], selectedAgentId: "",
+    unavailableReason: "", sending: false, agents: [], selectedAgentId: "",
     chooserOpen: false, sessionStarting: false, actionsOpen: false, canEndTurn: false, endingTurn: false,
     closingSession: false, onDraft: vi.fn(),
     onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onToggleChooser: vi.fn(),

@@ -17,18 +17,15 @@ import (
 )
 
 const (
-	sessionStateFile       = "forge-sessions.json"
-	sessionLockFile        = ".forge-sessions.lock"
-	defaultSessionTimeout  = 5 * time.Minute
-	defaultStartingGrace   = 30 * time.Second
-	sessionNewUsage        = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] [--starting-grace <duration>] ]"
-	sessionBindUsage       = "usage: forge session bind-agenthub --id=<id> --agenthub-session-id=<id>"
-	sessionHeartbeatUsage  = "usage: forge session heartbeat --id=<id>"
-	sessionLockUsage       = "usage: forge session lock --id=<id> [--project=<project>] [--task=<task>]"
-	sessionUnlockUsage     = "usage: forge session unlock --id=<id> [--project=<project>] [--task=<task>]"
-	sessionEndUsage        = "usage: forge session end --id=<id>"
-	sessionShowUsage       = "usage: forge session show --id=<id>"
-	workspaceNoLockMessage = "workspace root does not need a lock"
+	sessionStateFile      = "forge-sessions.json"
+	sessionLockFile       = ".forge-sessions.lock"
+	defaultSessionTimeout = 5 * time.Minute
+	defaultStartingGrace  = 30 * time.Second
+	sessionNewUsage       = "usage: forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>] [--starting-grace <duration>] ]"
+	sessionBindUsage      = "usage: forge session bind-agenthub --id=<id> --agenthub-session-id=<id>"
+	sessionHeartbeatUsage = "usage: forge session heartbeat --id=<id>"
+	sessionEndUsage       = "usage: forge session end --id=<id>"
+	sessionShowUsage      = "usage: forge session show --id=<id>"
 )
 
 type SessionStore struct {
@@ -37,12 +34,10 @@ type SessionStore struct {
 }
 
 type Session struct {
-	ID        string           `json:"id"`
-	Liveness  SessionLiveness  `json:"liveness"`
-	Primary   *SessionControl  `json:"primary,omitempty"`
-	Controls  []SessionControl `json:"controls"`
-	StartedAt string           `json:"startedAt"`
-	UpdatedAt string           `json:"updatedAt"`
+	ID        string          `json:"id"`
+	Liveness  SessionLiveness `json:"liveness"`
+	StartedAt string          `json:"startedAt"`
+	UpdatedAt string          `json:"updatedAt"`
 }
 
 type SessionLiveness struct {
@@ -60,17 +55,6 @@ type SessionLiveness struct {
 	LivenessDiagnostic string `json:"livenessDiagnostic,omitempty"`
 }
 
-type SessionControl struct {
-	ResourceID string `json:"resourceId,omitempty"`
-	Path       string `json:"path"`
-}
-
-type sessionTargetOptions struct {
-	ID      string
-	Project string
-	Task    string
-}
-
 func runSession(args []string) error {
 	if len(args) == 0 {
 		return errors.New("session requires a subcommand")
@@ -82,10 +66,6 @@ func runSession(args []string) error {
 		return sessionHeartbeat(args[1:])
 	case "bind-agenthub":
 		return sessionBindAgentHub(args[1:])
-	case "lock":
-		return sessionLock(args[1:])
-	case "unlock":
-		return sessionUnlock(args[1:])
 	case "end":
 		return sessionEnd(args[1:])
 	case "list":
@@ -184,7 +164,6 @@ func createSession(root string, liveness SessionLiveness) (string, error) {
 		store.Sessions = append(store.Sessions, Session{
 			ID:        id,
 			Liveness:  liveness,
-			Controls:  []SessionControl{},
 			StartedAt: now,
 			UpdatedAt: now,
 		})
@@ -218,22 +197,6 @@ func sessionHeartbeat(args []string) error {
 		return err
 	}
 	return printSessionJSON(session)
-}
-
-func sessionLock(args []string) error {
-	options, err := parseSessionTargetArgs(args, sessionLockUsage)
-	if err != nil {
-		return err
-	}
-	return updateSessionLock(options, true)
-}
-
-func sessionUnlock(args []string) error {
-	options, err := parseSessionTargetArgs(args, sessionUnlockUsage)
-	if err != nil {
-		return err
-	}
-	return updateSessionLock(options, false)
 }
 
 func sessionEnd(args []string) error {
@@ -310,74 +273,6 @@ func sessionShow(args []string) error {
 		return err
 	}
 	return printSessionJSON(session)
-}
-
-func updateSessionLock(options sessionTargetOptions, lock bool) error {
-	root, err := findWorkspaceRoot()
-	if err != nil {
-		return err
-	}
-	control, noLock, err := resolveSessionTarget(root, options)
-	if err != nil {
-		return err
-	}
-	var session Session
-	if err := withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		index := findSessionIndex(store.Sessions, options.ID)
-		if index < 0 {
-			return fmt.Errorf("session not found: %s", options.ID)
-		}
-		if !noLock && lock {
-			if err := ensureNoSessionControlConflicts(store, options.ID, control); err != nil {
-				return err
-			}
-			addSessionControl(&store.Sessions[index], control)
-		}
-		if !noLock && !lock {
-			store.Sessions[index].Controls = removeSessionControl(store.Sessions[index].Controls, control)
-			if store.Sessions[index].Primary != nil && store.Sessions[index].Primary.Path == control.Path {
-				store.Sessions[index].Primary = nil
-			}
-		}
-		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
-		session = store.Sessions[index]
-		return nil
-	}); err != nil {
-		return err
-	}
-	if noLock {
-		return nil
-	}
-	return printSessionJSON(session)
-}
-
-func lockSessionResource(root, sessionID, resourceID string) (Session, error) {
-	control, noLock, err := resolveResourceSessionControl(root, resourceID)
-	if err != nil {
-		return Session{}, err
-	}
-	if noLock {
-		return Session{}, nil
-	}
-	var session Session
-	if err := withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		index := findSessionIndex(store.Sessions, sessionID)
-		if index < 0 {
-			return fmt.Errorf("session not found: %s", sessionID)
-		}
-		if err := ensureNoSessionControlConflicts(store, sessionID, control); err != nil {
-			return err
-		}
-		addSessionControl(&store.Sessions[index], control)
-		store.Sessions[index].UpdatedAt = time.Now().Format(time.RFC3339)
-		session = store.Sessions[index]
-		return nil
-	}); err != nil {
-		return Session{}, err
-	}
-	return session, nil
 }
 
 func parseSessionNewArgs(args []string) (SessionLiveness, error) {
@@ -602,171 +497,12 @@ func parseSessionIDArg(args []string, usage string) (string, error) {
 	return id, nil
 }
 
-func parseSessionTargetArgs(args []string, usage string) (sessionTargetOptions, error) {
-	var options sessionTargetOptions
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
-		switch {
-		case strings.HasPrefix(arg, "--id="):
-			value := strings.TrimSpace(strings.TrimPrefix(arg, "--id="))
-			if value == "" || options.ID != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.ID = value
-		case arg == "--id":
-			value, ok := nextFlagValue(args, &i)
-			if !ok || strings.TrimSpace(value) == "" || options.ID != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.ID = strings.TrimSpace(value)
-		case strings.HasPrefix(arg, "--project="):
-			value := strings.TrimSpace(strings.TrimPrefix(arg, "--project="))
-			if value == "" || options.Project != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.Project = value
-		case arg == "--project":
-			value, ok := nextFlagValue(args, &i)
-			if !ok || strings.TrimSpace(value) == "" || options.Project != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.Project = strings.TrimSpace(value)
-		case strings.HasPrefix(arg, "--task="):
-			value := strings.TrimSpace(strings.TrimPrefix(arg, "--task="))
-			if value == "" || options.Task != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.Task = value
-		case arg == "--task":
-			value, ok := nextFlagValue(args, &i)
-			if !ok || strings.TrimSpace(value) == "" || options.Task != "" {
-				return sessionTargetOptions{}, errors.New(usage)
-			}
-			options.Task = strings.TrimSpace(value)
-		default:
-			return sessionTargetOptions{}, errors.New(usage)
-		}
-	}
-	if options.ID == "" {
-		return sessionTargetOptions{}, errors.New(usage)
-	}
-	return options, nil
-}
-
 func nextFlagValue(args []string, i *int) (string, bool) {
 	if *i+1 >= len(args) || strings.HasPrefix(args[*i+1], "--") {
 		return "", false
 	}
 	*i = *i + 1
 	return args[*i], true
-}
-
-func resolveSessionTarget(root string, options sessionTargetOptions) (SessionControl, bool, error) {
-	if options.Project == "" && options.Task == "" {
-		taskID, ok, err := inferCurrentTaskID()
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		if ok {
-			return resolveResourceSessionControl(root, taskID)
-		}
-		projectID, ok, err := inferCurrentProjectID()
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		if ok {
-			return resolveResourceSessionControl(root, projectID)
-		}
-		return SessionControl{}, false, errors.New("an explicit project or task is required")
-	}
-
-	projectID := options.Project
-	if projectID != "" {
-		normalized, err := normalizeProjectArg(projectID)
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		projectID = normalized
-	}
-	if options.Task == "" {
-		return resolveResourceSessionControl(root, projectID)
-	}
-	if projectID == "" {
-		inferred, ok, err := inferCurrentProjectID()
-		if err != nil {
-			return SessionControl{}, false, err
-		}
-		if !ok {
-			return SessionControl{}, false, errors.New("could not infer current project; use --project=<project> with --task=<task>")
-		}
-		projectID = inferred
-	}
-	taskID, err := normalizeTaskArg(projectID, options.Task)
-	if err != nil {
-		return SessionControl{}, false, err
-	}
-	return resolveResourceSessionControl(root, taskID)
-}
-
-func resolveResourceSessionControl(root, resourceID string) (SessionControl, bool, error) {
-	path, err := findResourceDir(root, resourceID)
-	if err != nil {
-		return SessionControl{}, false, err
-	}
-	if isArchivedPath(root, path) {
-		return SessionControl{}, false, fmt.Errorf("cannot lock archived resource: %s", resourceID)
-	}
-	return SessionControl{ResourceID: resourceID, Path: relPath(root, path)}, false, nil
-}
-
-func ensureNoSessionControlConflicts(store *SessionStore, sessionID string, control SessionControl) error {
-	for _, session := range store.Sessions {
-		if session.ID == sessionID {
-			continue
-		}
-		for _, existing := range session.Controls {
-			if existing.Path == control.Path {
-				return fmt.Errorf("control conflict: %s is already controlled by session %q", formatSessionControl(control), session.ID)
-			}
-		}
-	}
-	return nil
-}
-
-func sessionPathsOverlap(a, b string) bool {
-	a = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(a))), "/")
-	b = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(b))), "/")
-	if a == "." {
-		a = ""
-	}
-	if b == "." {
-		b = ""
-	}
-	return a == b || a == "" || b == "" || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
-}
-
-func addSessionControl(session *Session, control SessionControl) {
-	for _, existing := range session.Controls {
-		if existing.Path == control.Path {
-			return
-		}
-	}
-	if session.Primary == nil && len(session.Controls) == 0 {
-		primary := control
-		session.Primary = &primary
-	}
-	session.Controls = append(session.Controls, control)
-	sortSessionControls(session.Controls)
-}
-
-func removeSessionControl(controls []SessionControl, control SessionControl) []SessionControl {
-	remaining := []SessionControl{}
-	for _, existing := range controls {
-		if existing.Path != control.Path {
-			remaining = append(remaining, existing)
-		}
-	}
-	return remaining
 }
 
 func findSessionIndex(sessions []Session, id string) int {
@@ -790,112 +526,6 @@ func pruneStaleSessions(store *SessionStore) []Session {
 	}
 	store.Sessions = active
 	return removed
-}
-
-func pruneArchivedResourceSessions(root string, store *SessionStore) []Session {
-	var active []Session
-	var removed []Session
-	for _, session := range store.Sessions {
-		if sessionControlsArchivedResource(root, session) {
-			removed = append(removed, session)
-		} else {
-			active = append(active, session)
-		}
-	}
-	store.Sessions = active
-	return removed
-}
-
-func sessionControlsArchivedResource(root string, session Session) bool {
-	for _, control := range session.Controls {
-		if controlPathArchived(root, control.Path) {
-			return true
-		}
-		if strings.TrimSpace(control.ResourceID) == "" {
-			continue
-		}
-		path, err := findResourceDir(root, control.ResourceID)
-		if err == nil && isArchivedPath(root, path) {
-			return true
-		}
-	}
-	return false
-}
-
-func controlPathArchived(root, path string) bool {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return false
-	}
-	if filepath.IsAbs(path) {
-		return isArchivedPath(root, path)
-	}
-	return isArchivedPath(root, filepath.Join(root, filepath.FromSlash(path)))
-}
-
-func releaseSessionsControllingPath(root, targetRel string) error {
-	return withLockedSessionStore(root, func(store *SessionStore) error {
-		pruneStaleSessions(store)
-		pruneArchivedResourceSessions(root, store)
-		active := store.Sessions[:0]
-		now := time.Now().Format(time.RFC3339)
-		for _, session := range store.Sessions {
-			if sessionPrimaryControlsPath(session, targetRel) {
-				continue
-			}
-			controls := removeSessionControlsWithinPath(session.Controls, targetRel)
-			if len(controls) != len(session.Controls) {
-				session.Controls = controls
-				session.UpdatedAt = now
-			}
-			active = append(active, session)
-		}
-		store.Sessions = active
-		return nil
-	})
-}
-
-func sessionPrimaryControlsPath(session Session, targetRel string) bool {
-	if session.Primary != nil {
-		return sessionPathWithin(session.Primary.Path, targetRel)
-	}
-	// A session can have no primary after its primary control is explicitly
-	// unlocked. Treat that state as ambiguous and keep the fail-safe behavior
-	// instead of allowing an agent whose working resource may have been archived
-	// to continue without a lock.
-	return sessionControlsPath(session, targetRel)
-}
-
-func sessionControlsPath(session Session, targetRel string) bool {
-	for _, control := range session.Controls {
-		if sessionPathsOverlap(control.Path, targetRel) {
-			return true
-		}
-	}
-	return false
-}
-
-func removeSessionControlsWithinPath(controls []SessionControl, targetRel string) []SessionControl {
-	remaining := make([]SessionControl, 0, len(controls))
-	for _, control := range controls {
-		if sessionPathWithin(control.Path, targetRel) {
-			continue
-		}
-		remaining = append(remaining, control)
-	}
-	return remaining
-}
-
-func sessionPathWithin(path, parent string) bool {
-	path = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(path))), "/")
-	parent = strings.Trim(strings.TrimSpace(filepath.ToSlash(filepath.Clean(parent))), "/")
-	if path == "." {
-		path = ""
-	}
-	if parent == "." {
-		parent = ""
-	}
-	return path == parent || parent == "" || strings.HasPrefix(path, parent+"/")
 }
 
 func sessionActiveWithProjection(session *Session) bool {
@@ -956,13 +586,7 @@ func withLockedSessionStore(root string, update func(*SessionStore) error) error
 	if marshalErr != nil {
 		return marshalErr
 	}
-	prunedArchived := len(pruneArchivedResourceSessions(root, &store)) > 0
 	if err := update(&store); err != nil {
-		if prunedArchived {
-			if writeErr := writeSessionStore(root, store); writeErr != nil {
-				return writeErr
-			}
-		}
 		return err
 	}
 	// Read-only commands (list/show/tree) must not rewrite unchanged state.
@@ -1049,23 +673,6 @@ func parseSessionTime(value string) (time.Time, bool) {
 	return parsed, err == nil
 }
 
-func sortSessionControls(controls []SessionControl) {
-	sort.Slice(controls, func(i, j int) bool {
-		return controls[i].Path < controls[j].Path
-	})
-}
-
-func formatSessionControls(controls []SessionControl) string {
-	if len(controls) == 0 {
-		return "-"
-	}
-	parts := make([]string, 0, len(controls))
-	for _, control := range controls {
-		parts = append(parts, formatSessionControl(control))
-	}
-	return strings.Join(parts, ",")
-}
-
 func formatSessionLiveness(liveness SessionLiveness) string {
 	switch liveness.Type {
 	case "pid":
@@ -1080,13 +687,6 @@ func formatSessionLiveness(liveness SessionLiveness) string {
 	default:
 		return "unknown"
 	}
-}
-
-func formatSessionControl(control SessionControl) string {
-	if control.ResourceID != "" {
-		return control.ResourceID + ":" + control.Path
-	}
-	return control.Path
 }
 
 func newSessionID() (string, error) {

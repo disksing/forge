@@ -30,16 +30,10 @@ export interface ResourceRecord {
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
 }
 
-export interface SessionControl {
-  resourceId: string;
-  path?: string;
-}
-
 export interface WorkspaceSession extends AgentRun {
   source?: "internal" | "external" | string;
   runId?: string;
   forgeSessionId?: string;
-  controls?: SessionControl[];
   startedAt?: string;
   agentRunTitle?: string;
   agentRunAgentName?: string;

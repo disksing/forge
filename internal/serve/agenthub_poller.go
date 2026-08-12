@@ -87,7 +87,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 	}
 	var failures []string
 	for _, workspace := range cfg.Workspaces {
-		// Reconciliation only controls sessions in owned Workspaces.
+		// Reconciliation only manages sessions in owned Workspaces.
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
@@ -283,7 +283,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, workspace guiWo
 		if id := strings.TrimSpace(run.AgentHubSessionID); id != "" {
 			if fetched, err := client.GetSession(ctx, id); err == nil {
 				if agentHubSourceConflicts(run, fetched) {
-					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted Forge run source; Forge session lock retained", id))
+					rt.setRecoveryError(m, fmt.Errorf("AgentHub session %s source does not match the persisted Forge run source; transient Forge session retained", id))
 					return
 				}
 				session, found = fetched, true

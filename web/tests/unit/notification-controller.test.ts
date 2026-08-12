@@ -34,7 +34,7 @@ function dependencies(scope: ResourceScope, storage: Storage): NotificationContr
 		agentRuns: () => [],
 		hasTree: () => true,
 		findResource: (id) => ({ id, title: "Task title", type: "task" }),
-		sessionNavigationTarget: () => ({ primaryResourceId: "task1" }),
+		sessionNavigationTarget: () => ({ resourceId: "task1" }),
 		selectResource: async () => undefined,
 		activateRun: () => undefined,
 		notificationsSettingsVisible: () => false,

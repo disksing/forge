@@ -13,7 +13,7 @@ afterEach(async () => {
 });
 
 const emptyStatus: ShellStatusPresentation = {
-  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [], lock: null,
+  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [],
 };
 
 function resource(id: string, title: string, type: "project" | "task" = "project"): ShellResourceItem {
@@ -34,7 +34,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     sessions: [{
       id: "session-a", source: "internal", title: "Task session", meta: "AgentHub · project-a.task-a", label: "Codex",
       statusLabel: "Session active", status: emptyStatus, unread: true, current: false, clickable: true,
-      navigationResourceId: "project-a.task-a", menu: false, controls: [],
+      navigationResourceId: "project-a.task-a",
     }],
     paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarSessionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
@@ -75,7 +75,7 @@ describe("AppShell", () => {
     channel.publish({
       ...initial,
       projects: initial.projects.map((project) => project.id === "project-a"
-        ? { ...project, active: true, statusLabel: "Session running", status: { hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single", statuses: [{ key: "session", className: "task-status-session-running", iconName: "loader-circle", recentOutput: true }], lock: null } }
+        ? { ...project, active: true, statusLabel: "Session running", status: { hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single", statuses: [{ key: "session", className: "task-status-session-running", iconName: "loader-circle", recentOutput: true }] } }
         : project),
       sessions: initial.sessions.map((session) => ({ ...session, current: true, unread: false })),
     });

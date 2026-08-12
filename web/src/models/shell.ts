@@ -13,7 +13,6 @@ export interface ShellStatusPresentation {
   layoutClassName: string;
   slotClassName: string;
   statuses: ShellStatusItem[];
-  lock: { className: string } | null;
 }
 
 export interface ShellProjectSummary {
@@ -37,12 +36,6 @@ export interface ShellResourceItem {
   projectId?: string;
 }
 
-export interface ShellSessionControl {
-  resourceId: string;
-  path: string;
-  navigable: boolean;
-}
-
 export interface ShellSessionItem {
   id: string;
   source: "internal" | "external" | string;
@@ -55,8 +48,6 @@ export interface ShellSessionItem {
   current: boolean;
   clickable: boolean;
   navigationResourceId: string;
-  menu: boolean;
-  controls: ShellSessionControl[];
 }
 
 export interface ShellWorkspaceItem extends WorkspaceOption {

@@ -239,11 +239,7 @@ func applicationSessionList() error {
 		return err
 	}
 	for _, session := range sessions {
-		controls := make([]SessionControl, 0, len(session.Controls))
-		for _, control := range session.Controls {
-			controls = append(controls, SessionControl(control))
-		}
-		fmt.Printf("%s\t%s\t%s\t%s\n", session.ID, formatSessionLiveness(SessionLiveness(session.Liveness)), formatSessionControls(controls), session.UpdatedAt)
+		fmt.Printf("%s\t%s\t%s\n", session.ID, formatSessionLiveness(SessionLiveness(session.Liveness)), session.UpdatedAt)
 	}
 	return nil
 }
@@ -254,30 +250,6 @@ func applicationSessionShow(id string) error {
 		return err
 	}
 	session, err := workspace.Session(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
-}
-
-func applicationSessionLock(id, resourceID string, lock bool) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(resourceID) == "" {
-		if _, err := workspace.Session(id); err != nil {
-			return err
-		}
-		fmt.Println(workspaceNoLockMessage)
-		return nil
-	}
-	var session app.Session
-	if lock {
-		session, err = workspace.LockSession(id, resourceID)
-	} else {
-		session, err = workspace.UnlockSession(id, resourceID)
-	}
 	if err != nil {
 		return err
 	}

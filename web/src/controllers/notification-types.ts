@@ -14,7 +14,6 @@ export interface NotificationSource {
   completionState?: string;
   agentRunCompletionState?: string;
   completionEventId?: number;
-  controls?: Array<{ resourceId?: string }>;
 }
 
 export interface NotificationResource {

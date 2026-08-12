@@ -51,8 +51,6 @@ export interface AgentSessionDependencies {
 	userName(): string;
 	workspaceName(): string;
 	defaultCwd(): string;
-	hasExternalLock(): boolean;
-	externalLockMessage: string;
 	isLive(run: AgentRunRecord | null): boolean;
 	isTurnInterruptible(run: AgentRunRecord | null): boolean;
 	mutate<T>(action: () => Promise<T>): Promise<T>;
@@ -81,7 +79,6 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 		return dependencies.mutate(async () => {
 			const workspaceId = dependencies.workspaceId();
 			if (!workspaceId) throw new Error("Select a workspace first.");
-			if (dependencies.hasExternalLock()) throw new Error(dependencies.externalLockMessage);
 			const selected = dependencies.selectedResource();
 			const requested = String(agentName || "").trim();
 			const agent = requested ? dependencies.enabledAgents().find((candidate) => candidate.id === requested) || null : dependencies.selectedAgent();
@@ -198,7 +195,6 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 		const runId = dependencies.activeRunId();
 		if (!runId) return;
 		return dependencies.mutate(async () => {
-			if (dependencies.hasExternalLock()) throw new Error(dependencies.externalLockMessage);
 			dependencies.flushDraft();
 			const response = await dependencies.request<{ run: AgentRunRecord }>(`/api/workspaces/${dependencies.workspaceId()}/agent/runs/${runId}/resume`, { method: "POST" });
 			dependencies.setActiveRun(response.run.id);
@@ -234,7 +230,6 @@ export function createAgentSessionController(dependencies: AgentSessionDependenc
 		const sendVersion = dependencies.currentDraft().version;
 		if (!operations.startSending(sendingKey)) return { accepted: false, clear: false };
 		try {
-			if (dependencies.hasExternalLock()) throw new Error(dependencies.externalLockMessage);
 			const run = dependencies.currentRun();
 			if (!run || context.runId !== run.id || context.resourceId !== (run.resourceId || "")) throw new Error("The selected Workspace or Session changed before the message could be sent.");
 			const body: Record<string, unknown> = { text: rawText, userName: dependencies.userName() };

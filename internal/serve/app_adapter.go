@@ -18,12 +18,8 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 	}
 	for _, session := range tree.Sessions {
 		liveness, _ := json.Marshal(session.Liveness)
-		controls := make([]guiSessionControl, 0, len(session.Controls))
-		for _, control := range session.Controls {
-			controls = append(controls, guiSessionControl{ResourceID: control.ResourceID, Path: control.Path})
-		}
 		result.Sessions = append(result.Sessions, guiSession{
-			ID: session.ID, Liveness: liveness, Controls: controls,
+			ID: session.ID, Liveness: liveness,
 			StartedAt: session.StartedAt, UpdatedAt: session.UpdatedAt, Source: "external",
 		})
 	}

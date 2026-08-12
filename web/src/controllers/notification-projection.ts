@@ -13,10 +13,9 @@ export function notificationSessionIdFor(item: NotificationSource): string {
   return String(item.forgeSessionId || item.sessionId || item.agentHubSessionId || item.id || "").trim();
 }
 
-export function notificationResourceIdFor(item: NotificationSource, navigationTarget: (item: NotificationSource) => { primaryResourceId?: string }): string {
-  if (item.source === "internal" || item.source === "external") return navigationTarget(item).primaryResourceId || "";
+export function notificationResourceIdFor(item: NotificationSource, navigationTarget: (item: NotificationSource) => { resourceId?: string }): string {
+  if (item.source === "internal" || item.source === "external") return navigationTarget(item).resourceId || "";
   if (item.resourceId) return String(item.resourceId).trim();
-  if (item.controls?.length === 1) return String(item.controls[0]?.resourceId || "").trim();
   return "";
 }
 
@@ -31,7 +30,7 @@ export function createNotificationRecord(item: NotificationSource, context: {
   workspaceId: string;
   marker: string;
   completionState?: string;
-  navigationTarget(item: NotificationSource): { primaryResourceId?: string };
+  navigationTarget(item: NotificationSource): { resourceId?: string };
   findResource(id: string): NotificationResource | null | undefined;
   now?: () => number;
 }): NotificationRecord | null {

@@ -9,7 +9,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Transparent local state.** Projects, tasks, logs, artifacts, templates, and Wiki pages remain ordinary files that can be inspected, versioned, backed up, or repaired without the GUI.
 - **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
-- **Coordinated writers.** Sessions lock the project or task they control. PID, heartbeat, and GUI-run liveness allow stale sessions and locks to be pruned safely.
+- **Explicit file ownership.** Generated agent instructions allow writes only in the starting resource and its task worktrees, while keeping other Workspace resources read-only.
 - **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1440px, and a single-column mobile layout below 980px. A layout switcher in the brand band (or the slim toolbar when the sidebar is collapsed) lets users override the responsive choice manually: three columns, tabbed two columns, or a split view that collapses the sidebar into a drawer with details and chat side by side; the preference is stored in the browser.
 
@@ -18,7 +18,7 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 Forge separates concerns deliberately:
 
 ```text
-forge CLI / forge start ──────┐
+forge CLI ────────────────────┐
                               ├── AgentWorkspace files (source of truth)
 forge serve ── internal/app ──┤
   (Web UI)  ├── AgentHub client │
@@ -30,12 +30,11 @@ shared checkout in repos/ ── git worktree ── task-owned branch in worktr
 ```
 
 - The **CLI** owns flag parsing and compatibility output; deterministic workspace mutations and typed views live in the reusable `internal/app` API.
-- **`forge start`** launches a terminal agent inside one resource with a managed session and lock.
 - **`forge serve`** renders workspace state in the web UI, routes interactive sessions through AgentHub, and calls `internal/app` directly for workspace operations.
 - **AgentHub** owns provider discovery, provider process lifecycle, provider-native configuration, and durable agent sessions.
-- **Agents** read the workspace contract, operate within the selected resource, and write code only in the task's worktree.
+- **Agents** may read other Workspace resources for context, but write only files owned by their starting resource and its task worktrees. Host files outside the Workspace follow user scope and host permissions.
 
-The workspace root itself is not lockable. Project and task resources are independently lockable, so unrelated tasks can progress concurrently.
+Resource-level Session Locks are not part of Forge. Multiple sessions can run against the same resource; generated instructions provide the non-recursive coordination boundary.
 
 ## Requirements
 
@@ -59,7 +58,7 @@ This creates:
 bin/forge
 ```
 
-The single binary provides the workspace CLI, the agent launcher (`forge start`), and the web service (`forge serve`). Pass another output directory to `scripts/build` if needed. Add that directory to `PATH`, or invoke the binary by its absolute path.
+The single binary provides the workspace CLI and web service (`forge serve`). Pass another output directory to `scripts/build` if needed. Add that directory to `PATH`, or invoke the binary by its absolute path.
 
 ## Quick Start
 
@@ -91,7 +90,7 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 
 The main UI is split into navigation, resource details, and agent chat:
 
-- **Navigation:** switch workspaces, expand the project/task tree, inspect lock state, and monitor active or external sessions.
+- **Navigation:** switch workspaces, expand the project/task tree, and monitor active or external sessions.
 - **Details:** render `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** start, close, resume, or revisit sessions; end the current turn while keeping the Session open; stream responses and tool activity; answer approvals; and upload files.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, and map system or custom Agent Profiles—including the reserved `scheduler` route—to catalog agents. The user name defaults to `User` and is not written to server configuration or workspace data.
@@ -104,7 +103,7 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge retains workspace/task/session-lock/Profile control. `forge serve` is the only owner of AgentHub session reconciliation: a resource lock is released only after the service observes a durable `stopped` state, or proves through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the lock. Plain CLI commands (`forge session list/show`, `forge workspace tree`, `forge start`, session create/lock/unlock/heartbeat/end, resource archival) never contact AgentHub; an AgentHub-managed session stays active in the session store until the service reconciles it or `forge session end --id=<id>` releases it manually. While the service is stopped, those sessions and locks are conservatively retained. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
+Forge retains workspace/task/Profile control and a minimal transient record for active GUI sessions. `forge serve` owns AgentHub session reconciliation: it removes that record only after observing a durable terminal state, or proving through continuous durable event history that an archived session passed through `stopped`. An unreachable or unknown AgentHub state keeps the record for later reconciliation. Plain CLI commands (`forge session list/show/new/heartbeat/end`, `forge workspace tree`, and resource archival) never contact AgentHub. Historical pre-AgentHub runs and their local event logs are no longer read or migrated; input, approval, interrupt, stop, and resume operations are unavailable for those files.
 
 Useful overrides:
 
@@ -142,26 +141,9 @@ forge task repo add \
 
 Use an absolute destination with `git worktree add`, especially when combining it with `git -C`; otherwise Git may resolve the destination relative to the shared checkout.
 
-## Interactive Agent Launches
+## Interactive Agent Sessions
 
-`forge start` runs a command in the selected project or task directory. It creates a PID-liveness session, locks that resource, injects `FORGE_SESSION_ID`, writes launch context under `.forge/`, and releases the session when the command exits.
-
-```bash
-forge start --project=project1 --task=task1 -- codex
-```
-
-Selectors may be omitted when the current directory already identifies the task or project. A default command can be stored in `forge.json` as either a string or argument array:
-
-```json
-{
-  "version": 1,
-  "language": "en",
-  "agentCommand": ["codex", "--dangerously-bypass-approvals-and-sandbox"]
-}
-```
-
-Agents launched by `forge start` or the Forge web UI must reuse the injected session id. Directly launched agents should create and later end their own session, and should temporarily lock other resources only when work genuinely crosses the current task boundary.
-The first resource locked by a session is its primary resource; later controls are temporary. Archiving the primary resource ends the session, while archiving a temporarily controlled resource removes only the archived controls and preserves the primary session.
+Interactive agents are launched through the Forge web UI and AgentHub. A resource may have multiple active sessions. Archiving a resource does not delete a running session record synchronously; `forge serve` requests the corresponding AgentHub stop and removes the transient record only after safe terminal-state reconciliation.
 
 ## Task Templates
 
@@ -281,12 +263,11 @@ forge task show|archive ...
 forge task log add|list ...
 forge task repo add|list|remove ...
 
-forge session new|heartbeat|lock|unlock|end|list|show ...
+forge session new|heartbeat|end|list|show ...
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ```
 

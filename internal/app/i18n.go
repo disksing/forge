@@ -11,12 +11,12 @@ const (
 	languageSimplifiedChinese = "zh-CN"
 )
 
-const crossResourceReadGuidanceEnglish = `- Read-only inspection of other project/task resources does not change them and needs no additional Forge lock. Only when writing to a project/task outside the resource already locked for this session, acquire a temporary lock with explicit ` + "`--project`" + `/` + "`--task`" + ` selectors by running ` + "`forge session lock --id=$FORGE_SESSION_ID`" + `, then release it with ` + "`forge session unlock --id=$FORGE_SESSION_ID`" + ` when finished.
+const crossResourceReadGuidanceEnglish = `- Within the Workspace, write only files owned by the resource where the agent was started and task worktrees owned by that resource. Other Workspace resources are read-only, and files managed by another agent must not be modified. Outside the Workspace, follow the user's requested scope and the host account's permissions.
 - To understand another task without writing, inspect its ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, and relevant ` + "`artifacts/`" + `. ` + "`task.json`" + ` contains structured state, ` + "`task.md`" + ` the durable contract, ` + "`work.md`" + ` the current recovery checkpoint, and ` + "`log.jsonl`" + ` the historical timeline. You may use ` + "`sed`" + `, ` + "`rg`" + `, or ` + "`less`" + ` on the resolved paths.
 - For a read-only Forge view of another task, use ` + "`forge task show --project=<project> --task=<task>`" + ` for structured task information, ` + "`forge task log list --project=<project> --task=<task> [--json]`" + ` for its log, and ` + "`forge workspace resource --id=<project.task> --json`" + ` for resource details including common Markdown file contents and logs.
 `
 
-const crossResourceReadGuidanceChinese = `- 只读检查其他项目/任务资源不会改变资源，因此不需要额外的 Forge 锁。只有准备写入当前 session 已锁定资源之外的项目/任务时，才使用带明确 ` + "`--project`" + `/` + "`--task`" + ` 选择器的临时锁，运行 ` + "`forge session lock --id=$FORGE_SESSION_ID`" + ` 获取，完成后用 ` + "`forge session unlock --id=$FORGE_SESSION_ID`" + ` 释放。
+const crossResourceReadGuidanceChinese = `- 在 Workspace 内，只能写入 agent 启动资源拥有的文件及该资源拥有的任务 worktree。其他 Workspace 资源只读，不得修改由其他 agent 管理的文件。Workspace 外的文件遵循用户要求的范围和主机账户权限。
 - 如需不写入地了解其他任务，可查看其 ` + "`task.json`" + `、` + "`task.md`" + `、` + "`work.md`" + `、` + "`log.jsonl`" + ` 和相关 ` + "`artifacts/`" + `：` + "`task.json`" + ` 是结构化状态，` + "`task.md`" + ` 是长期约定，` + "`work.md`" + ` 是当前恢复检查点，` + "`log.jsonl`" + ` 是历史时间线。也可以对已解析的文件路径使用 ` + "`sed`" + `、` + "`rg`" + ` 或 ` + "`less`" + `。
 - 通过 Forge 只读查看其他任务时，使用 ` + "`forge task show --project=<project> --task=<task>`" + ` 查看结构化任务信息，使用 ` + "`forge task log list --project=<project> --task=<task> [--json]`" + ` 查看日志，使用 ` + "`forge workspace resource --id=<project.task> --json`" + ` 获取包含常用 Markdown 文件内容和日志的资源详情。
 `
@@ -221,14 +221,14 @@ func taskAgentsPromptZH(resource Resource) string {
 	scope := "AgentWorkspace 任务目录"
 	readLine := "执行前读取 task.json、task.md、work.md 和 log.jsonl。"
 	boundary := "将此目录视为当前任务边界。"
-	writeScope := "任务边界是避免多 agent 冲突的默认保护措施，并非绝对限制。用户的明确指令可以授权操作此任务目录之外的内容；但仍须遵守 Forge 锁规则。"
+	writeScope := "任务边界是避免多 agent 冲突的默认保护措施，并非绝对限制。用户的明确指令可以授权操作此任务目录之外的主机文件；但不得修改其他 agent 管理的 Workspace 资源。"
 	repoGuidance := "如需修改代码，请在 worktree/ 下创建 Git worktree。执行 `git worktree add` 时，目标必须使用此任务 worktree/ 目录内的绝对路径；当命令使用 `git -C` 时，相对目标会从共享仓库解析，可能把 worktree 错放到任务目录之外。"
 	updateLine := "如果任务涉及新仓库，请更新此任务的 task.json。"
 	structuredLine := "task.json 只记录 Forge 已理解的结构化事实；任意说明、链接、ID 和进度应使用 Markdown。"
 	backgroundLine := "将 task.md 作为长期有效的任务约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
 	recoveryLine := "将 work.md 作为可替换的恢复检查点：只记录当前重点、下一步行动、阻塞以及恢复所需状态；不要重复任务约定或追加已完成步骤的历史。仅在有用时保留可选模块，删除空模块，并将任意资源链接或 ID 放入“资源”。"
 	pendingLine := "可能改变范围、验收标准或稳定约束的问题应保存在 task.md 中，并在实现前请用户确认。短期执行问题放在 work.md 中。调查形成长期决策后，将其提升到 task.md，并从 work.md 删除临时说明。"
-	agentsLine := "总是读取父项目 AGENTS.md（../AGENTS.md）和 workspace 根目录的 AGENTS.md（../../AGENTS.md），了解项目约定、全局 Forge session、锁和文件职责规则。"
+	agentsLine := "总是读取父项目 AGENTS.md（../AGENTS.md）和 workspace 根目录的 AGENTS.md（../../AGENTS.md），了解项目约定和全局 Workspace 文件职责规则。"
 	extra := `
 - 此任务属于一个项目。需要更广泛的上下文时，读取父项目目录中的 project.json、project.md 和 log.jsonl。
 - 父项目文件仅作参考；除非用户明确要求，否则修改应限定在此任务目录及其 worktree 中。
@@ -247,7 +247,7 @@ func taskAgentsPromptZH(resource Resource) string {
 		backgroundLine = "将 project.md 作为长期有效的项目约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
 		recoveryLine = "短期实现状态应放在任务的 work.md 中；项目自身没有 work.md 恢复快照。"
 		pendingLine = "可能改变项目范围、验收标准或稳定约束的问题应保存在 project.md 中；需要时请用户确认，并把长期有效的答案记录在那里。"
-		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Forge session、锁和文件职责规则。"
+		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Workspace 文件职责规则。"
 		extra = `
 - 项目内容模板位于 templates/*.md。使用 schema-version: 2，并声明 title、可选 description/task-title、fields 和 Markdown 正文；字段类型支持 text、textarea、select、boolean。
 - 模板只组织任务内容，不包含运行时 Agent 或 Session 设置。
@@ -279,8 +279,6 @@ func taskAgentsPromptZH(resource Resource) string {
 - %s
 - %s
 - %s
-- Forge session 所有权：如果环境变量或注入的 Forge session 上下文中存在 `+"`FORGE_SESSION_ID`"+`，请复用它；外层启动器已注册 session 并锁定此目录对应的资源，因此不要创建新 session，不要锁定/解锁当前资源，也不要自行结束外层 session。
-- 如果环境变量和注入的 session 上下文都没有 `+"`FORGE_SESSION_ID`"+`，请检测当前 agent PID，运行 `+"`forge session new --pid <pid>`"+`，导出返回的 ID 为 `+"`FORGE_SESSION_ID`"+`，并在更新项目/任务数据前只锁定一次当前目录对应的资源。
 `+crossResourceReadGuidanceChinese+`- %s
 - 将 workspace 的 repos/ checkout 视为共享源码缓存；代码修改应在任务 worktree 中进行。
 - %s
@@ -309,12 +307,7 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 开始此 workspace 中的工作前，请读取 ` + "`wiki/index.md`" + `。
 - 根据索引只读取与当前任务相关的 Wiki 页面，不要无差别加载整个 Wiki。
 - 当用户要求分析代码、项目或工作记录并更新 Wiki 时，请维护相关页面、交叉链接和 ` + "`wiki/index.md`" + ` 摘要。
-- Agent 通过 session 协调写入；session 会锁定其更新的项目或任务，过期锁根据 session 存活状态清理。
-` + crossResourceReadGuidanceChinese + `- Agent 只应更新已锁定的资源及该资源拥有的任务 worktree。
-- 通过 ` + "`forge start`" + ` 或 Forge Web 服务启动时，Forge 会创建 session、锁定所选资源、通过环境变量或显式 Forge session 上下文注入 ` + "`FORGE_SESSION_ID`" + `，并在 agent 退出后释放 session；agent 应复用该 ID，不应自行锁定/解锁起始资源。
-- 直接启动且环境变量或注入上下文中没有 ` + "`FORGE_SESSION_ID`" + ` 时，agent 应检测自身 PID，运行 ` + "`forge session new --pid <pid>`" + `，导出 ` + "`FORGE_SESSION_ID`" + `，锁定当前项目/任务资源，并在退出时结束该 session。
-- 只有准备写入起始资源之外的其他项目/任务资源时，才使用额外的 lock/unlock；只读检查不需要额外加锁。
-- workspace 根目录无需加锁。
+` + crossResourceReadGuidanceChinese + `- Workspace 文件边界依靠提示词协调，不是主机文件系统沙箱。
 - 开放项目直接位于 workspace 下的 ` + "`projectN/`" + ` 或 ` + "`projectN-slug/`" + ` 目录。
 - 项目任务直接位于项目目录下简短的 ` + "`taskM/`" + ` 或 ` + "`taskM-slug/`" + ` 目录；资源 ID 仍是 ` + "`projectN.taskM`" + ` 形式的完整 ID。
 - 已归档项目位于 ` + "`archive/`" + `。已归档项目任务位于其项目目录下的 ` + "`archive/`" + `。
@@ -372,8 +365,6 @@ forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
 forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
 forge session heartbeat --id=<id>
-forge session lock --id=<id> [--project=<project>] [--task=<task>]
-forge session unlock --id=<id> [--project=<project>] [--task=<task>]
 forge session end --id=<id>
 forge session list
 forge session show --id=<id>
@@ -381,7 +372,6 @@ forge session show --id=<id>
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
-forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
 forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ` + "```" + `
 
@@ -400,8 +390,7 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge task archive`" + ` 将开放任务移入项目的 archive；` + "`forge project archive`" + ` 将开放项目移入 workspace 的 ` + "`archive/`" + `。
 - ` + "`forge task log add/list`" + ` 和 ` + "`forge project log add/list`" + ` 读写结构化 ` + "`log.jsonl`" + `。日志按最新优先显示，` + "`--details -`" + ` 从标准输入读取多行详情。
 - ` + "`forge task repo add/list/remove`" + ` 在任务的 ` + "`task.json`" + ` 中记录、列出或删除相关仓库。任务选择规则与 ` + "`forge task show`" + ` 相同。项目不保存仓库元数据。
-- ` + "`forge session new`" + ` 创建 session 并打印唯一 ID。默认使用 heartbeat 存活方式；也可显式指定 ` + "`--heartbeat [--timeout <duration>]`" + `，或用 ` + "`--pid <pid>`" + ` 绑定进程。Forge GUI 使用持久化 endpoint 与完整 source 的 AgentHub 存活方式，并用 ` + "`forge session bind-agenthub`" + ` 保存最终 AgentHub session ID。普通 CLI 命令不会访问 AgentHub：AgentHub 管理的 session 始终保持活动，直到 ` + "`forge serve`" + ` 对账到 AgentHub 安全终态（durable stopped，或可证明先经过 stopped 的 archived）或用户显式结束它。服务停止或 AgentHub 不可达期间，这些 session 与其锁会被保守保留。` + "`heartbeat`" + ` 刷新时间戳；` + "`lock/unlock`" + ` 记录或释放项目/任务控制权；` + "`end`" + ` 立即结束 session 并释放其锁，也是 AgentHub 管理 session 的人工逃生通道；` + "`list/show`" + ` 用于查看 session。
+- ` + "`forge session new`" + ` 创建 session 并打印唯一 ID。默认使用 heartbeat 存活方式；也可显式指定 ` + "`--heartbeat [--timeout <duration>]`" + `，或用 ` + "`--pid <pid>`" + ` 绑定进程。Forge GUI 使用持久化 endpoint 与完整 source 的 AgentHub 存活方式，并用 ` + "`forge session bind-agenthub`" + ` 保存最终 AgentHub session ID。普通 CLI 命令不会访问 AgentHub：AgentHub 管理的 session 始终保持活动，直到 ` + "`forge serve`" + ` 根据 AgentHub 的持久终态完成对账，或用户显式结束它。` + "`heartbeat`" + ` 刷新时间戳；` + "`end`" + ` 立即结束 session；` + "`list/show`" + ` 用于查看 session。
 - ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
-- ` + "`forge start [--project=<project>] [--task=<task>] [-- <agent command...>]`" + ` 是普通 session 启动器：创建 session、锁定资源、运行 agent 并结束 session。
 `

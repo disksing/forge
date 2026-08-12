@@ -11,7 +11,7 @@ describe("shell projection", () => {
     ] }],
     sessions: [{ id: "session1", resourceId: "task1", source: "internal", agentRunStatus: "running", agentRunAgentName: "codex", agentRunLastOutputAt: "2026-08-11T02:00:00Z" }],
   };
-  const projection = createShellProjection({ tree: () => tree, controls: (session) => (session.controls || []).map((control) => ({ resourceId: control.resourceId, path: control.path || "" })), findResource: () => null, agentName: (id) => id || "agent", now: () => Date.parse("2026-08-11T02:00:30Z") });
+  const projection = createShellProjection({ tree: () => tree, findResource: () => null, agentName: (id) => id || "agent", now: () => Date.parse("2026-08-11T02:00:30Z") });
 
   it("keeps custom order stable and moves only known targets", () => {
     expect(projection.applyCustomOrder([{ id: "a" }, { id: "b" }, { id: "c" }], ["c", "a"]).map((item) => item.id)).toEqual(["c", "a", "b"]);

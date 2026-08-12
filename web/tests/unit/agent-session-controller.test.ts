@@ -36,8 +36,6 @@ describe("AgentSessionController", () => {
 			userName: () => "User",
 			workspaceName: () => "Workspace",
 			defaultCwd: () => "/tmp/task",
-			hasExternalLock: () => false,
-			externalLockMessage: "locked",
 			isLive: () => true,
 			isTurnInterruptible: () => true,
 			mutate: (action) => action(),

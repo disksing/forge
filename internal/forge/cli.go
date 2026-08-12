@@ -53,8 +53,6 @@ func Run(args []string) error {
 		return runWorkspace(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
-	case "start":
-		return runStart(args[1:])
 	case "serve":
 		return serve.Main(args[1:])
 	case "help", "-h", "--help":
@@ -260,12 +258,9 @@ func printUsage() {
 
 How Forge works:
   All workspace data lives on the filesystem as project/task directories,
-  JSON/Markdown files, logs, artifacts, and task worktrees. Agents coordinate
-  writes with sessions that lock the project or task they update; stale locks
-  are pruned from session liveness. Agents may read other projects and tasks
-  freely for context, but should only update resources they have locked. Agent
-  execution (forge start) and the web service (forge serve) are subcommands of
-  the same forge binary. The workspace root does not require a lock.
+  JSON/Markdown files, logs, artifacts, and task worktrees. Agents may inspect
+  other resources, but write only the Workspace files owned by their starting
+  resource and its task worktrees. The web service is provided by forge serve.
 
 Usage:
   forge --version
@@ -303,8 +298,6 @@ Usage:
   forge session new [--heartbeat [--timeout <duration>] | --pid <pid> | --agenthub --endpoint <url> --source-instance-id <id> --source-external-id <id> [--agenthub-session-id <id>]]
   forge session bind-agenthub --id=<id> --agenthub-session-id=<id>
   forge session heartbeat --id=<id>
-  forge session lock --id=<id> [--project=<project>] [--task=<task>]
-  forge session unlock --id=<id> [--project=<project>] [--task=<task>]
   forge session end --id=<id>
   forge session list
   forge session show --id=<id>
@@ -312,7 +305,6 @@ Usage:
   forge workspace tree --json
   forge workspace resource --id=<resource> --json
 
-  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
 
 Commands:
@@ -434,18 +426,10 @@ Commands:
   forge session heartbeat --id=<id>
     Update a session's heartbeat timestamp.
 
-  forge session lock --id=<id> [--project=<project>] [--task=<task>]
-    Lock a project or task for a session. With no selector, Forge uses the
-    current task when inside a task, otherwise the current project. With only
-    --task, Forge uses the current project. Workspace root does not need a lock.
-
-  forge session unlock --id=<id> [--project=<project>] [--task=<task>]
-    Release a project or task lock using the same selector rules as lock.
-
   forge session end --id=<id>
     End a session immediately and remove it from the active session list.
-    This is the manual escape hatch that releases AgentHub-managed sessions
-    and their locks when forge serve is not running.
+    This is the manual escape hatch for AgentHub-managed runtime records when
+    forge serve is not running.
 
   forge session list
     List active sessions after automatically pruning stale sessions.
@@ -460,15 +444,6 @@ Commands:
   forge workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,
     artifacts, worktrees, and task repository metadata.
-
-  forge start [--project=<project>] [--task=<task>] [-- <agent command...>]
-    Run an agent command in the selected project or task directory. When
-    selectors are omitted, Forge uses the current task, otherwise the current
-    project. With only --task, Forge uses the current project. Explicit command
-    arguments after -- override the workspace forge.json agentCommand default.
-    forge start creates a PID-liveness session, locks the selected resource,
-    injects FORGE_SESSION_ID into the agent environment, and ends the session
-    when the command exits.
 
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
     Start the Forge web service: Workspace API, AgentHub session orchestration

@@ -15,7 +15,7 @@ export interface NotificationControllerDependencies {
   agentRuns(): NotificationSource[];
   hasTree(): boolean;
   findResource(id: string): NotificationResource | null | undefined;
-  sessionNavigationTarget(item: NotificationSource): { primaryResourceId?: string };
+  sessionNavigationTarget(item: NotificationSource): { resourceId?: string };
   selectResource(id: string, options: { clearUnread: boolean; forceDetail: boolean }): Promise<void>;
   activateRun(runId: string): void;
   notificationsSettingsVisible(): boolean;

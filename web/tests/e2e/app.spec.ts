@@ -174,7 +174,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1"): Pr
         projects: [project],
         sessions: runs.map((run) => ({
           id: `forge-${run.id}`,
-          controls: [{ resourceId: run.resourceId, path: run.resourceId }],
           startedAt: run.createdAt,
           updatedAt: run.updatedAt,
           source: "internal",

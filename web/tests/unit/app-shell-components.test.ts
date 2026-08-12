@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 const emptyStatus: ShellStatusPresentation = {
-  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [], lock: null,
+  hasTaskState: false, className: "", layoutClassName: "", slotClassName: "", statuses: [],
 };
 
 function resource(id: string, type: "project" | "task" = "project"): ShellResourceItem {
@@ -37,7 +37,7 @@ function resource(id: string, type: "project" | "task" = "project"): ShellResour
 function session(id: string, overrides: Partial<ShellSessionItem> = {}): ShellSessionItem {
   return {
     id, source: "internal", title: id, meta: "Codex", label: "Codex", statusLabel: "Session active",
-    status: emptyStatus, unread: false, current: false, clickable: true, navigationResourceId: "", menu: false, controls: [],
+    status: emptyStatus, unread: false, current: false, clickable: true, navigationResourceId: "",
     ...overrides,
   };
 }
@@ -138,25 +138,22 @@ describe("AppShell responsibility components", () => {
     expect(onDragState).toHaveBeenLastCalledWith(null);
   });
 
-  it("GlobalSessionList owns navigation, resource menus, unread state, and session ordering", async () => {
+  it("GlobalSessionList owns navigation, unread state, and session ordering", async () => {
     const onSelect = vi.fn(async () => undefined);
     const onReorder = vi.fn(async () => undefined);
     const onDragState = vi.fn();
     const sessions = [
-      session("session-a", { menu: true, unread: true, controls: [{ resourceId: "project-a.task-a", path: "/tmp/a", navigable: true }] }),
+      session("session-a", { unread: true, navigationResourceId: "project-a.task-a" }),
       session("session-b", { navigationResourceId: "project-b.task-b" }),
     ];
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(GlobalSessionList, { target, props: {
-      identity: "workspace-a", mobileSidebarOpen: false, sessions, onSelect, onReorder, onDragState, onToast: vi.fn(),
+      identity: "workspace-a", sessions, onSelect, onReorder, onDragState, onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
 
     target.querySelector<HTMLButtonElement>('[aria-label^="session-a"]')!.click();
-    await tick();
-    expect(target.querySelector('[data-session-menu="session-a"]')).not.toBeNull();
-    target.querySelector<HTMLButtonElement>('[data-session-menu="session-a"] button')!.click();
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("project-a.task-a"));
     target.querySelector<HTMLButtonElement>('[aria-label^="session-b"]')!.click();
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("project-b.task-b"));

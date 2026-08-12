@@ -140,27 +140,21 @@ type guiState struct {
 }
 
 type guiSession struct {
-	ID                       string              `json:"id"`
-	Liveness                 json.RawMessage     `json:"liveness,omitempty"`
-	Controls                 []guiSessionControl `json:"controls"`
-	StartedAt                string              `json:"startedAt"`
-	UpdatedAt                string              `json:"updatedAt"`
-	Source                   string              `json:"source"`
-	AgentRunID               string              `json:"agentRunId,omitempty"`
-	AgentRunAgentName        string              `json:"agentRunAgentName,omitempty"`
-	AgentRunTitle            string              `json:"agentRunTitle,omitempty"`
-	AgentRunStatus           string              `json:"agentRunStatus,omitempty"`
-	AgentRunUpdatedAt        string              `json:"agentRunUpdatedAt,omitempty"`
-	AgentRunLastOutputAt     string              `json:"agentRunLastOutputAt,omitempty"`
-	ResourceID               string              `json:"resourceId,omitempty"`
-	AgentRunCompletionMarker string              `json:"agentRunCompletionMarker,omitempty"`
-	AgentRunCompletionState  string              `json:"agentRunCompletionState,omitempty"`
-	AgentRunCompletionAt     string              `json:"agentRunCompletionAt,omitempty"`
-}
-
-type guiSessionControl struct {
-	ResourceID string `json:"resourceId,omitempty"`
-	Path       string `json:"path"`
+	ID                       string          `json:"id"`
+	Liveness                 json.RawMessage `json:"liveness,omitempty"`
+	StartedAt                string          `json:"startedAt"`
+	UpdatedAt                string          `json:"updatedAt"`
+	Source                   string          `json:"source"`
+	AgentRunID               string          `json:"agentRunId,omitempty"`
+	AgentRunAgentName        string          `json:"agentRunAgentName,omitempty"`
+	AgentRunTitle            string          `json:"agentRunTitle,omitempty"`
+	AgentRunStatus           string          `json:"agentRunStatus,omitempty"`
+	AgentRunUpdatedAt        string          `json:"agentRunUpdatedAt,omitempty"`
+	AgentRunLastOutputAt     string          `json:"agentRunLastOutputAt,omitempty"`
+	ResourceID               string          `json:"resourceId,omitempty"`
+	AgentRunCompletionMarker string          `json:"agentRunCompletionMarker,omitempty"`
+	AgentRunCompletionState  string          `json:"agentRunCompletionState,omitempty"`
+	AgentRunCompletionAt     string          `json:"agentRunCompletionAt,omitempty"`
 }
 
 type resourceLogRequest struct {

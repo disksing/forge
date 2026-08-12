@@ -132,9 +132,6 @@ func archiveResource(id string) error {
 			return err
 		}
 	}
-	if err := releaseSessionsControllingPath(root, relPath(root, src)); err != nil {
-		return err
-	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -854,11 +851,11 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		return taskAgentsPromptZH(resource)
 	}
 	extra := ""
-	agentsLine := "Always read the parent project AGENTS.md (../AGENTS.md) and workspace root AGENTS.md (../../AGENTS.md) for project conventions and global Forge session, lock, and file-role rules."
+	agentsLine := "Always read the parent project AGENTS.md (../AGENTS.md) and workspace root AGENTS.md (../../AGENTS.md) for project conventions and global Workspace file-role rules."
 	title := "Task Agent Instructions"
 	scope := "single AgentWorkspace task directory"
 	boundary := "Treat this directory as the current task boundary."
-	writeScope := "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions. Explicit user instructions may authorize work outside this task directory; Forge lock rules still apply."
+	writeScope := "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions. Explicit user instructions may authorize host-file work outside this task directory, but do not modify another agent's Workspace resource."
 	repoGuidance := "For code changes, create Git worktrees under worktree/. When running `git worktree add`, pass an absolute destination path inside this task's worktree/ directory; a relative destination can be resolved from the shared repository when the command uses `git -C`, placing the worktree outside this task."
 	if isProject(resource) {
 		title = "Project Agent Instructions"
@@ -866,7 +863,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		boundary = "Treat this directory as the current project boundary."
 		writeScope = "Only update files inside this project directory unless a task directory has been explicitly selected."
 		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
-		agentsLine = "Always read the workspace root AGENTS.md (../AGENTS.md) for global Forge session, lock, and file-role rules."
+		agentsLine = "Always read the workspace root AGENTS.md (../AGENTS.md) for global Workspace file-role rules."
 	} else if _, ok := resource.(*Task); ok {
 		extra = `
 - This task belongs to a project. Read the parent project directory's project.json, project.md, and log.jsonl when you need broader context.
@@ -919,8 +916,6 @@ You are working inside a %s.
 - %s
 - %s
 - %s
-- Forge session ownership: if `+"`FORGE_SESSION_ID`"+` is set in the environment or supplied in injected Forge session context, reuse it; the outer launcher already registered the session and locked this directory's resource, so do not create another session, do not lock/unlock this directory's resource, and do not end the outer session.
-- If `+"`FORGE_SESSION_ID`"+` is not available from the environment or injected session context, detect your current agent PID, run `+"`forge session new --pid <pid>`"+`, export the printed id as `+"`FORGE_SESSION_ID`"+`, and lock this directory's resource once before updating project/task data.
 `+crossResourceReadGuidanceEnglish+`- %s
 - Treat workspace repos/ checkouts as shared source caches; make code changes in task worktrees.
 - %s

@@ -10,11 +10,8 @@ export interface TaskStatusState {
   recentOutput: boolean;
 }
 
-export interface TaskLockState { kind: string; className: string; label: string }
-
 export interface OperationalStatusPresentation {
   statuses: TaskStatusState[];
-  lock: TaskLockState | null;
   hasTaskState: boolean;
   className: string;
   layoutClassName: string;
@@ -25,7 +22,6 @@ export interface TaskOperationalState {
   session: TaskStatusState | null;
   className: string;
   label: string;
-  lock: TaskLockState | null;
   statusPresentation: OperationalStatusPresentation;
 }
 
@@ -40,7 +36,6 @@ export interface ProjectTaskSummary {
 
 export interface ShellProjectionDependencies {
   tree(): WorkspaceTree | null;
-  controls(session: WorkspaceSession): Array<{ resourceId: string; path: string }>;
   findResource(id: string): ResourceRecord | null;
   agentName(agentId: string | undefined): string;
   now?(): number;
@@ -71,7 +66,6 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
         iconName: status.iconName || "circle",
         recentOutput: status.recentOutput,
       })),
-      lock: presentation.lock ? { className: presentation.lock.className } : null,
     };
   }
 
@@ -142,17 +136,15 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return sessions.length ? sessionStatusPresentation(sessions[0]) : null;
   }
 
-  function operationalStatusPresentation(statuses: Array<TaskStatusState | null>, lock: TaskLockState | null = null): OperationalStatusPresentation {
+  function operationalStatusPresentation(statuses: Array<TaskStatusState | null>): OperationalStatusPresentation {
     const visible = statuses.filter((status): status is TaskStatusState => Boolean(status));
-    const hasTaskState = visible.length > 0 || Boolean(lock);
+    const hasTaskState = visible.length > 0;
     return {
       statuses: visible,
-      lock,
       hasTaskState,
       className: visible.map((status) => status.className).filter(Boolean).join(" "),
       layoutClassName: !hasTaskState ? "" : visible.length > 1 ? "has-task-status-dual" : "has-task-status",
       slotClassName: [
-        visible.length === 0 && lock ? "task-status-lock-only" : "",
         visible.length === 1 ? "task-status-single" : "",
         visible.length > 1 ? "task-status-dual" : "",
       ].filter(Boolean).join(" "),
@@ -160,43 +152,25 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   }
 
   function taskAgentSessions(resourceId: string): WorkspaceSession[] {
-    return resourceId ? (dependencies.tree()?.sessions || []).filter((session) => session.resourceId === resourceId || dependencies.controls(session).some((control) => control.resourceId === resourceId)) : [];
+    return resourceId ? (dependencies.tree()?.sessions || []).filter((session) => session.resourceId === resourceId) : [];
   }
 
-  function resourceLocks(resourceId: string): WorkspaceSession[] {
-    return resourceId ? (dependencies.tree()?.sessions || []).filter((session) => dependencies.controls(session).some((control) => control.resourceId === resourceId)) : [];
-  }
-
-  function deriveTaskLockState(locks: WorkspaceSession[]): TaskLockState | null {
-    if (!locks.length) return null;
-    const external = locks.find((session) => session.source === "external");
-    const owner = external || locks[0];
-    const ownerLabel = owner.source === "external" ? "an external session" : `${dependencies.agentName(owner.agentRunAgentName)} session`;
-    return {
-      kind: external ? "external" : "internal",
-      className: external ? "task-lock-external" : "task-lock-internal",
-      label: locks.length > 1 ? `Locked by ${locks.length} sessions including ${ownerLabel}` : `Locked by ${ownerLabel}`,
-    };
-  }
-
-  function taskOperationalLabel(sessions: WorkspaceSession[], lock: TaskLockState | null): string {
+  function taskOperationalLabel(sessions: WorkspaceSession[]): string {
     const parts: string[] = [];
     if (sessions.length === 1) parts.push(`Agent session ${(sessions[0].agentRunStatus || "open").replace("waiting_approval", "waiting for approval")}`);
     else if (sessions.length > 1) parts.push(`${sessions.length} agent sessions: ${[...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ")}`);
-    if (lock) parts.push(lock.label);
     return parts.join(" · ");
   }
 
   function taskOperationalState(item: ResourceRecord): TaskOperationalState {
     const sessions = taskAgentSessions(item.id);
     const session = deriveTaskSessionState(sessions);
-    const lock = deriveTaskLockState(resourceLocks(item.id));
-    const statusPresentation = operationalStatusPresentation([session], lock);
-    return { session, lock, statusPresentation, className: statusPresentation.className, label: taskOperationalLabel(sessions, lock) };
+    const statusPresentation = operationalStatusPresentation([session]);
+    return { session, statusPresentation, className: statusPresentation.className, label: taskOperationalLabel(sessions) };
   }
 
   function noTaskOperationalState(): TaskOperationalState {
-    return { session: null, className: "", label: "", lock: null, statusPresentation: operationalStatusPresentation([]) };
+    return { session: null, className: "", label: "", statusPresentation: operationalStatusPresentation([]) };
   }
 
   function projectTaskSummary(project: ResourceRecord): ProjectTaskSummary {
@@ -218,10 +192,10 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     for (const project of tree.projects) {
       const state = taskOperationalState(project);
       const summary = projectTaskSummary(project);
-      parts.push(`${project.id}:session=${taskStatusKey(state.session)}:${state.lock?.kind || "none"}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
+      parts.push(`${project.id}:session=${taskStatusKey(state.session)}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
       for (const task of project.children || []) {
         const taskState = taskOperationalState(task);
-        parts.push(`${task.id}:session=${taskStatusKey(taskState.session)}:${taskState.lock?.kind || "none"}:${taskState.label}`);
+        parts.push(`${task.id}:session=${taskStatusKey(taskState.session)}:${taskState.label}`);
       }
     }
     return parts.join("|");
@@ -239,7 +213,6 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     noTaskOperationalState,
     operationalStatusPresentation,
     projectTaskSummary,
-    resourceLocks,
     resourceRefText,
     sessionOperationalLabel,
     sessionStatusPresentation,

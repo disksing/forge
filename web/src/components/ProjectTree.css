@@ -214,16 +214,6 @@
   color: #fff;
 }
 
-:where([data-component-owner="project-tree"]) .tree-item:hover .task-lock-indicator {
-  border-color: var(--ink-row);
-  background: var(--ink-row);
-}
-
-:where([data-component-owner="project-tree"]) .tree-item.active .task-lock-indicator {
-  border-color: var(--ink-deep);
-  background: var(--ink-deep);
-}
-
 :where([data-component-owner="project-tree"]) .task-item {
   padding-left: 30px;
   font-size: 13px;

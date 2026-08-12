@@ -20,7 +20,7 @@ describe("notification modules", () => {
     expect(notificationEventState({ id: 42, type: "turn.failed" })).toBe("failed");
     const record = createNotificationRecord(source, {
       workspaceId: "workspace-a", marker: "hub-1:42", completionState: "failed",
-      navigationTarget: () => ({ primaryResourceId: "task1" }),
+      navigationTarget: () => ({ resourceId: "task1" }),
       findResource: () => ({ id: "task1", type: "task", title: "Build release" }),
       now: () => 100,
     });
