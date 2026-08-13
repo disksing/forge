@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -32,96 +31,6 @@ type taskListEntry struct {
 type projectListEntry struct {
 	Project Project
 	Path    string
-}
-
-func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, newRel string) error {
-	changed := false
-	for i := range task.Repos {
-		before := task.Repos[i]
-		task.Repos[i].WorktreePath = migratePathReference(root, task.Repos[i].WorktreePath, oldRel, newRel)
-		task.Repos[i].RepoPath = migratePathReference(root, task.Repos[i].RepoPath, oldRel, newRel)
-		task.Repos[i].BarePath = migratePathReference(root, task.Repos[i].BarePath, oldRel, newRel)
-		if task.Repos[i] != before {
-			changed = true
-		}
-	}
-	if changed {
-		task.UpdatedAt = time.Now().Format(time.RFC3339)
-		if err := writeResourceMetadata(taskPath, &task); err != nil {
-			return err
-		}
-	}
-	for _, repo := range task.Repos {
-		if err := repairRepoWorktree(root, repo); err != nil {
-			return fmt.Errorf("repair archived worktree for %s repo %q: %w", task.ID, repo.Name, err)
-		}
-	}
-	return nil
-}
-
-func ensureProjectTasksArchived(projectPath string, project *Project) error {
-	openTasks, err := readTaskEntriesInDir(projectPath, projectTaskName(project.ID))
-	if err != nil {
-		return err
-	}
-	if len(openTasks) == 0 {
-		return nil
-	}
-	names := make([]string, 0, len(openTasks))
-	for _, entry := range openTasks {
-		names = append(names, taskDirectoryName(entry.Task.ID))
-	}
-	return fmt.Errorf("cannot archive %s: archive all project tasks first: %s", project.ID, strings.Join(names, ", "))
-}
-
-func resourceArchiveDestination(root, taskPath string, task Resource) (string, error) {
-	meta := task.resourceMeta()
-	if isProject(task) {
-		return filepath.Join(root, archiveDir, filepath.Base(taskPath)), nil
-	}
-	if typed, ok := task.(*Task); ok && typed.Parent != "" {
-		parentPath := filepath.Dir(taskPath)
-		return filepath.Join(parentPath, archiveDir, filepath.Base(taskPath)), nil
-	}
-	return "", fmt.Errorf("unsupported task id for archive: %s", meta.ID)
-}
-
-func ensureTaskRepoWorktreesMerged(root string, task Task) error {
-	for _, repo := range task.Repos {
-		if strings.TrimSpace(repo.WorktreePath) == "" {
-			continue
-		}
-		worktreePath := repo.WorktreePath
-		if !filepath.IsAbs(worktreePath) {
-			worktreePath = filepath.Join(root, worktreePath)
-		}
-		if !isDir(worktreePath) {
-			continue
-		}
-
-		target := strings.TrimSpace(repo.TargetBranch)
-		if target == "" {
-			return fmt.Errorf("cannot archive %s: repo %q worktree %s has no target branch recorded", task.ID, repo.Name, relPath(root, worktreePath))
-		}
-		cmd := exec.Command("git", "-C", worktreePath, "merge-base", "--is-ancestor", "HEAD", target)
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			continue
-		}
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			commits := strings.TrimSpace(gitOutput(worktreePath, "log", "--oneline", "-n", "5", target+"..HEAD"))
-			if commits != "" {
-				return fmt.Errorf("cannot archive %s: repo %q worktree %s has commits not merged into target branch %q:\n%s", task.ID, repo.Name, relPath(root, worktreePath), target, commits)
-			}
-			return fmt.Errorf("cannot archive %s: repo %q worktree %s has commits not merged into target branch %q", task.ID, repo.Name, relPath(root, worktreePath), target)
-		}
-		detail := strings.TrimSpace(string(out))
-		if detail == "" {
-			detail = err.Error()
-		}
-		return fmt.Errorf("cannot archive %s: cannot verify repo %q worktree %s against target branch %q: %s", task.ID, repo.Name, relPath(root, worktreePath), target, detail)
-	}
-	return nil
 }
 
 func newProject(id, title, description string) Project {

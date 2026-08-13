@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -73,6 +74,85 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	archivedProject, err := workspace.ArchiveResource(project.ID)
 	if err != nil || archivedProject.Path != "archive/project1-application" {
 		t.Fatalf("archive project = %#v, %v", archivedProject, err)
+	}
+}
+
+func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Archive cascade", "cascade")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "first"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Another child", Slug: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoPath := filepath.Join(root, "repos", "example")
+	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worktreePath := filepath.Join(root, filepath.FromSlash(first.Path), "worktree", "example")
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.AddTaskRepo(app.TaskRepoInput{
+		TaskID: first.ID, Name: "example", WorktreePath: filepath.ToSlash(first.Path + "/worktree/example"),
+		Branch: "feature", TargetBranch: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projectValue, err := workspace.ResourceValue(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := workspace.ArchiveResource(project.ID)
+	if err != nil {
+		t.Fatalf("project archive failed: %v", err)
+	}
+	if result.Path != filepath.ToSlash(filepath.Join("archive", filepath.Base(filepath.FromSlash(projectValue.Path)))) {
+		t.Fatalf("unexpected project archive path: %#v", result)
+	}
+	openWarnings := 0
+	for _, warning := range result.Warnings {
+		if warning.Code == "open_child_task" {
+			openWarnings++
+		}
+	}
+	if openWarnings != 2 {
+		t.Fatalf("project archive warnings = %#v, want one open-child warning per child", result.Warnings)
+	}
+	firstDir := filepath.Base(filepath.FromSlash(first.Path))
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(result.Path), firstDir, "task.json")); err != nil {
+		t.Fatalf("first child was not moved with its project: %v", err)
+	}
+
+	archivedFirst, err := workspace.ResourceValue(first.ID)
+	if err != nil || archivedFirst.Task == nil || !archivedFirst.Archived {
+		t.Fatalf("archived first child = %#v, %v", archivedFirst, err)
+	}
+	if got := archivedFirst.Task.Repos[0].WorktreePath; !strings.HasPrefix(got, "archive/") || !strings.Contains(got, "/"+firstDir+"/worktree/example") {
+		t.Fatalf("first child worktree path was not repaired: %q", got)
+	}
+	archivedSecond, err := workspace.ResourceValue(second.ID)
+	if err != nil || archivedSecond.Task == nil || !archivedSecond.Archived {
+		t.Fatalf("archived second child = %#v, %v", archivedSecond, err)
+	}
+	listed, err := workspace.Tasks(app.TaskListOptions{ProjectID: project.ID, IncludeArchived: true})
+	if err != nil || len(listed.Tasks) != 2 || !listed.Tasks[0].Archived || !listed.Tasks[1].Archived {
+		t.Fatalf("archived project children = %#v, %v", listed, err)
+	}
+	detail, err := workspace.Resource(project.ID)
+	if err != nil || len(detail.Children) != 2 || !detail.Children[0].Archived || !detail.Children[1].Archived {
+		t.Fatalf("archived project detail children = %#v, %v", detail.Children, err)
 	}
 }
 

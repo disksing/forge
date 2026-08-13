@@ -91,8 +91,15 @@ func applicationArchiveResource(id string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(os.Stdout, archived.Path)
-	return err
+	if _, err = fmt.Fprintln(os.Stdout, archived.Path); err != nil {
+		return err
+	}
+	for _, warning := range archived.Warnings {
+		if _, err = fmt.Fprintf(os.Stdout, "warning[%s]: %s\n", warning.Code, warning.Message); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func applicationTaskCreate(input app.CreateTaskInput) error {

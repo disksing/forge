@@ -1284,7 +1284,7 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
+func TestTaskArchiveWarnsUnmergedRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Archive before merge")
@@ -1300,16 +1300,13 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "--project=project1", "--task=task1")
-		if err == nil {
-			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "feature work") {
+			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "feature work") {
-			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
-		}
-		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
-			t.Fatal("project1.task1 should not have been archived")
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		if pathExists(filepath.Join(root, "project1", "task1")) {
+			t.Fatal("project1.task1 should have been archived despite the warning")
 		}
 	})
 }
@@ -1323,10 +1320,35 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(archived, "project1/archive/task1") {
-			t.Fatalf("expected archive path, got:\n%s", archived)
+		if !strings.Contains(archived, "project1/archive/task1") || !strings.Contains(archived, "warning[worktree_unverifiable]") {
+			t.Fatalf("expected archive path and unverifiable worktree warning, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+	})
+}
+
+func TestTaskArchiveWarnsDirtyWorktreeAndMissingTarget(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Archive with Git warnings")
+		run(t, "task", "create", "--project=project1", "Code task")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
+		if err := os.WriteFile(filepath.Join(worktreePath, "uncommitted.txt"), []byte("preserve me\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "missing-target")
+
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, "warning[dirty_worktree]") || !strings.Contains(out, "warning[target_branch_unverifiable]") {
+			t.Fatalf("expected dirty and unverifiable-target warnings, got stdout:\n%s", out)
+		}
+		archivedWorktree := filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "forge", "uncommitted.txt")
+		if got := readFile(t, archivedWorktree); got != "preserve me\n" {
+			t.Fatalf("archive did not preserve dirty worktree content: %q", got)
+		}
 	})
 }
 
@@ -1489,17 +1511,14 @@ func TestProjectListAllIncludesArchivedProjectsOnly(t *testing.T) {
 			t.Fatalf("task list --all should include archived and open tasks, got:\n%s", allTasks)
 		}
 
-		out, err := runErr(t, "project", "archive", "--project=project1")
-		if err == nil {
-			t.Fatalf("expected project archive with open tasks to fail, got stdout:\n%s", out)
+		out := run(t, "project", "archive", "--project=project1")
+		if !strings.Contains(out, "warning[open_child_task]") || !strings.Contains(out, "project1.task2") {
+			t.Fatalf("expected open child task warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "archive all project tasks first: task2") {
-			t.Fatalf("expected open child task in archive error, got error %v and stdout:\n%s", err, out)
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1"))
+		if pathExists(filepath.Join(root, "project1")) {
+			t.Fatal("project1 should have moved out of the open workspace")
 		}
-		assertDir(t, filepath.Join(root, "project1"))
-
-		run(t, "task", "archive", "--project=project1", "--task=task2")
-		run(t, "project", "archive", "--project=project1")
 		openProjects = run(t, "project", "list")
 		if strings.Contains(openProjects, "project1\tParent project") {
 			t.Fatalf("archived project should not be listed by default, got:\n%s", openProjects)
@@ -1605,7 +1624,7 @@ func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
+func TestTaskArchiveWarnsUnmergedSubtaskRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Parent project")
@@ -1621,16 +1640,13 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "--project=project1", "--task=task1")
-		if err == nil {
-			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "child feature work") {
+			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "child feature work") {
-			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
-		}
-		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
-			t.Fatal("unmerged subtask should not have been archived")
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		if pathExists(filepath.Join(root, "project1", "task1")) {
+			t.Fatal("unmerged subtask should have been archived despite the warning")
 		}
 	})
 }

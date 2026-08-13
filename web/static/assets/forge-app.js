@@ -10728,10 +10728,11 @@ function sm() {
 	hf.render();
 }
 async function cm(e) {
-	confirm(`Archive ${e}?`) && (await Hf(`/api/workspaces/${$.activeWorkspaceId}/archive`, {
+	let t = (await Hf(`/api/workspaces/${$.activeWorkspaceId}/archive`, {
 		method: "POST",
 		body: JSON.stringify({ resourceId: e })
-	}), Dm("Archived."), $.selectedId = "workspace", await Wf());
+	})).warnings || [];
+	Dm(t.length > 0 ? ["Archived.", ...t.map((e) => `Warning: ${e.message}`)].join("\n") : "Archived."), $.selectedId = "workspace", await Wf();
 }
 function lm(e) {
 	if (!$.tree) return null;

@@ -854,21 +854,29 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 	}
 	var archiveResult app.ArchiveResult
 	archive := func() error {
-		if s.agents != nil {
-			active, activeErr := s.agents.resourceHasActiveTurn(r.Context(), workspace, resourceID)
-			if activeErr != nil {
-				return activeErr
-			}
-			if active {
-				return &resourceAPIError{Code: "active_turn", Message: fmt.Sprintf("resource %s has an active Turn; interrupt or stop it before archiving", resourceID)}
-			}
-		}
+		resourceIDs, resourceIDsErr := archiveResourceIDs(forgeWorkspace, resourceID)
 		result, archiveErr := forgeWorkspace.ArchiveResource(resourceID)
 		if archiveErr != nil {
 			return archiveErr
 		}
-		if markErr := markResourceMailboxArchived(workspace.Path, resourceID); markErr != nil {
-			return markErr
+		if resourceIDsErr != nil {
+			warning := app.ArchiveWarning{
+				Severity:   "warning",
+				Code:       "runtime_descendants_unverifiable",
+				Message:    fmt.Sprintf("resource %s was archived, but runtime descendants could not be enumerated: %v; background reconciliation will retry", resourceID, resourceIDsErr),
+				ResourceID: resourceID,
+			}
+			result.Warnings = append(result.Warnings, warning)
+		}
+		for _, archivedResourceID := range resourceIDs {
+			if markErr := markResourceMailboxArchived(workspace.Path, archivedResourceID); markErr != nil {
+				result.Warnings = append(result.Warnings, app.ArchiveWarning{
+					Severity:   "warning",
+					Code:       "runtime_mailbox_mark_failed",
+					Message:    fmt.Sprintf("resource %s was archived, but its runtime mailbox could not be marked archived: %v; background reconciliation will retry", archivedResourceID, markErr),
+					ResourceID: archivedResourceID,
+				})
+			}
 		}
 		archiveResult = result
 		return nil
@@ -890,9 +898,12 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, archiveErr, status)
 		return
 	}
-	// Keep the existing HTTP response contract while the application layer
-	// returns the richer typed ArchiveResult to in-process callers.
-	writeJSON(w, map[string]string{"path": archiveResult.Path})
+	// Keep the existing path field while exposing non-blocking conditions to
+	// HTTP/Web callers. Warnings are omitted for the common clean case.
+	writeJSON(w, struct {
+		Path     string               `json:"path"`
+		Warnings []app.ArchiveWarning `json:"warnings,omitempty"`
+	}{Path: archiveResult.Path, Warnings: archiveResult.Warnings})
 	if s.agents != nil {
 		s.agents.runBackground(func() {
 			if err := s.agents.pollAgentHubSessions(context.Background()); err != nil {

@@ -396,10 +396,12 @@ type TaskPreview struct {
 }
 
 // ArchiveResult describes an archive operation without relying on printed
-// paths.
+// paths. Warnings are non-blocking observations made before or after the
+// directory move; a successful result always means the move itself completed.
 type ArchiveResult struct {
-	ResourceID string
-	Path       string
+	ResourceID string           `json:"resourceId"`
+	Path       string           `json:"path"`
+	Warnings   []ArchiveWarning `json:"warnings,omitempty"`
 }
 
 // Tree returns the complete Workspace resource tree.
@@ -732,7 +734,8 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 }
 
 // ArchiveResource moves an open project or task into its archive and returns
-// the resulting Workspace-relative path.
+// the resulting Workspace-relative path plus non-blocking warnings. A Project
+// move includes its complete child subtree.
 func (w *Workspace) ArchiveResource(id string) (ArchiveResult, error) {
 	if err := w.require(); err != nil {
 		return ArchiveResult{}, err
@@ -769,15 +772,15 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 	if pathExists(dst) {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Path: relPath(w.root, dst), Err: fmt.Errorf("archive destination already exists: %s", relPath(w.root, dst))}
 	}
+	var (
+		warnings []ArchiveWarning
+		children []archiveTaskReference
+	)
 	if isProject(resource) {
-		if err := ensureProjectTasksArchived(src, resource.(*Project)); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
-		}
+		children, warnings = collectProjectArchiveTasks(w.root, src, *resource.(*Project))
 	}
 	if task, ok := resource.(*Task); ok {
-		if err := ensureTaskRepoWorktreesMerged(w.root, *task); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
-		}
+		warnings = append(warnings, inspectTaskRepoWorktrees(w.root, *task)...)
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
@@ -785,10 +788,18 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 	if err := os.Rename(src, dst); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 	}
-	if task, ok := resource.(*Task); ok {
-		if err := rewriteArchivedTaskReferences(w.root, dst, *task, relPath(w.root, src), relPath(w.root, dst)); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
+	for _, directory := range []string{filepath.Dir(src), filepath.Dir(dst)} {
+		if err := syncDirectory(directory); err != nil {
+			warning := archiveWarning("archive_sync_failed", fmt.Sprintf("archive directory move for %s completed, but syncing %s failed: %v", cleanID, relPath(w.root, directory), err))
+			warning.ResourceID = cleanID
+			warning.Path = relPath(w.root, directory)
+			warnings = append(warnings, warning)
 		}
 	}
-	return ArchiveResult{ResourceID: cleanID, Path: relPath(w.root, dst)}, nil
+	if task, ok := resource.(*Task); ok {
+		warnings = append(warnings, rewriteArchivedTaskReferences(w.root, dst, *task, relPath(w.root, src), relPath(w.root, dst))...)
+	} else {
+		warnings = append(warnings, archiveTaskReferencesAfterMove(w.root, src, dst, children)...)
+	}
+	return ArchiveResult{ResourceID: cleanID, Path: relPath(w.root, dst), Warnings: sortArchiveWarnings(warnings)}, nil
 }

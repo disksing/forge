@@ -220,7 +220,10 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 
 func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {
 	pattern := projectTaskName(entry.Resource.resourceMeta().ID)
-	dirs := []string{entry.Path}
+	// Include both locations so an archived Project remains able to expose its
+	// complete child tree. The caller decides whether archived rows are shown;
+	// discovery must not lose them after a project-level directory move.
+	dirs := []string{entry.Path, filepath.Join(entry.Path, archiveDir)}
 	childEntries, err := readTaskEntriesInDirs(dirs, pattern)
 	if err != nil {
 		return nil, err
