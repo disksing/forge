@@ -61,6 +61,12 @@ type agentRun struct {
 	CreatedAt                 string                   `json:"createdAt"`
 	UpdatedAt                 string                   `json:"updatedAt"`
 	LastOutputAt              string                   `json:"lastOutputAt,omitempty"`
+	// TurnNumber is the durable ordinal of the latest AgentHub turn observed
+	// for this generation. LastTurnID survives an idle edge so a Forge restart
+	// or repeated session projection cannot count the same turn twice.
+	TurnNumber    int    `json:"turnNumber,omitempty"`
+	CurrentTurnID string `json:"currentTurnId,omitempty"`
+	LastTurnID    string `json:"lastTurnId,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
@@ -975,6 +981,10 @@ func cloneAgentRun(run agentRun) agentRun {
 func isLiveAgentStatus(status string) bool {
 	return status == "starting" || status == "running" || status == "waiting_approval" ||
 		status == "idle" || status == "stopping" || status == "recovering"
+}
+
+func resourceRunHasActiveTurn(run agentRun) bool {
+	return strings.TrimSpace(run.CurrentTurnID) != "" || run.Status == "running" || run.Status == "waiting_approval"
 }
 
 func (rt *agentRuntime) markIdle(m *agentManager) {

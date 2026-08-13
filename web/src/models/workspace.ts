@@ -31,6 +31,12 @@ export interface ResourceRecord {
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
   scheduler?: SchedulerConfigRecord;
   runtime?: ResourceRuntime;
+  attention?: ResourceAttention;
+}
+
+export interface ResourceAttention {
+  followed?: boolean;
+  dismissedTurn?: number;
 }
 
 export interface ResourceRuntime {
@@ -44,6 +50,8 @@ export interface ResourceRuntime {
   completionState?: string;
   completionAt?: string;
   replacementPending?: boolean;
+  turnNumber?: number;
+  activeTurn?: boolean;
 }
 
 export interface ScheduleRecord {
@@ -68,6 +76,7 @@ export interface WorkspaceTree {
   agentBinding?: { kind: "profile" | "agent"; name: string };
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
+  attentionList?: ResourceRecord[];
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
 }
 

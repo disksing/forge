@@ -34,6 +34,19 @@ export interface ShellResourceItem {
   summary: ShellProjectSummary | null;
   children: ShellResourceItem[];
   projectId?: string;
+  followed?: boolean;
+}
+
+export interface ShellAttentionItem {
+  id: string;
+  type: "workspace" | "scheduler" | "project" | "task";
+  title: string;
+  ref: string;
+  active: boolean;
+  followed: boolean;
+  turnNumber: number;
+  statusLabel: string;
+  status: ShellStatusPresentation;
 }
 
 export interface ShellWorkspaceItem extends WorkspaceOption {
@@ -55,6 +68,7 @@ export interface AppShellModel {
   workspaces: ShellWorkspaceItem[];
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
+  attentionList: ShellAttentionItem[];
   paneSizes: { sidebarWidth: number; chatWidth: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
@@ -67,6 +81,8 @@ export interface AppShellModel {
   onSelectResource: (id: string) => Promise<void>;
   onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
   onDragState: (drag: ShellDragTarget | null) => void;
+  onToggleAttention: (id: string, followed: boolean) => Promise<void>;
+  onDismissAttention: (id: string) => Promise<void>;
   onPanePreview: (name: keyof AppShellModel["paneSizes"], value: number) => void;
   onPaneCommit: (name: keyof AppShellModel["paneSizes"]) => void;
   onPaneViewport: () => void;

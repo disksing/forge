@@ -73,6 +73,7 @@ export interface ResourceGenerationStatus {
   generation: number;
   generationId: string;
   status: string;
+  turnNumber?: number;
   replacementPending?: boolean;
   agentHubSessionId?: string;
 }

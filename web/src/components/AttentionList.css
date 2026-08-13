@@ -1,0 +1,141 @@
+/* Attention list styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="attention-list"]).attention-section {
+  flex: 0 0 auto;
+  min-height: 0;
+  max-height: 42%;
+  overflow: auto;
+  padding: 4px 12px 14px;
+  border-top: 1px solid var(--ink-row);
+}
+
+:where([data-component-owner="attention-list"]) .section-title {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="attention-list"]) .attention-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+:where([data-component-owner="attention-list"]) .attention-item {
+  width: 100%;
+  min-height: 30px;
+  display: grid;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto auto;
+  column-gap: 6px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  color: #d3dbe3;
+  text-align: left;
+  font-size: 13px;
+}
+
+:where([data-component-owner="attention-list"]) .attention-item:hover,
+:where([data-component-owner="attention-list"]) .attention-item.active {
+  background: #33475c;
+  color: #fff;
+}
+
+:where([data-component-owner="attention-list"]) .attention-item .name {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="attention-list"]) .name-text,
+:where([data-component-owner="attention-list"]) .attention-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:where([data-component-owner="attention-list"]) .name-text {
+  flex: 0 1 auto;
+}
+
+:where([data-component-owner="attention-list"]) .resource-ref,
+:where([data-component-owner="attention-list"]) .attention-meta {
+  flex: 0 0 auto;
+  color: var(--faint-on-dark);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+:where([data-component-owner="attention-list"]) .attention-meta {
+  max-width: 42%;
+}
+
+:where([data-component-owner="attention-list"]) .attention-icon {
+  color: var(--faint-on-dark);
+}
+
+:where([data-component-owner="attention-list"]) .attention-star,
+:where([data-component-owner="attention-list"]) .attention-dismiss {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--faint-on-dark);
+  cursor: pointer;
+  opacity: 0;
+}
+
+:where([data-component-owner="attention-list"]) .attention-item:hover .attention-star,
+:where([data-component-owner="attention-list"]) .attention-item:focus-within .attention-star,
+:where([data-component-owner="attention-list"]) .attention-star.followed,
+:where([data-component-owner="attention-list"]) .attention-item:hover .attention-dismiss,
+:where([data-component-owner="attention-list"]) .attention-item:focus-within .attention-dismiss,
+:where([data-component-owner="attention-list"]) .attention-star:focus-visible,
+:where([data-component-owner="attention-list"]) .attention-dismiss:focus-visible {
+  opacity: 1;
+}
+
+:where([data-component-owner="attention-list"]) .attention-star:hover,
+:where([data-component-owner="attention-list"]) .attention-star:focus-visible,
+:where([data-component-owner="attention-list"]) .attention-dismiss:hover,
+:where([data-component-owner="attention-list"]) .attention-dismiss:focus-visible {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="attention-list"]) .attention-star svg,
+:where([data-component-owner="attention-list"]) .attention-dismiss svg {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="attention-list"]) .attention-star.followed svg {
+  fill: currentColor;
+}
+
+:where([data-component-owner="attention-list"]) .empty-attention {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:where([data-component-owner="attention-list"]) .empty-attention svg {
+  width: 14px;
+  height: 14px;
+}

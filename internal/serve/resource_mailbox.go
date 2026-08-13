@@ -137,6 +137,7 @@ type resourceGenerationStatus struct {
 	GenerationID       string `json:"generationId"`
 	Status             string `json:"status"`
 	ReplacementPending bool   `json:"replacementPending"`
+	TurnNumber         int    `json:"turnNumber,omitempty"`
 	AgentHubSessionID  string `json:"agentHubSessionId,omitempty"`
 }
 
@@ -778,6 +779,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 	status.Generation = &resourceGenerationStatus{
 		Generation: run.Generation, GenerationID: run.GenerationID,
 		Status: run.Status, ReplacementPending: run.ReplacementPending,
+		TurnNumber:        run.TurnNumber,
 		AgentHubSessionID: run.AgentHubSessionID,
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" || cfgErr != nil {
@@ -971,6 +973,9 @@ func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiW
 	}
 	if archived {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived and no longer accepts messages", resourceID)}
+	}
+	if err := m.server.followResource(workspace.Path, resourceID); err != nil {
+		return resourceMailboxMessage{}, fmt.Errorf("follow resource before accepting message: %w", err)
 	}
 	message, err := acceptMailboxMessage(workspace.Path, resourceID, request)
 	if err != nil {

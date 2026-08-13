@@ -1,0 +1,99 @@
+<script lang="ts">
+  import "./AttentionList.css";
+
+  import Icon from "./Icon.svelte";
+  import StatusPresentation from "./StatusPresentation.svelte";
+  import type { ShellAttentionItem, ShellStatusPresentation } from "./models";
+
+  let {
+    items,
+    onSelect,
+    onToggleAttention,
+    onDismiss,
+    onToast,
+  }: {
+    items: ShellAttentionItem[];
+    onSelect: (id: string) => Promise<void>;
+    onToggleAttention: (id: string, followed: boolean) => Promise<void>;
+    onDismiss: (id: string) => Promise<void>;
+    onToast: (message: string) => void;
+  } = $props();
+
+  function statusClass(status: ShellStatusPresentation): string {
+    return [status.layoutClassName, status.className].filter(Boolean).join(" ");
+  }
+
+  function iconName(item: ShellAttentionItem): string {
+    if (item.type === "project") return "folder";
+    if (item.type === "task") return "file-text";
+    if (item.type === "scheduler") return "calendar-clock";
+    return "home";
+  }
+
+  function resourceKind(item: ShellAttentionItem): string {
+    if (item.type === "project") return "Project";
+    if (item.type === "task") return "Task";
+    if (item.type === "scheduler") return "Scheduler";
+    return "Workspace";
+  }
+
+  function canFollow(item: ShellAttentionItem): boolean {
+    return item.type === "project" || item.type === "task";
+  }
+
+  async function select(item: ShellAttentionItem): Promise<void> {
+    try {
+      await onSelect(item.id);
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function toggleAttention(event: Event, item: ShellAttentionItem): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await onToggleAttention(item.id, !item.followed);
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  async function dismiss(event: Event, item: ShellAttentionItem): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await onDismiss(item.id);
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  function controlKeydown(event: KeyboardEvent, action: (event: KeyboardEvent) => Promise<void>): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    void action(event);
+  }
+</script>
+
+<section class="attention-section" data-component-owner="attention-list">
+  <div class="section-title"><span>Attention</span></div>
+  <nav class="attention-list" aria-label="Attention list">
+    {#if items.length === 0}
+      <div class="empty-attention"><Icon name="star" /><span>No focused resources</span></div>
+    {:else}
+      {#each items as item (item.id)}
+        <button type="button" class={`attention-item ${statusClass(item.status)} ${item.active ? "active" : ""}`} aria-label={`${item.title}${item.statusLabel ? `. ${item.statusLabel}` : ""}`} title={item.statusLabel || undefined} onclick={() => select(item)}>
+          <StatusPresentation status={item.status} />
+          <Icon name={iconName(item)} className="attention-icon" />
+          <span class="name"><span class="name-text">{item.title}</span>{#if item.ref}<span class="resource-ref">{item.ref}</span>{/if}<span class="attention-meta">{resourceKind(item)}{#if item.turnNumber > 0} · Turn {item.turnNumber}{/if}</span></span>
+          {#if canFollow(item)}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span class:followed={item.followed} class="attention-star" role="button" tabindex="0" aria-label={item.followed ? `Unfollow ${item.title}` : `Follow ${item.title}`} title={item.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, item)} onkeydown={(event) => controlKeydown(event, (keyEvent) => toggleAttention(keyEvent, item))}><Icon name="star" /></span>
+          {/if}
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span class="attention-dismiss" role="button" tabindex="0" aria-label={`Dismiss ${item.title}`} title="Dismiss" onclick={(event) => dismiss(event, item)} onkeydown={(event) => controlKeydown(event, (keyEvent) => dismiss(keyEvent, item))}><Icon name="x" /></span>
+        </button>
+      {/each}
+    {/if}
+  </nav>
+</section>

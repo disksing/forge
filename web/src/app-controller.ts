@@ -3,7 +3,7 @@ import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
-import type { AppShellModel, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
+import type { AppShellModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
 import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree } from "./models/workspace";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
@@ -698,7 +698,8 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 			ariaLabel: summary.ariaLabel
 		} : null,
 		children: kind === "project" ? applyCustomOrder(item.children || [], controllerState.taskOrder[item.id]).map((task) => appShellResourceModel(task, "task", item.id)) : [],
-		projectId
+		projectId,
+		followed: Boolean(item.attention?.followed)
 	};
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
@@ -718,8 +719,25 @@ function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellR
 		children: []
 	};
 }
+function appShellAttentionModel(item: ResourceRecord): ShellAttentionItem {
+	const state = taskOperationalState(item);
+	const type = item.type === "scheduler" || item.type === "project" || item.type === "task" ? item.type : "workspace";
+	const title = item.title || item.id;
+	return {
+		id: item.id,
+		type,
+		title,
+		ref: type === "project" || type === "task" ? resourceRefText(item.id) : "",
+		active: Boolean(item.runtime?.activeTurn),
+		followed: Boolean(item.attention?.followed),
+		turnNumber: Number(item.runtime?.turnNumber) || 0,
+		statusLabel: state.label || (item.attention?.followed ? "Focused resource" : "Active turn"),
+		status: appShellStatusModel(state.statusPresentation)
+	};
+}
 function renderAppShell() {
 	const projects = controllerState.tree ? applyCustomOrder(controllerState.tree.projects || [], controllerState.projectOrder).map((project) => appShellResourceModel(project, "project")) : [];
+	const attentionList = controllerState.tree?.attentionList?.map((item) => appShellAttentionModel(item)) || [];
 	if (controllerState.tree) controllerState.taskOperationalStateKey = taskOperationalStateKey();
 	publisher.renderAppShell({
 		identity: controllerState.activeWorkspaceId || "no-workspace",
@@ -736,6 +754,7 @@ function renderAppShell() {
 		})),
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
+		attentionList,
 		...paneLayoutController.snapshot(),
 		route: routeController.projection(),
 		onSwitchWorkspace: (id) => switchWorkspace(id),
@@ -748,6 +767,8 @@ function renderAppShell() {
 		onDragState: (drag) => {
 			controllerState.listDrag = drag;
 		},
+		onToggleAttention: (id, followed) => toggleResourceAttention(id, followed),
+		onDismissAttention: (id) => dismissResourceAttention(id),
 		onPanePreview: (name, value) => setPaneSize(name, value),
 		onPaneCommit: (name) => savePaneSize(name),
 		onPaneViewport: () => syncPaneViewport(),
@@ -1073,6 +1094,23 @@ async function refreshTreeAfterResourceMutation(): Promise<void> {
 	if (!controllerState.activeWorkspaceId || !controllerState.tree) return;
 	const tree = await fetchCurrentTree(controllerState.activeWorkspaceId);
 	if (tree) controllerState.tree = tree;
+}
+async function toggleResourceAttention(resourceId: string, followed: boolean): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	if (!workspaceId || !resourceId) return;
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention`, {
+		method: "PUT",
+		body: JSON.stringify({ followed })
+	});
+	await refreshTreeAfterResourceMutation();
+	publishViewModels();
+}
+async function dismissResourceAttention(resourceId: string): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	if (!workspaceId || !resourceId) return;
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/attention/dismiss`, { method: "POST" });
+	await refreshTreeAfterResourceMutation();
+	publishViewModels();
 }
 async function refreshResourceMessageStatus(workspaceId = controllerState.activeWorkspaceId, resourceId = selectedAgentResourceId()): Promise<boolean> {
 	if (!workspaceId || !resourceId) return false;

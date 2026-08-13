@@ -2,9 +2,10 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import MobileToolbar from "../../src/components/MobileToolbar.svelte";
+import AttentionList from "../../src/components/AttentionList.svelte";
 import ProjectTree from "../../src/components/ProjectTree.svelte";
 import WorkspaceSwitcher from "../../src/components/WorkspaceSwitcher.svelte";
-import type { ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { ShellAttentionItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -102,11 +103,12 @@ describe("AppShell responsibility components", () => {
     const onSelect = vi.fn(async () => undefined);
     const onReorder = vi.fn(async () => undefined);
     const onDragState = vi.fn();
+    const onToggleAttention = vi.fn(async () => undefined);
     const projectA = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(ProjectTree, { target, props: {
       identity: "workspace-a", loading: false, error: "", projects: [projectA, resource("project-b")],
-      onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToast: vi.fn(),
+      onCreate: vi.fn(), onToggle, onSelect, onReorder, onDragState, onToggleAttention, onToast: vi.fn(),
     } });
     cleanups.push(() => unmount(component));
     await tick();
@@ -115,6 +117,8 @@ describe("AppShell responsibility components", () => {
     target.querySelector<HTMLButtonElement>('[aria-label="task-a"]')!.click();
     await vi.waitFor(() => expect(onToggle).toHaveBeenCalledWith("project-a"));
     await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("task-a"));
+    target.querySelector<HTMLElement>('[aria-label="Follow project-a"]')!.click();
+    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", true));
 
     const rows = target.querySelectorAll<HTMLElement>(".project-tree > .tree-item");
     rows[0].querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
@@ -126,5 +130,25 @@ describe("AppShell responsibility components", () => {
       true,
     ));
     expect(onDragState).toHaveBeenLastCalledWith(null);
+  });
+
+  it("AttentionList exposes follow and dismiss controls without selecting the row", async () => {
+    const onSelect = vi.fn(async () => undefined);
+    const onToggleAttention = vi.fn(async () => undefined);
+    const onDismiss = vi.fn(async () => undefined);
+    const item: ShellAttentionItem = {
+      id: "project-a", type: "project", title: "Project A", ref: "#1", active: false, followed: true,
+      turnNumber: 2, statusLabel: "Focused resource", status: emptyStatus,
+    };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AttentionList, { target, props: { items: [item], onSelect, onToggleAttention, onDismiss, onToast: vi.fn() } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLElement>('[aria-label="Unfollow Project A"]')!.click();
+    target.querySelector<HTMLElement>('[aria-label="Dismiss Project A"]')!.click();
+    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", false));
+    await vi.waitFor(() => expect(onDismiss).toHaveBeenCalledWith("project-a"));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

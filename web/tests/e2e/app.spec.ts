@@ -15,6 +15,7 @@ interface Harness {
   steeredMessageIds: string[];
   schedulerBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
   bindingBodies: Array<Record<string, unknown>>;
+  attentionBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
 }
 
 const templates = [
@@ -125,8 +126,9 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, turnRunning = false): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
+  const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
   let scheduleSequence = 0;
   let schedulerConfig = {
     schemaVersion: 1,
@@ -194,18 +196,51 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     if (path === "/api/workspaces/ws-test/tree") {
       harness.treeRequests += 1;
+      const projectSnapshot = {
+        ...project,
+        attention: attentionStates[project.id],
+        children: project.children.map((resource) => resource.id === "project1.task1" ? {
+          ...resource,
+          attention: attentionStates[resource.id],
+          runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now, turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning },
+        } : { ...resource, attention: attentionStates[resource.id] }),
+      };
+      const attentionCandidates = [projectSnapshot, ...projectSnapshot.children];
+      const attentionList = attentionCandidates.filter((item) => {
+        const state = item.attention;
+        const runtime = (item as { runtime?: { activeTurn?: boolean; turnNumber?: number } }).runtime;
+        if (runtime?.activeTurn) return true;
+        if (!state?.followed) return false;
+        return state.dismissedTurn === undefined || Number(runtime?.turnNumber || 0) > state.dismissedTurn;
+      }).map((item) => ({ ...item, children: undefined }));
       return json(route, {
         root: "/tmp/forge-e2e",
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
-        projects: [{
-          ...project,
-          children: project.children.map((resource) => resource.id === "project1.task1" ? {
-            ...resource,
-            runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now },
-          } : resource),
-        }],
+        projects: [projectSnapshot],
+        attentionList,
         wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
+    }
+    const attentionDismissMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/attention\/dismiss$/);
+    if (attentionDismissMatch && method === "POST") {
+      const resourceId = decodeURIComponent(attentionDismissMatch[1]);
+      const current = attentionStates[resourceId] || { followed: false };
+      attentionStates[resourceId] = { ...current, dismissedTurn: turnRunning && resourceId === "project1.task1" ? 1 : 0 };
+      harness.attentionBodies.push({ method, path });
+      return json(route, attentionStates[resourceId]);
+    }
+    const attentionMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/attention$/);
+    if (attentionMatch) {
+      const resourceId = decodeURIComponent(attentionMatch[1]);
+      if (method === "PUT") {
+        const body = request.postDataJSON() as { followed?: boolean };
+        const current = attentionStates[resourceId] || { followed: false };
+        attentionStates[resourceId] = body.followed ? { followed: true } : current;
+        if (!body.followed) attentionStates[resourceId].followed = false;
+        harness.attentionBodies.push({ method, path, body });
+        return json(route, attentionStates[resourceId]);
+      }
+      if (method === "GET") return json(route, attentionStates[resourceId] || { followed: false });
     }
     if (path === "/api/workspaces/ws-test/scheduler" && method === "GET") {
       return json(route, schedulerConfig);
@@ -478,6 +513,22 @@ test("navigates resources and creates a task through the canonical application f
     detail: "Playwright isolated task body",
   });
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("follows and dismisses a resource from the tree and attention list", async ({ page }) => {
+  const harness = await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  const projectRow = page.locator("#projectTree > .tree-item").first();
+  await projectRow.hover();
+  await projectRow.locator('[aria-label="Follow Migration project"]').click();
+  const attentionRow = page.locator('[data-component-owner="attention-list"] .attention-item');
+  await expect(attentionRow).toHaveCount(1);
+  await expect(attentionRow).toContainText("Migration project");
+  await attentionRow.hover();
+  await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
+  await expect(attentionRow).toHaveCount(0);
+  expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
 });
 
 test("manages natural-language schedules from the fixed Scheduler resource", async ({ page }) => {

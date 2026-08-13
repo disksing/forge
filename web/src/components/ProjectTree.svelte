@@ -17,6 +17,7 @@
     onSelect,
     onReorder,
     onDragState,
+    onToggleAttention,
     onToast,
   }: {
     identity: string;
@@ -28,6 +29,7 @@
     onSelect: (id: string) => Promise<void>;
     onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;
     onDragState: (drag: ShellDragTarget | null) => void;
+    onToggleAttention: (id: string, followed: boolean) => Promise<void>;
     onToast: (message: string) => void;
   } = $props();
   let drag = $state<ShellDragTarget | null>(null);
@@ -105,6 +107,21 @@
       onToast(reason instanceof Error ? reason.message : String(reason));
     }
   }
+
+  async function toggleAttention(event: Event, item: ShellResourceItem): Promise<void> {
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      await onToggleAttention(item.id, !item.followed);
+    } catch (reason) {
+      onToast(reason instanceof Error ? reason.message : String(reason));
+    }
+  }
+
+  function attentionKeydown(event: KeyboardEvent, item: ShellResourceItem): void {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    void toggleAttention(event, item);
+  }
 </script>
 
 <section class="tree-section" data-component-owner="project-tree">
@@ -124,6 +141,8 @@
           <Icon name="folder" className="tree-icon" />
           <span class="name"><span class="name-text">{project.title}</span><span class="resource-ref">{project.ref}</span>{#if project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <span class:followed={project.followed} class="attention-star" role="checkbox" aria-checked={project.followed} tabindex="0" aria-label={project.followed ? `Unfollow ${project.title}` : `Follow ${project.title}`} title={project.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, project)} onkeydown={(event) => attentionKeydown(event, project)}><Icon name="star" /></span>
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
           <span class="drag-handle" draggable="true" title="Drag to reorder" ondragstart={(event) => beginDrag(event, { kind: "project", id: project.id, projectId: "" })} ondragend={finishDrag}><Icon name="grip-vertical" className="drag-handle-icon" /></span>
         </button>
         {#if project.expanded}
@@ -133,6 +152,8 @@
                 <span class="chevron"></span>
                 <StatusPresentation status={task.status} />
                 <Icon name="file-text" className="tree-icon" /><span class="name"><span class="name-text">{task.title}</span><span class="resource-ref">{task.ref}</span></span>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <span class:followed={task.followed} class="attention-star" role="checkbox" aria-checked={task.followed} tabindex="0" aria-label={task.followed ? `Unfollow ${task.title}` : `Follow ${task.title}`} title={task.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, task)} onkeydown={(event) => attentionKeydown(event, task)}><Icon name="star" /></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <span class="drag-handle" draggable="true" title="Drag to reorder" ondragstart={(event) => beginDrag(event, { kind: "task", id: task.id, projectId: project.id })} ondragend={finishDrag}><Icon name="grip-vertical" className="drag-handle-icon" /></span>
               </button>

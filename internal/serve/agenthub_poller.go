@@ -495,6 +495,7 @@ func agentHubStateForForgeStatus(status string) string {
 // only status signal that schedules durable canonical terminal inspection.
 func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agentHubSession) {
 	turnFinished := false
+	turnStarted := false
 	run, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
 		previousState := runtime.agentHubState
 		if previousState == "" {
@@ -516,6 +517,16 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 				runtime.run.CompletionPending = false
 			}
 			runtime.run.AgentHubSessionID = session.ID
+		}
+		turnID := strings.TrimSpace(session.CurrentTurnID)
+		if turnID == "" {
+			runtime.run.CurrentTurnID = ""
+		} else {
+			if runtime.run.LastTurnID != turnID {
+				turnStarted = true
+				runtime.run.LastTurnID = turnID
+			}
+			runtime.run.CurrentTurnID = turnID
 		}
 		runtime.agentHubState = session.State
 		runtime.run.Status = forgeStatusForAgentHubState(session.State)
@@ -540,6 +551,18 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	if persistErr != nil {
 		rt.addForgeNotice(m, "warning", "agenthub/action", "Persist AgentHub response: "+persistErr.Error())
 		return
+	}
+	if turnStarted && m != nil && m.server != nil {
+		resourceID := normalizedResourceID(run.ResourceID)
+		turnNumber, err := m.server.allocateResourceTurnNumber(rt.workspace.Path, resourceID)
+		if err != nil {
+			rt.addForgeNotice(m, "warning", "agenthub/action", "Persist resource turn ordinal: "+err.Error())
+		} else {
+			run, persistErr = rt.mutateRun(func(run *agentRun) { run.TurnNumber = turnNumber })
+			if persistErr != nil {
+				rt.addForgeNotice(m, "warning", "agenthub/action", "Persist generation turn ordinal: "+persistErr.Error())
+			}
+		}
 	}
 	if turnFinished {
 		go func() {

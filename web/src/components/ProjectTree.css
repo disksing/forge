@@ -170,7 +170,7 @@
 :where([data-component-owner="project-tree"]) .tree-item {
   min-height: 30px;
   display: grid;
-  grid-template-columns: 16px 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 16px minmax(0, 1fr) auto auto;
   column-gap: 6px;
   align-items: center;
   padding: 6px 8px;
@@ -181,11 +181,11 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.has-task-status {
-  grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 16px 16px minmax(0, 1fr) auto auto;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.has-task-status-dual {
-  grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto;
+  grid-template-columns: 16px 36px 16px minmax(0, 1fr) auto auto;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item:hover {
@@ -255,6 +255,40 @@
 
 :where([data-component-owner="project-tree"]) .tree-item:hover .drag-handle {
   display: grid;
+}
+
+:where([data-component-owner="project-tree"]) .attention-star {
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--faint-on-dark);
+  cursor: pointer;
+  opacity: 0;
+}
+
+:where([data-component-owner="project-tree"]) .attention-star:hover,
+:where([data-component-owner="project-tree"]) .attention-star:focus-visible,
+:where([data-component-owner="project-tree"]) .attention-star.followed,
+:where([data-component-owner="project-tree"]) .tree-item:hover .attention-star,
+:where([data-component-owner="project-tree"]) .tree-item:focus-within .attention-star {
+  opacity: 1;
+}
+
+:where([data-component-owner="project-tree"]) .attention-star:hover,
+:where([data-component-owner="project-tree"]) .attention-star:focus-visible {
+  background: var(--ink-row);
+  color: #fff;
+}
+
+:where([data-component-owner="project-tree"]) .attention-star svg {
+  width: 14px;
+  height: 14px;
+}
+
+:where([data-component-owner="project-tree"]) .attention-star.followed svg {
+  fill: currentColor;
 }
 
 :where([data-component-owner="project-tree"]) .tree-item.drag-source {

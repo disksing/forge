@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -86,12 +87,13 @@ const (
 )
 
 type workspaceTree struct {
-	Root         string             `json:"root"`
-	Creator      *app.Creator       `json:"creator,omitempty"`
-	AgentBinding app.AgentBinding   `json:"agentBinding"`
-	Scheduler    resourceSnapshot   `json:"scheduler"`
-	Projects     []resourceSnapshot `json:"projects"`
-	Wiki         workspaceWiki      `json:"wiki"`
+	Root          string             `json:"root"`
+	Creator       *app.Creator       `json:"creator,omitempty"`
+	AgentBinding  app.AgentBinding   `json:"agentBinding"`
+	Scheduler     resourceSnapshot   `json:"scheduler"`
+	Projects      []resourceSnapshot `json:"projects"`
+	AttentionList []resourceSnapshot `json:"attentionList"`
+	Wiki          workspaceWiki      `json:"wiki"`
 }
 
 type workspaceWiki struct {
@@ -110,15 +112,16 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID           string                   `json:"id"`
-	Type         string                   `json:"type"`
-	Title        string                   `json:"title"`
-	Path         string                   `json:"path"`
-	Archived     bool                     `json:"archived"`
-	Creator      *app.Creator             `json:"creator,omitempty"`
-	AgentBinding app.AgentBinding         `json:"agentBinding"`
-	Runtime      *resourceRuntimeSnapshot `json:"runtime,omitempty"`
-	Children     []resourceSnapshot       `json:"children,omitempty"`
+	ID           string                     `json:"id"`
+	Type         string                     `json:"type"`
+	Title        string                     `json:"title"`
+	Path         string                     `json:"path"`
+	Archived     bool                       `json:"archived"`
+	Creator      *app.Creator               `json:"creator,omitempty"`
+	AgentBinding app.AgentBinding           `json:"agentBinding"`
+	Runtime      *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
+	Attention    *resourceAttentionSnapshot `json:"attention,omitempty"`
+	Children     []resourceSnapshot         `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -143,11 +146,12 @@ type diffResponse struct {
 }
 
 type guiState struct {
-	Version          int                 `json:"version"`
-	ExpandedProjects []string            `json:"expandedProjects"`
-	LastResourceID   string              `json:"lastResourceId,omitempty"`
-	ProjectOrder     []string            `json:"projectOrder,omitempty"`
-	TaskOrder        map[string][]string `json:"taskOrder,omitempty"`
+	Version          int                               `json:"version"`
+	ExpandedProjects []string                          `json:"expandedProjects"`
+	LastResourceID   string                            `json:"lastResourceId,omitempty"`
+	ProjectOrder     []string                          `json:"projectOrder,omitempty"`
+	TaskOrder        map[string][]string               `json:"taskOrder,omitempty"`
+	Attention        map[string]resourceAttentionState `json:"attention,omitempty"`
 }
 
 type resourceLogRequest struct {
@@ -157,10 +161,11 @@ type resourceLogRequest struct {
 }
 
 type server struct {
-	addr   string
-	config string
-	agents *agentManager
-	locks  *workspaceLockManager
+	addr      string
+	config    string
+	agents    *agentManager
+	locks     *workspaceLockManager
+	uiStateMu sync.Mutex
 }
 
 const (
@@ -407,6 +412,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.agents.handleResourceStatus(w, r, id, parts[2])
 			return
 		}
+		if len(parts) == 5 && parts[3] == "attention" && parts[4] == "dismiss" {
+			s.handleResourceAttentionDismiss(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "attention" {
+			s.handleResourceAttention(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "messages" {
 			s.agents.handleResourceMessages(w, r, id, parts[2])
 			return
@@ -648,6 +661,10 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 	result.AgentBinding = binding
+	if err := s.followResource(workspace.Path, result.ID); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, result)
 }
 
@@ -730,6 +747,10 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	result.AgentBinding = binding
+	if err := s.followResource(workspace.Path, result.ID); err != nil {
+		writeError(w, err, http.StatusInternalServerError)
+		return
+	}
 	writeJSON(w, result)
 }
 
@@ -1424,6 +1445,9 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
+	if err := s.enrichTreeResourceAttention(path, &tree); err != nil {
+		return workspaceTree{}, err
+	}
 	return tree, nil
 }
 
@@ -1438,6 +1462,8 @@ type resourceRuntimeSnapshot struct {
 	CompletionState    string `json:"completionState,omitempty"`
 	CompletionAt       string `json:"completionAt,omitempty"`
 	ReplacementPending bool   `json:"replacementPending,omitempty"`
+	TurnNumber         int    `json:"turnNumber,omitempty"`
+	ActiveTurn         bool   `json:"activeTurn,omitempty"`
 }
 
 func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
@@ -1467,6 +1493,7 @@ func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspace
 				AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
 				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
 				CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
+				TurnNumber: run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run),
 			}
 		}
 		for i := range item.Children {
@@ -1545,48 +1572,30 @@ func (s *server) resource(ctx context.Context, id string, resourceID string, log
 }
 
 func (s *server) loadUIState(id string) (guiState, error) {
+	s.uiStateMu.Lock()
+	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
 	if err != nil {
 		return guiState{}, err
 	}
-	path := guiStatePath(workspace.Path)
-	var state guiState
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return guiState{Version: 1, ExpandedProjects: []string{}}, nil
-		}
-		return guiState{}, err
-	}
-	if err := json.Unmarshal(data, &state); err != nil {
-		return guiState{}, err
-	}
-	if state.Version == 0 {
-		state.Version = 1
-	}
-	if state.ExpandedProjects == nil {
-		state.ExpandedProjects = []string{}
-	}
-	return state, nil
+	return loadGUIStateFile(guiStatePath(workspace.Path))
 }
 
 func (s *server) saveUIState(id string, state guiState) error {
+	s.uiStateMu.Lock()
+	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
 	if err != nil {
 		return err
 	}
-	state.Version = 1
-	state.ExpandedProjects = uniqueNonEmpty(state.ExpandedProjects)
-	path := guiStatePath(workspace.Path)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(state, "", "  ")
+	// UI navigation updates predate attention state. Preserve the server-owned
+	// attention map so an older browser cannot overwrite stars or dismissals.
+	existing, err := loadGUIStateFile(guiStatePath(workspace.Path))
 	if err != nil {
 		return err
 	}
-	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o644)
+	state.Attention = existing.Attention
+	return saveGUIStateFile(guiStatePath(workspace.Path), state)
 }
 
 func (s *server) buildDiff(ctx context.Context, worktreePath string, base string) (string, error) {

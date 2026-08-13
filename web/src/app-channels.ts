@@ -23,12 +23,12 @@ const noopAsync = async () => undefined;
 export function createForgeAppChannels(): ForgeAppChannels {
   return {
     appShell: createModelChannel<AppShellModel>({
-      identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [],
+      identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [], attentionList: [],
       paneSizes: { sidebarWidth: 280, chatWidth: 420 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
       layout: { preference: "auto", effective: "three" },
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onToggleProject: noopAsync, onSelectResource: noopAsync,
-      onReorder: noopAsync, onDragState: noop, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
+      onReorder: noopAsync, onDragState: noop, onToggleAttention: noopAsync, onDismissAttention: noopAsync, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
       onMobileImmersive: noop, onLayoutCycle: noop, onToast: noop, onIconsChanged: noop, onHistoryNavigation: noopAsync,
     }),
     create: createModelChannel<CreateDialogModel>({
