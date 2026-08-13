@@ -1,7 +1,4 @@
 export type AgentOperationKind =
-	| "session-start"
-	| "session-switch"
-	| "session-stop"
 	| "turn-stop";
 
 export interface AgentOperationLease {

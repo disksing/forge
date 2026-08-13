@@ -262,6 +262,9 @@ func (w *Workspace) migrate(language string) error {
 	if err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
+	if err := isolateLegacySessionProjection(w.root); err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "session_projection", Workspace: w.root, Err: err}
+	}
 	if err := ensureWorkspaceWiki(w.root, language); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
@@ -393,8 +396,7 @@ type ArchiveResult struct {
 	Path       string
 }
 
-// Tree returns the complete Workspace tree using the persistent session-store lock
-// and the same pruning semantics as the CLI.
+// Tree returns the complete Workspace resource tree.
 func (w *Workspace) Tree() (WorkspaceTree, error) {
 	if err := w.require(); err != nil {
 		return WorkspaceTree{}, err

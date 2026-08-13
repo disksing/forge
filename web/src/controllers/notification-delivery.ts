@@ -17,7 +17,7 @@ export function notificationPermission(): NotificationPermission | "unsupported"
 
 export function notificationDisplayTitle(record: NotificationRecord): string {
   const kind = record.resourceType === "project" ? "Project" : record.resourceType === "task" ? "Task" : "Session";
-  return `${kind}: ${record.title || record.resourceId || record.sessionId}`;
+  return `${kind}: ${record.title || record.resourceId || record.generationId}`;
 }
 
 export function notificationDisplayBody(record: NotificationRecord): string {

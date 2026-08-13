@@ -11,16 +11,12 @@ export interface NotificationControllerDependencies {
   scope: ResourceScope;
   storage?: Storage | null;
   selectedResourceId(): string;
-  treeSessions(): NotificationSource[];
-  agentRuns(): NotificationSource[];
+  resourceProjections(): NotificationSource[];
   hasTree(): boolean;
   findResource(id: string): NotificationResource | null | undefined;
-  sessionNavigationTarget(item: NotificationSource): { resourceId?: string };
   selectResource(id: string, options: { clearUnread: boolean; forceDetail: boolean }): Promise<void>;
-  activateRun(runId: string): void;
   notificationsSettingsVisible(): boolean;
   renderSettings(): void;
-  renderSessions(): void;
   refreshIcons(): void;
   flushDraft(): void;
 }
@@ -131,7 +127,6 @@ export function createNotificationController(dependencies: NotificationControlle
     if (!record.resourceId) return;
     try {
       await dependencies.selectResource(record.resourceId, { clearUnread: false, forceDetail: true });
-      if (record.runId) dependencies.activateRun(record.runId);
     } finally {
       clearUnreadForMarker(record.marker);
     }
@@ -193,10 +188,7 @@ export function createNotificationController(dependencies: NotificationControlle
       } else {
         if (!current.unread.some((item) => item.marker === record.marker)) current.unread.push(record);
         writeStore();
-        if (dependencies.hasTree()) {
-          dependencies.renderSessions();
-          dependencies.refreshIcons();
-        }
+        if (dependencies.hasTree()) dependencies.refreshIcons();
       }
       return;
     }
@@ -208,7 +200,7 @@ export function createNotificationController(dependencies: NotificationControlle
       current.pending = current.pending.filter((item) => item.resourceId !== message.resourceId);
     } else return;
     writeStore();
-    if (dependencies.hasTree()) dependencies.renderSessions();
+    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function observeCompletion(item: NotificationSource, completionState = ""): boolean {
@@ -218,10 +210,9 @@ export function createNotificationController(dependencies: NotificationControlle
       workspaceId: state.workspaceId,
       marker,
       completionState,
-      navigationTarget: dependencies.sessionNavigationTarget,
       findResource: dependencies.findResource,
     });
-    if (!record?.sessionId) return false;
+    if (!record) return false;
     const current = store();
     const seen = current.seen.some((entry) => entry.marker === marker);
     const pendingIndex = current.pending.findIndex((entry) => entry.marker === marker);
@@ -243,34 +234,29 @@ export function createNotificationController(dependencies: NotificationControlle
     writeStore();
     broadcast({ type: "record", record });
     delivery.deliver(record);
-    if (dependencies.hasTree()) {
-      dependencies.renderSessions();
-      dependencies.refreshIcons();
-    }
+    if (dependencies.hasTree()) dependencies.refreshIcons();
     return true;
   }
 
   function observeProjections(items: NotificationSource[]): void {
-    for (const item of items) if (notificationMarkerFor(item)) observeCompletion(item, item.completionState || item.agentRunCompletionState || "");
+    for (const item of items) if (notificationMarkerFor(item)) observeCompletion(item, item.completionState || "");
   }
 
-  function observeEvent(event: NotificationEvent, run: NotificationSource): void {
+  function observeEvent(event: NotificationEvent, source: NotificationSource): void {
     const completionState = notificationEventState(event);
-    if (!completionState || !event.sessionId || !Number(event.id)) return;
-    observeCompletion({ ...run, completionMarker: `${event.sessionId}:${event.id}`, completionState, agentHubSessionId: run.agentHubSessionId || event.sessionId }, completionState);
+    if (!completionState || !Number(event.id)) return;
+    observeCompletion({
+      ...source,
+      completionMarker: `${source.generationId || event.sessionId || "generation"}:${event.id}`,
+      completionState,
+    }, completionState);
   }
 
   function establishBaseline(): void {
     if (state.ready) return;
-    observeProjections(dependencies.treeSessions());
-    observeProjections(dependencies.agentRuns());
+    observeProjections(dependencies.resourceProjections());
     state.ready = true;
     writeStore();
-  }
-
-  function hasUnreadForSession(sessionId: string): boolean {
-    const normalized = sessionId.trim();
-    return Boolean(normalized && store().unread.some((record) => record.sessionId === normalized));
   }
 
   function clearUnreadForMarker(marker: string): void {
@@ -282,7 +268,7 @@ export function createNotificationController(dependencies: NotificationControlle
     current.pending = current.pending.filter((record) => record.marker !== value);
     writeStore();
     broadcast({ type: "clear-marker", marker: value });
-    if (dependencies.hasTree()) dependencies.renderSessions();
+    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function clearResource(resourceId: string): void {
@@ -294,14 +280,14 @@ export function createNotificationController(dependencies: NotificationControlle
     current.pending = current.pending.filter((record) => record.resourceId !== value);
     writeStore();
     broadcast({ type: "clear-resource", resourceId: value });
-    if (dependencies.hasTree()) dependencies.renderSessions();
+    if (dependencies.hasTree()) dependencies.refreshIcons();
   }
 
   function install(): void {
     dependencies.scope.listen(window, "storage", (event) => {
       if (event.key === notificationStateKey(state.workspaceId) && event.newValue) {
         state.store = repository.readStore(state.workspaceId);
-        if (dependencies.hasTree()) dependencies.renderSessions();
+        if (dependencies.hasTree()) dependencies.refreshIcons();
       }
       if (event.key === NOTIFICATION_SETTINGS_KEY) {
         state.settings = repository.readSettings();
@@ -333,7 +319,6 @@ export function createNotificationController(dependencies: NotificationControlle
     establishBaseline,
     observeProjections,
     observeEvent,
-    hasUnreadForSession,
     clearResource,
     preferences,
     setBrowserEnabled: delivery.setBrowserEnabled,

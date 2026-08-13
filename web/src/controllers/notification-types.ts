@@ -1,19 +1,14 @@
 export interface NotificationSource {
   id?: string;
-  source?: string;
   title?: string;
   resourceId?: string;
-  runId?: string;
-  agentRunId?: string;
-  forgeSessionId?: string;
-  sessionId?: string;
+  generationId?: string;
   agentHubSessionId?: string;
-  completionSessionId?: string;
   completionMarker?: string;
-  agentRunCompletionMarker?: string;
   completionState?: string;
-  agentRunCompletionState?: string;
+  completionAt?: string;
   completionEventId?: number;
+  status?: string;
 }
 
 export interface NotificationResource {
@@ -30,8 +25,7 @@ export interface NotificationEvent {
 
 export interface NotificationRecord {
   workspaceId: string;
-  sessionId: string;
-  runId: string;
+  generationId: string;
   resourceId: string;
   marker: string;
   completionState: string;

@@ -3,7 +3,6 @@
 
   import { onMount, type Snippet } from "svelte";
 
-  import GlobalSessionList from "./GlobalSessionList.svelte";
   import Icon from "./Icon.svelte";
   import LayoutSwitcher from "./LayoutSwitcher.svelte";
   import MobileToolbar from "./MobileToolbar.svelte";
@@ -124,8 +123,6 @@
   <WorkspaceSwitcher identity={model.identity} mobileSidebarOpen={model.mobile.sidebarOpen} activeWorkspaceId={model.activeWorkspaceId} workspaces={model.workspaces} onSwitch={model.onSwitchWorkspace} onAdd={model.onAddWorkspace} onToast={model.onToast} />
   <SchedulerNav item={model.scheduler || null} onSelect={model.onSelectResource} onToast={model.onToast} />
   <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToast={model.onToast} />
-  <PaneResizeHandle id="sessionResize" kind="sidebarSessionHeight" className="horizontal-resize sidebar-session-resize" label="Resize sessions panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
-  <GlobalSessionList identity={model.identity} sessions={model.sessions} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToast={model.onToast} />
 </aside>
 <PaneResizeHandle id="sidebarResize" kind="sidebarWidth" className="sidebar-resize" label="Resize sidebar" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
 <main class="workspace-panel">

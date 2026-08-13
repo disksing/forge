@@ -1,12 +1,10 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import GlobalSessionList from "../../src/components/GlobalSessionList.svelte";
 import MobileToolbar from "../../src/components/MobileToolbar.svelte";
-import PaneResizeHandle from "../../src/components/PaneResizeHandle.svelte";
 import ProjectTree from "../../src/components/ProjectTree.svelte";
 import WorkspaceSwitcher from "../../src/components/WorkspaceSwitcher.svelte";
-import type { ShellResourceItem, ShellSessionItem, ShellStatusPresentation } from "../../src/components/models";
+import type { ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -31,14 +29,6 @@ function resource(id: string, type: "project" | "task" = "project"): ShellResour
   return {
     id, type, title: id, ref: `#${id}`, active: false, expanded: false, ariaLabel: id, statusLabel: "",
     status: emptyStatus, summary: null, children: [],
-  };
-}
-
-function session(id: string, overrides: Partial<ShellSessionItem> = {}): ShellSessionItem {
-  return {
-    id, source: "internal", title: id, meta: "Codex", label: "Codex", statusLabel: "Session active",
-    status: emptyStatus, unread: false, current: false, clickable: true, navigationResourceId: "",
-    ...overrides,
   };
 }
 
@@ -136,71 +126,5 @@ describe("AppShell responsibility components", () => {
       true,
     ));
     expect(onDragState).toHaveBeenLastCalledWith(null);
-  });
-
-  it("GlobalSessionList owns navigation, unread state, and session ordering", async () => {
-    const onSelect = vi.fn(async () => undefined);
-    const onReorder = vi.fn(async () => undefined);
-    const onDragState = vi.fn();
-    const sessions = [
-      session("session-a", { unread: true, navigationResourceId: "project-a.task-a" }),
-      session("session-b", { navigationResourceId: "project-b.task-b" }),
-    ];
-    const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(GlobalSessionList, { target, props: {
-      identity: "workspace-a", sessions, onSelect, onReorder, onDragState, onToast: vi.fn(),
-    } });
-    cleanups.push(() => unmount(component));
-    await tick();
-
-    target.querySelector<HTMLButtonElement>('[aria-label^="session-a"]')!.click();
-    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("project-a.task-a"));
-    target.querySelector<HTMLButtonElement>('[aria-label^="session-b"]')!.click();
-    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("project-b.task-b"));
-    expect(target.querySelector(".session-unread-badge")?.textContent).toBe("New");
-
-    const rows = target.querySelectorAll<HTMLElement>(".session-row");
-    rows[0].querySelector<HTMLElement>(".drag-handle")!.dispatchEvent(dragEvent("dragstart"));
-    rows[1].dispatchEvent(dragEvent("dragover", 1));
-    rows[1].dispatchEvent(dragEvent("drop", 1));
-    await vi.waitFor(() => expect(onReorder).toHaveBeenCalledWith(
-      { kind: "session", id: "session-a", projectId: "" },
-      { kind: "session", id: "session-b", projectId: "" },
-      true,
-    ));
-    expect(onDragState).toHaveBeenLastCalledWith(null);
-  });
-
-  it("PaneResizeHandle owns preview, commit, and pointer-listener cleanup", async () => {
-    const app = document.body.appendChild(document.createElement("div"));
-    app.id = "app";
-    const sidebar = app.appendChild(document.createElement("aside"));
-    sidebar.id = "mobileSidebar";
-    const sessions = sidebar.appendChild(document.createElement("section"));
-    sessions.className = "session-section";
-    const workspace = app.appendChild(document.createElement("main"));
-    workspace.className = "workspace-panel";
-    const chat = workspace.appendChild(document.createElement("aside"));
-    chat.id = "agentPanel";
-    vi.spyOn(app, "getBoundingClientRect").mockReturnValue({ width: 1_200 } as DOMRect);
-    vi.spyOn(sidebar, "getBoundingClientRect").mockReturnValue({ width: 280, height: 800 } as DOMRect);
-    vi.spyOn(sessions, "getBoundingClientRect").mockReturnValue({ height: 210 } as DOMRect);
-    vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({ width: 912 } as DOMRect);
-    vi.spyOn(chat, "getBoundingClientRect").mockReturnValue({ width: 420 } as DOMRect);
-    const onPreview = vi.fn();
-    const onCommit = vi.fn();
-    const component = mount(PaneResizeHandle, { target: sidebar, props: {
-      id: "sessionResize", kind: "sidebarSessionHeight", className: "horizontal-resize sidebar-session-resize",
-      label: "Resize sessions panel", onPreview, onCommit,
-    } });
-    cleanups.push(() => unmount(component));
-
-    sidebar.querySelector<HTMLElement>("#sessionResize")!.dispatchEvent(pointerEvent("pointerdown", 10, 100));
-    window.dispatchEvent(pointerEvent("pointermove", 10, 140));
-    expect(onPreview).toHaveBeenCalledWith("sidebarSessionHeight", 170);
-    expect(document.body.classList.contains("resizing-y")).toBe(true);
-    window.dispatchEvent(pointerEvent("pointerup", 10, 140));
-    expect(onCommit).toHaveBeenCalledWith("sidebarSessionHeight");
-    expect(document.body.classList.contains("resizing-y")).toBe(false);
   });
 });

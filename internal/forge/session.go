@@ -8,12 +8,11 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-const sessionShowUsage = "usage: forge session show --id=<id>"
+const sessionShowUsage = "usage: forge session show --id=<generationId>"
 
-// The CLI intentionally exposes only read-only Session diagnostics. Session
-// creation, binding, and removal are internal forge serve operations.
-type Session = app.Session
-type SessionLiveness = app.SessionLiveness
+// The CLI intentionally exposes only read-only generation diagnostics. An
+// AgentHub Session id is evidence in the result, never a public address.
+type Session = app.GenerationDiagnostic
 
 func runSession(args []string) error {
 	if len(args) == 0 {
@@ -75,12 +74,14 @@ func nextFlagValue(args []string, i *int) (string, bool) {
 	return args[*i], true
 }
 
-func formatSessionLiveness(liveness SessionLiveness) string {
-	if liveness.AgentHubSessionID != "" {
-		return "agenthub:" + liveness.AgentHubSessionID
+func formatSessionDiagnostic(session Session) string {
+	resourceID := session.ResourceID
+	if resourceID == "" {
+		resourceID = "workspace"
 	}
-	if liveness.SourceExternalID != "" {
-		return "agenthub:" + liveness.SourceExternalID
+	agent := session.AgentName
+	if agent == "" {
+		agent = "-"
 	}
-	return "agenthub:unbound"
+	return fmt.Sprintf("%s\t%s\tgen #%d\t%s\t%s\t%s", session.GenerationID, resourceID, session.Generation, session.Status, agent, session.UpdatedAt)
 }

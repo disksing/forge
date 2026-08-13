@@ -54,8 +54,8 @@ describe("timeline rendering components", () => {
     const group = mounted(ToolGroup, { item: { kind: "tools", key: "group-a", calls: [
       { callId: "call-a", name: "Read", summary: "task.md", status: "running", method: "fs/read", output: "partial" },
       { callId: "call-b", name: "Build", status: "failed", error: "boom" },
-    ] }, runId: "run-a", open: true, onToggle });
-    expect(group.querySelector(".agent-tool-group")?.getAttribute("data-tool-group-key")).toBe("run-a:group-a");
+    ] }, generationId: "gen-a", open: true, onToggle });
+    expect(group.querySelector(".agent-tool-group")?.getAttribute("data-tool-group-key")).toBe("gen-a:group-a");
     expect(group.textContent).toContain("2 tool calls");
     expect(group.querySelectorAll(".agent-tool-item")).toHaveLength(2);
     group.querySelector<HTMLDetailsElement>(".agent-tool-group")?.dispatchEvent(new Event("toggle"));
@@ -76,11 +76,11 @@ describe("timeline rendering components", () => {
     const card = mounted(ApprovalCard, { item: {
       kind: "approval", approvalId: "approval-a", title: "Permission", question: "Continue?", status: "pending",
       options: [{ optionId: "allow", name: "Allow" }, { optionId: "reject", kind: "reject_once" }],
-    }, runId: "run-a", contextIdentity: "workspace:run-a", onApproval, onToast });
+    }, generationId: "gen-a", contextIdentity: "workspace:gen-a", onApproval, onToast });
     const buttons = card.querySelectorAll<HTMLButtonElement>(".approval-options button");
     buttons[0].click();
     await tick();
-    expect(onApproval).toHaveBeenCalledWith("run-a", "approval-a", { optionId: "allow" });
+    expect(onApproval).toHaveBeenCalledWith("gen-a", "approval-a", { optionId: "allow" });
     expect([...buttons].every((button) => button.disabled)).toBe(true);
     buttons[1].click();
     expect(onApproval).toHaveBeenCalledTimes(1);
@@ -89,7 +89,7 @@ describe("timeline rendering components", () => {
     await tick();
     expect([...buttons].every((button) => !button.disabled)).toBe(true);
 
-    const failing = mounted(ApprovalCard, { item: { kind: "approval", approvalId: "approval-b", status: "pending" }, runId: "run-a", contextIdentity: "workspace:run-a", onApproval: vi.fn(async () => { throw new Error("denied"); }), onToast });
+    const failing = mounted(ApprovalCard, { item: { kind: "approval", approvalId: "approval-b", status: "pending" }, generationId: "gen-a", contextIdentity: "workspace:gen-a", onApproval: vi.fn(async () => { throw new Error("denied"); }), onToast });
     failing.querySelector<HTMLButtonElement>(".approval-actions button")?.click();
     await vi.waitFor(() => expect(onToast).toHaveBeenCalledWith("denied"));
   });

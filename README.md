@@ -10,8 +10,8 @@ The workspace is the source of truth. Contracts are Markdown, structured state i
 - **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Explicit file ownership.** Generated agent instructions allow writes only in the starting resource and its task worktrees, while keeping other Workspace resources read-only.
-- **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and session surface, including streaming chat, resumable history, file uploads, approvals, and mid-run user intervention.
-- **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor sessions, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1440px, and a single-column mobile layout below 980px. A layout switcher in the brand band (or the slim toolbar when the sidebar is collapsed) lets users override the responsive choice manually: three columns, tabbed two columns, or a split view that collapses the sidebar into a drawer with details and chat side by side; the preference is stored in the browser.
+- **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and conversation surface, including streaming chat, resumable history, file uploads, approvals, and mid-turn user intervention.
+- **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor resource runtime state, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1440px, and a single-column mobile layout below 980px. A layout switcher in the brand band (or the slim toolbar when the sidebar is collapsed) lets users override the responsive choice manually: three columns, tabbed two columns, or a split view that collapses the sidebar into a drawer with details and chat side by side; the preference is stored in the browser.
 - **Agent-interpreted scheduling.** Every Workspace has a Forge-managed Scheduler resource that evaluates natural-language conditions and sends ordinary resource messages without introducing a second execution protocol.
 
 ## Design
@@ -91,12 +91,12 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 
 The main UI is split into navigation, resource details, and agent chat:
 
-- **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor active or external sessions.
+- **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor each resource's current runtime state.
 - **Details:** render Scheduler context, schedules, `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
-The desktop panes and session list are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
+The desktop panes are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
 
 ### AgentHub execution
 
@@ -104,7 +104,7 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge persists generation projections in `<workspace>/.forge/runtime/generations.json` and a Workspace-wide, resource-owned mailbox in `<workspace>/.forge/runtime/mailbox.json`. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Session/Turn association. Upgrading migrates stage-one `pendingMessages` by writing the mailbox first, deduplicating by stable ID, and only then clearing legacy generation queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
+Forge persists generation records in `<workspace>/.forge/runtime/generations.json` and a Workspace-wide, resource-owned mailbox in `<workspace>/.forge/runtime/mailbox.json`. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Turn association. Upgrading migrates stage-one `pendingMessages` by writing the mailbox first, deduplicating by stable ID, and only then clearing legacy generation queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
 
 Resource messages use `steer` (default), `enqueue`, or `interrupt`. A supported active Turn receives steer immediately; an unsupported steer is durably downgraded to enqueue. Enqueue waits for a ready boundary. Interrupt first persists its mailbox item, records the exact active Turn, interrupts only that Turn, waits for terminal state, and then opens a new Turn. Already-delivering messages resolve first; otherwise interrupt outranks steer, and steer outranks queued enqueue, with acceptance order preserved inside each class. A live steer or interrupt may therefore bypass older enqueue work. Generation replacement never moves mailbox ownership: delivered steer remains with the old Turn, enqueue waits for the new generation, and interrupt terminates the old Turn before replacement delivery. The periodic reconciler recovers all modes after Server or AgentHub failures. Archived resources reject new messages: items not yet sent become `undeliverable`, while an already-attempted item whose AgentHub outcome cannot be confirmed becomes `delivery_unknown`; both remain queryable by message ID.
 
@@ -139,7 +139,7 @@ forge message send --to=project1.task2 --mode=interrupt "Stop the current approa
 forge message show --id=msg-run-0123456789abcdef
 ```
 
-These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. History lists and Turn/Event details default to formatted text for direct reading; pass `--json` for the complete structured response. They never write `mailbox.json` directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` remain read-only local diagnostics and never contact AgentHub.
+These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. History lists and Turn/Event details default to formatted text for direct reading; pass `--json` for the complete structured response. They never write `mailbox.json` directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` are read-only generation diagnostics derived from the local generation index and never contact AgentHub.
 
 Useful overrides:
 
@@ -150,7 +150,7 @@ FORGE_GUI_CONFIG    GUI configuration file
 
 `forge serve` no longer reads the former `FORGE_CLI` override. Remove that setting when upgrading; Workspace operations use the in-process typed API and the configured Workspace path.
 
-Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot recover sessions or write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before session recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
+Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before runtime recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -179,7 +179,7 @@ Use an absolute destination with `git worktree add`, especially when combining i
 
 ## Interactive Agent Sessions
 
-Interactive agents are launched through the Forge web UI and AgentHub. A resource-managed conversation has one current generation; explicit diagnostic Sessions may still coexist. Archiving a resource does not delete a running session record synchronously; `forge serve` requests the corresponding AgentHub stop and removes the transient record only after safe terminal-state reconciliation.
+Interactive agents are launched through the Forge web UI and AgentHub. A resource-managed conversation has one current generation, addressed by the resource ID and generation ID. AgentHub Session IDs are retained only as provider-correlation facts in durable generation records and history; they are not Forge resource addresses or lifecycle controls. Archiving a resource reconciles its generation with AgentHub and preserves the durable history.
 
 ## Task Templates
 
@@ -231,7 +231,8 @@ Templates without `schema-version` remain visible as legacy V1 templates with de
 AgentWorkspace/
   AGENTS.md                   global human and agent instructions
   forge.json                  workspace configuration
-  forge-sessions.json         transient AgentHub Session projections for forge serve
+  .forge/runtime/generations.json  durable resource generation records
+  .forge/runtime/mailbox.json      durable resource mailbox
   wiki/
     index.md                  long-lived workspace knowledge
   scheduler/
@@ -320,7 +321,7 @@ forge task log add|list ...
 forge task repo add|list|remove ...
 
 forge session list
-forge session show --id=<id>
+forge session show --id=<generationId>
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
@@ -338,7 +339,7 @@ Workspace, Project, and Task creation is local and uses the shared `internal/app
 
 Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the existing durable mailbox as structured system messages with stable `type`, `causation`, and receipt metadata. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
-`forge migrate` upgrades supported resource metadata, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves content outside these markers:
+`forge migrate` upgrades supported resource metadata, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
 
 ```markdown
 <!-- managed by forge cli -->

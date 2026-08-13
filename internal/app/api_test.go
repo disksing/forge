@@ -280,3 +280,65 @@ func TestMigrateDropsRemovedAgentCommandConfig(t *testing.T) {
 		t.Fatalf("removed agentCommand survived migration: %s", data)
 	}
 }
+
+func TestMigrateIsolatesLegacySessionProjectionWithoutTouchingRuntime(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{Workspace: "default", Project: "default", Task: "default"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Migrate(""); err != nil {
+		t.Fatal(err)
+	}
+	legacy := []byte(`{"version":1,"sessions":[{"id":"legacy","liveness":{"type":"pid","pid":1}}]}` + "\n")
+	legacyPath := filepath.Join(root, "forge-sessions.json")
+	if err := os.WriteFile(legacyPath, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	legacyLock := []byte("legacy-lock")
+	legacyLockPath := filepath.Join(root, ".forge-sessions.lock")
+	if err := os.WriteFile(legacyLockPath, legacyLock, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	generationPath := filepath.Join(root, ".forge", "runtime", "generations.json")
+	if err := os.WriteFile(generationPath, []byte("[]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	generationBefore, err := os.ReadFile(generationPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedulerPath := filepath.Join(root, "scheduler", "scheduler.json")
+	schedulerBefore, err := os.ReadFile(schedulerPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Migrate(""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy Session projection still visible after migration: %v", err)
+	}
+	if _, err := os.Stat(legacyLockPath); !os.IsNotExist(err) {
+		t.Fatalf("legacy Session lock still visible after migration: %v", err)
+	}
+	backup, err := os.ReadFile(filepath.Join(root, ".forge", "legacy", "forge-sessions.json"))
+	if err != nil || string(backup) != string(legacy) {
+		t.Fatalf("legacy Session backup = %q, %v", backup, err)
+	}
+	lockBackup, err := os.ReadFile(filepath.Join(root, ".forge", "legacy", ".forge-sessions.lock"))
+	if err != nil || string(lockBackup) != string(legacyLock) {
+		t.Fatalf("legacy Session lock backup = %q, %v", lockBackup, err)
+	}
+	generationAfter, _ := os.ReadFile(generationPath)
+	schedulerAfter, _ := os.ReadFile(schedulerPath)
+	if string(generationAfter) != string(generationBefore) || string(schedulerAfter) != string(schedulerBefore) {
+		t.Fatal("migration changed the generation index or Scheduler content")
+	}
+	if err := workspace.Migrate(""); err != nil {
+		t.Fatalf("repeat migration was not idempotent: %v", err)
+	}
+}

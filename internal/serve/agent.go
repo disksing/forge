@@ -24,20 +24,25 @@ import (
 )
 
 type agentRun struct {
-	ID                      string `json:"id"`
-	WorkspaceID             string `json:"workspaceId"`
-	ResourceID              string `json:"resourceId,omitempty"`
-	Generation              int    `json:"generation,omitempty"`
-	GenerationID            string `json:"generationId,omitempty"`
-	SourceInstanceID        string `json:"sourceInstanceId,omitempty"`
-	BindingKind             string `json:"bindingKind,omitempty"`
-	BindingName             string `json:"bindingName,omitempty"`
-	ProfileRevision         string `json:"profileRevision,omitempty"`
-	ResolvedProfile         string `json:"resolvedProfile,omitempty"`
-	AgentConfigError        string `json:"agentConfigError,omitempty"`
-	ReplacementPending      bool   `json:"replacementPending,omitempty"`
-	AgentProfile            string `json:"agentProfile,omitempty"`
-	AgentSelectionReason    string `json:"agentSelectionReason,omitempty"`
+	// agentRun is the internal persisted generation record. ID is an
+	// implementation key only; resource APIs address records by GenerationID.
+	ID                   string `json:"id"`
+	WorkspaceID          string `json:"workspaceId"`
+	ResourceID           string `json:"resourceId,omitempty"`
+	Generation           int    `json:"generation,omitempty"`
+	GenerationID         string `json:"generationId,omitempty"`
+	SourceInstanceID     string `json:"sourceInstanceId,omitempty"`
+	BindingKind          string `json:"bindingKind,omitempty"`
+	BindingName          string `json:"bindingName,omitempty"`
+	ProfileRevision      string `json:"profileRevision,omitempty"`
+	ResolvedProfile      string `json:"resolvedProfile,omitempty"`
+	AgentConfigError     string `json:"agentConfigError,omitempty"`
+	ReplacementPending   bool   `json:"replacementPending,omitempty"`
+	AgentProfile         string `json:"agentProfile,omitempty"`
+	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
+	// ForgeSessionID is retained only for the unexposed legacy agent-run
+	// compatibility path. Resource generations leave it empty and therefore do
+	// not serialize a Forge Session address.
 	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
 	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
@@ -59,7 +64,7 @@ type agentRun struct {
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
-	// completion. Both fields live in the local run projection and are
+	// completion. Both fields live in the local generation record and are
 	// rebuilt/reconciled from AgentHub's durable event log.
 	CompletionCursor    int64  `json:"completionCursor,omitempty"`
 	CompletionSessionID string `json:"completionSessionId,omitempty"`
@@ -83,8 +88,9 @@ type resourceInboundMessage struct {
 	AcceptedAt string `json:"acceptedAt"`
 }
 
-// agentRunDetail carries run metadata only. Event history is served by the
-// AgentHub proxy endpoints and never embedded in detail responses.
+// agentRunDetail is retained only for the unregistered pre-resource
+// compatibility handlers. Resource endpoints return resource/generation
+// responses and never expose this run-shaped envelope.
 type agentRunDetail struct {
 	Run agentRun `json:"run"`
 }
@@ -107,7 +113,6 @@ type forgeNoticeData struct {
 	Text       string `json:"text"`
 	Kind       string `json:"kind,omitempty"`
 	Lifecycle  string `json:"lifecycle,omitempty"`
-	RunID      string `json:"runId,omitempty"`
 	ResourceID string `json:"resourceId,omitempty"`
 }
 
@@ -122,6 +127,11 @@ type agentUploadResponse struct {
 }
 
 var agentIndexMu sync.Mutex
+
+type generationIndexDocument struct {
+	Version     int        `json:"version"`
+	Generations []agentRun `json:"generations"`
+}
 
 type startAgentRequest struct {
 	AgentName            string `json:"agentName"`
@@ -179,6 +189,9 @@ func newAgentManager(s *server) *agentManager {
 	}
 }
 
+// handle is an unregistered compatibility dispatcher for pre-stage-six
+// in-process callers. server.handleWorkspace deliberately has no path that
+// invokes it; all public AgentHub traffic is routed through stable resources.
 func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceID string, parts []string) {
 	if len(parts) == 0 || parts[0] != "runs" {
 		http.NotFound(w, r)
@@ -471,61 +484,36 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 }
 
 func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, run agentRun, cfg config) (string, error) {
+	// Resource generations are now the Forge-side lifecycle record. Legacy
+	// agent-run compatibility code still carries a synthetic identifier so its
+	// in-memory control flow can converge, but it never creates a Forge Session
+	// projection.
 	_ = ctx
-	endpoint, err := effectiveAgentHubEndpoint(cfg.AgentHubEndpoint)
-	if err != nil {
-		return "", err
+	_ = workspace
+	_ = cfg
+	if strings.TrimSpace(run.GenerationID) == "" && strings.TrimSpace(run.ID) != "" {
+		return "legacy-session-" + run.ID, nil
 	}
-	sourceExternalID := strings.TrimSpace(run.SourceExternalID)
-	if sourceExternalID == "" {
-		sourceExternalID = workspace.ID + "/" + run.ID
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return "", err
-	}
-	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
-		Type: "agenthub", Endpoint: endpoint, SourceApp: "forge",
-		SourceInstanceID: runSourceInstanceID(cfg, run), SourceExternalID: sourceExternalID,
-	})
-	if err != nil {
-		return "", err
-	}
-	sessionID := strings.TrimSpace(session.ID)
-	if sessionID == "" {
-		return "", errors.New("internal Forge session creation returned an empty id")
-	}
-	return sessionID, nil
+	return "", nil
 }
 
 func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace guiWorkspace, forgeSessionID, agentHubSessionID string) error {
+	// AgentHubSessionID is persisted on the generation record itself. This
+	// compatibility hook intentionally has no filesystem side effect.
 	_ = ctx
-	if strings.TrimSpace(forgeSessionID) == "" || strings.TrimSpace(agentHubSessionID) == "" {
-		return errors.New("Forge and AgentHub session ids are required")
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return err
-	}
-	_, err = forgeWorkspace.BindAgentHubSession(forgeSessionID, agentHubSessionID)
-	return err
+	_ = workspace
+	_ = forgeSessionID
+	_ = agentHubSessionID
+	return nil
 }
 
 func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
+	// Kept as a no-op for the unregistered legacy control path. There is no
+	// Forge Session projection to release in the resource lifecycle.
 	_ = ctx
-	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" {
-		return nil
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		return err
-	}
-	_, err = forgeWorkspace.EndSession(sessionID)
-	if err != nil && strings.Contains(err.Error(), "session not found") {
-		return nil
-	}
-	return err
+	_ = workspace
+	_ = sessionID
+	return nil
 }
 
 func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, resourceID, requested string) (string, error) {
@@ -1045,11 +1033,24 @@ func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
 		}
 		return nil, err
 	}
-	var runs []agentRun
-	if err := json.Unmarshal(data, &runs); err != nil {
+	if strings.HasPrefix(strings.TrimSpace(string(data)), "[") {
+		var runs []agentRun
+		if err := json.Unmarshal(data, &runs); err != nil {
+			return nil, err
+		}
+		return runs, nil
+	}
+	var document generationIndexDocument
+	if err := json.Unmarshal(data, &document); err != nil {
 		return nil, err
 	}
-	return runs, nil
+	if document.Version != 1 {
+		return nil, fmt.Errorf("unsupported generation index version %d; expected 1", document.Version)
+	}
+	if document.Generations == nil {
+		document.Generations = []agentRun{}
+	}
+	return document.Generations, nil
 }
 
 func saveAgentRun(workspacePath string, run agentRun) error {
@@ -1113,7 +1114,7 @@ func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {
 	if err := ensureAgentDirs(workspacePath); err != nil {
 		return err
 	}
-	data, err := json.MarshalIndent(runs, "", "  ")
+	data, err := json.MarshalIndent(generationIndexDocument{Version: 1, Generations: runs}, "", "  ")
 	if err != nil {
 		return err
 	}

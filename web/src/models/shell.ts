@@ -36,26 +36,12 @@ export interface ShellResourceItem {
   projectId?: string;
 }
 
-export interface ShellSessionItem {
-  id: string;
-  source: "internal" | "external" | string;
-  title: string;
-  meta: string;
-  label: string;
-  statusLabel: string;
-  status: ShellStatusPresentation;
-  unread: boolean;
-  current: boolean;
-  clickable: boolean;
-  navigationResourceId: string;
-}
-
 export interface ShellWorkspaceItem extends WorkspaceOption {
   iconSrc: string;
 }
 
 export interface ShellDragTarget {
-  kind: "project" | "task" | "session";
+  kind: "project" | "task";
   id: string;
   projectId: string;
 }
@@ -69,8 +55,7 @@ export interface AppShellModel {
   workspaces: ShellWorkspaceItem[];
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
-  sessions: ShellSessionItem[];
-  paneSizes: { sidebarWidth: number; chatWidth: number; sidebarSessionHeight: number };
+  paneSizes: { sidebarWidth: number; chatWidth: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
   route: { path: string; revision: number; replace: boolean };

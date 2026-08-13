@@ -11,7 +11,6 @@ interface Harness {
   streamRequests: string[];
   treeRequests: number;
   agentsBodies: Array<Record<string, unknown>>;
-  startBodies: Array<Record<string, unknown>>;
   uiStateBodies: Array<Record<string, unknown>>;
   steeredMessageIds: string[];
   schedulerBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
@@ -64,33 +63,6 @@ const schedulerResource = {
   agentBinding: { kind: "profile", name: "fast" },
 };
 
-const runs = [
-  {
-    id: "run-1",
-    workspaceId: "ws-test",
-    resourceId: "project1.task1",
-    agentHubSessionId: "session-1",
-    agentHubAgentName: "test-agent",
-    title: "Primary session",
-    cwd: "/tmp/forge-e2e/worktree",
-    status: "idle",
-    createdAt: now,
-    updatedAt: now,
-  },
-  {
-    id: "run-2",
-    workspaceId: "ws-test",
-    resourceId: "project1.task1",
-    agentHubSessionId: "session-2",
-    agentHubAgentName: "test-agent",
-    title: "Secondary session",
-    cwd: "/tmp/forge-e2e/worktree",
-    status: "idle",
-    createdAt: "2026-08-10T11:00:00Z",
-    updatedAt: "2026-08-10T11:00:00Z",
-  },
-];
-
 function detail(id: string) {
   const resource = id === project.id ? project : project.children.find((item) => item.id === id);
   if (!resource) throw new Error(`unknown resource ${id}`);
@@ -108,22 +80,22 @@ function detail(id: string) {
   };
 }
 
-function historyEvents(runId: string) {
+function historyEvents(generationId: string) {
   return Array.from({ length: 32 }, (_, index) => ({
     id: index + 33,
     time: `2026-08-10T12:${String(index).padStart(2, "0")}:00Z`,
     type: index % 2 === 0 ? "message.input" : "message.assistant.delta",
-    sessionId: runId,
+    sessionId: "agenthub-session-1",
     turnId: `turn-${index}`,
     data: {
-      text: `${runId} baseline message ${index + 1}`,
+      text: `${generationId} baseline message ${index + 1}`,
       ...(index % 2 === 0 ? { role: "user", sender: { name: "Test User" } } : {}),
     },
   }));
 }
 
-function historyTurns(runId: string) {
-  return historyEvents(runId).map((event) => ({
+function historyTurns(generationId: string) {
+  return historyEvents(generationId).map((event) => ({
     id: event.turnId, turnId: event.turnId, status: "completed", closed: true,
     startEventId: event.id, endEventId: event.id, firstEventId: event.id, lastEventId: event.id,
     items: [{
@@ -140,7 +112,7 @@ const resourceGeneration = {
 };
 
 function resourceTurnSummaries() {
-  return historyTurns("run-1").map((turn) => ({
+  return historyTurns("gen-1").map((turn) => ({
     reference: `ref-${turn.turnId}`, turnId: turn.turnId, status: turn.status, closed: turn.closed,
     startedAt: turn.items[0].startedAt, durationMs: 0, triggerPreview: turn.items[0].text,
     eventCount: 1, toolEventCount: 0, startEventId: turn.startEventId, lastEventId: turn.lastEventId,
@@ -153,7 +125,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, turnRunning = false): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], startBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   let scheduleSequence = 0;
   let schedulerConfig = {
@@ -218,7 +190,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         lastResourceId,
         projectOrder: [],
         taskOrder: {},
-        sessionOrder: [],
       });
     }
     if (path === "/api/workspaces/ws-test/tree") {
@@ -226,18 +197,13 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, {
         root: "/tmp/forge-e2e",
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
-        projects: [project],
-        sessions: runs.map((run) => ({
-          id: `forge-${run.id}`,
-          startedAt: run.createdAt,
-          updatedAt: run.updatedAt,
-          source: "internal",
-          agentRunId: run.id,
-          agentRunAgentName: run.agentHubAgentName,
-          agentRunTitle: run.title,
-          agentRunStatus: run.status,
-          resourceId: run.resourceId,
-        })),
+        projects: [{
+          ...project,
+          children: project.children.map((resource) => resource.id === "project1.task1" ? {
+            ...resource,
+            runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now },
+          } : resource),
+        }],
         wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
     }
@@ -301,8 +267,8 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         resourceId, state: "working", exists: true, archived: false, acceptsMessages: true,
         canSteerWaiting: true, waitingMessages: visible, messages: { waiting: visible.length },
         ...(resourceId === "project1.task1" ? {
-          generation: { runId: "run-1", generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle" },
-          session: { id: "run-1", state: turnRunning ? "running" : "idle", ...(turnRunning ? { currentTurnId: "turn-stream" } : {}) },
+          generation: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle" },
+          session: { id: "session-1", state: turnRunning ? "running" : "idle", ...(turnRunning ? { currentTurnId: "turn-stream" } : {}) },
         } : {}),
       });
     }
@@ -318,14 +284,14 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       const reference = decodeURIComponent(historyTurnDetailMatch[1]);
       const summary = resourceTurnSummaries().find((turn) => turn.reference === reference);
       if (!summary) return json(route, { error: "turn not found" }, 404);
-      const source = historyTurns("run-1").find((turn) => turn.turnId === summary.turnId)!;
+      const source = historyTurns("gen-1").find((turn) => turn.turnId === summary.turnId)!;
       return json(route, { turn: summary, items: source.items, latestEventId: 64 });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/history/turns" && method === "GET") {
       if (url.searchParams.has("cursor")) {
         const summary = {
           reference: "ref-turn-older", turnId: "turn-older", status: "completed", closed: true,
-          startedAt: now, durationMs: 0, triggerPreview: "run-1 older history", eventCount: 2, toolEventCount: 0,
+          startedAt: now, durationMs: 0, triggerPreview: "gen-1 older history", eventCount: 2, toolEventCount: 0,
           startEventId: 1, lastEventId: 32, endEventId: 32, generation: resourceGeneration,
         };
         return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: [summary] }], page: { limit: 20, hasMore: false } });
@@ -334,7 +300,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/stream" && method === "GET") {
       harness.streamRequests.push("project1.task1");
-      const event = { id: 100, time: now, type: "message.assistant.delta", sessionId: "run-1", turnId: "turn-stream", data: { text: "SSE update for project1.task1" } };
+      const event = { id: 100, time: now, type: "message.assistant.delta", sessionId: "session-1", turnId: "turn-stream", data: { text: "SSE update for project1.task1" } };
       return route.fulfill({ status: 200, contentType: "text/event-stream", headers: { "cache-control": "no-cache" }, body: `id: 100\ndata: ${JSON.stringify(event)}\n\n` });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/messages" && method === "POST") {
@@ -404,82 +370,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       const summary = String((body.templateFields as Record<string, unknown>)?.summary || "Untitled");
       return json(route, { title: `${templateName}:${summary}`, markdown: `# ${templateName}:${summary}\n`, slug: "", template: { digest: `digest-${templateName}` } });
     }
-    if (path === "/api/workspaces/ws-test/agent/runs" && method === "GET") {
-      const resourceId = url.searchParams.get("resourceId");
-      return json(route, { runs: resourceId === "project1.task1" ? runs : [] });
-    }
-    if (path === "/api/workspaces/ws-test/agent/runs" && method === "POST") {
-      harness.startBodies.push(request.postDataJSON());
-      return json(route, { run: { ...runs[0], id: "run-3", agentHubSessionId: "session-3", agentHubAgentName: "test-agent", title: "New session" } }, 201);
-    }
-    const runMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])$/);
-    if (runMatch && method === "GET") {
-      return json(route, { run: runs.find((run) => run.id === runMatch[1]) });
-    }
-    const turnsMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/turns$/);
-    if (turnsMatch) {
-      if (url.searchParams.has("before")) {
-        return json(route, {
-          turns: [{
-            id: "turn-older", turnId: "turn-older", status: "completed", closed: true,
-            startEventId: 1, endEventId: 32, firstEventId: 1, lastEventId: 32,
-            items: [
-              { type: "message", role: "user", sender: { name: "Test User" }, text: `${turnsMatch[1]} older history`, startEventId: 1, endEventId: 1, startedAt: now, endedAt: now, count: 1 },
-              { type: "message", role: "assistant", text: `${turnsMatch[1]} older reply`, startEventId: 32, endEventId: 32, startedAt: now, endedAt: now, count: 1 },
-            ],
-          }],
-          latestEventId: 64, page: { hasMoreBefore: false },
-        });
-      }
-      if (turnsMatch[1] === "run-2") await new Promise((resolve) => setTimeout(resolve, 300));
-      return json(route, { turns: historyTurns(turnsMatch[1]), latestEventId: 64, page: { hasMoreBefore: true } });
-    }
-    const eventsMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/events$/);
-    if (eventsMatch) {
-      if (url.searchParams.has("before")) {
-        return json(route, {
-          events: [
-            { id: 1, time: "2026-08-10T10:00:00Z", type: "message.input", sessionId: eventsMatch[1], turnId: "turn-older", data: { text: `${eventsMatch[1]} older history`, role: "user", sender: { name: "Test User" } } },
-            { id: 32, time: "2026-08-10T10:01:00Z", type: "message.assistant.delta", sessionId: eventsMatch[1], turnId: "turn-older", data: { text: `${eventsMatch[1]} older reply` } },
-            { id: 33, time: "2026-08-10T10:02:00Z", type: "message.input", sessionId: eventsMatch[1], turnId: "turn-overlap", data: { text: `${eventsMatch[1]} baseline message 1`, role: "user", sender: { name: "Test User" } } },
-          ],
-          page: { hasMoreBefore: false },
-        });
-      }
-      if (eventsMatch[1] === "run-2") await new Promise((resolve) => setTimeout(resolve, 300));
-      return json(route, { events: historyEvents(eventsMatch[1]), page: { hasMoreBefore: true } });
-    }
-    const streamMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/stream$/);
-    if (streamMatch) {
-      harness.streamRequests.push(streamMatch[1]);
-      const event = {
-        id: 100,
-        time: now,
-        type: "message.assistant.delta",
-        sessionId: streamMatch[1],
-        turnId: "turn-stream",
-        data: { text: `SSE update for ${streamMatch[1]}` },
-      };
-      return route.fulfill({
-        status: 200,
-        contentType: "text/event-stream",
-        headers: { "cache-control": "no-cache" },
-        body: `id: 100\ndata: ${JSON.stringify(event)}\n\n`,
-      });
-    }
-    const inputMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/input$/);
-    if (inputMatch && method === "POST") {
-      harness.inputBodies.push(request.postDataJSON());
-      return json(route, { status: "accepted" });
-    }
-    const uploadMatch = path.match(/^\/api\/workspaces\/ws-test\/agent\/runs\/(run-[12])\/uploads$/);
-    if (uploadMatch && method === "POST") {
-      const multipart = request.postData() || "";
-      const name = multipart.match(/filename="([^"]+)"/)?.[1] || "upload.txt";
-      harness.uploadNames.push(name);
-      return json(route, { name, path: `artifacts/upload/${name}` }, 201);
-    }
-    if (/\/agent\/runs\/run-[12]\/stop$/.test(path) && method === "POST") return json(route, {});
     return json(route, { error: `Unhandled mock request: ${method} ${path}` }, 500);
   });
   return harness;
@@ -494,15 +384,15 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
   let failNextSave = false;
   const uiStateBodies: ShellHarness["uiStateBodies"] = [];
   const uiStates: Record<string, Record<string, unknown>> = {
-    "ws-a": { version: 1, expandedProjects: ["project1"], lastResourceId: "project1.task1", projectOrder: [], taskOrder: {}, sessionOrder: [] },
-    "ws-b": { version: 1, expandedProjects: ["project2"], lastResourceId: "project2.task1", projectOrder: [], taskOrder: {}, sessionOrder: [] },
+    "ws-a": { version: 1, expandedProjects: ["project1"], lastResourceId: "project1.task1", projectOrder: [], taskOrder: {} },
+    "ws-b": { version: 1, expandedProjects: ["project2"], lastResourceId: "project2.task1", projectOrder: [], taskOrder: {} },
   };
   const trees = {
-    "ws-a": { root: "/tmp/ws-a", projects: [project], sessions: [], wiki: { exists: false, entries: [] } },
+    "ws-a": { root: "/tmp/ws-a", projects: [project], wiki: { exists: false, entries: [] } },
     "ws-b": {
       root: "/tmp/ws-b",
       projects: [{ id: "project2", type: "project", title: "Second workspace project", path: "project2", archived: false, children: [{ id: "project2.task1", type: "task", title: "Second workspace task", path: "project2/task1", archived: false }] }],
-      sessions: [], wiki: { exists: false, entries: [] },
+      wiki: { exists: false, entries: [] },
     },
   };
   await page.route("**/api/**", async (route) => {
@@ -550,7 +440,6 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
       });
     }
     if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
-    if (/^\/api\/workspaces\/ws-[ab]\/agent\/runs$/.test(path)) return json(route, { runs: [] });
     return json(route, { error: `Unhandled shell request: ${method} ${path}` }, 500);
   });
   return { uiStateBodies, failNextUIStateSave: () => { failNextSave = true; } };
@@ -721,12 +610,12 @@ test("pages resource history, sends input, receives SSE, and preserves active re
   await page.goto("/w/ws-test/r/project1.task1");
 
   await expect(page.locator("#ttyLog")).toContainText("SSE update for project1.task1");
-  await expect(page.locator("#ttyLog")).toContainText("run-1 baseline message 1");
-  const historyAnchor = page.locator(".conversation-turn").filter({ hasText: "run-1 baseline message 1" }).first();
+  await expect(page.locator("#ttyLog")).toContainText("gen-1 baseline message 1");
+  const historyAnchor = page.locator(".conversation-turn").filter({ hasText: "gen-1 baseline message 1" }).first();
   await expect(historyAnchor).toBeVisible();
   await historyAnchor.evaluate((node) => node.setAttribute("data-history-anchor", "stable"));
   await page.locator("#loadOlderAgentEventsButton, .load-older-events").click();
-  await expect(page.locator("#ttyLog")).toContainText("run-1 older history");
+  await expect(page.locator("#ttyLog")).toContainText("gen-1 older history");
   await expect(historyAnchor).toHaveAttribute("data-history-anchor", "stable");
   const input = page.locator("#ttyInput");
   await input.fill("Preserve this draft until accepted");

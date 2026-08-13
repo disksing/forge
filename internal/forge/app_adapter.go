@@ -178,12 +178,12 @@ func applicationSessionList() error {
 	if err != nil {
 		return err
 	}
-	sessions, err := workspace.Sessions()
+	sessions, err := workspace.GenerationDiagnostics()
 	if err != nil {
 		return err
 	}
 	for _, session := range sessions {
-		fmt.Printf("%s\t%s\t%s\n", session.ID, formatSessionLiveness(SessionLiveness(session.Liveness)), session.UpdatedAt)
+		fmt.Println(formatSessionDiagnostic(session))
 	}
 	return nil
 }
@@ -193,7 +193,7 @@ func applicationSessionShow(id string) error {
 	if err != nil {
 		return err
 	}
-	session, err := workspace.Session(id)
+	session, err := workspace.GenerationDiagnostic(id)
 	if err != nil {
 		return err
 	}

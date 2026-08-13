@@ -33,8 +33,7 @@ describe("route and pane layout controllers", () => {
 	it("normalizes legacy details width and persists committed pane sizes", () => {
 		expect(normalizePaneSizes({ detailsWidth: 500, sidebarWidth: 100 }, 1_200)).toEqual({
 			sidebarWidth: 220,
-			chatWidth: 692,
-			sidebarSessionHeight: 210
+			chatWidth: 692
 		});
 		const layout = createPaneLayoutController(() => undefined, storage);
 		layout.initialize();

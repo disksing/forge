@@ -16,17 +16,19 @@ import (
 // a raw stream. The only Forge addition is the forge.notice frames interleaved
 // into the proxy stream so existing browser notifications keep working.
 
-// errAgentHubProxyUnbound marks runs that exist but have no AgentHub session,
-// which the proxy reports as 409 instead of a generic upstream failure.
+// errAgentHubProxyUnbound marks an internal generation record that has no
+// AgentHub session, which the resource proxy reports as 409 instead of a
+// generic upstream failure.
 var errAgentHubProxyUnbound = errors.New("run is not attached to AgentHub")
 
 // errAgentHubProxyConfig marks AgentHub client configuration failures, which
 // the proxy reports as 503 because the GUI itself is not ready to serve events.
 var errAgentHubProxyConfig = errors.New("AgentHub is not configured")
 
-// resolveAgentHubProxyTarget finds the run projection and a live AgentHub
-// client without loading any event history. The returned status is the HTTP
-// code to report when err is non-nil.
+// resolveAgentHubProxyTarget finds an internal generation record and a live
+// AgentHub client without loading any event history. The returned status is
+// the HTTP code to report when err is non-nil. Its runID argument is an
+// implementation key, never a resource address.
 func (m *agentManager) resolveAgentHubProxyTarget(workspaceID, runID string) (agentRun, *agentHubClient, int, error) {
 	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil {

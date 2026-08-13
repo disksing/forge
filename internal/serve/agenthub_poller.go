@@ -11,7 +11,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-// This file reconciles local run projections with AgentHub session state by
+// This file reconciles local generation records with AgentHub session state by
 // polling one session list per interval instead of replaying event history.
 // Run status follows session state. Forge session release is owned here and
 // nowhere else: durable
@@ -30,7 +30,7 @@ var (
 	agentHubStopConfirmInterval = 200 * time.Millisecond
 )
 
-// startAgentRecovery rebuilds run projections in the background so the HTTP
+// startAgentRecovery rebuilds generation records in the background so the HTTP
 // listener can serve immediately; the session poller runs right away and then
 // every interval as the fallback for any run the recovery pass missed.
 func (m *agentManager) startAgentRecovery(ctx context.Context) {
@@ -108,7 +108,8 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			}
 			resourceID := strings.TrimSpace(run.ResourceID)
 			archiveState, isTask := taskArchiveStates[resourceID]
-			if !isTask && resourceID != "" && resourceID != "workspace" {
+			archiveManaged := resourceID != "" && resourceID != "workspace" && resourceID != app.SchedulerResourceID
+			if !isTask && archiveManaged {
 				resource, resourceErr := forgeWorkspace.ResourceValue(resourceID)
 				archiveState = taskArchiveState{archived: resource.Archived, err: resourceErr}
 			}
@@ -117,7 +118,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 				// intentionally reclaimed the task. Keep the AgentHub session
 				// open and surface the failed inspection instead.
 				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
-			} else if !isTask && resourceID != "" && resourceID != "workspace" && archiveState.err != nil {
+			} else if !isTask && archiveManaged && archiveState.err != nil {
 				failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, archiveState.err))
 			} else if archiveState.archived {
 				// Reclaim only the session id already bound to this run. Source

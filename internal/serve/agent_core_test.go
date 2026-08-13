@@ -62,11 +62,11 @@ func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {
 	}
 }
 
-func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
+func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	workspace := t.TempDir()
 	run := agentRun{
 		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
-		AgentHubAgentName: "review-agent", ForgeSessionID: "session-one", AgentHubSessionID: "ses_one",
+		Generation: 1, GenerationID: "gen-one", AgentHubAgentName: "review-agent", AgentHubSessionID: "ses_one",
 		Title: "Run One", Cwd: workspace, Status: "running",
 		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
 		LastOutputAt: "2026-01-01T00:00:02Z",
@@ -74,20 +74,14 @@ func TestEnrichTreeSessionsIncludesAgentHubRunState(t *testing.T) {
 	if err := rewriteAgentRuns(workspace, []agentRun{run}); err != nil {
 		t.Fatal(err)
 	}
-	tree := workspaceTree{Sessions: []guiSession{
-		{ID: "session-one"},
-		{ID: "external"},
-	}}
-	if err := (&server{}).enrichTreeSessions(workspace, &tree); err != nil {
+	tree := workspaceTree{Projects: []resourceSnapshot{{ID: "project1", Children: []resourceSnapshot{{ID: "project1.task1"}}}}}
+	if err := (&server{}).enrichTreeResourceRuntime(workspace, &tree); err != nil {
 		t.Fatal(err)
 	}
-	internal := tree.Sessions[0]
-	if internal.Source != "internal" || internal.AgentRunID != run.ID || internal.AgentRunAgentName != run.AgentHubAgentName ||
-		internal.AgentRunStatus != run.Status || internal.AgentRunLastOutputAt != run.LastOutputAt || internal.ResourceID != run.ResourceID {
-		t.Fatalf("internal session was not enriched: %#v", internal)
-	}
-	if tree.Sessions[1].Source != "external" {
-		t.Fatalf("external session was misclassified: %#v", tree.Sessions[1])
+	runtime := tree.Projects[0].Children[0].Runtime
+	if runtime == nil || runtime.GenerationID != run.GenerationID || runtime.AgentName != run.AgentHubAgentName ||
+		runtime.Status != run.Status || runtime.LastOutputAt != run.LastOutputAt {
+		t.Fatalf("resource runtime was not enriched: %#v", runtime)
 	}
 }
 
@@ -158,17 +152,11 @@ func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 	if err != nil || id == "" {
 		t.Fatalf("create Forge session: id=%q err=%v", id, err)
 	}
-	forgeWorkspace, err := app.OpenWorkspace(workspace)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.HasPrefix(id, "legacy-session-") {
+		t.Fatalf("legacy compatibility id = %q", id)
 	}
-	session, err := forgeWorkspace.Session(id)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if session.Liveness.Type != "agenthub" || session.Liveness.Endpoint != defaultAgentHubEndpoint ||
-		session.Liveness.SourceInstanceID != "forge-one" || session.Liveness.SourceExternalID != "workspace-one/run-one" {
-		t.Fatalf("unexpected session liveness: %#v", session.Liveness)
+	if _, err := os.Stat(filepath.Join(workspace, "forge-sessions.json")); !os.IsNotExist(err) {
+		t.Fatalf("legacy Forge Session projection was created: %v", err)
 	}
 }
 

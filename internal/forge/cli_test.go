@@ -864,7 +864,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge template list [--project=<project>] [--json]",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
-		"  forge session list\n  forge session show --id=<id>",
+		"  forge session list\n  forge session show --id=<generationId>",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
 		"  forge init [--language=<language>] [--creator=user|agent]",
@@ -873,7 +873,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
 		"  forge template list|show|validate|render|create|migrate ...",
-		"  forge session list\n    List the transient AgentHub Session projections managed by forge serve.",
+		"  forge session list\n    List read-only generation diagnostics derived from .forge/runtime/generations.json.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0
@@ -1097,30 +1097,30 @@ func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
 func TestSessionListAndShowAreReadOnlyAgentHubDiagnostics(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		path := filepath.Join(root, "forge-sessions.json")
-		store := `{"version":1,"sessions":[` +
-			`{"id":"legacy-pid","liveness":{"type":"pid","pid":123},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
-			`{"id":"legacy-heartbeat","liveness":{"type":"heartbeat","timeout":"1h"},"startedAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
-			`{"id":"session-agenthub","liveness":{"type":"agenthub","sourceExternalId":"workspace/run","agentHubSessionId":"ses_one","lastKnownState":"legacy"},"startedAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
-		if err := os.WriteFile(path, []byte(store), 0o644); err != nil {
+		path := filepath.Join(root, ".forge", "runtime", "generations.json")
+		store := `{"version":1,"generations":[` +
+			`{"id":"run-internal","resourceId":"workspace","generation":1,"generationId":"gen-one","title":"Workspace generation","status":"idle","agentHubSessionId":"ses_one","createdAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(store), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		before := readFile(t, path)
 
 		listed := run(t, "session", "list")
-		if !strings.Contains(listed, "session-agenthub\tagenthub:ses_one") ||
-			strings.Contains(listed, "legacy-pid") || strings.Contains(listed, "legacy-heartbeat") {
+		if !strings.Contains(listed, "gen-one\tworkspace\tgen #1\tidle") || strings.Contains(listed, "run-internal") {
 			t.Fatalf("unexpected read-only session list:\n%s", listed)
 		}
-		shown := run(t, "session", "show", "--id", "session-agenthub")
+		shown := run(t, "session", "show", "--id", "gen-one")
 		if !strings.Contains(shown, `"agentHubSessionId": "ses_one"`) {
-			t.Fatalf("unexpected session JSON:\n%s", shown)
+			t.Fatalf("unexpected generation JSON:\n%s", shown)
 		}
-		if _, err := runErr(t, "session", "show", "--id=session-agenthub", "--id", "session-agenthub"); err == nil || !strings.Contains(err.Error(), sessionShowUsage) {
-			t.Fatalf("duplicate session ID flag should be rejected, got %v", err)
+		if _, err := runErr(t, "session", "show", "--id=gen-one", "--id", "gen-one"); err == nil || !strings.Contains(err.Error(), sessionShowUsage) {
+			t.Fatalf("duplicate generation ID flag should be rejected, got %v", err)
 		}
-		if _, err := runErr(t, "session", "show", "--id", "legacy-pid"); err == nil || !strings.Contains(err.Error(), "session not found") {
-			t.Fatalf("legacy PID session should not be exposed, got %v", err)
+		if _, err := runErr(t, "session", "show", "--id", "run-internal"); err == nil || !strings.Contains(err.Error(), "generation not found") {
+			t.Fatalf("internal run ID should not be exposed, got %v", err)
 		}
 		run(t, "workspace", "tree", "--json")
 		if after := readFile(t, path); after != before {

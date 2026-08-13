@@ -1,4 +1,3 @@
-import type { AgentEvent, AgentNotice, AgentRun } from "./chat";
 import type { TaskTemplate } from "./create";
 import type { FileTreeModel, ResourceCreatorModel, ResourceFileModel, ResourceRepoModel } from "./detail";
 
@@ -31,6 +30,20 @@ export interface ResourceRecord {
   template?: { name: string; schemaVersion?: number; digest?: string } | null;
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
   scheduler?: SchedulerConfigRecord;
+  runtime?: ResourceRuntime;
+}
+
+export interface ResourceRuntime {
+  generation?: number;
+  generationId?: string;
+  status?: string;
+  agentName?: string;
+  updatedAt?: string;
+  lastOutputAt?: string;
+  completionMarker?: string;
+  completionState?: string;
+  completionAt?: string;
+  replacementPending?: boolean;
 }
 
 export interface ScheduleRecord {
@@ -50,25 +63,11 @@ export interface SchedulerConfigRecord {
   schedules: ScheduleRecord[];
 }
 
-export interface WorkspaceSession extends AgentRun {
-  source?: "internal" | "external" | string;
-  runId?: string;
-  forgeSessionId?: string;
-  startedAt?: string;
-  agentRunTitle?: string;
-  agentRunAgentName?: string;
-  agentRunStatus?: string;
-  agentRunUpdatedAt?: string;
-  agentRunLastOutputAt?: string;
-  completionSessionId?: string;
-}
-
 export interface WorkspaceTree {
   creator?: ResourceCreatorModel;
   agentBinding?: { kind: "profile" | "agent"; name: string };
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
-  sessions: WorkspaceSession[];
   wiki?: { exists?: boolean; error?: string; entries?: FileTreeModel[] };
 }
 
@@ -116,10 +115,4 @@ export interface WorkspaceConfig {
   agents: AgentConfig[];
   agentProfiles: AgentProfile[];
   agentHubProviders?: Array<{ id: string; name?: string }>;
-}
-
-export interface AgentRuntimeState {
-  runs: WorkspaceSession[];
-  events: AgentEvent[];
-  notices: AgentNotice[];
 }

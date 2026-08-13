@@ -1,20 +1,12 @@
-const STORAGE_PREFIX = "forge.gui.agentDraft.v1";
-const STORAGE_VERSION = 1;
+const STORAGE_PREFIX = "forge.gui.agentDraft.v2";
+const STORAGE_VERSION = 2;
 const DEFAULT_MAX_ORPHAN_COUNT = 50;
 const DEFAULT_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
-
-export interface AgentDraftRun {
-	id?: unknown;
-	resourceId?: unknown;
-	agentHubSessionId?: unknown;
-	sourceExternalId?: unknown;
-}
 
 export interface AgentDraftContext {
 	workspaceId: string;
 	resourceId: string;
-	runId: string;
-	sessionId: string;
+	generationId?: string;
 }
 
 export interface AgentDraftRecord extends AgentDraftContext {
@@ -32,10 +24,6 @@ export interface AgentDraftStoreOptions {
 
 function storagePart(value: unknown): string {
 	return encodeURIComponent(String(value || "").trim());
-}
-
-export function agentDraftSessionIdentity(run: AgentDraftRun | null | undefined): string {
-	return String(run?.agentHubSessionId || run?.sourceExternalId || run?.id || "").trim();
 }
 
 export function agentDraftResourceScope(resourceId: unknown): string {
@@ -56,13 +44,6 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 		}
 	}
 
-	function keyForRun(run: AgentDraftRun | null | undefined, workspaceId: unknown): string {
-		const workspace = String(workspaceId || "").trim();
-		const session = agentDraftSessionIdentity(run);
-		if (!workspace || !session) return "";
-		return `${STORAGE_PREFIX}.session.${storagePart(workspace)}.${storagePart(session)}`;
-	}
-
 	function keyForResource(workspaceId: unknown, resourceId: unknown): string {
 		const workspace = String(workspaceId || "").trim();
 		const resource = agentDraftResourceScope(resourceId);
@@ -80,9 +61,8 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 				text: record.text,
 				updatedAt: Number(record.updatedAt) || 0,
 				workspaceId: String(record.workspaceId || ""),
-				resourceId: String(record.resourceId || ""),
-				runId: String(record.runId || ""),
-				sessionId: String(record.sessionId || "")
+				resourceId: agentDraftResourceScope(record.resourceId),
+				generationId: String(record.generationId || "") || undefined
 			};
 		} catch (_) {
 			return null;
@@ -134,7 +114,9 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 				version: STORAGE_VERSION,
 				text,
 				updatedAt: now(),
-				...context
+				workspaceId: context.workspaceId,
+				resourceId: agentDraftResourceScope(context.resourceId),
+				generationId: String(context.generationId || "") || undefined
 			} satisfies AgentDraftRecord));
 		} catch (_) {}
 	}
@@ -144,7 +126,7 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 		const workspace = String(workspaceId || "").trim();
 		const resource = agentDraftResourceScope(resourceId);
 		if (!target || !workspace) return;
-		const prefix = `${STORAGE_PREFIX}.session.${storagePart(workspace)}.`;
+		const prefix = `${STORAGE_PREFIX}.resource.${storagePart(workspace)}.`;
 		const candidates: Array<{ key: string; updatedAt: number }> = [];
 		const currentTime = now();
 		try {
@@ -167,5 +149,5 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 		} catch (_) {}
 	}
 
-	return { keyForRun, keyForResource, read, remove, write, prune };
+	return { keyForResource, read, remove, write, prune };
 }

@@ -17,29 +17,31 @@ func openTestForgeWorkspace(t *testing.T, path, language string) *app.Workspace 
 
 func seedTestForgeSession(t *testing.T, workspace guiWorkspace, externalID string) string {
 	t.Helper()
-	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	session, err := forgeWorkspace.CreateSession(app.SessionLiveness{
-		Type: "agenthub", SourceApp: "forge", SourceInstanceID: "forge-runtime-test",
-		SourceExternalID: externalID,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return session.ID
+	return "legacy-session-" + newRunID()
 }
 
-func testForgeSessions(t *testing.T, workspacePath string) []app.Session {
+type testForgeSession struct {
+	ID       string
+	Liveness struct {
+		AgentHubSessionID string
+	}
+}
+
+func testForgeSessions(t *testing.T, workspacePath string) []testForgeSession {
 	t.Helper()
-	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
+	runs, err := loadAgentRuns(workspacePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	sessions, err := forgeWorkspace.Sessions()
-	if err != nil {
-		t.Fatal(err)
+	sessions := make([]testForgeSession, 0, len(runs))
+	for _, run := range runs {
+		if run.ForgeSessionID == "" || (run.Status == "stopped" && run.AgentHubStoppedObserved) {
+			continue
+		}
+		sessions = append(sessions, testForgeSession{
+			ID:       run.ForgeSessionID,
+			Liveness: struct{ AgentHubSessionID string }{AgentHubSessionID: run.AgentHubSessionID},
+		})
 	}
 	return sessions
 }

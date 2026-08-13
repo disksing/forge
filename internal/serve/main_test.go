@@ -305,6 +305,15 @@ func TestRemovedAutomationHTTPInputsAreRejected(t *testing.T) {
 	}
 }
 
+func TestLegacyAgentRunControlRouteIsGone(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/agent/runs", nil)
+	(&server{}).handleWorkspace(recorder, request)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("legacy agent run route returned %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	workspace := t.TempDir()
 	forgeWorkspace, err := app.Initialize(workspace, "en")
@@ -663,7 +672,7 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	put := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/ui-state", strings.NewReader(`{"version":1,"expandedProjects":[],"projectOrder":["project2","project1"],"taskOrder":{"project1":["project1.task3","project1.task1"]},"sessionOrder":["session-b","session-a"]}`))
+	put := httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/ui-state", strings.NewReader(`{"version":1,"expandedProjects":[],"projectOrder":["project2","project1"],"taskOrder":{"project1":["project1.task3","project1.task1"]}}`))
 	rec := httptest.NewRecorder()
 	s.handleWorkspace(rec, put)
 	if rec.Code != http.StatusOK {
@@ -686,15 +695,12 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 	if len(loaded.TaskOrder["project1"]) != 2 || loaded.TaskOrder["project1"][0] != "project1.task3" {
 		t.Fatalf("expected persisted task order, got %+v", loaded.TaskOrder)
 	}
-	if len(loaded.SessionOrder) != 2 || loaded.SessionOrder[0] != "session-b" {
-		t.Fatalf("expected persisted session order, got %+v", loaded.SessionOrder)
-	}
 
 	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "gui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), `"projectOrder"`) || !strings.Contains(string(data), `"taskOrder"`) || !strings.Contains(string(data), `"sessionOrder"`) {
+	if !strings.Contains(string(data), `"projectOrder"`) || !strings.Contains(string(data), `"taskOrder"`) || strings.Contains(string(data), `"sessionOrder"`) {
 		t.Fatalf("expected gui-state.json to persist custom order fields, got %s", data)
 	}
 }

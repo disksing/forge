@@ -1,8 +1,6 @@
 package serve
 
 import (
-	"encoding/json"
-
 	"github.com/disksing/forge/internal/app"
 )
 
@@ -12,18 +10,10 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 		Creator:   tree.Creator,
 		Scheduler: resourceSnapshotFromApp(tree.Scheduler),
 		Projects:  make([]resourceSnapshot, 0, len(tree.Projects)),
-		Sessions:  make([]guiSession, 0, len(tree.Sessions)),
 		Wiki:      workspaceWiki{Exists: tree.Wiki.Exists, Entries: fileTreeEntriesFromApp(tree.Wiki.Entries), Error: tree.Wiki.Error},
 	}
 	for _, project := range tree.Projects {
 		result.Projects = append(result.Projects, resourceSnapshotFromApp(project))
-	}
-	for _, session := range tree.Sessions {
-		liveness, _ := json.Marshal(session.Liveness)
-		result.Sessions = append(result.Sessions, guiSession{
-			ID: session.ID, Liveness: liveness,
-			StartedAt: session.StartedAt, UpdatedAt: session.UpdatedAt, Source: "external",
-		})
 	}
 	return result
 }

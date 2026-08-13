@@ -91,7 +91,6 @@ type workspaceTree struct {
 	AgentBinding app.AgentBinding   `json:"agentBinding"`
 	Scheduler    resourceSnapshot   `json:"scheduler"`
 	Projects     []resourceSnapshot `json:"projects"`
-	Sessions     []guiSession       `json:"sessions"`
 	Wiki         workspaceWiki      `json:"wiki"`
 }
 
@@ -111,14 +110,15 @@ type fileTreeEntry struct {
 }
 
 type resourceSnapshot struct {
-	ID           string             `json:"id"`
-	Type         string             `json:"type"`
-	Title        string             `json:"title"`
-	Path         string             `json:"path"`
-	Archived     bool               `json:"archived"`
-	Creator      *app.Creator       `json:"creator,omitempty"`
-	AgentBinding app.AgentBinding   `json:"agentBinding"`
-	Children     []resourceSnapshot `json:"children,omitempty"`
+	ID           string                   `json:"id"`
+	Type         string                   `json:"type"`
+	Title        string                   `json:"title"`
+	Path         string                   `json:"path"`
+	Archived     bool                     `json:"archived"`
+	Creator      *app.Creator             `json:"creator,omitempty"`
+	AgentBinding app.AgentBinding         `json:"agentBinding"`
+	Runtime      *resourceRuntimeSnapshot `json:"runtime,omitempty"`
+	Children     []resourceSnapshot       `json:"children,omitempty"`
 }
 
 type filePreview struct {
@@ -148,25 +148,6 @@ type guiState struct {
 	LastResourceID   string              `json:"lastResourceId,omitempty"`
 	ProjectOrder     []string            `json:"projectOrder,omitempty"`
 	TaskOrder        map[string][]string `json:"taskOrder,omitempty"`
-	SessionOrder     []string            `json:"sessionOrder,omitempty"`
-}
-
-type guiSession struct {
-	ID                       string          `json:"id"`
-	Liveness                 json.RawMessage `json:"liveness,omitempty"`
-	StartedAt                string          `json:"startedAt"`
-	UpdatedAt                string          `json:"updatedAt"`
-	Source                   string          `json:"source"`
-	AgentRunID               string          `json:"agentRunId,omitempty"`
-	AgentRunAgentName        string          `json:"agentRunAgentName,omitempty"`
-	AgentRunTitle            string          `json:"agentRunTitle,omitempty"`
-	AgentRunStatus           string          `json:"agentRunStatus,omitempty"`
-	AgentRunUpdatedAt        string          `json:"agentRunUpdatedAt,omitempty"`
-	AgentRunLastOutputAt     string          `json:"agentRunLastOutputAt,omitempty"`
-	ResourceID               string          `json:"resourceId,omitempty"`
-	AgentRunCompletionMarker string          `json:"agentRunCompletionMarker,omitempty"`
-	AgentRunCompletionState  string          `json:"agentRunCompletionState,omitempty"`
-	AgentRunCompletionAt     string          `json:"agentRunCompletionAt,omitempty"`
 }
 
 type resourceLogRequest struct {
@@ -520,8 +501,6 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		s.worktreeDiff(w, r, id)
 	case "ui-state":
 		s.handleUIState(w, r, id)
-	case "agent":
-		s.agents.handle(w, r, id, parts[2:])
 	case "projects":
 		if r.Method != http.MethodPost {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1442,40 +1421,79 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 	} else {
 		tree.AgentBinding = app.AgentBinding{Kind: "profile", Name: "default"}
 	}
-	if err := s.enrichTreeSessions(path, &tree); err != nil {
+	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
 	}
 	return tree, nil
 }
 
-func (s *server) enrichTreeSessions(workspacePath string, tree *workspaceTree) error {
+type resourceRuntimeSnapshot struct {
+	Generation         int    `json:"generation,omitempty"`
+	GenerationID       string `json:"generationId"`
+	Status             string `json:"status"`
+	AgentName          string `json:"agentName,omitempty"`
+	UpdatedAt          string `json:"updatedAt,omitempty"`
+	LastOutputAt       string `json:"lastOutputAt,omitempty"`
+	CompletionMarker   string `json:"completionMarker,omitempty"`
+	CompletionState    string `json:"completionState,omitempty"`
+	CompletionAt       string `json:"completionAt,omitempty"`
+	ReplacementPending bool   `json:"replacementPending,omitempty"`
+}
+
+func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
 	runs, err := loadAgentRuns(workspacePath)
 	if err != nil {
-		return fmt.Errorf("load agent runs for sessions: %w", err)
+		return fmt.Errorf("load resource generations for tree: %w", err)
 	}
-	bySessionID := make(map[string]agentRun)
+	byResourceID := make(map[string]agentRun)
 	for _, run := range runs {
-		if isAgentHubRun(run) && run.ForgeSessionID != "" {
-			bySessionID[run.ForgeSessionID] = run
+		if strings.TrimSpace(run.GenerationID) == "" || !isAgentHubRun(run) {
+			continue
+		}
+		resourceID := normalizedResourceID(run.ResourceID)
+		if resourceID == "" {
+			resourceID = "workspace"
+		}
+		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeRunNewer(run, current) {
+			byResourceID[resourceID] = run
 		}
 	}
-	for i := range tree.Sessions {
-		tree.Sessions[i].Source = "external"
-		if run, ok := bySessionID[tree.Sessions[i].ID]; ok {
-			tree.Sessions[i].Source = "internal"
-			tree.Sessions[i].AgentRunID = run.ID
-			tree.Sessions[i].AgentRunAgentName = run.AgentHubAgentName
-			tree.Sessions[i].AgentRunTitle = run.Title
-			tree.Sessions[i].AgentRunStatus = run.Status
-			tree.Sessions[i].AgentRunUpdatedAt = run.UpdatedAt
-			tree.Sessions[i].AgentRunLastOutputAt = run.LastOutputAt
-			tree.Sessions[i].ResourceID = run.ResourceID
-			tree.Sessions[i].AgentRunCompletionMarker = run.CompletionMarker
-			tree.Sessions[i].AgentRunCompletionState = run.CompletionState
-			tree.Sessions[i].AgentRunCompletionAt = run.CompletionAt
+	var attach func(*resourceSnapshot)
+	attach = func(item *resourceSnapshot) {
+		resourceID := normalizedResourceID(item.ID)
+		if run, ok := byResourceID[resourceID]; ok {
+			item.Runtime = &resourceRuntimeSnapshot{
+				Generation: run.Generation, GenerationID: run.GenerationID, Status: run.Status,
+				AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
+				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
+				CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
+			}
 		}
+		for i := range item.Children {
+			attach(&item.Children[i])
+		}
+	}
+	attach(&tree.Scheduler)
+	for i := range tree.Projects {
+		attach(&tree.Projects[i])
 	}
 	return nil
+}
+
+func resourceRuntimeRunNewer(left, right agentRun) bool {
+	if left.Generation != right.Generation {
+		return left.Generation > right.Generation
+	}
+	leftTime, leftErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(left.UpdatedAt))
+	rightTime, rightErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(right.UpdatedAt))
+	leftOK, rightOK := leftErr == nil, rightErr == nil
+	if leftOK && rightOK && !leftTime.Equal(rightTime) {
+		return leftTime.After(rightTime)
+	}
+	if leftOK != rightOK {
+		return leftOK
+	}
+	return left.ID > right.ID
 }
 
 func parseResourceLogRequest(values url.Values) (resourceLogRequest, error) {

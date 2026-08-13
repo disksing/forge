@@ -345,7 +345,7 @@ Usage:
   forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
   forge scheduler remove --id=<schedule>
   forge session list
-  forge session show --id=<id>
+  forge session show --id=<generationId>
 
   forge workspace tree --json
   forge workspace resource --id=<resource> --json
@@ -496,16 +496,16 @@ Commands:
     --server explicitly overrides its diagnostic address.
 
   forge session list
-    List the transient AgentHub Session projections managed by forge serve.
-    This diagnostic command never changes Session state or contacts AgentHub.
+    List read-only generation diagnostics derived from .forge/runtime/generations.json.
+    This diagnostic command never changes generation state or contacts AgentHub.
 
-  forge session show --id=<id>
-    Print one transient AgentHub Session projection as formatted JSON. This
-    diagnostic command never changes Session state or contacts AgentHub.
+  forge session show --id=<generationId>
+    Print one generation diagnostic as formatted JSON. The stable generationId
+    is the only accepted address; this command never contacts AgentHub.
 
   forge workspace tree --json
-    Print a lightweight JSON tree of open projects, open tasks, and active
-    sessions for GUI and tool integrations.
+    Print a lightweight JSON tree of open projects, open tasks, and resource
+    runtime state for GUI and tool integrations.
 
   forge workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,

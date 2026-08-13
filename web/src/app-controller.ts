@@ -1,19 +1,19 @@
-import type { AgentEvent, AgentNotice, AgentRun as AgentRunRecord, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
 import type { AppShellModel, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
-import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceSession, WorkspaceTree } from "./models/workspace";
+import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree } from "./models/workspace";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
-import { createNotificationController } from "./controllers/notification-controller";
+import { createNotificationController, type NotificationSource } from "./controllers/notification-controller";
 import { createPaneLayoutController } from "./controllers/pane-layout-controller";
 import { createResourceDetailController, type ResourceLogPageState } from "./controllers/resource-detail-controller";
 import { createRouteController } from "./controllers/route-controller";
 import { createSettingsController, type AgentHubData } from "./controllers/settings-controller";
-import { createShellProjection, type TaskOperationalState, type TaskStatusState } from "./controllers/shell-projection";
+import { createShellProjection } from "./controllers/shell-projection";
 import { createUserSettingsController } from "./controllers/user-settings-controller";
 import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
@@ -52,38 +52,28 @@ interface ControllerState {
 	expandedProjects: Set<string>;
 	projectOrder: string[];
 	taskOrder: Record<string, string[]>;
-	sessionOrder: string[];
 	listDrag: ShellDragTarget | null;
 	expandedPaths: Set<string>;
 	preview: (WorkspaceFileRecord & { section?: string }) | null;
 	diff: DiffRecord | null;
 	modalEnter: string;
-	sessionMenu: WorkspaceSession | null;
 	taskOperationalStateKey: string;
 	uploadDialog: { open: boolean; identity: number; resourceId: string; items: unknown[]; nextId: number };
 	autoRefreshTimer: number | null;
 	autoRefreshInFlight: boolean;
 	autoRefreshVersion: number;
-	agentRunProjectionVersion: number;
 	treeRequestVersion: number;
 	navigationVersion: number;
 	detailRequestVersion: number;
 	workspaceAgentsRequestVersion: number;
 	previewRequestVersion: number;
 	diffRequestVersion: number;
-	agentSessionMutationCount: number;
 	messageStatus: ResourceMessageStatus | null;
 	messageStatusKey: string;
 	messageStatusRequestVersion: number;
 	steeringMessageId: string;
 	iconRefreshScheduled: boolean;
 	agent: {
-		runs: AgentRunRecord[];
-		activeRunId: string;
-		events: AgentEvent[];
-		notices: AgentNotice[];
-		stream: EventSource | null;
-		streamRunId: string;
 		renderTimer: number | null;
 		draftPrompt: string;
 		ttyDraft: string;
@@ -91,18 +81,12 @@ interface ControllerState {
 		ttyDraftKey: string;
 		ttyDraftWorkspaceId: string;
 		ttyDraftResourceId: string;
-		ttyDraftRunId: string;
 		ttyDraftVersion: number;
 		ttyDraftResetVersion: number;
 		skipTTYDraftSync: boolean;
 		agentName: string;
 		optionsOpen: boolean;
-		agentChooserOpen: boolean;
 		historyOpen: boolean;
-		sessionActionsOpen: boolean;
-		eventsHasMore: boolean;
-		historyBeforeId: number;
-		loadingOlder: boolean;
 		toolGroupOpen: Map<string, boolean>;
 		approvalDrafts: Map<string, Record<string, unknown>>;
 		renderDeferredForSelection: boolean;
@@ -128,13 +112,11 @@ const controllerState: ControllerState = {
 	expandedProjects: /* @__PURE__ */ new Set<string>(),
 	projectOrder: [] as string[],
 	taskOrder: {} as Record<string, string[]>,
-	sessionOrder: [] as string[],
 	listDrag: null as ShellDragTarget | null,
 	expandedPaths: /* @__PURE__ */ new Set<string>(),
 	preview: null,
 	diff: null,
 	modalEnter: "",
-	sessionMenu: null,
 	taskOperationalStateKey: "",
 	uploadDialog: {
 		open: false,
@@ -146,26 +128,18 @@ const controllerState: ControllerState = {
 		autoRefreshTimer: null as number | null,
 	autoRefreshInFlight: false,
 	autoRefreshVersion: 0,
-	agentRunProjectionVersion: 0,
 	treeRequestVersion: 0,
 	navigationVersion: 0,
 	detailRequestVersion: 0,
 	workspaceAgentsRequestVersion: 0,
 	previewRequestVersion: 0,
 	diffRequestVersion: 0,
-	agentSessionMutationCount: 0,
 	messageStatus: null,
 	messageStatusKey: "",
 	messageStatusRequestVersion: 0,
 	steeringMessageId: "",
 	iconRefreshScheduled: false,
 	agent: {
-		runs: [],
-		activeRunId: "",
-		events: [],
-		notices: [],
-		stream: null as EventSource | null,
-		streamRunId: "",
 		renderTimer: null as number | null,
 		draftPrompt: "",
 		ttyDraft: "",
@@ -173,18 +147,12 @@ const controllerState: ControllerState = {
 		ttyDraftKey: "",
 		ttyDraftWorkspaceId: "",
 		ttyDraftResourceId: "",
-		ttyDraftRunId: "",
 		ttyDraftVersion: 0,
 		ttyDraftResetVersion: 0,
 		skipTTYDraftSync: false,
 		agentName: "",
 		optionsOpen: false,
-		agentChooserOpen: false,
 		historyOpen: false,
-		sessionActionsOpen: false,
-		eventsHasMore: false,
-		historyBeforeId: 0,
-		loadingOlder: false,
 		toolGroupOpen: /* @__PURE__ */ new Map<string, boolean>(),
 		approvalDrafts: /* @__PURE__ */ new Map<string, Record<string, unknown>>(),
 		renderDeferredForSelection: false
@@ -206,8 +174,6 @@ function clearResourceDetailState() {
 const agentDraftController = createAgentDraftController({
 	runtime: controllerState.agent,
 	workspaceId: () => controllerState.activeWorkspaceId,
-	runs: () => controllerState.agent.runs,
-	currentRun: () => currentAgentRun(),
 });
 const clearResourceDraftAfterAccepted = agentDraftController.clearResourceAfterAccepted;
 const clearAgentDraftMemory = agentDraftController.clearMemory;
@@ -268,13 +234,6 @@ interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; re
 interface RenderOptions { skipDraftSync?: boolean }
 interface UploadContext { workspaceId?: string; resourceId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
-interface SessionNavigationTarget {
-	kind: string;
-	resourceId: string;
-	displayResourceId: string;
-	navigationResourceId: string;
-	selectedResourceIds: string[];
-}
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconOption = {
 	id: "",
 	label: "Forge default",
@@ -367,17 +326,11 @@ const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, ite
 const {
 	applyCustomOrder,
 	moveIdInList,
-	noTaskOperationalState,
-	operationalStatusPresentation,
 	projectTaskSummary,
 	resourceRefText,
-	sessionOperationalLabel,
-	sessionStatusPresentation,
-	sortedSessionsForDisplay,
 	statusModel: appShellStatusModel,
 	taskOperationalState,
 	taskOperationalStateKey,
-	taskStatusState,
 } = createShellProjection({
 	tree: () => controllerState.tree,
 	findResource: (id) => findResource(id),
@@ -440,14 +393,35 @@ function initializeNotificationState(workspaceId: string): void {
 function establishNotificationBaseline() {
 	notificationController?.establishBaseline();
 }
-function observeCompletionProjections(items: Array<WorkspaceSession | AgentRunRecord>): void {
+function resourceNotificationProjections(tree: WorkspaceTree | null = controllerState.tree): NotificationSource[] {
+	if (!tree) return [];
+	const projections: NotificationSource[] = [];
+	const append = (resource: ResourceRecord | null | undefined): void => {
+		const runtime = resource?.runtime;
+		if (!resource || !runtime?.generationId || !runtime.completionMarker) return;
+		projections.push({
+			id: runtime.generationId,
+			resourceId: resource.id,
+			title: resource.title || resource.id,
+			generationId: runtime.generationId,
+			completionMarker: runtime.completionMarker,
+			completionState: runtime.completionState || "completed",
+			completionAt: runtime.completionAt,
+			status: runtime.status
+		});
+	};
+	append(tree.scheduler);
+	for (const project of tree.projects || []) {
+		append(project);
+		for (const task of project.children || []) append(task);
+	}
+	return projections;
+}
+function observeCompletionProjections(items: NotificationSource[]): void {
 	notificationController?.observeProjections(items);
 }
-function observeCompletionEvent(event: AgentEvent, run: AgentRunRecord | null): void {
-	if (run) notificationController?.observeEvent(event, run);
-}
-function hasUnreadNotificationForSession(sessionId: string): boolean {
-	return notificationController?.hasUnreadForSession(sessionId) ?? false;
+function observeCompletionEvent(event: AgentEvent, source: NotificationSource | null): void {
+	if (source) notificationController?.observeEvent(event, source);
 }
 function clearUnreadForResource(resourceId: string): void {
 	notificationController?.clearResource(resourceId);
@@ -529,8 +503,6 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	if (controllerState.selectedId === "workspace") await loadWorkspaceAgents();
 	else if (controllerState.selectedId) await loadDetail(controllerState.selectedId);
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
-	await loadAgentRuns();
-	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId());
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion, treeRequestVersion)) return;
 	establishNotificationBaseline();
@@ -580,13 +552,12 @@ async function loadWorkspaceAgents(options: WorkspaceAgentsOptions = {}) {
 	return controllerState.workspaceAgents;
 }
 async function loadUIState(workspaceId = controllerState.activeWorkspaceId, navigationVersion = controllerState.navigationVersion) {
-	const uiState = await api<{ expandedProjects?: string[]; lastResourceId?: string; projectOrder?: string[]; taskOrder?: Record<string, string[]>; sessionOrder?: string[] }>(`/api/workspaces/${workspaceId}/ui-state`);
+	const uiState = await api<{ expandedProjects?: string[]; lastResourceId?: string; projectOrder?: string[]; taskOrder?: Record<string, string[]> }>(`/api/workspaces/${workspaceId}/ui-state`);
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion)) return false;
 	controllerState.expandedProjects = new Set(uiState.expandedProjects || []);
 	controllerState.lastResourceId = uiState.lastResourceId || "";
 	controllerState.projectOrder = Array.isArray(uiState.projectOrder) ? uiState.projectOrder : [];
 	controllerState.taskOrder = uiState.taskOrder && typeof uiState.taskOrder === "object" ? uiState.taskOrder : {};
-	controllerState.sessionOrder = Array.isArray(uiState.sessionOrder) ? uiState.sessionOrder : [];
 	return true;
 }
 async function saveUIState() {
@@ -601,8 +572,7 @@ async function saveUIState() {
 			expandedProjects: [...controllerState.expandedProjects],
 			lastResourceId: selectedId,
 			projectOrder: controllerState.projectOrder,
-			taskOrder: controllerState.taskOrder,
-			sessionOrder: controllerState.sessionOrder
+			taskOrder: controllerState.taskOrder
 		})
 	});
 	if (isCurrentWorkspaceView(workspaceId, navigationVersion)) controllerState.lastResourceId = selectedId;
@@ -616,7 +586,7 @@ function startAutoRefresh() {
 	}, AUTO_REFRESH_INTERVAL_MS) ?? null;
 }
 async function autoRefresh() {
-	if (!controllerState.activeWorkspaceId || controllerState.autoRefreshInFlight || controllerState.agentSessionMutationCount > 0 || controllerState.listDrag) return;
+	if (!controllerState.activeWorkspaceId || controllerState.autoRefreshInFlight || controllerState.listDrag) return;
 	const refreshVersion = controllerState.autoRefreshVersion;
 	const workspaceId = controllerState.activeWorkspaceId;
 	const navigationVersion = controllerState.navigationVersion;
@@ -627,7 +597,7 @@ async function autoRefresh() {
 		if (!tree || !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
 		let changed = !sameJSON(controllerState.tree, tree);
 		if (changed) controllerState.tree = tree;
-		if (typeof observeCompletionProjections === "function") observeCompletionProjections(tree.sessions || []);
+		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (changed && controllerState.preview?.section === "Wiki" && !controllerState.preview.loading) {
 			await refreshFilePreview("Wiki", controllerState.preview.path);
 			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
@@ -653,19 +623,7 @@ async function autoRefresh() {
 			applyResourceDetail(detail, "head");
 			if (!sameJSON(previousDetail, resourceDetailSnapshot(selectedId))) changed = true;
 		}
-		controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
-		const agentRunProjectionVersion = controllerState.agentRunProjectionVersion;
-		const runs = await fetchAgentRuns();
-		if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) || agentRunProjectionVersion !== controllerState.agentRunProjectionVersion) return;
-		if (!sameJSON(controllerState.agent.runs, runs)) {
-			controllerState.agent.runs = runs;
-			changed = true;
-		}
-		if (typeof observeCompletionProjections === "function") observeCompletionProjections(runs);
-		if (reconcileActiveAgentRun(runs)) {
-			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) || agentRunProjectionVersion !== controllerState.agentRunProjectionVersion) return;
-			changed = true;
-		}
+		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (await refreshResourceMessageStatus(workspaceId, selectedAgentResourceId())) changed = true;
 		if (taskOperationalStateKey() !== controllerState.taskOperationalStateKey) changed = true;
 		if (changed) publishViewModels();
@@ -760,37 +718,8 @@ function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellR
 		children: []
 	};
 }
-function appShellSessionModel(session: WorkspaceSession): AppShellModel["sessions"][number] {
-	const navigation = sessionNavigationTarget(session);
-	const resourceId = navigation.displayResourceId;
-	const isInternal = session.source === "internal";
-	const status = isInternal ? sessionStatusPresentation(session) : taskStatusState("session-external", "session-status-external", "message-square", "External session active", "session");
-	const taskResource = sessionTaskResource(session);
-	const taskState = taskResource ? taskOperationalState(taskResource) : noTaskOperationalState();
-	const presentation = operationalStatusPresentation([status]);
-	const unread = hasUnreadNotificationForSession(session.id);
-	const statusLabel = `${sessionOperationalLabel(session, taskResource, taskState, status)}${unread ? ". Unread turn completion." : ""}`;
-	const agent = isInternal ? (controllerState.config?.agents || []).find((item) => item.id === session.agentRunAgentName) : null;
-	const metaParts = [isInternal ? "AgentHub" : "External"];
-	if (resourceId) metaParts.push(resourceId);
-	if (session.updatedAt) metaParts.push(relativeTime(session.updatedAt));
-	return {
-		id: session.id,
-		source: session.source || "external",
-		title: sessionDisplayTitle(session, navigation),
-		meta: metaParts.join(" · "),
-		label: isInternal ? agent?.name || session.agentRunAgentName || "AgentHub" : "External",
-		statusLabel,
-		status: appShellStatusModel(presentation),
-		unread,
-		current: Boolean(controllerState.selectedId && controllerState.selectedId !== "workspace" && navigation.selectedResourceIds.includes(controllerState.selectedId)),
-		clickable: Boolean(navigation.navigationResourceId),
-		navigationResourceId: navigation.navigationResourceId,
-	};
-}
 function renderAppShell() {
 	const projects = controllerState.tree ? applyCustomOrder(controllerState.tree.projects || [], controllerState.projectOrder).map((project) => appShellResourceModel(project, "project")) : [];
-	const sessions = applyCustomOrder(sortedSessionsForDisplay(controllerState.tree?.sessions || []), controllerState.sessionOrder).map(appShellSessionModel);
 	if (controllerState.tree) controllerState.taskOperationalStateKey = taskOperationalStateKey();
 	publisher.renderAppShell({
 		identity: controllerState.activeWorkspaceId || "no-workspace",
@@ -807,7 +736,6 @@ function renderAppShell() {
 		})),
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
-		sessions,
 		...paneLayoutController.snapshot(),
 		route: routeController.projection(),
 		onSwitchWorkspace: (id) => switchWorkspace(id),
@@ -857,7 +785,6 @@ async function switchWorkspace(id: string): Promise<void> {
 	controllerState.navigationError = "";
 	clearResourceDetailState();
 	initializeNotificationState(id);
-	controllerState.sessionMenu = null;
 	resetWorkspaceAgentsDraft();
 	controllerState.workspaceAgentsSaving = false;
 	closeCreateDialog();
@@ -870,13 +797,9 @@ async function switchWorkspace(id: string): Promise<void> {
 async function commitListDrag(drag: ShellDragTarget, target: ShellDragTarget, after: boolean): Promise<void> {
 	const previous = {
 		projectOrder: [...controllerState.projectOrder],
-		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []])),
-		sessionOrder: [...controllerState.sessionOrder]
+		taskOrder: Object.fromEntries(Object.entries(controllerState.taskOrder).map(([id, order]) => [id, Array.isArray(order) ? [...order] : []]))
 	};
-	if (drag.kind === "session") {
-		const sessions = applyCustomOrder(sortedSessionsForDisplay(controllerState.tree?.sessions || []), controllerState.sessionOrder);
-		controllerState.sessionOrder = moveIdInList(sessions.map((session) => session.id), drag.id, target.id, after);
-	} else if (drag.kind === "task") {
+	if (drag.kind === "task") {
 		const project = findResource(drag.projectId);
 		if (!project) return;
 		const tasks = applyCustomOrder(project.children || [], controllerState.taskOrder[drag.projectId]);
@@ -894,7 +817,6 @@ async function commitListDrag(drag: ShellDragTarget, target: ShellDragTarget, af
 	} catch (err) {
 		controllerState.projectOrder = previous.projectOrder;
 		controllerState.taskOrder = previous.taskOrder;
-		controllerState.sessionOrder = previous.sessionOrder;
 		renderAppShell();
 		throw err;
 	}
@@ -918,24 +840,17 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 	}
 	if (selectionChanged) {
 		controllerState.workspaceAgentsSaving = false;
-		flushAgentDraft();
-		discardAgentUploadDialog();
-		controllerState.preview = null;
-		controllerState.diff = null;
-		closeAgentStream();
-		controllerState.agent.runs = [];
-		controllerState.agent.activeRunId = "";
-		controllerState.agent.events = [];
-		controllerState.agent.notices = [];
-		controllerState.agent.historyBeforeId = 0;
-		clearAgentDraftMemory();
+			flushAgentDraft();
+			discardAgentUploadDialog();
+			controllerState.preview = null;
+			controllerState.diff = null;
+			clearAgentDraftMemory();
 		controllerState.messageStatus = null;
 		controllerState.messageStatusKey = "";
 		controllerState.messageStatusRequestVersion++;
 		controllerState.steeringMessageId = "";
 	}
 	controllerState.selectedId = id;
-	controllerState.sessionMenu = null;
 	setMobileSidebar(false);
 	ensureSelectedProjectExpanded(false);
 	syncURL();
@@ -943,7 +858,6 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 	renderSelectionPanels();
 	await Promise.all([
 		id === "workspace" ? loadWorkspaceAgents({ force: Boolean(options.forceDetail) }) : loadDetail(id, { force: forceDetail }),
-		selectionChanged ? loadAgentRuns() : Promise.resolve(),
 		refreshResourceMessageStatus(controllerState.activeWorkspaceId, id)
 	]);
 	if (!isCurrentWorkspaceView(controllerState.activeWorkspaceId, controllerState.navigationVersion)) return;
@@ -961,48 +875,6 @@ async function toggleProject(id: string): Promise<void> {
 		renderAppShell();
 		throw err;
 	}
-}
-function renderSessions() {
-	renderAppShell();
-}
-function sessionDisplayTitle(session: WorkspaceSession, resource: SessionNavigationTarget | string = sessionNavigationTarget(session)): string {
-	const displayResourceId = (typeof resource === "string" ? resource : resource.displayResourceId) || "";
-	const resourceTitle = findResource(displayResourceId)?.title || "";
-	if (session.source === "internal") return session.agentRunTitle || resourceTitle || displayResourceId || session.id;
-	return resourceTitle || displayResourceId || session.id;
-}
-function sessionNavigableResourceId(resourceId: string): string {
-	const value = String(resourceId || "").trim();
-	if (!value) return "";
-	const resource = findResource(value);
-	return resource && resource.archived !== true ? value : "";
-}
-function sessionNavigationTarget(session: WorkspaceSession): SessionNavigationTarget {
-	const runResourceId = String(session?.resourceId || "").trim();
-	if (session?.source === "internal" && runResourceId) return {
-		kind: "run",
-		resourceId: runResourceId,
-		displayResourceId: runResourceId,
-		navigationResourceId: sessionNavigableResourceId(runResourceId),
-		selectedResourceIds: [runResourceId]
-	};
-	return {
-		kind: "none",
-		resourceId: "",
-		displayResourceId: "",
-		navigationResourceId: "",
-		selectedResourceIds: []
-	};
-}
-function sessionTaskResource(session: WorkspaceSession): ResourceRecord | null {
-	if (!session || session.source !== "internal") return null;
-	const explicitResourceId = String(session.resourceId || "").trim();
-	if (explicitResourceId) return activeTaskResource(explicitResourceId);
-	return null;
-}
-function activeTaskResource(resourceId: string): ResourceRecord | null {
-	const resource = findResource(resourceId);
-	return resource && resource.type === "task" && !resource.archived ? resource : null;
 }
 function detailPanelModel(): DetailPanelModel {
 	const workspaceId = controllerState.activeWorkspaceId || "";
@@ -1191,90 +1063,16 @@ function closeDiff(): void {
 function filePreviewURL(section: string, path: string, workspaceId = controllerState.activeWorkspaceId): string {
 	return `/api/workspaces/${workspaceId}/${section === "Wiki" ? "wiki/files" : "files"}?path=${encodeURIComponent(path)}`;
 }
-async function loadAgentRuns(): Promise<boolean | void> {
-	if (!controllerState.activeWorkspaceId) {
-		resetAgentState();
-		return;
-	}
-	controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
-	const projectionVersion = controllerState.agentRunProjectionVersion;
-	const runs = await fetchAgentRuns();
-	if (projectionVersion !== controllerState.agentRunProjectionVersion || !controllerState.activeWorkspaceId) return false;
-	controllerState.agent.runs = runs;
-	observeCompletionProjections(controllerState.agent.runs);
-	reconcileActiveAgentRun(controllerState.agent.runs);
-	if (!controllerState.agent.activeRunId) controllerState.agent.historyBeforeId = 0;
-	if (projectionVersion !== controllerState.agentRunProjectionVersion) return false;
-	return true;
-}
-async function refreshAgentRunMetadata(): Promise<boolean | void> {
-	if (!controllerState.activeWorkspaceId) return;
-	controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
-	const projectionVersion = controllerState.agentRunProjectionVersion;
-	const workspaceId = controllerState.activeWorkspaceId;
-	const runs = await fetchAgentRuns();
-	if (projectionVersion !== controllerState.agentRunProjectionVersion || controllerState.activeWorkspaceId !== workspaceId) return false;
-	controllerState.agent.runs = runs;
-	observeCompletionProjections(runs);
-	if (reconcileActiveAgentRun(runs)) {
-		if (projectionVersion !== controllerState.agentRunProjectionVersion || controllerState.activeWorkspaceId !== workspaceId) return false;
-	}
-	return true;
-}
-function reconcileActiveAgentRun(runs: AgentRunRecord[]): boolean {
-	const nextRunId = preferredAgentRunID(runs);
-	if (controllerState.agent.activeRunId === nextRunId) return false;
-	controllerState.agent.activeRunId = nextRunId;
-	controllerState.agent.events = [];
-	controllerState.agent.notices = [];
-	controllerState.agent.eventsHasMore = false;
-	controllerState.agent.historyBeforeId = 0;
-	controllerState.agent.approvalDrafts.clear();
-	return true;
-}
-function preferredAgentRunID(runs: AgentRunRecord[]): string {
-	if (runs.some((run) => run.id === controllerState.agent.activeRunId)) return controllerState.agent.activeRunId;
-	return runs[0]?.id || "";
-}
 async function fetchCurrentTree(workspaceId = controllerState.activeWorkspaceId): Promise<WorkspaceTree | null> {
 	const requestVersion = ++controllerState.treeRequestVersion;
 	const navigationVersion = controllerState.navigationVersion;
 	const tree = await api<WorkspaceTree>(`/api/workspaces/${workspaceId}/tree`);
 	return isCurrentWorkspaceView(workspaceId, navigationVersion, requestVersion) ? tree : null;
 }
-async function refreshTreeAfterAgentSessionMutation(): Promise<void> {
+async function refreshTreeAfterResourceMutation(): Promise<void> {
 	if (!controllerState.activeWorkspaceId || !controllerState.tree) return;
 	const tree = await fetchCurrentTree(controllerState.activeWorkspaceId);
 	if (tree) controllerState.tree = tree;
-}
-async function refreshAgentInputProjection(workspaceId: string, resourceId: string): Promise<void> {
-	if (!workspaceId || controllerState.activeWorkspaceId !== workspaceId) return;
-	await Promise.all([
-		loadAgentRuns(),
-		refreshTreeAfterAgentSessionMutation(),
-		refreshResourceMessageStatus(workspaceId, resourceId),
-		resourceId && resourceId !== "workspace" ? fetchDetail(resourceId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT }).then((detail) => {
-			if (controllerState.activeWorkspaceId === workspaceId && detail) applyResourceDetail(detail, "head");
-		}) : Promise.resolve()
-	]);
-	if (controllerState.activeWorkspaceId === workspaceId) {
-		publishViewModels();
-	}
-}
-async function mutateAgentSession<Result>(action: () => Promise<Result>): Promise<Result> {
-	controllerState.agentSessionMutationCount++;
-	controllerState.autoRefreshVersion++;
-	controllerState.treeRequestVersion++;
-	try {
-		return await action();
-	} finally {
-		controllerState.agentSessionMutationCount--;
-	}
-}
-function fetchAgentRuns(): Promise<AgentRunRecord[]> {
-	const resourceId = selectedAgentResourceId();
-	const query = resourceId ? `?resourceId=${encodeURIComponent(resourceId)}` : "";
-	return api<{ runs?: AgentRunRecord[] }>(`/api/workspaces/${controllerState.activeWorkspaceId}/agent/runs${query}`).then((body) => body.runs || []);
 }
 async function refreshResourceMessageStatus(workspaceId = controllerState.activeWorkspaceId, resourceId = selectedAgentResourceId()): Promise<boolean> {
 	if (!workspaceId || !resourceId) return false;
@@ -1311,34 +1109,19 @@ async function steerWaitingMessage(messageId: string): Promise<void> {
 		}
 	}
 }
-async function reloadAgentRunsForSelection(): Promise<void> {
+async function reloadResourceForSelection(): Promise<void> {
 	flushAgentDraft();
-	closeAgentStream();
 	agentOperations.reset();
-	controllerState.agent.activeRunId = "";
-	controllerState.agent.events = [];
-	controllerState.agent.notices = [];
-	controllerState.agent.historyBeforeId = 0;
 	clearAgentDraftMemory();
 	controllerState.messageStatus = null;
 	controllerState.messageStatusKey = "";
 	controllerState.messageStatusRequestVersion++;
-	await Promise.all([loadAgentRuns(), refreshResourceMessageStatus()]);
+	await refreshResourceMessageStatus();
 }
 function resetAgentState(): void {
 	flushAgentDraft();
 	discardAgentUploadDialog();
-	closeAgentStream();
-	controllerState.agent.runs = [];
-	controllerState.agentRunProjectionVersion = (Number(controllerState.agentRunProjectionVersion) || 0) + 1;
-	controllerState.agent.activeRunId = "";
-	controllerState.agent.events = [];
-	controllerState.agent.notices = [];
-	controllerState.agent.eventsHasMore = false;
-	controllerState.agent.historyBeforeId = 0;
-	controllerState.agent.loadingOlder = false;
 	controllerState.agent.optionsOpen = false;
-	controllerState.agent.agentChooserOpen = false;
 	controllerState.agent.historyOpen = false;
 	clearAgentDraftMemory();
 	agentOperations.reset();
@@ -1351,19 +1134,19 @@ function resetAgentState(): void {
 	controllerState.agent.renderDeferredForSelection = false;
 	clearAgentRenderTimer();
 }
-function closeAgentStream(): void {
-	if (controllerState.agent.stream) controllerState.agent.stream.close();
-	controllerState.agent.stream = null;
-	controllerState.agent.streamRunId = "";
-}
 function handleSvelteAgentEvent(workspaceId: string, resourceId: string, event: AgentEvent): void {
 	if (workspaceId !== controllerState.activeWorkspaceId || resourceId !== selectedAgentResourceId() || !event) return;
-	const run = currentAgentRun();
+	const runtime = findResource(resourceId)?.runtime || controllerState.messageStatus?.generation;
 	if ([
 		"turn.completed",
 		"turn.failed",
 		"turn.cancelled"
-	].includes(event.type)) observeCompletionEvent(event, run);
+	].includes(event.type)) observeCompletionEvent(event, runtime?.generationId ? {
+		id: runtime.generationId,
+		resourceId,
+		generationId: runtime.generationId,
+		completionState: event.type === "turn.failed" ? "failed" : event.type === "turn.cancelled" ? "cancelled" : "completed"
+	} : null);
 	if ([
 		"turn.completed",
 		"turn.failed",
@@ -1579,22 +1362,6 @@ async function resolveResourceApproval(generationId: string, requestId: string, 
 	await refreshResourceMessageStatus(workspaceId, resourceId);
 	publishViewModels();
 }
-function currentAgentRun(): AgentRunRecord | null {
-	return controllerState.agent.runs.find((run) => run.id === controllerState.agent.activeRunId) || null;
-}
-function isLiveAgentRun(run: AgentRunRecord | null): boolean {
-	return [
-		"starting",
-		"running",
-		"waiting_approval",
-		"idle",
-		"stopping",
-		"recovering"
-	].includes(run?.status || "");
-}
-function isAgentTurnInterruptible(run: AgentRunRecord | null): boolean {
-	return ["running", "waiting_approval"].includes(run?.status || "");
-}
 async function submitTTYInput(rawText: string, context: ComposerContext): Promise<{ accepted: boolean; clear: boolean }> {
 	if (!rawText.trim() || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.ttyDraftKey) return { accepted: false, clear: false };
 	const key = resourceMutationKey(context.workspaceId, context.resourceId);
@@ -1607,7 +1374,7 @@ async function submitTTYInput(rawText: string, context: ComposerContext): Promis
 		const accepted = true;
 		const clear = clearResourceDraftAfterAccepted({ workspaceId: context.workspaceId, resourceId: context.resourceId, key: context.draftKey, text: rawText, version });
 		if (clear) controllerState.agent.ttyDraftResetVersion++;
-		await Promise.all([refreshResourceMessageStatus(context.workspaceId, context.resourceId), refreshTreeAfterAgentSessionMutation()]);
+		await Promise.all([refreshResourceMessageStatus(context.workspaceId, context.resourceId), refreshTreeAfterResourceMutation()]);
 		publishViewModels();
 		return { accepted, clear };
 	} finally {
@@ -1792,9 +1559,8 @@ function installControllerListeners(): void {
 	lifecycle?.listen(document, "keydown", (event) => {
 	if (event.key === "Escape" && controllerState.diff) closeDiff();
 	else if (event.key === "Escape" && controllerState.preview) closePreview();
-	else if (event.key === "Escape" && (controllerState.agent.optionsOpen || controllerState.agent.agentChooserOpen || controllerState.agent.historyOpen)) {
+	else if (event.key === "Escape" && (controllerState.agent.optionsOpen || controllerState.agent.historyOpen)) {
 		controllerState.agent.optionsOpen = false;
-		controllerState.agent.agentChooserOpen = false;
 		controllerState.agent.historyOpen = false;
 		renderAgent();
 		renderTTYComposer();
@@ -1808,21 +1574,15 @@ function installControllerListeners(): void {
 		openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource || "workspace").catch((err) => toast(errorMessage(err)));
 		return;
 	}
-	const outsideAgentChooser = controllerState.agent.agentChooserOpen && target && !target.closest(".tty-new-session-control");
 	const outsideAgentPanelMenu = (controllerState.agent.optionsOpen || controllerState.agent.historyOpen) && target && !target.closest(".tty-composer");
-	if (outsideAgentChooser || outsideAgentPanelMenu) {
+	if (outsideAgentPanelMenu) {
 		controllerState.agent.optionsOpen = false;
-		controllerState.agent.agentChooserOpen = false;
 		controllerState.agent.historyOpen = false;
 		renderAgent();
 		renderTTYComposer();
 		refreshIcons();
 	}
-	if (!controllerState.sessionMenu) return;
-	if (target?.closest(".session-row") || target?.closest(".session-resource-menu")) return;
-	controllerState.sessionMenu = null;
-	renderSessions();
-		refreshIcons();
+	refreshIcons();
 	});
 	lifecycle?.listen(window, "beforeunload", flushAgentDraftOnPageLeave);
 	lifecycle?.listen(document, "visibilitychange", () => {
@@ -1842,23 +1602,12 @@ export function startForgeApp(nextPublisher: ForgeViewPublisher): void {
 	notificationController = createNotificationController({
 		scope,
 		selectedResourceId: () => controllerState.selectedId,
-		treeSessions: () => controllerState.tree?.sessions || [],
-		agentRuns: () => controllerState.agent.runs,
+		resourceProjections: () => resourceNotificationProjections(),
 		hasTree: () => Boolean(controllerState.tree),
 		findResource,
-		sessionNavigationTarget,
 		selectResource,
-		activateRun: (runId) => {
-			const run = controllerState.agent.runs.find((item) => item.id === runId);
-			if (!run) return;
-			controllerState.agent.activeRunId = run.id;
-			renderAgent();
-			renderTTY();
-			refreshIcons();
-		},
 		notificationsSettingsVisible: () => settingsController.isOpenTab("notifications"),
 		renderSettings: renderSettingsModal,
-		renderSessions,
 		refreshIcons,
 		flushDraft: flushAgentDraftOnPageLeave
 	});
@@ -1884,7 +1633,6 @@ export function stopForgeApp(): void {
 	if (!appBooted) return;
 	flushAgentDraftOnPageLeave();
 	appBooted = false;
-	closeAgentStream();
 	notificationController?.dispose();
 	notificationController = null;
 	userSettingsController = null;
@@ -1921,7 +1669,6 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 	}
 	controllerState.preview = null;
 	controllerState.diff = null;
-	controllerState.sessionMenu = null;
 	if (workspaceChanged) {
 		controllerState.tree = null;
 		controllerState.navigationLoading = true;
@@ -1946,7 +1693,7 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 			await loadDetail(controllerState.selectedId);
 		}
 		if (!isCurrentWorkspaceView(route.workspaceId || "", navigationVersion)) return;
-		if (previousSelectedId !== controllerState.selectedId) await reloadAgentRunsForSelection();
+		if (previousSelectedId !== controllerState.selectedId) await reloadResourceForSelection();
 		publishViewModels();
 		if (selectionCorrected) syncURL({ replace: true });
 	}

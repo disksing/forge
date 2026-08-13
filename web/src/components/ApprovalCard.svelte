@@ -5,9 +5,9 @@
   import type { EventTimelineModel, TimelineItem } from "./models";
 
   type ApprovalReply = Parameters<EventTimelineModel["onApproval"]>[2];
-  let { item, runId, contextIdentity, onApproval, onToast }: {
+  let { item, generationId, contextIdentity, onApproval, onToast }: {
     item: TimelineItem;
-    runId: string;
+    generationId: string;
     contextIdentity: string;
     onApproval: EventTimelineModel["onApproval"];
     onToast: EventTimelineModel["onToast"];
@@ -33,7 +33,7 @@
     if (!approvalId || pending) return;
     pending = true;
     try {
-      await onApproval(runId, approvalId, reply);
+      await onApproval(generationId, approvalId, reply);
       draft = "";
     } catch (reason) {
       onToast(reason instanceof Error ? reason.message : String(reason));

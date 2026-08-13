@@ -89,15 +89,14 @@ func TestAgentHubTurnTerminalKinds(t *testing.T) {
 	}
 }
 
-func TestTreeSessionProjectsCompletionMarker(t *testing.T) {
+func TestResourceTreeProjectsCompletionMarker(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	if err := saveAgentRun(workspace.Path, agentRun{
-		ID:                "run-tree",
+		ID: "run-tree", Generation: 1, GenerationID: "gen-tree",
 		WorkspaceID:       workspace.ID,
-		ForgeSessionID:    "forge-tree",
 		AgentHubSessionID: "ses-tree",
 		ResourceID:        "project1.task1",
 		Status:            "idle",
@@ -107,13 +106,13 @@ func TestTreeSessionProjectsCompletionMarker(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	tree := workspaceTree{Sessions: []guiSession{{ID: "forge-tree"}}}
-	if err := manager.server.enrichTreeSessions(workspace.Path, &tree); err != nil {
+	tree := workspaceTree{Projects: []resourceSnapshot{{ID: "project1", Children: []resourceSnapshot{{ID: "project1.task1"}}}}}
+	if err := manager.server.enrichTreeResourceRuntime(workspace.Path, &tree); err != nil {
 		t.Fatal(err)
 	}
-	projected := tree.Sessions[0]
-	if projected.AgentRunCompletionMarker != "ses-tree:17" || projected.AgentRunCompletionState != "failed" || projected.AgentRunCompletionAt != "2026-08-06T00:00:17Z" {
-		t.Fatalf("completion marker was not projected to the tree session: %#v", projected)
+	projected := tree.Projects[0].Children[0].Runtime
+	if projected == nil || projected.CompletionMarker != "ses-tree:17" || projected.CompletionState != "failed" || projected.CompletionAt != "2026-08-06T00:00:17Z" {
+		t.Fatalf("completion marker was not projected to the resource runtime: %#v", projected)
 	}
 }
 

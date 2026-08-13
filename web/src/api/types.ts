@@ -22,17 +22,8 @@ export interface ResourceSummary {
   children?: ResourceSummary[];
 }
 
-export interface SessionSummary {
-  id: string;
-  resourceId?: string;
-  agentRunId?: string;
-  agentRunStatus?: string;
-  updatedAt: string;
-}
-
 export interface WorkspaceTreeResponse {
   root: string;
   scheduler?: ResourceSummary;
   projects: ResourceSummary[];
-  sessions: SessionSummary[];
 }

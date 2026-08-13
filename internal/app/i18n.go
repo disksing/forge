@@ -344,7 +344,7 @@ forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktre
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 forge session list
-forge session show --id=<id>
+forge session show --id=<generationId>
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
@@ -369,8 +369,8 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 - ` + "`forge task archive`" + ` 将开放任务移入项目的 archive；` + "`forge project archive`" + ` 将开放项目移入 workspace 的 ` + "`archive/`" + `。
 - ` + "`forge task log add/list`" + ` 和 ` + "`forge project log add/list`" + ` 读写结构化 ` + "`log.jsonl`" + `。日志按最新优先显示，` + "`--details -`" + ` 从标准输入读取多行详情。
 - ` + "`forge task repo add/list/remove`" + ` 在任务的 ` + "`task.json`" + ` 中记录、列出或删除相关仓库。任务选择规则与 ` + "`forge task show`" + ` 相同。项目不保存仓库元数据。
-- ` + "`forge session list`" + ` 和 ` + "`forge session show --id=<id>`" + ` 仅用于只读诊断 ` + "`forge serve`" + ` 管理的瞬态 AgentHub Session 投影；它们不会创建、修改、结束、接管或访问 AgentHub Session。
-- ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务和活动 session 的轻量 JSON 树，供 GUI 和工具集成使用。
+- ` + "`forge session list`" + ` 和 ` + "`forge session show --id=<generationId>`" + ` 仅用于从资源 generation 派生的只读诊断；它们不会创建、修改、结束、接管或访问 AgentHub Session。
+- ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务及其 resource runtime 状态的轻量 JSON 树，供 GUI 和工具集成使用。
 - ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
 - creator Turn 结果和消息投递终态通知会作为持久、结构化的 system 消息进入资源 mailbox。诊断时使用 ` + "`forge message show`" + `，并用稳定引用调用 ` + "`forge history turn show`" + `。
 `

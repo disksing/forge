@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 )
 
@@ -14,7 +13,6 @@ type WorkspaceTree struct {
 	Creator   *Creator           `json:"creator,omitempty"`
 	Scheduler ResourceTreeView   `json:"scheduler"`
 	Projects  []ResourceTreeView `json:"projects"`
-	Sessions  []Session          `json:"sessions"`
 	Wiki      WorkspaceWikiView  `json:"wiki"`
 }
 
@@ -123,10 +121,6 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 		}
 		projects = append(projects, project)
 	}
-	sessions, err := activeSessions(root)
-	if err != nil {
-		return WorkspaceTree{}, err
-	}
 	return WorkspaceTree{
 		Root:    slash(root),
 		Creator: config.Creator,
@@ -135,7 +129,6 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 			Path: schedulerDir, AgentBinding: schedulerConfig.AgentBinding,
 		},
 		Projects: projects,
-		Sessions: sessions,
 		Wiki:     readWorkspaceWiki(root),
 	}, nil
 }
@@ -340,23 +333,4 @@ func skipFileTreeDir(entry os.DirEntry) bool {
 	default:
 		return false
 	}
-}
-
-func activeSessions(root string) ([]Session, error) {
-	var sessions []Session
-	err := withLockedSessionStore(root, func(store *sessionStore) error {
-		sessions = activeAgentHubSessions(store.Sessions)
-		sortSessions(sessions)
-		return nil
-	})
-	if err != nil {
-		if strings.Contains(err.Error(), "could not find AgentWorkspace root") {
-			return nil, nil
-		}
-		return nil, err
-	}
-	if sessions == nil {
-		sessions = []Session{}
-	}
-	return sessions, nil
 }

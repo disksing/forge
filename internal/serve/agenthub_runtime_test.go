@@ -1485,16 +1485,9 @@ func TestAgentHubCloseResponseReleasesForgeProjectionBeforeReturn(t *testing.T) 
 	if runs[0].Status != "stopped" || runs[0].ForgeSessionID != "" {
 		t.Fatalf("close response returned a stale run projection: %#v", runs[0])
 	}
-	tree, err := manager.server.tree(context.Background(), workspace.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tree.Sessions) != 0 {
-		t.Fatalf("workspace tree still exposed the stopped run's transient session: %#v", tree.Sessions)
-	}
 }
 
-func TestAgentHubCloseFailsClosedWhenForgeReleaseFails(t *testing.T) {
+func TestAgentHubCloseDoesNotCreateLegacyForgeProjection(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -1503,39 +1496,24 @@ func TestAgentHubCloseFailsClosedWhenForgeReleaseFails(t *testing.T) {
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
-	lockPath := filepath.Join(workspace.Path, ".forge-sessions.lock")
-	if err := os.Remove(lockPath); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Mkdir(lockPath, 0o755); err != nil {
-		t.Fatal(err)
-	}
 	response := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if response.Code == http.StatusOK || !strings.Contains(response.Body.String(), "Forge session release failed") {
-		t.Fatalf("Forge release failure must not report success: %d %s", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("close failed: %d %s", response.Code, response.Body.String())
 	}
-	if err := os.Remove(lockPath); err != nil {
-		t.Fatal(err)
-	}
-	file, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file.Close()
-	sessions := testForgeSessions(t, workspace.Path)
-	if len(sessions) != 1 {
-		t.Fatalf("failed close must retain the active Forge session for recovery: %#v", sessions)
+	for _, legacyPath := range []string{
+		filepath.Join(workspace.Path, "forge-sessions.json"),
+		filepath.Join(workspace.Path, ".forge-sessions.lock"),
+	} {
+		if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+			t.Fatalf("legacy Forge projection exists at %s: %v", legacyPath, err)
+		}
 	}
 	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(runs) != 1 || runs[0].ForgeSessionID == "" {
-		t.Fatalf("failed close must retain a recoverable run projection: runs=%#v err=%v", runs, err)
-	}
-	retry := closeRuntimeTestRun(t, manager, workspace, detail.Run.ID)
-	if retry.Code != http.StatusOK {
-		t.Fatalf("retry after Forge release recovery failed: %d %s", retry.Code, retry.Body.String())
+	if err != nil || len(runs) != 1 || runs[0].ForgeSessionID != "" {
+		t.Fatalf("close must leave no legacy Forge projection reference: runs=%#v err=%v", runs, err)
 	}
 	if sessions := testForgeSessions(t, workspace.Path); len(sessions) != 0 {
-		t.Fatalf("successful retry did not finish Forge release: %#v", sessions)
+		t.Fatalf("close left a compatibility session projection: %#v", sessions)
 	}
 }
 
@@ -1697,13 +1675,6 @@ func TestAgentHubStoppedResumeSerializesDelayedForgeSessionRelease(t *testing.T)
 	sessions := testForgeSessions(t, workspace.Path)
 	if len(sessions) != 1 || sessions[0].ID != updated.ForgeSessionID {
 		t.Fatalf("delayed release removed the replacement Forge session: %#v", sessions)
-	}
-	tree, err := manager.server.tree(context.Background(), workspace.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(tree.Sessions) != 1 || tree.Sessions[0].AgentRunID != run.ID || tree.Sessions[0].AgentRunStatus != "idle" {
-		t.Fatalf("resumed run is missing from the workspace tree: %#v", tree.Sessions)
 	}
 }
 

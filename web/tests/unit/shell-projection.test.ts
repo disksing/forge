@@ -6,10 +6,9 @@ import type { WorkspaceTree } from "../../src/models/workspace";
 describe("shell projection", () => {
   const tree: WorkspaceTree = {
     projects: [{ id: "project1", type: "project", children: [
-      { id: "task1", type: "task" },
+      { id: "task1", type: "task", runtime: { generationId: "gen-task1", status: "running", lastOutputAt: "2026-08-11T02:00:00Z" } },
       { id: "task2", type: "task" },
     ] }],
-    sessions: [{ id: "session1", resourceId: "task1", source: "internal", agentRunStatus: "running", agentRunAgentName: "codex", agentRunLastOutputAt: "2026-08-11T02:00:00Z" }],
   };
   const projection = createShellProjection({ tree: () => tree, findResource: () => null, agentName: (id) => id || "agent", now: () => Date.parse("2026-08-11T02:00:30Z") });
 
@@ -19,10 +18,10 @@ describe("shell projection", () => {
     expect(projection.moveIdInList(["a", "b"], "a", "missing", false)).toEqual(["a", "b"]);
   });
 
-  it("projects Session status without losing recent output", () => {
+  it("projects resource generation status without losing recent output", () => {
     const task = tree.projects[0].children![0];
     const state = projection.taskOperationalState(task);
-    expect(state.session).toMatchObject({ kind: "session-running", recentOutput: true });
+    expect(state.session).toMatchObject({ kind: "resource-running", recentOutput: true });
     expect(state.statusPresentation.layoutClassName).toBe("has-task-status");
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ taskCount: 2, runningCount: 1 });
   });

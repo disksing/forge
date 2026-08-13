@@ -30,16 +30,12 @@ function dependencies(scope: ResourceScope, storage: Storage): NotificationContr
 		scope,
 		storage,
 		selectedResourceId: () => "other-task",
-		treeSessions: () => [],
-		agentRuns: () => [],
+		resourceProjections: () => [],
 		hasTree: () => true,
 		findResource: (id) => ({ id, title: "Task title", type: "task" }),
-		sessionNavigationTarget: () => ({ resourceId: "task1" }),
 		selectResource: async () => undefined,
-		activateRun: () => undefined,
 		notificationsSettingsVisible: () => false,
 		renderSettings: () => undefined,
-		renderSessions: () => undefined,
 		refreshIcons: () => undefined,
 		flushDraft: () => undefined
 	};
@@ -64,22 +60,20 @@ describe("NotificationController", () => {
 		second.establishBaseline();
 
 		const completion = {
-			id: "run-1",
+			id: "gen-1",
 			resourceId: "task1",
-			completionMarker: "session-1:42",
-			forgeSessionId: "forge-session-1",
+			generationId: "gen-1",
+			completionMarker: "gen-1:42",
 			completionState: "completed"
 		};
 		expect(first.observeProjections([completion])).toBeUndefined();
 		first.observeProjections([completion]);
 
-		expect(first.hasUnreadForSession("forge-session-1")).toBe(true);
-		expect(second.hasUnreadForSession("forge-session-1")).toBe(true);
+		expect(JSON.parse(storage.getItem("forge.gui.notifications.v1.state.workspace-a") || "{}").unread[0].generationId).toBe("gen-1");
 		expect(JSON.parse(storage.getItem("forge.gui.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(1);
 
 		second.clearResource("task1");
-		expect(first.hasUnreadForSession("forge-session-1")).toBe(false);
-		expect(second.hasUnreadForSession("forge-session-1")).toBe(false);
+		expect(JSON.parse(storage.getItem("forge.gui.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(0);
 
 		first.dispose();
 		second.dispose();

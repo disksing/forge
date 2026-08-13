@@ -1,5 +1,5 @@
 import type { ShellStatusPresentation } from "../models/shell";
-import type { ResourceRecord, WorkspaceSession, WorkspaceTree } from "../models/workspace";
+import type { ResourceRecord, ResourceRuntime, WorkspaceTree } from "../models/workspace";
 
 export interface TaskStatusState {
   kind: string;
@@ -41,7 +41,7 @@ export interface ShellProjectionDependencies {
   now?(): number;
 }
 
-const RUNNING_SESSION_STATES = new Set(["starting", "running", "waiting_approval", "recovering"]);
+const RUNNING_RESOURCE_STATES = new Set(["starting", "running", "waiting_approval", "recovering", "stopping"]);
 const OUTPUT_FRESH_WINDOW_MS = 60_000;
 
 export function createShellProjection(dependencies: ShellProjectionDependencies) {
@@ -90,50 +90,30 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return next;
   }
 
-  function sortedSessionsForDisplay(sessions: WorkspaceSession[]): WorkspaceSession[] {
-    return sessions.map((session, index) => ({ session, index })).sort((leftEntry, rightEntry) => {
-      const left = Date.parse(leftEntry.session.startedAt || "");
-      const right = Date.parse(rightEntry.session.startedAt || "");
-      const leftOK = Number.isFinite(left);
-      const rightOK = Number.isFinite(right);
-      if (leftOK && rightOK && left !== right) return left - right;
-      if (leftOK !== rightOK) return leftOK ? -1 : 1;
-      if (leftEntry.session.id !== rightEntry.session.id) return leftEntry.session.id < rightEntry.session.id ? -1 : 1;
-      return leftEntry.index - rightEntry.index;
-    }).map((entry) => entry.session);
-  }
-
-  function hasRecentAgentOutput(session: WorkspaceSession): boolean {
-    const outputAt = new Date(session.agentRunLastOutputAt || "").getTime();
+  function hasRecentAgentOutput(runtime: ResourceRuntime): boolean {
+    const outputAt = new Date(runtime.lastOutputAt || "").getTime();
     if (Number.isFinite(outputAt)) return now() - outputAt <= OUTPUT_FRESH_WINDOW_MS;
-    if (!["running", "starting"].includes(session.agentRunStatus || "")) return false;
-    const updatedAt = new Date(session.agentRunUpdatedAt || "").getTime();
+    if (!RUNNING_RESOURCE_STATES.has(runtime.status || "")) return false;
+    const updatedAt = new Date(runtime.updatedAt || "").getTime();
     return Number.isFinite(updatedAt) && now() - updatedAt <= OUTPUT_FRESH_WINDOW_MS;
   }
 
-  function taskStatusState(kind: string, className: string, iconName: string, label: string, dimension: string, session: WorkspaceSession | null = null): TaskStatusState {
-    return { kind, className, iconName, label, dimension, recentOutput: Boolean(session && hasRecentAgentOutput(session)) };
-  }
-
-  function sessionStatusPresentation(session: WorkspaceSession): TaskStatusState {
-    const status = session.agentRunStatus || "";
-    switch (status) {
-      case "starting": return taskStatusState("session-starting", "task-status-session-running", "loader-circle", "Session starting", "session", session);
-      case "running": return taskStatusState("session-running", "task-status-session-running", "loader-circle", "Session running", "session", session);
-      case "waiting_approval": return taskStatusState("session-approval", "task-status-attention", "shield-question", "Session waiting for approval", "session", session);
-      case "stopping": return taskStatusState("session-stopping", "task-status-session-stopping", "loader-circle", "Session stopping", "session", session);
-      case "recovering": return taskStatusState("session-recovering", "task-status-attention", "rotate-ccw", "Session recovering", "session", session);
-      case "idle": return taskStatusState("session-idle", "task-status-info", "message-square", "Session waiting for input", "session", session);
-      default: return taskStatusState("session-active", "task-status-neutral", "circle-dot", status ? `Session ${status}` : "Session active", "session", session);
+  function resourceStatusState(runtime: ResourceRuntime | undefined): TaskStatusState | null {
+    if (!runtime?.status || runtime.status === "stopped" || runtime.status === "archived") return null;
+    const recentOutput = hasRecentAgentOutput(runtime);
+    switch (runtime.status) {
+      case "starting": return { kind: "resource-starting", className: "task-status-session-running", iconName: "loader-circle", label: "Resource starting", dimension: "resource", recentOutput };
+      case "running": return { kind: "resource-running", className: "task-status-session-running", iconName: "loader-circle", label: "Resource working", dimension: "resource", recentOutput };
+      case "waiting_approval": return { kind: "resource-approval", className: "task-status-attention", iconName: "shield-question", label: "Resource waiting for approval", dimension: "resource", recentOutput };
+      case "stopping": return { kind: "resource-stopping", className: "task-status-session-stopping", iconName: "loader-circle", label: "Resource stopping", dimension: "resource", recentOutput };
+      case "recovering": return { kind: "resource-recovering", className: "task-status-attention", iconName: "rotate-ccw", label: "Resource recovering", dimension: "resource", recentOutput };
+      case "idle": return { kind: "resource-idle", className: "task-status-info", iconName: "message-square", label: "Resource ready", dimension: "resource", recentOutput };
+      default: return { kind: "resource-active", className: "task-status-neutral", iconName: "circle-dot", label: `Resource ${runtime.status}`, dimension: "resource", recentOutput };
     }
   }
 
-  function deriveTaskSessionState(sessions: WorkspaceSession[]): TaskStatusState | null {
-    for (const status of ["waiting_approval", "starting", "running", "stopping", "recovering", "idle"]) {
-      const session = sessions.find((item) => item.agentRunStatus === status);
-      if (session) return sessionStatusPresentation(session);
-    }
-    return sessions.length ? sessionStatusPresentation(sessions[0]) : null;
+  function taskStatusState(kind: string, className: string, iconName: string, label: string, dimension: string, runtime?: ResourceRuntime): TaskStatusState {
+    return { kind, className, iconName, label, dimension, recentOutput: Boolean(runtime && hasRecentAgentOutput(runtime)) };
   }
 
   function operationalStatusPresentation(statuses: Array<TaskStatusState | null>): OperationalStatusPresentation {
@@ -144,29 +124,15 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
       hasTaskState,
       className: visible.map((status) => status.className).filter(Boolean).join(" "),
       layoutClassName: !hasTaskState ? "" : visible.length > 1 ? "has-task-status-dual" : "has-task-status",
-      slotClassName: [
-        visible.length === 1 ? "task-status-single" : "",
-        visible.length > 1 ? "task-status-dual" : "",
-      ].filter(Boolean).join(" "),
+      slotClassName: [visible.length === 1 ? "task-status-single" : "", visible.length > 1 ? "task-status-dual" : ""].filter(Boolean).join(" "),
     };
   }
 
-  function taskAgentSessions(resourceId: string): WorkspaceSession[] {
-    return resourceId ? (dependencies.tree()?.sessions || []).filter((session) => session.resourceId === resourceId) : [];
-  }
-
-  function taskOperationalLabel(sessions: WorkspaceSession[]): string {
-    const parts: string[] = [];
-    if (sessions.length === 1) parts.push(`Agent session ${(sessions[0].agentRunStatus || "open").replace("waiting_approval", "waiting for approval")}`);
-    else if (sessions.length > 1) parts.push(`${sessions.length} agent sessions: ${[...new Set(sessions.map((session) => session.agentRunStatus || "open"))].join(", ")}`);
-    return parts.join(" · ");
-  }
-
   function taskOperationalState(item: ResourceRecord): TaskOperationalState {
-    const sessions = taskAgentSessions(item.id);
-    const session = deriveTaskSessionState(sessions);
-    const statusPresentation = operationalStatusPresentation([session]);
-    return { session, statusPresentation, className: statusPresentation.className, label: taskOperationalLabel(sessions) };
+    const status = resourceStatusState(item.runtime);
+    const label = status?.label || "";
+    const statusPresentation = operationalStatusPresentation([status]);
+    return { session: status, statusPresentation, className: statusPresentation.className, label };
   }
 
   function noTaskOperationalState(): TaskOperationalState {
@@ -175,10 +141,10 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
 
   function projectTaskSummary(project: ResourceRecord): ProjectTaskSummary {
     const tasks = (project.children || []).filter((task) => task.archived !== true);
-    const running = new Set(tasks.filter((task) => taskAgentSessions(task.id).some((session) => session.source === "internal" && RUNNING_SESSION_STATES.has(session.agentRunStatus || ""))).map((task) => task.id));
+    const running = tasks.filter((task) => RUNNING_RESOURCE_STATES.has(task.runtime?.status || "")).length;
     const taskLabel = `${tasks.length} ${tasks.length === 1 ? "task" : "tasks"}`;
-    const runningLabel = `${running.size} running`;
-    return { taskCount: tasks.length, runningCount: running.size, taskLabel, runningLabel, text: `${taskLabel} · ${runningLabel}`, ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}` };
+    const runningLabel = `${running} working`;
+    return { taskCount: tasks.length, runningCount: running, taskLabel, runningLabel, text: `${taskLabel} · ${runningLabel}`, ariaLabel: `Open tasks: ${taskLabel}; ${runningLabel}` };
   }
 
   function taskStatusKey(status: TaskStatusState | null): string {
@@ -189,26 +155,20 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     const tree = dependencies.tree();
     if (!tree) return "";
     const parts: string[] = [];
-	if (tree.scheduler) {
-		const schedulerState = taskOperationalState(tree.scheduler);
-		parts.push(`scheduler:session=${taskStatusKey(schedulerState.session)}:${schedulerState.label}`);
-	}
+    if (tree.scheduler) {
+      const schedulerState = taskOperationalState(tree.scheduler);
+      parts.push(`scheduler:resource=${taskStatusKey(schedulerState.session)}:${schedulerState.label}`);
+    }
     for (const project of tree.projects) {
       const state = taskOperationalState(project);
       const summary = projectTaskSummary(project);
-      parts.push(`${project.id}:session=${taskStatusKey(state.session)}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
+      parts.push(`${project.id}:resource=${taskStatusKey(state.session)}:${state.label}:tasks=${summary.taskCount}:${summary.runningCount}`);
       for (const task of project.children || []) {
         const taskState = taskOperationalState(task);
-        parts.push(`${task.id}:session=${taskStatusKey(taskState.session)}:${taskState.label}`);
+        parts.push(`${task.id}:resource=${taskStatusKey(taskState.session)}:${taskState.label}`);
       }
     }
     return parts.join("|");
-  }
-
-  function sessionOperationalLabel(session: WorkspaceSession, _taskResource: ResourceRecord | null, _taskState: TaskOperationalState, sessionStatus: TaskStatusState): string {
-    const parts: string[] = [];
-    if (sessionStatus) parts.push(sessionStatus.label);
-    return parts.length ? parts.join(" · ") : session.source === "external" ? "External session active" : "Session active";
   }
 
   return {
@@ -218,11 +178,8 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     operationalStatusPresentation,
     projectTaskSummary,
     resourceRefText,
-    sessionOperationalLabel,
-    sessionStatusPresentation,
-    sortedSessionsForDisplay,
+    resourceStatusState,
     statusModel,
-    taskAgentSessions,
     taskOperationalState,
     taskOperationalStateKey,
     taskStatusState,

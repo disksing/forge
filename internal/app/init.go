@@ -179,7 +179,7 @@ forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktre
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
 forge session list
-forge session show --id=<id>
+forge session show --id=<generationId>
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
@@ -204,8 +204,8 @@ Notes:
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task log add/list`" + ` and ` + "`forge project log add/list`" + ` write and read structured ` + "`log.jsonl`" + ` entries. Logs are displayed newest first, and ` + "`--details -`" + ` reads multiline details from standard input.
 - ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
-- ` + "`forge session list`" + ` and ` + "`forge session show --id=<id>`" + ` provide read-only diagnostics for transient AgentHub Session projections managed by ` + "`forge serve`" + `. They do not create, modify, end, take over, or contact AgentHub Sessions.
-- ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and active sessions for GUI and tool integrations.
+- ` + "`forge session list`" + ` and ` + "`forge session show --id=<generationId>`" + ` provide read-only diagnostics derived from resource generations. They do not create, modify, end, take over, or contact AgentHub Sessions.
+- ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and their resource runtime state for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
 - Creator Turn results and terminal delivery notices arrive as durable structured system messages in the resource mailbox. Use ` + "`forge message show`" + ` and ` + "`forge history turn show`" + ` with their stable references for diagnosis.
 `

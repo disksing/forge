@@ -12,12 +12,11 @@ export function normalizeNotificationRecord(raw: unknown): NotificationRecord | 
   const record = objectRecord(raw);
   if (!record) return null;
   const marker = String(record.marker || "").trim();
-  const sessionId = String(record.sessionId || "").trim();
-  if (!marker || !sessionId) return null;
+  const generationId = String(record.generationId || "").trim();
+  if (!marker || !generationId) return null;
   return {
     workspaceId: String(record.workspaceId || "").trim(),
-    sessionId,
-    runId: String(record.runId || "").trim(),
+    generationId,
     resourceId: String(record.resourceId || "").trim(),
     marker,
     completionState: String(record.completionState || "completed").trim(),

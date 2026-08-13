@@ -2,21 +2,15 @@ import { normalizeNotificationRecord } from "./notification-store";
 import type { NotificationEvent, NotificationRecord, NotificationResource, NotificationSource } from "./notification-types";
 
 export function notificationMarkerFor(item: NotificationSource): string {
-  const explicit = String(item.completionMarker || item.agentRunCompletionMarker || "").trim();
+  const explicit = String(item.completionMarker || "").trim();
   if (explicit) return explicit;
-  const sessionId = String(item.agentHubSessionId || item.completionSessionId || "").trim();
+  const generationId = String(item.generationId || "").trim();
   const eventId = Number(item.completionEventId) || 0;
-  return sessionId && eventId > 0 ? `${sessionId}:${eventId}` : "";
+  return generationId && eventId > 0 ? `${generationId}:${eventId}` : "";
 }
 
-export function notificationSessionIdFor(item: NotificationSource): string {
-  return String(item.forgeSessionId || item.sessionId || item.agentHubSessionId || item.id || "").trim();
-}
-
-export function notificationResourceIdFor(item: NotificationSource, navigationTarget: (item: NotificationSource) => { resourceId?: string }): string {
-  if (item.source === "internal" || item.source === "external") return navigationTarget(item).resourceId || "";
-  if (item.resourceId) return String(item.resourceId).trim();
-  return "";
+export function notificationGenerationIdFor(item: NotificationSource): string {
+  return String(item.generationId || item.id || "").trim();
 }
 
 export function notificationEventState(event: NotificationEvent): string {
@@ -30,20 +24,20 @@ export function createNotificationRecord(item: NotificationSource, context: {
   workspaceId: string;
   marker: string;
   completionState?: string;
-  navigationTarget(item: NotificationSource): { resourceId?: string };
   findResource(id: string): NotificationResource | null | undefined;
   now?: () => number;
 }): NotificationRecord | null {
-  const resourceId = notificationResourceIdFor(item, context.navigationTarget);
+  const resourceId = String(item.resourceId || "").trim();
   const resource = context.findResource(resourceId);
+  const generationId = notificationGenerationIdFor(item);
+  if (!resourceId || !generationId) return null;
   return normalizeNotificationRecord({
     workspaceId: context.workspaceId,
-    sessionId: notificationSessionIdFor(item),
-    runId: String(item.runId || item.agentRunId || item.id || "").trim(),
+    generationId,
     resourceId,
     marker: context.marker,
     completionState: context.completionState || item.completionState || "completed",
-    title: resource?.title || item.title || item.id || "Session",
+    title: resource?.title || item.title || generationId,
     resourceType: resource?.type || "",
     resourceTitle: resource?.title || "",
     at: context.now?.() ?? Date.now(),

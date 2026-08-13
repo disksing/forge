@@ -216,9 +216,9 @@
               {:else if item.kind === "thinking"}
                 <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "tools"}
-                <ToolGroup {item} runId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+                <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
               {:else if item.kind === "approval"}
-                <ApprovalCard {item} runId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
+                <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={model.onApproval} onToast={model.onToast} />
               {:else if item.kind === "lifecycle"}
                 <LifecycleNotice {item} />
               {:else if item.kind === "error"}

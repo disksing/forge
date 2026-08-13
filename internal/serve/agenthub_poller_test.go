@@ -103,6 +103,25 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
+func TestAgentHubPollerSkipsArchiveLookupForSchedulerResource(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-scheduler", WorkspaceID: workspace.ID, ResourceID: app.SchedulerResourceID,
+		AgentHubSessionID: "ses_scheduler", SourceExternalID: workspace.ID + "/scheduler/1", Status: "idle",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{ID: "ses_scheduler", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatalf("Scheduler poll must not inspect the special resource as a Project/Task: %v", err)
+	}
+	if run := pollerRunState(manager.runtimeByID("run-scheduler")); run.Status != "idle" {
+		t.Fatalf("Scheduler run projection changed unexpectedly: %#v", run)
+	}
+}
+
 func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)

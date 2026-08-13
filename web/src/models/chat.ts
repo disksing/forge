@@ -70,7 +70,6 @@ export interface ComposerContext {
 }
 
 export interface ResourceGenerationStatus {
-  runId: string;
   generation: number;
   generationId: string;
   status: string;
@@ -83,27 +82,6 @@ export interface ResourceSessionStatus {
   state?: string;
   currentTurnId?: string;
   inputCapabilities?: { prompt?: boolean; steer?: boolean };
-}
-
-export interface AgentRun {
-  id: string;
-  workspaceId?: string;
-  resourceId?: string;
-  agentHubSessionId?: string;
-  sourceExternalId?: string;
-  agentHubAgentName?: string;
-  resolvedProfile?: string;
-  agentConfigError?: string;
-  title?: string;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  completionMarker?: string;
-  completionSessionId?: string;
-  completionEventId?: number;
-  completionState?: string;
-  agentRunCompletionMarker?: string;
-  agentRunCompletionState?: string;
 }
 
 export interface AgentEvent {
@@ -218,7 +196,6 @@ export interface AgentNotice {
     method?: string;
     kind?: string;
     lifecycle?: string;
-    runId?: string;
     resourceId?: string;
     text?: string;
   };

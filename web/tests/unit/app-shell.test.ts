@@ -31,12 +31,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
     ],
     projects: [resource("project-a", "Project A"), resource("project-b", "Project B")],
-    sessions: [{
-      id: "session-a", source: "internal", title: "Task session", meta: "AgentHub · project-a.task-a", label: "Codex",
-      statusLabel: "Session active", status: emptyStatus, unread: true, current: false, clickable: true,
-      navigationResourceId: "project-a.task-a",
-    }],
-    paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarSessionHeight: 210 },
+    paneSizes: { sidebarWidth: 280, chatWidth: 420 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
     layout: { preference: "auto", effective: "three" },
     route: { path: "", revision: 0, replace: true },
@@ -69,23 +64,20 @@ describe("AppShell", () => {
 
     const projectA = target.querySelector<HTMLElement>('.tree-item[aria-label="Project A"]')!;
     projectA.dataset.identityProbe = "stable";
-    target.querySelector<HTMLButtonElement>('.session-row[aria-label^="Task session"]')!.click();
-    await vi.waitFor(() => expect(onSelectResource).toHaveBeenCalledWith("project-a.task-a"));
+    target.querySelector<HTMLButtonElement>('.tree-item[aria-label="Project A"]')!.click();
+    await vi.waitFor(() => expect(onSelectResource).toHaveBeenCalledWith("project-a"));
 
     channel.publish({
       ...initial,
       projects: initial.projects.map((project) => project.id === "project-a"
         ? { ...project, active: true, statusLabel: "Session running", status: { hasTaskState: true, className: "task-status-session-running", layoutClassName: "has-task-status", slotClassName: "task-status-single", statuses: [{ key: "session", className: "task-status-session-running", iconName: "loader-circle", recentOutput: true }] } }
         : project),
-      sessions: initial.sessions.map((session) => ({ ...session, current: true, unread: false })),
     });
     await tick();
 
     expect(target.querySelector('.tree-item[aria-label="Project A"]')).toBe(projectA);
     expect(projectA.dataset.identityProbe).toBe("stable");
     expect(projectA.classList.contains("active")).toBe(true);
-    expect(target.querySelector(".session-row")?.classList.contains("current-session")).toBe(true);
-    expect(target.querySelector(".session-unread-badge")).toBeNull();
   });
 
   it("keeps drag state local and sends one typed reorder transaction", async () => {

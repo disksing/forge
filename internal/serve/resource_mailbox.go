@@ -133,7 +133,6 @@ type resourceMailboxCounts struct {
 }
 
 type resourceGenerationStatus struct {
-	RunID              string `json:"runId"`
 	Generation         int    `json:"generation"`
 	GenerationID       string `json:"generationId"`
 	Status             string `json:"status"`
@@ -777,7 +776,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		return status, nil
 	}
 	status.Generation = &resourceGenerationStatus{
-		RunID: run.ID, Generation: run.Generation, GenerationID: run.GenerationID,
+		Generation: run.Generation, GenerationID: run.GenerationID,
 		Status: run.Status, ReplacementPending: run.ReplacementPending,
 		AgentHubSessionID: run.AgentHubSessionID,
 	}
