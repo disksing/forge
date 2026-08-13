@@ -272,6 +272,8 @@ AgentWorkspace/
 
 Open/archive state is represented by directory location. Human-readable directory suffixes do not change resource ids: `project1-forge-dev/task1-first-change/` is still `project1.task1`.
 
+The Workspace tree contains only open Projects and Tasks. Archived resources remain addressable through resource lookup, archived listings, history, and Project detail views, but do not appear in the default navigation tree.
+
 Archive is a reversible, non-destructive directory move. Archiving a Project moves its complete subtree, including open Tasks, in one top-level rename; `--all`, resource lookup, history, and the Web API continue to find the archived resources. Forge performs only read-only best-effort Git checks before the move. Dirty or unmerged worktrees, missing target branches, unverifiable Git state, open child Tasks, and post-move worktree repair failures are returned as structured warnings; Forge never resets, cleans, stashes, deletes, or commits source code for archive. Runtime Session stop/archive and pending mailbox convergence continue asynchronously after the directory move, and a warning does not roll back a completed move.
 
 ### File Roles

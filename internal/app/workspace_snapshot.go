@@ -160,7 +160,7 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		AgentBinding: meta.AgentBinding,
 	}
 	if includeChildren && isProject(entry.Resource) {
-		children, err := projectChildTreeItems(root, entry)
+		children, err := projectChildTreeItems(root, entry, false)
 		if err != nil {
 			return ResourceTreeView{}, err
 		}
@@ -199,7 +199,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}
 	if isProject(entry.Resource) {
-		children, err := projectChildTreeItems(root, entry)
+		children, err := projectChildTreeItems(root, entry, true)
 		if err != nil {
 			return ResourceDetailView{}, err
 		}
@@ -208,12 +208,14 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	return detail, nil
 }
 
-func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {
+func projectChildTreeItems(root string, entry resourceEntry, includeArchived bool) ([]ResourceTreeView, error) {
 	pattern := projectTaskName(entry.Resource.resourceMeta().ID)
-	// Include both locations so an archived Project remains able to expose its
-	// complete child tree. The caller decides whether archived rows are shown;
-	// discovery must not lose them after a project-level directory move.
-	dirs := []string{entry.Path, filepath.Join(entry.Path, archiveDir)}
+	dirs := []string{entry.Path}
+	if includeArchived {
+		// Resource details remain able to expose a complete project subtree after
+		// a project-level move, while the Workspace tree only lists open Tasks.
+		dirs = append(dirs, filepath.Join(entry.Path, archiveDir))
+	}
 	childEntries, err := readTaskEntriesInDirs(dirs, pattern)
 	if err != nil {
 		return nil, err

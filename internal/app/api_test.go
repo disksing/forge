@@ -71,6 +71,14 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	if err != nil || archivedTask.Path != "project1-application/archive/task1-api" {
 		t.Fatalf("archive task = %#v, %v", archivedTask, err)
 	}
+	tree, err = workspace.Tree()
+	if err != nil || len(tree.Projects) != 1 || len(tree.Projects[0].Children) != 0 {
+		t.Fatalf("Workspace tree includes archived task = %#v, %v", tree, err)
+	}
+	detail, err = workspace.Resource(project.ID)
+	if err != nil || len(detail.Children) != 1 || !detail.Children[0].Archived {
+		t.Fatalf("project detail lost archived task = %#v, %v", detail.Children, err)
+	}
 	archivedProject, err := workspace.ArchiveResource(project.ID)
 	if err != nil || archivedProject.Path != "archive/project1-application" {
 		t.Fatalf("archive project = %#v, %v", archivedProject, err)
