@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { tick } from "svelte";
+
   import type { AgentOption } from "../models/common";
   import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "../models/detail";
 
@@ -21,6 +23,22 @@
   const profileOptions = $derived(profileSelections());
   const agentOptions = $derived(agentSelections());
   const selectedValue = $derived(serialize(value));
+  const selectedLabel = $derived(
+    [...profileOptions, ...agentOptions].find((option) => serialize(option.value) === selectedValue)?.label || value.name || "Unavailable"
+  );
+
+  // Native selects size to the widest option, which leaves trailing blank
+  // space when the selected label is short. Measure the selected label with a
+  // hidden sizer and size the control to its content instead.
+  let sizer: HTMLSpanElement | undefined = $state();
+  let contentWidth = $state(0);
+
+  $effect(() => {
+    selectedLabel;
+    void tick().then(() => {
+      if (sizer) contentWidth = Math.ceil(sizer.getBoundingClientRect().width);
+    });
+  });
 
   function normalize(value: string): string {
     return value.trim().toLowerCase();
@@ -79,7 +97,8 @@
   }
 </script>
 
-<select {disabled} aria-label={ariaLabel} value={selectedValue} onchange={select}>
+<span class="agent-binding-sizer" bind:this={sizer} aria-hidden="true">{selectedLabel}</span>
+<select {disabled} aria-label={ariaLabel} value={selectedValue} style:width={contentWidth ? `${contentWidth + 2}px` : undefined} onchange={select}>
   {#if profileOptions.length}
     <optgroup label="Profiles">
       {#each profileOptions as option (serialize(option.value))}<option value={serialize(option.value)}>{option.label}</option>{/each}

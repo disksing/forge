@@ -13,7 +13,7 @@ function p() {
 		reject: t
 	};
 }
-var m = 1024, h = 2048, g = 4096, _ = 8192, v = 16384, y = 32768, b = 1 << 25, x = 65536, S = 1 << 19, ee = 1 << 20, C = 1 << 25, w = 65536, T = 1 << 21, te = 1 << 22, ne = 1 << 23, re = Symbol("$state"), ie = Symbol("legacy props"), ae = Symbol(""), oe = Symbol("attributes"), se = Symbol("class"), ce = Symbol("style"), le = Symbol("text"), ue = Symbol("form reset"), de = new class extends Error {
+var m = 1024, h = 2048, g = 4096, _ = 8192, v = 16384, y = 32768, b = 1 << 25, x = 65536, S = 1 << 19, C = 1 << 20, w = 1 << 25, T = 65536, ee = 1 << 21, te = 1 << 22, ne = 1 << 23, re = Symbol("$state"), ie = Symbol("legacy props"), ae = Symbol(""), oe = Symbol("attributes"), se = Symbol("class"), ce = Symbol("style"), le = Symbol("text"), ue = Symbol("form reset"), de = new class extends Error {
 	name = "StaleReactionError";
 	message = "The reaction that called `getAbortSignal()` was re-run or destroyed";
 }(), fe = !!globalThis.document?.contentType && /* @__PURE__ */ globalThis.document.contentType.includes("xml");
@@ -207,7 +207,7 @@ function $e(e) {
 //#endregion
 //#region node_modules/svelte/src/internal/client/reactivity/utils.js
 function et(e) {
-	if (e !== null) for (let t of e) !(t.f & 2) || !(t.f & 65536) || (t.f ^= w, et(t.deps));
+	if (e !== null) for (let t of e) !(t.f & 2) || !(t.f & 65536) || (t.f ^= T, et(t.deps));
 }
 function tt(e, t, n) {
 	e.f & 2048 ? t.add(e) : e.f & 4096 && n.add(e), et(e.deps), Qe(e, m);
@@ -570,7 +570,7 @@ function St(e) {
 	if (!Vn && r !== null && e.v !== Ee && r.f & 24576) return Ae(), e.v;
 	Gn(r);
 	try {
-		e.f &= ~w, xt(e), t = ar(e);
+		e.f &= ~T, xt(e), t = ar(e);
 	} finally {
 		Gn(n);
 	}
@@ -951,7 +951,7 @@ function Qt(e, t, n) {
 			if (l && Qe(s, t), c & 131072) Wt.add(s);
 			else if (c & 2) {
 				var u = s;
-				Ot?.delete(u), c & 65536 || (c & 512 && (V === null || !(V.f & 2097152)) && (s.f |= w), Qt(u, g, n));
+				Ot?.delete(u), c & 65536 || (c & 512 && (V === null || !(V.f & 2097152)) && (s.f |= T), Qt(u, g, n));
 			} else if (l) {
 				var d = s;
 				c & 16 && zt !== null && zt.add(d), n === null ? Vt(d) : n.push(d);
@@ -1195,7 +1195,7 @@ function bn(e) {
 	} else return xn(e);
 }
 function xn(e) {
-	return _n(4 | ee, e);
+	return _n(4 | C, e);
 }
 function Sn(e) {
 	It.ensure();
@@ -1354,7 +1354,7 @@ function nr() {
 function rr(e) {
 	var t = e.f;
 	if (t & 2048) return !0;
-	if (t & 2 && (e.f &= ~w), t & 4096) {
+	if (t & 2 && (e.f &= ~T), t & 4096) {
 		for (var n = e.deps, r = n.length, i = 0; i < r; i++) {
 			var a = n[i];
 			if (rr(a) && Ct(a), a.wv > e.wv) return !0;
@@ -1376,7 +1376,7 @@ function ar(e) {
 		e.ac.abort(de);
 	}), e.ac = null);
 	try {
-		e.f |= T;
+		e.f |= ee;
 		var u = e.fn, d = u();
 		e.f |= y;
 		var f = e.deps, p = N?.is_fork;
@@ -1396,7 +1396,7 @@ function ar(e) {
 	} catch (e) {
 		return Ye(e);
 	} finally {
-		e.f ^= T, Jn = t, Yn = n, Xn = r, B = i, Kn = a, Ue(o), Un = s, er = c;
+		e.f ^= ee, Jn = t, Yn = n, Xn = r, B = i, Kn = a, Ue(o), Un = s, er = c;
 	}
 }
 function or(e, r) {
@@ -1410,7 +1410,7 @@ function or(e, r) {
 	}
 	if (i === null && r.f & 2 && (Jn === null || !n.call(Jn, r))) {
 		var s = r;
-		s.f & 512 && (s.f ^= 512, s.f &= ~w), s.v !== Ee && $e(s), s.ac !== null && st(() => {
+		s.f & 512 && (s.f ^= 512, s.f &= ~T), s.v !== Ee && $e(s), s.ac !== null && st(() => {
 			s.ac.abort(de), s.ac = null, Qe(s, h);
 		}), wt(s), sr(s, 0);
 	}
@@ -1824,7 +1824,7 @@ function Vr(e, t, n = !0) {
 	}
 	for (var i = 0; i < t.length; i++) {
 		var a = t[i];
-		r?.has(a) ? (a.f |= C, Rn(a, document.createDocumentFragment())) : jn(t[i], n);
+		r?.has(a) ? (a.f |= w, Rn(a, document.createDocumentFragment())) : jn(t[i], n);
 	}
 }
 var Hr;
@@ -1840,7 +1840,7 @@ function J(t, n, i, a, o, s = null) {
 		return e(t) ? t : t == null ? [] : r(t);
 	}), p, m = /* @__PURE__ */ new Map(), h = !0;
 	function g(e) {
-		v.effect.f & 16384 || (v.pending.delete(e), v.fallback = d, Wr(v, p, c, n, a), d !== null && (p.length === 0 ? d.f & 33554432 ? (d.f ^= C, Kr(d, null, c)) : In(d) : Pn(d, () => {
+		v.effect.f & 16384 || (v.pending.delete(e), v.fallback = d, Wr(v, p, c, n, a), d !== null && (p.length === 0 ? d.f & 33554432 ? (d.f ^= w, Kr(d, null, c)) : In(d) : Pn(d, () => {
 			d = null;
 		})));
 	}
@@ -1856,9 +1856,9 @@ function J(t, n, i, a, o, s = null) {
 			for (var r = /* @__PURE__ */ new Set(), u = N, v = fn(), y = 0; y < e; y += 1) {
 				E && D.nodeType === 8 && D.data === "]" && (c = D, t = !0, Pe(!1));
 				var b = p[y], x = a(b, y), S = h ? null : l.get(x);
-				S ? (S.v && Yt(S.v, b), S.i && Yt(S.i, y), v && u.unskip_effect(S.e)) : (S = Gr(l, h ? c : Hr ??= cn(), b, x, y, o, n, i), h || (S.e.f |= C), l.set(x, S)), r.add(x);
+				S ? (S.v && Yt(S.v, b), S.i && Yt(S.i, y), v && u.unskip_effect(S.e)) : (S = Gr(l, h ? c : Hr ??= cn(), b, x, y, o, n, i), h || (S.e.f |= w), l.set(x, S)), r.add(x);
 			}
-			if (e === 0 && s && !d && (h ? d = Dn(() => s(c)) : (d = Dn(() => s(Hr ??= cn())), d.f |= C)), e > r.size && he("", "", ""), E && e > 0 && Fe(Le()), !h) {
+			if (e === 0 && s && !d && (h ? d = Dn(() => s(c)) : (d = Dn(() => s(Hr ??= cn())), d.f |= w)), e > r.size && he("", "", ""), E && e > 0 && Fe(Le()), !h) {
 				if (m.set(u, r), v) {
 					for (let [e, t] of l) r.has(e) || u.skip_effect(t.e);
 					u.oncommit(g), u.ondiscard(_);
@@ -1884,7 +1884,7 @@ function Wr(e, t, n, i, a) {
 	for (v = 0; v < s; v += 1) {
 		if (h = t[v], g = a(h, v), _ = c.get(g).e, e.outrogroups !== null) for (let t of e.outrogroups) t.pending.delete(_), t.done.delete(_);
 		if (_.f & 8192 && (In(_), o && (_.nodes?.a?.unfix(), (f ??= /* @__PURE__ */ new Set()).delete(_))), _.f & 33554432) {
-			if (_.f ^= C, _ === l) Kr(_, null, n);
+			if (_.f ^= w, _ === l) Kr(_, null, n);
 			else {
 				var y = d ? d.next : l;
 				_ === e.effect.last && (e.effect.last = _.prev), _.prev && (_.prev.next = _.next), _.next && (_.next.prev = _.prev), qr(e, d, _), qr(e, _, y), Kr(_, y, n), d = _, p = [], m = [], l = Ur(d.next);
@@ -1896,10 +1896,10 @@ function Wr(e, t, n, i, a) {
 				if (p.length < m.length) {
 					var b = m[0], x;
 					d = b.prev;
-					var S = p[0], ee = p[p.length - 1];
+					var S = p[0], C = p[p.length - 1];
 					for (x = 0; x < p.length; x += 1) Kr(p[x], b, n);
 					for (x = 0; x < m.length; x += 1) u.delete(m[x]);
-					qr(e, S.prev, ee.next), qr(e, d, S), qr(e, ee, b), l = b, d = ee, --v, p = [], m = [];
+					qr(e, S.prev, C.next), qr(e, d, S), qr(e, C, b), l = b, d = C, --v, p = [], m = [];
 				} else u.delete(_), Kr(_, l, n), qr(e, _.prev, _.next), qr(e, _, d === null ? e.effect.first : d.next), qr(e, d, _), d = _;
 				continue;
 			}
@@ -1913,17 +1913,17 @@ function Wr(e, t, n, i, a) {
 		e.outrogroups.size === 0 && (e.outrogroups = null);
 	}
 	if (l !== null || u !== void 0) {
-		var w = [];
-		if (u !== void 0) for (_ of u) _.f & 8192 || w.push(_);
-		for (; l !== null;) !(l.f & 8192) && l !== e.fallback && w.push(l), l = Ur(l.next);
-		var T = w.length;
-		if (T > 0) {
+		var T = [];
+		if (u !== void 0) for (_ of u) _.f & 8192 || T.push(_);
+		for (; l !== null;) !(l.f & 8192) && l !== e.fallback && T.push(l), l = Ur(l.next);
+		var ee = T.length;
+		if (ee > 0) {
 			var te = i & 4 && s === 0 ? n : null;
 			if (o) {
-				for (v = 0; v < T; v += 1) w[v].nodes?.a?.measure();
-				for (v = 0; v < T; v += 1) w[v].nodes?.a?.fix();
+				for (v = 0; v < ee; v += 1) T[v].nodes?.a?.measure();
+				for (v = 0; v < ee; v += 1) T[v].nodes?.a?.fix();
 			}
-			Br(e, w, te);
+			Br(e, T, te);
 		}
 	}
 	o && qe(() => {
@@ -2635,7 +2635,7 @@ function ea(e, t) {
 			O(v);
 			var b = R(v), x = I(b, !0);
 			O(b);
-			var S = R(b), ee = (e) => {
+			var S = R(b), C = (e) => {
 				var n = Yi(), r = I(n), i = I(r, !0);
 				O(r);
 				var a = R(r, 2), o = I(a, !0);
@@ -2644,14 +2644,14 @@ function ea(e, t) {
 				}), G(e, n);
 			};
 			q(S, (e) => {
-				H(t).summary && !H(t).expanded && e(ee);
+				H(t).summary && !H(t).expanded && e(C);
 			}), O(_);
-			var C = R(_, 2);
-			X(I(C), {
+			var w = R(_, 2);
+			X(I(w), {
 				name: "grip-vertical",
 				className: "drag-handle-icon"
-			}), O(C), O(i);
-			var w = R(i, 2), T = (e) => {
+			}), O(w), O(i);
+			var T = R(i, 2), ee = (e) => {
 				var r = Zi();
 				J(r, 21, () => H(t).children, (e) => e.id, (e, r) => {
 					var i = Xi(), s = R(I(i), 2);
@@ -2688,8 +2688,8 @@ function ea(e, t) {
 					})), xr("dragend", y, d), G(e, i);
 				}), O(r), G(e, r);
 			};
-			q(w, (e) => {
-				H(t).expanded && e(T);
+			q(T, (e) => {
+				H(t).expanded && e(ee);
 			}), z((e) => {
 				ai(i, 1, e), Y(i, "aria-label", H(t).ariaLabel || void 0), Y(i, "title", H(t).statusLabel || void 0), Y(s, "data-project-toggle", H(t).children.length ? H(t).id : void 0), K(y, H(t).title), K(x, H(t).ref);
 			}, [() => `tree-item ${a(H(t).status)} ${H(t).active ? "active" : ""} ${H(n)?.id === H(t).id ? "drag-source" : ""} ${o(H(t).id)}`]), U("click", i, (e) => f(e, H(t))), xr("dragover", i, (e) => l(e, {
@@ -2700,11 +2700,11 @@ function ea(e, t) {
 				kind: "project",
 				id: H(t).id,
 				projectId: ""
-			})), xr("dragstart", C, (e) => c(e, {
+			})), xr("dragstart", w, (e) => c(e, {
 				kind: "project",
 				id: H(t).id,
 				projectId: ""
-			})), xr("dragend", C, d), G(e, r);
+			})), xr("dragend", w, d), G(e, r);
 		}), G(e, r);
 	};
 	q(_, (e) => {
@@ -3042,17 +3042,17 @@ function ca(e, t) {
 			return H(n).onLayoutCycle;
 		}
 	}), O(x), O(y);
-	var S = R(y, 2), ee = I(S), C = I(ee), w = R(C, 2);
-	O(ee);
-	var T = R(ee, 2);
-	Vi(I(T), {
+	var S = R(y, 2), C = I(S), w = I(C), T = R(w, 2);
+	O(C);
+	var ee = R(C, 2);
+	Vi(I(ee), {
 		get preference() {
 			return H(n).layout.preference;
 		},
 		get onCycle() {
 			return H(n).onLayoutCycle;
 		}
-	}), O(T), O(S);
+	}), O(ee), O(S);
 	var te = R(S, 2), ne = I(te), re = (e) => {
 		var n = Ar();
 		Yr(L(n), () => t.details), G(e, n);
@@ -3087,40 +3087,45 @@ function ca(e, t) {
 	q(de, (e) => {
 		t.composer && e(fe);
 	}), O(ue), O(oe), O(ae), O(v), O(i), z(() => {
-		K(u, H(n).version), Y(b, "aria-expanded", H(n).mobile.sidebarOpen), Y(C, "aria-selected", H(n).mobile.view === "details"), Y(w, "aria-selected", H(n).mobile.view === "chat");
+		K(u, H(n).version), Y(b, "aria-expanded", H(n).mobile.sidebarOpen), Y(w, "aria-selected", H(n).mobile.view === "details"), Y(T, "aria-selected", H(n).mobile.view === "chat");
 	}), U("click", f, () => {
 		H(n).onMobileSidebar(!1), H(n).onOpenSettings();
-	}), U("click", b, () => H(n).onMobileSidebar(!0)), U("click", C, () => H(n).onMobileView("details")), U("click", w, () => H(n).onMobileView("chat")), G(e, i), j();
+	}), U("click", b, () => H(n).onMobileSidebar(!0)), U("click", w, () => H(n).onMobileView("details")), U("click", T, () => H(n).onMobileView("chat")), G(e, i), j();
 }
 Sr(["click"]);
 //#endregion
 //#region src/components/AgentBindingSelector.svelte
-var la = /* @__PURE__ */ W("<option> </option>"), ua = /* @__PURE__ */ W("<optgroup label=\"Profiles\"></optgroup>"), da = /* @__PURE__ */ W("<optgroup label=\"Agents\"></optgroup>"), fa = /* @__PURE__ */ W("<select><!><!></select>");
+var la = /* @__PURE__ */ W("<option> </option>"), ua = /* @__PURE__ */ W("<optgroup label=\"Profiles\"></optgroup>"), da = /* @__PURE__ */ W("<optgroup label=\"Agents\"></optgroup>"), fa = /* @__PURE__ */ W("<span class=\"agent-binding-sizer\" aria-hidden=\"true\"> </span> <select><!><!></select>", 1);
 function pa(e, t) {
 	A(t, !0);
-	let n = Oi(t, "disabled", 3, !1), r = Oi(t, "ariaLabel", 3, "Agent binding"), i = /* @__PURE__ */ M(l), a = /* @__PURE__ */ M(u), o = /* @__PURE__ */ M(() => d(t.value));
-	function s(e) {
+	let n = Oi(t, "disabled", 3, !1), r = Oi(t, "ariaLabel", 3, "Agent binding"), i = /* @__PURE__ */ M(f), a = /* @__PURE__ */ M(p), o = /* @__PURE__ */ M(() => m(t.value)), s = /* @__PURE__ */ M(() => [...H(i), ...H(a)].find((e) => m(e.value) === H(o))?.label || t.value.name || "Unavailable"), c = /* @__PURE__ */ P(void 0), l = /* @__PURE__ */ P(0);
+	bn(() => {
+		H(s), lr().then(() => {
+			H(c) && F(l, Math.ceil(H(c).getBoundingClientRect().width), !0);
+		});
+	});
+	function u(e) {
 		return e.trim().toLowerCase();
 	}
-	function c(e) {
-		return t.agents.find((t) => s(t.id) === s(e))?.label || e || "Unavailable";
+	function d(e) {
+		return t.agents.find((t) => u(t.id) === u(e))?.label || e || "Unavailable";
 	}
-	function l() {
+	function f() {
 		let e = t.profiles.map((e) => ({
 			value: {
 				kind: "profile",
 				name: e.key
 			},
-			label: `${e.key} (current: ${c(e.agentName || "")})`
+			label: `${e.key} (current: ${d(e.agentName || "")})`
 		}));
-		return t.value.kind === "profile" && !t.profiles.some((e) => s(e.key) === s(t.value.name)) && e.unshift({
+		return t.value.kind === "profile" && !t.profiles.some((e) => u(e.key) === u(t.value.name)) && e.unshift({
 			value: t.value,
 			label: `${t.value.name} (missing profile)`
 		}), e;
 	}
-	function u() {
+	function p() {
 		let e = t.agents.map((e) => {
-			let n = t.profiles.filter((t) => s(t.agentName || "") === s(e.id)).map((e) => e.key);
+			let n = t.profiles.filter((t) => u(t.agentName || "") === u(e.id)).map((e) => e.key);
 			return {
 				value: {
 					kind: "agent",
@@ -3129,15 +3134,15 @@ function pa(e, t) {
 				label: n.length ? `${e.label} (${n.join(", ")})` : e.label
 			};
 		});
-		return t.value.kind === "agent" && !t.agents.some((e) => s(e.id) === s(t.value.name)) && e.unshift({
+		return t.value.kind === "agent" && !t.agents.some((e) => u(e.id) === u(t.value.name)) && e.unshift({
 			value: t.value,
 			label: `${t.value.name} (missing agent)`
 		}), e;
 	}
-	function d(e) {
+	function m(e) {
 		return `${e.kind}:${encodeURIComponent(e.name)}`;
 	}
-	function f(e) {
+	function h(e) {
 		let n = e.currentTarget, r = n.value;
 		n.value = H(o);
 		let i = r.indexOf(":");
@@ -3148,40 +3153,44 @@ function pa(e, t) {
 			kind: a,
 			name: decodeURIComponent(r.slice(i + 1))
 		};
-		d(s) !== H(o) && t.onSelect(s);
+		m(s) !== H(o) && t.onSelect(s);
 	}
-	var p = fa(), m = I(p), h = (e) => {
+	var g = fa(), _ = L(g), v = I(_, !0);
+	O(_), Di(_, (e) => F(c, e), () => H(c));
+	var y = R(_, 2);
+	let b;
+	var x = I(y), S = (e) => {
 		var t = ua();
-		J(t, 21, () => H(i), (e) => d(e.value), (e, t) => {
+		J(t, 21, () => H(i), (e) => m(e.value), (e, t) => {
 			var n = la(), r = I(n, !0);
 			O(n);
 			var i = {};
 			z((e) => {
 				K(r, H(t).label), i !== (i = e) && (n.value = (n.__value = e) ?? "");
-			}, [() => d(H(t).value)]), G(e, n);
+			}, [() => m(H(t).value)]), G(e, n);
 		}), O(t), G(e, t);
 	};
-	q(m, (e) => {
-		H(i).length && e(h);
+	q(x, (e) => {
+		H(i).length && e(S);
 	});
-	var g = R(m), _ = (e) => {
+	var C = R(x), w = (e) => {
 		var t = da();
-		J(t, 21, () => H(a), (e) => d(e.value), (e, t) => {
+		J(t, 21, () => H(a), (e) => m(e.value), (e, t) => {
 			var n = la(), r = I(n, !0);
 			O(n);
 			var i = {};
 			z((e) => {
 				K(r, H(t).label), i !== (i = e) && (n.value = (n.__value = e) ?? "");
-			}, [() => d(H(t).value)]), G(e, n);
+			}, [() => m(H(t).value)]), G(e, n);
 		}), O(t), G(e, t);
 	};
-	q(g, (e) => {
-		H(a).length && e(_);
-	}), O(p);
-	var v;
-	li(p), z(() => {
-		p.disabled = n(), Y(p, "aria-label", r()), v !== (v = H(o)) && (p.value = (p.__value = H(o)) ?? "", ci(p, H(o)));
-	}), U("change", p, f), G(e, p), j();
+	q(C, (e) => {
+		H(a).length && e(w);
+	}), O(y);
+	var T;
+	li(y), z(() => {
+		K(v, H(s)), y.disabled = n(), Y(y, "aria-label", r()), b = si(y, "", b, { width: H(l) ? `${H(l) + 2}px` : void 0 }), T !== (T = H(o)) && (y.value = (y.__value = H(o)) ?? "", ci(y, H(o)));
+	}), U("change", y, h), G(e, g), j();
 }
 Sr(["change"]);
 //#endregion
@@ -3283,11 +3292,11 @@ function ba(e, t) {
 	q(x, (e) => {
 		H(r).waitingMessages.length && e(S);
 	});
-	var ee = R(x, 2), C = I(ee);
-	it(C), Di(C, (e) => F(d, e), () => H(d));
-	var w = R(C, 2), T = I(w);
-	X(I(T), { name: "plus" }), O(T);
-	var te = R(T, 2), ne = I(te), re = I(ne);
+	var C = R(x, 2), w = I(C);
+	it(w), Di(w, (e) => F(d, e), () => H(d));
+	var T = R(w, 2), ee = I(T);
+	X(I(ee), { name: "plus" }), O(ee);
+	var te = R(ee, 2), ne = I(te), re = I(ne);
 	{
 		let e = /* @__PURE__ */ M(() => H(f) || H(r).bindingSaving);
 		pa(re, {
@@ -3330,8 +3339,8 @@ function ba(e, t) {
 			return H(e);
 		} });
 	}
-	O(oe), O(te), O(w), O(ee);
-	var ce = R(ee, 2), le = (e) => {
+	O(oe), O(te), O(T), O(C);
+	var ce = R(C, 2), le = (e) => {
 		var t = va(), n = I(t), r = I(n, !0);
 		O(n);
 		var i = R(n);
@@ -3342,8 +3351,8 @@ function ba(e, t) {
 	q(ce, (e) => {
 		H(c) && e(le);
 	}), z((e) => {
-		Y(C, "data-agent-draft-key", H(r).draftKey), Y(C, "placeholder", H(r).unavailableReason || "Message this resource"), C.disabled = H(f), _i(C, H(o)), T.disabled = e, Y(oe, "title", H(s) ? "Sending..." : H(r).unavailableReason || "Send input"), Y(oe, "aria-label", H(s) ? "Sending..." : H(r).unavailableReason || "Send input"), oe.disabled = H(f);
-	}, [() => !!H(r).unavailableReason]), xr("submit", ee, h), U("input", C, (e) => m(e.currentTarget.value)), U("keydown", C, _), U("click", T, function(...e) {
+		Y(w, "data-agent-draft-key", H(r).draftKey), Y(w, "placeholder", H(r).unavailableReason || "Message this resource"), w.disabled = H(f), _i(w, H(o)), ee.disabled = e, Y(oe, "title", H(s) ? "Sending..." : H(r).unavailableReason || "Send input"), Y(oe, "aria-label", H(s) ? "Sending..." : H(r).unavailableReason || "Send input"), oe.disabled = H(f);
+	}, [() => !!H(r).unavailableReason]), xr("submit", C, h), U("input", w, (e) => m(e.currentTarget.value)), U("keydown", w, _), U("click", ee, function(...e) {
 		H(r).onOpenUpload?.apply(this, e);
 	}), G(e, b), j();
 }
@@ -3636,15 +3645,15 @@ function io(e, t) {
 	q(b, (e) => {
 		t.model.templates.length && e(x);
 	});
-	var S = R(b, 2), ee = R(I(S), 2), C = I(ee), w = I(C), T = R(I(w)), te = (e) => {
+	var S = R(b, 2), C = R(I(S), 2), w = I(C), T = I(w), ee = R(I(T)), te = (e) => {
 		G(e, Qa());
 	}, ne = (e) => {
 		G(e, $a());
 	};
-	q(T, (e) => {
+	q(ee, (e) => {
 		H(i)?.taskTitle && !n().titleOverride ? e(te) : e(ne, -1);
-	}), O(w);
-	var re = R(w, 2), ie = I(re);
+	}), O(T);
+	var re = R(T, 2), ie = I(re);
 	gi(ie);
 	var ae = R(ie, 2), oe = (e) => {
 		var t = eo();
@@ -3652,9 +3661,9 @@ function io(e, t) {
 	};
 	q(ae, (e) => {
 		H(i)?.taskTitle && n().titleOverride && e(oe);
-	}), O(re), O(C);
-	var se = R(C, 2), ce = R(I(se), 2), le = R(I(ce), 2);
-	gi(le), O(ce), O(se), O(ee), O(S);
+	}), O(re), O(w);
+	var se = R(w, 2), ce = R(I(se), 2), le = R(I(ce), 2);
+	gi(le), O(ce), O(se), O(C), O(S);
 	var ue = R(S, 2), de = (e) => {
 		var t = to(), r = R(I(t), 2), i = (e) => {
 			qa(e, {
@@ -4220,15 +4229,15 @@ function Ho(e, t) {
 			O(s), O(r), z((e) => {
 				K(o, H(n).name || t.selection.path), K(c, `Binary file, ${e ?? ""}.`);
 			}, [() => Eo(H(n).size || 0)]), G(e, r);
-		}, ee = (e) => {
+		}, C = (e) => {
 			var t = zo();
 			Jr(t, () => So(H(n)?.content || ""), !0), O(t), G(e, t);
-		}, C = /* @__PURE__ */ M(() => xo(H(n)?.path || t.selection.path)), w = (e) => {
+		}, w = /* @__PURE__ */ M(() => xo(H(n)?.path || t.selection.path)), T = (e) => {
 			var t = Bo(), r = I(t, !0);
 			O(t), z(() => K(r, H(n)?.content || "")), G(e, t);
 		};
 		q(v, (e) => {
-			H(r) ? e(y) : H(i) ? e(b, 1) : H(n)?.image ? e(x, 2) : H(n)?.binary ? e(S, 3) : H(C) ? e(ee, 4) : e(w, -1);
+			H(r) ? e(y) : H(i) ? e(b, 1) : H(n)?.image ? e(x, 2) : H(n)?.binary ? e(S, 3) : H(w) ? e(C, 4) : e(T, -1);
 		}), O(c), O(a), z((e, r) => {
 			Y(c, "data-preview-identity", `${t.workspaceId}:${t.resourceId}:${t.selection.section}:${t.selection.path}:${H(n)?.contentHash || "pending"}`), K(f, e), K(m, `${t.selection.path ?? ""}${r ?? ""}${H(n)?.truncated ? " · truncated" : ""}`), Y(g, "href", H(o));
 		}, [() => H(n)?.name || t.selection.path.split("/").pop() || "File preview", () => H(n)?.size == null ? "" : ` · ${Eo(H(n).size)}`]), U("click", s, function(...e) {
@@ -4402,18 +4411,18 @@ function rs(e, t) {
 	gi(_), k(), O(g);
 	var v = R(g, 2);
 	X(I(v), { name: "save" }), k(), O(v), O(h);
-	var y = R(h, 2), b = I(y), x = I(b), S = I(x), ee = I(S, !0);
+	var y = R(h, 2), b = I(y), x = I(b), S = I(x), C = I(S, !0);
 	O(S), k(), O(x);
-	var C = R(x), w = (e) => {
+	var w = R(x), T = (e) => {
 		var t = $o();
 		U("click", t, u), G(e, t);
 	};
-	q(C, (e) => {
-		H(r) && e(w);
+	q(w, (e) => {
+		H(r) && e(T);
 	}), O(b);
-	var T = R(b, 2), te = R(I(T));
-	gi(te), O(T);
-	var ne = R(T, 2), re = R(I(ne));
+	var ee = R(b, 2), te = R(I(ee));
+	gi(te), O(ee);
+	var ne = R(ee, 2), re = R(I(ne));
 	it(re), O(ne);
 	var ie = R(ne, 2), ae = R(I(ie));
 	gi(ae), O(ie);
@@ -4441,9 +4450,9 @@ function rs(e, t) {
 			X(I(h), { name: "trash-2" }), k(), O(h), O(p), O(a);
 			var g = R(a, 2), _ = I(g), v = R(I(_)), y = I(v, !0);
 			O(v), O(_);
-			var b = R(_), x = R(I(b)), S = I(x), ee = I(S, !0);
+			var b = R(_), x = R(I(b)), S = I(x), C = I(S, !0);
 			O(S), O(x), O(b), O(g), O(n), z(() => {
-				i = ai(n, 1, "", null, i, { editing: H(r) === H(t).id }), K(c, H(t).description), K(d, H(t).id), K(y, H(t).condition), K(ee, H(t).target);
+				i = ai(n, 1, "", null, i, { editing: H(r) === H(t).id }), K(c, H(t).description), K(d, H(t).id), K(y, H(t).condition), K(C, H(t).target);
 			}), U("click", m, () => l(H(t))), U("click", h, () => f(H(t))), G(e, n);
 		}), G(e, n);
 	}, pe = (e) => {
@@ -4453,7 +4462,7 @@ function rs(e, t) {
 	q(de, (e) => {
 		t.config.schedules.length ? e(fe) : e(pe, -1);
 	}), O(ue), z((e) => {
-		v.disabled = H(c) || H(s) === t.config.wakeIntervalMinutes, K(ee, H(r) ? "Edit schedule" : "Add schedule"), oe.disabled = e, K(le, H(r) ? "Update schedule" : "Add schedule");
+		v.disabled = H(c) || H(s) === t.config.wakeIntervalMinutes, K(C, H(r) ? "Edit schedule" : "Add schedule"), oe.disabled = e, K(le, H(r) ? "Update schedule" : "Add schedule");
 	}, [() => H(c) || !H(i).trim() || !H(a).trim() || !H(o).trim()]), Si(_, () => H(s), (e) => F(s, e)), U("click", v, p), Si(te, () => H(i), (e) => F(i, e)), Si(re, () => H(a), (e) => F(a, e)), Si(ae, () => H(o), (e) => F(o, e)), U("click", oe, d), G(e, m), j();
 }
 Sr(["click"]);
@@ -4619,16 +4628,16 @@ function Ns(e, t) {
 		let i = e === "Wiki" ? "wiki/files/raw" : "files/raw", a = r ? "&download=1" : "";
 		return `/api/workspaces/${encodeURIComponent(H(n).workspaceId)}/${i}?path=${encodeURIComponent(t)}${a}`;
 	}
-	function ee(e, t) {
+	function C(e, t) {
 		F(o, {
 			section: e,
 			path: t
 		}, !0);
 	}
-	function C(e) {
+	function w(e) {
 		e && H(n).onToast(e);
 	}
-	var w = Ms(), T = L(w), te = (e) => {
+	var T = Ms(), ee = L(T), te = (e) => {
 		var t = ds(), n = I(t);
 		X(I(n), {
 			name: "folder-search",
@@ -4669,7 +4678,7 @@ function Ns(e, t) {
 			X(I(n), { name: "book-open" }), k(), O(n);
 			var r = R(n);
 			X(I(r), { name: "book-open" }), k(2), O(r), O(t), G(e, t);
-		}, C = (e) => {
+		}, w = (e) => {
 			{
 				let t = /* @__PURE__ */ M(() => H(n).wiki.entries || []);
 				Po(e, {
@@ -4685,13 +4694,13 @@ function Ns(e, t) {
 						return H(p);
 					},
 					onToggle: x,
-					onPreview: ee,
+					onPreview: C,
 					rawURL: S
 				});
 			}
 		};
 		q(g, (e) => {
-			H(n).wiki?.error ? e(_) : H(n).wiki?.exists ? e(C, -1) : e(v, 1);
+			H(n).wiki?.error ? e(_) : H(n).wiki?.exists ? e(w, -1) : e(v, 1);
 		}), O(m), z((e, t) => {
 			K(s, H(n).workspaceName), K(u, H(n).workspaceName), Y(d, "title", e), K(f, t);
 		}, [() => b(), () => y()]), U("click", o, () => H(n).onNavigate("workspace")), G(e, t);
@@ -4705,9 +4714,9 @@ function Ns(e, t) {
 		q(d, (e) => {
 			H(n).parent && e(m);
 		});
-		var h = R(d, 3), C = I(h, !0);
+		var h = R(d, 3), w = I(h, !0);
 		O(h), O(o);
-		var w = R(o, 2), T = I(w), te = I(T, !0), ne = R(te), re = (e) => {
+		var T = R(o, 2), ee = I(T), te = I(ee, !0), ne = R(te), re = (e) => {
 			var t = gs(), r = I(t, !0);
 			O(t), z((e) => K(r, e), [() => v(H(n).resourceId)]), G(e, t);
 		};
@@ -4715,8 +4724,8 @@ function Ns(e, t) {
 			H(n).resourceType !== "scheduler" && e(re);
 		});
 		var ie = R(ne), ae = I(ie, !0);
-		O(ie), O(T);
-		var oe = R(T), se = (e) => {
+		O(ie), O(ee);
+		var oe = R(ee), se = (e) => {
 			var t = ys(), r = I(t), i = (e) => {
 				var t = _s();
 				X(I(t), { name: "plus" }), k(), O(t), U("click", t, () => H(n).onCreateTask(H(n).resourceId)), G(e, t);
@@ -4734,7 +4743,7 @@ function Ns(e, t) {
 		};
 		q(oe, (e) => {
 			H(n).detail && e(se);
-		}), O(w), O(r);
+		}), O(T), O(r);
 		var ce = R(r, 2), le = (e) => {
 			var t = bs(), n = I(t);
 			X(I(n), {
@@ -4811,7 +4820,7 @@ function Ns(e, t) {
 						var c = R(o), l = I(c);
 						O(c), O(a), X(R(a), { name: "chevron-right" }), O(n), z(() => {
 							r = ai(n, 1, "template-row", null, r, { invalid: !H(t).valid }), K(s, H(t).title || H(t).name), K(l, `${H(t).name ?? ""} · v${(H(t).schemaVersion || "?") ?? ""} · ${H(t).valid ? `${(H(t).fields || []).length} fields` : `invalid${H(t).errors?.[0]?.message ? `: ${H(t).errors[0].message}` : ""}`}${H(t).legacy ? " · legacy" : ""}`);
-						}), U("click", n, () => H(t).path && ee("Templates", H(t).path)), G(e, n);
+						}), U("click", n, () => H(t).path && C("Templates", H(t).path)), G(e, n);
 					}), G(e, t);
 				}, o = (e) => {
 					var t = Ts();
@@ -4833,10 +4842,10 @@ function Ns(e, t) {
 			q(h, (e) => {
 				H(n).resourceType === "project" ? e(v) : H(n).detail.template && e(y, 1);
 			}), O(m);
-			var b = R(m, 2), C = I(b);
+			var b = R(m, 2), w = I(b);
 			{
 				let e = /* @__PURE__ */ M(() => H(n).detail.logs || []);
-				Jo(C, {
+				Jo(w, {
 					get resourceId() {
 						return H(n).resourceId;
 					},
@@ -4859,10 +4868,10 @@ function Ns(e, t) {
 				});
 			}
 			O(b);
-			var w = R(b, 2), T = I(w);
+			var T = R(b, 2), ee = I(T);
 			{
 				let e = /* @__PURE__ */ M(() => H(n).detail.artifacts || []);
-				Po(T, {
+				Po(ee, {
 					title: "Artifacts",
 					get entries() {
 						return H(e);
@@ -4875,13 +4884,13 @@ function Ns(e, t) {
 						return H(p);
 					},
 					onToggle: x,
-					onPreview: ee,
+					onPreview: C,
 					rawURL: S,
 					showHeading: !1
 				});
 			}
-			O(w);
-			var te = R(w, 2), ne = I(te), re = I(ne), ie = I(re), ae = (e) => {
+			O(T);
+			var te = R(T, 2), ne = I(te), re = I(ne), ie = I(re), ae = (e) => {
 				var t = Ar();
 				J(L(t), 17, () => H(n).detail.repos, (e) => `${e.name}:${e.worktreePath}`, (e, t) => {
 					var n = Os(), r = I(n), i = I(r);
@@ -4907,19 +4916,19 @@ function Ns(e, t) {
 			q(ie, (e) => {
 				H(n).detail.repos?.length ? e(ae) : e(oe, -1);
 			}), O(re), O(ne), O(te), O(o), z(() => {
-				Y(m, "hidden", H(i) !== "template"), Y(b, "hidden", H(i) !== "logs"), Y(w, "hidden", H(i) !== "artifacts"), Y(te, "hidden", H(i) !== "worktrees");
+				Y(m, "hidden", H(i) !== "template"), Y(b, "hidden", H(i) !== "logs"), Y(T, "hidden", H(i) !== "artifacts"), Y(te, "hidden", H(i) !== "worktrees");
 			}), G(e, t);
 		};
 		q(ce, (e) => {
 			H(n).loading || !H(n).detail ? e(le) : e(ue, -1);
 		}), z((e, t) => {
-			K(l, H(n).workspaceName), K(C, H(n).resourceTitle), K(te, H(n).resourceTitle), Y(ie, "title", e), K(ae, t);
+			K(l, H(n).workspaceName), K(w, H(n).resourceTitle), K(te, H(n).resourceTitle), Y(ie, "title", e), K(ae, t);
 		}, [() => H(n).resourceType === "scheduler" ? "Special Forge-managed Workspace resource" : b(), () => H(n).resourceType === "scheduler" ? "Forge-managed" : y()]), U("click", c, () => H(n).onNavigate("workspace")), U("click", h, () => H(n).onNavigate(H(n).resourceId)), G(e, t);
 	};
-	q(T, (e) => {
+	q(ee, (e) => {
 		H(n).workspaceId ? H(n).resourceType === "workspace" ? e(ne, 1) : e(re, -1) : e(te);
 	});
-	var ie = R(T, 2);
+	var ie = R(ee, 2);
 	Ho(ie, {
 		get client() {
 			return l;
@@ -4934,7 +4943,7 @@ function Ns(e, t) {
 			return H(o);
 		},
 		onClose: () => F(o, null),
-		onError: C,
+		onError: w,
 		get onIconsChanged() {
 			return H(n).onIconsChanged;
 		}
@@ -4952,11 +4961,11 @@ function Ns(e, t) {
 			return H(s);
 		},
 		onClose: () => F(s, null),
-		onError: C,
+		onError: w,
 		get onIconsChanged() {
 			return H(n).onIconsChanged;
 		}
-	}), G(e, w), j();
+	}), G(e, T), j();
 }
 Sr(["click"]);
 //#endregion
@@ -5783,12 +5792,12 @@ function Nc(e, t) {
 	var b = R(l, 2), x = I(b), S = (e) => {
 		var t = Ac();
 		Jr(t, a, !0), O(t), G(e, t);
-	}, ee = (e) => {
+	}, C = (e) => {
 		var n = jc(), r = I(n, !0);
 		O(n), z(() => K(r, t.item.text || "")), G(e, n);
 	};
 	q(x, (e) => {
-		H(n) === "assistant" ? e(S) : e(ee, -1);
+		H(n) === "assistant" ? e(S) : e(C, -1);
 	}), O(b), O(c), O(s), z((e, t) => {
 		ai(s, 1, `agent-message-row ${H(n) === "assistant" ? "assistant final" : H(n)}`), K(d, e), K(y, t);
 	}, [() => r(), () => i()]), G(e, s), j();
@@ -5907,9 +5916,9 @@ function il(e, t) {
 			onNotice: (e, t, r) => H(n).onNotice(e, t, r)
 		});
 		let i = o.subscribe(f), a = t.channel.subscribe((e) => {
-			let t = H(n).identity, i = C(H(n).status) !== C(e.status) && ee(x());
+			let t = H(n).identity, i = w(H(n).status) !== w(e.status) && C(x());
 			F(n, e, !0), e.project !== H(r) && F(r, e.project, !0), e.identity !== t && (l = !0, s = null, F(d, new Map(u.get(e.identity) ?? []), !0)), o?.activate(e.workspaceId, e.resourceId, e.status), lr().then(() => {
-				i && !S() && w(), e.onIconsChanged();
+				i && !S() && T(), e.onIconsChanged();
 			});
 		}), c = () => {
 			if (!s || S()) return;
@@ -5929,8 +5938,8 @@ function il(e, t) {
 	}
 	function p(e) {
 		let t = x();
-		c = e.identity !== H(i).identity || l || ee(t), l = !1, F(i, e, !0), t && (t.dataset.agentResourceId = e.resourceId), lr().then(() => {
-			c && !S() && w(), H(n).onIconsChanged(), e.loaded && e.hasMoreBefore && g(e.identity);
+		c = e.identity !== H(i).identity || l || C(t), l = !1, F(i, e, !0), t && (t.dataset.agentResourceId = e.resourceId), lr().then(() => {
+			c && !S() && T(), H(n).onIconsChanged(), e.loaded && e.hasMoreBefore && g(e.identity);
 		});
 	}
 	function m(e, t) {
@@ -5967,13 +5976,13 @@ function il(e, t) {
 		for (; t < 16 && H(i).identity === e && H(i).hasMoreBefore;) {
 			let e = x();
 			if (!e || e.scrollHeight > e.clientHeight + 160 || S() || !await o?.loadOlder()) return;
-			t++, await lr(), w();
+			t++, await lr(), T();
 		}
 	}
 	async function _() {
 		let e = x();
 		if (!e || H(i).loadingOlder) return;
-		let t = T(e), r = t?.getBoundingClientRect().top ?? 0, a = e.scrollHeight, s = e.scrollTop, c = H(i).identity;
+		let t = ee(e), r = t?.getBoundingClientRect().top ?? 0, a = e.scrollHeight, s = e.scrollTop, c = H(i).identity;
 		await o?.loadOlder(), await lr(), H(i).identity === c && (e.scrollTop = t?.isConnected ? s + (t.getBoundingClientRect().top - r) : s + (e.scrollHeight - a), H(n).onIconsChanged());
 	}
 	function v(e, t) {
@@ -5993,17 +6002,17 @@ function il(e, t) {
 		let e = x(), t = window.getSelection?.();
 		return !!(e && t && !t.isCollapsed && t.rangeCount && t.getRangeAt(0).intersectsNode(e));
 	}
-	function ee(e) {
+	function C(e) {
 		return !!(e && e.scrollHeight - e.scrollTop - e.clientHeight <= 32);
 	}
-	function C(e) {
+	function w(e) {
 		return e?.session?.state === "running" && !!e.session.currentTurnId;
 	}
-	function w() {
+	function T() {
 		let e = x();
 		e && (e.scrollTop = e.scrollHeight);
 	}
-	function T(e) {
+	function ee(e) {
 		let t = e.getBoundingClientRect().top;
 		return [...e.querySelectorAll("[data-timeline-key]")].find((e) => e.getBoundingClientRect().bottom >= t) ?? null;
 	}
@@ -6216,7 +6225,7 @@ function il(e, t) {
 		var d = R(l, 2), f = (e) => {
 			var t = Qc();
 			X(I(t), { name: "loader-circle" }), k(), O(t), G(e, t);
-		}, p = /* @__PURE__ */ M(() => C(H(n).status));
+		}, p = /* @__PURE__ */ M(() => w(H(n).status));
 		q(d, (e) => {
 			H(p) && e(f);
 		});
@@ -6227,12 +6236,12 @@ function il(e, t) {
 		q(g, (e) => {
 			H(i).loading && !H(i).blocks.length && e(x);
 		});
-		var S = R(g, 2), ee = (e) => {
+		var S = R(g, 2), C = (e) => {
 			var t = el();
 			X(I(t), { name: "bot" }), k(2), O(t), G(e, t);
-		}, w = /* @__PURE__ */ M(() => H(i).loaded && !H(i).loading && !H(i).blocks.length && !H(i).notices.length && !C(H(n).status));
+		}, T = /* @__PURE__ */ M(() => H(i).loaded && !H(i).loading && !H(i).blocks.length && !H(i).notices.length && !w(H(n).status));
 		q(S, (e) => {
-			H(w) && e(ee);
+			H(T) && e(C);
 		}), G(e, t);
 	}, oe = (e) => {
 		var t = nl();
@@ -6323,14 +6332,14 @@ function fl(e, t) {
 	}), O(y), O(h);
 	var b = R(h, 2), x = I(b);
 	let S;
-	var ee = I(x, !0);
+	var C = I(x, !0);
 	O(x);
-	var C = R(x);
-	X(I(C), { name: "save" }), k(), O(C), O(b), O(a), z((e) => {
-		K(l, t.agentHub.connected && t.agentHub.compatible ? "Compatible" : t.agentHub.connected ? "Incompatible" : "Unavailable"), K(p, t.agentHub.error || `API ${t.agentHub.apiVersion || "unknown"} · AgentHub ${t.agentHub.version || "unknown"}`), K(v, `${t.agentHub.agents.length ?? ""} agents · ${t.agentHub.providers.length ?? ""} providers`), S = ai(x, 1, "settings-save-hint", null, S, { visible: n().dirty }), K(ee, n().dirty ? "Unsaved changes" : ""), C.disabled = e;
+	var w = R(x);
+	X(I(w), { name: "save" }), k(), O(w), O(b), O(a), z((e) => {
+		K(l, t.agentHub.connected && t.agentHub.compatible ? "Compatible" : t.agentHub.connected ? "Incompatible" : "Unavailable"), K(p, t.agentHub.error || `API ${t.agentHub.apiVersion || "unknown"} · AgentHub ${t.agentHub.version || "unknown"}`), K(v, `${t.agentHub.agents.length ?? ""} agents · ${t.agentHub.providers.length ?? ""} providers`), S = ai(x, 1, "settings-save-hint", null, S, { visible: n().dirty }), K(C, n().dirty ? "Unsaved changes" : ""), w.disabled = e;
 	}, [() => !n().dirty || !!r()]), U("input", d, function(...e) {
 		t.onDirty?.apply(this, e);
-	}), Si(d, () => n().endpoint, (e) => n(n().endpoint = e, !0)), U("click", C, i), G(e, a), j();
+	}), Si(d, () => n().endpoint, (e) => n(n().endpoint = e, !0)), U("click", w, i), G(e, a), j();
 }
 Sr(["input", "click"]);
 //#endregion
@@ -6480,27 +6489,27 @@ function Sl(e, t) {
 	});
 	var x = R(b, 2), S = I(x);
 	gi(S);
-	var ee = R(S, 2);
-	gi(ee);
-	var C = R(ee, 2);
-	J(C, 21, () => t.agents, zr, (e, t) => {
+	var C = R(S, 2);
+	gi(C);
+	var w = R(C, 2);
+	J(w, 21, () => t.agents, zr, (e, t) => {
 		var n = gl(), r = I(n, !0);
 		O(n);
 		var i = {};
 		z(() => {
 			K(r, H(t).label), i !== (i = H(t).id) && (n.value = (n.__value = H(t).id) ?? "");
 		}), G(e, n);
-	}), O(C);
-	var w = R(C, 2);
-	X(I(w), { name: "plus" }), k(), O(w), O(x), O(y), O(h);
-	var T = R(h, 2), te = I(T);
+	}), O(w);
+	var T = R(w, 2);
+	X(I(T), { name: "plus" }), k(), O(T), O(x), O(y), O(h);
+	var ee = R(h, 2), te = I(ee);
 	let ne;
 	var re = I(te, !0);
 	O(te);
 	var ie = R(te);
-	X(I(ie), { name: "save" }), k(), O(ie), O(T), O(f), z((e) => {
-		K(v, `${n().profiles.length ?? ""} routes`), C.disabled = !t.agents.length, w.disabled = !t.agents.length, ne = ai(te, 1, "settings-save-hint", null, ne, { visible: n().dirty }), K(re, n().dirty ? "Unsaved changes" : ""), ie.disabled = e;
-	}, [() => !n().dirty || !!r()]), Si(S, () => n().newProfile.key, (e) => n(n().newProfile.key = e, !0)), Si(ee, () => n().newProfile.description, (e) => n(n().newProfile.description = e, !0)), ui(C, () => n().newProfile.agentName, (e) => n(n().newProfile.agentName = e, !0)), U("click", w, o), U("click", ie, d), G(e, f), j();
+	X(I(ie), { name: "save" }), k(), O(ie), O(ee), O(f), z((e) => {
+		K(v, `${n().profiles.length ?? ""} routes`), w.disabled = !t.agents.length, T.disabled = !t.agents.length, ne = ai(te, 1, "settings-save-hint", null, ne, { visible: n().dirty }), K(re, n().dirty ? "Unsaved changes" : ""), ie.disabled = e;
+	}, [() => !n().dirty || !!r()]), Si(S, () => n().newProfile.key, (e) => n(n().newProfile.key = e, !0)), Si(C, () => n().newProfile.description, (e) => n(n().newProfile.description = e, !0)), ui(w, () => n().newProfile.agentName, (e) => n(n().newProfile.agentName = e, !0)), U("click", T, o), U("click", ie, d), G(e, f), j();
 }
 Sr([
 	"change",
@@ -6660,10 +6669,10 @@ function Fl(e, t) {
 		q(b, (e) => {
 			H(n).id === t.activeWorkspaceId && e(x);
 		});
-		var S = R(b, 2), ee = I(S), C = R(ee, 2), w = I(C, !0);
-		O(C), X(R(C, 2), { name: "chevron-down" }), O(S);
-		var T = R(S, 2);
-		X(I(T), { name: "trash-2" }), O(T), O(y), O(u);
+		var S = R(b, 2), C = I(S), w = R(C, 2), T = I(w, !0);
+		O(w), X(R(w, 2), { name: "chevron-down" }), O(S);
+		var ee = R(S, 2);
+		X(I(ee), { name: "trash-2" }), O(ee), O(y), O(u);
 		var te = R(u, 2), ne = (e) => {
 			var r = jl();
 			J(r, 21, () => t.workspaceIcons, (e) => e.id, (e, t) => {
@@ -6684,8 +6693,8 @@ function Fl(e, t) {
 		q(te, (e) => {
 			H(i) === H(n).id && e(ne);
 		}), O(l), z((e, t) => {
-			Y(p, "src", H(a).src), K(g, H(n).name), K(v, H(n).path), Y(S, "aria-expanded", H(i) === H(n).id), S.disabled = e, Y(ee, "src", H(a).src), K(w, r() === `icon:${H(n).id}` ? "Saving..." : H(a).label), T.disabled = t;
-		}, [() => !!r(), () => !!r()]), U("click", S, () => F(i, H(i) === H(n).id ? "" : H(n).id, !0)), U("click", T, () => o(H(n).id)), G(e, l);
+			Y(p, "src", H(a).src), K(g, H(n).name), K(v, H(n).path), Y(S, "aria-expanded", H(i) === H(n).id), S.disabled = e, Y(C, "src", H(a).src), K(T, r() === `icon:${H(n).id}` ? "Saving..." : H(a).label), ee.disabled = t;
+		}, [() => !!r(), () => !!r()]), U("click", S, () => F(i, H(i) === H(n).id ? "" : H(n).id, !0)), U("click", ee, () => o(H(n).id)), G(e, l);
 	}, (e) => {
 		G(e, Nl());
 	}), O(v), O(l), z((e) => {
@@ -7036,18 +7045,18 @@ function Gl(e, t) {
 				}), K(l, H(t).name), K(d, e), K(p, H(n).label), Y(m, "aria-label", H(t).name), Y(m, "aria-valuenow", H(t).progress), g = si(h, "", g, { width: `${H(t).progress}%` });
 			}, [() => v(H(t).size)]), G(e, r);
 		}), O(b), O(d);
-		var ee = R(d, 2), C = I(ee), w = I(C, !0);
-		O(C);
-		var T = R(C, 2);
-		O(ee), O(r), O(t), z(() => {
-			s.disabled = H(c), K(w, H(c) ? "Wait for uploads to finish before closing." : H(i).length ? `${H(l)} uploaded${H(u) ? ` · ${H(u)} failed` : ""}. Successful paths will be added to the chat input.` : "No files selected."), T.disabled = H(c);
+		var C = R(d, 2), w = I(C), T = I(w, !0);
+		O(w);
+		var ee = R(w, 2);
+		O(C), O(r), O(t), z(() => {
+			s.disabled = H(c), K(T, H(c) ? "Wait for uploads to finish before closing." : H(i).length ? `${H(l)} uploaded${H(u) ? ` · ${H(u)} failed` : ""}. Successful paths will be added to the chat input.` : "No files selected."), ee.disabled = H(c);
 		}), U("click", n, _), U("click", s, _), U("change", f, () => H(o).files && m(H(o).files)), xr("dragover", p, (e) => {
 			e.preventDefault(), e.currentTarget.classList.add("dragging");
 		}), xr("dragleave", p, (e) => e.currentTarget.classList.remove("dragging")), xr("drop", p, (e) => {
 			e.preventDefault(), e.currentTarget.classList.remove("dragging"), e.dataTransfer?.files && m(e.dataTransfer.files);
 		}), U("keydown", p, (e) => {
 			(e.key === "Enter" || e.key === " ") && (e.preventDefault(), H(o).click());
-		}), U("click", g, () => H(o).click()), U("click", T, _), G(e, t);
+		}), U("click", g, () => H(o).click()), U("click", ee, _), G(e, t);
 	};
 	q(x, (e) => {
 		H(n).open && e(S);
@@ -8133,7 +8142,7 @@ function ku(e) {
 				forceDetail: !0
 			}), t.runId && e.activateRun(t.runId);
 		} finally {
-			T(t.marker);
+			ee(t.marker);
 		}
 	}
 	let g = mu({
@@ -8215,7 +8224,7 @@ function ku(e) {
 	function S(e) {
 		for (let t of e) Cu(t) && x(t, t.completionState || t.agentRunCompletionState || "");
 	}
-	function ee(e, t) {
+	function C(e, t) {
 		let n = Eu(e);
 		!n || !e.sessionId || !Number(e.id) || x({
 			...t,
@@ -8224,14 +8233,14 @@ function ku(e) {
 			agentHubSessionId: t.agentHubSessionId || e.sessionId
 		}, n);
 	}
-	function C() {
+	function w() {
 		n.ready || (S(e.treeSessions()), S(e.agentRuns()), n.ready = !0, o());
 	}
-	function w(e) {
+	function T(e) {
 		let t = e.trim();
 		return !!(t && r().unread.some((e) => e.sessionId === t));
 	}
-	function T(t) {
+	function ee(t) {
 		let n = t.trim();
 		if (!n) return;
 		let i = r();
@@ -8266,10 +8275,10 @@ function ku(e) {
 		initialize: y,
 		install: ne,
 		dispose: ie,
-		establishBaseline: C,
+		establishBaseline: w,
 		observeProjections: S,
-		observeEvent: ee,
-		hasUnreadForSession: w,
+		observeEvent: C,
+		hasUnreadForSession: T,
 		clearResource: te,
 		preferences: re,
 		setBrowserEnabled: g.setBrowserEnabled,
