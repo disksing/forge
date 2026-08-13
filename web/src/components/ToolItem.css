@@ -45,3 +45,32 @@
 :where([data-component-owner="event-timeline"]) .agent-tool-running summary>svg { color: var(--amber); }
 :where([data-component-owner="event-timeline"]) .agent-tool-completed summary>svg { color: var(--green); }
 :where([data-component-owner="event-timeline"]) .agent-tool-failed summary>svg { color: var(--red); }
+
+:where([data-component-owner="event-timeline"]) .tool-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="event-timeline"]) .tool-status-icon-running,
+:where([data-component-owner="event-timeline"]) .tool-status-icon-failed {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-running .tool-status-icon-completed,
+:where([data-component-owner="event-timeline"]) .agent-tool-running .tool-status-icon-failed {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-running .tool-status-icon-running {
+  display: inline-flex;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-failed .tool-status-icon-completed,
+:where([data-component-owner="event-timeline"]) .agent-tool-failed .tool-status-icon-running {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-tool-failed .tool-status-icon-failed {
+  display: inline-flex;
+}

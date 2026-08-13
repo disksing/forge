@@ -65,7 +65,7 @@
       <textarea id="workspaceAgentsContent" rows="10" spellcheck="false" disabled={saving} bind:value={draft}></textarea>
       {#if conflict}<p class="log-load-error" role="alert">AGENTS.md changed on disk while you were editing. Your draft is preserved; saving now will report a conflict.</p>{/if}
       {#if error}<p class="log-load-error" role="alert">{error}</p>{/if}
-      <div class="form-actions"><button type="submit" disabled={saving || !dirty}><Icon name={saving ? "loader-circle" : "save"} /><span>{saving ? "Saving" : "Save"}</span></button></div>
+      <div class="form-actions"><button type="submit" class:busy={saving} disabled={saving || !dirty}><span class="workspace-agents-icon workspace-agents-icon-idle"><Icon name="save" /></span><span class="workspace-agents-icon workspace-agents-icon-busy"><Icon name="loader-circle" /></span><span>{saving ? "Saving" : "Save"}</span></button></div>
     </form>
   {/if}
 </div>

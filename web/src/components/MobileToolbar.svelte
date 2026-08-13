@@ -26,6 +26,6 @@
     <button id="mobileDetailsButton" type="button" role="tab" aria-controls="detailsPanel" aria-selected={view === "details"} onclick={() => onView("details")}>Details</button>
     <button id="mobileChatButton" type="button" role="tab" aria-controls="agentPanel" aria-selected={view === "chat"} onclick={() => onView("chat")}>Chat</button>
   </div>
-  <button id="mobileImmersiveButton" class="mobile-icon-button mobile-immersive-button" type="button" aria-label="Toggle immersive chat" aria-pressed={immersive} onclick={() => onImmersive(!immersive)}><Icon name={immersive ? "minimize-2" : "maximize-2"} /></button>
+  <button id="mobileImmersiveButton" class="mobile-icon-button mobile-immersive-button" class:immersive={immersive} type="button" aria-label="Toggle immersive chat" aria-pressed={immersive} onclick={() => onImmersive(!immersive)}><span class="mobile-immersive-icon mobile-immersive-icon-collapse"><Icon name="minimize-2" /></span><span class="mobile-immersive-icon mobile-immersive-icon-expand"><Icon name="maximize-2" /></span></button>
 </header>
 <button id="mobileSidebarBackdrop" class="mobile-sidebar-backdrop" data-component-owner="mobile-toolbar" type="button" aria-label="Close navigation" onclick={() => onSidebar(false)}></button>

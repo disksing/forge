@@ -31,6 +31,6 @@
       {/each}
     </div>
     {#if error}<p class="log-load-error" role="alert">{error}</p>{/if}
-    {#if hasMore}<div class="log-load-actions"><button type="button" class="secondary-button log-load-more" disabled={loading || loadingLocally} aria-busy={loading || loadingLocally} onclick={loadMore}><Icon name={loading || loadingLocally ? "loader-circle" : "chevron-down"} className={loading || loadingLocally ? "spin" : ""} /><span>{loading || loadingLocally ? "Loading older logs..." : error ? "Retry" : "Load More"}</span></button></div>{/if}
+    {#if hasMore}<div class="log-load-actions"><button type="button" class="secondary-button log-load-more" class:busy={loading || loadingLocally} disabled={loading || loadingLocally} aria-busy={loading || loadingLocally} onclick={loadMore}><span class="log-load-icon log-load-icon-idle"><Icon name="chevron-down" /></span><span class="log-load-icon log-load-icon-busy"><Icon name="loader-circle" className="spin" /></span><span>{loading || loadingLocally ? "Loading older logs..." : error ? "Retry" : "Load More"}</span></button></div>{/if}
   </div>
 {/if}

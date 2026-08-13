@@ -74,6 +74,25 @@
   color: var(--faint-on-dark);
 }
 
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-icon-busy {
+  display: none;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button.busy .workspace-switcher-icon-idle {
+  display: none;
+}
+
+:where([data-component-owner="workspace-switcher"]) .workspace-switcher-button.busy .workspace-switcher-icon-busy {
+  display: inline-flex;
+}
+
 :where([data-component-owner="workspace-switcher"]) .workspace-avatar {
   width: 20px;
   height: 20px;

@@ -9,3 +9,21 @@
 :where([data-component-owner="workspace-agents-editor"]) .workspace-agents-form textarea {
   min-width: 0;
 }
+
+:where([data-component-owner="workspace-agents-editor"]) .workspace-agents-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="workspace-agents-editor"]) .workspace-agents-icon-busy {
+  display: none;
+}
+
+:where([data-component-owner="workspace-agents-editor"]) .form-actions button.busy .workspace-agents-icon-idle {
+  display: none;
+}
+
+:where([data-component-owner="workspace-agents-editor"]) .form-actions button.busy .workspace-agents-icon-busy {
+  display: inline-flex;
+}

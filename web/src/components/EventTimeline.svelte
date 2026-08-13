@@ -194,8 +194,8 @@
 <div bind:this={root} data-component-owner="event-timeline" class="event-timeline-root" data-chat-context={snapshot.identity}>
   {#if snapshot.resourceId}
     {#if snapshot.hasMoreBefore}
-      <button type="button" class="load-older-events" disabled={snapshot.loadingOlder} onclick={loadOlder}>
-        <Icon name={snapshot.loadingOlder ? "loader-circle" : "chevrons-up"} /><span>{snapshot.loadingOlder ? "Loading..." : "Load older messages"}</span>
+      <button type="button" class="load-older-events" class:busy={snapshot.loadingOlder} disabled={snapshot.loadingOlder} onclick={loadOlder}>
+        <span class="load-older-icon load-older-icon-idle"><Icon name="chevrons-up" /></span><span class="load-older-icon load-older-icon-busy"><Icon name="loader-circle" /></span><span>{snapshot.loadingOlder ? "Loading..." : "Load older messages"}</span>
       </button>
     {/if}
     {#each snapshot.blocks as block, index (block.key)}

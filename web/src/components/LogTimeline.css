@@ -17,6 +17,24 @@
   justify-content: center;
 }
 
+:where([data-component-owner="log-timeline"]) .log-load-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="log-timeline"]) .log-load-icon-busy {
+  display: none;
+}
+
+:where([data-component-owner="log-timeline"]) .log-load-more.busy .log-load-icon-idle {
+  display: none;
+}
+
+:where([data-component-owner="log-timeline"]) .log-load-more.busy .log-load-icon-busy {
+  display: inline-flex;
+}
+
 :where([data-component-owner="log-timeline"]) .log-load-error {
   margin: 10px 0 0;
   color: #c0392b;

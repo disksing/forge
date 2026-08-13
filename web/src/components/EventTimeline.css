@@ -31,6 +31,24 @@
   height: 14px;
 }
 
+:where([data-component-owner="event-timeline"]) .load-older-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-icon-busy {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-events.busy .load-older-icon-idle {
+  display: none;
+}
+
+:where([data-component-owner="event-timeline"]) .load-older-events.busy .load-older-icon-busy {
+  display: inline-flex;
+}
+
 :where([data-component-owner="event-timeline"]) .tty-empty {
   min-height: 100%;
   display: grid;

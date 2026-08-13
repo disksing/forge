@@ -98,9 +98,13 @@ describe("timeline rendering components", () => {
     expect(onToggle).toHaveBeenCalledWith(true);
 
     const item = mounted(ToolItem, { call: { callId: "call-c", name: "Test", status: "completed", method: "shell", output: "ok", rawPreview: "raw" } });
-    expect(item.querySelector("summary span")?.textContent).toBe("Test");
+    expect(item.querySelector("summary > span:last-of-type")?.textContent).toBe("Test");
     expect(item.querySelector("small")?.textContent).toBe("shell");
     expect(item.querySelector("pre")?.textContent).toBe("ok\n\nraw");
+    // Status icons are all rendered statically; the tool status class picks which one is visible.
+    expect(item.querySelector('.tool-status-icon-completed i[data-lucide="check-circle"]')).not.toBeNull();
+    expect(item.querySelector('.tool-status-icon-running i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(item.querySelector('.tool-status-icon-failed i[data-lucide="x-circle"]')).not.toBeNull();
   });
 
   it("keeps approval drafts local, gates duplicate actions, and reports callback failures", async () => {
