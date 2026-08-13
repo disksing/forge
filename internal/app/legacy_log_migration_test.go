@@ -118,6 +118,43 @@ func TestMigrateLegacyLogsFailsClosedForMalformedSourceAndConflicts(t *testing.T
 	}
 }
 
+func TestMigrateLegacyLogsRetainsSourceWhenArtifactContentIsAltered(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Altered artifact", "altered-artifact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := workspace.ResourceValue(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, filepath.FromSlash(result.Path))
+	source := []byte("{\"id\":\"entry\",\"time\":\"2025-01-01T00:00:00Z\",\"title\":\"Entry\"}\n")
+	sourcePath := filepath.Join(dir, legacyLogFileName)
+	if err := os.WriteFile(sourcePath, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Migrate(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "artifacts", legacyLogArtifactName), []byte("<!-- forge legacy log v1 -->\n<!-- source: log.jsonl -->\n<!-- source-digest: "+legacyLogDigest(source)+" -->\ncorrupted\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, source, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Migrate(""); err == nil || !IsKind(err, "legacy_log") {
+		t.Fatalf("altered artifact should fail with legacy_log, got %v", err)
+	}
+	if _, err := os.Stat(sourcePath); err != nil {
+		t.Fatalf("altered artifact caused source deletion: %v", err)
+	}
+}
+
 func TestResourceDoesNotReadLegacyLogHotPath(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := Initialize(root, "en")

@@ -2,12 +2,12 @@
 
 Forge is a local, filesystem-first workspace manager for people and AI coding agents. It combines a deterministic CLI with a responsive web UI for organizing projects and tasks, running interactive agent sessions, and reviewing the resulting files and Git changes.
 
-The workspace is the source of truth. Contracts are Markdown, structured state is JSON, history is JSONL, generated output is stored as artifacts, and code changes live in task-owned Git worktrees. The GUI is a control plane over those files rather than a separate project database.
+The workspace is the source of truth. Contracts are Markdown, structured state is JSON, resource History is the canonical conversation projection, generated output is stored as artifacts, and code changes live in task-owned Git worktrees. The GUI is a control plane over those files rather than a separate project database.
 
 ## Highlights
 
-- **Transparent local state.** Projects, tasks, logs, artifacts, templates, and Wiki pages remain ordinary files that can be inspected, versioned, backed up, or repaired without the GUI.
-- **Purpose-built agent context.** Durable scope and acceptance criteria, short-lived recovery state, and chronological history have distinct files so a new agent can resume without reconstructing the task from chat.
+- **Transparent local state.** Projects, tasks, resource History, artifacts, templates, and Wiki pages remain inspectable workspace data that can be backed up or repaired without the GUI.
+- **Purpose-built agent context.** Durable scope and acceptance criteria are paired with bounded resource History so a new agent can resume without reconstructing the task from an obsolete manual timeline.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Explicit file ownership.** Generated agent instructions allow writes only in the starting resource and its task worktrees, while keeping other Workspace resources read-only.
 - **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and conversation surface, including streaming chat, resumable history, file uploads, approvals, and mid-turn user intervention.
@@ -92,7 +92,7 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor each resource's current runtime state.
-- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
+- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, and resource History; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
 - **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. A new generation recovers from the brief, bounded recent resource history, task-worktree Git state, and artifacts rather than a second permanent progress file. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 

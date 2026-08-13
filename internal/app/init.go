@@ -123,7 +123,8 @@ This directory is an AgentWorkspace managed by forge.
 - Before starting work in this workspace, read ` + "`wiki/index.md`" + `.
 - Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
 - When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
-` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
+` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- ` + "`task.json`" + ` contains structured state, ` + "`task.md`" + ` the durable contract, and ` + "`work.md`" + ` the current recovery checkpoint.
+- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.

@@ -598,7 +598,7 @@ func (w *Workspace) CreateTask(input CreateTaskInput) (Task, error) {
 }
 
 // PreviewTask validates and resolves a task creation request without
-// allocating a task id, writing files, or appending logs.
+// allocating a task id or writing files.
 func (w *Workspace) PreviewTask(input CreateTaskInput) (TaskPreview, error) {
 	if err := w.require(); err != nil {
 		return TaskPreview{}, err

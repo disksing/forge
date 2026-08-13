@@ -672,7 +672,7 @@ func taskAgentsPrompt(resource Resource, language string) string {
 - When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 `
 	}
-	readLine := "Read task.json, task.md, and work.md before acting; use resource History when conversation context is needed."
+	readLine := "Read task.json and task.md before acting; use resource History when conversation context is needed."
 	updateLine := "If the task involves a new repository, update this task's task.json."
 	structuredLine := jsonGuidance("task.json")
 	backgroundLine := markdownGuidance("task.md")

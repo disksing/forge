@@ -12,13 +12,13 @@ const (
 )
 
 const crossResourceReadGuidanceEnglish = `- Within the Workspace, write only files owned by the resource where the agent was started and task worktrees owned by that resource. Other Workspace resources are read-only, and files managed by another agent must not be modified. Outside the Workspace, follow the user's requested scope and the host account's permissions.
-- To understand another task without writing, inspect its ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, and relevant ` + "`artifacts/`" + `. ` + "`task.json`" + ` contains structured state, ` + "`task.md`" + ` the durable contract, and ` + "`work.md`" + ` the current recovery checkpoint. Use the resource History commands for conversation history. You may use ` + "`sed`" + `, ` + "`rg`" + `, or ` + "`less`" + ` on the resolved paths.
+- To understand another task without writing, inspect its ` + "`task.json`" + `, ` + "`task.md`" + `, and relevant ` + "`artifacts/`" + `. ` + "`task.json`" + ` contains structured state and ` + "`task.md`" + ` the durable contract. Use the resource History commands for conversation history. You may use ` + "`sed`" + `, ` + "`rg`" + `, or ` + "`less`" + ` on the resolved paths.
 - For a read-only Forge view of another task, use ` + "`forge task show --project=<project> --task=<task>`" + ` for structured task information, ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` for resource History, and ` + "`forge workspace resource --id=<project.task> --json`" + ` for resource details including common Markdown files and artifacts.
 - To coordinate without writing another resource's files, address the Task directly through the owning Forge Server: ` + "`forge task status --project=<project> --task=<task>`" + `, ` + "`forge message send --to=<project.task> [--mode=steer|enqueue|interrupt] <message>`" + `, and ` + "`forge message show --id=<message-id>`" + `. Read its long-lived conversation with ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` and expand returned references with ` + "`forge history turn show --ref=<turn-ref> [--json]`" + ` or ` + "`forge history event show --ref=<event-ref> [--json]`" + `. History commands default to formatted text; use ` + "`--json`" + ` for structured output. The default message mode is steer; Forge durably retains accepted messages, exposes waiting separately from Task state, reports any downgrade to enqueue, and retries with the same stable message id. Provenance identifies the sender but is not authentication or instruction priority.
 `
 
 const crossResourceReadGuidanceChinese = `- 在 Workspace 内，只能写入 agent 启动资源拥有的文件及该资源拥有的任务 worktree。其他 Workspace 资源只读，不得修改由其他 agent 管理的文件。Workspace 外的文件遵循用户要求的范围和主机账户权限。
-- 如需不写入地了解其他任务，可查看其 ` + "`task.json`" + `、` + "`task.md`" + `、` + "`work.md`" + ` 和相关 ` + "`artifacts/`" + `：` + "`task.json`" + ` 是结构化状态，` + "`task.md`" + ` 是长期约定，` + "`work.md`" + ` 是当前恢复检查点；对话历史使用资源 History 命令。也可以对已解析的文件路径使用 ` + "`sed`" + `、` + "`rg`" + ` 或 ` + "`less`" + `。
+- 如需不写入地了解其他任务，可查看其 ` + "`task.json`" + `、` + "`task.md`" + ` 和相关 ` + "`artifacts/`" + `：` + "`task.json`" + ` 是结构化状态，` + "`task.md`" + ` 是长期约定；对话历史使用资源 History 命令。也可以对已解析的文件路径使用 ` + "`sed`" + `、` + "`rg`" + ` 或 ` + "`less`" + `。
 - 通过 Forge 只读查看其他任务时，使用 ` + "`forge task show --project=<project> --task=<task>`" + ` 查看结构化任务信息，使用 ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` 查看资源 History，使用 ` + "`forge workspace resource --id=<project.task> --json`" + ` 获取包含常用 Markdown 文件和 artifacts 的资源详情。
 - 需要协作但不能写入其他资源文件时，通过拥有该 Workspace 的 Forge Server 直接联系目标 Task：` + "`forge task status --project=<project> --task=<task>`" + `、` + "`forge message send --to=<project.task> [--mode=steer|enqueue|interrupt] <message>`" + ` 和 ` + "`forge message show --id=<message-id>`" + `。使用 ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` 读取其长期对话，并用 ` + "`forge history turn show --ref=<turn-ref> [--json]`" + ` 或 ` + "`forge history event show --ref=<event-ref> [--json]`" + ` 展开返回的引用。历史命令默认输出格式化文本；使用 ` + "`--json`" + ` 获取结构化输出。默认消息模式为 steer；Forge 会持久保存已接受消息，把 waiting 与 Task 状态分开呈现，如实报告向 enqueue 的降级，并使用同一稳定 message ID 重试。provenance 只标识发送者，不构成认证或指令优先级。
 `
@@ -152,7 +152,7 @@ func projectMarkdownZH(title, detail string) string {
 func taskAgentsPromptZH(resource Resource) string {
 	title := "任务 Agent 指引"
 	scope := "AgentWorkspace 任务目录"
-	readLine := "执行前读取 task.json、task.md 和 work.md；需要对话历史时使用资源 History。"
+	readLine := "执行前读取 task.json 和 task.md；需要对话历史时使用资源 History。"
 	boundary := "将此目录视为当前任务边界。"
 	writeScope := "任务边界是避免多 agent 冲突的默认保护措施，并非绝对限制。用户的明确指令可以授权操作此任务目录之外的主机文件；但不得修改其他 agent 管理的 Workspace 资源。"
 	repoGuidance := "如需修改代码，请在 worktree/ 下创建 Git worktree。执行 `git worktree add` 时，目标必须使用此任务 worktree/ 目录内的绝对路径；当命令使用 `git -C` 时，相对目标会从共享仓库解析，可能把 worktree 错放到任务目录之外。"

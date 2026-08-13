@@ -54,7 +54,7 @@ Each panel receives typed `SettingsModel` callbacks and the smallest relevant sh
 | `notification-controller.ts` plus `notification-{store,projection,delivery}.ts` | Orchestration; versioned persistence; completion projection; browser/sound delivery | Created for each application start because orchestration owns a `ResourceScope` and `BroadcastChannel`; delivery owns and disposes the optional `AudioContext` |
 | `agent-draft-store.ts` | Versioned Workspace/Resource draft keys, generation metadata, local persistence, and bounded orphan eviction | Stateless adapter created once; browser storage is resolved lazily |
 | `agent-draft-controller.ts` | Resource-scoped draft restore/persist/prune coordination | Created once over the application draft runtime |
-| `resource-detail-controller.ts` | Resource detail fetch identity, log pagination, overlap deduplication, and stale page rejection | Created once over the canonical detail/page records; requests are accepted only for the captured Workspace, Resource, and generation |
+| `resource-detail-controller.ts` | Resource detail fetch identity and stale-result rejection | Created once over the canonical detail records; requests are accepted only for the captured Workspace, Resource, and generation |
 | `chat-state.ts` and `agent-operation-controller.ts` | Resource history/stream and Turn mutations with keyed pending state; stale operation leases cannot clear newer state | Created once; pending leases are reset during selection changes and application stop |
 | `create-dialog-controller.ts` | Create Project/Task draft conversion, template preview cancellation, submission, and dialog identity | Created once; pending preview is aborted on close and application stop |
 | `settings-controller.ts` and `user-settings-controller.ts` | Settings loading/mutation plus browser-local User identity persistence | Settings state is application-scoped; the User controller and its storage listener are recreated with each application lifecycle |
@@ -63,7 +63,7 @@ Each panel receives typed `SettingsModel` callbacks and the smallest relevant sh
 
 Dependencies point from `app-controller.ts` into these controllers, and from controllers only into typed component models or small runtime utilities. Cross-domain work such as switching Workspace, reconciling Tree + resource runtime state, and publishing several view roots remains in `app-controller.ts`; storage formats, request pagination, mutations, and pending-operation state remain inside their domain owner.
 
-The shell has one canonical Workspace and Resource selection. That selection drives tree highlight, title, resource runtime state, unread state, and History API projection. Project, Task, log, and timeline rows use stable keys so unrelated refreshes retain their DOM identity. A drag transaction suppresses refresh until persistence succeeds or rolls back.
+The shell has one canonical Workspace and Resource selection. That selection drives tree highlight, title, resource runtime state, unread state, and History API projection. Project, Task, History, and timeline rows use stable keys so unrelated refreshes retain their DOM identity. A drag transaction suppresses refresh until persistence succeeds or rolls back.
 
 ### App shell component boundaries
 
@@ -116,7 +116,7 @@ The extraction reduced the stateful roots while retaining the complete behavior 
 | Scenario | Fixture | Budget |
 | --- | ---: | ---: |
 | Project/Task tree | 720 rows | 5,000 ms and fewer than 15,000 elements |
-| Resource log | 750 entries | 4,000 ms and fewer than 10,000 elements |
+| Resource History | 750 Turn summaries | 4,000 ms and fewer than 10,000 elements |
 | Markdown document | 3,000 sections | 1,000 ms |
 | Generation event canonicalization | 10,000 events with an overlapping delta | 1,000 ms |
 | Continuous resource updates | 1,000 deltas applied after 10,000 events | 1,500 ms |

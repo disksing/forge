@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -70,10 +71,17 @@ func legacyResourcePaths(root string) ([]legacyResourcePath, error) {
 
 func migrateLegacyLogFile(resourceDir string) error {
 	sourcePath := filepath.Join(resourceDir, legacyLogFileName)
-	source, err := os.ReadFile(sourcePath)
+	sourceInfo, err := os.Lstat(sourcePath)
 	if os.IsNotExist(err) {
 		return nil
 	}
+	if err != nil {
+		return err
+	}
+	if sourceInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("legacy source must not be a symbolic link: %s", sourcePath)
+	}
+	source, err := os.ReadFile(sourcePath)
 	if err != nil {
 		return err
 	}
@@ -82,14 +90,22 @@ func migrateLegacyLogFile(resourceDir string) error {
 		return err
 	}
 	digest := legacyLogDigest(source)
+	expectedArtifact := []byte(formatLegacyLogArtifact(digest, entries))
 	artifactDir, err := ensureLegacyArtifactDir(resourceDir)
 	if err != nil {
 		return err
 	}
 	artifactPath := filepath.Join(artifactDir, legacyLogArtifactName)
+	artifactInfo, artifactStatErr := os.Lstat(artifactPath)
+	if artifactStatErr != nil && !os.IsNotExist(artifactStatErr) {
+		return artifactStatErr
+	}
+	if artifactStatErr == nil && artifactInfo.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("legacy artifact must not be a symbolic link: %s", artifactPath)
+	}
 	if existing, readErr := os.ReadFile(artifactPath); readErr == nil {
-		if !legacyLogArtifactMatches(existing, digest) {
-			return fmt.Errorf("legacy artifact already exists with a different source digest: %s", artifactPath)
+		if !bytes.Equal(existing, expectedArtifact) {
+			return fmt.Errorf("legacy artifact already exists with different or altered content: %s", artifactPath)
 		}
 	} else if !os.IsNotExist(readErr) {
 		return readErr
@@ -106,7 +122,7 @@ func migrateLegacyLogFile(resourceDir string) error {
 	if err != nil {
 		return fmt.Errorf("verify legacy artifact: %w", err)
 	}
-	if !legacyLogArtifactMatches(validated, digest) {
+	if !bytes.Equal(validated, expectedArtifact) {
 		return errors.New("legacy artifact verification failed; source log was retained")
 	}
 	if err := os.Remove(sourcePath); err != nil {

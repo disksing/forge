@@ -1481,7 +1481,7 @@ func mailboxMessageByID(workspacePath, messageID string) (resourceMailboxMessage
 	}
 
 	// Recovery fallback is bounded by the number of resource stores and each
-	// store's fixed receipt window. It is not a scan of the old delivered log.
+	// store's fixed receipt window. It is not a scan of old delivered mailbox entries.
 	resourceIDs, err := listResourceMailboxResourceIDs(workspacePath)
 	if err != nil {
 		return resourceMailboxMessage{}, false, err

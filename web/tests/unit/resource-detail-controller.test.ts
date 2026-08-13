@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createResourceDetailController, type ResourceDetailContext, type ResourceDetailRecord } from "../../src/controllers/resource-detail-controller";
 
 describe("ResourceDetailController", () => {
-	it("loads a resource detail without log query parameters", async () => {
+	it("loads a resource detail without History query parameters", async () => {
 		const details: Record<string, ResourceDetailRecord> = {};
 		const context: ResourceDetailContext = { workspaceId: "alpha", navigationVersion: 1, selectedId: "task1", detailRequestVersion: 0 };
 		const request = vi.fn(async <T>(_path: string, _init?: RequestInit) => ({ id: "task1", type: "task", artifacts: [] } as T));

@@ -147,10 +147,6 @@ i[data-lucide] {
   background: #f4f5f7;
 }
 
-.log-load-more .spin {
-  animation: task-status-spin 1s linear infinite;
-}
-
 .empty-list-row {
   min-height: 42px;
   display: flex;
