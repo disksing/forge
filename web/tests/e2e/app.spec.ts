@@ -125,10 +125,13 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, turnRunning = false): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
+  let runtimeExists = !startWithoutRuntime;
+  let turnRunning = initialTurnRunning;
+  if (startWithoutRuntime) attentionStates["project1.task1"] = { followed: true };
   let scheduleSequence = 0;
   let schedulerConfig = {
     schemaVersion: 1,
@@ -202,7 +205,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         children: project.children.map((resource) => resource.id === "project1.task1" ? {
           ...resource,
           attention: attentionStates[resource.id],
-          runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now, turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning },
+          ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now, turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
         } : { ...resource, attention: attentionStates[resource.id] }),
       };
       const attentionCandidates = [projectSnapshot, ...projectSnapshot.children];
@@ -340,6 +343,9 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/messages" && method === "POST") {
       harness.inputBodies.push(request.postDataJSON());
+      runtimeExists = true;
+      turnRunning = true;
+      attentionStates["project1.task1"] = { followed: true };
       return json(route, { status: "delivered", messageId: "msg-e2e" });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/uploads" && method === "POST") {
@@ -564,6 +570,43 @@ test("highlights the selected Activity resource instead of every active turn", a
   await expect(runningActivity).not.toHaveAttribute("aria-current");
   await expect(runningActivity).toHaveAttribute("data-active-turn", "true");
   await expect(runningActivity).toContainText("Resource working");
+});
+
+test("keeps a newly created task Activity row aligned when its first turn starts", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1", false, false, true);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
+  await expect(activityRow).toHaveCount(1);
+  await expect(activityRow.locator(":scope > .activity-status")).toHaveCount(1);
+  await expect(activityRow.locator(":scope > .activity-title")).toHaveCount(1);
+  await expect(activityRow.locator(":scope > .activity-badge")).toHaveCount(1);
+  await expect(activityRow.locator(":scope > .activity-actions")).toHaveCount(1);
+  await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
+
+  const before = await activityRow.evaluate((row) => ({
+    titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
+    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
+    actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
+  }));
+  const input = page.locator("#ttyInput");
+  await input.fill("Start the first turn");
+  await input.press("Enter");
+  await expect.poll(() => harness.inputBodies.length).toBe(1);
+  await expect(activityRow).toHaveAttribute("data-active-turn", "true", { timeout: 8_000 });
+  await expect(activityRow.locator('.activity-status-runtime-slot [data-lucide="loader-circle"]')).toBeVisible();
+  await expect(activityRow.locator('.activity-status-fallback-slot [data-lucide="file-text"]')).toBeHidden();
+
+  const after = await activityRow.evaluate((row) => ({
+    directChildren: row.children.length,
+    titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
+    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
+    actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
+  }));
+  expect(after.directChildren).toBe(4);
+  expect(Math.abs(after.titleTop - after.badgeTop)).toBeLessThan(2);
+  expect(Math.abs(after.titleTop - after.actionsTop)).toBeLessThan(2);
+  expect(Math.abs(after.titleTop - before.titleTop)).toBeLessThan(2);
 });
 
 test("manages natural-language schedules from the fixed Scheduler resource", async ({ page }) => {

@@ -64,6 +64,29 @@
   background: var(--ink);
 }
 
+:where([data-component-owner="attention-list"]) .activity-status {
+  width: 16px;
+  min-width: 0;
+  height: 18px;
+  display: flex;
+  align-items: flex-start;
+}
+
+:where([data-component-owner="attention-list"]) .activity-row.has-task-status-dual .activity-status {
+  width: 36px;
+}
+
+:where([data-component-owner="attention-list"]) .activity-status-fallback-slot,
+:where([data-component-owner="attention-list"]) .activity-status-runtime-slot {
+  display: flex;
+  align-items: flex-start;
+}
+
+:where([data-component-owner="attention-list"]) .activity-status-fallback-slot[hidden],
+:where([data-component-owner="attention-list"]) .activity-status-runtime-slot[hidden] {
+  display: none;
+}
+
 :where([data-component-owner="attention-list"]) .activity-status-icon {
   margin-top: 1px;
 }

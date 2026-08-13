@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../src/components/AppShell.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
-import type { AppShellModel, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { AppShellModel, ShellAttentionItem, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -20,6 +20,14 @@ function resource(id: string, title: string, type: "project" | "task" = "project
   return {
     id, type, title, ref: type === "project" ? "#1" : "#2", active: false, expanded: false,
     ariaLabel: title, statusLabel: "", status: emptyStatus, summary: null, children: [],
+  };
+}
+
+function activity(status: ShellStatusPresentation = emptyStatus): ShellAttentionItem {
+  return {
+    id: "project-a", type: "project", title: "Project A", ref: "#1", selected: true,
+    activeTurn: status.hasTaskState, followed: true, turnNumber: status.hasTaskState ? 1 : 0,
+    agentName: status.hasTaskState ? "Codex" : "", statusLabel: status.hasTaskState ? "Resource working" : "Focused resource", status,
   };
 }
 
@@ -78,6 +86,46 @@ describe("AppShell", () => {
     expect(target.querySelector('.tree-item[aria-label="Project A"]')).toBe(projectA);
     expect(projectA.dataset.identityProbe).toBe("stable");
     expect(projectA.classList.contains("active")).toBe(true);
+  });
+
+  it("keeps the Activity grid stable when a new resource starts its first turn", async () => {
+    const initial = model({ attentionList: [activity()] });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const row = target.querySelector<HTMLElement>('[data-component-owner="attention-list"] button.activity-row')!;
+    const status = row.querySelector<HTMLElement>(".activity-status")!;
+    expect([...row.children].map((child) => child.className)).toEqual([
+      "activity-status", "activity-title", "activity-badge", "activity-actions",
+    ]);
+    const fallbackSlot = status.querySelector<HTMLElement>(".activity-status-fallback-slot")!;
+    const runtimeSlot = status.querySelector<HTMLElement>(".activity-status-runtime-slot")!;
+    expect(fallbackSlot.hidden).toBe(false);
+    expect(runtimeSlot.hidden).toBe(true);
+    expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
+
+    const runningStatus: ShellStatusPresentation = {
+      hasTaskState: true,
+      className: "task-status-session-running",
+      layoutClassName: "has-task-status",
+      slotClassName: "task-status-single",
+      statuses: [{ key: "resource-running:0", className: "task-status-session-running", iconName: "loader-circle", recentOutput: true }],
+    };
+    channel.publish({ ...initial, attentionList: [activity(runningStatus)] });
+    await tick();
+
+    expect(target.querySelector('[data-component-owner="attention-list"] button.activity-row')).toBe(row);
+    expect([...row.children].map((child) => child.className)).toEqual([
+      "activity-status", "activity-title", "activity-badge", "activity-actions",
+    ]);
+    expect(row.querySelector(".activity-status")).toBe(status);
+    expect(fallbackSlot.hidden).toBe(true);
+    expect(runtimeSlot.hidden).toBe(false);
+    expect(runtimeSlot.querySelectorAll('[data-lucide="loader-circle"]')).toHaveLength(1);
+    expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
   });
 
   it("keeps drag state local and sends one typed reorder transaction", async () => {

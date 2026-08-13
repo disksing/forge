@@ -92,7 +92,10 @@
     {:else}
       {#each items as item (item.id)}
         <button type="button" class={`activity-row ${statusClass(item.status)} ${item.selected ? "selected" : ""}`} aria-current={item.selected ? "page" : undefined} data-active-turn={item.activeTurn || undefined} aria-label={`${item.title}. ${metadata(item)}`} title={item.statusLabel || undefined} onclick={() => select(item)}>
-          {#if item.status.hasTaskState}<StatusPresentation status={item.status} className="activity-status-icon" />{:else}<Icon name={iconName(item)} className="activity-status-fallback" />{/if}
+          <span class="activity-status" aria-hidden="true">
+            <span class="activity-status-fallback-slot" hidden={item.status.hasTaskState}><Icon name={iconName(item)} className="activity-status-fallback" /></span>
+            <span class="activity-status-runtime-slot" hidden={!item.status.hasTaskState}><StatusPresentation status={item.status} className="activity-status-icon" /></span>
+          </span>
           <span class="activity-title"><strong>{item.title}</strong><span class="activity-meta">{metadata(item)}</span></span>
           <span class="activity-badge">{resourceKind(item)}</span>
           <span class="activity-actions">

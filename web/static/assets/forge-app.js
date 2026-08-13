@@ -2356,7 +2356,7 @@ function Pi(e, t) {
 }
 //#endregion
 //#region src/components/AttentionList.svelte
-var Fi = /* @__PURE__ */ W("<div class=\"activity-row empty-attention\"><!><div><strong>No activity</strong><span>Follow a resource or start a turn.</span></div></div>"), Ii = /* @__PURE__ */ W("<span role=\"button\" tabindex=\"0\"><!></span>"), Li = /* @__PURE__ */ W("<button type=\"button\"><!> <span class=\"activity-title\"><strong> </strong><span class=\"activity-meta\"> </span></span> <span class=\"activity-badge\"> </span> <span class=\"activity-actions\"><!> <span class=\"attention-dismiss\" role=\"button\" tabindex=\"0\" title=\"Dismiss\"><!></span></span></button>"), Ri = /* @__PURE__ */ W("<section class=\"attention-section\" data-component-owner=\"attention-list\"><div class=\"section-title\"><span>Activity</span></div> <nav class=\"attention-list\" aria-label=\"Activity list\"><!></nav></section>");
+var Fi = /* @__PURE__ */ W("<div class=\"activity-row empty-attention\"><!><div><strong>No activity</strong><span>Follow a resource or start a turn.</span></div></div>"), Ii = /* @__PURE__ */ W("<span role=\"button\" tabindex=\"0\"><!></span>"), Li = /* @__PURE__ */ W("<button type=\"button\"><span class=\"activity-status\" aria-hidden=\"true\"><span class=\"activity-status-fallback-slot\"><!></span> <span class=\"activity-status-runtime-slot\"><!></span></span> <span class=\"activity-title\"><strong> </strong><span class=\"activity-meta\"> </span></span> <span class=\"activity-badge\"> </span> <span class=\"activity-actions\"><!> <span class=\"attention-dismiss\" role=\"button\" tabindex=\"0\" title=\"Dismiss\"><!></span></span></button>"), Ri = /* @__PURE__ */ W("<section class=\"attention-section\" data-component-owner=\"attention-list\"><div class=\"section-title\"><span>Activity</span></div> <nav class=\"attention-list\" aria-label=\"Activity list\"><!></nav></section>");
 function zi(e, t) {
 	j(t, !0);
 	function n(e) {
@@ -2411,52 +2411,49 @@ function zi(e, t) {
 	}, h = (e) => {
 		var d = Ar();
 		J(un(d), 17, () => t.items, (e) => e.id, (e, t) => {
-			var d = Li(), f = L(d), p = (e) => {
-				Pi(e, {
-					get status() {
-						return H(t).status;
+			var d = Li(), f = L(d), p = L(f), m = L(p);
+			{
+				let e = /* @__PURE__ */ N(() => r(H(t)));
+				X(m, {
+					get name() {
+						return H(e);
 					},
-					className: "activity-status-icon"
+					className: "activity-status-fallback"
 				});
-			}, m = (e) => {
-				{
-					let n = /* @__PURE__ */ N(() => r(H(t)));
-					X(e, {
-						get name() {
-							return H(n);
-						},
-						className: "activity-status-fallback"
-					});
-				}
-			};
-			q(f, (e) => {
-				H(t).status.hasTaskState ? e(p) : e(m, -1);
-			});
-			var h = R(f, 2), g = L(h), _ = L(g, !0);
-			k(g);
-			var v = R(g), y = L(v, !0);
-			k(v), k(h);
-			var b = R(h, 2), x = L(b, !0);
-			k(b);
-			var S = R(b, 2), C = L(S), w = (e) => {
+			}
+			k(p);
+			var h = R(p, 2);
+			Pi(L(h), {
+				get status() {
+					return H(t).status;
+				},
+				className: "activity-status-icon"
+			}), k(h), k(f);
+			var g = R(f, 2), _ = L(g), v = L(_, !0);
+			k(_);
+			var y = R(_), b = L(y, !0);
+			k(y), k(g);
+			var x = R(g, 2), S = L(x, !0);
+			k(x);
+			var C = R(x, 2), w = L(C), T = (e) => {
 				var n = Ii();
 				let r;
 				X(L(n), { name: "star" }), k(n), z(() => {
 					r = ai(n, 1, "attention-star", null, r, { followed: H(t).followed }), Y(n, "aria-label", H(t).followed ? `Unfollow ${H(t).title}` : `Follow ${H(t).title}`), Y(n, "title", H(t).followed ? "Unfollow" : "Follow");
 				}), U("click", n, (e) => c(e, H(t))), U("keydown", n, (e) => u(e, (e) => c(e, H(t)))), G(e, n);
-			}, T = /* @__PURE__ */ N(() => a(H(t)));
-			q(C, (e) => {
-				H(T) && e(w);
+			}, E = /* @__PURE__ */ N(() => a(H(t)));
+			q(w, (e) => {
+				H(E) && e(T);
 			});
-			var E = R(C, 2);
-			X(L(E), { name: "x" }), k(E), k(S), k(d), z((e, n, r, i) => {
-				ai(d, 1, e), Y(d, "aria-current", H(t).selected ? "page" : void 0), Y(d, "data-active-turn", H(t).activeTurn || void 0), Y(d, "aria-label", n), Y(d, "title", H(t).statusLabel || void 0), K(_, H(t).title), K(y, r), K(x, i), Y(E, "aria-label", `Dismiss ${H(t).title}`);
+			var ee = R(w, 2);
+			X(L(ee), { name: "x" }), k(ee), k(C), k(d), z((e, n, r, i) => {
+				ai(d, 1, e), Y(d, "aria-current", H(t).selected ? "page" : void 0), Y(d, "data-active-turn", H(t).activeTurn || void 0), Y(d, "aria-label", n), Y(d, "title", H(t).statusLabel || void 0), Y(p, "hidden", H(t).status.hasTaskState), Y(h, "hidden", !H(t).status.hasTaskState), K(v, H(t).title), K(b, r), K(S, i), Y(ee, "aria-label", `Dismiss ${H(t).title}`);
 			}, [
 				() => `activity-row ${n(H(t).status)} ${H(t).selected ? "selected" : ""}`,
 				() => `${H(t).title}. ${o(H(t))}`,
 				() => o(H(t)),
 				() => i(H(t))
-			]), U("click", d, () => s(H(t))), U("click", E, (e) => l(e, H(t))), U("keydown", E, (e) => u(e, (e) => l(e, H(t)))), G(e, d);
+			]), U("click", d, () => s(H(t))), U("click", ee, (e) => l(e, H(t))), U("keydown", ee, (e) => u(e, (e) => l(e, H(t)))), G(e, d);
 		}), G(e, d);
 	};
 	q(p, (e) => {

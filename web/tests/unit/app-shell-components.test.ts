@@ -166,6 +166,12 @@ describe("AppShell responsibility components", () => {
     expect(activeRow.classList.contains("selected")).toBe(false);
     expect(activeRow.hasAttribute("aria-current")).toBe(false);
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
+    expect([...selectedRow.children].map((child) => child.className)).toEqual([
+      "activity-status", "activity-title", "activity-badge", "activity-actions",
+    ]);
+    expect([...activeRow.children].map((child) => child.className)).toEqual([
+      "activity-status", "activity-title", "activity-badge", "activity-actions",
+    ]);
   });
 
   it("PaneResizeHandle resizes and commits the Activity panel height", async () => {
