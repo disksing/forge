@@ -204,20 +204,20 @@ func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool
 	return agentRun{}, false, nil
 }
 
-
-
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
 // AgentHub's at-least-once capability makes an unknown response safe: Forge
 // retains the same stable ID until AgentHub durably accepts retry ownership.
 func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *agentManager) error {
-	m.resourceMu.Lock()
-	defer m.resourceMu.Unlock()
-	return m.reconcileResourceMailboxLocked(ctx, rt.workspace, rt.snapshotRun().ResourceID)
+	run := rt.snapshotRun()
+	return m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
+		return m.reconcileResourceMailboxLocked(ctx, rt.workspace, run.ResourceID)
+	})
 }
 
-// createResourceGeneration creates one durable generation while resourceMu is
-// held by the caller. Pending inputs remain owned by the Workspace mailbox;
-// generation creation never transfers or rewrites them.
+// createResourceGeneration creates one durable generation. Callers that need
+// resource ordering must invoke it from that resource's controller. Pending
+// inputs remain owned by the Workspace mailbox; generation creation never
+// transfers or rewrites them.
 func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
@@ -315,6 +315,12 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 }
 
 func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
+	return m.withResourceController(ctx, workspace, resourceID, func() error {
+		return m.resourceBindingChangedLocked(ctx, workspace, resourceID, binding)
+	})
+}
+
+func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
 	_ = binding
 	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil || !found {
@@ -377,7 +383,10 @@ func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace gui
 	}); err != nil {
 		return err
 	}
-	go m.retireResourceGeneration(context.WithoutCancel(ctx), rt)
+	_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
+		return nil
+	})
 	return nil
 }
 
@@ -454,8 +463,20 @@ func toConfigProfileRoutes(routes []agentHubProfileRoute) []agentProfileRoute {
 }
 
 func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRuntime) {
-	m.resourceMu.Lock()
-	defer m.resourceMu.Unlock()
+	if rt == nil {
+		return
+	}
+	run := rt.snapshotRun()
+	_ = m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
+		m.retireResourceGenerationLocked(ctx, rt)
+		return nil
+	})
+}
+
+// retireResourceGenerationLocked runs the Stop -> stopped -> Archive
+// lifecycle while its resource controller owns the operation. The name is
+// retained to make accidental calls from outside the controller obvious.
+func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *agentRuntime) {
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
@@ -514,7 +535,9 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		// Archive may have happened after a successful Stop but before this
 		// process observed it. Reuse the existing durable proof path rather than
 		// treating an archived projection as proof by itself.
-		go rt.reconcileArchivedAgentHubSession(m, client, session)
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			rt.reconcileArchivedAgentHubSession(m, client, session)
+		})
 		return
 	}
 	if session.State == "ready" {
@@ -570,7 +593,9 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		}
 	}
 	if session.State == "archived" {
-		go rt.reconcileArchivedAgentHubSession(m, client, session)
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			rt.reconcileArchivedAgentHubSession(m, client, session)
+		})
 		return
 	}
 	if session.State != "stopped" {

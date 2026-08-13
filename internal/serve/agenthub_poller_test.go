@@ -599,5 +599,3 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 		t.Fatalf("unchanged projection must not rewrite runs.json:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
-
-

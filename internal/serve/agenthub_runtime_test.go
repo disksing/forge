@@ -39,6 +39,7 @@ type runtimeFakeAgentHub struct {
 	extraAgents        []string
 	stopHook           func(string)
 	resumeHook         func(string)
+	messageHook        func(string, agentHubInboundMessage)
 	messageSteers      []bool
 	messageRoles       []string
 	messageSenders     []*agentHubMessageSender
@@ -146,6 +147,12 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if len(parts) == 4 && parts[3] == "messages" {
 		var body agentHubInboundMessage
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		messageHook := f.messageHook
+		f.mu.Unlock()
+		if messageHook != nil {
+			messageHook(id, body)
+		}
 		f.mu.Lock()
 		f.messageSteers = append(f.messageSteers, body.Steer)
 		f.messageRoles = append(f.messageRoles, body.Role)
@@ -362,9 +369,6 @@ func (f *runtimeFakeAgentHub) create(w http.ResponseWriter, r *http.Request) {
 	writeRuntimeFakeJSON(w, map[string]any{"session": session})
 }
 
-
-
-
 func (f *runtimeFakeAgentHub) list(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -549,11 +553,9 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	}
 	role, sender := agentHubMessageProvenance(request.UserName)
 	recorder := httptest.NewRecorder()
-	manager.resourceMu.Lock()
 	message, err := manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{
 		Text: request.Prompt, Mode: resourceMessageModeSteer, Role: role, Sender: sender,
 	})
-	manager.resourceMu.Unlock()
 	if err != nil {
 		writeError(recorder, err, resourceErrorStatus(err))
 		return recorder, agentRun{}
@@ -982,11 +984,9 @@ func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWor
 	}
 	role, sender := agentHubMessageProvenance(request.UserName)
 	recorder := httptest.NewRecorder()
-	manager.resourceMu.Lock()
 	message, sendErr := manager.acceptResourceMessage(context.Background(), workspace, normalizedResourceID(resourceID), resourceMessageRequest{
 		Text: request.Text, Mode: resourceMessageModeSteer, Role: role, Sender: sender,
 	})
-	manager.resourceMu.Unlock()
 	if sendErr != nil {
 		writeError(recorder, sendErr, resourceErrorStatus(sendErr))
 		return recorder
@@ -1088,11 +1088,6 @@ func TestNormalizeAgentHubUserName(t *testing.T) {
 	}
 }
 
-
-
-
-
-
 func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -1123,10 +1118,6 @@ func TestNormalizeAgentHubApprovalReply(t *testing.T) {
 	}
 }
 
-
-
-
-
 func waitForRuntimeTest(t *testing.T, condition func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -1138,9 +1129,3 @@ func waitForRuntimeTest(t *testing.T, condition func() bool) {
 	}
 	t.Fatal("condition was not reached before timeout")
 }
-
-
-
-
-
-

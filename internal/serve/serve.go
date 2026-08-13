@@ -865,31 +865,47 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
+	var archiveResult app.ArchiveResult
+	archive := func() error {
+		if s.agents != nil {
+			active, activeErr := s.agents.resourceHasActiveTurn(r.Context(), workspace, resourceID)
+			if activeErr != nil {
+				return activeErr
+			}
+			if active {
+				return &resourceAPIError{Code: "active_turn", Message: fmt.Sprintf("resource %s has an active Turn; interrupt or stop it before archiving", resourceID)}
+			}
+		}
+		result, archiveErr := forgeWorkspace.ArchiveResource(resourceID)
+		if archiveErr != nil {
+			return archiveErr
+		}
+		if markErr := markResourceMailboxArchived(workspace.Path, resourceID); markErr != nil {
+			return markErr
+		}
+		archiveResult = result
+		return nil
+	}
+	var archiveErr error
 	if s.agents != nil {
-		s.agents.resourceMu.Lock()
-		defer s.agents.resourceMu.Unlock()
-		active, activeErr := s.agents.resourceHasActiveTurn(r.Context(), workspace, resourceID)
-		if activeErr != nil {
-			writeError(w, activeErr, http.StatusInternalServerError)
-			return
-		}
-		if active {
-			writeError(w, fmt.Errorf("resource %s has an active Turn; interrupt or stop it before archiving", resourceID), http.StatusConflict)
-			return
-		}
+		archiveErr = s.agents.withResourceController(r.Context(), workspace, resourceID, archive)
+	} else {
+		archiveErr = archive()
 	}
-	result, err := forgeWorkspace.ArchiveResource(resourceID)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if err := markResourceMailboxArchived(workspace.Path, resourceID); err != nil {
-		writeError(w, err, http.StatusInternalServerError)
+	if archiveErr != nil {
+		status := http.StatusBadRequest
+		if s.agents != nil {
+			var apiErr *resourceAPIError
+			if errors.As(archiveErr, &apiErr) {
+				status = resourceErrorStatus(archiveErr)
+			}
+		}
+		writeError(w, archiveErr, status)
 		return
 	}
 	// Keep the existing HTTP response contract while the application layer
 	// returns the richer typed ArchiveResult to in-process callers.
-	writeJSON(w, map[string]string{"path": result.Path})
+	writeJSON(w, map[string]string{"path": archiveResult.Path})
 	if s.agents != nil {
 		go func() {
 			if err := s.agents.pollAgentHubSessions(context.Background()); err != nil {

@@ -124,9 +124,17 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 				// Reclaim only the session id already bound to this run. Source
 				// lookup is deliberately not used here: duplicate or stale
 				// external ids must never make archival stop the wrong session.
-				if session, found := byID[strings.TrimSpace(run.AgentHubSessionID)]; found &&
-					m.stopAgentHubSessionForArchivedResource(ctx, cfg, workspace, run, session, client) {
-					continue
+				if session, found := byID[strings.TrimSpace(run.AgentHubSessionID)]; found {
+					handled := false
+					controllerErr := m.withResourceController(ctx, workspace, resourceID, func() error {
+						handled = m.stopAgentHubSessionForArchivedResource(ctx, cfg, workspace, run, session, client)
+						return nil
+					})
+					if controllerErr != nil {
+						failures = append(failures, fmt.Sprintf("%s run %s resource %s: %v", workspace.ID, run.ID, resourceID, controllerErr))
+					} else if handled {
+						continue
+					}
 				}
 			}
 			m.reconcileAgentHubRun(ctx, cfg, workspace, run, byExternalID, byID, client)
@@ -142,7 +150,6 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 	if err := m.profileRoutesChanged(ctx, profileConfig, profileConfig); err != nil {
 		failures = append(failures, err.Error())
 	}
-	m.resourceMu.Lock()
 	for _, workspace := range cfg.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
@@ -157,7 +164,6 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			failures = append(failures, fmt.Sprintf("%s notifications: %v", workspace.ID, err))
 		}
 	}
-	m.resourceMu.Unlock()
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}
@@ -227,14 +233,13 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		return false
 	}
+	effectContext := context.WithoutCancel(ctx)
 	if session.State == "stopped" && run.GenerationID != "" {
-		go func() {
-			if _, err := client.Archive(context.WithoutCancel(ctx), session.ID); err != nil {
-				if rt := m.runtimeByID(run.ID); rt != nil {
-					rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
-				}
+		if _, err := client.Archive(effectContext, session.ID); err != nil {
+			if rt := m.runtimeByID(run.ID); rt != nil {
+				rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
 			}
-		}()
+		}
 		return true
 	}
 	if session.State == "running" || session.State == "waiting_approval" {
@@ -278,29 +283,27 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 	rt.agentHub = client
 	rt.mu.Unlock()
 
-	go func() {
-		stopped, err := client.Stop(ctx, session.ID)
-		if err != nil {
-			rt.mu.Lock()
-			rt.agentHubStopRequested = false
-			rt.mu.Unlock()
-			rt.setRecoveryError(m, fmt.Errorf("stop AgentHub session for archived task %s: %w", run.ResourceID, err))
-			return
+	stopped, err := client.Stop(effectContext, session.ID)
+	if err != nil {
+		rt.mu.Lock()
+		rt.agentHubStopRequested = false
+		rt.mu.Unlock()
+		rt.setRecoveryError(m, fmt.Errorf("stop AgentHub session for archived task %s: %w", run.ResourceID, err))
+		return true
+	}
+	if !agentHubSessionExactlyMatchesRun(cfg, run, stopped) {
+		rt.mu.Lock()
+		rt.agentHubStopRequested = false
+		rt.mu.Unlock()
+		rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source", run.ResourceID))
+		return true
+	}
+	rt.applyAgentHubSessionState(m, stopped)
+	if stopped.State == "stopped" && run.GenerationID != "" {
+		if _, err := client.Archive(effectContext, stopped.ID); err != nil {
+			rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
 		}
-		if !agentHubSessionExactlyMatchesRun(cfg, run, stopped) {
-			rt.mu.Lock()
-			rt.agentHubStopRequested = false
-			rt.mu.Unlock()
-			rt.setRecoveryError(m, fmt.Errorf("AgentHub stop response for archived task %s did not match the persisted Forge run source", run.ResourceID))
-			return
-		}
-		rt.applyAgentHubSessionState(m, stopped)
-		if stopped.State == "stopped" && run.GenerationID != "" {
-			if _, err := client.Archive(context.WithoutCancel(ctx), stopped.ID); err != nil {
-				rt.addForgeNotice(m, "warning", "agenthub/resource-reclaim", "Archive stopped resource generation: "+err.Error())
-			}
-		}
-	}()
+	}
 	return true
 }
 
@@ -330,6 +333,13 @@ func agentHubSessionExactlyMatchesRun(cfg config, run agentRun, session agentHub
 // conservatively moves live runs to recovering and keeps terminal runs
 // untouched.
 func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+	_ = m.withResourceController(ctx, workspace, run.ResourceID, func() error {
+		m.reconcileAgentHubRunLocked(ctx, cfg, workspace, run, byExternalID, byID, client)
+		return nil
+	})
+}
+
+func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	session, found := byExternalID[sourceLookupKey(runSourceInstanceID(cfg, run), run.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(run.AgentHubSessionID)]
@@ -356,7 +366,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	}
 	if !found {
 		if run.GenerationID != "" && isLiveAgentStatus(run.Status) {
-			if err := m.recoverAgentHubRun(context.WithoutCancel(ctx), cfg, client, workspace, run, nil); err != nil {
+			if err := m.recoverAgentHubRunLocked(context.WithoutCancel(ctx), cfg, client, workspace, run, nil); err != nil {
 				rt.addForgeNotice(m, "warning", "agenthub/recovery", "Recreate missing resource generation: "+err.Error())
 			}
 			return
@@ -370,7 +380,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 		// A durable stopped edge observed locally permits the release even
 		// after the session disappeared upstream; the call is a no-op for
 		// every other run.
-		go rt.releaseForgeSessionAfterStopped(m)
+		_ = m.enqueueRuntimeOperation(rt, func() { _ = rt.releaseForgeSessionAfterStopped(m) })
 		return
 	}
 	if session.State == "archived" {
@@ -469,7 +479,9 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 		}
 	}
 	if refreshTurnStartedAt {
-		go rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
+		})
 	}
 	rt.mu.Lock()
 	if rt.agentHub == nil {
@@ -487,36 +499,39 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	// A turn ends when the session leaves running/waiting_approval for ready or
 	// stopped. Record the durable completion before publishing the final state.
 	if turnFinished {
-		go func() {
+		_ = m.enqueueRuntimeOperation(rt, func() {
 			rt.handleTurnFinished(m, session)
 			if session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
-		}()
+		})
 	}
 	if !turnFinished && (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
-		go func() {
+		_ = m.enqueueRuntimeOperation(rt, func() {
 			rt.recordTurnCompletion(session)
 			if session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
-		}()
+		})
 	} else if !turnFinished && session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 		// Idempotent: releases the Forge session on the stopped edge and
 		// retries a release that failed on an earlier poll.
-		go rt.releaseForgeSessionAfterStopped(m)
+		_ = m.enqueueRuntimeOperation(rt, func() { _ = rt.releaseForgeSessionAfterStopped(m) })
 	}
 	if updated.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
-		go m.retireResourceGeneration(context.Background(), rt)
+		_ = m.enqueueResourceController(rt.workspace, updated.ResourceID, func() error {
+			m.retireResourceGenerationLocked(context.Background(), rt)
+			return nil
+		})
 	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(updated.PendingMessages) > 0 {
-		go func() {
-			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, updated.ResourceID); err != nil {
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
 			}
-		}()
+		})
 	}
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
-		if err := m.reconcileIdleGeneration(ctx, workspace, updated, session, client); err != nil {
+		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addForgeNotice(m, "warning", "resource/idle-sleep", err.Error())
 		}
 	}
@@ -671,7 +686,9 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		rt.mu.Lock()
 		client := rt.agentHub
 		rt.mu.Unlock()
-		go rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
+		})
 	}
 	if turnFinished {
 		// Keep the idle sleeper behind the same durable terminal inspection when
@@ -680,30 +697,33 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		rt.markTurnCompletionPending()
 	}
 	if turnFinished {
-		go func() {
+		_ = m.enqueueRuntimeOperation(rt, func() {
 			rt.handleTurnFinished(m, session)
 			if session.State == "stopped" && !run.IdleSleepStopRequested {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
-		}()
+		})
 	} else if (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
-		go func() {
+		_ = m.enqueueRuntimeOperation(rt, func() {
 			rt.recordTurnCompletion(session)
 			if session.State == "stopped" && !run.IdleSleepStopRequested {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
-		}()
+		})
 	} else if run.Status == "stopped" && !run.IdleSleepStopRequested && run.AgentHubStoppedObserved {
-		go rt.releaseForgeSessionAfterStopped(m)
+		_ = m.enqueueRuntimeOperation(rt, func() { _ = rt.releaseForgeSessionAfterStopped(m) })
 	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
-		go m.retireResourceGeneration(context.Background(), rt)
+		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+			m.retireResourceGenerationLocked(context.Background(), rt)
+			return nil
+		})
 	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
-		go func() {
-			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, run.ResourceID); err != nil {
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
 			}
-		}()
+			return nil
+		})
 	}
 }
-
