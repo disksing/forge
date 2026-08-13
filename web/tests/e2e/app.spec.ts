@@ -619,7 +619,8 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   await page.locator('[data-component-owner="scheduler-nav"] button').click();
   await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
   await expect(page.getByRole("heading", { name: /Scheduler/ }).first()).toBeVisible();
-  await page.getByRole("tab", { name: "Schedules" }).click();
+  await expect(page.locator(".details-tabs [role=\"tab\"]")).toHaveText(["Schedules", "Context"]);
+  await expect(page.getByRole("tab", { name: "Schedules" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("No schedules. The Server will not create empty Scheduler Turns.")).toBeVisible();
 
   await page.getByLabel("Description").fill("Notify when the release is ready");

@@ -62,7 +62,7 @@
 
   function initialTab(value: DetailPanelModel): string {
     const detailFiles = (value.detail?.files || []).filter((file) => file.name !== "AGENTS.md");
-    if (value.resourceType === "scheduler") return "context";
+    if (value.resourceType === "scheduler") return "schedules";
     if (value.resourceType === "project" && detailFiles.some((file) => file.name === "project.md")) return "project";
     if (detailFiles.some((file) => file.name === "task.md")) return "task";
     if (detailFiles.some((file) => file.name === "work.md")) return "work";
@@ -74,8 +74,8 @@
   function resourceTabs(): Array<{ id: string; label: string; icon: string }> {
     if (!model.detail) return [];
 	if (model.resourceType === "scheduler") return [
-	  { id: "context", label: "Context", icon: "file-text" },
-	  { id: "schedules", label: "Schedules", icon: "calendar-clock" }
+	  { id: "schedules", label: "Schedules", icon: "calendar-clock" },
+	  { id: "context", label: "Context", icon: "file-text" }
 	];
     const result: Array<{ id: string; label: string; icon: string }> = [];
     if (fileNames.has("project.md")) result.push({ id: "project", label: "Project", icon: "file-text" });

@@ -4606,18 +4606,18 @@ function Fs(e, t) {
 	}), Ai(() => l.dispose());
 	function m(e) {
 		let t = (e.detail?.files || []).filter((e) => e.name !== "AGENTS.md");
-		return e.resourceType === "scheduler" ? "context" : e.resourceType === "project" && t.some((e) => e.name === "project.md") ? "project" : t.some((e) => e.name === "task.md") ? "task" : t.some((e) => e.name === "work.md") ? "work" : e.resourceType === "project" ? "project" : e.resourceType === "task" ? "task" : "logs";
+		return e.resourceType === "scheduler" ? "schedules" : e.resourceType === "project" && t.some((e) => e.name === "project.md") ? "project" : t.some((e) => e.name === "task.md") ? "task" : t.some((e) => e.name === "work.md") ? "work" : e.resourceType === "project" ? "project" : e.resourceType === "task" ? "task" : "logs";
 	}
 	function h() {
 		if (!H(n).detail) return [];
 		if (H(n).resourceType === "scheduler") return [{
-			id: "context",
-			label: "Context",
-			icon: "file-text"
-		}, {
 			id: "schedules",
 			label: "Schedules",
 			icon: "calendar-clock"
+		}, {
+			id: "context",
+			label: "Context",
+			icon: "file-text"
 		}];
 		let e = [];
 		return H(d).has("project.md") && e.push({
