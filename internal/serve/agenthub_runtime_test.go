@@ -511,6 +511,7 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	manager := newAgentManager(server)
 	manager.now = func() time.Time { return time.Date(2026, 8, 1, 0, 0, 20, 0, time.UTC) }
 	server.agents = manager
+	t.Cleanup(manager.waitBackground)
 	return manager, workspace, configPath
 }
 

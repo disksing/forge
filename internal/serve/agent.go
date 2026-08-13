@@ -170,6 +170,7 @@ type agentRuntime struct {
 type agentManager struct {
 	server                *server
 	mu                    sync.Mutex
+	backgroundWork        sync.WaitGroup
 	resourceControllersMu sync.Mutex
 	resourceControllers   map[string]*resourceController
 	runtimes              map[string]*agentRuntime
@@ -177,6 +178,25 @@ type agentManager struct {
 	schedulerDigests      map[string]string
 	now                   func() time.Time
 	idleSleepAfter        time.Duration
+}
+
+// runBackground tracks short-lived work started by an HTTP request. The
+// service keeps the work asynchronous for callers, while tests and orderly
+// shutdown paths can wait until the manager has stopped touching its
+// Workspace.
+func (m *agentManager) runBackground(fn func()) {
+	if fn == nil {
+		return
+	}
+	m.backgroundWork.Add(1)
+	go func() {
+		defer m.backgroundWork.Done()
+		fn()
+	}()
+}
+
+func (m *agentManager) waitBackground() {
+	m.backgroundWork.Wait()
 }
 
 func newAgentManager(s *server) *agentManager {
