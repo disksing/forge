@@ -34,18 +34,18 @@ var (
 // listener can serve immediately; the session poller runs right away and then
 // every interval as the fallback for any run the recovery pass missed.
 func (m *agentManager) startAgentRecovery(ctx context.Context) {
-	go func() {
+	m.runBackground(func() {
 		if err := m.recoverAgentHubRuns(ctx); err != nil {
 			log.Printf("recover AgentHub runs: %v", err)
 		}
-	}()
+	})
 	m.startAgentHubPoller(ctx)
 }
 
 // startAgentHubPoller polls AgentHub session state in the background until
 // ctx is cancelled.
 func (m *agentManager) startAgentHubPoller(ctx context.Context) {
-	go func() {
+	m.runBackground(func() {
 		if err := m.pollAgentHubSessions(ctx); err != nil {
 			log.Printf("poll AgentHub sessions: %v", err)
 		}
@@ -61,7 +61,7 @@ func (m *agentManager) startAgentHubPoller(ctx context.Context) {
 				}
 			}
 		}
-	}()
+	})
 }
 
 // pollAgentHubSessions lists this instance's live AgentHub sessions once and

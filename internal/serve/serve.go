@@ -907,11 +907,11 @@ func (s *server) archiveResource(w http.ResponseWriter, r *http.Request, id stri
 	// returns the richer typed ArchiveResult to in-process callers.
 	writeJSON(w, map[string]string{"path": archiveResult.Path})
 	if s.agents != nil {
-		go func() {
+		s.agents.runBackground(func() {
 			if err := s.agents.pollAgentHubSessions(context.Background()); err != nil {
 				log.Printf("reconcile archived resource %s: %v", resourceID, err)
 			}
-		}()
+		})
 	}
 }
 
