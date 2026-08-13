@@ -1429,12 +1429,14 @@ function renderTTY(_options: RenderOptions = {}): void {
 function resourceMutationKey(workspaceId: string, resourceId: string): string {
 	return `${workspaceId || "workspace"}:${resourceId || "resource"}`;
 }
+let agentBindingSavingFor = "";
 function renderTTYComposer(_options: RenderOptions = {}): void {
 	controllerState.agent.skipTTYDraftSync = false;
 	const resourceId = selectedAgentResourceId();
 	if (controllerState.activeWorkspaceId && resourceId) restoreAgentDraftForResource(resourceId);
 	const stopTurnPending = agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === resourceId;
 	const messageStatus = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
+	const workspaceId = controllerState.activeWorkspaceId;
 	publisher.renderComposer({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.ttyDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
@@ -1449,11 +1451,36 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		waitingMessages: messageStatus?.waitingMessages || [],
 		canSteerWaiting: Boolean(messageStatus?.canSteerWaiting),
 		steeringMessageId: controllerState.steeringMessageId,
+		agentBinding: resourceId === "workspace"
+			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
+			: findResource(resourceId)?.agentBinding || { kind: "profile", name: "default" },
+		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
+		agents: svelteAgentOptions(),
+		bindingSaving: agentBindingSavingFor === resourceId,
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
 		onSteerWaiting: steerWaitingMessage,
+		onSaveAgentBinding: async (binding) => {
+			if (resourceId !== selectedAgentResourceId()) return;
+			agentBindingSavingFor = resourceId;
+			renderTTYComposer();
+			try {
+				await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
+					method: "PUT", body: JSON.stringify(binding)
+				});
+				await loadTree({ updateURL: false });
+				if (resourceId !== "workspace") await loadDetail(resourceId, { force: true });
+				publishViewModels();
+				toast("Resource agent binding saved.");
+			} catch (err) {
+				toast(errorMessage(err));
+			} finally {
+				agentBindingSavingFor = "";
+				renderTTYComposer();
+			}
+		},
 		onIconsChanged: refreshIcons
 	});
 }

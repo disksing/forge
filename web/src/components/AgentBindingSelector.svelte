@@ -63,12 +63,19 @@
   }
 
   function select(event: Event): void {
-    const raw = (event.currentTarget as HTMLSelectElement).value;
+    const element = event.currentTarget as HTMLSelectElement;
+    const raw = element.value;
+    // The binding save is asynchronous and may fail; keep the control
+    // controlled by snapping back to the persisted value until the parent
+    // publishes the updated binding.
+    element.value = selectedValue;
     const separator = raw.indexOf(":");
     if (separator < 0) return;
     const kind = raw.slice(0, separator);
     if (kind !== "profile" && kind !== "agent") return;
-    onSelect({ kind, name: decodeURIComponent(raw.slice(separator + 1)) });
+    const binding = { kind, name: decodeURIComponent(raw.slice(separator + 1)) } as ResourceAgentBindingModel;
+    if (serialize(binding) === selectedValue) return;
+    onSelect(binding);
   }
 </script>
 

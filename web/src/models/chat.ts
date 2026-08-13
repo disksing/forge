@@ -1,3 +1,6 @@
+import type { AgentOption } from "./common";
+import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "./detail";
+
 export interface UploadDialogModel {
   open: boolean;
   identity: string;
@@ -21,11 +24,16 @@ export interface ComposerModel {
   waitingMessages: WaitingMessage[];
   canSteerWaiting: boolean;
   steeringMessageId: string;
+  agentBinding: ResourceAgentBindingModel;
+  agentProfiles: ResourceAgentProfileModel[];
+  agents: AgentOption[];
+  bindingSaving: boolean;
   onDraft: (text: string, context: ComposerContext) => void;
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
   onEndTurn: () => void;
   onSteerWaiting: (messageId: string) => Promise<void>;
+  onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onIconsChanged: () => void;
 }
 
