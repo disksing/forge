@@ -106,6 +106,7 @@ describe("AppShell", () => {
     expect(fallbackSlot.hidden).toBe(false);
     expect(runtimeSlot.hidden).toBe(true);
     expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
+    expect(row.querySelector('[aria-label="Dismiss Project A"]')).not.toBeNull();
 
     const runningStatus: ShellStatusPresentation = {
       hasTaskState: true,
@@ -126,6 +127,13 @@ describe("AppShell", () => {
     expect(runtimeSlot.hidden).toBe(false);
     expect(runtimeSlot.querySelectorAll('[data-lucide="loader-circle"]')).toHaveLength(1);
     expect(fallbackSlot.querySelector('[data-lucide="folder"]')).not.toBeNull();
+    expect(row.querySelector('[aria-label="Dismiss Project A"]')).toBeNull();
+
+    channel.publish({ ...initial, attentionList: [activity()] });
+    await tick();
+
+    expect(target.querySelector('[data-component-owner="attention-list"] button.activity-row')).toBe(row);
+    expect(row.querySelector('[aria-label="Dismiss Project A"]')).not.toBeNull();
   });
 
   it("keeps drag state local and sends one typed reorder transaction", async () => {

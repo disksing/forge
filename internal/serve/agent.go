@@ -984,7 +984,7 @@ func isLiveAgentStatus(status string) bool {
 }
 
 func resourceRunHasActiveTurn(run agentRun) bool {
-	return strings.TrimSpace(run.CurrentTurnID) != "" || run.Status == "running" || run.Status == "waiting_approval"
+	return run.Status == "running" || run.Status == "waiting_approval"
 }
 
 func (rt *agentRuntime) markIdle(m *agentManager) {

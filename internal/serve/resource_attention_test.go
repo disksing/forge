@@ -132,6 +132,13 @@ func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testin
 	}
 }
 
+func TestResourceActiveTurnIgnoresStaleTurnIDOnIdleGeneration(t *testing.T) {
+	run := agentRun{Status: "idle", CurrentTurnID: "turn-already-completed"}
+	if resourceRunHasActiveTurn(run) {
+		t.Fatalf("idle generation with a stale Turn ID must not remain active: %#v", run)
+	}
+}
+
 func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
@@ -233,7 +240,10 @@ func TestTurnOrdinalChangesOnlyForNewAgentHubTurn(t *testing.T) {
 	if got := runtime.snapshotRun().TurnNumber; got != 1 {
 		t.Fatalf("duplicate turn ordinal = %d, want 1", got)
 	}
-	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "ready"})
+	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "ready", CurrentTurnID: "turn-one"})
+	if run := runtime.snapshotRun(); run.CurrentTurnID != "" || resourceRunHasActiveTurn(run) {
+		t.Fatalf("ready session retained stale active Turn state: %#v", run)
+	}
 	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "running", CurrentTurnID: "turn-two"})
 	if got := runtime.snapshotRun().TurnNumber; got != 2 {
 		t.Fatalf("second turn ordinal = %d, want 2", got)

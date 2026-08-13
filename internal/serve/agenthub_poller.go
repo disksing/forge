@@ -379,6 +379,7 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	}
 
 	turnFinished := false
+	turnStarted := false
 	updated, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
 		previousState := runtime.agentHubState
 		if previousState == "" {
@@ -414,6 +415,16 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 			}
 			runtime.run.AgentHubSessionID = session.ID
 		}
+		turnID := activeAgentHubTurnID(session)
+		if turnID == "" {
+			runtime.run.CurrentTurnID = ""
+		} else {
+			if runtime.run.LastTurnID != turnID {
+				turnStarted = true
+				runtime.run.LastTurnID = turnID
+			}
+			runtime.run.CurrentTurnID = turnID
+		}
 		// LastOutputAt degenerates to the AgentHub session update time: without a
 		// server-side event pipeline it is the closest available recency signal.
 		if updatedAt := agentRunTime(session.UpdatedAt); !updatedAt.IsZero() {
@@ -429,6 +440,18 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	if persistErr != nil {
 		rt.addForgeNotice(m, "warning", "agenthub/reconcile", "Persist session reconciliation: "+persistErr.Error())
 		return
+	}
+	if turnStarted && m.server != nil {
+		resourceID := normalizedResourceID(updated.ResourceID)
+		turnNumber, err := m.server.allocateResourceTurnNumber(workspace.Path, resourceID)
+		if err != nil {
+			rt.addForgeNotice(m, "warning", "agenthub/reconcile", "Persist resource turn ordinal: "+err.Error())
+		} else {
+			updated, persistErr = rt.mutateRun(func(run *agentRun) { run.TurnNumber = turnNumber })
+			if persistErr != nil {
+				rt.addForgeNotice(m, "warning", "agenthub/reconcile", "Persist generation turn ordinal: "+persistErr.Error())
+			}
+		}
 	}
 	rt.mu.Lock()
 	if rt.agentHub == nil {
@@ -490,6 +513,17 @@ func agentHubStateForForgeStatus(status string) string {
 	}
 }
 
+// activeAgentHubTurnID ignores stale currentTurnId values on non-active
+// session snapshots. AgentHub may retain the just-finished Turn ID after the
+// session has already returned to ready; the state transition is authoritative
+// for whether Forge should project an active Turn.
+func activeAgentHubTurnID(session agentHubSession) string {
+	if session.State != "running" && session.State != "waiting_approval" {
+		return ""
+	}
+	return strings.TrimSpace(session.CurrentTurnID)
+}
+
 // applyAgentHubSessionState projects an AgentHub action or session response
 // onto the local run. A running/waiting_approval -> ready/stopped edge is the
 // only status signal that schedules durable canonical terminal inspection.
@@ -518,7 +552,7 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 			}
 			runtime.run.AgentHubSessionID = session.ID
 		}
-		turnID := strings.TrimSpace(session.CurrentTurnID)
+		turnID := activeAgentHubTurnID(session)
 		if turnID == "" {
 			runtime.run.CurrentTurnID = ""
 		} else {

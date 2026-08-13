@@ -103,6 +103,71 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	waitForRuntimeTest(t, func() bool { return len(testForgeSessions(t, workspace.Path)) == 0 })
 }
 
+func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	cfg, _, err := manager.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := manager.resolveResourceAgent(workspace, "project1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedPollerRun(t, fake, workspace, agentRun{
+		ID: "run-activity-turn", WorkspaceID: workspace.ID, ResourceID: "project1", Generation: 1,
+		GenerationID: "gen-activity-turn", AgentHubSessionID: "ses_activity_turn",
+		SourceExternalID: workspace.ID + "/run-activity-turn", Status: "idle", AgentHubAgentName: resolved.AgentName,
+		BindingKind: resolved.Binding.Kind, BindingName: resolved.Binding.Name,
+		ProfileRevision: resolved.ProfileRevision, ResolvedProfile: resolved.ResolvedProfile,
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}, agentHubSession{
+		ID: "ses_activity_turn", State: "running", CurrentTurnID: "turn-activity",
+		UpdatedAt: "2026-08-01T00:00:10Z",
+	})
+	if _, err := manager.server.mutateResourceAttentionAtPath(workspace.Path, "project1", func(state *resourceAttentionState) {
+		state.Followed = true
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	run := pollerRunState(manager.runtimeByID("run-activity-turn"))
+	if run.Status != "running" || run.CurrentTurnID != "turn-activity" || run.LastTurnID != "turn-activity" || run.TurnNumber != 1 {
+		t.Fatalf("poller did not project the started Turn: %#v", run)
+	}
+
+	// AgentHub may return to ready before clearing currentTurnId from its
+	// session projection. Forge must treat ready as authoritative so Activity
+	// stops presenting the resource as active and restores its dismiss action.
+	fake.mu.Lock()
+	session := fake.sessions["ses_activity_turn"]
+	session.State = "ready"
+	session.CurrentTurnID = "turn-activity"
+	session.UpdatedAt = "2026-08-01T00:00:20Z"
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	run = pollerRunState(manager.runtimeByID("run-activity-turn"))
+	if run.Status != "idle" || run.CurrentTurnID != "" || resourceRunHasActiveTurn(run) {
+		t.Fatalf("ready session retained a stale active Turn: %#v", run)
+	}
+	tree, err := manager.server.treeAt(context.Background(), workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tree.AttentionList) != 1 || tree.AttentionList[0].Runtime == nil || tree.AttentionList[0].Runtime.ActiveTurn {
+		t.Fatalf("Activity did not converge to an idle dismissible row: %#v", tree.AttentionList)
+	}
+}
+
 func TestAgentHubPollerSkipsArchiveLookupForSchedulerResource(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
