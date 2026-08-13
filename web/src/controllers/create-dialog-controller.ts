@@ -20,10 +20,20 @@ export interface CreateDialogDependencies {
 	publish(model: CreateDialogModel): void;
 	toast(message: string): void;
 	reloadTree(): Promise<void>;
-	selectWorkspaceResource(): void;
+	selectResource(resourceId: string): Promise<void>;
 	onOpen(): void;
 	onIconsChanged(): void;
 	confirmTemplateSwitch(): boolean;
+}
+
+interface CreatedResource {
+	id?: unknown;
+}
+
+function createdResourceId(result: CreatedResource): string {
+	const id = String(result?.id || "").trim();
+	if (!id) throw new Error("The created resource did not return an id.");
+	return id;
 }
 
 function emptyState(identity: number): CreateDialogState {
@@ -215,13 +225,14 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 		state.submitting = true;
 		render();
 		try {
+			let resourceId = "";
 			if (state.type === "project") {
-				await dependencies.request(`/api/workspaces/${workspaceId}/projects`, {
+				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/projects`, {
 					method: "POST",
 					body: JSON.stringify({ description: state.description, slug: state.slug })
 				});
+				resourceId = createdResourceId(created);
 				dependencies.toast("Project created.");
-				dependencies.selectWorkspaceResource();
 			} else {
 				let requestBody: object;
 				const editedMarkdown = state.templateName && state.editedMarkdown != null && state.editedMarkdown !== state.preview?.markdown ? state.editedMarkdown : null;
@@ -236,13 +247,16 @@ export function createCreateDialogController(dependencies: CreateDialogDependenc
 					}
 					requestBody = createTaskRequest(state);
 				}
-				await dependencies.request(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(requestBody) });
+				const created = await dependencies.request<CreatedResource>(`/api/workspaces/${workspaceId}/tasks`, { method: "POST", body: JSON.stringify(requestBody) });
+				resourceId = createdResourceId(created);
 				dependencies.toast("Task created.");
 			}
 			if (workspaceId !== dependencies.workspaceId() || state.identity !== dialogIdentity) return;
 			state.open = false;
-			state.identity = ++identity;
+			const completedDialogIdentity = ++identity;
+			state.identity = completedDialogIdentity;
 			await dependencies.reloadTree();
+			if (workspaceId === dependencies.workspaceId() && state.identity === completedDialogIdentity) await dependencies.selectResource(resourceId);
 		} catch (error) {
 			if (state.identity === dialogIdentity) {
 				state.submitting = false;

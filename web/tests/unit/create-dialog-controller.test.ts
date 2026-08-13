@@ -16,10 +16,11 @@ interface RequestRecord {
 	init?: RequestInit;
 }
 
-function harness(responder: (path: string, init?: RequestInit) => unknown | Promise<unknown> = () => ({})) {
+function harness(responder: (path: string, init?: RequestInit) => unknown | Promise<unknown> = (path) => path.endsWith("/projects") ? { id: "project2" } : { id: "project1.task1" }) {
 	let published: CreateDialogModel | undefined;
 	const requests: RequestRecord[] = [];
 	const reloadTree = vi.fn().mockResolvedValue(undefined);
+	const selectResource = vi.fn().mockResolvedValue(undefined);
 	const controller = createCreateDialogController({
 		workspaceId: () => "workspace-a",
 		templates: () => [template],
@@ -30,7 +31,7 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 		publish: (model) => { published = model; },
 		toast: vi.fn(),
 		reloadTree,
-		selectWorkspaceResource: vi.fn(),
+		selectResource,
 		onOpen: vi.fn(),
 		onIconsChanged: vi.fn(),
 		confirmTemplateSwitch: () => true,
@@ -39,6 +40,7 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 		controller,
 		requests,
 		reloadTree,
+		selectResource,
 		current: () => {
 			if (!published) throw new Error("dialog was not published");
 			return published;
@@ -54,12 +56,14 @@ describe("CreateDialogController", () => {
 	it("maps Project drafts to the Project API without Task-only fields", async () => {
 		const test = harness();
 		test.controller.open("project");
-		await test.current().onSubmit({ ...test.current().draft, description: "New workspace project", slug: "new-project" });
+		const created = { ...test.current().draft, description: "New workspace project", slug: "new-project" };
+		await test.current().onSubmit(created);
 
 		expect(test.requests).toHaveLength(1);
 		expect(test.requests[0].path).toBe("/api/workspaces/workspace-a/projects");
 		expect(body(test.requests[0])).toEqual({ description: "New workspace project", slug: "new-project" });
 		expect(test.reloadTree).toHaveBeenCalledOnce();
+		expect(test.selectResource).toHaveBeenCalledWith("project2");
 	});
 
 	it("renders a template before submit and sends the complete Task payload", async () => {
@@ -87,6 +91,7 @@ describe("CreateDialogController", () => {
 			expectedTemplateDigest: "sha256:template",
 			slug: "generated-title",
 		});
+		expect(test.selectResource).toHaveBeenCalledWith("project1.task1");
 	});
 
 	it("submits edited preview Markdown with its generated title", async () => {
@@ -103,6 +108,7 @@ describe("CreateDialogController", () => {
 			taskMarkdown: "# Hand edited\n",
 			slug: "",
 		});
+		expect(test.selectResource).toHaveBeenCalledWith("project1.task1");
 	});
 
 	it("deduplicates Task submission while the first request is pending", async () => {

@@ -211,9 +211,7 @@ const createDialogController = createCreateDialogController({
 	publish: (model) => publisher.renderCreateDialog(model),
 	toast,
 	reloadTree: () => loadTree(),
-	selectWorkspaceResource: () => {
-		controllerState.selectedId = "workspace";
-	},
+	selectResource: (resourceId) => selectResource(resourceId),
 	onOpen: () => {
 		controllerState.modalEnter = "create";
 	},

@@ -55,6 +55,10 @@ const project = {
   ],
 };
 
+type MockProject = typeof project;
+type MockTask = MockProject["children"][number];
+type MockResource = MockProject | MockTask;
+
 const schedulerResource = {
   id: "scheduler",
   type: "scheduler",
@@ -64,21 +68,25 @@ const schedulerResource = {
   agentBinding: { kind: "profile", name: "fast" },
 };
 
-function detail(id: string) {
-  const resource = id === project.id ? project : project.children.find((item) => item.id === id);
-  if (!resource) throw new Error(`unknown resource ${id}`);
+function resourceDetail(resource: MockResource) {
   return {
     ...resource,
     files: [
-      { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${id}-brief-v1` },
-      ...(resource.type === "task" ? [{ name: "work.md", path: `${resource.path}/work.md`, content: "# Work\n\nCurrent checkpoint.", contentHash: `${id}-work-v1` }] : []),
+      { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
+      ...(resource.type === "task" ? [{ name: "work.md", path: `${resource.path}/work.md`, content: "# Work\n\nCurrent checkpoint.", contentHash: `${resource.id}-work-v1` }] : []),
     ],
-    logs: [{ id: `${id}-log-1`, time: now, title: "Initial detail log", details: "Stable log details." }],
-    logPage: { hasMore: true, nextCursor: `${id}-log-1` },
+    logs: [{ id: `${resource.id}-log-1`, time: now, title: "Initial detail log", details: "Stable log details." }],
+    logPage: { hasMore: true, nextCursor: `${resource.id}-log-1` },
     artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
     repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
     templates: resource?.type === "project" ? templates : [],
   };
+}
+
+function detail(id: string) {
+  const resource = id === project.id ? project : project.children.find((item) => item.id === id);
+  if (!resource) throw new Error(`unknown resource ${id}`);
+  return resourceDetail(resource);
 }
 
 function historyEvents(generationId: string) {
@@ -132,6 +140,8 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
   let runtimeExists = !startWithoutRuntime;
   let turnRunning = initialTurnRunning;
   if (startWithoutRuntime) attentionStates["project1.task1"] = { followed: true };
+  let createdProject: MockProject | null = null;
+  let createdTask: MockTask | null = null;
   let scheduleSequence = 0;
   let schedulerConfig = {
     schemaVersion: 1,
@@ -199,10 +209,11 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     }
     if (path === "/api/workspaces/ws-test/tree") {
       harness.treeRequests += 1;
+      const tasks = [...project.children, ...(createdTask ? [createdTask] : [])];
       const projectSnapshot = {
         ...project,
         attention: attentionStates[project.id],
-        children: project.children.map((resource) => resource.id === "project1.task1" ? {
+        children: tasks.map((resource) => resource.id === "project1.task1" ? {
           ...resource,
           attention: attentionStates[resource.id],
           ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now, turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
@@ -219,7 +230,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, {
         root: "/tmp/forge-e2e",
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
-        projects: [projectSnapshot],
+        projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, attention: attentionStates[createdProject.id] }] : [])],
         attentionList,
         wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
       });
@@ -377,7 +388,12 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
           repos: [],
         });
       }
-      const value = detail(decodeURIComponent(resourceMatch[1]));
+      const resourceId = decodeURIComponent(resourceMatch[1]);
+      const value = createdProject?.id === resourceId
+        ? resourceDetail(createdProject)
+        : createdTask?.id === resourceId
+          ? resourceDetail(createdTask)
+          : detail(resourceId);
       if (url.searchParams.get("logsCursor")) {
         value.logs = [{ id: `${value.id}-log-2`, time: "2026-08-09T12:00:00Z", title: "Older detail log", details: "Older page." }];
         value.logPage = { hasMore: false, nextCursor: `${value.id}-log-2` };
@@ -399,9 +415,29 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
     }
     if (path === "/api/workspaces/ws-test/diff") return json(route, { path: url.searchParams.get("path"), branch: "topic", base: "master", diff: "diff --git a/a.txt b/a.txt\nnew file mode 100644\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+detail diff\n", hasChanges: true });
+    if (path === "/api/workspaces/ws-test/projects" && method === "POST") {
+      const body = request.postDataJSON() as Record<string, unknown>;
+      createdProject = {
+        id: "project2",
+        type: "project",
+        title: String(body.description || "Created project"),
+        path: "project2-created-project",
+        archived: false,
+        children: [],
+      };
+      return json(route, createdProject, 201);
+    }
     if (path === "/api/workspaces/ws-test/tasks" && method === "POST") {
-      harness.taskBodies.push(request.postDataJSON());
-      return json(route, { id: "project1.task3" }, 201);
+      const body = request.postDataJSON() as Record<string, unknown>;
+      harness.taskBodies.push(body);
+      createdTask = {
+        id: "project1.task3",
+        type: "task",
+        title: String(body.title || "Created task"),
+        path: "project1-migration/task3-created-from-baseline",
+        archived: false,
+      };
+      return json(route, createdTask, 201);
     }
     if (path === "/api/workspaces/ws-test/tasks/preview" && method === "POST") {
       const body = request.postDataJSON();
@@ -520,7 +556,23 @@ test("navigates resources and creates a task through the canonical application f
     title: "Created from baseline",
     detail: "Playwright isolated task body",
   });
+  await expect(page).toHaveURL(/project1\.task3/);
+  await expect(page.getByRole("heading", { name: "Created from baseline", exact: true }).first()).toBeVisible();
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("navigates to a newly created project", async ({ page }) => {
+  const harness = await installMockApi(page, "project1");
+  await page.goto("/w/ws-test/r/project1");
+
+  await page.locator("#newProjectButton").click();
+  await page.locator('#createDialogForm textarea[name="description"]').fill("Created from baseline project");
+  await page.locator("#createDialogForm").getByRole("button", { name: "Create", exact: true }).click();
+
+  await expect.poll(() => harness.treeRequests).toBeGreaterThan(1);
+  await expect(page).toHaveURL(/\/w\/ws-test\/r\/project2$/);
+  await expect(page.getByRole("heading", { name: "Created from baseline project", exact: true }).first()).toBeVisible();
+  await expect(page.locator("#toast")).toContainText("Project created");
 });
 
 test("follows and dismisses a resource from the tree and attention list", async ({ page }) => {
