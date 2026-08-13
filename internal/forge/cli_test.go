@@ -1028,7 +1028,7 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
 		"  forge template list|show|validate|render|create|migrate ...",
-		"  forge session list\n    List read-only generation diagnostics derived from .forge/runtime/generations.json.",
+		"  forge session list\n    List read-only generation diagnostics derived from the resource-scoped generation store.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0

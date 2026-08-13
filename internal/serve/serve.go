@@ -1465,7 +1465,7 @@ type resourceRuntimeSnapshot struct {
 }
 
 func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
-	runs, err := loadAgentRuns(workspacePath)
+	runs, err := loadAgentRunsCurrent(workspacePath)
 	if err != nil {
 		return fmt.Errorf("load resource generations for tree: %w", err)
 	}

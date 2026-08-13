@@ -104,7 +104,7 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge persists generation records in `<workspace>/.forge/runtime/generations.json` and a Workspace-wide, resource-owned mailbox in `<workspace>/.forge/runtime/mailbox.json`. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Turn association. Upgrading migrates stage-one `pendingMessages` by writing the mailbox first, deduplicating by stable ID, and only then clearing legacy generation queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
+Forge persists each resource generation under `<workspace>/.forge/runtime/resources/<resource-key>/`: one mutable `current.json` and immutable retired manifests in `generations/`. The resource key is derived from the stable Workspace instance ID and resource ID, so it is unambiguous and independent of the Workspace path. A versioned `generation-store.json` marker and staging directory make migration from the old `.forge/runtime/generations.json` and `.forge/gui-agent/runs.json` repeatable; those legacy files remain as rollback evidence, while records without a generation ID are isolated as cold history. The Workspace-wide, resource-owned mailbox remains in `<workspace>/.forge/runtime/mailbox.json`. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Turn association. Upgrading migrates stage-one `pendingMessages` by writing the mailbox first, deduplicating by stable ID, and only then clearing legacy generation queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
 
 A ready current generation is automatically slept after 30 minutes of continuous idle when there is no active Turn or approval, pending mailbox delivery, or lifecycle convergence. Forge persists the ready boundary, safely Stop-confirms-Archive the exact AgentHub Session, and retains the resource as an addressable idle resource; a later user, agent, system, or Scheduler message lazily creates the next generation. Polling and Server restarts do not reset the deadline, and the resource history remains continuous across generations.
 
@@ -235,7 +235,8 @@ Templates without `schema-version` remain visible as legacy V1 templates with de
 AgentWorkspace/
   AGENTS.md                   global human and agent instructions
   forge.json                  workspace configuration
-  .forge/runtime/generations.json  durable resource generation records
+  .forge/runtime/generation-store.json  generation store schema/migration marker
+  .forge/runtime/resources/<resource-key>/  current and retired generation records
   .forge/runtime/mailbox.json      durable resource mailbox
   wiki/
     index.md                  long-lived workspace knowledge

@@ -447,7 +447,6 @@ type agentHubResumeRequest struct {
 	LaunchEnvironment map[string]string `json:"launchEnvironment,omitempty"`
 }
 
-
 func (c *agentHubClient) Archive(ctx context.Context, sessionID string) (agentHubSession, error) {
 	var response struct {
 		Session agentHubSession `json:"session"`

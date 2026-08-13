@@ -96,7 +96,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			failures = append(failures, fmt.Sprintf("%s: inspect resources: %v", workspace.ID, openErr))
 			continue
 		}
-		runs, loadErr := loadAgentRuns(workspace.Path)
+		runs, loadErr := loadAgentRunsCurrent(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue
@@ -232,6 +232,22 @@ func inspectTaskArchiveStates(workspace *app.Workspace, runs []agentRun) map[str
 func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		return false
+	}
+	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
+	if mailboxErr == nil {
+		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+			Run: run, Session: &session, ResourceArchived: true, Mailbox: mailbox, Revision: run.UpdatedAt,
+		}))
+		switch lifecyclePlan.Operation {
+		case GenerationOperationFinalizeArchivedMailbox:
+			_ = markResourceMailboxArchived(workspace.Path, run.ResourceID)
+			return true
+		case GenerationOperationWaitForTurnTerminal, GenerationOperationWaitForSession,
+			GenerationOperationWaitForMessageReceipt, GenerationOperationRetireGeneration:
+			return true
+		case GenerationOperationNone:
+			return false
+		}
 	}
 	effectContext := context.WithoutCancel(ctx)
 	if session.State == "stopped" && run.GenerationID != "" {

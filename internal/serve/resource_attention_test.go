@@ -153,8 +153,8 @@ func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(tree.AttentionList) != 1 || tree.AttentionList[0].Runtime == nil || tree.AttentionList[0].Runtime.GenerationID != "gen-old-active" {
-		t.Fatalf("active older generation was not retained: %#v", tree.AttentionList)
+	if len(tree.AttentionList) != 0 {
+		t.Fatalf("retired older generation must be excluded from lifecycle attention: %#v", tree.AttentionList)
 	}
 }
 

@@ -2,6 +2,8 @@
 
 `internal/serve` 提供静态 Web UI、Workspace HTTP API，以及以资源 generation 为边界的 AgentHub 对话、输入、审批、停止、恢复和对账。Workspace 文件操作直接调用 `internal/app`，不会启动 `forge` 子进程。
 
+Generation 生命周期的 canonical facts、operation 优先级、网络 effect 与 guarded commit 边界见 [`generation_lifecycle.md`](generation_lifecycle.md)。planner 是纯决策层；resource controller 串行化同一稳定 resource 的调度；store adapter 负责 durable receipt/current/retired 事实；AgentHub client 只负责网络副作用。统一恢复顺序为 `facts → plan → effect → guarded commit → replan`，旧 generation 的过期结果不得覆盖新 current。
+
 ## 配置与所有权
 
 持久化 GUI 配置使用 schema version 4，包含 Workspace、AgentHub endpoint、Forge instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 GUI 创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 Forge 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
@@ -25,7 +27,7 @@ Scheduler API 同样委托 `internal/app`，提供 `GET/POST .../scheduler`、`P
 
 每个 Workspace、Scheduler、Project、Task 都持久化显式 `{kind: profile|agent, name}` 绑定，不做父级继承。资源聊天在首条消息到达时懒创建代际；Forge 使用 Workspace 稳定 instance ID、资源 ID、代际编号/ID、绑定与 Profile revision 组成 AgentHub source metadata，并用代际 ID 幂等建会。浏览器输入携带稳定 `messageId`、provenance `role=user` 和当前用户名；这些来源字段不参与认证或授权。
 
-资源代际保存在 `<workspace>/.forge/runtime/generations.json`；Workspace 统一、按目标资源归属的 mailbox 保存在 `<workspace>/.forge/runtime/mailbox.json`。mailbox 项记录稳定 message ID、顺序、目标资源、正文、role/sender provenance、requested/actual mode、降级原因、状态、时间、最近错误和 generation/Turn 关联；AgentHub Session ID 只作为底层事实关联，不是资源地址。HTTP 只有在 mailbox 临时文件完成 write + fsync + rename 且目录 fsync 后才返回 accepted。升级时先把 generation 的旧 `pendingMessages` 合并写入 mailbox，再清空旧字段；崩溃后按稳定 ID 重复迁移不会丢失或复制消息。
+资源代际按资源拆分保存在 `<workspace>/.forge/runtime/resources/<resource-key>/`：`current.json` 是唯一可变 current，`generations/` 保存不可变 retired manifest；resource key 由稳定 Workspace instance ID 与资源 ID 编码而成，与 Workspace 路径无关。`generation-store.json` 是版本化迁移 marker，升级期间使用 staging 目录、原子替换和 fsync；旧的 `.forge/runtime/generations.json` 与 `.forge/gui-agent/runs.json` 会保留为 rollback evidence，缺少 `generationId` 的记录只进入 cold history，不进入 lifecycle reconcile。Workspace 统一、按目标资源归属的 mailbox 保存在 `<workspace>/.forge/runtime/mailbox.json`。mailbox 项记录稳定 message ID、顺序、目标资源、正文、role/sender provenance、requested/actual mode、降级原因、状态、时间、最近错误和 generation/Turn 关联；AgentHub Session ID 只作为底层事实关联，不是资源地址。HTTP 只有在 mailbox 临时文件完成 write + fsync + rename 且目录 fsync 后才返回 accepted。升级时先把 generation 的旧 `pendingMessages` 合并写入 mailbox，再清空旧字段；崩溃后按稳定 ID 重复迁移不会丢失或复制消息。
 
 三种模式共享同一 reconciler：`steer` 默认在支持能力的活动 Turn 中插入，不支持时持久降级为 `enqueue`；`enqueue` 只在 ready 边界作为新 Turn 投递；`interrupt` 先记录被中断的稳定 Turn ID，只重试同一 Turn 的中断，确认其 terminal 后再开启新 Turn。已经处于 delivering/interrupting 的结果不明项最先收敛；其余项按 interrupt、steer、enqueue 优先级处理，同一类保持接受顺序，因此显式 steer/interrupt 可以越过早先等待的 enqueue。AgentHub 成功承担至少一次投递责任后状态才变为 delivered；这不表示 Turn 已完成。绑定替换不再搬运消息：steer 成功后留在旧 Turn，enqueue 等新 generation，interrupt 终止旧 Turn 后再随 replacement 收敛。归档资源拒收新消息；尚未开始发送的项进入 `undeliverable`，已开始发送但无法确认结果的项进入 `delivery_unknown`，两种终态都可按 message ID 查询。
 

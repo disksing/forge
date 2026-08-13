@@ -91,6 +91,12 @@ type agentRun struct {
 	CompletionTurnID    string `json:"completionTurnId,omitempty"`
 	CompletionAt        string `json:"completionAt,omitempty"`
 	CompletionPending   bool   `json:"completionPending,omitempty"`
+	// Retired and Legacy are storage projection flags, not public runtime
+	// fields. Retired records are immutable history and must never enter the
+	// lifecycle reconciler.
+	Retired      bool   `json:"-"`
+	Legacy       bool   `json:"-"`
+	RetireReason string `json:"retireReason,omitempty"`
 }
 
 type resourceInboundMessage struct {
@@ -139,11 +145,6 @@ type agentUploadResponse struct {
 
 var agentIndexMu sync.Mutex
 
-type generationIndexDocument struct {
-	Version     int        `json:"version"`
-	Generations []agentRun `json:"generations"`
-}
-
 type agentApprovalRequest struct {
 	RequestID string `json:"requestId"`
 	Decision  string `json:"decision"`
@@ -154,6 +155,7 @@ type agentApprovalRequest struct {
 type agentRuntime struct {
 	mu                    sync.Mutex
 	turnActionMu          sync.Mutex
+	retirementMu          sync.Mutex
 	forgeSessionReleaseMu sync.Mutex
 	workspace             guiWorkspace
 	manager               *agentManager
@@ -743,9 +745,15 @@ func agentStreamAfterID(r *http.Request) int64 {
 }
 
 func loadAgentRuns(workspacePath string) ([]agentRun, error) {
-	agentIndexMu.Lock()
-	defer agentIndexMu.Unlock()
-	runs, err := loadAgentRunsLocked(workspacePath)
+	store, err := openGenerationStore(workspacePath, "")
+	if err != nil {
+		return nil, err
+	}
+	records, err := store.List()
+	if err != nil {
+		return nil, err
+	}
+	runs, err := generationRecordsToAgentRuns(records)
 	if err != nil {
 		return nil, err
 	}
@@ -753,69 +761,49 @@ func loadAgentRuns(workspacePath string) ([]agentRun, error) {
 	return runs, nil
 }
 
-func loadAgentRunsLocked(workspacePath string) ([]agentRun, error) {
-	data, err := os.ReadFile(agentIndexPath(workspacePath))
+func loadAgentRunsCurrent(workspacePath string) ([]agentRun, error) {
+	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
-		if os.IsNotExist(err) {
-			legacyPath := filepath.Join(workspacePath, ".forge", "gui-agent", "runs.json")
-			legacy, legacyErr := os.ReadFile(legacyPath)
-			if os.IsNotExist(legacyErr) {
-				return []agentRun{}, nil
-			}
-			if legacyErr != nil {
-				return nil, legacyErr
-			}
-			var migrated []agentRun
-			if err := json.Unmarshal(legacy, &migrated); err != nil {
-				return nil, fmt.Errorf("read legacy Agent run index: %w", err)
-			}
-			if err := writeAgentRunsIndexLocked(workspacePath, migrated); err != nil {
-				return nil, fmt.Errorf("migrate legacy Agent run index: %w", err)
-			}
-			return migrated, nil
-		}
 		return nil, err
 	}
-	if strings.HasPrefix(strings.TrimSpace(string(data)), "[") {
-		var runs []agentRun
-		if err := json.Unmarshal(data, &runs); err != nil {
-			return nil, err
-		}
-		return runs, nil
-	}
-	var document generationIndexDocument
-	if err := json.Unmarshal(data, &document); err != nil {
+	records, err := store.ListCurrent()
+	if err != nil {
 		return nil, err
 	}
-	if document.Version != 1 {
-		return nil, fmt.Errorf("unsupported generation index version %d; expected 1", document.Version)
+	runs, err := generationRecordsToAgentRuns(records)
+	if err != nil {
+		return nil, err
 	}
-	if document.Generations == nil {
-		document.Generations = []agentRun{}
-	}
-	return document.Generations, nil
+	sortAgentRunsNewestFirst(runs)
+	return runs, nil
 }
 
 func saveAgentRun(workspacePath string, run agentRun) error {
-	agentIndexMu.Lock()
-	defer agentIndexMu.Unlock()
-	runs, err := loadAgentRunsLocked(workspacePath)
+	// New in-process callers always create generation-addressed records. Keep
+	// hand-built test/compatibility projections usable without allowing records
+	// loaded from an old file (which carry Legacy=true) to become a mutable
+	// current generation during migration.
+	if !run.Legacy && strings.TrimSpace(run.GenerationID) == "" && strings.TrimSpace(run.SourceExternalID) != "" && strings.TrimSpace(run.ID) != "" && isAgentHubRun(run) {
+		// Compatibility callers may hand us a projection that predates explicit
+		// generation IDs. Derive one from its stable run ID so a later projection
+		// update addresses the same current file instead of creating a new owner.
+		run.GenerationID = "gen-" + strings.TrimSpace(run.ID)
+		if run.Generation == 0 {
+			run.Generation = 1
+		}
+	}
+	store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
 	if err != nil {
 		return err
 	}
-	found := false
-	for i := range runs {
-		if runs[i].ID == run.ID {
-			runs[i] = run
-			found = true
-			break
-		}
+	record, err := agentRunToGenerationRecord(run)
+	if err != nil {
+		return err
 	}
-	if !found {
-		runs = append(runs, run)
+	if run.Retired {
+		return store.SaveRetired(record, run.RetireReason)
 	}
-	sortAgentRunsNewestFirst(runs)
-	return writeAgentRunsIndexLocked(workspacePath, runs)
+	return store.SaveCurrent(record)
 }
 
 func sortAgentRunsNewestFirst(runs []agentRun) {
@@ -854,48 +842,12 @@ func agentRunTime(value string) time.Time {
 }
 
 func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {
-	if err := ensureAgentDirs(workspacePath); err != nil {
-		return err
-	}
-	data, err := json.MarshalIndent(generationIndexDocument{Version: 1, Generations: runs}, "", "  ")
-	if err != nil {
-		return err
-	}
-	data = append(data, '\n')
-	path := agentIndexPath(workspacePath)
-	tmp := path + "." + newRunID() + ".tmp"
-	file, err := os.OpenFile(tmp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		file.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		file.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	directory, err := os.Open(filepath.Dir(path))
-	if err != nil {
-		return err
-	}
-	if err := directory.Sync(); err != nil {
-		directory.Close()
-		return err
-	}
-	if err := directory.Close(); err != nil {
-		return err
+	// Kept as a test/migration compatibility helper. Each record is now written
+	// through the generation store; no legacy global array is regenerated.
+	for _, run := range runs {
+		if err := saveAgentRun(workspacePath, run); err != nil {
+			return err
+		}
 	}
 	return nil
 }
