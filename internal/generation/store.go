@@ -128,6 +128,12 @@ func Open(workspaceRoot, instanceID string) (*Store, error) {
 	if instanceID == "" {
 		instanceID = fallbackInstanceID(root)
 	}
+	// A ready or in-progress marker is authoritative for an already
+	// initialized Workspace. Resolve it once while opening the Store so the
+	// immutable instanceID is never mutated by concurrent operations.
+	if existing, markerErr := readMarker(root); markerErr == nil && existing != nil && strings.TrimSpace(existing.WorkspaceInstanceID) != "" {
+		instanceID = strings.TrimSpace(existing.WorkspaceInstanceID)
+	}
 	return &Store{workspaceRoot: filepath.Clean(root), instanceID: instanceID}, nil
 }
 
@@ -170,9 +176,6 @@ func (s *Store) EnsureReady() error {
 		return err
 	}
 	if current != nil && current.State == "ready" {
-		if value := strings.TrimSpace(current.WorkspaceInstanceID); value != "" {
-			s.instanceID = value
-		}
 		_ = os.RemoveAll(filepath.Join(s.runtimeRoot(), stagingDirName))
 		return nil
 	}
