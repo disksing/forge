@@ -333,6 +333,10 @@ func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T
 		}
 		return false
 	})
+	if tick.Role != "system" || tick.SubscribeResult || tick.RequestedMode != resourceMessageModeEnqueue ||
+		tick.ActualMode != resourceMessageModeEnqueue || !tick.ModeFrozen {
+		t.Fatalf("Scheduler tick mode mapping = %#v", tick)
+	}
 	current, found, err := currentResourceGeneration(workspace.Path, app.SchedulerResourceID)
 	if err != nil || !found || current.Generation <= run.Generation || current.GenerationID != tick.GenerationID {
 		t.Fatalf("Scheduler did not wake a replacement generation: current=%#v found=%v tick=%#v err=%v", current, found, tick, err)

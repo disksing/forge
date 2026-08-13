@@ -676,14 +676,38 @@ func acceptGeneratedMailboxMessage(workspacePath string, expected resourceMailbo
 	expected.ID = strings.TrimSpace(expected.ID)
 	expected.ResourceID = normalizedResourceID(expected.ResourceID)
 	expected.Text = strings.TrimSpace(expected.Text)
+	requestedMode, modeErr := normalizeResourceMessageMode(expected.RequestedMode)
+	if modeErr != nil {
+		return resourceMailboxMessage{}, modeErr
+	}
+	if requestedMode == resourceMessageModeInterrupt {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "invalid_request", Message: "generated mailbox messages may request only steer or enqueue"}
+	}
+	actualModeValue := strings.TrimSpace(expected.ActualMode)
+	if actualModeValue == "" {
+		actualModeValue = requestedMode
+	}
+	actualMode, modeErr := normalizeResourceMessageMode(actualModeValue)
+	if modeErr != nil {
+		return resourceMailboxMessage{}, modeErr
+	}
+	if actualMode == resourceMessageModeInterrupt {
+		return resourceMailboxMessage{}, &resourceAPIError{Code: "invalid_request", Message: "generated mailbox messages may use only steer or enqueue"}
+	}
 	expected.Role = "system"
 	expected.SubscribeResult = false
 	expected.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
 	expected.ResultOperationID = ""
 	expected.subscribeResultPresent = true
-	expected.RequestedMode = resourceMessageModeEnqueue
-	expected.ActualMode = resourceMessageModeEnqueue
-	expected.ModeFrozen = true
+	expected.RequestedMode = requestedMode
+	if expected.ModeFrozen {
+		expected.ActualMode = actualMode
+	} else {
+		// Durable notification acceptance starts with the caller's requested
+		// mode and lets the ordinary mailbox reconciler freeze steer/enqueue
+		// after inspecting the target generation and capabilities.
+		expected.ActualMode = requestedMode
+	}
 	expected.Status = resourceMessageQueued
 	if expected.ID == "" || expected.Text == "" || expected.Type == "" || expected.Causation == nil {
 		return resourceMailboxMessage{}, errors.New("generated mailbox message is incomplete")

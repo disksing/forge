@@ -375,6 +375,10 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		current.Status = resourceNotificationAccepted
 		current.AcceptedAt = accepted.AcceptedAt
 		current.GeneratedText = ""
+		current.GeneratedRequestedMode = accepted.RequestedMode
+		current.GeneratedActualMode = accepted.ActualMode
+		current.GeneratedModeFrozen = accepted.ModeFrozen
+		current.GeneratedDowngradeReason = accepted.DowngradeReason
 		current.DeliveryStatus = publicResourceMessageStatus(accepted.Status)
 		current.DeliveredAt = accepted.DeliveredAt
 		current.TerminalAt = accepted.TerminalAt
@@ -549,6 +553,10 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 		targetResourceID := group.SubscriberResourceID
 		operationStatus := resourceNotificationWaiting
 		acceptedAt := ""
+		generatedRequestedMode := resourceMessageModeSteer
+		generatedActualMode := resourceMessageModeSteer
+		generatedModeFrozen := false
+		generatedDowngradeReason := ""
 		if existingFound && existingOperation.Type == resourceMessageTypeTurnResult {
 			// A pre-subscribeResult server may already have durably created the
 			// callback operation under the legacy type. Reuse its operation and
@@ -570,6 +578,14 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 				operationStatus = existingOperation.Status
 			}
 			acceptedAt = existingOperation.AcceptedAt
+			if existingOperation.GeneratedRequestedMode != "" {
+				generatedRequestedMode = existingOperation.GeneratedRequestedMode
+			}
+			if existingOperation.GeneratedActualMode != "" {
+				generatedActualMode = existingOperation.GeneratedActualMode
+			}
+			generatedModeFrozen = existingOperation.GeneratedModeFrozen
+			generatedDowngradeReason = existingOperation.GeneratedDowngradeReason
 		}
 		causation := &resourceMessageCausation{
 			Type: resourceMessageTypeTurnResult, SourceWorkspaceInstanceID: instanceID, SourceResourceID: group.SourceResourceID,
@@ -580,6 +596,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 			ID: generatedMessageID, ResourceID: targetResourceID,
 			Text:   turnResultMessage(group.SourceResourceID, group.GenerationID, turn, reference, sourceIDs, historyUnavailable),
 			Sender: &agentHubMessageSender{ID: group.SourceResourceID, Name: group.SourceResourceID}, SenderWorkspaceInstanceID: instanceID,
+			RequestedMode: generatedRequestedMode, ActualMode: generatedActualMode, ModeFrozen: generatedModeFrozen, DowngradeReason: generatedDowngradeReason,
 			SubscribeResult: false, ResultSubscriptionStatus: resourceResultSubscriptionDisabled,
 			Type: resourceMessageTypeTurnResult, Causation: causation,
 		}
@@ -588,6 +605,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 			SourceResourceID: group.SourceResourceID, SourceWorkspaceInstanceID: instanceID,
 			TargetWorkspaceInstanceID: targetWorkspaceInstanceID, TargetResourceID: targetResourceID,
 			GeneratedMessageID: generatedMessageID, GeneratedText: generated.Text, GeneratedSender: generated.Sender, GeneratedCausation: causation,
+			GeneratedRequestedMode: generatedRequestedMode, GeneratedActualMode: generatedActualMode, GeneratedModeFrozen: generatedModeFrozen, GeneratedDowngradeReason: generatedDowngradeReason,
 			Status: operationStatus, AcceptedAt: acceptedAt, UpdatedAt: time.Now().Format(time.RFC3339Nano),
 			GenerationID: group.GenerationID, TurnID: turnID, TurnReference: reference, TurnStatus: turn.Status, HistoryUnavailable: historyUnavailable,
 		}
@@ -622,6 +640,7 @@ func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace gu
 	generated := resourceMailboxMessage{
 		ID: receiptID, ResourceID: message.Sender.ID, Text: terminalDeliveryMessage(message),
 		Sender: &agentHubMessageSender{ID: message.ResourceID, Name: message.ResourceID}, SenderWorkspaceInstanceID: instanceID,
+		RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
 		Type: resourceMessageTypeDeliveryTerminal,
 		Causation: &resourceMessageCausation{
 			Type: resourceMessageTypeDeliveryTerminal, SourceWorkspaceInstanceID: instanceID, SourceResourceID: message.ResourceID,

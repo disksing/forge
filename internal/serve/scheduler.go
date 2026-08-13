@@ -336,6 +336,7 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWork
 	message := resourceMailboxMessage{
 		ID:         messageID,
 		ResourceID: app.SchedulerResourceID, Text: schedulerTickMessage(reason, messageID),
+		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue, ModeFrozen: true,
 		Type: resourceMessageTypeSchedulerTick,
 		Causation: &resourceMessageCausation{
 			Type: resourceMessageTypeSchedulerTick, SourceWorkspaceInstanceID: instanceID,

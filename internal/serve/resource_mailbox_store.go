@@ -145,6 +145,10 @@ type resourceMailboxNotificationOp struct {
 	GeneratedText             string                    `json:"generatedText,omitempty"`
 	GeneratedSender           *agentHubMessageSender    `json:"generatedSender,omitempty"`
 	GeneratedCausation        *resourceMessageCausation `json:"generatedCausation,omitempty"`
+	GeneratedRequestedMode    string                    `json:"generatedRequestedMode,omitempty"`
+	GeneratedActualMode       string                    `json:"generatedActualMode,omitempty"`
+	GeneratedModeFrozen       bool                      `json:"generatedModeFrozen,omitempty"`
+	GeneratedDowngradeReason  string                    `json:"generatedDowngradeReason,omitempty"`
 	Status                    string                    `json:"status"`
 	AcceptedAt                string                    `json:"acceptedAt,omitempty"`
 	UpdatedAt                 string                    `json:"updatedAt"`
@@ -1218,7 +1222,9 @@ func mailboxNotificationOperationFromGenerated(source resourceMailboxMessage, ge
 		ID: generated.ID, Type: generated.Type, SourceMessageID: source.ID, SourceMessageIDs: []string{source.ID},
 		SourceResourceID: normalizedResourceID(source.ResourceID), SourceWorkspaceInstanceID: strings.TrimSpace(generated.SenderWorkspaceInstanceID),
 		GeneratedMessageID: generated.ID, GeneratedText: generated.Text, GeneratedSender: generated.Sender,
-		GeneratedCausation: generated.Causation, Status: resourceNotificationWaiting, UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		GeneratedCausation: generated.Causation, GeneratedRequestedMode: generated.RequestedMode, GeneratedActualMode: generated.ActualMode,
+		GeneratedModeFrozen: generated.ModeFrozen, GeneratedDowngradeReason: generated.DowngradeReason,
+		Status: resourceNotificationWaiting, UpdatedAt: time.Now().Format(time.RFC3339Nano),
 	}
 	if receipt != nil {
 		operation.TargetWorkspaceInstanceID = receipt.TargetWorkspaceInstanceID
@@ -1272,6 +1278,18 @@ func appendUniqueMailboxOperation(operations []resourceMailboxNotificationOp, op
 		}
 		if operation.GeneratedCausation != nil {
 			current.GeneratedCausation = operation.GeneratedCausation
+		}
+		if operation.GeneratedRequestedMode != "" {
+			current.GeneratedRequestedMode = operation.GeneratedRequestedMode
+		}
+		if operation.GeneratedActualMode != "" && !current.GeneratedModeFrozen {
+			current.GeneratedActualMode = operation.GeneratedActualMode
+		}
+		if operation.GeneratedModeFrozen {
+			current.GeneratedModeFrozen = true
+		}
+		if operation.GeneratedDowngradeReason != "" {
+			current.GeneratedDowngradeReason = operation.GeneratedDowngradeReason
 		}
 		if operation.Status != "" {
 			current.Status = operation.Status
@@ -1670,12 +1688,20 @@ func updateMailboxMessage(workspacePath, messageID string, mutate func(*resource
 }
 
 func resourceMailboxOperationGeneratedMessage(operation resourceMailboxNotificationOp) resourceMailboxMessage {
+	requestedMode := operation.GeneratedRequestedMode
+	if requestedMode == "" {
+		requestedMode = resourceMessageModeSteer
+	}
+	actualMode := operation.GeneratedActualMode
+	if actualMode == "" {
+		actualMode = requestedMode
+	}
 	return resourceMailboxMessage{
 		ID: operation.GeneratedMessageID, ResourceID: operation.TargetResourceID, Text: operation.GeneratedText,
 		Role: "system", Sender: operation.GeneratedSender, SenderWorkspaceInstanceID: operation.SourceWorkspaceInstanceID,
 		SubscribeResult: false, ResultSubscriptionStatus: resourceResultSubscriptionDisabled,
 		Type: operation.Type, Causation: operation.GeneratedCausation,
-		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue, ModeFrozen: true,
+		RequestedMode: requestedMode, ActualMode: actualMode, ModeFrozen: operation.GeneratedModeFrozen, DowngradeReason: operation.GeneratedDowngradeReason,
 		Status: resourceMessageQueued, AcceptedAt: operation.AcceptedAt, UpdatedAt: operation.UpdatedAt,
 	}
 }

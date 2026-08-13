@@ -106,7 +106,7 @@ func TestTurnResultSubscriptionsGroupBySenderAndTurn(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(mailbox.Messages) != 1 || mailbox.Messages[0].Type != resourceMessageTypeTurnResult || mailbox.Messages[0].SubscribeResult {
+		if len(mailbox.Messages) != 1 || mailbox.Messages[0].Type != resourceMessageTypeTurnResult || mailbox.Messages[0].Role != "system" || mailbox.Messages[0].SubscribeResult || mailbox.Messages[0].RequestedMode != resourceMessageModeSteer {
 			t.Fatalf("result mailbox for %s = %#v", check.resource, mailbox.Messages)
 		}
 		result := mailbox.Messages[0]
@@ -134,6 +134,143 @@ func TestTurnResultSubscriptionsGroupBySenderAndTurn(t *testing.T) {
 		if err != nil || len(mailbox.Messages) != 1 {
 			t.Fatalf("result duplicated for %s: %#v err=%v", resource, mailbox.Messages, err)
 		}
+	}
+}
+
+func TestGeneratedNotificationModesUseOrdinaryMailboxReconciliation(t *testing.T) {
+	tests := []struct {
+		name          string
+		runStatus     string
+		sessionState  string
+		steer         bool
+		wantActual    string
+		wantReason    string
+		wantStatus    string
+		wantSteerCall bool
+	}{
+		{name: "active steer", runStatus: "running", sessionState: "running", steer: true, wantActual: resourceMessageModeSteer, wantStatus: resourceMessageDelivered, wantSteerCall: true},
+		{name: "no active turn", runStatus: "idle", sessionState: "ready", steer: true, wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonNoActiveTurn, wantStatus: resourceMessageDelivered},
+		{name: "active turn without steer capability", runStatus: "running", sessionState: "running", wantActual: resourceMessageModeEnqueue, wantReason: resourceMessageReasonSteerUnsupported, wantStatus: resourceMessageQueued},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fake := newRuntimeFakeAgentHub()
+			hub := httptest.NewServer(fake)
+			defer hub.Close()
+			manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+			now := time.Now().Format(time.RFC3339Nano)
+			run := agentRun{
+				ID: "run-generated-" + strings.ReplaceAll(test.name, " ", "-"), WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+				Generation: 1, GenerationID: "gen-generated-" + strings.ReplaceAll(test.name, " ", "-"), AgentHubSessionID: "ses-generated-" + strings.ReplaceAll(test.name, " ", "-"),
+				AgentHubAgentName: "fake-agent", SourceExternalID: workspace.ID + "/generated", Status: test.runStatus,
+				CreatedAt: now, UpdatedAt: now,
+			}
+			seedPollerRun(t, fake, workspace, run, agentHubSession{
+				ID: run.AgentHubSessionID, State: test.sessionState, CurrentTurnID: "turn-generated",
+				InputCapabilities: agentHubInputCapabilities{Steer: test.steer}, UpdatedAt: now,
+			})
+
+			generated := resourceMailboxMessage{
+				ID: "generated-" + strings.ReplaceAll(test.name, " ", "-"), ResourceID: run.ResourceID, Text: "generated result",
+				RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
+				Type:      resourceMessageTypeTurnResult,
+				Causation: &resourceMessageCausation{Type: resourceMessageTypeTurnResult, SourceResourceID: "project1.task2", MessageID: "source-message"},
+			}
+			accepted, err := acceptGeneratedMailboxMessage(workspace.Path, generated)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if accepted.Role != "system" || accepted.SubscribeResult || accepted.ResultSubscriptionStatus != resourceResultSubscriptionDisabled ||
+				accepted.RequestedMode != resourceMessageModeSteer || accepted.ActualMode != resourceMessageModeSteer || accepted.ModeFrozen {
+				t.Fatalf("generated durable accept did not preserve initial steer mapping: %#v", accepted)
+			}
+			if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+				return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			result, found, err := mailboxMessageByID(workspace.Path, generated.ID)
+			if err != nil || !found {
+				t.Fatalf("generated message lookup: found=%v err=%v", found, err)
+			}
+			if result.ActualMode != test.wantActual || !result.ModeFrozen || result.DowngradeReason != test.wantReason || result.Status != test.wantStatus {
+				t.Fatalf("generated mode reconciliation = %#v", result)
+			}
+			if test.name == "active steer" && result.TurnID != "turn-generated" {
+				t.Fatalf("active steer was not bound to the exact active Turn: %#v", result)
+			}
+			fake.mu.Lock()
+			steers := append([]bool(nil), fake.messageSteers...)
+			fake.mu.Unlock()
+			if test.wantSteerCall {
+				if len(steers) != 1 || !steers[0] {
+					t.Fatalf("active steer delivery = %#v", steers)
+				}
+			} else if test.wantStatus == resourceMessageDelivered {
+				if len(steers) != 1 || steers[0] {
+					t.Fatalf("enqueue downgrade delivery = %#v", steers)
+				}
+			} else if len(steers) != 0 {
+				t.Fatalf("unsupported steer should wait without AgentHub delivery: %#v", steers)
+			}
+		})
+	}
+}
+
+func TestGeneratedNotificationFrozenModeDoesNotDriftOnRetry(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	now := time.Now().Format(time.RFC3339Nano)
+	run := agentRun{
+		ID: "run-frozen-generated", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1,
+		GenerationID: "gen-frozen-generated", AgentHubSessionID: "ses-frozen-generated", AgentHubAgentName: "fake-agent",
+		SourceExternalID: workspace.ID + "/frozen-generated", Status: "running", CreatedAt: now, UpdatedAt: now,
+	}
+	seedPollerRun(t, fake, workspace, run, agentHubSession{
+		ID: run.AgentHubSessionID, State: "running", CurrentTurnID: "turn-frozen", UpdatedAt: now,
+	})
+	generated := resourceMailboxMessage{
+		ID: "generated-frozen", ResourceID: run.ResourceID, Text: "frozen result",
+		RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
+		Type:      resourceMessageTypeTurnResult,
+		Causation: &resourceMessageCausation{Type: resourceMessageTypeTurnResult, SourceResourceID: "project1.task2", MessageID: "source-frozen"},
+	}
+	if _, err := acceptGeneratedMailboxMessage(workspace.Path, generated); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	first, found, err := mailboxMessageByID(workspace.Path, generated.ID)
+	if err != nil || !found || first.Status != resourceMessageQueued || first.ActualMode != resourceMessageModeEnqueue ||
+		!first.ModeFrozen || first.DowngradeReason != resourceMessageReasonSteerUnsupported {
+		t.Fatalf("initial frozen downgrade = found=%v err=%v message=%#v", found, err, first)
+	}
+
+	fake.mu.Lock()
+	session := fake.sessions[run.AgentHubSessionID]
+	session.InputCapabilities.Steer = true
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	second, found, err := mailboxMessageByID(workspace.Path, generated.ID)
+	if err != nil || !found || second.Status != resourceMessageQueued || second.RequestedMode != resourceMessageModeSteer ||
+		second.ActualMode != resourceMessageModeEnqueue || !second.ModeFrozen || second.DowngradeReason != resourceMessageReasonSteerUnsupported {
+		t.Fatalf("frozen retry drifted mode = found=%v err=%v message=%#v", found, err, second)
+	}
+	fake.mu.Lock()
+	steers := append([]bool(nil), fake.messageSteers...)
+	fake.mu.Unlock()
+	if len(steers) != 0 {
+		t.Fatalf("frozen enqueue retry unexpectedly called AgentHub: %#v", steers)
 	}
 }
 
@@ -184,7 +321,7 @@ func TestTerminalDeliveryNoticeRoutesToResourceSenderWithoutBounce(t *testing.T)
 		t.Fatalf("delivery notice mailbox = %#v, %v", sourceMailbox.Messages, err)
 	}
 	notice := sourceMailbox.Messages[0]
-	if notice.Type != resourceMessageTypeDeliveryTerminal || notice.Role != "system" || notice.Causation == nil ||
+	if notice.Type != resourceMessageTypeDeliveryTerminal || notice.Role != "system" || notice.SubscribeResult || notice.RequestedMode != resourceMessageModeSteer || notice.Causation == nil ||
 		notice.Causation.TerminalCode != "resource_archived" || notice.SenderWorkspaceInstanceID != targetRuntime.InstanceID {
 		t.Fatalf("delivery notice = %#v", notice)
 	}
@@ -202,7 +339,7 @@ func TestTerminalDeliveryNoticeRoutesToResourceSenderWithoutBounce(t *testing.T)
 		t.Fatalf("delivery_unknown notice mailbox = %#v, %v", sourceMailbox.Messages, err)
 	}
 	unknownNotice := sourceMailbox.Messages[1]
-	if unknownNotice.Causation == nil || unknownNotice.Causation.MessageID != unknown.ID ||
+	if unknownNotice.Role != "system" || unknownNotice.SubscribeResult || unknownNotice.RequestedMode != resourceMessageModeSteer || unknownNotice.Causation == nil || unknownNotice.Causation.MessageID != unknown.ID ||
 		unknownNotice.Causation.TerminalCode != "delivery_outcome_unknown" || !strings.Contains(unknownNotice.Text, "delivery_unknown") ||
 		strings.Contains(strings.ToLower(unknownNotice.Text), "not delivered") {
 		t.Fatalf("delivery_unknown was misrepresented: %#v", unknownNotice)
