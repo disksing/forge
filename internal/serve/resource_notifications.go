@@ -186,6 +186,9 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 			return err
 		}
 	}
+	if generated.ID == "" && operation.GeneratedMessageID != "" {
+		generated = resourceMailboxOperationGeneratedMessage(operation)
+	}
 	if receipt.Status == resourceNotificationTerminal || receipt.Status == resourceNotificationDelivered {
 		return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
 	}
@@ -202,17 +205,34 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		}
 		return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_workspace_unavailable", "the target Workspace is not registered with and owned by this Forge Server")
 	}
+	targetResourceID := normalizedResourceID(receipt.TargetResourceID)
 	if receipt.Status == resourceNotificationAccepted {
-		latest, messageFound, loadErr := mailboxMessageByID(target.Path, receipt.ID)
-		if loadErr != nil {
-			var apiErr *resourceAPIError
-			if errors.As(loadErr, &apiErr) && apiErr.Code == "message_receipt_expired" {
-				return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_message_expired", loadErr.Error())
+		var latest resourceMailboxMessage
+		var messageFound bool
+		var targetTerminalCode, targetTerminalDetail string
+		controllerErr := m.withResourceController(ctx, target, targetResourceID, func() error {
+			var loadErr error
+			latest, messageFound, loadErr = mailboxMessageByID(target.Path, receipt.ID)
+			if loadErr != nil {
+				var apiErr *resourceAPIError
+				if errors.As(loadErr, &apiErr) && apiErr.Code == "message_receipt_expired" {
+					targetTerminalCode = "target_message_expired"
+					targetTerminalDetail = loadErr.Error()
+					return nil
+				}
+				return loadErr
 			}
-			return loadErr
+			if !messageFound {
+				targetTerminalCode = "target_message_missing"
+				targetTerminalDetail = "the previously accepted target mailbox message is missing"
+			}
+			return nil
+		})
+		if controllerErr != nil {
+			return controllerErr
 		}
-		if !messageFound {
-			return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_message_missing", "the previously accepted target mailbox message is missing")
+		if targetTerminalCode != "" {
+			return terminalNotificationReceipt(source.Path, sourceMessage.ID, targetTerminalCode, targetTerminalDetail)
 		}
 		if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
 			mirrorNotificationDelivery(current, latest)
@@ -228,24 +248,62 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 			current.LastErrorCode = latest.LastErrorCode
 		})
 	}
-	exists, archived, _, inspectErr := resourceExistsAndArchived(target.Path, receipt.TargetResourceID)
-	if inspectErr != nil || !exists {
-		detail := fmt.Sprintf("target resource not found: %s", receipt.TargetResourceID)
-		if inspectErr != nil {
-			detail = inspectErr.Error()
+	var accepted, latest resourceMailboxMessage
+	var targetTerminalCode, targetTerminalDetail string
+	controllerErr := m.withResourceController(ctx, target, targetResourceID, func() error {
+		exists, archived, _, inspectErr := resourceExistsAndArchived(target.Path, targetResourceID)
+		if inspectErr != nil || !exists {
+			targetTerminalCode = "target_resource_not_found"
+			targetTerminalDetail = fmt.Sprintf("target resource not found: %s", receipt.TargetResourceID)
+			if inspectErr != nil {
+				targetTerminalDetail = inspectErr.Error()
+			}
+			return nil
 		}
-		return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_resource_not_found", detail)
-	}
-	if archived {
-		return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_resource_archived", fmt.Sprintf("target resource is archived: %s", receipt.TargetResourceID))
-	}
-	accepted, err := acceptGeneratedMailboxMessage(target.Path, generated)
-	if err != nil {
-		var apiErr *resourceAPIError
-		if errors.As(err, &apiErr) && apiErr.Code == "message_conflict" {
-			return terminalNotificationReceipt(source.Path, sourceMessage.ID, apiErr.Code, apiErr.Message)
+		if archived {
+			targetTerminalCode = "target_resource_archived"
+			targetTerminalDetail = fmt.Sprintf("target resource is archived: %s", receipt.TargetResourceID)
+			return nil
 		}
-		return err
+		var err error
+		accepted, err = acceptGeneratedMailboxMessage(target.Path, generated)
+		if err != nil {
+			var apiErr *resourceAPIError
+			if errors.As(err, &apiErr) && apiErr.Code == "message_conflict" {
+				targetTerminalCode = apiErr.Code
+				targetTerminalDetail = apiErr.Message
+				return nil
+			}
+			return err
+		}
+		if accepted.Status == resourceMessageQueued || accepted.Status == resourceMessageDelivering || accepted.Status == resourceMessageInterrupting {
+			if err := m.reconcileResourceMailboxLocked(ctx, target, accepted.ResourceID); err != nil {
+				recordMailboxFailure(target.Path, accepted.ID, err)
+			}
+		}
+		var found bool
+		var loadErr error
+		latest, found, loadErr = mailboxMessageByID(target.Path, accepted.ID)
+		if loadErr != nil {
+			var apiErr *resourceAPIError
+			if errors.As(loadErr, &apiErr) && apiErr.Code == "message_receipt_expired" {
+				targetTerminalCode = "target_message_expired"
+				targetTerminalDetail = loadErr.Error()
+				return nil
+			}
+			return loadErr
+		}
+		if !found {
+			targetTerminalCode = "target_message_missing"
+			targetTerminalDetail = "the accepted target mailbox message is missing"
+		}
+		return nil
+	})
+	if controllerErr != nil {
+		return controllerErr
+	}
+	if targetTerminalCode != "" {
+		return terminalNotificationReceipt(source.Path, sourceMessage.ID, targetTerminalCode, targetTerminalDetail)
 	}
 	if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
 		current.Status = resourceNotificationAccepted
@@ -268,15 +326,6 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		current.LastError = accepted.LastError
 		current.LastErrorCode = accepted.LastErrorCode
 	}); err != nil {
-		return err
-	}
-	if accepted.Status == resourceMessageQueued || accepted.Status == resourceMessageDelivering || accepted.Status == resourceMessageInterrupting {
-		if err := m.reconcileResourceMailboxLocked(ctx, target, accepted.ResourceID); err != nil {
-			recordMailboxFailure(target.Path, accepted.ID, err)
-		}
-	}
-	latest, found, err := mailboxMessageByID(target.Path, accepted.ID)
-	if err != nil || !found {
 		return err
 	}
 	if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {

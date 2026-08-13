@@ -195,9 +195,7 @@ func TestResourceIdleSleepMessageAfterStopWaitsForArchiveThenCreatesGeneration(t
 
 	accepted := make(chan resourceMailboxMessage, 1)
 	go func() {
-		manager.resourceMu.Lock()
 		message, err := manager.acceptResourceMessage(context.Background(), workspace, run.ResourceID, resourceMessageRequest{Text: "after sleep", Mode: resourceMessageModeEnqueue})
-		manager.resourceMu.Unlock()
 		if err != nil {
 			accepted <- resourceMailboxMessage{LastError: err.Error()}
 			return

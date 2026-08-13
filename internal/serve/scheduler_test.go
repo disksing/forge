@@ -83,9 +83,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 		t.Fatal(err)
 	}
 
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 0 {
 		t.Fatalf("empty Scheduler reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
 	}
@@ -97,9 +95,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	if err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,9 +127,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	fake.mu.Unlock()
 
 	manager.now = func() time.Time { return endedAt.Add(29 * time.Minute) }
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 1 {
 		t.Fatalf("early interval reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
 	}
@@ -144,9 +138,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 		Status: resourceMessageDelivered, AcceptedAt: endedAt.Add(time.Minute).Format(time.RFC3339Nano), UpdatedAt: endedAt.Add(time.Minute).Format(time.RFC3339Nano),
 	})
 	manager.now = func() time.Time { return endedAt.Add(30 * time.Minute) }
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,9 +151,7 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Description: &description}); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,18 +163,14 @@ func TestSchedulerReconcileSkipsEmptyUsesCompletedTickIntervalAndCoalescesChange
 	if _, err := forgeWorkspace.UpdateSchedule(app.UpdateScheduleInput{ID: created.ID, Condition: &condition}); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil || len(schedulerMessages(t, workspace.Path)) != 3 {
 		t.Fatalf("coalesced change reconcile = %v, messages=%#v", err, schedulerMessages(t, workspace.Path))
 	}
 	if _, err := forgeWorkspace.RemoveSchedule(created.ID); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	ticks = schedulerMessages(t, workspace.Path)
 	if err != nil || ticks[2].Status != resourceMessageUndeliverable || ticks[2].LastErrorCode != "scheduler_empty" {
 		t.Fatalf("empty-list cancellation = %v, messages=%#v", err, ticks)
@@ -201,9 +187,7 @@ func TestFailedSchedulerTickDoesNotResetInterval(t *testing.T) {
 	if _, err := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: "Retry", Condition: "always inspect", Target: "workspace"}); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
 	err := manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,9 +206,7 @@ func TestFailedSchedulerTickDoesNotResetInterval(t *testing.T) {
 	session.State = "ready"
 	fake.sessions[run.AgentHubSessionID] = session
 	fake.mu.Unlock()
-	manager.resourceMu.Lock()
 	err = manager.reconcileSchedulerLocked(context.Background(), workspace, client)
-	manager.resourceMu.Unlock()
 	ticks := schedulerMessages(t, workspace.Path)
 	if err != nil || len(ticks) != 2 || ticks[1].Causation.Reason != schedulerTickReasonRecovery {
 		t.Fatalf("failed tick recovery = %v, messages=%#v", err, ticks)

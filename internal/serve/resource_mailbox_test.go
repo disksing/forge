@@ -18,8 +18,6 @@ import (
 
 func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace guiWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {
 	t.Helper()
-	manager.resourceMu.Lock()
-	defer manager.resourceMu.Unlock()
 	message, err := manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{
 		Text: text, Mode: mode, Role: "agent", Sender: sender,
 	})
@@ -287,9 +285,7 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 	if steered.Status != resourceMessageDelivered || steered.ActualMode != resourceMessageModeSteer {
 		t.Fatalf("steer did not bypass the queued enqueue: %#v", steered)
 	}
-	manager.resourceMu.Lock()
 	promoted, err := manager.promoteWaitingMessage(context.Background(), workspace, enqueued.ID)
-	manager.resourceMu.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,9 +344,9 @@ func TestResourceMailboxSteerDowngradeAndInterrupt(t *testing.T) {
 	session.CurrentTurnID = ""
 	fake.sessions[session.ID] = session
 	fake.mu.Unlock()
-	manager.resourceMu.Lock()
-	err = manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
-	manager.resourceMu.Unlock()
+	err = manager.withResourceController(context.Background(), workspace, "project1.task1", func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,8 +393,9 @@ func TestResourceMailboxInterruptRetiresReplacingGeneration(t *testing.T) {
 			// The generation and mailbox files become observable before the
 			// retirement goroutine publishes its final notice. Join that bounded
 			// critical section so TempDir cleanup cannot race the last disk write.
-			manager.resourceMu.Lock()
-			manager.resourceMu.Unlock()
+			if err := manager.withResourceController(context.Background(), workspace, "project1.task1", func() error { return nil }); err != nil {
+				t.Fatalf("join resource controller: %v", err)
+			}
 			if message.GenerationID == oldRun.GenerationID {
 				t.Fatalf("interrupt message was delivered to the retired generation: %#v", message)
 			}
@@ -436,9 +433,9 @@ func TestResourceMailboxArchiveTerminatesPendingMessages(t *testing.T) {
 	if _, err := forgeWorkspace.ArchiveResource("project1.task1"); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
-	err = manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
-	manager.resourceMu.Unlock()
+	err = manager.withResourceController(context.Background(), workspace, "project1.task1", func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -479,9 +476,7 @@ func TestResourceMailboxArchiveRaceEitherRejectsOrTerminatesAcceptedMessage(t *t
 	go func() {
 		defer wait.Done()
 		<-start
-		manager.resourceMu.Lock()
 		sent, sendErr = manager.acceptResourceMessage(context.Background(), workspace, "project1.task1", resourceMessageRequest{Text: "race", Mode: resourceMessageModeEnqueue})
-		manager.resourceMu.Unlock()
 	}()
 	go func() {
 		defer wait.Done()
@@ -536,9 +531,9 @@ func TestResourceMailboxPersistsBindingAndTemporaryDeliveryErrors(t *testing.T) 
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	manager.resourceMu.Lock()
-	err := manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
-	manager.resourceMu.Unlock()
+	err := manager.withResourceController(context.Background(), workspace, "project1.task1", func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, "project1.task1")
+	})
 	if err == nil {
 		t.Fatal("unreachable AgentHub unexpectedly reconciled")
 	}
@@ -589,7 +584,7 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	sendRequest := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspace.ID+"/resources/project1.task1/messages", strings.NewReader(`{"text":"coordinate","mode":"steer","role":"agent","sender":{"id":"project1.task2","name":"Task two"}}`))
 	sendRecorder := httptest.NewRecorder()
 	manager.server.handleWorkspace(sendRecorder, sendRequest)
-	if sendRecorder.Code != http.StatusOK {
+	if sendRecorder.Code != http.StatusAccepted {
 		t.Fatalf("resource send failed: %d %s", sendRecorder.Code, sendRecorder.Body.String())
 	}
 	var sent resourceMessageResponse
@@ -597,7 +592,7 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 		t.Fatal(err)
 	}
 	if sent.MessageID == "" || sent.ResourceID != "project1.task1" || sent.RequestedMode != resourceMessageModeSteer ||
-		sent.ActualMode != resourceMessageModeEnqueue || sent.Status != resourceMessageDelivered || !strings.Contains(sent.Reference, sent.MessageID) {
+		sent.ActualMode != resourceMessageModeSteer || sent.Status != "waiting" || !strings.Contains(sent.Reference, sent.MessageID) {
 		t.Fatalf("send response mismatch: %#v", sent)
 	}
 
@@ -735,7 +730,5 @@ func TestResourceServerAPIStructuredErrors(t *testing.T) {
 }
 
 func acceptTestResourceMessageWithError(manager *agentManager, workspace guiWorkspace, resourceID string) (resourceMailboxMessage, error) {
-	manager.resourceMu.Lock()
-	defer manager.resourceMu.Unlock()
 	return manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{Text: "no", Mode: resourceMessageModeSteer})
 }
