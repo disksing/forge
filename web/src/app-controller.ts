@@ -20,6 +20,7 @@ import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
 import { buildTimeline as buildAgentHubTimeline } from "../vendor/agenthub-event-timeline";
+import { visibleConversationTimelineItems } from "./components/timeline-events";
 
 export interface ForgeViewPublisher {
   renderAppShell(model: AppShellModel): void;
@@ -214,7 +215,6 @@ const createDialogController = createCreateDialogController({
 });
 const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string): ElementType | null => document.getElementById(id) as ElementType | null;
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
-const AGENT_HIDDEN_EVENT_TYPES = /* @__PURE__ */ new Set(["session.launch-environment"]);
 interface LoadTreeOptions { updateURL?: boolean; replaceURL?: boolean }
 interface LoadDetailOptions { force?: boolean }
 interface FetchDetailOptions {}
@@ -1163,9 +1163,9 @@ function clearAgentRenderTimer(): void {
 	controllerState.agent.renderTimer = null;
 }
 function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
-	const visibleEvents = (events || []).filter((event) => !AGENT_HIDDEN_EVENT_TYPES.has(event?.type));
-	const items = buildAgentHubTimeline(visibleEvents) as TimelineItem[];
-	const byID = new Map(visibleEvents.map((event) => [Number(event.id), event]));
+	const sourceEvents = events || [];
+	const items = visibleConversationTimelineItems(sourceEvents, buildAgentHubTimeline(sourceEvents) as TimelineItem[]);
+	const byID = new Map(sourceEvents.map((event) => [Number(event.id), event]));
 	for (const item of items) {
 		const event = byID.get(Number(item.key));
 		const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;

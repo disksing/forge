@@ -4,12 +4,12 @@ import type {
   ResourceHistoryGeneration, ResourceHistoryPage, ResourceHistorySegment,
   ResourceHistoryTurnDetail, ResourceHistoryTurnSummary, ResourceMessageStatus, TimelineItem,
 } from "./models";
-import { compactTimelineEvents, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
+import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
 
 const HISTORY_LIMIT = 20;
 const EVENT_LIMIT = 250;
 const STREAM_BATCH_WINDOW_MS = 80;
-const HIDDEN_EVENT_TYPES = new Set(["session.launch-environment"]);
+const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment"]);
 
 type EventSourceFactory = (url: string) => EventSource;
 type SnapshotListener = (snapshot: ChatContextSnapshot) => void;
@@ -585,7 +585,7 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
     case "tool": return [{ ...base, kind: "tools", compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId, calls: [{ key, callId: key, name: "Tool activity", summary: `${Math.max(1, Number(item.count) || 1)} call(s) · details omitted`, status: "completed" }] }];
     case "approval": return [{ ...base, kind: "approval", approvalId: String(data.requestId || data.approvalId || key), title: String(data.title || "Approval"), question: String(data.question || ""), status: String(data.status || (data.decision ? "resolved" : "pending")), decision: String(data.decision || "") }];
     case "error": return [{ ...base, kind: "error", text: item.text || String(data.message || "Provider error") }];
-    case "lifecycle": return item.text ? [{ ...base, kind: "lifecycle", type: item.text, text: item.text }] : [];
+    case "lifecycle": return item.text && !isHiddenConversationLifecycleText(item.text) ? [{ ...base, kind: "lifecycle", type: item.text, text: item.text }] : [];
     default: return [{ ...base, kind: "unknown", type: item.type, text: item.text || "" }];
   }
 }

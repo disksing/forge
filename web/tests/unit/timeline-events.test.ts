@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { AgentEvent } from "../../src/components/models";
-import { compactTimelineEvents, mergeCanonicalEventBatch, mergeCanonicalEvents } from "../../src/components/timeline-events";
+import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
+import type { AgentEvent, TimelineItem } from "../../src/components/models";
+import { compactTimelineEvents, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -59,5 +60,27 @@ describe("timeline event algorithms", () => {
     expect(compacted.map((event) => event.id)).toEqual([2, 3, 4, 6]);
     expect(compacted[1].data?.raw).toMatchObject({ update: { toolCallId: "call-a", content: [{ text: "a2" }] } });
     expect(compacted[3].data?.raw).toMatchObject({ update: { toolCallId: "call-a", content: [{ text: "a4" }] } });
+  });
+
+  it("hides routine session and turn boundaries without breaking terminal tool settlement", () => {
+    const events: AgentEvent[] = [
+      { id: 1, type: "session.created" },
+      { id: 2, type: "session.provider", data: { agentName: "gpt-5.6-sol", provider: "codex" } },
+      { id: 3, type: "message.input", turnId: "turn-1", data: { text: "hello" } },
+      { id: 4, type: "turn.started", turnId: "turn-1" },
+      { id: 5, type: "tool.event", turnId: "turn-1", data: { method: "item/started", raw: { item: { id: "call-1", type: "commandExecution", command: ["make"], status: "inProgress" } } } },
+      { id: 6, type: "turn.completed", turnId: "turn-1" },
+      { id: 7, type: "session.state", data: { state: "stopped", reason: "completed" } },
+    ];
+
+    const items = visibleConversationTimelineItems(events, buildAgentHubTimeline(events) as TimelineItem[]);
+
+    expect(items.map((item) => item.text)).not.toContain("Session created");
+    expect(items.map((item) => item.text)).not.toContain("Agent connected · gpt-5.6-sol · via codex");
+    expect(items.map((item) => item.text)).not.toContain("Turn started");
+    expect(items.map((item) => item.text)).not.toContain("Turn completed");
+    expect(items.find((item) => item.kind === "message")?.text).toBe("hello");
+    expect(items.find((item) => item.kind === "tools")?.calls?.[0].status).toBe("completed");
+    expect(items.find((item) => item.kind === "lifecycle")?.text).toBe("Session stopped · provider completed");
   });
 });

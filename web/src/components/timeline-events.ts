@@ -1,4 +1,32 @@
-import type { AgentEvent } from "./models";
+import type { AgentEvent, TimelineItem } from "./models";
+
+const HIDDEN_CONVERSATION_EVENT_TYPES = new Set([
+  "session.created",
+  "session.provider",
+  "session.launch-environment",
+  "turn.started",
+  "turn.completed",
+]);
+
+const HIDDEN_CONVERSATION_LIFECYCLE_TEXT = new Set([
+  "Session created",
+  "Turn started",
+  "Turn completed",
+]);
+
+export function visibleConversationTimelineItems(events: AgentEvent[], items: TimelineItem[]): TimelineItem[] {
+  const hiddenKeys = new Set(
+    events
+      .filter((event) => HIDDEN_CONVERSATION_EVENT_TYPES.has(event.type))
+      .map((event) => String(event.id)),
+  );
+  return items.filter((item) => item.key === undefined || !hiddenKeys.has(String(item.key)));
+}
+
+export function isHiddenConversationLifecycleText(value: string | undefined): boolean {
+  const text = String(value || "");
+  return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
+}
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
   const byId = new Map<number, AgentEvent>();

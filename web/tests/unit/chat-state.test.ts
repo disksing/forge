@@ -248,7 +248,7 @@ describe("resource conversation controller", () => {
     await vi.waitFor(() => expect(historyCalls).toBe(2));
   });
 
-  it("places session-level lifecycle events in chronological order among turns", async () => {
+  it("omits routine session startup events while retaining notable session lifecycle events", async () => {
     const closedTurn = turn(3, "turn-a", 4, 7);
     const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closedTurn] }], page: { limit: 20, hasMore: false } }));
     const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
@@ -260,9 +260,8 @@ describe("resource conversation controller", () => {
     stream.emit({ id: 1, type: "session.created", sessionId: "session-3" });
     stream.emit({ id: 2, type: "session.provider", sessionId: "session-3", data: { agentName: "Fixture Agent", provider: "codex" } });
     stream.emit({ id: 8, type: "session.state", sessionId: "session-3", data: { state: "stopped", reason: "completed" } });
-    await vi.waitFor(() => expect(latest.blocks).toHaveLength(3));
-    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:current:1", "gen-3:turn-a", "gen-3:current:8"]);
-    expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([1, 2]);
-    expect(latest.blocks[2].events?.map((event) => event.id)).toEqual([8]);
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(2));
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a", "gen-3:current:8"]);
+    expect(latest.blocks[1].events?.map((event) => event.id)).toEqual([8]);
   });
 });
