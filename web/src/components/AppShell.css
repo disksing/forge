@@ -147,6 +147,7 @@
 
 :where([data-component-owner="app-shell"]) .tty-composer {
   flex: 0 0 auto;
+  background: var(--bg);
 }
 
 :where([data-component-owner="app-shell"]) .workspace-panel {
