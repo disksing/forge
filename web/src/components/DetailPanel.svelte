@@ -9,7 +9,7 @@
   import FileBrowser from "./FileBrowser.svelte";
   import FilePreviewModal from "./FilePreviewModal.svelte";
   import Icon from "./Icon.svelte";
-  import LogTimeline from "./LogTimeline.svelte";
+  import HistoryTimeline from "./HistoryTimeline.svelte";
   import MarkdownDocument from "./MarkdownDocument.svelte";
   import SchedulerPanel from "./SchedulerPanel.svelte";
   import WorkspaceAgentsEditor from "./WorkspaceAgentsEditor.svelte";
@@ -68,7 +68,7 @@
     if (detailFiles.some((file) => file.name === "task.md")) return "task";
     if (value.resourceType === "project") return "project";
     if (value.resourceType === "task") return "task";
-    return "logs";
+    return "history";
   }
 
   function resourceTabs(): Array<{ id: string; label: string; icon: string }> {
@@ -81,7 +81,7 @@
     if (fileNames.has("project.md")) result.push({ id: "project", label: "Project", icon: "file-text" });
     if (fileNames.has("task.md")) result.push({ id: "task", label: "Task", icon: "file-text" });
     if (model.resourceType === "project" || model.detail.template) result.push({ id: "template", label: "Template", icon: "layout-template" });
-    result.push({ id: "logs", label: "Logs", icon: "history" }, { id: "artifacts", label: "Artifacts", icon: "paperclip" });
+    result.push({ id: "history", label: "History", icon: "history" }, { id: "artifacts", label: "Artifacts", icon: "paperclip" });
     if (model.resourceType === "task") result.push({ id: "worktrees", label: "Worktrees", icon: "folder-git-2" });
     return result;
   }
@@ -160,7 +160,7 @@
   {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}
     <div class="details-tabs" role="tablist" aria-label="Resource details">
-      {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span>{#if tab.id === "logs" && model.detail.logs?.length}<span class="details-tab-count">{model.detail.logs.length}</span>{/if}</button>{/each}
+      {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>{/each}
     </div>
     <div id="detailsContent" class="details-content">
       {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} /></div>{/each}
@@ -169,7 +169,7 @@
         {#if model.resourceType === "project"}<div class="content-section"><div class="template-list">{#if model.detail.templates?.length}{#each model.detail.templates as template (template.name)}<button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && openPreview("Templates", template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}{template.legacy ? " · legacy" : ""}</small></span><Icon name="chevron-right" /></button>{/each}{:else}<div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>{/if}</div></div>
         {:else if model.detail.template}<div class="content-section"><div class="template-list"><div class="template-row"><Icon name="file-text" /><span><strong>{model.detail.template.name}</strong><small>Created from template · v{model.detail.template.schemaVersion || "?"} · {model.detail.template.digest || ""}</small></span></div></div></div>{/if}
       </div>
-      <div hidden={activeTab !== "logs"}><LogTimeline resourceId={model.resourceId} logs={model.detail.logs || []} hasMore={model.logs.hasMore} loading={model.logs.loading} error={model.logs.error} onLoadMore={() => model.onLoadMoreLogs(model.resourceId)} onIconsChanged={model.onIconsChanged} /></div>
+      {#if activeTab === "history"}{#key model.identity}<HistoryTimeline workspaceId={model.workspaceId} resourceId={model.resourceId} artifacts={model.detail.artifacts || []} onOpenLegacy={(path) => openPreview("Artifacts", path)} onIconsChanged={model.onIconsChanged} />{/key}{/if}
       <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} showHeading={false} /></div>
       <div hidden={activeTab !== "worktrees"}><div class="content-section"><div class="worktree-list">{#if model.detail.repos?.length}{#each model.detail.repos as repo (`${repo.name}:${repo.worktreePath}`)}<div class="worktree-row"><div class="worktree-main"><Icon name="git-branch" className="worktree-icon" /><div><strong>{repo.branch || "HEAD"}</strong><span>{repo.name || "repository"}{(repo.targetBranch || repo.baseBranch) ? ` · base ${repo.targetBranch || repo.baseBranch}` : ""}</span><small>{repo.worktreePath || ""}</small></div></div><button type="button" class="secondary-button" onclick={() => diffRepo = repo}><Icon name="git-compare-arrows" /><span>View Diff</span></button></div>{/each}{:else}<div class="empty-list-row"><Icon name="git-branch" /><span>No worktrees.</span></div>{/if}</div></div></div>
     </div>

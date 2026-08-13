@@ -2,7 +2,6 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DetailPanel from "../../src/components/DetailPanel.svelte";
-import LogTimeline from "../../src/components/LogTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { DetailPanelModel } from "../../src/components/models";
 
@@ -22,8 +21,6 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     detail: {
       id: "project1.task1", type: "task", title: "Stable detail", path: "project1/task1",
       files: [{ name: "task.md", path: "project1/task1/task.md", content: "# Stable detail\n\nSelected text.", contentHash: "doc-a" }],
-      logs: [{ id: "log-1", time: "2026-08-11T00:00:00Z", title: "First", details: "Initial details" }],
-      logPage: { hasMore: true, nextCursor: "log-1" },
       artifacts: [{ name: "folder", path: "project1/task1/artifacts/folder", type: "directory", children: [{ name: "nested.txt", path: "project1/task1/artifacts/folder/nested.txt", type: "file", size: 4 }] }, { name: "a.txt", path: "project1/task1/artifacts/a.txt", type: "file", size: 3 }, { name: "b.txt", path: "project1/task1/artifacts/b.txt", type: "file", size: 3 }],
       repos: [{ name: "forge", worktreePath: "project1/task1/worktree/forge", branch: "topic", targetBranch: "master" }, { name: "docs", worktreePath: "project1/task1/worktree/docs", branch: "docs-topic", targetBranch: "master" }],
     },
@@ -32,8 +29,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
     agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
-    logs: { hasMore: true, loading: false, error: "" },
-    onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(), onLoadMoreLogs: vi.fn(async () => undefined),
+    onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(),
     onSaveWorkspaceAgents: vi.fn(async () => ({ path: "AGENTS.md", content: "", contentHash: "saved" })),
     onSaveAgentBinding: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
@@ -93,8 +89,6 @@ describe("DetailPanel", () => {
     expect(artifactsSection.querySelector("h3")).toBeNull();
     const worktreesSection = target.querySelector(".worktree-list")!.closest(".content-section")!;
     expect(worktreesSection.querySelector("h3")).toBeNull();
-    const logsSection = target.querySelector('[data-component-owner="log-timeline"]')!;
-    expect(logsSection.querySelector("h3")).toBeNull();
   });
 
   it("labels legacy resources without inventing creator provenance", async () => {
@@ -156,7 +150,7 @@ describe("DetailPanel", () => {
     expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Task");
   });
 
-  it("keeps document and log DOM identity across unrelated refreshes and appends", async () => {
+  it("keeps document and artifact DOM identity across unrelated refreshes", async () => {
     const initial = resourceModel();
     const { channel, target } = mountModel(initial);
     await tick();
@@ -185,16 +179,6 @@ describe("DetailPanel", () => {
     expect((Array.from(target.querySelectorAll(".artifact-row")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("nested.txt"))).toBe(nestedNode);
     expect(nestedNode.dataset.identityProbe).toBe("expanded");
 
-    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Logs"))!.click();
-    await tick();
-    const logNode = target.querySelector('[data-log-id="log-1"]') as HTMLDetailsElement;
-    logNode.open = true;
-    const appended = { id: "log-2", time: "2026-08-10T23:00:00Z", title: "Older", details: "Older details" };
-    channel.publish({ ...initial, detail: { ...initial.detail!, logs: [...initial.detail!.logs!, appended] }, logs: { hasMore: false, loading: false, error: "" } });
-    await tick();
-    expect(target.querySelector('[data-log-id="log-1"]')).toBe(logNode);
-    expect(logNode.open).toBe(true);
-    expect(target.querySelectorAll("[data-log-id]")).toHaveLength(2);
   });
 
   it("ignores a late preview response after selecting another file", async () => {
@@ -287,19 +271,4 @@ describe("DetailPanel", () => {
     expect(expandedRow.classList.contains("open")).toBe(true);
   });
 
-  it("keeps the log load-more icon static and toggles busy through a class", async () => {
-    const target = document.createElement("div");
-    document.body.append(target);
-    const component = mount(LogTimeline, { target, props: {
-      resourceId: "project1.task1", logs: [], hasMore: true, loading: false, error: "",
-      onLoadMore: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
-    } });
-    mounted.push(component);
-    await tick();
-
-    const button = target.querySelector<HTMLButtonElement>(".log-load-more")!;
-    expect(button.querySelector('.log-load-icon-idle i[data-lucide="chevron-down"]')).not.toBeNull();
-    expect(button.querySelector('.log-load-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
-    expect(button.classList.contains("busy")).toBe(false);
-  });
 });

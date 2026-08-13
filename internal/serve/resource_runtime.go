@@ -225,24 +225,26 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 		return agentRun{}, err
 	}
 	now := time.Now().Format(time.RFC3339Nano)
+	providerID, providerName, model := snapshotAgentHubAgent(ctx, client, resolved.AgentName)
 	run := agentRun{
-		ID:                newRunID(),
-		WorkspaceID:       workspace.ID,
-		ResourceID:        strings.TrimSpace(resourceID),
-		Generation:        generation,
-		GenerationID:      "gen-" + newRunID(),
-		SourceInstanceID:  resolved.InstanceID,
-		BindingKind:       resolved.Binding.Kind,
-		BindingName:       resolved.Binding.Name,
-		ProfileRevision:   resolved.ProfileRevision,
-		ResolvedProfile:   resolved.ResolvedProfile,
-		AgentConfigError:  resolved.ConfigError,
-		AgentHubAgentName: resolved.AgentName,
-		Title:             title,
-		Cwd:               cwd,
-		Status:            "starting",
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		ID:                 newRunID(),
+		WorkspaceID:        workspace.ID,
+		ResourceID:         strings.TrimSpace(resourceID),
+		Generation:         generation,
+		GenerationID:       "gen-" + newRunID(),
+		SourceInstanceID:   resolved.InstanceID,
+		BindingKind:        resolved.Binding.Kind,
+		BindingName:        resolved.Binding.Name,
+		ProfileRevision:    resolved.ProfileRevision,
+		ResolvedProfile:    resolved.ResolvedProfile,
+		AgentConfigError:   resolved.ConfigError,
+		AgentHubAgentName:  resolved.AgentName,
+		AgentHubProviderID: providerID, AgentHubProviderName: providerName, AgentHubModel: model,
+		Title:     title,
+		Cwd:       cwd,
+		Status:    "starting",
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 	resourceKey := run.ResourceID
 	if resourceKey == "" {

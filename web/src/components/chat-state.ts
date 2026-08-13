@@ -53,6 +53,7 @@ export interface ChatSessionControllerOptions {
   onEvent?: (workspaceId: string, resourceId: string, event: AgentEvent) => void;
   onNotice?: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;
   streamBatchWindowMs?: number;
+  realtime?: boolean;
 }
 
 // The public name is retained to avoid churn in embedders. Its identity and
@@ -65,6 +66,7 @@ export class ChatSessionController {
   private readonly onEvent?: ChatSessionControllerOptions["onEvent"];
   private readonly onNotice?: ChatSessionControllerOptions["onNotice"];
   private readonly streamBatchWindowMs: number;
+  private readonly realtime: boolean;
   private activeKey = "";
   private disposed = false;
 
@@ -74,6 +76,7 @@ export class ChatSessionController {
     this.onEvent = options.onEvent;
     this.onNotice = options.onNotice;
     this.streamBatchWindowMs = Math.max(0, options.streamBatchWindowMs ?? STREAM_BATCH_WINDOW_MS);
+    this.realtime = options.realtime !== false;
   }
 
   subscribe(listener: SnapshotListener): () => void {
@@ -105,7 +108,7 @@ export class ChatSessionController {
       void this.loadInitial(context);
     } else if (!context.loaded && !context.loading) {
       void this.loadInitial(context);
-    } else {
+    } else if (this.realtime) {
       this.connect(context);
     }
     if (contextChanged || generationChanged) this.emit();
@@ -163,7 +166,7 @@ export class ChatSessionController {
         if (!this.isCurrent(context, generation)) return;
         context.liveEvents.set(reference, events);
       }
-      this.connect(context);
+      if (this.realtime) this.connect(context);
     } catch (error) {
       if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
       context.detailErrors.set(reference, errorMessage(error));
@@ -336,7 +339,7 @@ export class ChatSessionController {
   }
 
   private connect(context: ResourceChatContext): void {
-    if (!this.isActive(context) || context.stream || !context.generationId || !isStreamable(context.status)) return;
+    if (!this.realtime || !this.isActive(context) || context.stream || !context.generationId || !isStreamable(context.status)) return;
     const after = currentGenerationHead(context);
     const query = new URLSearchParams({ generationId: context.generationId });
     if (after) query.set("after", String(after));

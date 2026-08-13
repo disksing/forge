@@ -61,6 +61,37 @@ func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, reque
 	return "", fmt.Errorf("AgentHub agent %q is unavailable or not present in the catalog", requested)
 }
 
+// snapshotAgentHubAgent captures the catalog facts used to launch a
+// generation. A history response must use these persisted values rather than
+// looking up the current catalog, which may have changed since the Turn ran.
+func snapshotAgentHubAgent(ctx context.Context, client *agentHubClient, requested string) (providerID, providerName, model string) {
+	if client == nil || strings.TrimSpace(requested) == "" {
+		return "", "", ""
+	}
+	catalog, err := client.Agents(ctx)
+	if err != nil {
+		return "", "", ""
+	}
+	for _, agent := range catalog.Agents {
+		if !strings.EqualFold(strings.TrimSpace(agent.Name), strings.TrimSpace(requested)) {
+			continue
+		}
+		providerID = strings.TrimSpace(agent.ProviderID)
+		for _, provider := range catalog.Providers {
+			if strings.EqualFold(strings.TrimSpace(provider.ID), providerID) {
+				providerName = strings.TrimSpace(provider.Name)
+				break
+			}
+		}
+		model = strings.TrimSpace(agent.Options["model"])
+		if model == "" {
+			model = strings.TrimSpace(agent.Options["modelName"])
+		}
+		return providerID, providerName, model
+	}
+	return "", "", ""
+}
+
 const (
 	agentHubDefaultUserName   = "User"
 	agentHubUserNameMaxLength = 80

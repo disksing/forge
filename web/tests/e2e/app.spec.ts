@@ -74,8 +74,6 @@ function resourceDetail(resource: MockResource) {
     files: [
       { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
     ],
-    logs: [{ id: `${resource.id}-log-1`, time: now, title: "Initial detail log", details: "Stable log details." }],
-    logPage: { hasMore: true, nextCursor: `${resource.id}-log-1` },
     artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
     repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
     templates: resource?.type === "project" ? templates : [],
@@ -381,8 +379,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
             { name: "scheduler.md", path: "scheduler/scheduler.md", content: "# Scheduler context\n", contentHash: "scheduler-context-v1" },
             { name: "AGENTS.md", path: "scheduler/AGENTS.md", content: "# Scheduler guidance\n", contentHash: "scheduler-agents-v1" },
           ],
-          logs: [],
-          logPage: { hasMore: false },
           artifacts: [],
           repos: [],
         });
@@ -393,10 +389,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         : createdTask?.id === resourceId
           ? resourceDetail(createdTask)
           : detail(resourceId);
-      if (url.searchParams.get("logsCursor")) {
-        value.logs = [{ id: `${value.id}-log-2`, time: "2026-08-09T12:00:00Z", title: "Older detail log", details: "Older page." }];
-        value.logPage = { hasMore: false, nextCursor: `${value.id}-log-2` };
-      }
       return json(route, value);
     }
     if (path === "/api/workspaces/ws-test/files") {
@@ -512,7 +504,7 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
       return json(route, {
         ...resource,
         files: [{ name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}`, contentHash: `${id}-v1` }],
-        logs: [], logPage: { hasMore: false }, artifacts: [], repos: [], templates: [],
+        artifacts: [], repos: [], templates: [],
       });
     }
     if (/^\/api\/workspaces\/ws-[ab]\/files$/.test(path)) return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
@@ -723,7 +715,7 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   expect(harness.schedulerBodies[1].body).toMatchObject({ wakeIntervalMinutes: 45 });
 });
 
-test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable during refresh", async ({ page }) => {
+test("keeps Svelte Detail documents, History, previews, diffs, and edits stable during refresh", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
   const panel = page.locator("#detailsPanel");
@@ -762,13 +754,15 @@ test("keeps Svelte Detail documents, logs, previews, diffs, and edits stable dur
   await expect.poll(() => page.evaluate(() => window.getSelection()?.toString())).toBe("Baseline");
   await expect.poll(() => content.evaluate((node) => node.scrollTop)).toBe(180);
 
-  await panel.getByRole("tab", { name: /Logs/ }).click();
-  const firstLog = panel.locator('[data-log-id="project1.task1-log-1"]');
-  await firstLog.evaluate((node) => { (node as HTMLDetailsElement).open = true; node.setAttribute("data-identity-probe", "stable-log"); });
-  await panel.getByRole("button", { name: "Load More" }).click();
-  await expect(panel.locator("[data-log-id]")).toHaveCount(2);
-  await expect(firstLog).toHaveAttribute("open", "");
-  await expect(firstLog).toHaveAttribute("data-identity-probe", "stable-log");
+  await panel.getByRole("tab", { name: "History" }).click();
+  const history = panel.locator('[data-component-owner="history-timeline"]');
+  await expect(history).toContainText("Provider:");
+  await expect(history).toContainText("Model:");
+  const firstTurn = history.locator(".history-turn").first();
+  await firstTurn.locator(".history-turn-header").click();
+  await expect(firstTurn).toContainText("gen-1 baseline message 1");
+  await history.getByRole("button", { name: "Load older History" }).click();
+  await expect(history).toContainText("gen-1 older history");
   await expect(documentView).toHaveAttribute("data-identity-probe", "stable-document");
 
   await panel.getByRole("tab", { name: "Artifacts" }).click();

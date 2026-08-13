@@ -1,14 +1,6 @@
 import type { TaskTemplate } from "./create";
 import type { FileTreeModel, ResourceCreatorModel, ResourceFileModel, ResourceRepoModel } from "./detail";
 
-export interface ResourceLogRecord {
-  id?: string;
-  time?: string;
-  title?: string;
-  details?: string;
-  value?: unknown;
-}
-
 export interface ResourceRecord {
   id: string;
   type?: string;
@@ -22,8 +14,6 @@ export interface ResourceRecord {
   updatedAt?: string;
   children?: ResourceRecord[];
   files?: ResourceFileModel[];
-  logs?: ResourceLogRecord[];
-  logPage?: { entries?: ResourceLogRecord[]; hasMore?: boolean; nextCursor?: string };
   artifacts?: FileTreeModel[];
   repos?: ResourceRepoModel[];
   templates?: TaskTemplate[];

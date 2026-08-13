@@ -1,4 +1,4 @@
-import type { FileTreeModel, ResourceLogModel } from "./models";
+import type { FileTreeModel } from "./models";
 
 export function isMarkdownFile(path = ""): boolean {
   return /\.(md|markdown|mdown|mkdn)$/i.test(path);
@@ -26,13 +26,6 @@ export function stripForgeManagedBlocks(content: string): string {
     cursor = end + endMarker.length;
   }
   return result.trim();
-}
-
-export function compareLogTimeDesc(a: ResourceLogModel, b: ResourceLogModel): number {
-  const left = Date.parse(a.time || "");
-  const right = Date.parse(b.time || "");
-  if (Number.isFinite(left) && Number.isFinite(right) && left !== right) return right - left;
-  return String(b.time || "").localeCompare(String(a.time || ""));
 }
 
 export function relativeTime(value: string): string {

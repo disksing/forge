@@ -1,13 +1,11 @@
-import type { AgentEvent, AppShellModel, ResourceLogModel, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
+import type { AgentEvent, AppShellModel, ShellResourceItem, ShellStatusPresentation } from "../../src/components/models";
 
 export const performanceBudgets = {
   treeRenderMs: 5_000,
-  logRenderMs: 4_000,
   markdownRenderMs: 1_000,
   eventMergeMs: 1_000,
   continuousDeltaMs: 1_500,
   maximumTreeElements: 15_000,
-  maximumLogElements: 10_000,
 } as const;
 
 const emptyStatus: ShellStatusPresentation = {
@@ -38,15 +36,6 @@ export function largeTreeModel(): AppShellModel {
     onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
     onMobileImmersive: noop, onHistoryNavigation: noopAsync, onToast: noop, onIconsChanged: noop,
   };
-}
-
-export function longLogs(): ResourceLogModel[] {
-  return Array.from({ length: 750 }, (_, index) => ({
-    id: `log-${index}`,
-    time: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(),
-    title: `Deterministic log ${index}`,
-    details: `## Log ${index}\n\n${"bounded detail ".repeat(20)}`,
-  }));
 }
 
 export function largeMarkdown(): string {

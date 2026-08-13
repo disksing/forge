@@ -540,6 +540,46 @@ func TestResourceGenerationTitleUsesResourceTitleAndGeneration(t *testing.T) {
 	}
 }
 
+func TestCreateResourceGenerationPersistsAgentHubCatalogSnapshot(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/agents" && r.Method == http.MethodGet {
+			writeRuntimeFakeJSON(w, map[string]any{
+				"providers": []any{map[string]any{"id": "codex", "name": "Codex Cloud", "type": "cloud", "enabled": true}},
+				"agents":    []any{map[string]any{"name": "fake-agent", "providerId": "codex", "options": map[string]string{"model": "gpt-history"}, "available": true}},
+				"probes":    []any{},
+			})
+			return
+		}
+		fake.ServeHTTP(w, r)
+	}))
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	cfg, client, err := manager.agentHubRuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := manager.resolveResourceAgent(workspace, "project1.task1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := manager.createResourceGeneration(context.Background(), workspace, "project1.task1", workspace.Path, cfg, client, resolved)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.AgentHubProviderID != "codex" || created.AgentHubProviderName != "Codex Cloud" || created.AgentHubModel != "gpt-history" {
+		t.Fatalf("catalog snapshot was not persisted in the generation: %#v", created)
+	}
+	persisted, err := loadAgentRun(workspace.Path, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := historyGeneration(persisted)
+	if history.Provider != "Codex Cloud" || history.ProviderID != "codex" || history.Model != "gpt-history" {
+		t.Fatalf("history projection lost the immutable catalog snapshot: %#v", history)
+	}
+}
+
 func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorkspace, body string) (*httptest.ResponseRecorder, agentRun) {
 	t.Helper()
 	var request struct {

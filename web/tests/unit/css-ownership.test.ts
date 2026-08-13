@@ -22,7 +22,7 @@ const components = [
   "EventTimeline",
   "FileBrowser",
   "FilePreviewModal",
-  "LogTimeline",
+  "HistoryTimeline",
   "LifecycleNotice",
   "MarkdownDocument",
   "MobileToolbar",
@@ -65,7 +65,7 @@ const owners: Record<(typeof components)[number], string> = {
   EventTimeline: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
-  LogTimeline: "log-timeline",
+  HistoryTimeline: "history-timeline",
   LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
   MobileToolbar: "mobile-toolbar",
@@ -157,7 +157,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

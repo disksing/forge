@@ -1,0 +1,174 @@
+/* HistoryTimeline styles. Keep selectors within the documented ownership boundary. */
+[data-component-owner="history-timeline"].history-timeline-root {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+  padding: 14px 2px 28px;
+}
+
+[data-component-owner="history-timeline"] .history-state,
+[data-component-owner="history-timeline"] .history-legacy,
+[data-component-owner="history-timeline"] .history-gap,
+[data-component-owner="history-timeline"] .history-detail-state {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+[data-component-owner="history-timeline"] .history-state {
+  justify-content: center;
+  min-height: 120px;
+}
+
+[data-component-owner="history-timeline"] .history-state span,
+[data-component-owner="history-timeline"] .history-legacy small,
+[data-component-owner="history-timeline"] .history-gap small {
+  display: block;
+}
+
+[data-component-owner="history-timeline"] .history-state strong,
+[data-component-owner="history-timeline"] .history-legacy strong,
+[data-component-owner="history-timeline"] .history-gap strong {
+  color: var(--text-primary);
+}
+
+[data-component-owner="history-timeline"] .history-error {
+  color: var(--danger-text, #b42318);
+  flex-wrap: wrap;
+}
+
+[data-component-owner="history-timeline"] .history-load-older {
+  align-self: center;
+}
+
+[data-component-owner="history-timeline"] .history-generation {
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 14px;
+  justify-content: space-between;
+  padding: 11px 10px 8px;
+}
+
+[data-component-owner="history-timeline"] .history-generation div {
+  align-items: baseline;
+  display: flex;
+  gap: 8px;
+}
+
+[data-component-owner="history-timeline"] .history-generation span,
+[data-component-owner="history-timeline"] .history-generation-meta,
+[data-component-owner="history-timeline"] .history-turn-count,
+[data-component-owner="history-timeline"] .history-turn-title small {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+[data-component-owner="history-timeline"] .history-generation-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+}
+
+[data-component-owner="history-timeline"] .history-gap,
+[data-component-owner="history-timeline"] .history-legacy {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+[data-component-owner="history-timeline"] .history-gap > span,
+[data-component-owner="history-timeline"] .history-legacy > span {
+  flex: 1;
+}
+
+[data-component-owner="history-timeline"] .history-turn {
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+[data-component-owner="history-timeline"] .history-turn-header {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(118px, auto) minmax(0, 1fr) auto;
+  padding: 11px 12px;
+  text-align: left;
+  width: 100%;
+}
+
+[data-component-owner="history-timeline"] .history-turn-header:hover {
+  background: var(--surface-hover);
+}
+
+[data-component-owner="history-timeline"] .history-turn-title {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+[data-component-owner="history-timeline"] .history-turn-preview {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-component-owner="history-timeline"] .history-turn-count {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+[data-component-owner="history-timeline"] .history-items {
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 12px 12px;
+}
+
+[data-component-owner="history-timeline"] .history-item {
+  display: grid;
+  gap: 5px 9px;
+  grid-template-columns: max-content minmax(0, 1fr);
+  line-height: 1.4;
+}
+
+[data-component-owner="history-timeline"] .history-item-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+[data-component-owner="history-timeline"] .history-item-text,
+[data-component-owner="history-timeline"] .history-tool-calls {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+[data-component-owner="history-timeline"] .history-tool-calls {
+  grid-column: 2;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  [data-component-owner="history-timeline"] .history-turn-header {
+    grid-template-columns: 1fr auto;
+  }
+
+  [data-component-owner="history-timeline"] .history-turn-preview {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

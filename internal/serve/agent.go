@@ -43,9 +43,15 @@ type agentRun struct {
 	// ForgeSessionID is retained only for the unexposed legacy agent-run
 	// compatibility path. Resource generations leave it empty and therefore do
 	// not serialize a Forge Session address.
-	ForgeSessionID          string `json:"forgeSessionId,omitempty"`
-	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
-	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
+	ForgeSessionID    string `json:"forgeSessionId,omitempty"`
+	AgentHubSessionID string `json:"agentHubSessionId,omitempty"`
+	AgentHubAgentName string `json:"agentHubAgentName,omitempty"`
+	// AgentHubProviderID, AgentHubProviderName, and AgentHubModel are immutable
+	// launch-time catalog snapshots. History must not re-resolve them from the
+	// current AgentHub catalog after a binding or provider configuration change.
+	AgentHubProviderID      string `json:"agentHubProviderId,omitempty"`
+	AgentHubProviderName    string `json:"agentHubProviderName,omitempty"`
+	AgentHubModel           string `json:"agentHubModel,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
 	// IdleSinceAt and IdleDeadlineAt are the durable ready-boundary clock for

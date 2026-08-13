@@ -40,6 +40,9 @@ type resourceHistoryGeneration struct {
 	Binding            app.AgentBinding `json:"binding"`
 	ResolvedProfile    string           `json:"resolvedProfile,omitempty"`
 	AgentName          string           `json:"agentName,omitempty"`
+	Provider           string           `json:"provider,omitempty"`
+	ProviderID         string           `json:"providerId,omitempty"`
+	Model              string           `json:"model,omitempty"`
 	Status             string           `json:"status"`
 	CreatedAt          string           `json:"createdAt"`
 	UpdatedAt          string           `json:"updatedAt"`
@@ -208,6 +211,7 @@ func historyGeneration(run agentRun) resourceHistoryGeneration {
 		Generation: run.Generation, GenerationID: run.GenerationID, Title: run.Title,
 		Binding:         app.AgentBinding{Kind: run.BindingKind, Name: run.BindingName},
 		ResolvedProfile: run.ResolvedProfile, AgentName: run.AgentHubAgentName,
+		Provider: run.AgentHubProviderName, ProviderID: run.AgentHubProviderID, Model: run.AgentHubModel,
 		Status: run.Status, CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
 		AgentHubSessionID: run.AgentHubSessionID, ReplacementPending: run.ReplacementPending,
 	}

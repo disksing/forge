@@ -93,6 +93,9 @@ func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 }
 
 func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
+	t.Setenv(forgeWorkspaceRootEnvironment, "")
+	t.Setenv(forgeWorkspaceInstanceEnvironment, "")
+	t.Setenv(forgeResourceIDEnvironment, "")
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Mailbox project")
@@ -359,14 +362,6 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
 		}
-		var projectLogs []app.LogEntry
-		if err := json.Unmarshal([]byte(run(t, "project", "log", "list", "--project=project1", "--json")), &projectLogs); err != nil {
-			t.Fatal(err)
-		}
-		if len(projectLogs) != 1 || projectLogs[0].Title != "项目已创建" {
-			t.Fatalf("expected localized project creation log, got %+v", projectLogs)
-		}
-
 		run(t, "task", "create", "--project=project1", "中文任务")
 		taskPath := filepath.Join(projectPath, "task1")
 		taskMDPath := filepath.Join(taskPath, testTaskMDFile)
@@ -378,14 +373,6 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
-		var taskLogs []app.LogEntry
-		if err := json.Unmarshal([]byte(run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")), &taskLogs); err != nil {
-			t.Fatal(err)
-		}
-		if len(taskLogs) != 1 || taskLogs[0].Title != "任务已创建" {
-			t.Fatalf("expected localized task creation log, got %+v", taskLogs)
-		}
-
 		appendFile(t, projectAgentsPath, "\n# 团队说明\n\n保留这行。\n")
 		chineseTaskMD := readFile(t, taskMDPath)
 		if err := os.Chdir(taskPath); err != nil {
@@ -440,10 +427,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"relevant `artifacts/`",
 				"task.json` contains structured state",
 				"task.md` the durable contract",
-				"log.jsonl` the historical timeline",
+				"Use the resource History commands for conversation history.",
 				"You may use `sed`, `rg`, or `less` on the resolved paths.",
 				"forge task show --project=<project> --task=<task>",
-				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge task history --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "只读检查其他项目/任务资源",
@@ -458,10 +445,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"相关 `artifacts/`",
 				"`task.json` 是结构化状态",
 				"`task.md` 是长期约定",
-				"`log.jsonl` 是历史时间线",
+				"对话历史使用资源 History 命令",
 				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
 				"forge task show --project=<project> --task=<task>",
-				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge task history --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "Read-only inspection of other project/task resources",
@@ -732,16 +719,6 @@ func TestTaskLifecycle(t *testing.T) {
 		assertMissing(t, filepath.Join(root, "project1", "task.json"))
 		assertMissing(t, filepath.Join(root, "project1", "task.md"))
 		assertMissing(t, filepath.Join(root, "project1", "work.md"))
-		assertFile(t, filepath.Join(root, "project1", "log.jsonl"))
-		assertMissing(t, filepath.Join(root, "project1", "log.md"))
-		projectLogJSON := run(t, "project", "log", "list", "--project=project1", "--json")
-		var projectLogs []app.LogEntry
-		if err := json.Unmarshal([]byte(projectLogJSON), &projectLogs); err != nil {
-			t.Fatalf("project log list should print JSON, got error %v and output:\n%s", err, projectLogJSON)
-		}
-		if len(projectLogs) != 1 || projectLogs[0].Title != "Project created" {
-			t.Fatalf("expected project creation log, got: %+v", projectLogs)
-		}
 		assertDir(t, filepath.Join(root, "project1", "artifacts"))
 		assertDir(t, filepath.Join(root, "project1", "templates"))
 		assertMissing(t, filepath.Join(root, "project1", "worktree"))
@@ -829,14 +806,14 @@ func TestTaskLifecycle(t *testing.T) {
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json, project.md, and log.jsonl") {
+		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json and project.md") {
 			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "prefer an existing suitable template") || !strings.Contains(subtaskAgents, "preserve all existing template rules by default") || !strings.Contains(subtaskAgents, "override a particular rule only when the user explicitly asks for that override") {
 			t.Fatalf("expected subtask AGENTS.md to preserve applicable template guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "forge task log add <title> --details <details>") {
-			t.Fatalf("expected subtask AGENTS.md to mention structured log command, got:\n%s", subtaskAgents)
+		if !strings.Contains(subtaskAgents, "Read conversation and execution events through the resource History commands") {
+			t.Fatalf("expected subtask AGENTS.md to mention resource History, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
@@ -917,32 +894,8 @@ func TestTaskLifecycle(t *testing.T) {
 		if detail.Files[0].ContentHash == "" {
 			t.Fatal("expected task Markdown detail to include a content hash")
 		}
-		if len(detail.Logs) != 1 || detail.Logs[0].Title != "Task created" {
-			t.Fatalf("expected structured task creation log, got: %+v", detail.Logs)
-		}
 		if len(detail.Artifacts) != 1 || detail.Artifacts[0].Name != "result.txt" {
 			t.Fatalf("expected artifact file in task detail, got: %+v", detail.Artifacts)
-		}
-
-		addedLog := run(t, "task", "log", "add", "--project=project1", "--task=task1", "--details", "go test ./... passed", "Ran checks")
-		var addedEntry app.LogEntry
-		if err := json.Unmarshal([]byte(addedLog), &addedEntry); err != nil {
-			t.Fatalf("task log add should print JSON, got error %v and output:\n%s", err, addedLog)
-		}
-		if addedEntry.Title != "Ran checks" || addedEntry.Details != "go test ./... passed" {
-			t.Fatalf("unexpected added log entry: %+v", addedEntry)
-		}
-		taskLogJSON := run(t, "task", "log", "list", "--project=project1", "--task=task1", "--json")
-		var taskLogs []app.LogEntry
-		if err := json.Unmarshal([]byte(taskLogJSON), &taskLogs); err != nil {
-			t.Fatalf("task log list should print JSON, got error %v and output:\n%s", err, taskLogJSON)
-		}
-		if len(taskLogs) != 2 || taskLogs[0].Title != "Ran checks" || taskLogs[1].Title != "Task created" {
-			t.Fatalf("expected newest task log first, got: %+v", taskLogs)
-		}
-		rawTaskLog := readFile(t, filepath.Join(root, "project1", "task1", "log.jsonl"))
-		if !strings.Contains(strings.SplitN(rawTaskLog, "\n", 2)[0], `"title":"Ran checks"`) {
-			t.Fatalf("expected log.jsonl to store newest entry first, got:\n%s", rawTaskLog)
 		}
 
 		shown := run(t, "task", "show", "--project=project1", "--task=task1")
@@ -1841,11 +1794,11 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "When starting a new generation") || !strings.Contains(first, "--limit=20") || !strings.Contains(first, "do not create a second permanent progress file") {
 			t.Fatalf("expected workspace AGENTS.md to describe bounded generation recovery, got:\n%s", first)
 		}
-		if !strings.Contains(first, "task.json` contains structured state, `task.md` the durable contract, and `log.jsonl` the historical timeline") {
-			t.Fatalf("expected workspace AGENTS.md to distinguish structured facts, contracts, and timeline, got:\n%s", first)
+		if !strings.Contains(first, "task.json` contains structured state, `task.md` the durable contract, and `work.md` the current recovery checkpoint") {
+			t.Fatalf("expected workspace AGENTS.md to distinguish structured facts, contracts, and recovery state, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "Query recent resource history with a bounded limit") {
-			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from bounded history, got:\n%s", first)
+		if !strings.Contains(first, "Keep current state in `work.md`") || !strings.Contains(first, "resource History for chronological conversation and execution events") {
+			t.Fatalf("expected workspace AGENTS.md to distinguish current state from History, got:\n%s", first)
 		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
 			if !strings.Contains(first, want) {
@@ -1997,7 +1950,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
 		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json, project.md, and log.jsonl", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json and project.md", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
@@ -2047,7 +2000,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Keep child note.") {
 			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json, project.md, and log.jsonl") {
+		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json and project.md") {
 			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
 		}
 		if !strings.Contains(subtaskAfter, "absolute destination path inside this task's worktree/") {

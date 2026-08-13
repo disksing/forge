@@ -258,14 +258,12 @@ AgentWorkspace/
     AGENTS.md                 generated project launch card
     project.json              structured project metadata
     project.md                durable project contract
-    log.jsonl                 append-only project timeline
     templates/                reusable task templates
     artifacts/                project outputs
     task1-first-change/
       AGENTS.md               generated task launch card
       task.json               task and repository metadata
       task.md                 durable task contract
-      log.jsonl               append-only task timeline
       artifacts/              reports, screenshots, uploads, patches
       worktree/               task-owned Git worktrees
     archive/                  archived tasks
@@ -279,7 +277,7 @@ Open/archive state is represented by directory location. Human-readable director
 | File | Role |
 | --- | --- |
 | `project.md`, `task.md` | Durable contracts: background, scope, acceptance criteria, stable constraints, decisions, and contract-changing questions. |
-| `log.jsonl` | Append-only chronological events and completed-step history, written with `forge project log` or `forge task log`. |
+| Resource History | Bounded generation/Turn conversation history, exposed by the History API and CLI. |
 | `project.json`, `task.json` | Versioned structured facts Forge understands. Arbitrary notes belong in Markdown. |
 | `AGENTS.md` | Workspace operating rules plus generated project/task launch cards. Forge rewrites only its marked managed block. |
 | `wiki/` | Long-lived knowledge shared across projects and tasks, with `wiki/index.md` as the entry point. |
@@ -301,8 +299,6 @@ forge project create [--slug <slug>] [--creator=user|agent] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
-forge project log add|list ...
-
 forge template list|show|validate|render|create|migrate ...
 
 forge scheduler list [--json]
@@ -328,7 +324,6 @@ forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=use
                   [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
 forge task list [--project=<project>] [--all]
 forge task show|archive ...
-forge task log add|list ...
 forge task repo add|list|remove ...
 
 forge session list
@@ -350,7 +345,7 @@ Workspace, Project, and Task creation is local and uses the shared `internal/app
 
 Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
-`forge migrate` upgrades supported resource metadata, performs the one-time versioned migration of generation records and mailbox `pendingMessages` into staged resource stores, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, migrates meaningful legacy task `work.md` content into a digest-marked chapter in `task.md` before removing the source, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. Known default explanatory comments are stripped only on exact deterministic matches; conflicts and uncertain content fail closed. Mailbox stores are committed before migrated queues are cleared, retries deduplicate by stable message ID, and retained legacy files provide rollback evidence. An older Forge that does not understand the new resource stores must not write the Workspace after migration; stop the new Server and use a compatible version or restore from backup. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
+`forge migrate` upgrades supported resource metadata, performs the one-time versioned migration of generation records and mailbox `pendingMessages` into staged resource stores, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, migrates meaningful legacy task `work.md` content into a digest-marked chapter in `task.md` before removing the source, migrates pre-History resource `log.jsonl` into `artifacts/legacy-log.md` before removing the source, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. Known default explanatory comments are stripped only on exact deterministic matches; conflicts and uncertain content fail closed. Mailbox stores are committed before migrated queues are cleared, retries deduplicate by stable message ID, and retained legacy files provide rollback evidence. An older Forge that does not understand the new resource stores must not write the Workspace after migration; stop the new Server and use a compatible version or restore from backup. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
 
 ```markdown
 <!-- managed by forge cli -->

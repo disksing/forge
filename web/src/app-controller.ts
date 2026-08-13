@@ -10,7 +10,7 @@ import { createAgentOperationController } from "./controllers/agent-operation-co
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
 import { createNotificationController, type NotificationSource } from "./controllers/notification-controller";
 import { createPaneLayoutController } from "./controllers/pane-layout-controller";
-import { createResourceDetailController, type ResourceLogPageState } from "./controllers/resource-detail-controller";
+import { createResourceDetailController } from "./controllers/resource-detail-controller";
 import { createRouteController } from "./controllers/route-controller";
 import { createSettingsController, type AgentHubData } from "./controllers/settings-controller";
 import { createShellProjection } from "./controllers/shell-projection";
@@ -38,7 +38,6 @@ interface ControllerState {
 	config: WorkspaceConfig | null;
 	tree: WorkspaceTree | null;
 	details: Record<string, ResourceRecord>;
-	resourceLogPages: Record<string, ResourceLogPageState>;
 	workspaceAgents: WorkspaceFileRecord | null;
 	workspaceAgentsDraft: string;
 	workspaceAgentsDirty: boolean;
@@ -98,7 +97,6 @@ const controllerState: ControllerState = {
 	config: null,
 	tree: null,
 	details: {},
-	resourceLogPages: {} as Record<string, ResourceLogPageState>,
 	workspaceAgents: null,
 	workspaceAgentsDraft: "",
 	workspaceAgentsDirty: false,
@@ -168,7 +166,6 @@ const controllerState: ControllerState = {
 
 function clearResourceDetailState() {
 	for (const id of Object.keys(controllerState.details)) delete controllerState.details[id];
-	for (const id of Object.keys(controllerState.resourceLogPages)) delete controllerState.resourceLogPages[id];
 }
 
 const agentDraftController = createAgentDraftController({
@@ -190,7 +187,6 @@ const paneLayoutController = createPaneLayoutController(() => renderAppShell());
 const routeController = createRouteController(() => renderAppShell());
 const resourceDetailController = createResourceDetailController({
 	details: controllerState.details,
-	pages: controllerState.resourceLogPages,
 	context: () => ({
 		workspaceId: controllerState.activeWorkspaceId,
 		navigationVersion: controllerState.navigationVersion,
@@ -200,8 +196,6 @@ const resourceDetailController = createResourceDetailController({
 	nextDetailRequestVersion: () => ++controllerState.detailRequestVersion,
 	isCurrentWorkspace: (workspaceId, navigationVersion) => isCurrentWorkspaceView(workspaceId, navigationVersion),
 	request: (path, init) => api(path, init),
-	render: renderDetails,
-	refreshIcons
 });
 const createDialogController = createCreateDialogController({
 	workspaceId: () => controllerState.activeWorkspaceId,
@@ -219,12 +213,10 @@ const createDialogController = createCreateDialogController({
 });
 const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string): ElementType | null => document.getElementById(id) as ElementType | null;
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
-const RESOURCE_LOG_INITIAL_LIMIT = 10;
-const RESOURCE_LOG_MORE_LIMIT = 20;
 const AGENT_HIDDEN_EVENT_TYPES = /* @__PURE__ */ new Set(["session.launch-environment"]);
 interface LoadTreeOptions { updateURL?: boolean; replaceURL?: boolean }
 interface LoadDetailOptions { force?: boolean }
-interface FetchDetailOptions { logsCursor?: string | number; cursor?: string | number; logsLimit?: number; limit?: number }
+interface FetchDetailOptions {}
 interface WorkspaceAgentsOptions { force?: boolean }
 interface SelectResourceOptions { clearUnread?: boolean; forceDetail?: boolean }
 interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; rethrow?: boolean }
@@ -517,23 +509,14 @@ async function loadTree(options: LoadTreeOptions = {}) {
 async function loadDetail(id: string, options: LoadDetailOptions = {}): Promise<ResourceRecord | null | undefined> {
 	return resourceDetailController.load(id, options);
 }
-function fetchDetail(id: string, workspaceId = controllerState.activeWorkspaceId, options: FetchDetailOptions = {}): Promise<ResourceRecord> {
-	return resourceDetailController.fetch(id, workspaceId, options);
-}
-function resetResourceLogState(resourceId: string): void {
-	resourceDetailController.reset(resourceId);
-}
-function resourceLogPage(resourceId: string): ResourceLogPageState {
-	return resourceDetailController.page(resourceId);
+function fetchDetail(id: string, workspaceId = controllerState.activeWorkspaceId, _options: FetchDetailOptions = {}): Promise<ResourceRecord> {
+	return resourceDetailController.fetch(id, workspaceId);
 }
 function resourceDetailSnapshot(resourceId: string): ReturnType<typeof resourceDetailController.snapshot> {
 	return resourceDetailController.snapshot(resourceId);
 }
-function applyResourceDetail(detail: ResourceRecord, mode: "head" | "replace" | "older" = "head"): ResourceRecord | null {
-	return resourceDetailController.apply(detail, mode);
-}
-async function loadMoreLogs(resourceId = controllerState.selectedId) {
-	await resourceDetailController.loadMore(resourceId);
+function applyResourceDetail(detail: ResourceRecord): ResourceRecord | null {
+	return resourceDetailController.apply(detail);
 }
 async function loadWorkspaceAgents(options: WorkspaceAgentsOptions = {}) {
 	if (!controllerState.activeWorkspaceId || controllerState.workspaceAgents && !options.force) return;
@@ -620,10 +603,10 @@ async function autoRefresh() {
 			if (!sameJSON(previousAgents, controllerState.workspaceAgents)) changed = true;
 		} else if (selectedId) {
 			const detailRequestVersion = ++controllerState.detailRequestVersion;
-			const detail = await fetchDetail(selectedId, workspaceId, { logsLimit: RESOURCE_LOG_INITIAL_LIMIT });
+			const detail = await fetchDetail(selectedId, workspaceId);
 			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion) || controllerState.selectedId !== selectedId || detailRequestVersion !== controllerState.detailRequestVersion) return;
 			const previousDetail = resourceDetailSnapshot(selectedId);
-			applyResourceDetail(detail, "head");
+			applyResourceDetail(detail);
 			if (!sameJSON(previousDetail, resourceDetailSnapshot(selectedId))) changed = true;
 		}
 		observeCompletionProjections(resourceNotificationProjections(tree));
@@ -857,8 +840,7 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		controllerState.previewRequestVersion++;
 		controllerState.diffRequestVersion++;
 		if (id !== "workspace") {
-			resetResourceLogState(id);
-			delete controllerState.details[id];
+			resourceDetailController.reset(id);
 		}
 	}
 	if (selectionChanged) {
@@ -921,15 +903,9 @@ function detailPanelModel(): DetailPanelModel {
 			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
 		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
 		agents: svelteAgentOptions(),
-		logs: {
-			hasMore: false,
-			loading: false,
-			error: ""
-		},
 		onNavigate: (resourceId: string) => openBreadcrumbResource(resourceId).catch((err) => toast(errorMessage(err))),
 		onCreateTask: (projectId: string) => showTaskForm(projectId),
 		onArchive: (resourceId: string) => archiveResource(resourceId).catch((err) => toast(errorMessage(err))),
-		onLoadMoreLogs: (resourceId: string) => loadMoreLogs(resourceId),
 		onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => saveWorkspaceAgentsFromDetail(content, expectedContentHash),
 		onSaveAgentBinding: async (binding) => {
 			const resourceId = controllerState.selectedId || "workspace";
@@ -965,7 +941,6 @@ function detailPanelModel(): DetailPanelModel {
 	} as DetailPanelModel;
 	const detail = controllerState.details[selected.id] || null;
 	const parent = parentProject(selected.id);
-	const page = controllerState.resourceLogPages?.[selected.id] || {};
 	return {
 		...base,
 		identity: `${workspaceId}:${selected.id}:${selected.type}`,
@@ -977,12 +952,7 @@ function detailPanelModel(): DetailPanelModel {
 			title: parent.title || parent.id
 		} : null,
 		loading: !detail,
-		detail: resourceDetailView(detail),
-		logs: {
-			hasMore: Boolean(page.hasMore ?? detail?.logPage?.hasMore),
-			loading: Boolean(page.loading),
-			error: String(page.error || "")
-		}
+		detail: resourceDetailView(detail)
 	};
 }
 function resourceDetailView(detail: ResourceRecord | null): DetailPanelModel["detail"] {
@@ -991,13 +961,7 @@ function resourceDetailView(detail: ResourceRecord | null): DetailPanelModel["de
 		...detail,
 		type: detail.type,
 		title: detail.title || detail.id,
-		path: detail.path || "",
-		logs: (detail.logs || []).map((entry, index) => ({
-			id: entry.id || `${detail.id}:log:${index}`,
-			time: entry.time || "",
-			title: entry.title,
-			details: entry.details,
-		})),
+		path: detail.path || ""
 	};
 }
 function renderDetails(): void {
@@ -1700,7 +1664,7 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 	controllerState.activeWorkspaceId = route.workspaceId || "";
 	controllerState.selectedId = route.resourceId || "workspace";
 	if (!workspaceChanged && previousSelectedId !== controllerState.selectedId && controllerState.selectedId !== "workspace") {
-		resetResourceLogState(controllerState.selectedId);
+		resourceDetailController.reset(controllerState.selectedId);
 		delete controllerState.details[controllerState.selectedId];
 	}
 	controllerState.preview = null;

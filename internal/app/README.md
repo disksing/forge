@@ -27,7 +27,7 @@ project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{
 - `PreviewTask`：无副作用地计算最终标题、Markdown 与模板 digest；
 - `CreateProject`、`CreateProjectWithInput`、`CreateTask`、`ArchiveResource`：资源生命周期；
 - `GenerationDiagnostics`、`GenerationDiagnostic`：从 `.forge/runtime/resources/<resource-key>/` 的 resource-scoped generation store 派生只读 generation 诊断；不创建、修改或访问 AgentHub Session；
-- `AddLog`、`Logs`、`Repositories`、`CloneRepository` 及 Task repository 方法：历史和仓库数据。
+- `Repositories`、`CloneRepository` 及 Task repository 方法：仓库数据。资源对话历史由 `forge serve` 的 Resource History API 提供；旧资源的 `log.jsonl` 仅由 `forge migrate` 迁移为 `artifacts/legacy-log.md`。
 
 跨进程写入使用 Workspace mutation lock。模板任务在同一 mutation lock 中重新读取并渲染；可选 digest 不匹配会在分配任务编号和创建 staging 目录前失败。CLI、HTTP handler 和 GUI 只负责适配输入输出，不解析 YAML、替换占位符或自行读写资源 schema。
 

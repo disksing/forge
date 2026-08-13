@@ -35,13 +35,6 @@ export interface FileTreeModel {
   children?: FileTreeModel[];
 }
 
-export interface ResourceLogModel {
-  id: string;
-  time: string;
-  title?: string;
-  details?: string;
-}
-
 export interface ResourceRepoModel {
   name?: string;
   worktreePath?: string;
@@ -60,8 +53,6 @@ export interface ResourceDetailModel {
   creator?: ResourceCreatorModel;
   agentBinding?: ResourceAgentBindingModel;
   files?: ResourceFileModel[];
-  logs?: ResourceLogModel[];
-  logPage?: { hasMore?: boolean; nextCursor?: string };
   artifacts?: FileTreeModel[];
   repos?: ResourceRepoModel[];
   templates?: TaskTemplate[];
@@ -112,11 +103,9 @@ export interface DetailPanelModel {
   agentBinding: ResourceAgentBindingModel;
   agentProfiles: ResourceAgentProfileModel[];
   agents: AgentOption[];
-  logs: { hasMore: boolean; loading: boolean; error: string };
   onNavigate: (resourceId: string) => void;
   onCreateTask: (projectId: string) => void;
   onArchive: (resourceId: string) => void;
-  onLoadMoreLogs: (resourceId: string) => Promise<void>;
   onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => Promise<WorkspaceAgentsModel>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;

@@ -117,6 +117,9 @@ export interface ResourceHistoryGeneration {
   binding?: { kind?: string; name?: string };
   resolvedProfile?: string;
   agentName?: string;
+  provider?: string;
+  providerId?: string;
+  model?: string;
   status: string;
   createdAt: string;
   updatedAt: string;
