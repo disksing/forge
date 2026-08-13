@@ -199,6 +199,36 @@ describe("DetailPanel", () => {
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain("old response");
   });
 
+  it("preserves an open artifact preview while the same file is refreshed", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      path: "a.txt",
+      content: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"),
+      contentHash: "a-v1",
+    }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetch);
+    const initial = resourceModel();
+    const { channel, target } = mountModel(initial);
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Artifacts"))!.click();
+    await tick();
+    const file = (Array.from(target.querySelectorAll(".artifact-row")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("a.txt"))!;
+    file.click();
+    await vi.waitFor(() => expect(target.querySelector("[data-preview-scroll]")).not.toBeNull());
+
+    const scroller = target.querySelector<HTMLElement>("[data-preview-scroll]")!;
+    scroller.scrollTop = 40;
+    scroller.scrollLeft = 7;
+    channel.publish({ ...initial, resourceTitle: "Refreshed", detail: { ...initial.detail!, title: "Refreshed" } });
+    await tick();
+    expect(target.querySelector<HTMLElement>("[data-preview-scroll]")).toBe(scroller);
+    file.click();
+    await tick();
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(scroller.scrollTop).toBe(40);
+    expect(scroller.scrollLeft).toBe(7);
+  });
+
   it("ignores a late Diff response after switching worktrees", async () => {
     const pending = new Map<string, (response: Response) => void>();
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => new Promise<Response>((resolve) => pending.set(String(input), resolve))));
