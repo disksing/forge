@@ -25,4 +25,14 @@ describe("shell projection", () => {
     expect(state.statusPresentation.layoutClassName).toBe("has-task-status");
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ taskCount: 2, runningCount: 1 });
   });
+
+  it("shows a resumable stopped generation as sleeping, not retired", () => {
+    const task = tree.projects[0].children![0];
+    task.runtime = { generationId: "gen-task1", status: "idle-suspended", resumable: true };
+    expect(projection.taskOperationalState(task).session).toMatchObject({
+      kind: "resource-suspended",
+      label: "Resource sleeping",
+    });
+    expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ runningCount: 0 });
+  });
 });

@@ -4838,14 +4838,15 @@ function gs(e) {
 	return e.reduce((e, t) => Math.max(e, Number(t.id) || 0), 0);
 }
 function _s(e) {
-	return !!(e?.generation?.generationId && e.session?.id && [
+	let t = e?.generation;
+	return !!(t?.generationId && e?.session?.id && ([
 		"starting",
 		"running",
 		"waiting_approval",
 		"idle",
 		"stopping",
 		"recovering"
-	].includes(String(e.generation.status || "")));
+	].includes(String(t.status || "")) || ["idle-suspended", "stopped"].includes(String(t.status || "")) && t.resumable === !0));
 }
 function vs(e) {
 	return [
@@ -9034,7 +9035,7 @@ function Dd(e) {
 		return Number.isFinite(r) && t() - r <= Ed;
 	}
 	function s(e) {
-		if (!e?.status || e.status === "stopped" || e.status === "archived") return null;
+		if (!e?.status || e.status === "archived" || ["stopped", "idle-suspended"].includes(e.status) && e.resumable !== !0) return null;
 		let t = o(e);
 		switch (e.status) {
 			case "starting": return {
@@ -9082,6 +9083,15 @@ function Dd(e) {
 				className: "task-status-info",
 				iconName: "message-square",
 				label: "Resource ready",
+				dimension: "resource",
+				recentOutput: t
+			};
+			case "idle-suspended":
+			case "stopped": return {
+				kind: "resource-suspended",
+				className: "task-status-info",
+				iconName: "pause-circle",
+				label: "Resource sleeping",
 				dimension: "resource",
 				recentOutput: t
 			};

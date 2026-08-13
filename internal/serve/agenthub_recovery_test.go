@@ -38,6 +38,14 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	if eventsCalls != 0 || streamCalls != 0 {
 		t.Fatalf("recovery must not read event history or open streams: events=%d streams=%d", eventsCalls, streamCalls)
 	}
+	fake.mu.Lock()
+	for _, action := range fake.actions {
+		if action == "resume" {
+			fake.mu.Unlock()
+			t.Fatal("stopped Session without mailbox demand was resumed during startup")
+		}
+	}
+	fake.mu.Unlock()
 	live := manager.runtimeByID("run-live")
 	if live == nil {
 		t.Fatal("live run was not recovered")
@@ -106,6 +114,64 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 	}
 	if rt := manager.runtimeByID("run-099"); rt == nil {
 		t.Fatal("stopped runs were not registered as lightweight runtimes")
+	}
+}
+
+func TestAgentHubRecoveryDoesNotReplayConfirmedActiveTurnAfterDaemonRestart(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := agentRun{
+		ID: "run-active-restart", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		AgentHubSessionID: "ses-active-restart", SourceExternalID: workspace.ID + "/run-active-restart",
+		Generation: 1, GenerationID: "gen-active-restart", AgentHubAgentName: "fake-agent",
+		Status: "running", LastTurnID: "turn-active-restart", CurrentTurnID: "turn-active-restart",
+		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
+	}
+	seedPollerRun(t, fake, workspace, run, agentHubSession{
+		ID: run.AgentHubSessionID, State: "stopped", StopReason: "daemon_recovery",
+		UpdatedAt: "2026-08-01T00:00:10Z",
+	})
+	fake.mu.Lock()
+	fake.appendLocked(run.AgentHubSessionID, "message.input", map[string]any{
+		"messageId": "msg-confirmed-restart", "text": "already delivered", "role": "user",
+	})
+	fake.appendLocked(run.AgentHubSessionID, "turn.started", map[string]any{"text": "already delivered"})
+	terminal := fake.appendLocked(run.AgentHubSessionID, "turn.cancelled", map[string]any{"reason": "daemon_recovery"})
+	terminal.TurnID = run.LastTurnID
+	fake.events[run.AgentHubSessionID][len(fake.events[run.AgentHubSessionID])-1] = terminal
+	session := fake.sessions[run.AgentHubSessionID]
+	session.State = "stopped"
+	session.StopReason = "daemon_recovery"
+	session.CurrentTurnID = ""
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	restarted := newAgentManager(manager.server)
+	manager.server.agents = restarted
+	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		rt := restarted.runtimeByID(run.ID)
+		if rt == nil {
+			return false
+		}
+		current := pollerRunState(rt)
+		return current.Status == "stopped" && !current.CompletionPending
+	})
+	fake.mu.Lock()
+	messageIDs := append([]string(nil), fake.messageIDs...)
+	actions := append([]string(nil), fake.actions...)
+	fake.mu.Unlock()
+	if len(messageIDs) != 0 {
+		t.Fatalf("restart replayed a confirmed prompt: message ids=%#v", messageIDs)
+	}
+	for _, action := range actions {
+		if action == "resume" {
+			t.Fatalf("daemon recovery resumed a terminal stopped Session without mailbox demand: actions=%#v", actions)
+		}
 	}
 }
 

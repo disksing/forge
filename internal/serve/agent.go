@@ -60,10 +60,20 @@ type agentRun struct {
 	// postpone the deadline.
 	IdleSinceAt    string `json:"idleSinceAt,omitempty"`
 	IdleDeadlineAt string `json:"idleDeadlineAt,omitempty"`
-	// IdleSleepStopRequested is the durable Stop -> stopped -> Archive guard
-	// for automatic sleep. It keeps mailbox messages waiting while the old
-	// generation is still converging, including across a Forge restart.
+	// IdleSleepStopRequested records that this current generation was put to
+	// sleep by the idle policy. It remains set after the Session reaches stopped
+	// so the public projection can distinguish an idle-suspended current
+	// generation from a retired one; a later mailbox item resumes this same
+	// generation and clears the marker at the ready boundary.
 	IdleSleepStopRequested bool `json:"idleSleepStopRequested,omitempty"`
+	// LifecycleReceipt is the durable boundary for the last lifecycle effect.
+	// It is deliberately stored on the generation so a Forge restart can retry
+	// or observe an idempotent Resume without a process-local state machine.
+	LifecycleReceipt *GenerationLifecycleReceipt `json:"lifecycleReceipt,omitempty"`
+	// SessionResumeUnavailable is set only after AgentHub explicitly reports
+	// that this exact Session cannot be resumed (or its identity no longer
+	// matches). It then permits the existing replacement/retirement path.
+	SessionResumeUnavailable bool `json:"sessionResumeUnavailable,omitempty"`
 	// ArchivedTaskStopRequested is the legacy-named durable progress marker for
 	// any archived Project/Task generation stop. It records that reconciliation
 	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are
@@ -732,6 +742,10 @@ func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, err
 
 func cloneAgentRun(run agentRun) agentRun {
 	cloned := run
+	if run.LifecycleReceipt != nil {
+		receipt := *run.LifecycleReceipt
+		cloned.LifecycleReceipt = &receipt
+	}
 	cloned.PendingMessages = append([]resourceInboundMessage(nil), run.PendingMessages...)
 	for index := range cloned.PendingMessages {
 		if cloned.PendingMessages[index].Sender != nil {

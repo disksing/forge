@@ -8,12 +8,12 @@ import (
 )
 
 // resourceGenerationLifecyclePending keeps a generation addressable while a
-// durable Stop -> Archive operation is still in flight. In particular, a
-// mailbox message accepted after Stop has become irreversible must wait for
-// this generation to finish instead of creating a second live generation.
+// replacement/archive Stop -> Archive operation is still in flight. Idle
+// sleep is intentionally absent: its stopped Session remains the current
+// generation and is the target of a later on-demand Resume.
 func resourceGenerationLifecyclePending(run agentRun) bool {
 	return (run.Status == "stopping" || run.Status == "stopped") &&
-		(run.IdleSleepStopRequested || run.ReplacementPending || run.ArchivedTaskStopRequested)
+		(run.ReplacementPending || run.ArchivedTaskStopRequested)
 }
 
 func (m *agentManager) resourceIdleSleepAfter() time.Duration {
@@ -56,14 +56,28 @@ func (m *agentManager) projectResourceIdleState(run *agentRun, session agentHubS
 	if run == nil {
 		return
 	}
+	resuming := run.LifecycleReceipt != nil && run.LifecycleReceipt.Operation == GenerationOperationResumeSession &&
+		run.LifecycleReceipt.State != GenerationReceiptTerminal
 	switch session.State {
-	case "running", "waiting_approval", "starting":
+	case "running", "waiting_approval":
 		run.IdleSinceAt = ""
 		run.IdleDeadlineAt = ""
 		// A new active Turn wins a race with a previously requested sleep. It
 		// is never interrupted by the automatic sleeper.
 		run.IdleSleepStopRequested = false
+	case "starting":
+		run.IdleSinceAt = ""
+		run.IdleDeadlineAt = ""
+		// Keep the idle marker until Resume reaches a ready/active boundary. A
+		// restart during starting must still describe this same sleeping
+		// generation rather than making it eligible for archival.
+		if !resuming {
+			run.IdleSleepStopRequested = false
+		}
 	case "ready":
+		if resuming && run.IdleSleepStopRequested {
+			run.IdleSleepStopRequested = false
+		}
 		if run.IdleSleepStopRequested || turnFinished || previousState == "running" || previousState == "waiting_approval" {
 			if run.IdleSleepStopRequested || run.ArchivedTaskStopRequested {
 				run.Status = "stopping"
@@ -73,10 +87,15 @@ func (m *agentManager) projectResourceIdleState(run *agentRun, session agentHubS
 		boundary := agentRunTime(run.CompletionAt)
 		m.initializeResourceIdleDeadline(run, session, boundary)
 		run.Status = "idle"
-	case "stopping", "stopped", "archived":
-		// Keep the durable deadline and Stop guard until Archive has been
-		// confirmed. Clearing it earlier would let a message create a new
-		// generation while the old Session is still converging.
+	case "stopping":
+		// Keep the durable Stop receipt while the idle Session converges.
+	case "stopped":
+		if run.IdleSleepStopRequested && !run.ReplacementPending && !run.ArchivedTaskStopRequested {
+			run.Status = "idle-suspended"
+		}
+	case "archived":
+		// Archived is terminal; the lifecycle planner retires it and never
+		// attempts to Resume the old Session.
 	}
 }
 
@@ -198,7 +217,8 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 	switch lifecyclePlan.Operation {
 	case GenerationOperationNone, GenerationOperationWaitForSession,
 		GenerationOperationWaitForMessageReceipt, GenerationOperationWaitForTurnTerminal,
-		GenerationOperationDeliverMessage, GenerationOperationInterruptTurn:
+		GenerationOperationDeliverMessage, GenerationOperationInterruptTurn,
+		GenerationOperationResumeSession:
 		return nil
 	}
 

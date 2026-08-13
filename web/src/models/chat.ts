@@ -75,6 +75,9 @@ export interface ResourceGenerationStatus {
   status: string;
   turnNumber?: number;
   replacementPending?: boolean;
+  resumable?: boolean;
+  idleSuspended?: boolean;
+  resumeUnavailable?: boolean;
   agentHubSessionId?: string;
 }
 

@@ -50,6 +50,7 @@ const (
 	GenerationOperationWaitForTurnTerminal     GenerationLifecycleOperation = "wait_for_turn_terminal"
 	GenerationOperationInterruptTurn           GenerationLifecycleOperation = "interrupt_turn"
 	GenerationOperationStopSession             GenerationLifecycleOperation = "stop_session"
+	GenerationOperationResumeSession           GenerationLifecycleOperation = "resume_session"
 	GenerationOperationWaitForStopped          GenerationLifecycleOperation = "wait_for_stopped"
 	GenerationOperationArchiveSession          GenerationLifecycleOperation = "archive_session"
 	GenerationOperationRetireGeneration        GenerationLifecycleOperation = "retire_generation"
@@ -149,13 +150,18 @@ type GenerationLifecycleFacts struct {
 	BindingChanged    bool                     `json:"bindingChanged,omitempty"`
 	ResourceArchived  bool                     `json:"resourceArchived,omitempty"`
 
-	SessionKnown    bool   `json:"sessionKnown"`
-	SessionID       string `json:"sessionId,omitempty"`
-	SessionState    string `json:"sessionState,omitempty"`
-	TurnID          string `json:"turnId,omitempty"`
-	TurnActive      bool   `json:"turnActive"`
-	ApprovalPending bool   `json:"approvalPending"`
-	SteerSupported  bool   `json:"steerSupported"`
+	SessionKnown bool   `json:"sessionKnown"`
+	SessionID    string `json:"sessionId,omitempty"`
+	SessionState string `json:"sessionState,omitempty"`
+	// SessionResumable is an observation about the exact current Session, not
+	// permission to create a replacement. A stopped Session remains resumable
+	// until AgentHub reports an explicit terminal resume failure.
+	SessionResumable         bool   `json:"sessionResumable"`
+	SessionResumeUnavailable bool   `json:"sessionResumeUnavailable"`
+	TurnID                   string `json:"turnId,omitempty"`
+	TurnActive               bool   `json:"turnActive"`
+	ApprovalPending          bool   `json:"approvalPending"`
+	SteerSupported           bool   `json:"steerSupported"`
 
 	MailboxPending bool                    `json:"mailboxPending"`
 	NextMessage    *GenerationMessageFacts `json:"nextMessage,omitempty"`
@@ -168,13 +174,14 @@ type GenerationLifecycleFacts struct {
 // before a local commit. A network response must never be committed when any
 // identity or revision it was planned against has changed.
 type GenerationLifecycleGuard struct {
-	WorkspaceInstanceID string `json:"workspaceInstanceId,omitempty"`
-	ResourceID          string `json:"resourceId"`
-	Revision            string `json:"revision,omitempty"`
-	GenerationID        string `json:"generationId,omitempty"`
-	SessionID           string `json:"sessionId,omitempty"`
-	TurnID              string `json:"turnId,omitempty"`
-	MessageID           string `json:"messageId,omitempty"`
+	WorkspaceInstanceID string                    `json:"workspaceInstanceId,omitempty"`
+	ResourceID          string                    `json:"resourceId"`
+	Revision            string                    `json:"revision,omitempty"`
+	LifecycleIntent     GenerationLifecycleIntent `json:"lifecycleIntent,omitempty"`
+	GenerationID        string                    `json:"generationId,omitempty"`
+	SessionID           string                    `json:"sessionId,omitempty"`
+	TurnID              string                    `json:"turnId,omitempty"`
+	MessageID           string                    `json:"messageId,omitempty"`
 }
 
 // GenerationLifecyclePlan describes exactly one next step. A plan with a
@@ -198,13 +205,14 @@ type GenerationLifecyclePlan struct {
 //
 //  1. finalize archived mailbox items;
 //  2. converge archive/replacement/idle lifecycle intent;
-//  3. recover an in-flight mailbox receipt;
+//  3. recover an in-flight lifecycle/mailbox receipt;
 //  4. deliver or interrupt the next message;
 //  5. create a generation for pending work;
 //  6. start idle retirement only at a proven ready boundary.
 //
-// Lifecycle intent always wins over delivery. In particular, no plan can send
-// to a stopping, stopped, or archived session.
+// Lifecycle intent always wins over delivery. In particular, no plan sends a
+// message to a stopping or archived Session; a stopped resumable Session first
+// receives the explicit ResumeSession operation.
 func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 	facts = normalizeGenerationFacts(facts)
 	plan := GenerationLifecyclePlan{
@@ -223,6 +231,7 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 	intent, reason := generationLifecycleIntent(facts)
 	plan.Intent = intent
 	plan.Reason = reason
+	plan.Guard.LifecycleIntent = intent
 
 	if facts.ResourceArchived && facts.MailboxPending {
 		return finishGenerationPlan(plan, GenerationOperationFinalizeArchivedMailbox, reasonOr(reason, "resource_archived"), facts.NextMessage)
@@ -253,8 +262,18 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 	if phase == GenerationPhaseArchived {
 		return finishGenerationPlan(plan, GenerationOperationRetireGeneration, "session_archived", nil)
 	}
+	if phase == GenerationPhaseStopped && facts.MailboxPending && facts.NextMessage != nil &&
+		facts.SessionKnown && facts.SessionResumable && !facts.SessionResumeUnavailable {
+		return finishGenerationPlan(plan, GenerationOperationResumeSession, "resume_stopped_session", facts.NextMessage)
+	}
+	if phase == GenerationPhaseStopped && facts.SessionResumeUnavailable {
+		return finishGenerationPlan(plan, GenerationOperationArchiveSession, "session_resume_unavailable", nil)
+	}
 	if phase == GenerationPhaseStopped {
-		return finishGenerationPlan(plan, GenerationOperationArchiveSession, "stopped_generation", nil)
+		// A stopped current generation is intentionally retained. It is resumed
+		// only when a mailbox item creates demand; no-message observations do not
+		// start provider work or retire the generation.
+		return plan
 	}
 	if phase == GenerationPhaseCreating || phase == GenerationPhaseRecovering || !facts.SessionKnown {
 		return finishGenerationPlan(plan, GenerationOperationWaitForSession, "session_state_not_ready", nil)
@@ -272,6 +291,11 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 
 func planLifecycleIntent(plan GenerationLifecyclePlan, facts GenerationLifecycleFacts, intent GenerationLifecycleIntent, reason string) GenerationLifecyclePlan {
 	phase := observedGenerationPhase(facts)
+	if intent == GenerationIntentIdle && phase == GenerationPhaseStopped && !facts.SessionResumeUnavailable {
+		// Idle sleep is a reversible current-generation state. Once Stop has
+		// converged, hold the exact Session until a mailbox item asks for Resume.
+		return plan
+	}
 	if intent == GenerationIntentReplacement && facts.TurnActive && facts.NextMessage != nil &&
 		facts.NextMessage.RequestedMode == GenerationMessageModeInterrupt &&
 		facts.NextMessage.Status == GenerationMessageStatusQueued {
@@ -323,6 +347,17 @@ func planReceiptRecovery(plan GenerationLifecyclePlan, facts GenerationLifecycle
 		}
 		return planLifecycleIntent(plan, facts, intent, plan.Reason), true
 	}
+	if receipt.Operation == GenerationOperationResumeSession {
+		if facts.SessionResumeUnavailable {
+			plan.Intent = GenerationIntentRecovery
+			return planLifecycleIntent(plan, facts, GenerationIntentRecovery, "resume_terminal_failure"), true
+		}
+		if facts.MailboxPending && facts.NextMessage != nil && observedGenerationPhase(facts) == GenerationPhaseStopped &&
+			facts.SessionKnown && facts.SessionResumable {
+			return finishGenerationPlan(plan, GenerationOperationResumeSession, "retry_resume", facts.NextMessage), true
+		}
+		return GenerationLifecyclePlan{}, false
+	}
 	return GenerationLifecyclePlan{}, false
 }
 
@@ -337,7 +372,13 @@ func planMessage(plan GenerationLifecyclePlan, facts GenerationLifecycleFacts) G
 	if message.Status == GenerationMessageStatusDelivering || message.Status == GenerationMessageStatusInterrupting || message.AgentHubAccepted {
 		return finishGenerationPlan(plan, GenerationOperationWaitForMessageReceipt, "message_receipt_pending", message)
 	}
-	if phase == GenerationPhaseStopping || phase == GenerationPhaseStopped || phase == GenerationPhaseArchived {
+	if phase == GenerationPhaseStopping || phase == GenerationPhaseArchived {
+		return finishGenerationPlan(plan, GenerationOperationWaitForStopped, "generation_not_deliverable", message)
+	}
+	if phase == GenerationPhaseStopped {
+		if facts.SessionKnown && facts.SessionResumable && !facts.SessionResumeUnavailable {
+			return finishGenerationPlan(plan, GenerationOperationResumeSession, "resume_stopped_session", message)
+		}
 		return finishGenerationPlan(plan, GenerationOperationWaitForStopped, "generation_not_deliverable", message)
 	}
 	active := facts.TurnActive || facts.ApprovalPending || phase == GenerationPhaseActive || facts.SessionState == "running" || facts.SessionState == "waiting_approval"
@@ -389,6 +430,9 @@ func generationLifecycleIntent(facts GenerationLifecycleFacts) (GenerationLifecy
 	if facts.BindingChanged && intent != GenerationIntentArchive {
 		return GenerationIntentReplacement, reasonOr(reason, "binding_changed")
 	}
+	if facts.SessionResumeUnavailable && intent != GenerationIntentArchive && intent != GenerationIntentReplacement {
+		return GenerationIntentRecovery, reasonOr(reason, "session_resume_unavailable")
+	}
 	if intent == GenerationIntentIdle && facts.MailboxPending {
 		return GenerationIntentNone, ""
 	}
@@ -402,10 +446,12 @@ func generationLifecycleIntent(facts GenerationLifecycleFacts) (GenerationLifecy
 }
 
 func generationLifecycleGuard(facts GenerationLifecycleFacts) GenerationLifecycleGuard {
+	intent, _ := generationLifecycleIntent(facts)
 	return GenerationLifecycleGuard{
 		WorkspaceInstanceID: strings.TrimSpace(facts.WorkspaceInstanceID),
 		ResourceID:          strings.TrimSpace(facts.ResourceID),
 		Revision:            strings.TrimSpace(facts.Revision),
+		LifecycleIntent:     intent,
 		GenerationID:        strings.TrimSpace(facts.GenerationID),
 		SessionID:           strings.TrimSpace(facts.SessionID),
 		TurnID:              strings.TrimSpace(facts.TurnID),
@@ -420,6 +466,13 @@ func normalizeGenerationFacts(facts GenerationLifecycleFacts) GenerationLifecycl
 	facts.SessionID = strings.TrimSpace(facts.SessionID)
 	facts.SessionState = strings.TrimSpace(facts.SessionState)
 	facts.TurnID = strings.TrimSpace(facts.TurnID)
+	if facts.SessionKnown && facts.SessionState == "stopped" && facts.SessionID != "" && !facts.SessionResumeUnavailable {
+		// A present, non-archived stopped Session is resumable by default. The
+		// adapter may set this fact explicitly, but deriving it here keeps the
+		// pure planner safe for all store adapters until AgentHub reports an
+		// explicit terminal resume failure.
+		facts.SessionResumable = true
+	}
 	facts.Lifecycle.Reason = strings.TrimSpace(facts.Lifecycle.Reason)
 	if facts.Lifecycle.Intent == "" {
 		facts.Lifecycle.Intent = GenerationIntentNone
@@ -512,6 +565,7 @@ func LifecycleGuardMatchesFacts(plan GenerationLifecyclePlan, facts GenerationLi
 	return equalGuardField(guard.WorkspaceInstanceID, current.WorkspaceInstanceID) &&
 		equalGuardField(guard.ResourceID, current.ResourceID) &&
 		equalGuardField(guard.Revision, current.Revision) &&
+		equalGuardField(string(guard.LifecycleIntent), string(current.LifecycleIntent)) &&
 		equalGuardField(guard.GenerationID, current.GenerationID) &&
 		equalGuardField(guard.SessionID, current.SessionID) &&
 		equalGuardField(guard.TurnID, current.TurnID) &&
@@ -634,6 +688,11 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 		facts.SteerSupported = session.InputCapabilities.Steer
 		facts.Phase = legacyGenerationPhase(session.State)
 		facts.Lifecycle.Phase = facts.Phase
+		facts.SessionResumable = session.State == "stopped" && strings.TrimSpace(facts.SessionID) != ""
+	}
+	facts.SessionResumeUnavailable = run.SessionResumeUnavailable
+	if run.LifecycleReceipt != nil {
+		facts.Lifecycle.Receipt = *run.LifecycleReceipt
 	}
 	if facts.TurnID == "" && !facts.SessionKnown {
 		facts.TurnID = strings.TrimSpace(run.CurrentTurnID)
@@ -677,8 +736,24 @@ func ApplyLegacyLifecyclePlan(run *agentRun, plan GenerationLifecyclePlan) {
 	switch plan.Operation {
 	case GenerationOperationStopSession, GenerationOperationWaitForStopped:
 		run.Status = "stopping"
+	case GenerationOperationResumeSession:
+		run.Status = "starting"
+		run.AgentHubStoppedObserved = false
 	case GenerationOperationArchiveSession, GenerationOperationRetireGeneration:
 		run.Status = "stopped"
+	}
+	if plan.Operation == GenerationOperationStopSession || plan.Operation == GenerationOperationResumeSession || plan.Operation == GenerationOperationArchiveSession {
+		receipt := GenerationLifecycleReceipt{
+			Operation:    plan.Operation,
+			State:        GenerationReceiptRequested,
+			OperationID:  plan.OperationID,
+			GenerationID: plan.GenerationID,
+			SessionID:    plan.SessionID,
+			TurnID:       plan.TurnID,
+			MessageID:    plan.MessageID,
+			Revision:     plan.Guard.Revision,
+		}
+		run.LifecycleReceipt = &receipt
 	}
 	if plan.Operation == GenerationOperationRetireGeneration {
 		run.ReplacementPending = false
@@ -694,6 +769,8 @@ func legacyGenerationPhase(status string) GenerationLifecyclePhase {
 		return GenerationPhaseCreating
 	case "idle", "ready":
 		return GenerationPhaseReady
+	case "idle-suspended":
+		return GenerationPhaseStopped
 	case "running", "waiting_approval":
 		return GenerationPhaseActive
 	case "stopping":
@@ -716,6 +793,9 @@ func legacyLifecycleIntent(run agentRun, resourceArchived bool) GenerationLifecy
 	if run.ReplacementPending {
 		return GenerationIntentReplacement
 	}
+	if run.SessionResumeUnavailable {
+		return GenerationIntentRecovery
+	}
 	if run.IdleSleepStopRequested {
 		return GenerationIntentIdle
 	}
@@ -728,6 +808,9 @@ func legacyLifecycleReason(run agentRun, resourceArchived bool) string {
 	}
 	if run.ReplacementPending {
 		return "binding_changed"
+	}
+	if run.SessionResumeUnavailable {
+		return "session_resume_unavailable"
 	}
 	if run.IdleSleepStopRequested {
 		return "idle_deadline"

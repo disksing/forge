@@ -51,13 +51,13 @@ func waitForFakeSessionState(t *testing.T, fake *runtimeFakeAgentHub, sessionID,
 	})
 }
 
-func waitForIdleGenerationRetirement(t *testing.T, manager *agentManager, workspacePath, runID string) agentRun {
+func waitForIdleGenerationSuspended(t *testing.T, manager *agentManager, workspacePath, runID string) agentRun {
 	t.Helper()
 	var stored agentRun
 	waitForRuntimeTest(t, func() bool {
 		candidate, err := loadAgentRun(workspacePath, runID)
-		if err != nil || candidate.Status != "stopped" || !candidate.AgentHubStoppedObserved ||
-			candidate.IdleSleepStopRequested || candidate.ReplacementPending {
+		if err != nil || candidate.Status != "idle-suspended" || candidate.AgentHubStoppedObserved ||
+			!candidate.IdleSleepStopRequested || candidate.ReplacementPending {
 			return false
 		}
 		rt := manager.runtimeByID(runID)
@@ -82,7 +82,7 @@ func fakeStopCalls(fake *runtimeFakeAgentHub) int {
 	return fake.stopCalls
 }
 
-func TestResourceIdleSleepHonorsDeadlineAndArchivesAllResourceKinds(t *testing.T) {
+func TestResourceIdleSleepHonorsDeadlineAndSuspendsAllResourceKinds(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -114,15 +114,17 @@ func TestResourceIdleSleepHonorsDeadlineAndArchivesAllResourceKinds(t *testing.T
 		t.Fatal(err)
 	}
 	for _, run := range runs {
-		waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
-		waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
+		waitForFakeSessionState(t, fake, run.AgentHubSessionID, "stopped")
+		waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
 	}
 	if got := fakeStopCalls(fake); got != len(resources) {
 		t.Fatalf("each resource kind must be stopped exactly once: got %d, want %d", got, len(resources))
 	}
-	for _, resourceID := range resources {
-		if _, found, err := currentResourceGeneration(workspace.Path, resourceID); err != nil || found {
-			t.Fatalf("archived generation remained current for %s: found=%v err=%v", resourceID, found, err)
+	for _, expected := range runs {
+		resourceID := expected.ResourceID
+		current, found, err := currentResourceGeneration(workspace.Path, resourceID)
+		if err != nil || !found || current.GenerationID != expected.GenerationID {
+			t.Fatalf("idle generation was not retained current for %s: current=%#v found=%v err=%v", resourceID, current, found, err)
 		}
 	}
 }
@@ -170,7 +172,7 @@ func TestResourceIdleSleepDoesNotStopActiveApprovalOrMailboxWork(t *testing.T) {
 	}
 }
 
-func TestResourceIdleSleepMessageAfterStopWaitsForArchiveThenCreatesGeneration(t *testing.T) {
+func TestResourceIdleSleepMessageAfterStopResumesSameGeneration(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -212,23 +214,33 @@ func TestResourceIdleSleepMessageAfterStopWaitsForArchiveThenCreatesGeneration(t
 	if err := <-pollDone; err != nil {
 		t.Fatal(err)
 	}
-	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	if message.LastError != "" {
 		t.Fatal(message.LastError)
 	}
 	waitForRuntimeTest(t, func() bool {
 		current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
-		if err != nil || !found || current.Generation <= run.Generation {
+		if err != nil || !found || current.Generation != run.Generation || current.GenerationID != run.GenerationID {
 			return false
 		}
 		stored, found, err := mailboxMessageByID(workspace.Path, message.ID)
 		return err == nil && found && stored.Status == resourceMessageDelivered && stored.GenerationID == current.GenerationID
 	})
-	if message.GenerationID == run.GenerationID {
-		t.Fatalf("message was delivered to the retired generation: %#v", message)
+	if message.GenerationID != run.GenerationID {
+		t.Fatalf("message was not delivered to the retained generation: %#v", message)
 	}
 	if fakeStopCalls(fake) != 1 {
 		t.Fatalf("Stop was duplicated during the message race: %d", fakeStopCalls(fake))
+	}
+	fake.mu.Lock()
+	resumeSeen := false
+	for _, action := range fake.actions {
+		if action == "resume" {
+			resumeSeen = true
+		}
+	}
+	fake.mu.Unlock()
+	if !resumeSeen {
+		t.Fatal("message did not resume the retained Session")
 	}
 }
 
@@ -246,12 +258,12 @@ func TestResourceIdleSleepRecoversOverdueDeadlineAfterRestart(t *testing.T) {
 	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
-	stored := waitForIdleGenerationRetirement(t, restarted, workspace.Path, run.ID)
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "stopped")
+	stored := waitForIdleGenerationSuspended(t, restarted, workspace.Path, run.ID)
 	if got := fakeStopCalls(fake); got != 1 {
 		t.Fatalf("overdue restart recovery issued %d Stop calls, want 1", got)
 	}
-	if stored.Status != "stopped" || stored.IdleSleepStopRequested {
+	if stored.Status != "idle-suspended" || !stored.IdleSleepStopRequested {
 		t.Fatalf("restart recovery did not complete the durable sleep lifecycle: %#v", stored)
 	}
 }
@@ -280,8 +292,8 @@ func TestResourceIdleSleepRetriesAmbiguousStopWithoutDuplicateAfterConvergence(t
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
-	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "stopped")
+	waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
 	if got := fakeStopCalls(fake); got != 2 {
 		t.Fatalf("ambiguous Stop did not retry exactly once: %d", got)
 	}
@@ -293,7 +305,7 @@ func TestResourceIdleSleepRetriesAmbiguousStopWithoutDuplicateAfterConvergence(t
 	}
 }
 
-func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T) {
+func TestResourceIdleSleepSchedulerTickResumesCurrentGeneration(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -316,8 +328,6 @@ func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
-	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	var tick resourceMailboxMessage
 	waitForRuntimeTest(t, func() bool {
 		mailbox, loadErr := loadResourceMailbox(workspace.Path)
@@ -326,7 +336,7 @@ func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T
 		}
 		for _, message := range mailbox.Messages {
 			if message.ResourceID == app.SchedulerResourceID && message.Type == resourceMessageTypeSchedulerTick &&
-				message.Status == resourceMessageDelivered && message.GenerationID != run.GenerationID {
+				message.Status == resourceMessageDelivered && message.GenerationID == run.GenerationID {
 				tick = message
 				return true
 			}
@@ -334,10 +344,263 @@ func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T
 		return false
 	})
 	current, found, err := currentResourceGeneration(workspace.Path, app.SchedulerResourceID)
-	if err != nil || !found || current.Generation <= run.Generation || current.GenerationID != tick.GenerationID {
-		t.Fatalf("Scheduler did not wake a replacement generation: current=%#v found=%v tick=%#v err=%v", current, found, tick, err)
+	if err != nil || !found || current.Generation != run.Generation || current.GenerationID != tick.GenerationID {
+		t.Fatalf("Scheduler did not resume the current generation: current=%#v found=%v tick=%#v err=%v", current, found, tick, err)
 	}
 	if got := fakeStopCalls(fake); got != 1 {
 		t.Fatalf("Scheduler wake duplicated the old generation Stop: %d", got)
+	}
+}
+
+func TestStoppedCurrentGenerationAfterDaemonRestartResumesOnDemand(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := idleTestRun(workspace, "project1.task1", "run-daemon-recovery", "ses-daemon-recovery", time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC))
+	run.Status = "stopped"
+	run.IdleSinceAt = ""
+	run.IdleDeadlineAt = ""
+	run.AgentHubStoppedObserved = true
+	seedIdleTestRun(t, fake, workspace, run, "stopped")
+	accepted, err := acceptMailboxMessage(workspace.Path, run.ResourceID, resourceMessageRequest{Text: "after daemon recovery", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := newAgentManager(manager.server)
+	manager.server.agents = restarted
+	if err := restarted.reconcileWorkspaceMailboxes(context.Background(), workspace); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if err != nil || !found || current.GenerationID != run.GenerationID {
+			return false
+		}
+		message, found, loadErr := mailboxMessageByID(workspace.Path, accepted.ID)
+		return loadErr == nil && found && message.Status == resourceMessageDelivered && message.GenerationID == run.GenerationID
+	})
+	fake.mu.Lock()
+	resumeCount := len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeCount != 1 {
+		t.Fatalf("daemon recovery did not resume exactly once: actions=%#v", fake.actions)
+	}
+}
+
+func TestStoppedSessionResumeTemporaryFailureRetainsMailboxAndGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	deadline := time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC)
+	manager.now = func() time.Time { return deadline }
+	run := idleTestRun(workspace, "project1.task1", "run-resume-retry", "ses-resume-retry", deadline)
+	seedIdleTestRun(t, fake, workspace, run, "ready")
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "stopped")
+	waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
+	fake.mu.Lock()
+	fake.resumeUpdatesAt = true
+	fake.failNextResume = true
+	fake.resumeBeforeFailure = true
+	fake.mu.Unlock()
+	message, err := manager.acceptResourceMessage(context.Background(), workspace, run.ResourceID, resourceMessageRequest{Text: "retry me", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, found, err := mailboxMessageByID(workspace.Path, message.ID)
+	if err != nil || !found || stored.Status != resourceMessageQueued || stored.LastErrorCode != "temporarily_undeliverable" {
+		t.Fatalf("temporary Resume failure did not retain queued mailbox: found=%v err=%v message=%#v", found, err, stored)
+	}
+	current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
+	if err != nil || !found || current.GenerationID != run.GenerationID {
+		t.Fatalf("temporary Resume failure replaced current generation: current=%#v found=%v err=%v", current, found, err)
+	}
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID)
+		return loadErr == nil && found && updated.Status == resourceMessageDelivered && updated.GenerationID == run.GenerationID
+	})
+	fake.mu.Lock()
+	resumeCount := len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeCount != 1 {
+		t.Fatalf("ambiguous Resume was replayed after ready observation: %d attempts", resumeCount)
+	}
+}
+
+func TestStoppedSessionResumeTerminalFailureReplacesGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	deadline := time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC)
+	manager.now = func() time.Time { return deadline }
+	run := idleTestRun(workspace, "project1.task1", "run-resume-terminal", "ses-resume-terminal", deadline)
+	seedIdleTestRun(t, fake, workspace, run, "ready")
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "stopped")
+	waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
+	fake.mu.Lock()
+	fake.failNextResume = true
+	fake.resumeErrorStatus = 422
+	fake.resumeErrorCode = "provider_resume_unavailable"
+	fake.resumeErrorMessage = "provider does not support session resume/load"
+	fake.mu.Unlock()
+	message, err := manager.acceptResourceMessage(context.Background(), workspace, run.ResourceID, resourceMessageRequest{Text: "replace me", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if loadErr != nil || !found || current.Generation <= run.Generation {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	if message.GenerationID == run.GenerationID {
+		t.Fatalf("terminal Resume failure delivered to the unrecoverable generation: %#v", message)
+	}
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+}
+
+func TestStoppedSessionMissingRetiresAndReplacesGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := idleTestRun(workspace, "project1.task1", "run-resume-missing", "ses-resume-missing", time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC))
+	run.Status = "stopped"
+	run.IdleSinceAt = ""
+	run.IdleDeadlineAt = ""
+	run.AgentHubStoppedObserved = true
+	seedIdleTestRun(t, fake, workspace, run, "stopped")
+	message, err := acceptMailboxMessage(workspace.Path, run.ResourceID, resourceMessageRequest{Text: "replace missing", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	delete(fake.sessions, run.AgentHubSessionID)
+	fake.mu.Unlock()
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if loadErr != nil || !found || current.Generation <= run.Generation {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	fake.mu.Lock()
+	resumeAttempts := len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeAttempts != 0 {
+		t.Fatalf("missing Session was resumed before replacement: %d attempts", resumeAttempts)
+	}
+}
+
+func TestStoppedSessionBindingChangeWinsBeforeResume(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	fake.extraAgents = []string{"replacement-agent"}
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	deadline := time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC)
+	manager.now = func() time.Time { return deadline }
+	run := idleTestRun(workspace, "project1.task1", "run-resume-binding", "ses-resume-binding", deadline)
+	seedIdleTestRun(t, fake, workspace, run, "ready")
+	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	waitForIdleGenerationSuspended(t, manager, workspace.Path, run.ID)
+
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := app.AgentBinding{Kind: "agent", Name: "replacement-agent"}
+	if _, err := forgeWorkspace.SetResourceAgentBinding(run.ResourceID, binding); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.resourceBindingChanged(context.Background(), workspace, run.ResourceID, binding); err != nil {
+		t.Fatal(err)
+	}
+	message, err := acceptMailboxMessage(workspace.Path, run.ResourceID, resourceMessageRequest{Text: "after binding change", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if loadErr != nil || !found || current.Generation <= run.Generation {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	fake.mu.Lock()
+	resumeAttempts := len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeAttempts != 0 {
+		t.Fatalf("binding change resumed the old Session: %d attempts", resumeAttempts)
+	}
+}
+
+func TestStoppedSessionArchivedRetiresAndReplacesGeneration(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := idleTestRun(workspace, "project1.task1", "run-resume-archived", "ses-resume-archived", time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC))
+	run.Status = "idle-suspended"
+	run.IdleSleepStopRequested = true
+	seedIdleTestRun(t, fake, workspace, run, "archived")
+	message, err := acceptMailboxMessage(workspace.Path, run.ResourceID, resourceMessageRequest{Text: "replace archived", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		current, found, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if loadErr == nil && found && current.Generation > run.Generation {
+			updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+			if messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	current, currentFound, currentErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+	updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+	if !currentFound || currentErr != nil || current.Generation <= run.Generation || !messageFound || messageErr != nil || updated.Status != resourceMessageDelivered || updated.GenerationID != current.GenerationID {
+		fake.mu.Lock()
+		actions := append([]string(nil), fake.actions...)
+		fake.mu.Unlock()
+		t.Fatalf("archived Session did not replace: current=%#v found=%v err=%v message=%#v found=%v err=%v actions=%#v", current, currentFound, currentErr, updated, messageFound, messageErr, actions)
+	}
+	fake.mu.Lock()
+	resumeAttempts := len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeAttempts != 0 {
+		t.Fatalf("archived Session was resumed before replacement: %d attempts", resumeAttempts)
 	}
 }

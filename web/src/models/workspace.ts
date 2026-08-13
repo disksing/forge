@@ -40,6 +40,9 @@ export interface ResourceRuntime {
   completionState?: string;
   completionAt?: string;
   replacementPending?: boolean;
+  resumable?: boolean;
+  idleSuspended?: boolean;
+  resumeUnavailable?: boolean;
   turnNumber?: number;
   activeTurn?: boolean;
   turnStartedAt?: string;

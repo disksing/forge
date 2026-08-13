@@ -56,6 +56,15 @@ func TestAgentHubClientContract(t *testing.T) {
 			}
 			approvalReplies = append(approvalReplies, reply)
 			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/sessions/ses_1/resume":
+			var request agentHubResumeRequest
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+				t.Errorf("decode resume request: %v", err)
+			}
+			if len(request.LaunchEnvironment) != 0 {
+				t.Errorf("unexpected resume environment overlay: %#v", request.LaunchEnvironment)
+			}
+			writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "ready"))
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/sessions/ses_1/"):
 			if r.Header.Get("Content-Type") != "application/json" {
 				t.Errorf("missing JSON content type for %s", r.URL.Path)
@@ -121,11 +130,14 @@ func TestAgentHubClientContract(t *testing.T) {
 	if _, err := client.Stop(ctx, "ses_1"); err != nil {
 		t.Fatal(err)
 	}
+	if resumed, err := client.Resume(ctx, "ses_1", nil); err != nil || resumed.ID != "ses_1" || resumed.State != "ready" {
+		t.Fatalf("resume: %+v, %v", resumed, err)
+	}
 	archived, err := client.Archive(ctx, "ses_1")
 	if err != nil || archived.State != "archived" {
 		t.Fatalf("archive: %+v, %v", archived, err)
 	}
-	if len(methods) != 13 {
+	if len(methods) != 14 {
 		t.Fatalf("expected all client operations, got %d: %v", len(methods), methods)
 	}
 	wantReplies := []agentHubApprovalReply{

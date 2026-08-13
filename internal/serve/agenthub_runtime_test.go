@@ -21,38 +21,43 @@ import (
 )
 
 type runtimeFakeAgentHub struct {
-	mu                 sync.Mutex
-	sessions           map[string]agentHubSession
-	events             map[string][]agentHubEvent
-	turns              map[string]map[string]agentHubTurn
-	nextSession        int
-	abortNextCreate    bool
-	duplicateSource    bool
-	gapAfter           int64
-	failEvents         bool
-	stopAtStopping     bool
-	failNextStop       bool
-	failNextInterrupt  bool
-	failNextResume     bool
-	failNextMessage    bool
-	enforceMessageIDs  bool
-	rejectAgentName    string
-	extraAgents        []string
-	stopHook           func(string)
-	resumeHook         func(string)
-	messageHook        func(string, agentHubInboundMessage)
-	messageSteers      []bool
-	messageRoles       []string
-	messageSenders     []*agentHubMessageSender
-	messageIDs         []string
-	messageInputs      map[string]agentHubInboundMessage
-	actions            []string
-	resumeEnvironments []map[string]string
-	listCalls          int
-	stopCalls          int
-	eventsAttempts     int
-	eventsCalls        int
-	streamCalls        int
+	mu                  sync.Mutex
+	sessions            map[string]agentHubSession
+	events              map[string][]agentHubEvent
+	turns               map[string]map[string]agentHubTurn
+	nextSession         int
+	abortNextCreate     bool
+	duplicateSource     bool
+	gapAfter            int64
+	failEvents          bool
+	stopAtStopping      bool
+	failNextStop        bool
+	failNextInterrupt   bool
+	failNextResume      bool
+	resumeBeforeFailure bool
+	resumeErrorStatus   int
+	resumeErrorCode     string
+	resumeErrorMessage  string
+	resumeUpdatesAt     bool
+	failNextMessage     bool
+	enforceMessageIDs   bool
+	rejectAgentName     string
+	extraAgents         []string
+	stopHook            func(string)
+	resumeHook          func(string)
+	messageHook         func(string, agentHubInboundMessage)
+	messageSteers       []bool
+	messageRoles        []string
+	messageSenders      []*agentHubMessageSender
+	messageIDs          []string
+	messageInputs       map[string]agentHubInboundMessage
+	actions             []string
+	resumeEnvironments  []map[string]string
+	listCalls           int
+	stopCalls           int
+	eventsAttempts      int
+	eventsCalls         int
+	streamCalls         int
 }
 
 func newRuntimeFakeAgentHub() *runtimeFakeAgentHub {
@@ -238,10 +243,27 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			f.resumeEnvironments = append(f.resumeEnvironments, resumeRequest.LaunchEnvironment)
 			if f.failNextResume {
 				f.failNextResume = false
+				status := f.resumeErrorStatus
+				code := f.resumeErrorCode
+				message := f.resumeErrorMessage
+				if f.resumeBeforeFailure {
+					session := f.sessions[id]
+					session.State = "ready"
+					f.sessions[id] = session
+				}
 				f.mu.Unlock()
-				w.WriteHeader(http.StatusInternalServerError)
+				if status == 0 {
+					status = http.StatusInternalServerError
+				}
+				if code == "" {
+					code = "resume_failed"
+				}
+				if message == "" {
+					message = "synthetic resume failure"
+				}
+				w.WriteHeader(status)
 				writeRuntimeFakeJSON(w, map[string]any{"error": map[string]any{
-					"code": "resume_failed", "message": "synthetic resume failure",
+					"code": code, "message": message,
 				}})
 				return
 			}
@@ -295,6 +317,9 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			f.appendLocked(id, "session.state", map[string]any{"state": "starting"})
 			f.appendLocked(id, "session.state", map[string]any{"state": "ready"})
 			session.State = "ready"
+			if f.resumeUpdatesAt {
+				session.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			}
 		}
 		session.LastEventID = int64(len(f.events[id]))
 		f.sessions[id] = session

@@ -379,6 +379,7 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 			run.ReplacementPending = true
 			run.ResolvedProfile = resolved.ResolvedProfile
 			run.AgentConfigError = resolved.ConfigError
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		})
 		return err
 	}
@@ -387,6 +388,7 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 		run.ReplacementPending = true
 		run.ResolvedProfile = resolved.ResolvedProfile
 		run.AgentConfigError = resolved.ConfigError
+		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 	}); err != nil {
 		return err
 	}
@@ -519,6 +521,21 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
 		return
 	}
+	if automaticSleep && !run.ReplacementPending && !run.ArchivedTaskStopRequested && session.State == "stopped" {
+		// Idle Stop is reversible. Keep this exact Session as the current
+		// generation for a later mailbox-triggered Resume; it never enters the
+		// Archive/retire tail below.
+		rt.applyAgentHubSessionState(m, session)
+		_, _ = rt.mutateRun(func(current *agentRun) {
+			if current.GenerationID == run.GenerationID && current.AgentHubSessionID == run.AgentHubSessionID &&
+				current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
+				receipt := *current.LifecycleReceipt
+				receipt.State = GenerationReceiptSucceeded
+				current.LifecycleReceipt = &receipt
+			}
+		})
+		return
+	}
 	mailbox, mailboxErr := loadHotResourceMailbox(rt.workspace.Path, run.ResourceID)
 	if mailboxErr != nil {
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", mailboxErr))
@@ -578,6 +595,17 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		}
 		_, err = rt.mutateRuntime(func(runtime *agentRuntime) {
 			runtime.run.Status = "stopping"
+			if automaticSleep && !runtime.run.ReplacementPending && !runtime.run.ArchivedTaskStopRequested {
+				receipt := GenerationLifecycleReceipt{
+					Operation:    GenerationOperationStopSession,
+					State:        GenerationReceiptRequested,
+					OperationID:  lifecycleOperationID(GenerationLifecyclePlan{Operation: GenerationOperationStopSession, GenerationID: runtime.run.GenerationID, SessionID: runtime.run.AgentHubSessionID}),
+					GenerationID: runtime.run.GenerationID,
+					SessionID:    runtime.run.AgentHubSessionID,
+					Revision:     runtime.run.UpdatedAt,
+				}
+				runtime.run.LifecycleReceipt = &receipt
+			}
 			runtime.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 			runtime.agentHubStopRequested = true
 		})
@@ -587,6 +615,13 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		}
 		session, err = client.Stop(ctx, run.AgentHubSessionID)
 		if err != nil {
+			_, _ = rt.mutateRun(func(current *agentRun) {
+				if current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
+					receipt := *current.LifecycleReceipt
+					receipt.State = GenerationReceiptUnknown
+					current.LifecycleReceipt = &receipt
+				}
+			})
 			rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
 			return
 		}
@@ -614,6 +649,25 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 				rt.setRecoveryError(m, fmt.Errorf("confirmation for generation %s did not match its AgentHub source", run.GenerationID))
 				return
 			}
+		}
+	}
+	if automaticSleep && !run.ReplacementPending && !run.ArchivedTaskStopRequested {
+		if session.State == "stopped" {
+			rt.applyAgentHubSessionState(m, session)
+			_, _ = rt.mutateRun(func(current *agentRun) {
+				if current.LifecycleReceipt != nil && current.LifecycleReceipt.Operation == GenerationOperationStopSession {
+					receipt := *current.LifecycleReceipt
+					receipt.State = GenerationReceiptSucceeded
+					current.LifecycleReceipt = &receipt
+				}
+			})
+			return
+		}
+		if session.State != "archived" {
+			// A temporary Stop confirmation gap is retried by polling. It must
+			// not fall through to Archive merely because this legacy helper owns
+			// the call site.
+			return
 		}
 	}
 	if session.State == "archived" {

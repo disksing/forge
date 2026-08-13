@@ -654,7 +654,10 @@ function latestEventId(events: AgentEvent[]): number {
 }
 
 function isStreamable(status: ResourceMessageStatus | null): boolean {
-  return Boolean(status?.generation?.generationId && status.session?.id && ["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(String(status.generation.status || "")));
+  const generation = status?.generation;
+  return Boolean(generation?.generationId && status?.session?.id &&
+    (["starting", "running", "waiting_approval", "idle", "stopping", "recovering"].includes(String(generation.status || "")) ||
+      (["idle-suspended", "stopped"].includes(String(generation.status || "")) && generation.resumable === true)));
 }
 
 function isTurnTerminal(event: AgentEvent): boolean {

@@ -99,7 +99,8 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   }
 
   function resourceStatusState(runtime: ResourceRuntime | undefined): TaskStatusState | null {
-    if (!runtime?.status || runtime.status === "stopped" || runtime.status === "archived") return null;
+    if (!runtime?.status || runtime.status === "archived" ||
+      (["stopped", "idle-suspended"].includes(runtime.status) && runtime.resumable !== true)) return null;
     const recentOutput = hasRecentAgentOutput(runtime);
     switch (runtime.status) {
       case "starting": return { kind: "resource-starting", className: "task-status-session-running", iconName: "loader-circle", label: "Resource starting", dimension: "resource", recentOutput };
@@ -108,6 +109,8 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
       case "stopping": return { kind: "resource-stopping", className: "task-status-session-stopping", iconName: "loader-circle", label: "Resource stopping", dimension: "resource", recentOutput };
       case "recovering": return { kind: "resource-recovering", className: "task-status-attention", iconName: "rotate-ccw", label: "Resource recovering", dimension: "resource", recentOutput };
       case "idle": return { kind: "resource-idle", className: "task-status-info", iconName: "message-square", label: "Resource ready", dimension: "resource", recentOutput };
+      case "idle-suspended":
+      case "stopped": return { kind: "resource-suspended", className: "task-status-info", iconName: "pause-circle", label: "Resource sleeping", dimension: "resource", recentOutput };
       default: return { kind: "resource-active", className: "task-status-neutral", iconName: "circle-dot", label: `Resource ${runtime.status}`, dimension: "resource", recentOutput };
     }
   }

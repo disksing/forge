@@ -139,6 +139,9 @@ type resourceGenerationStatus struct {
 	GenerationID       string `json:"generationId"`
 	Status             string `json:"status"`
 	ReplacementPending bool   `json:"replacementPending"`
+	Resumable          bool   `json:"resumable,omitempty"`
+	IdleSuspended      bool   `json:"idleSuspended,omitempty"`
+	ResumeUnavailable  bool   `json:"resumeUnavailable,omitempty"`
 	IdleSinceAt        string `json:"idleSinceAt,omitempty"`
 	IdleDeadlineAt     string `json:"idleDeadlineAt,omitempty"`
 	IdleSleepRequested bool   `json:"idleSleepRequested,omitempty"`
@@ -784,7 +787,9 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 	status.Generation = &resourceGenerationStatus{
 		Generation: run.Generation, GenerationID: run.GenerationID,
 		Status: run.Status, ReplacementPending: run.ReplacementPending,
-		IdleSinceAt: run.IdleSinceAt, IdleDeadlineAt: run.IdleDeadlineAt,
+		IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),
+		ResumeUnavailable: run.SessionResumeUnavailable,
+		IdleSinceAt:       run.IdleSinceAt, IdleDeadlineAt: run.IdleDeadlineAt,
 		IdleSleepRequested: run.IdleSleepStopRequested,
 		TurnNumber:         run.TurnNumber,
 		AgentHubSessionID:  run.AgentHubSessionID,
@@ -805,6 +810,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		ID: session.ID, State: session.State, CurrentTurnID: session.CurrentTurnID,
 		InputCapabilities: session.InputCapabilities,
 	}
+	status.Generation.Resumable = session.State == "stopped" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested
 	status.CanSteerWaiting = !archived && !run.ReplacementPending && (session.State == "running" || session.State == "waiting_approval") && session.InputCapabilities.Steer
 	status.State = publicResourceState(archived, unavailableReason, status.Generation, status.Session, "")
 	return status, nil
@@ -1202,12 +1208,10 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 				return err
 			}
 		}
-		// Automatic sleep owns the old generation until Stop has been
-		// confirmed and Archive has completed. A message accepted after the
-		// irreversible boundary remains in the Workspace mailbox; it must not
-		// be sent to the stopping/stopped Session or create a second generation
-		// beside it.
-		if run.IdleSleepStopRequested || resourceGenerationLifecyclePending(run) {
+		// Replacement/archive owns the old generation until its terminal
+		// sequence completes. Idle sleep is different: the stopped current
+		// Session is the exact target of an on-demand Resume.
+		if resourceGenerationLifecyclePending(run) {
 			return nil
 		}
 		if run.ReplacementPending && message.Status == resourceMessageQueued {
@@ -1230,17 +1234,68 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		}
 		session, err := client.GetSession(ctx, run.AgentHubSessionID)
 		if err != nil {
+			if isTerminalResumeError(err) {
+				if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, err); retireErr != nil {
+					return retireErr
+				}
+				continue
+			}
 			recordMailboxFailure(workspace.Path, message.ID, err)
 			return err
 		}
+		cfg, _, cfgErr := m.agentHubRuntimeConfig()
+		if cfgErr != nil {
+			return cfgErr
+		}
+		if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+			if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, fmt.Errorf("AgentHub Session %s source does not match generation %s", session.ID, run.GenerationID)); retireErr != nil {
+				return retireErr
+			}
+			continue
+		}
 		rt.applyAgentHubSessionState(m, session)
+		run = rt.snapshotRun()
 		active := session.State == "running" || session.State == "waiting_approval"
 		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
 			Run: run, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: run.UpdatedAt,
 		}))
 		switch lifecyclePlan.Operation {
+		case GenerationOperationResumeSession:
+			resumed, terminal, resumeErr := m.resumeStoppedGenerationLocked(ctx, workspace, run, rt, client, lifecyclePlan)
+			if terminal {
+				if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, resumeErr); retireErr != nil {
+					return retireErr
+				}
+				continue
+			}
+			if resumeErr != nil {
+				recordMailboxFailure(workspace.Path, message.ID, resumeErr)
+				return resumeErr
+			}
+			if resumed {
+				continue
+			}
+			return nil
 		case GenerationOperationStopSession, GenerationOperationWaitForStopped, GenerationOperationArchiveSession,
-			GenerationOperationRetireGeneration, GenerationOperationWaitForSession:
+			GenerationOperationWaitForSession:
+			return nil
+		case GenerationOperationRetireGeneration:
+			if session.State == "archived" {
+				// A message can observe an externally archived Session before the
+				// poller does. Treat the exact archived Session as the terminal
+				// Resume boundary; never revive it or create a replacement from a
+				// different source tuple.
+				if retireErr := m.retireUnresumableGenerationLocked(ctx, rt, client, fmt.Errorf("AgentHub Session %s is archived and cannot be resumed", session.ID)); retireErr != nil {
+					return retireErr
+				}
+				if _, currentFound, currentErr := currentResourceGeneration(workspace.Path, resourceID); currentErr != nil {
+					return currentErr
+				} else if !currentFound {
+					// The archived proof retired the old current generation. Let
+					// the same mailbox pass create and deliver the next generation.
+					continue
+				}
+			}
 			return nil
 		}
 

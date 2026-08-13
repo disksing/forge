@@ -569,6 +569,8 @@ func agentHubStateForForgeStatus(status string) string {
 		return "stopping"
 	case "stopped":
 		return "stopped"
+	case "idle-suspended":
+		return "stopped"
 	default:
 		return ""
 	}

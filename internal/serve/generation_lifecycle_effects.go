@@ -16,6 +16,7 @@ type GenerationLifecycleEffects struct {
 	DeliverMessage          func(context.Context, GenerationLifecyclePlan) (agentHubSession, error)
 	InterruptTurn           func(context.Context, GenerationLifecyclePlan) (agentHubSession, error)
 	StopSession             func(context.Context, GenerationLifecyclePlan) (agentHubSession, error)
+	ResumeSession           func(context.Context, GenerationLifecyclePlan) (agentHubSession, error)
 	ArchiveSession          func(context.Context, GenerationLifecyclePlan) (agentHubSession, error)
 	RetireGeneration        func(context.Context, GenerationLifecyclePlan) error
 	FinalizeArchivedMailbox func(context.Context, GenerationLifecyclePlan) error
@@ -70,6 +71,8 @@ func ExecuteGenerationLifecyclePlan(ctx context.Context, plan GenerationLifecycl
 		result.Session, result.Receipt, effectErr = executeSessionEffect(ctx, plan, effects.InterruptTurn, result.Receipt)
 	case GenerationOperationStopSession:
 		result.Session, result.Receipt, effectErr = executeSessionEffect(ctx, plan, effects.StopSession, result.Receipt)
+	case GenerationOperationResumeSession:
+		result.Session, result.Receipt, effectErr = executeSessionEffect(ctx, plan, effects.ResumeSession, result.Receipt)
 	case GenerationOperationArchiveSession:
 		result.Session, result.Receipt, effectErr = executeSessionEffect(ctx, plan, effects.ArchiveSession, result.Receipt)
 	case GenerationOperationRetireGeneration:

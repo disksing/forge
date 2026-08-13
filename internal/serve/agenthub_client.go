@@ -447,6 +447,19 @@ type agentHubResumeRequest struct {
 	LaunchEnvironment map[string]string `json:"launchEnvironment,omitempty"`
 }
 
+// Resume reactivates the exact stopped AgentHub Session. The persisted
+// providerSessionId and history remain owned by AgentHub; Forge supplies no
+// new source tuple and therefore never creates a replacement here.
+func (c *agentHubClient) Resume(ctx context.Context, sessionID string, launchEnvironment map[string]string) (agentHubSession, error) {
+	var response struct {
+		Session agentHubSession `json:"session"`
+	}
+	err := c.doJSON(ctx, http.MethodPost, sessionPath(sessionID)+"/resume", agentHubResumeRequest{
+		LaunchEnvironment: launchEnvironment,
+	}, &response)
+	return response.Session, err
+}
+
 func (c *agentHubClient) Archive(ctx context.Context, sessionID string) (agentHubSession, error) {
 	var response struct {
 		Session agentHubSession `json:"session"`

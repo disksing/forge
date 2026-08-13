@@ -104,6 +104,45 @@ func TestPlanGenerationLifecycleTable(t *testing.T) {
 			intent:    GenerationIntentReplacement,
 		},
 		{
+			name: "stopped current generation resumes for pending message",
+			mutate: func(f *GenerationLifecycleFacts) {
+				f.SessionState = "stopped"
+				f.MailboxPending = true
+				f.NextMessage = generationMessage(GenerationMessageModeEnqueue, GenerationMessageStatusQueued)
+			},
+			operation: GenerationOperationResumeSession,
+			reason:    "resume_stopped_session",
+		},
+		{
+			name: "stopped current generation waits without demand",
+			mutate: func(f *GenerationLifecycleFacts) {
+				f.SessionState = "stopped"
+				f.SessionResumable = true
+			},
+			operation: GenerationOperationNone,
+		},
+		{
+			name: "idle suspended generation stays stopped without demand",
+			mutate: func(f *GenerationLifecycleFacts) {
+				f.SessionState = "stopped"
+				f.SessionResumable = true
+				f.Lifecycle.Intent = GenerationIntentIdle
+			},
+			operation: GenerationOperationNone,
+			intent:    GenerationIntentIdle,
+		},
+		{
+			name: "terminal resume failure archives for replacement",
+			mutate: func(f *GenerationLifecycleFacts) {
+				f.SessionState = "stopped"
+				f.SessionResumeUnavailable = true
+				f.MailboxPending = true
+				f.NextMessage = generationMessage(GenerationMessageModeEnqueue, GenerationMessageStatusQueued)
+			},
+			operation: GenerationOperationArchiveSession,
+			intent:    GenerationIntentRecovery,
+		},
+		{
 			name:      "archived session is retired",
 			mutate:    func(f *GenerationLifecycleFacts) { f.SessionState = "archived" },
 			operation: GenerationOperationRetireGeneration,
@@ -318,13 +357,24 @@ func TestAdaptLegacyGenerationFacts(t *testing.T) {
 	if plan.Operation != GenerationOperationStopSession || plan.Intent != GenerationIntentReplacement {
 		t.Fatalf("adapted facts produced %#v", plan)
 	}
+	stopped := run
+	stopped.ReplacementPending = false
+	stopped.Status = "stopped"
+	stoppedFacts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{Run: stopped, Session: &agentHubSession{ID: "ses-3", State: "stopped"}, Mailbox: mailbox, Now: now})
+	if !stoppedFacts.SessionResumable {
+		t.Fatalf("stopped Session should be marked resumable by the adapter: %#v", stoppedFacts)
+	}
 }
 
 func TestApplyLegacyLifecyclePlan(t *testing.T) {
 	run := &agentRun{Status: "idle"}
 	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Intent: GenerationIntentIdle, Operation: GenerationOperationStopSession})
-	if !run.IdleSleepStopRequested || run.Status != "stopping" {
+	if !run.IdleSleepStopRequested || run.Status != "stopping" || run.LifecycleReceipt == nil || run.LifecycleReceipt.Operation != GenerationOperationStopSession {
 		t.Fatalf("idle stop was not adapted: %#v", run)
+	}
+	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Operation: GenerationOperationResumeSession, OperationID: "resume-1"})
+	if run.Status != "starting" || run.LifecycleReceipt == nil || run.LifecycleReceipt.Operation != GenerationOperationResumeSession {
+		t.Fatalf("resume was not adapted: %#v", run)
 	}
 	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Intent: GenerationIntentArchive, Operation: GenerationOperationRetireGeneration})
 	if run.Status != "stopped" || run.IdleSleepStopRequested || run.ArchivedTaskStopRequested || !run.AgentHubStoppedObserved {
@@ -369,6 +419,31 @@ func TestExecuteGenerationLifecyclePlanTreatsNetworkErrorAsUnknown(t *testing.T)
 	})
 	if err == nil || result.Receipt.State != GenerationReceiptUnknown {
 		t.Fatalf("network error was not preserved as unknown: result=%#v err=%v", result, err)
+	}
+}
+
+func TestExecuteGenerationLifecyclePlanResumesWithOneEffect(t *testing.T) {
+	facts := testGenerationFacts()
+	facts.SessionState = "stopped"
+	facts.SessionResumable = true
+	facts.MailboxPending = true
+	facts.NextMessage = generationMessage(GenerationMessageModeEnqueue, GenerationMessageStatusQueued)
+	plan := PlanGeneration(facts)
+	if plan.Operation != GenerationOperationResumeSession {
+		t.Fatalf("unexpected resume plan: %#v", plan)
+	}
+	calls := 0
+	result, err := ExecuteGenerationLifecyclePlan(context.Background(), plan, GenerationLifecycleEffects{
+		ResumeSession: func(_ context.Context, received GenerationLifecyclePlan) (agentHubSession, error) {
+			calls++
+			if received.SessionID != "ses-1" || received.MessageID != "msg-1" {
+				t.Fatalf("resume plan identity changed: %#v", received)
+			}
+			return agentHubSession{ID: "ses-1", State: "ready"}, nil
+		},
+	})
+	if err != nil || calls != 1 || result.Receipt.State != GenerationReceiptSucceeded || result.Session == nil || result.Session.State != "ready" {
+		t.Fatalf("unexpected resume execution: calls=%d result=%#v err=%v", calls, result, err)
 	}
 }
 
