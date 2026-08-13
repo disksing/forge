@@ -262,6 +262,9 @@ func (w *Workspace) migrate(language string) error {
 	if err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
+	if err := w.migrateLegacyTaskWorkFiles(language); err != nil {
+		return err
+	}
 	if err := isolateLegacySessionProjection(w.root); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "session_projection", Workspace: w.root, Err: err}
 	}

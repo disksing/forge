@@ -370,14 +370,11 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		run(t, "task", "create", "--project=project1", "中文任务")
 		taskPath := filepath.Join(projectPath, "task1")
 		taskMDPath := filepath.Join(taskPath, testTaskMDFile)
-		workMDPath := filepath.Join(taskPath, "work.md")
 		taskAgentsPath := filepath.Join(taskPath, "AGENTS.md")
 		if got := readFile(t, taskMDPath); !strings.Contains(got, "## 背景") || !strings.Contains(got, "长期有效的任务约定") {
 			t.Fatalf("expected Chinese task template, got:\n%s", got)
 		}
-		if got := readFile(t, workMDPath); !strings.Contains(got, "# 工作记录") || !strings.Contains(got, "## 当前重点") {
-			t.Fatalf("expected Chinese work template, got:\n%s", got)
-		}
+		assertMissing(t, filepath.Join(taskPath, "work.md"))
 		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
 			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
 		}
@@ -443,7 +440,6 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"relevant `artifacts/`",
 				"task.json` contains structured state",
 				"task.md` the durable contract",
-				"work.md` the current recovery checkpoint",
 				"log.jsonl` the historical timeline",
 				"You may use `sed`, `rg`, or `less` on the resolved paths.",
 				"forge task show --project=<project> --task=<task>",
@@ -462,7 +458,6 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"相关 `artifacts/`",
 				"`task.json` 是结构化状态",
 				"`task.md` 是长期约定",
-				"`work.md` 是当前恢复检查点",
 				"`log.jsonl` 是历史时间线",
 				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
 				"forge task show --project=<project> --task=<task>",
@@ -492,6 +487,15 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 							if !strings.Contains(content, want) {
 								t.Fatalf("generated %s card after %s is missing %q:\n%s", path, stage, want, content)
 							}
+						}
+						recoveryAnchor := "--limit=20"
+						if path == paths[1] {
+							recoveryAnchor = "forge project history --project=<project> --limit=20"
+						} else if path == paths[2] {
+							recoveryAnchor = "forge task history --project=<project> --task=<task> --limit=20"
+						}
+						if !strings.Contains(content, recoveryAnchor) {
+							t.Fatalf("generated %s card after %s is missing recovery guidance %q:\n%s", path, stage, recoveryAnchor, content)
 						}
 						if strings.Contains(content, tc.wrong) || strings.Contains(content, "forge task work show") {
 							t.Fatalf("generated %s card after %s contains wrong-language or nonexistent guidance:\n%s", path, stage, content)
@@ -766,8 +770,8 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected project.md to contain durable brief context only, got:\n%s", projectMD)
 		}
 		assertNoHan(t, projectMDPath)
-		if strings.Contains(projectAgents, "Read project.json, project.md, work.md") || !strings.Contains(projectAgents, "projects do not have a work.md recovery snapshot") {
-			t.Fatalf("expected project AGENTS.md to omit project work.md, got:\n%s", projectAgents)
+		if strings.Contains(projectAgents, "work.md") || !strings.Contains(projectAgents, "forge project history --project=<project> --limit=20") {
+			t.Fatalf("expected project AGENTS.md to use bounded project recovery, got:\n%s", projectAgents)
 		}
 		if strings.Contains(projectAgents, "This is a subtask") {
 			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
@@ -813,12 +817,9 @@ func TestTaskLifecycle(t *testing.T) {
 		assertFile(t, filepath.Join(root, "project1", "task1", "task.json"))
 		assertFile(t, filepath.Join(root, "project1", "task1", "task.md"))
 		taskMD := readFile(t, filepath.Join(root, "project1", "task1", "task.md"))
-		workMD := readFile(t, filepath.Join(root, "project1", "task1", "work.md"))
-		if !strings.Contains(taskMD, "Keep the durable contract here") || !strings.Contains(taskMD, "when they affect the task contract") {
+		assertMissing(t, filepath.Join(root, "project1", "task1", "work.md"))
+		if !strings.Contains(taskMD, "Keep the durable task contract here") || !strings.Contains(taskMD, "when they affect the task contract") {
 			t.Fatalf("expected task.md template to define the durable contract, got:\n%s", taskMD)
-		}
-		if !strings.Contains(workMD, "current execution state and next action") || !strings.Contains(workMD, "Do not restate the task background, scope, acceptance criteria, or stable decisions") {
-			t.Fatalf("expected work.md template to stay focused on recovery state, got:\n%s", workMD)
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
 		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
@@ -840,8 +841,8 @@ func TestTaskLifecycle(t *testing.T) {
 		if !strings.Contains(subtaskAgents, "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md") {
 			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Use task.md as the durable contract") || !strings.Contains(subtaskAgents, "Use work.md as a replaceable recovery checkpoint") || !strings.Contains(subtaskAgents, "promote it to task.md") {
-			t.Fatalf("expected subtask AGENTS.md to distinguish task contract from recovery state, got:\n%s", subtaskAgents)
+		if !strings.Contains(subtaskAgents, "Use task.md as the durable contract") || !strings.Contains(subtaskAgents, "forge task history --project=<project> --task=<task> --limit=20") || strings.Contains(subtaskAgents, "work.md") {
+			t.Fatalf("expected subtask AGENTS.md to use bounded recovery without a work.md contract, got:\n%s", subtaskAgents)
 		}
 		if !strings.Contains(subtaskAgents, "Within the Workspace, write only files owned by the resource where the agent was started") || !strings.Contains(subtaskAgents, "Other Workspace resources are read-only") {
 			t.Fatalf("expected subtask AGENTS.md to include non-recursive Workspace write guidance, got:\n%s", subtaskAgents)
@@ -1831,20 +1832,20 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, original) {
 			t.Fatalf("expected human content to be preserved, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Treat task `work.md` as a replaceable recovery checkpoint.") {
-			t.Fatalf("expected workspace AGENTS.md to describe work.md as a replaceable checkpoint, got:\n%s", first)
+		if !strings.Contains(first, "Treat task `task.md` as the durable contract.") {
+			t.Fatalf("expected workspace AGENTS.md to describe task.md as the durable contract, got:\n%s", first)
 		}
 		if !strings.Contains(first, "Treat `project.md` and `task.md` as durable contracts.") {
 			t.Fatalf("expected workspace AGENTS.md to describe markdown contracts, got:\n%s", first)
 		}
-		if !strings.Contains(first, "optional `work.md` modules such as `Todo`, `Blockers`, `Active Work`, `Paused Work`, `Resume Plan`, `Context`, `Resources`, `Verification`, and `Notes`") {
-			t.Fatalf("expected workspace AGENTS.md to describe optional work.md modules, got:\n%s", first)
+		if !strings.Contains(first, "When starting a new generation") || !strings.Contains(first, "--limit=20") || !strings.Contains(first, "do not create a second permanent progress file") {
+			t.Fatalf("expected workspace AGENTS.md to describe bounded generation recovery, got:\n%s", first)
 		}
-		if !strings.Contains(first, "keep arbitrary links or external ids in `Resources`") {
-			t.Fatalf("expected workspace AGENTS.md to keep arbitrary resources in Markdown, got:\n%s", first)
+		if !strings.Contains(first, "task.json` contains structured state, `task.md` the durable contract, and `log.jsonl` the historical timeline") {
+			t.Fatalf("expected workspace AGENTS.md to distinguish structured facts, contracts, and timeline, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "keep current state out of the log and history out of `work.md`") {
-			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from current state, got:\n%s", first)
+		if !strings.Contains(first, "Treat `log.jsonl` as the append-only timeline.") || !strings.Contains(first, "Query recent resource history with a bounded limit") {
+			t.Fatalf("expected workspace AGENTS.md to distinguish timeline from bounded history, got:\n%s", first)
 		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
 			if !strings.Contains(first, want) {
@@ -1984,6 +1985,8 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if err := os.WriteFile(legacyProjectWork, []byte("# Legacy project work\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+		writeFile(t, filepath.Join(root, "project1", "task1", "work.md"), "# Open child checkpoint\n\nKeep this manual task history.\n")
+		writeFile(t, filepath.Join(root, "project1", testArchiveDir, "task2", "work.md"), "# Archived child checkpoint\n\nKeep archived history.\n")
 
 		rootAgents := filepath.Join(root, "AGENTS.md")
 		taskAgents := filepath.Join(root, "project1", "AGENTS.md")
@@ -2002,7 +2005,14 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 		run(t, "migrate")
 		assertFile(t, legacyProjectWork)
-		assertFile(t, filepath.Join(root, "project1", "task1", "work.md"))
+		assertMissing(t, filepath.Join(root, "project1", "task1", "work.md"))
+		assertMissing(t, filepath.Join(root, "project1", testArchiveDir, "task2", "work.md"))
+		for _, path := range []string{filepath.Join(root, "project1", "task1", "task.md"), filepath.Join(root, "project1", testArchiveDir, "task2", "task.md")} {
+			got := readFile(t, path)
+			if !strings.Contains(got, "source=work.md digest=sha256:") || !strings.Contains(got, "Keep") {
+				t.Fatalf("expected legacy task history migration in %s, got:\n%s", path, got)
+			}
+		}
 
 		if pathExists(filepath.Join(root, "project1", "task1", testConfigFile)) {
 			t.Fatal("migrate from task should not create nested forge.json")

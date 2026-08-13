@@ -250,9 +250,6 @@ func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView
 
 func readResourceFiles(root, dir string, resource Resource) []ResourceFile {
 	names := []string{markdownFileName(resource)}
-	if !isProject(resource) {
-		names = append(names, "work.md")
-	}
 	names = append(names, "AGENTS.md")
 	files := make([]ResourceFile, 0, len(names))
 	for _, name := range names {

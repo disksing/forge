@@ -73,7 +73,6 @@ function resourceDetail(resource: MockResource) {
     ...resource,
     files: [
       { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
-      ...(resource.type === "task" ? [{ name: "work.md", path: `${resource.path}/work.md`, content: "# Work\n\nCurrent checkpoint.", contentHash: `${resource.id}-work-v1` }] : []),
     ],
     logs: [{ id: `${resource.id}-log-1`, time: now, title: "Initial detail log", details: "Stable log details." }],
     logPage: { hasMore: true, nextCursor: `${resource.id}-log-1` },

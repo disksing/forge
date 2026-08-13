@@ -92,8 +92,8 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor each resource's current runtime state.
-- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
+- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
+- **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. A new generation recovers from the brief, bounded recent resource history, task-worktree Git state, and artifacts rather than a second permanent progress file. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
@@ -256,7 +256,6 @@ AgentWorkspace/
       AGENTS.md               generated task launch card
       task.json               task and repository metadata
       task.md                 durable task contract
-      work.md                 replaceable recovery checkpoint
       log.jsonl               append-only task timeline
       artifacts/              reports, screenshots, uploads, patches
       worktree/               task-owned Git worktrees
@@ -271,7 +270,6 @@ Open/archive state is represented by directory location. Human-readable director
 | File | Role |
 | --- | --- |
 | `project.md`, `task.md` | Durable contracts: background, scope, acceptance criteria, stable constraints, decisions, and contract-changing questions. |
-| task `work.md` | Current focus, next actions, blockers, and just enough transient state to resume. It is replaced as work advances. |
 | `log.jsonl` | Append-only chronological events and completed-step history, written with `forge project log` or `forge task log`. |
 | `project.json`, `task.json` | Versioned structured facts Forge understands. Arbitrary notes belong in Markdown. |
 | `AGENTS.md` | Workspace operating rules plus generated project/task launch cards. Forge rewrites only its marked managed block. |
@@ -343,7 +341,7 @@ Workspace, Project, and Task creation is local and uses the shared `internal/app
 
 Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the existing durable mailbox as structured system messages with stable `type`, `causation`, and receipt metadata. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
-`forge migrate` upgrades supported resource metadata, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
+`forge migrate` upgrades supported resource metadata, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, migrates meaningful legacy task `work.md` content into a digest-marked chapter in `task.md` before removing the source, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. Known default explanatory comments are stripped only on exact deterministic matches; conflicts and uncertain content fail closed. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
 
 ```markdown
 <!-- managed by forge cli -->

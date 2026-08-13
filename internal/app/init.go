@@ -133,21 +133,18 @@ This directory is an AgentWorkspace managed by forge.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `.
-- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
+- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`log.jsonl`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `.
 - Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Read-only inspection of other task directories is allowed without an extra lock; use the state files and Forge commands described above.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
 - Treat ` + "`project.md`" + ` and ` + "`task.md`" + ` as durable contracts. Keep why the work exists, scope and non-scope, acceptance criteria, stable constraints, durable decisions, and contract-changing open questions there.
-- Treat task ` + "`work.md`" + ` as a replaceable recovery checkpoint. Keep only the current focus, next actions, blockers, and state needed to resume; do not restate the task contract.
-- Use optional ` + "`work.md`" + ` modules such as ` + "`Todo`" + `, ` + "`Blockers`" + `, ` + "`Active Work`" + `, ` + "`Paused Work`" + `, ` + "`Resume Plan`" + `, ` + "`Context`" + `, ` + "`Resources`" + `, ` + "`Verification`" + `, and ` + "`Notes`" + ` only when useful. Delete empty modules, and keep arbitrary links or external ids in ` + "`Resources`" + `.
-- Before starting risky, long-running, or interruptible task work, update the task's ` + "`work.md`" + ` with the current focus and any useful optional modules.
-- Immediately after completing a coherent task step, update the task's ` + "`work.md`" + ` with the new focus and any useful optional modules; remove empty optional modules.
-- Treat ` + "`log.jsonl`" + ` as the append-only timeline. Put important chronological events and completed-step history there; keep current state out of the log and history out of ` + "`work.md`" + `.
-- Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief. Keep short-lived execution questions in ` + "`work.md`" + `; promote durable answers to the brief and remove the temporary note.
+- Treat task ` + "`task.md`" + ` as the durable contract. For a new generation, recover transient context from bounded resource history, the task worktree's Git state, and related artifacts; do not create a second permanent progress file.
+- Treat ` + "`log.jsonl`" + ` as the append-only timeline. Query recent resource history with a bounded limit, expand only relevant or non-converged Turns, and report any gaps instead of loading complete history.
+- Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief; promote durable answers there after confirmation.
 - Use ` + "`forge task log add <title> --details <details>`" + ` or ` + "`forge project log add <title> --details <details>`" + ` to record important execution events.
 - Prefer forge commands for creating, listing, and archiving tasks.
-- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in task ` + "`work.md`" + `, and timeline history in ` + "`log.jsonl`" + `.
+- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, transient recovery inputs in bounded history plus Git and artifacts, and timeline history in ` + "`log.jsonl`" + `.
 
 ## forge CLI
 
@@ -200,7 +197,7 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 Notes:
 
 - ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace. Use ` + "`--language`" + ` to select ` + "`en`" + ` or ` + "`zh-CN`" + `.
-- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks in the enclosing workspace. Use ` + "`--language`" + ` to switch the workspace language.
+- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks and migrates legacy task history before removing obsolete files. Use ` + "`--language`" + ` to switch the workspace language.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for a bare repository layout.
 - ` + "`forge init`" + `, ` + "`forge project create`" + `, and ` + "`forge task create`" + ` accept ` + "`--creator=user|agent`" + `. A verified Forge resource environment defaults to Agent provenance; all other invocations default to user. Creator metadata records provenance only, not authority.
 - Resource creation is local and creates neither an initial message nor a generation. After creation, send the first message separately with ` + "`forge message send --to=<resource> ...`" + `; that accepted message creates a generation lazily. If create output is ambiguous, query the resource before attempting another create.

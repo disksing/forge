@@ -4572,9 +4572,11 @@ function Is(e, t) {
 	let n = /* @__PURE__ */ I(Zt(t.channel.current())), r = /* @__PURE__ */ I(""), i = /* @__PURE__ */ I(""), a = /* @__PURE__ */ I(Zt(/* @__PURE__ */ new Set())), o = /* @__PURE__ */ I(null), s = /* @__PURE__ */ I(null), c = /* @__PURE__ */ new Map(), l = new mo(), u = /* @__PURE__ */ P(() => (H(n).detail?.files || []).filter((e) => e.name !== "AGENTS.md")), d = /* @__PURE__ */ P(() => new Set(H(u).map((e) => e.name))), f = /* @__PURE__ */ P(h), p = /* @__PURE__ */ P(() => H(o) ? `${H(o).section}:${H(o).path}` : "");
 	ji(() => t.channel.subscribe((e) => {
 		if (L(n, e, !0), e.identity !== H(r)) {
-			H(r) && H(i) && c.set(H(r), H(i)), L(r, e.identity, !0), L(o, null), L(s, null), L(a, /* @__PURE__ */ new Set(), !0), L(i, c.get(H(r)) || m(e), !0);
-			let t = document.getElementById("detailsContent");
-			t && (t.scrollTop = 0);
+			H(r) && H(i) && c.set(H(r), H(i)), L(r, e.identity, !0), L(o, null), L(s, null), L(a, /* @__PURE__ */ new Set(), !0);
+			let t = c.get(H(r));
+			L(i, t && t !== "work" ? t : m(e), !0);
+			let n = document.getElementById("detailsContent");
+			n && (n.scrollTop = 0);
 		} else H(f).length && !H(f).some((e) => e.id === H(i)) && L(i, H(f)[0].id, !0);
 		queueMicrotask(e.onIconsChanged);
 	})), ji(() => {
@@ -4585,7 +4587,7 @@ function Is(e, t) {
 	}), Mi(() => l.dispose());
 	function m(e) {
 		let t = (e.detail?.files || []).filter((e) => e.name !== "AGENTS.md");
-		return e.resourceType === "scheduler" ? "schedules" : e.resourceType === "project" && t.some((e) => e.name === "project.md") ? "project" : t.some((e) => e.name === "task.md") ? "task" : t.some((e) => e.name === "work.md") ? "work" : e.resourceType === "project" ? "project" : e.resourceType === "task" ? "task" : "logs";
+		return e.resourceType === "scheduler" ? "schedules" : e.resourceType === "project" && t.some((e) => e.name === "project.md") ? "project" : t.some((e) => e.name === "task.md") ? "task" : e.resourceType === "project" ? "project" : e.resourceType === "task" ? "task" : "logs";
 	}
 	function h() {
 		if (!H(n).detail) return [];
@@ -4607,10 +4609,6 @@ function Is(e, t) {
 			id: "task",
 			label: "Task",
 			icon: "file-text"
-		}), H(d).has("work.md") && e.push({
-			id: "work",
-			label: "Work",
-			icon: "file-text"
 		}), (H(n).resourceType === "project" || H(n).detail.template) && e.push({
 			id: "template",
 			label: "Template",
@@ -4630,11 +4628,7 @@ function Is(e, t) {
 		}), e;
 	}
 	function g(e) {
-		return e.name === "scheduler.md" ? "context" : e.name === "project.md" ? "project" : e.name === "task.md" ? "task" : e.name === "work.md" ? "work" : H(f).find((e) => [
-			"project",
-			"task",
-			"work"
-		].includes(e.id))?.id || "";
+		return e.name === "scheduler.md" ? "context" : e.name === "project.md" ? "project" : e.name === "task.md" ? "task" : H(f).find((e) => ["project", "task"].includes(e.id))?.id || "";
 	}
 	function _(e) {
 		L(i, e, !0), c.set(H(r), e);
