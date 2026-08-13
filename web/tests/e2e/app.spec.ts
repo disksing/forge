@@ -149,7 +149,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       description: string;
       condition: string;
       target: string;
-      createdBy: { kind: string; name: string };
       createdAt: string;
       updatedAt: string;
     }>,
@@ -265,7 +264,6 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         description: String(body.description || ""),
         condition: String(body.condition || ""),
         target: String(body.target || ""),
-        createdBy: { kind: "user", name: "E2E User" },
         createdAt: now,
         updatedAt: now,
       };

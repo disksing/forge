@@ -54,16 +54,6 @@ func (m *agentManager) managedWorkspaceByInstanceID(instanceID string) (guiWorks
 	return guiWorkspace{}, false, nil
 }
 
-func notificationTrigger(mailbox resourceMailbox, message resourceMailboxMessage) bool {
-	for _, candidate := range mailbox.Messages {
-		if candidate.GenerationID == message.GenerationID && candidate.TurnID == message.TurnID &&
-			candidate.Status == resourceMessageDelivered && candidate.Sequence < message.Sequence {
-			return false
-		}
-	}
-	return true
-}
-
 func lastAssistantText(turn agentHubTurn) string {
 	for index := len(turn.Items) - 1; index >= 0; index-- {
 		item := turn.Items[index]
@@ -74,20 +64,37 @@ func lastAssistantText(turn agentHubTurn) string {
 	return ""
 }
 
-func creatorCallbackMessage(resourceID string, turn agentHubTurn, reference string, historyUnavailable bool) string {
+const maxTurnResultOutputBytes = 16 * 1024
+
+func boundedTurnResultOutput(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) <= maxTurnResultOutputBytes {
+		return value
+	}
+	return value[:maxTurnResultOutputBytes] + "\n[final assistant response truncated]"
+}
+
+func turnResultMessage(resourceID string, generationID string, turn agentHubTurn, reference string, sourceIDs []string, historyUnavailable bool) string {
 	status := strings.TrimSpace(turn.Status)
 	if status == "" {
 		status = "unknown"
 	}
+	turnID := strings.TrimSpace(turn.TurnID)
+	if turnID == "" {
+		turnID = strings.TrimSpace(turn.ID)
+	}
 	var builder strings.Builder
-	fmt.Fprintf(&builder, "Creator callback for `%s`: Turn `%s` ended with status `%s`.", resourceID, turn.TurnID, status)
+	fmt.Fprintf(&builder, "Turn result for `%s`: generation `%s`, Turn `%s` ended with status `%s`.", resourceID, generationID, turnID, status)
+	if len(sourceIDs) > 0 {
+		fmt.Fprintf(&builder, "\n\nSource message IDs: `%s`", strings.Join(sourceIDs, "`, `"))
+	}
 	if reference != "" {
 		fmt.Fprintf(&builder, "\n\nTurn reference: `%s`", reference)
 	}
-	if reply := lastAssistantText(turn); reply != "" {
+	if reply := boundedTurnResultOutput(lastAssistantText(turn)); reply != "" {
 		fmt.Fprintf(&builder, "\n\nFinal assistant response:\n\n%s", reply)
 	} else if historyUnavailable {
-		builder.WriteString("\n\nThe terminal result was recorded, but the canonical Turn history is unavailable; no Turn reference was manufactured.")
+		builder.WriteString("\n\nThe terminal result was recorded, but canonical Turn history is unavailable; no Turn reference was manufactured.")
 	} else {
 		builder.WriteString("\n\nThe Turn produced no final assistant text.")
 	}
@@ -132,6 +139,39 @@ func updateNotificationReceipt(workspacePath, sourceMessageID string, mutate fun
 	return err
 }
 
+func updateOperationNotificationReceipts(workspacePath string, operation resourceMailboxNotificationOp, mutate func(*resourceNotificationReceipt)) error {
+	ids := mailboxOperationSourceIDs(operation)
+	if len(ids) == 0 {
+		return nil
+	}
+	source, found, err := mailboxMessageByID(workspacePath, ids[0])
+	if err != nil || !found {
+		return err
+	}
+	_, err = mutateResourceMailboxForResource(workspacePath, source.ResourceID, func(mailbox *resourceMailbox) error {
+		for index := range mailbox.Messages {
+			message := &mailbox.Messages[index]
+			for _, sourceID := range ids {
+				if message.ID != sourceID {
+					continue
+				}
+				if message.Notification == nil {
+					message.Notification = &resourceNotificationReceipt{ID: operation.ID, Type: operation.Type, Status: operation.Status, TargetWorkspaceInstanceID: operation.TargetWorkspaceInstanceID, TargetResourceID: operation.TargetResourceID, CreatedAt: operation.UpdatedAt, UpdatedAt: operation.UpdatedAt}
+				}
+				mutate(message.Notification)
+				message.Notification.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+				if operation.Type == resourceMessageTypeTurnResult {
+					message.ResultOperationID = operation.ID
+					message.ResultSubscriptionStatus = resourceResultSubscriptionComplete
+				}
+				break
+			}
+		}
+		return nil
+	})
+	return err
+}
+
 func terminalNotificationReceipt(workspacePath, sourceMessageID, code, detail string) error {
 	if err := updateNotificationReceipt(workspacePath, sourceMessageID, func(receipt *resourceNotificationReceipt) {
 		receipt.Status = resourceNotificationTerminal
@@ -141,6 +181,21 @@ func terminalNotificationReceipt(workspacePath, sourceMessageID, code, detail st
 		return err
 	}
 	return removeMailboxNotificationOperation(workspacePath, sourceMessageID)
+}
+
+func terminalNotificationOperation(workspacePath string, operation resourceMailboxNotificationOp, code, detail string) error {
+	ids := mailboxOperationSourceIDs(operation)
+	if len(ids) == 0 {
+		return errors.New("notification operation has no source mailbox message")
+	}
+	if err := updateOperationNotificationReceipts(workspacePath, operation, func(receipt *resourceNotificationReceipt) {
+		receipt.Status = resourceNotificationTerminal
+		receipt.LastErrorCode = code
+		receipt.LastError = detail
+	}); err != nil {
+		return err
+	}
+	return removeMailboxNotificationOperation(workspacePath, ids[0])
 }
 
 func mirrorNotificationDelivery(receipt *resourceNotificationReceipt, message resourceMailboxMessage) {
@@ -189,30 +244,30 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	if generated.ID == "" && operation.GeneratedMessageID != "" {
 		generated = resourceMailboxOperationGeneratedMessage(operation)
 	}
-	if receipt.Status == resourceNotificationTerminal || receipt.Status == resourceNotificationDelivered {
+	if operation.Status == resourceNotificationTerminal || operation.Status == resourceNotificationDelivered {
 		return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
 	}
-	target, found, err := m.managedWorkspaceByInstanceID(receipt.TargetWorkspaceInstanceID)
+	target, found, err := m.managedWorkspaceByInstanceID(operation.TargetWorkspaceInstanceID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		if receipt.Status == resourceNotificationAccepted {
-			return updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+		if operation.Status == resourceNotificationAccepted {
+			return updateOperationNotificationReceipts(source.Path, operation, func(current *resourceNotificationReceipt) {
 				current.LastErrorCode = "target_workspace_unavailable"
 				current.LastError = "the target Workspace is no longer registered with and owned by this Forge Server; prior mailbox acceptance is retained"
 			})
 		}
-		return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_workspace_unavailable", "the target Workspace is not registered with and owned by this Forge Server")
+		return terminalNotificationOperation(source.Path, operation, "target_workspace_unavailable", "the target Workspace is not registered with and owned by this Forge Server")
 	}
-	targetResourceID := normalizedResourceID(receipt.TargetResourceID)
-	if receipt.Status == resourceNotificationAccepted {
+	targetResourceID := normalizedResourceID(operation.TargetResourceID)
+	if operation.Status == resourceNotificationAccepted {
 		var latest resourceMailboxMessage
 		var messageFound bool
 		var targetTerminalCode, targetTerminalDetail string
 		controllerErr := m.withResourceController(ctx, target, targetResourceID, func() error {
 			var loadErr error
-			latest, messageFound, loadErr = mailboxMessageByID(target.Path, receipt.ID)
+			latest, messageFound, loadErr = mailboxMessageByID(target.Path, operation.GeneratedMessageID)
 			if loadErr != nil {
 				var apiErr *resourceAPIError
 				if errors.As(loadErr, &apiErr) && apiErr.Code == "message_receipt_expired" {
@@ -232,17 +287,17 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 			return controllerErr
 		}
 		if targetTerminalCode != "" {
-			return terminalNotificationReceipt(source.Path, sourceMessage.ID, targetTerminalCode, targetTerminalDetail)
+			return terminalNotificationOperation(source.Path, operation, targetTerminalCode, targetTerminalDetail)
 		}
-		if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+		if err := updateOperationNotificationReceipts(source.Path, operation, func(current *resourceNotificationReceipt) {
 			mirrorNotificationDelivery(current, latest)
 		}); err != nil {
 			return err
 		}
 		if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
-			return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
+			return removeMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0])
 		}
-		return updateMailboxNotificationOperation(source.Path, sourceMessage.ID, func(current *resourceMailboxNotificationOp) {
+		return updateMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0], func(current *resourceMailboxNotificationOp) {
 			current.DeliveryStatus = publicResourceMessageStatus(latest.Status)
 			current.LastError = latest.LastError
 			current.LastErrorCode = latest.LastErrorCode
@@ -254,7 +309,7 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		exists, archived, _, inspectErr := resourceExistsAndArchived(target.Path, targetResourceID)
 		if inspectErr != nil || !exists {
 			targetTerminalCode = "target_resource_not_found"
-			targetTerminalDetail = fmt.Sprintf("target resource not found: %s", receipt.TargetResourceID)
+			targetTerminalDetail = fmt.Sprintf("target resource not found: %s", operation.TargetResourceID)
 			if inspectErr != nil {
 				targetTerminalDetail = inspectErr.Error()
 			}
@@ -262,7 +317,7 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		}
 		if archived {
 			targetTerminalCode = "target_resource_archived"
-			targetTerminalDetail = fmt.Sprintf("target resource is archived: %s", receipt.TargetResourceID)
+			targetTerminalDetail = fmt.Sprintf("target resource is archived: %s", operation.TargetResourceID)
 			return nil
 		}
 		var err error
@@ -303,9 +358,9 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		return controllerErr
 	}
 	if targetTerminalCode != "" {
-		return terminalNotificationReceipt(source.Path, sourceMessage.ID, targetTerminalCode, targetTerminalDetail)
+		return terminalNotificationOperation(source.Path, operation, targetTerminalCode, targetTerminalDetail)
 	}
-	if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+	if err := updateOperationNotificationReceipts(source.Path, operation, func(current *resourceNotificationReceipt) {
 		current.Status = resourceNotificationAccepted
 		current.AcceptedAt = accepted.AcceptedAt
 		current.DeliveryStatus = publicResourceMessageStatus(accepted.Status)
@@ -316,10 +371,14 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	}); err != nil {
 		return err
 	}
-	if err := updateMailboxNotificationOperation(source.Path, sourceMessage.ID, func(current *resourceMailboxNotificationOp) {
+	if err := updateMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0], func(current *resourceMailboxNotificationOp) {
 		current.Status = resourceNotificationAccepted
 		current.AcceptedAt = accepted.AcceptedAt
 		current.GeneratedText = ""
+		current.GeneratedRequestedMode = accepted.RequestedMode
+		current.GeneratedActualMode = accepted.ActualMode
+		current.GeneratedModeFrozen = accepted.ModeFrozen
+		current.GeneratedDowngradeReason = accepted.DowngradeReason
 		current.DeliveryStatus = publicResourceMessageStatus(accepted.Status)
 		current.DeliveredAt = accepted.DeliveredAt
 		current.TerminalAt = accepted.TerminalAt
@@ -328,87 +387,243 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	}); err != nil {
 		return err
 	}
-	if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+	if err := updateOperationNotificationReceipts(source.Path, operation, func(current *resourceNotificationReceipt) {
 		mirrorNotificationDelivery(current, latest)
 	}); err != nil {
 		return err
 	}
-	return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
+	if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
+		return removeMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0])
+	}
+	return nil
 }
 
-func (m *agentManager) reconcileCreatorCallback(ctx context.Context, workspace guiWorkspace, instanceID string, mailbox resourceMailbox, message resourceMailboxMessage, client *agentHubClient) error {
-	if message.Type != "" || message.Status != resourceMessageDelivered || message.Role != "agent" ||
-		strings.TrimSpace(message.GenerationID) == "" || strings.TrimSpace(message.TurnID) == "" || !notificationTrigger(mailbox, message) {
-		return nil
+func terminalTurnStatus(status string) bool {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "failed", "cancelled", "canceled", "interrupted", "turn.completed", "turn.failed", "turn.cancelled", "turn.interrupted":
+		return true
+	default:
+		return false
 	}
-	creator, err := resourceCreator(workspace.Path, message.ResourceID)
-	if err != nil || creator == nil || creator.Kind != app.CreatorKindResource || message.Sender == nil ||
-		strings.TrimSpace(message.Sender.ID) != creator.ResourceID || strings.TrimSpace(message.SenderWorkspaceInstanceID) != creator.WorkspaceInstanceID {
-		return err
-	}
-	run, found, err := runByGenerationID(workspace.Path, message.GenerationID)
+}
+
+type turnResultSubscriptionGroup struct {
+	SourceResourceID          string
+	SourceWorkspaceInstanceID string
+	GenerationID              string
+	TurnID                    string
+	SubscriberResourceID      string
+	SubscriberInstanceID      string
+	Messages                  []resourceMailboxMessage
+}
+
+func turnResultSubscriptionGroupKey(message resourceMailboxMessage) string {
+	return strings.Join([]string{
+		normalizedResourceID(message.ResourceID), message.GenerationID, message.TurnID,
+		strings.TrimSpace(message.SenderWorkspaceInstanceID), strings.TrimSpace(message.Sender.ID),
+	}, "\x00")
+}
+
+func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, workspace guiWorkspace, instanceID string, client *agentHubClient) error {
+	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
 	if err != nil {
 		return err
 	}
-	historyUnavailable := false
-	turn := agentHubTurn{}
-	if !found {
-		turn = agentHubTurn{TurnID: message.TurnID, Status: "unknown", Closed: true}
-		historyUnavailable = true
-	} else {
-		var turnErr error
-		turn, _, turnErr = client.SessionTurn(ctx, run.AgentHubSessionID, message.TurnID)
-		if turnErr != nil {
-			if run.CompletionMarker != "" && run.CompletionTurnID == message.TurnID {
-				turn = agentHubTurn{TurnID: message.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}
-				historyUnavailable = true
-			} else if !isLiveAgentStatus(run.Status) {
-				turn = agentHubTurn{TurnID: message.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
-				historyUnavailable = true
-			} else {
-				return nil
+	groups := make(map[string]*turnResultSubscriptionGroup)
+	for _, mailbox := range hotMailboxes {
+		for _, message := range mailbox.Messages {
+			if message.Type != "" || message.Status != resourceMessageDelivered || !message.SubscribeResult ||
+				(message.ResultSubscriptionStatus != resourceResultSubscriptionPending && message.ResultSubscriptionStatus != "") ||
+				message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
+				strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(message.GenerationID) == "" {
+				continue
 			}
+			if strings.TrimSpace(message.TurnID) == "" {
+				generation, generationFound, generationErr := runByGenerationID(workspace.Path, message.GenerationID)
+				if generationErr != nil {
+					return generationErr
+				}
+				if !generationFound || strings.TrimSpace(generation.AgentHubSessionID) == "" || client == nil {
+					continue
+				}
+				canonical, canonicalFound, canonicalErr := findCanonicalAgentHubMessage(ctx, client, generation.AgentHubSessionID, message)
+				if canonicalErr != nil || !canonicalFound || strings.TrimSpace(canonical.TurnID) == "" {
+					continue
+				}
+				message, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
+					current.TurnID = strings.TrimSpace(canonical.TurnID)
+					bindMailboxResultSubscription(current, current.TurnID)
+				})
+				if err != nil {
+					return err
+				}
+			}
+			if strings.TrimSpace(message.TurnID) == "" {
+				continue
+			}
+			key := turnResultSubscriptionGroupKey(message)
+			group := groups[key]
+			if group == nil {
+				group = &turnResultSubscriptionGroup{
+					SourceResourceID: normalizedResourceID(message.ResourceID), SourceWorkspaceInstanceID: instanceID,
+					GenerationID: message.GenerationID, TurnID: message.TurnID,
+					SubscriberResourceID: strings.TrimSpace(message.Sender.ID), SubscriberInstanceID: strings.TrimSpace(message.SenderWorkspaceInstanceID),
+				}
+				groups[key] = group
+			}
+			group.Messages = append(group.Messages, cloneMailboxMessage(message))
 		}
 	}
-	if !turn.Closed {
-		return nil
+	keys := make([]string, 0, len(groups))
+	for key := range groups {
+		keys = append(keys, key)
 	}
-	if strings.TrimSpace(turn.Status) == "" {
-		turn.Status = "unknown"
-	}
-	turnID := strings.TrimSpace(turn.TurnID)
-	if turnID == "" {
-		turnID = strings.TrimSpace(turn.ID)
-		if turnID == "" {
-			turnID = message.TurnID
-		}
-		turn.TurnID = turnID
-	}
-	reference := ""
-	if !historyUnavailable {
-		reference, err = encodeResourceHistoryReference(resourceHistoryReference{
-			Kind: "turn", InstanceID: instanceID, ResourceID: message.ResourceID, GenerationID: message.GenerationID, TurnID: turnID,
+	sort.Strings(keys)
+	for _, key := range keys {
+		group := groups[key]
+		sort.SliceStable(group.Messages, func(i, j int) bool {
+			if group.Messages[i].Sequence != group.Messages[j].Sequence {
+				return group.Messages[i].Sequence < group.Messages[j].Sequence
+			}
+			return group.Messages[i].ID < group.Messages[j].ID
 		})
+		sourceIDs := make([]string, 0, len(group.Messages))
+		for _, message := range group.Messages {
+			sourceIDs = append(sourceIDs, message.ID)
+		}
+
+		run, found, err := runByGenerationID(workspace.Path, group.GenerationID)
 		if err != nil {
 			return err
 		}
+		historyUnavailable := false
+		turn := agentHubTurn{}
+		if !found {
+			turn = agentHubTurn{TurnID: group.TurnID, Status: "unknown", Closed: true}
+			historyUnavailable = true
+		} else {
+			var turnErr error
+			if strings.TrimSpace(run.AgentHubSessionID) == "" {
+				turnErr = errors.New("generation has no AgentHub session")
+			} else {
+				turn, _, turnErr = client.SessionTurn(ctx, run.AgentHubSessionID, group.TurnID)
+			}
+			if turnErr != nil {
+				if run.CompletionMarker != "" && run.CompletionTurnID == group.TurnID {
+					turn = agentHubTurn{TurnID: group.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}
+					historyUnavailable = true
+				} else if !isLiveAgentStatus(run.Status) {
+					turn = agentHubTurn{TurnID: group.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+					historyUnavailable = true
+				} else {
+					continue
+				}
+			}
+		}
+		if !turn.Closed && !terminalTurnStatus(turn.Status) {
+			continue
+		}
+		if strings.TrimSpace(turn.Status) == "" {
+			turn.Status = "unknown"
+		}
+		turnID := strings.TrimSpace(turn.TurnID)
+		if turnID == "" {
+			turnID = strings.TrimSpace(turn.ID)
+			if turnID == "" {
+				turnID = group.TurnID
+			}
+			turn.TurnID = turnID
+		}
+		reference := ""
+		if !historyUnavailable {
+			reference, err = encodeResourceHistoryReference(resourceHistoryReference{
+				Kind: "turn", InstanceID: instanceID, ResourceID: group.SourceResourceID, GenerationID: group.GenerationID, TurnID: turnID,
+			})
+			if err != nil {
+				return err
+			}
+		}
+		existingOperation, existingFound, err := mailboxNotificationOperation(workspace.Path, sourceIDs[0])
+		if err != nil {
+			return err
+		}
+		operationID := notificationMessageID(resourceMessageTypeTurnResult, instanceID, group.SourceResourceID, group.GenerationID, turnID, group.SubscriberInstanceID, group.SubscriberResourceID)
+		generatedMessageID := operationID
+		targetWorkspaceInstanceID := group.SubscriberInstanceID
+		targetResourceID := group.SubscriberResourceID
+		operationStatus := resourceNotificationWaiting
+		acceptedAt := ""
+		generatedRequestedMode := resourceMessageModeSteer
+		generatedActualMode := resourceMessageModeSteer
+		generatedModeFrozen := false
+		generatedDowngradeReason := ""
+		if existingFound && existingOperation.Type == resourceMessageTypeTurnResult {
+			// A pre-subscribeResult server may already have durably created the
+			// callback operation under the legacy type. Reuse its operation and
+			// generated message IDs (and target) so migration recovery cannot
+			// create a second result for the same source message.
+			if strings.TrimSpace(existingOperation.ID) != "" {
+				operationID = existingOperation.ID
+			}
+			if strings.TrimSpace(existingOperation.GeneratedMessageID) != "" {
+				generatedMessageID = existingOperation.GeneratedMessageID
+			}
+			if strings.TrimSpace(existingOperation.TargetWorkspaceInstanceID) != "" {
+				targetWorkspaceInstanceID = existingOperation.TargetWorkspaceInstanceID
+			}
+			if strings.TrimSpace(existingOperation.TargetResourceID) != "" {
+				targetResourceID = existingOperation.TargetResourceID
+			}
+			if strings.TrimSpace(existingOperation.Status) != "" {
+				operationStatus = existingOperation.Status
+			}
+			acceptedAt = existingOperation.AcceptedAt
+			if existingOperation.GeneratedRequestedMode != "" {
+				generatedRequestedMode = existingOperation.GeneratedRequestedMode
+			}
+			if existingOperation.GeneratedActualMode != "" {
+				generatedActualMode = existingOperation.GeneratedActualMode
+			}
+			generatedModeFrozen = existingOperation.GeneratedModeFrozen
+			generatedDowngradeReason = existingOperation.GeneratedDowngradeReason
+		}
+		causation := &resourceMessageCausation{
+			Type: resourceMessageTypeTurnResult, SourceWorkspaceInstanceID: instanceID, SourceResourceID: group.SourceResourceID,
+			MessageID: sourceIDs[0], SourceMessageIDs: sourceIDs, GenerationID: group.GenerationID, TurnID: turnID, TurnReference: reference,
+			TurnStatus: strings.TrimSpace(turn.Status), HistoryUnavailable: historyUnavailable,
+		}
+		generated := resourceMailboxMessage{
+			ID: generatedMessageID, ResourceID: targetResourceID,
+			Text:   turnResultMessage(group.SourceResourceID, group.GenerationID, turn, reference, sourceIDs, historyUnavailable),
+			Sender: &agentHubMessageSender{ID: group.SourceResourceID, Name: group.SourceResourceID}, SenderWorkspaceInstanceID: instanceID,
+			RequestedMode: generatedRequestedMode, ActualMode: generatedActualMode, ModeFrozen: generatedModeFrozen, DowngradeReason: generatedDowngradeReason,
+			SubscribeResult: false, ResultSubscriptionStatus: resourceResultSubscriptionDisabled,
+			Type: resourceMessageTypeTurnResult, Causation: causation,
+		}
+		operation := resourceMailboxNotificationOp{
+			ID: operationID, Type: resourceMessageTypeTurnResult, SourceMessageID: sourceIDs[0], SourceMessageIDs: sourceIDs,
+			SourceResourceID: group.SourceResourceID, SourceWorkspaceInstanceID: instanceID,
+			TargetWorkspaceInstanceID: targetWorkspaceInstanceID, TargetResourceID: targetResourceID,
+			GeneratedMessageID: generatedMessageID, GeneratedText: generated.Text, GeneratedSender: generated.Sender, GeneratedCausation: causation,
+			GeneratedRequestedMode: generatedRequestedMode, GeneratedActualMode: generatedActualMode, GeneratedModeFrozen: generatedModeFrozen, GeneratedDowngradeReason: generatedDowngradeReason,
+			Status: operationStatus, AcceptedAt: acceptedAt, UpdatedAt: time.Now().Format(time.RFC3339Nano),
+			GenerationID: group.GenerationID, TurnID: turnID, TurnReference: reference, TurnStatus: turn.Status, HistoryUnavailable: historyUnavailable,
+		}
+		if err := upsertMailboxNotificationOperationForSources(workspace.Path, sourceIDs, operation); err != nil {
+			return err
+		}
+		latest, found, err := mailboxMessageByID(workspace.Path, sourceIDs[0])
+		if err != nil {
+			return err
+		}
+		if !found {
+			continue
+		}
+		if err := m.routeNotification(ctx, workspace, latest, resourceMailboxMessage{}); err != nil {
+			return err
+		}
 	}
-	receiptID := notificationMessageID(resourceMessageTypeCreatorTurnResult, instanceID, message.ResourceID, message.GenerationID, turnID)
-	updated, err := ensureNotificationReceipt(workspace.Path, message.ID, resourceMessageTypeCreatorTurnResult, creator.WorkspaceInstanceID, creator.ResourceID, receiptID)
-	if err != nil {
-		return err
-	}
-	causation := &resourceMessageCausation{
-		Type: resourceMessageTypeCreatorTurnResult, SourceWorkspaceInstanceID: instanceID, SourceResourceID: message.ResourceID,
-		MessageID: message.ID, GenerationID: message.GenerationID, TurnID: turnID, TurnReference: reference,
-		TurnStatus: strings.TrimSpace(turn.Status), HistoryUnavailable: historyUnavailable,
-	}
-	generated := resourceMailboxMessage{
-		ID: receiptID, ResourceID: creator.ResourceID, Text: creatorCallbackMessage(message.ResourceID, turn, reference, historyUnavailable),
-		Sender: &agentHubMessageSender{ID: message.ResourceID, Name: message.ResourceID}, SenderWorkspaceInstanceID: instanceID,
-		Type: resourceMessageTypeCreatorTurnResult, Causation: causation,
-	}
-	return m.routeNotification(ctx, workspace, updated, generated)
+	return nil
 }
 
 func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace guiWorkspace, instanceID string, message resourceMailboxMessage) error {
@@ -425,6 +640,7 @@ func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace gu
 	generated := resourceMailboxMessage{
 		ID: receiptID, ResourceID: message.Sender.ID, Text: terminalDeliveryMessage(message),
 		Sender: &agentHubMessageSender{ID: message.ResourceID, Name: message.ResourceID}, SenderWorkspaceInstanceID: instanceID,
+		RequestedMode: resourceMessageModeSteer, ActualMode: resourceMessageModeSteer,
 		Type: resourceMessageTypeDeliveryTerminal,
 		Causation: &resourceMessageCausation{
 			Type: resourceMessageTypeDeliveryTerminal, SourceWorkspaceInstanceID: instanceID, SourceResourceID: message.ResourceID,
@@ -458,17 +674,21 @@ func (m *agentManager) reconcileWorkspaceNotifications(ctx context.Context, work
 				failures = append(failures, fmt.Sprintf("message %s terminal notice: %v", message.ID, err))
 				continue
 			}
-			if err := m.reconcileCreatorCallback(ctx, workspace, instanceID, mailbox, message, client); err != nil {
-				failures = append(failures, fmt.Sprintf("message %s creator callback: %v", message.ID, err))
-			}
 		}
+	}
+	if err := m.reconcileTurnResultSubscriptions(ctx, workspace, instanceID, client); err != nil {
+		failures = append(failures, fmt.Sprintf("turn result subscriptions: %v", err))
 	}
 	operations, err := pendingResourceMailboxNotificationOperations(workspace.Path)
 	if err != nil {
 		return err
 	}
 	for _, operation := range operations {
-		source, found, sourceErr := mailboxMessageByID(workspace.Path, operation.SourceMessageID)
+		sourceIDs := mailboxOperationSourceIDs(operation)
+		if len(sourceIDs) == 0 {
+			continue
+		}
+		source, found, sourceErr := mailboxMessageByID(workspace.Path, sourceIDs[0])
 		if sourceErr != nil || !found {
 			if sourceErr != nil {
 				failures = append(failures, fmt.Sprintf("operation %s source: %v", operation.ID, sourceErr))

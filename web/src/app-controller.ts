@@ -5,6 +5,7 @@ import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
 import type { AppShellModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
 import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree } from "./models/workspace";
+import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
@@ -890,9 +891,6 @@ function detailPanelModel(): DetailPanelModel {
 		resourceId: controllerState.selectedId || "",
 		resourceType: "",
 		resourceTitle: "",
-		creator: controllerState.selectedId === "workspace"
-			? controllerState.tree?.creator
-			: controllerState.details[controllerState.selectedId]?.creator || findResource(controllerState.selectedId)?.creator,
 		parent: null,
 		loading: false,
 		detail: null,
@@ -1415,12 +1413,14 @@ function renderCreateDialog(): void {
 	createDialogController.render();
 }
 async function archiveResource(resourceId: string): Promise<void> {
-	if (!confirm(`Archive ${resourceId}?`)) return;
-	await api<void>(`/api/workspaces/${controllerState.activeWorkspaceId}/archive`, {
+	const result = await api<ArchiveResponse>(`/api/workspaces/${controllerState.activeWorkspaceId}/archive`, {
 		method: "POST",
 		body: JSON.stringify({ resourceId })
 	});
-	toast("Archived.");
+	const warnings = result.warnings || [];
+	toast(warnings.length > 0
+		? [`Archived.`, ...warnings.map((warning) => `Warning: ${warning.message}`)].join("\n")
+		: "Archived.");
 	controllerState.selectedId = "workspace";
 	await loadTree();
 }

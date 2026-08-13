@@ -22,13 +22,6 @@ func validateResource(resource Resource) error {
 	if strings.TrimSpace(meta.CreatedAt) == "" || strings.TrimSpace(meta.UpdatedAt) == "" {
 		return fmt.Errorf("createdAt and updatedAt cannot be empty")
 	}
-	if meta.Creator != nil {
-		creator, err := NormalizeCreator(*meta.Creator)
-		if err != nil {
-			return err
-		}
-		meta.Creator = &creator
-	}
 	if _, err := NormalizeAgentBinding(meta.AgentBinding); err != nil {
 		return err
 	}

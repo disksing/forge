@@ -347,6 +347,45 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	}
 }
 
+func TestArchiveResourceReturnsNonBlockingWarningsAfterMove(t *testing.T) {
+	workspace := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := forgeWorkspace.CreateProject("Warning project", "warning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "child"}); err != nil {
+		t.Fatal(err)
+	}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-one/archive", strings.NewReader(`{"resourceId":"project1"}`))
+	rec := httptest.NewRecorder()
+	s.archiveResource(rec, req, "workspace-one")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected OK with warnings, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Path     string               `json:"path"`
+		Warnings []app.ArchiveWarning `json:"warnings"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(response.Path, "archive") || len(response.Warnings) == 0 || response.Warnings[0].Severity != "warning" {
+		t.Fatalf("archive response did not expose structured warning: %#v", response)
+	}
+	if _, err := forgeWorkspace.ResourceValue("project1.task1"); err != nil {
+		t.Fatalf("archived child should remain addressable after HTTP archive: %v", err)
+	}
+}
+
 func TestWorkspaceAgentsSaveRejectsChangedContentHash(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {

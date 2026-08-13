@@ -115,7 +115,7 @@ func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
 	}
 }
 
-func TestScheduleLifecycleValidatesTargetsAndPreservesProvenance(t *testing.T) {
+func TestScheduleLifecycleValidatesTargets(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {
 		t.Fatal(err)
@@ -128,24 +128,15 @@ func TestScheduleLifecycleValidatesTargetsAndPreservesProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := workspace.RuntimeConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	creator, err := app.ResourceCreator(runtime.InstanceID, app.SchedulerResourceID)
-	if err != nil {
-		t.Fatal(err)
-	}
 	created, err := workspace.AddSchedule(app.CreateScheduleInput{
 		Description: "  Remind the target  ",
 		Condition:   "  tomorrow morning  ",
 		Target:      task.ID,
-		Creator:     creator,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Description != "Remind the target" || created.Condition != "tomorrow morning" || created.Target != task.ID || created.CreatedBy != creator || created.CreatedAt == "" || created.UpdatedAt != created.CreatedAt {
+	if created.Description != "Remind the target" || created.Condition != "tomorrow morning" || created.Target != task.ID || created.CreatedAt == "" || created.UpdatedAt != created.CreatedAt {
 		t.Fatalf("created schedule = %#v", created)
 	}
 	condition := "when the build is green"
@@ -154,7 +145,7 @@ func TestScheduleLifecycleValidatesTargetsAndPreservesProvenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Condition != condition || updated.Target != target || updated.CreatedAt != created.CreatedAt || updated.CreatedBy != creator {
+	if updated.Condition != condition || updated.Target != target || updated.CreatedAt != created.CreatedAt {
 		t.Fatalf("updated schedule = %#v", updated)
 	}
 	if _, err := workspace.AddSchedule(app.CreateScheduleInput{Description: "Bad", Condition: "now", Target: "project999.task999"}); err == nil {

@@ -23,22 +23,26 @@ import (
 )
 
 const (
-	workspaceStatusUsage  = "usage: forge workspace status [--server=<url>]"
-	projectStatusUsage    = "usage: forge project status [--project=<project>] [--server=<url>]"
-	taskStatusUsage       = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
-	messageSendUsage      = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>"
-	messageShowUsage      = "usage: forge message show --id=<message-id> [--server=<url>]"
-	workspaceHistoryUsage = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	projectHistoryUsage   = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	taskHistoryUsage      = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
-	historyShowUsage      = "usage: forge history turn|event show --ref=<reference> [--server=<url>] [--json]"
+	forgeWorkspaceRootEnvironment     = "FORGE_WORKSPACE_ROOT"
+	forgeWorkspaceInstanceEnvironment = "FORGE_WORKSPACE_INSTANCE_ID"
+	forgeResourceIDEnvironment        = "FORGE_RESOURCE_ID"
+	workspaceStatusUsage              = "usage: forge workspace status [--server=<url>]"
+	projectStatusUsage                = "usage: forge project status [--project=<project>] [--server=<url>]"
+	taskStatusUsage                   = "usage: forge task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	messageSendUsage                  = "usage: forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
+	messageShowUsage                  = "usage: forge message show --id=<message-id> [--server=<url>]"
+	workspaceHistoryUsage             = "usage: forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	projectHistoryUsage               = "usage: forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	taskHistoryUsage                  = "usage: forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
+	historyShowUsage                  = "usage: forge history turn|event show --ref=<reference> [--server=<url>] [--json]"
 )
 
 type resourceServerOptions struct {
-	ID        string
-	Mode      string
-	ServerURL string
-	Text      string
+	ID              string
+	Mode            string
+	ServerURL       string
+	Text            string
+	SubscribeResult *bool
 }
 
 type resourceHistoryOptions struct {
@@ -103,6 +107,25 @@ func parseMessageServerArgs(args []string, command string) (resourceServerOption
 			}
 			index++
 			options.Mode = strings.ToLower(strings.TrimSpace(args[index]))
+		case strings.HasPrefix(arg, "--subscribe-result=") && command == "send":
+			if options.SubscribeResult != nil {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			value, parseErr := strconv.ParseBool(strings.TrimSpace(strings.TrimPrefix(arg, "--subscribe-result=")))
+			if parseErr != nil {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			options.SubscribeResult = &value
+		case arg == "--subscribe-result" && command == "send":
+			if index+1 >= len(args) || strings.HasPrefix(args[index+1], "--") || options.SubscribeResult != nil {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			index++
+			value, parseErr := strconv.ParseBool(strings.TrimSpace(args[index]))
+			if parseErr != nil {
+				return resourceServerOptions{}, errors.New(usage)
+			}
+			options.SubscribeResult = &value
 		case strings.HasPrefix(arg, "--server="):
 			if options.ServerURL != "" {
 				return resourceServerOptions{}, errors.New(usage)
@@ -395,6 +418,9 @@ func runMessageSend(args []string) error {
 		"sender":                    map[string]string{"id": senderID, "name": senderID},
 		"senderWorkspaceInstanceId": senderInstanceID,
 	}
+	if options.SubscribeResult != nil {
+		body["subscribeResult"] = *options.SubscribeResult
+	}
 	var response map[string]any
 	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/messages", url.PathEscape(client.workspaceID), url.PathEscape(options.ID))
 	if err := client.request(context.Background(), http.MethodPost, path, body, &response); err != nil {
@@ -404,14 +430,44 @@ func runMessageSend(args []string) error {
 }
 
 func resolveMessageSender() (string, string, error) {
-	if strings.TrimSpace(os.Getenv(forgeWorkspaceRootEnvironment)) != "" ||
-		strings.TrimSpace(os.Getenv(forgeWorkspaceInstanceEnvironment)) != "" ||
-		strings.TrimSpace(os.Getenv(forgeResourceIDEnvironment)) != "" {
-		creator, err := resolveCreationCreator(creationCreatorAgent)
-		if err != nil {
-			return "", "", err
+	root := strings.TrimSpace(os.Getenv(forgeWorkspaceRootEnvironment))
+	instanceID := strings.TrimSpace(os.Getenv(forgeWorkspaceInstanceEnvironment))
+	resourceID := strings.TrimSpace(os.Getenv(forgeResourceIDEnvironment))
+	if root != "" || instanceID != "" || resourceID != "" {
+		currentWorkspace, currentErr := openApplicationWorkspace()
+		contextMatchesCurrent := currentErr == nil && sameWorkspacePath(root, currentWorkspace.Root())
+		if !contextMatchesCurrent && currentErr == nil {
+			// A parent AgentHub environment can remain in the process while a
+			// user changes into another temporary Workspace. The current stable
+			// resource address is the unambiguous CLI provenance in that case.
+			root, instanceID, resourceID = "", "", ""
 		}
-		return creator.ResourceID, creator.WorkspaceInstanceID, nil
+	}
+	if root != "" || instanceID != "" || resourceID != "" {
+		if root == "" || instanceID == "" || resourceID == "" {
+			return "", "", fmt.Errorf("resource message sender requires %s, %s, and %s", forgeWorkspaceRootEnvironment, forgeWorkspaceInstanceEnvironment, forgeResourceIDEnvironment)
+		}
+		workspace, err := app.OpenWorkspace(root)
+		if err != nil {
+			return "", "", fmt.Errorf("validate message sender Workspace: %w", err)
+		}
+		runtimeConfig, err := workspace.RuntimeConfig()
+		if err != nil {
+			return "", "", fmt.Errorf("validate message sender Workspace runtime: %w", err)
+		}
+		if runtimeConfig.InstanceID != instanceID {
+			return "", "", errors.New("message sender Workspace instance does not match its persisted Forge runtime")
+		}
+		if resourceID != "workspace" && resourceID != app.SchedulerResourceID {
+			resource, resourceErr := workspace.ResourceValue(resourceID)
+			if resourceErr != nil {
+				return "", "", fmt.Errorf("validate message sender resource: %w", resourceErr)
+			}
+			if resource.Archived {
+				return "", "", errors.New("message sender resource is archived")
+			}
+		}
+		return resourceID, instanceID, nil
 	}
 	senderID, err := inferCurrentResourceID()
 	if err != nil {
@@ -426,6 +482,26 @@ func resolveMessageSender() (string, string, error) {
 		return "", "", err
 	}
 	return senderID, runtime.InstanceID, nil
+}
+
+func sameWorkspacePath(left, right string) bool {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" || right == "" {
+		return false
+	}
+	leftAbs, leftErr := filepath.Abs(left)
+	rightAbs, rightErr := filepath.Abs(right)
+	if leftErr != nil || rightErr != nil {
+		return filepath.Clean(left) == filepath.Clean(right)
+	}
+	if resolved, err := filepath.EvalSymlinks(leftAbs); err == nil {
+		leftAbs = resolved
+	}
+	if resolved, err := filepath.EvalSymlinks(rightAbs); err == nil {
+		rightAbs = resolved
+	}
+	return filepath.Clean(leftAbs) == filepath.Clean(rightAbs)
 }
 
 func runMessageShow(args []string) error {

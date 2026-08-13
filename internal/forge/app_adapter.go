@@ -43,12 +43,12 @@ func applicationWorkspaceResourceJSON(id string) error {
 	return printJSON(detail)
 }
 
-func applicationProjectCreate(description, slug string, creator app.Creator) error {
+func applicationProjectCreate(description, slug string) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: description, Slug: slug, Creator: creator})
+	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: description, Slug: slug})
 	if err != nil {
 		return err
 	}
@@ -91,8 +91,15 @@ func applicationArchiveResource(id string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintln(os.Stdout, archived.Path)
-	return err
+	if _, err = fmt.Fprintln(os.Stdout, archived.Path); err != nil {
+		return err
+	}
+	for _, warning := range archived.Warnings {
+		if _, err = fmt.Fprintf(os.Stdout, "warning[%s]: %s\n", warning.Code, warning.Message); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func applicationTaskCreate(input app.CreateTaskInput) error {
@@ -129,33 +136,6 @@ func applicationTaskList(options taskListOptions) error {
 		fmt.Printf("%s\t%s\n", app.TaskShortID(entry.Task.ID), entry.Task.Title)
 	}
 	return nil
-}
-
-func applicationSessionList() error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	sessions, err := workspace.GenerationDiagnostics()
-	if err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		fmt.Println(formatSessionDiagnostic(session))
-	}
-	return nil
-}
-
-func applicationSessionShow(id string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.GenerationDiagnostic(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
 }
 
 func applicationRepoList() error {
@@ -240,12 +220,12 @@ func applicationTaskRepoRemove(taskID, name string) error {
 	return printJSON(task)
 }
 
-func applicationInit(language string, creator app.Creator) error {
+func applicationInit(language string) error {
 	root, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: language, Creator: creator}); err != nil {
+	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: language}); err != nil {
 		return err
 	}
 	fmt.Printf("initialized AgentWorkspace at %s\n", root)

@@ -265,7 +265,7 @@ func TestAgentHubPollerKeepsSessionForOpenTask(t *testing.T) {
 	}
 }
 
-func TestArchiveResourceRejectsActiveTurnBeforeMovingTask(t *testing.T) {
+func TestArchiveResourceAllowsActiveTurnAndConvergesAsynchronously(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -279,7 +279,7 @@ func TestArchiveResourceRejectsActiveTurnBeforeMovingTask(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-test/archive", strings.NewReader(`{"resourceId":"project1.task1"}`))
 	manager.server.archiveResource(recorder, request, workspace.ID)
-	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "active Turn") {
+	if recorder.Code != http.StatusOK || !strings.Contains(recorder.Body.String(), "archive") {
 		t.Fatalf("active Turn archive = %d %s", recorder.Code, recorder.Body.String())
 	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -287,8 +287,8 @@ func TestArchiveResourceRejectsActiveTurnBeforeMovingTask(t *testing.T) {
 		t.Fatal(err)
 	}
 	value, err := forgeWorkspace.ResourceValue("project1.task1")
-	if err != nil || value.Archived {
-		t.Fatalf("active resource moved despite rejection: %#v, %v", value, err)
+	if err != nil || !value.Archived {
+		t.Fatalf("active resource was not archived before runtime convergence: %#v, %v", value, err)
 	}
 }
 

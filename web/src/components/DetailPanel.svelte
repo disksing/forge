@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./DetailPanel.css";
 
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
 
   import { ApiClient } from "../api/client";
   import type { ModelChannel } from "./model-channel";
@@ -25,6 +25,9 @@
   let diffRepo = $state<ResourceRepoModel | null>(null);
   const tabMemory = new Map<string, string>();
   const client = new ApiClient();
+  let refreshVersion = 0;
+
+  type PreviewScrollState = { key: string; scrollTop: number; scrollLeft: number };
 
   const files = $derived((model.detail?.files || []).filter((file) => file.name !== "AGENTS.md"));
   const fileNames = $derived(new Set(files.map((file) => file.name)));
@@ -32,6 +35,8 @@
   const activePreviewPath = $derived(preview ? `${preview.section}:${preview.path}` : "");
 
   onMount(() => channel.subscribe((next) => {
+    const previewScrollState = capturePreviewScrollState();
+    const currentRefreshVersion = ++refreshVersion;
     model = next;
     if (next.identity !== identity) {
       if (identity && activeTab) tabMemory.set(identity, activeTab);
@@ -46,7 +51,10 @@
     } else if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) {
       activeTab = tabs[0].id;
     }
-    queueMicrotask(next.onIconsChanged);
+    void tick().then(() => {
+      if (currentRefreshVersion === refreshVersion) restorePreviewScrollState(previewScrollState);
+      next.onIconsChanged();
+    });
   }));
 
   onMount(() => {
@@ -104,18 +112,6 @@
     return `#${match ? match[1] : segment}`;
   }
 
-  function creatorLabel(): string {
-    if (!model.creator) return "Creator unknown (legacy)";
-    if (model.creator.kind === "user") return "Created by user";
-    return `Created by ${model.creator.resourceId || "resource"}`;
-  }
-
-  function creatorTitle(): string {
-    if (!model.creator) return "This legacy resource has no persisted creator provenance.";
-    if (model.creator.kind === "user") return "Creator provenance: user";
-    return `Creator provenance: ${model.creator.workspaceInstanceId || "unknown Workspace"} / ${model.creator.resourceId || "unknown resource"}`;
-  }
-
   function toggleFile(key: string): void {
     const next = new Set(expanded);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -133,6 +129,29 @@
     preview = { section, path };
   }
 
+  function previewKey(value: { section: string; path: string }): string {
+    return `${value.section}:${value.path}`;
+  }
+
+  function capturePreviewScrollState(): PreviewScrollState | null {
+    if (!preview) return null;
+    const scroller = document.querySelector<HTMLElement>("[data-preview-scroll]");
+    if (!scroller) return null;
+    return {
+      key: previewKey(preview),
+      scrollTop: scroller.scrollTop,
+      scrollLeft: scroller.scrollLeft,
+    };
+  }
+
+  function restorePreviewScrollState(snapshot: PreviewScrollState | null): void {
+    if (!snapshot || !preview || snapshot.key !== previewKey(preview)) return;
+    const scroller = document.querySelector<HTMLElement>("[data-preview-scroll]");
+    if (!scroller) return;
+    scroller.scrollTop = snapshot.scrollTop;
+    scroller.scrollLeft = snapshot.scrollLeft;
+  }
+
   function toastError(message: string): void {
     if (message) model.onToast(message);
   }
@@ -141,7 +160,7 @@
 {#if !model.workspaceId}
   <div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>
 {:else if model.resourceType === "workspace"}
-  <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}<span class="resource-creator-badge" title={creatorTitle()}>{creatorLabel()}</span></h1></div></div>
+  <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}</h1></div></div>
   <div id="detailsContent" class="details-content">
     <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
     {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
@@ -155,7 +174,7 @@
       {#if model.parent}<span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link" onclick={() => model.onNavigate(model.parent?.id || "workspace")}>{model.parent.title}</button>{/if}
       <span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate(model.resourceId)}>{model.resourceTitle}</button>
     </nav>
-    <div class="title-row"><h1>{model.resourceTitle}{#if model.resourceType !== "scheduler"}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code>{/if}<span class="resource-creator-badge" title={model.resourceType === "scheduler" ? "Special Forge-managed Workspace resource" : creatorTitle()}>{model.resourceType === "scheduler" ? "Forge-managed" : creatorLabel()}</span></h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}{#if model.resourceType !== "scheduler"}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button>{/if}</div>{/if}</div>
+    <div class="title-row"><h1>{model.resourceTitle}{#if model.resourceType !== "scheduler"}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code>{/if}</h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}{#if model.resourceType !== "scheduler"}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button>{/if}</div>{/if}</div>
   </div>
   {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}

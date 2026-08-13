@@ -4,6 +4,22 @@ export interface ApiErrorResponse {
   [key: string]: unknown;
 }
 
+export interface ArchiveWarning {
+  severity?: "warning" | string;
+  code: string;
+  message: string;
+  resourceId?: string;
+  repo?: string;
+  path?: string;
+  branch?: string;
+  targetBranch?: string;
+}
+
+export interface ArchiveResponse {
+  path: string;
+  warnings?: ArchiveWarning[];
+}
+
 export interface WorkspaceSummary {
   id: string;
   name: string;

@@ -211,19 +211,12 @@ func TestCreateTaskFromTemplateRecordsSource(t *testing.T) {
 	if preview.Template == nil {
 		t.Fatalf("template source missing from preview: %#v", preview)
 	}
-	creator, err := app.ResourceCreator("ws-template-source", "project9.task4")
-	if err != nil {
-		t.Fatal(err)
-	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, TemplateName: "request", TemplateFields: fields, ExpectedTemplateDigest: preview.Template.Digest, Creator: creator})
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, TemplateName: "request", TemplateFields: fields, ExpectedTemplateDigest: preview.Template.Digest})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if task.Template == nil || task.Template.Name != "request" || task.Template.SchemaVersion != 2 || task.Template.Digest != preview.Template.Digest {
 		t.Fatalf("unexpected template source: %#v", task)
-	}
-	if task.Creator == nil || *task.Creator != creator {
-		t.Fatalf("template task creator = %#v", task.Creator)
 	}
 	detail, err := workspace.Resource(task.ID)
 	if err != nil {

@@ -151,19 +151,19 @@ This directory is an AgentWorkspace managed by forge.
 Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
-forge init [--language=<language>] [--creator=user|agent]
+forge init [--language=<language>]
 forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--slug <slug>] [--creator=user|agent] <description>
+forge project create [--slug <slug>] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
 forge template list|show|validate|render|create|migrate ...
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
+forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
 forge task list [--project=<project>] [--all]
 forge task show [--project=<project>] [--task=<task>]
 forge task archive [--project=<project>] [--task=<task>]
@@ -178,11 +178,8 @@ forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [-
 forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 forge history turn show --ref=<reference> [--server=<url>] [--json]
 forge history event show --ref=<reference> [--server=<url>] [--json]
-forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
 forge message show --id=<message-id> [--server=<url>]
-forge session list
-forge session show --id=<generationId>
-
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
@@ -194,7 +191,7 @@ Notes:
 - ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace. Use ` + "`--language`" + ` to select ` + "`en`" + ` or ` + "`zh-CN`" + `.
 - ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks and migrates legacy task history before removing obsolete files. Use ` + "`--language`" + ` to switch the workspace language.
 - ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for a bare repository layout.
-- ` + "`forge init`" + `, ` + "`forge project create`" + `, and ` + "`forge task create`" + ` accept ` + "`--creator=user|agent`" + `. A verified Forge resource environment defaults to Agent provenance; all other invocations default to user. Creator metadata records provenance only, not authority.
+- ` + "`forge message send`" + ` accepts ` + "`--subscribe-result=false`" + ` to disable this input's Turn result subscription; omission defaults to true. Only a stable Forge resource sender receives a result mailbox message.
 - Resource creation is local and creates neither an initial message nor a generation. After creation, send the first message separately with ` + "`forge message send --to=<resource> ...`" + `; that accepted message creates a generation lazily. If create output is ambiguous, query the resource before attempting another create.
 - ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
 - ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
@@ -206,8 +203,7 @@ Notes:
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task history`" + ` and ` + "`forge project history`" + ` read bounded resource History; use ` + "`forge history turn show --ref=...`" + ` for a selected Turn.
 - ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
-- ` + "`forge session list`" + ` and ` + "`forge session show --id=<generationId>`" + ` provide read-only diagnostics derived from resource generations. They do not create, modify, end, take over, or contact AgentHub Sessions.
 - ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and their resource runtime state for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
-- Creator Turn results and terminal delivery notices arrive as durable structured system messages in the resource mailbox. Use ` + "`forge message show`" + ` and ` + "`forge history turn show`" + ` with their stable references for diagnosis.
+- Turn results and terminal delivery notices arrive as durable structured system messages in the resource mailbox. Use ` + "`forge message show`" + ` and ` + "`forge history turn show`" + ` with their stable references for diagnosis.
 `

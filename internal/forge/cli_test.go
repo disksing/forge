@@ -54,12 +54,12 @@ func TestVersion(t *testing.T) {
 func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		createdOutput := run(t, "scheduler", "add", "--description", "Review release", "--condition", "when the release branch is green", "--target", "workspace", "--creator=user")
+		createdOutput := run(t, "scheduler", "add", "--description", "Review release", "--condition", "when the release branch is green", "--target", "workspace")
 		var created app.Schedule
 		if err := json.Unmarshal([]byte(createdOutput), &created); err != nil {
 			t.Fatal(err)
 		}
-		if created.ID == "" || created.Description != "Review release" || created.Target != "workspace" || created.CreatedBy.Kind != app.CreatorKindUser {
+		if created.ID == "" || created.Description != "Review release" || created.Target != "workspace" {
 			t.Fatalf("created schedule = %#v", created)
 		}
 		listed := run(t, "scheduler", "list")
@@ -238,60 +238,13 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	})
 }
 
-func TestCreateCreatorFlagAndInjectedAgentContext(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Source project")
-		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
-			t.Fatal(err)
-		}
-		run(t, "task", "create", "Source task")
-		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
-			t.Fatal(err)
-		}
-		workspace, err := app.OpenWorkspace(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		runtime, err := workspace.RuntimeConfig()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv(forgeWorkspaceRootEnvironment, root)
-		t.Setenv(forgeWorkspaceInstanceEnvironment, runtime.InstanceID)
-		t.Setenv(forgeResourceIDEnvironment, "project1.task1")
-
-		run(t, "project", "create", "Agent delegated project")
-		delegated, err := workspace.ResourceValue("project2")
-		if err != nil || delegated.Project == nil || delegated.Project.Creator == nil {
-			t.Fatalf("delegated project = %#v, %v", delegated, err)
-		}
-		want, _ := app.ResourceCreator(runtime.InstanceID, "project1.task1")
-		if *delegated.Project.Creator != want {
-			t.Fatalf("delegated creator = %#v, want %#v", delegated.Project.Creator, want)
-		}
-
-		run(t, "project", "create", "--creator=user", "Explicit user project")
-		explicitUser, err := workspace.ResourceValue("project3")
-		if err != nil || explicitUser.Project.Creator == nil || explicitUser.Project.Creator.Kind != app.CreatorKindUser {
-			t.Fatalf("explicit user creator = %#v, %v", explicitUser.Project, err)
-		}
-
-		t.Setenv(forgeWorkspaceInstanceEnvironment, "wrong-instance")
-		if _, err := runErr(t, "project", "create", "Invalid Agent project"); err == nil || !strings.Contains(err.Error(), "does not match") {
-			t.Fatalf("invalid injected Agent context was accepted: %v", err)
-		}
-		run(t, "project", "create", "--creator=user", "User ignores invalid Agent context")
-	})
-}
-
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected forge start to be unknown, got %v", err)
 	}
-	for _, subcommand := range []string{"lock", "unlock", "new", "bind-agenthub", "heartbeat", "end"} {
-		if _, err := runErr(t, "session", subcommand, "--id=test"); err == nil || !strings.Contains(err.Error(), "unknown session subcommand") {
-			t.Fatalf("expected forge session %s to be unknown, got %v", subcommand, err)
+	for _, args := range [][]string{{"session"}, {"session", "list"}, {"session", "show", "--id=test"}} {
+		if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), `unknown command "session"`) {
+			t.Fatalf("expected removed forge session command to be unknown for %v, got %v", args, err)
 		}
 	}
 	serveHelp := run(t, "serve", "--help")
@@ -427,10 +380,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"relevant `artifacts/`",
 				"task.json` contains structured state",
 				"task.md` the durable contract",
-				"Use the resource History commands for conversation history.",
+				"log.jsonl` the historical timeline",
 				"You may use `sed`, `rg`, or `less` on the resolved paths.",
 				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
+				"forge task log list --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "只读检查其他项目/任务资源",
@@ -445,10 +398,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"相关 `artifacts/`",
 				"`task.json` 是结构化状态",
 				"`task.md` 是长期约定",
-				"对话历史使用资源 History 命令",
+				"`log.jsonl` 是历史时间线",
 				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
 				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
+				"forge task log list --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "Read-only inspection of other project/task resources",
@@ -528,8 +481,8 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"at-least-once delivery boundary",
 				"Waiting messages are separate from resource state",
 				"AgentHub accepting a message does not mean that its target Turn has completed",
-				"creator_turn_result",
-				"does not automatically reply when the target Turn completes normally",
+				"subscribeResult",
+				"turn_result",
 				"undeliverable",
 				"delivery_unknown",
 				"delivery_terminal_notice",
@@ -538,7 +491,6 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"binding switch, crash, or lifecycle convergence",
 				"old generations are read-only",
 				"must not Resume, Stop, or otherwise manage AgentHub Sessions directly",
-				"forge session list/show",
 				"forge workspace history",
 				"forge project history",
 				"forge task history",
@@ -553,7 +505,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"Resource creation is local and creates neither an initial message nor a generation",
 				"forge workspace status [--server=<url>]",
 				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
 			},
 			wrongHeading:     "## 资源通信、通知、generation 与 history",
 			wrongInterrupt:   "interrupt` requests a change to the active Turn",
@@ -576,8 +528,8 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"至少一次投递边界",
 				"waiting 消息与资源状态分开",
 				"AgentHub 接受消息不等于目标 Turn 已完成",
-				"creator_turn_result",
-				"目标 Turn 正常完成不会自动回复发送者",
+				"subscribeResult",
+				"turn_result",
 				"undeliverable",
 				"delivery_unknown",
 				"delivery_terminal_notice",
@@ -586,7 +538,6 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"绑定切换、崩溃或生命周期收敛",
 				"旧 generation 只读保留",
 				"不需也不应 Resume、Stop 或直接管理 AgentHub Session",
-				"forge session list/show",
 				"forge workspace history",
 				"forge project history",
 				"forge task history",
@@ -601,7 +552,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"资源创建仅在本地完成，不附带初始消息，也不创建 generation",
 				"forge workspace status [--server=<url>]",
 				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
 			},
 			wrongHeading:     "## Resource communication, notifications, generations, and history",
 			wrongInterrupt:   "interrupt` 请求改变活动 Turn",
@@ -967,21 +918,19 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"Agents may inspect\n  other resources, but write only the Workspace files owned by their starting\n  resource and its task worktrees.",
 		"The web service is provided by forge serve.",
 		"Usage:",
-		"  forge init [--language=<language>] [--creator=user|agent]\n  forge migrate [--language=<language>]",
+		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>\n  forge repo list",
-		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
+		"  forge project create [--slug <slug>] <description>",
 		"  forge template list [--project=<project>] [--json]",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
-		"  forge session list\n  forge session show --id=<generationId>",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
-		"  forge init [--language=<language>] [--creator=user|agent]",
+		"  forge init [--language=<language>]",
 		"  forge migrate [--language=<language>]",
 		"  forge repo add [--bare] <name> <url>",
-		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
+		"  forge project create [--slug <slug>] <description>",
+		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
 		"  forge template list|show|validate|render|create|migrate ...",
-		"  forge session list\n    List read-only generation diagnostics derived from the resource-scoped generation store.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0
@@ -991,6 +940,9 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 			t.Fatalf("expected help marker %q after offset %d, got:\n%s", marker, offset, help)
 		}
 		offset += index + len(marker)
+	}
+	if strings.Contains(help, "forge session") {
+		t.Fatalf("removed forge session command remains in help:\n%s", help)
 	}
 }
 
@@ -1202,41 +1154,6 @@ func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
 	})
 }
 
-func TestSessionListAndShowAreReadOnlyAgentHubDiagnostics(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		path := filepath.Join(root, ".forge", "runtime", "generations.json")
-		store := `{"version":1,"generations":[` +
-			`{"id":"run-internal","resourceId":"workspace","generation":1,"generationId":"gen-one","title":"Workspace generation","status":"idle","agentHubSessionId":"ses_one","createdAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(store), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		before := readFile(t, path)
-
-		listed := run(t, "session", "list")
-		if !strings.Contains(listed, "gen-one\tworkspace\tgen #1\tidle") || strings.Contains(listed, "run-internal") {
-			t.Fatalf("unexpected read-only session list:\n%s", listed)
-		}
-		shown := run(t, "session", "show", "--id", "gen-one")
-		if !strings.Contains(shown, `"agentHubSessionId": "ses_one"`) {
-			t.Fatalf("unexpected generation JSON:\n%s", shown)
-		}
-		if _, err := runErr(t, "session", "show", "--id=gen-one", "--id", "gen-one"); err == nil || !strings.Contains(err.Error(), sessionShowUsage) {
-			t.Fatalf("duplicate generation ID flag should be rejected, got %v", err)
-		}
-		if _, err := runErr(t, "session", "show", "--id", "run-internal"); err == nil || !strings.Contains(err.Error(), "generation not found") {
-			t.Fatalf("internal run ID should not be exposed, got %v", err)
-		}
-		run(t, "workspace", "tree", "--json")
-		if after := readFile(t, path); after != before {
-			t.Fatalf("read-only diagnostics rewrote the store:\nbefore:\n%s\nafter:\n%s", before, after)
-		}
-	})
-}
-
 func TestInitRejectsExistingWorkspaceChild(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -1284,7 +1201,7 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
+func TestTaskArchiveWarnsUnmergedRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Archive before merge")
@@ -1300,16 +1217,13 @@ func TestTaskArchiveRejectsUnmergedRepoWorktree(t *testing.T) {
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "feature work")
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "--project=project1", "--task=task1")
-		if err == nil {
-			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "feature work") {
+			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "feature work") {
-			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
-		}
-		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
-			t.Fatal("project1.task1 should not have been archived")
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		if pathExists(filepath.Join(root, "project1", "task1")) {
+			t.Fatal("project1.task1 should have been archived despite the warning")
 		}
 	})
 }
@@ -1323,10 +1237,35 @@ func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(archived, "project1/archive/task1") {
-			t.Fatalf("expected archive path, got:\n%s", archived)
+		if !strings.Contains(archived, "project1/archive/task1") || !strings.Contains(archived, "warning[worktree_unverifiable]") {
+			t.Fatalf("expected archive path and unverifiable worktree warning, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+	})
+}
+
+func TestTaskArchiveWarnsDirtyWorktreeAndMissingTarget(t *testing.T) {
+	withTempCwd(t, func(root string) {
+		run(t, "init")
+		run(t, "project", "create", "Archive with Git warnings")
+		run(t, "task", "create", "--project=project1", "Code task")
+		repoPath := filepath.Join(root, testReposDir, "disksing", "forge")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "forge")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
+		if err := os.WriteFile(filepath.Join(worktreePath, "uncommitted.txt"), []byte("preserve me\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "missing-target")
+
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, "warning[dirty_worktree]") || !strings.Contains(out, "warning[target_branch_unverifiable]") {
+			t.Fatalf("expected dirty and unverifiable-target warnings, got stdout:\n%s", out)
+		}
+		archivedWorktree := filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "forge", "uncommitted.txt")
+		if got := readFile(t, archivedWorktree); got != "preserve me\n" {
+			t.Fatalf("archive did not preserve dirty worktree content: %q", got)
+		}
 	})
 }
 
@@ -1489,17 +1428,14 @@ func TestProjectListAllIncludesArchivedProjectsOnly(t *testing.T) {
 			t.Fatalf("task list --all should include archived and open tasks, got:\n%s", allTasks)
 		}
 
-		out, err := runErr(t, "project", "archive", "--project=project1")
-		if err == nil {
-			t.Fatalf("expected project archive with open tasks to fail, got stdout:\n%s", out)
+		out := run(t, "project", "archive", "--project=project1")
+		if !strings.Contains(out, "warning[open_child_task]") || !strings.Contains(out, "project1.task2") {
+			t.Fatalf("expected open child task warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "archive all project tasks first: task2") {
-			t.Fatalf("expected open child task in archive error, got error %v and stdout:\n%s", err, out)
+		assertDir(t, filepath.Join(root, testArchiveDir, "project1"))
+		if pathExists(filepath.Join(root, "project1")) {
+			t.Fatal("project1 should have moved out of the open workspace")
 		}
-		assertDir(t, filepath.Join(root, "project1"))
-
-		run(t, "task", "archive", "--project=project1", "--task=task2")
-		run(t, "project", "archive", "--project=project1")
 		openProjects = run(t, "project", "list")
 		if strings.Contains(openProjects, "project1\tParent project") {
 			t.Fatalf("archived project should not be listed by default, got:\n%s", openProjects)
@@ -1605,7 +1541,7 @@ func TestSubtaskCreateSkipsArchivedAndOpenSubtaskIDs(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
+func TestTaskArchiveWarnsUnmergedSubtaskRepoWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Parent project")
@@ -1621,16 +1557,13 @@ func TestTaskArchiveRejectsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		runGit(t, worktreePath, "-c", "user.name=Forge Test", "-c", "user.email=forge@example.com", "commit", "-m", "child feature work")
 		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/forge", "--worktree", "project1/task1/worktree/forge", "--branch", "agent/project1.task1", "--target", "master")
 
-		out, err := runErr(t, "task", "archive", "--project=project1", "--task=task1")
-		if err == nil {
-			t.Fatalf("expected archive to fail, got stdout:\n%s", out)
+		out := run(t, "task", "archive", "--project=project1", "--task=task1")
+		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/forge"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "child feature work") {
+			t.Fatalf("expected clear unmerged commits warning, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), `repo "disksing/forge"`) || !strings.Contains(err.Error(), `not merged into target branch "master"`) || !strings.Contains(err.Error(), "child feature work") {
-			t.Fatalf("expected clear unmerged commits error, got: %v\nstdout:\n%s", err, out)
-		}
-		assertDir(t, filepath.Join(root, "project1", "task1"))
-		if pathExists(filepath.Join(root, "project1", testArchiveDir, "task1")) {
-			t.Fatal("unmerged subtask should not have been archived")
+		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
+		if pathExists(filepath.Join(root, "project1", "task1")) {
+			t.Fatal("unmerged subtask should have been archived despite the warning")
 		}
 	})
 }

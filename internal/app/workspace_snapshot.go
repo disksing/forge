@@ -10,7 +10,6 @@ import (
 
 type WorkspaceTree struct {
 	Root      string             `json:"root"`
-	Creator   *Creator           `json:"creator,omitempty"`
 	Scheduler ResourceTreeView   `json:"scheduler"`
 	Projects  []ResourceTreeView `json:"projects"`
 	Wiki      WorkspaceWikiView  `json:"wiki"`
@@ -28,7 +27,6 @@ type ResourceTreeView struct {
 	Title        string             `json:"title"`
 	Path         string             `json:"path"`
 	Archived     bool               `json:"archived"`
-	Creator      *Creator           `json:"creator,omitempty"`
 	AgentBinding AgentBinding       `json:"agentBinding"`
 	Children     []ResourceTreeView `json:"children,omitempty"`
 }
@@ -42,7 +40,6 @@ type ResourceDetailView struct {
 	UpdatedAt    string              `json:"updatedAt"`
 	Path         string              `json:"path"`
 	Archived     bool                `json:"archived"`
-	Creator      *Creator            `json:"creator,omitempty"`
 	AgentBinding AgentBinding        `json:"agentBinding"`
 	Repos        []TaskRepo          `json:"repos,omitempty"`
 	Files        []ResourceFile      `json:"files,omitempty"`
@@ -99,10 +96,6 @@ const (
 )
 
 func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
-	config, err := readWorkspaceConfig(root)
-	if err != nil {
-		return WorkspaceTree{}, err
-	}
 	projectEntries, err := readProjectEntriesInDirs([]string{root})
 	if err != nil {
 		return WorkspaceTree{}, err
@@ -120,8 +113,7 @@ func buildWorkspaceTreeAt(root string) (WorkspaceTree, error) {
 		projects = append(projects, project)
 	}
 	return WorkspaceTree{
-		Root:    slash(root),
-		Creator: config.Creator,
+		Root: slash(root),
 		Scheduler: ResourceTreeView{
 			ID: SchedulerResourceID, Type: SchedulerResourceID, Title: "Scheduler",
 			Path: schedulerDir, AgentBinding: schedulerConfig.AgentBinding,
@@ -165,7 +157,6 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Title:        meta.Title,
 		Path:         relPath(root, entry.Path),
 		Archived:     isArchivedPath(root, entry.Path),
-		Creator:      meta.Creator,
 		AgentBinding: meta.AgentBinding,
 	}
 	if includeChildren && isProject(entry.Resource) {
@@ -188,7 +179,6 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		UpdatedAt:    meta.UpdatedAt,
 		Path:         relPath(root, entry.Path),
 		Archived:     isArchivedPath(root, entry.Path),
-		Creator:      meta.Creator,
 		AgentBinding: meta.AgentBinding,
 		Files:        readResourceFiles(root, entry.Path, entry.Resource),
 		Artifacts:    readFileTree(root, filepath.Join(entry.Path, "artifacts")),
@@ -220,7 +210,10 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 
 func projectChildTreeItems(root string, entry resourceEntry) ([]ResourceTreeView, error) {
 	pattern := projectTaskName(entry.Resource.resourceMeta().ID)
-	dirs := []string{entry.Path}
+	// Include both locations so an archived Project remains able to expose its
+	// complete child tree. The caller decides whether archived rows are shown;
+	// discovery must not lose them after a project-level directory move.
+	dirs := []string{entry.Path, filepath.Join(entry.Path, archiveDir)}
 	childEntries, err := readTaskEntriesInDirs(dirs, pattern)
 	if err != nil {
 		return nil, err

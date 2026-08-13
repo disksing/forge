@@ -160,6 +160,7 @@ type agentHubInboundMessage struct {
 	Sender    *agentHubMessageSender `json:"sender,omitempty"`
 	Steer     bool                   `json:"steer,omitempty"`
 	MessageID string                 `json:"messageId,omitempty"`
+	TurnID    string                 `json:"-"`
 }
 
 type agentHubCreateSessionRequest struct {

@@ -15,7 +15,6 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     resourceId: "project1.task1",
     resourceType: "task",
     resourceTitle: "Stable detail",
-    creator: { kind: "resource", workspaceInstanceId: "ws-source", resourceId: "project2.task3" },
     parent: { id: "project1", title: "Project" },
     loading: false,
     detail: {
@@ -64,8 +63,6 @@ describe("DetailPanel", () => {
     const tabs = target.querySelector(".details-tabs")!;
     const content = target.querySelector("#detailsContent")!;
     expect(target.querySelector(".resource-ref-badge")?.textContent).toBe("#1");
-    expect(target.querySelector(".resource-creator-badge")?.textContent).toBe("Created by project2.task3");
-    expect(target.querySelector(".resource-creator-badge")?.getAttribute("title")).toContain("ws-source / project2.task3");
     expect(header.contains(content)).toBe(false);
     expect(tabs.contains(content)).toBe(false);
     expect(content.querySelector('[data-doc-file="task.md"]')).not.toBeNull();
@@ -89,12 +86,6 @@ describe("DetailPanel", () => {
     expect(artifactsSection.querySelector("h3")).toBeNull();
     const worktreesSection = target.querySelector(".worktree-list")!.closest(".content-section")!;
     expect(worktreesSection.querySelector("h3")).toBeNull();
-  });
-
-  it("labels legacy resources without inventing creator provenance", async () => {
-    const { target } = mountModel(resourceModel({ creator: undefined }));
-    await tick();
-    expect(target.querySelector(".resource-creator-badge")?.textContent).toBe("Creator unknown (legacy)");
   });
 
   it("uses the Project number for a Project detail reference", async () => {
@@ -197,6 +188,36 @@ describe("DetailPanel", () => {
     pending.get(urls[1])!(new Response(JSON.stringify({ path: "b.txt", content: "current response", contentHash: "current" }), { headers: { "content-type": "application/json" } }));
     await vi.waitFor(() => expect(target.querySelector('[role="dialog"]')?.textContent).toContain("current response"));
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain("old response");
+  });
+
+  it("preserves an open artifact preview while the same file is refreshed", async () => {
+    const fetch = vi.fn(async () => new Response(JSON.stringify({
+      path: "a.txt",
+      content: Array.from({ length: 40 }, (_, index) => `line ${index + 1}`).join("\n"),
+      contentHash: "a-v1",
+    }), { headers: { "content-type": "application/json" } }));
+    vi.stubGlobal("fetch", fetch);
+    const initial = resourceModel();
+    const { channel, target } = mountModel(initial);
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Artifacts"))!.click();
+    await tick();
+    const file = (Array.from(target.querySelectorAll(".artifact-row")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("a.txt"))!;
+    file.click();
+    await vi.waitFor(() => expect(target.querySelector("[data-preview-scroll]")).not.toBeNull());
+
+    const scroller = target.querySelector<HTMLElement>("[data-preview-scroll]")!;
+    scroller.scrollTop = 40;
+    scroller.scrollLeft = 7;
+    channel.publish({ ...initial, resourceTitle: "Refreshed", detail: { ...initial.detail!, title: "Refreshed" } });
+    await tick();
+    expect(target.querySelector<HTMLElement>("[data-preview-scroll]")).toBe(scroller);
+    file.click();
+    await tick();
+
+    expect(fetch).toHaveBeenCalledOnce();
+    expect(scroller.scrollTop).toBe(40);
+    expect(scroller.scrollLeft).toBe(7);
   });
 
   it("ignores a late Diff response after switching worktrees", async () => {

@@ -136,6 +136,73 @@ func TestResourceMailboxVersionOneMigratesToBoundedReceiptWithoutLosingMessage(t
 	}
 }
 
+func TestResultSubscriptionDefaultsAndSystemMessages(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	sender := &agentHubMessageSender{ID: "project1.task2", Name: "Sender"}
+
+	defaulted, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{
+		Text: "default subscription", Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !defaulted.SubscribeResult || defaulted.ResultSubscriptionStatus != "" || !defaulted.subscribeResultPresent {
+		t.Fatalf("omitted subscribeResult = %#v", defaulted)
+	}
+	bindMailboxResultSubscription(&defaulted, "turn-1")
+	if defaulted.ResultSubscriptionStatus != resourceResultSubscriptionPending {
+		t.Fatalf("delivered default subscription = %#v", defaulted)
+	}
+
+	disabled := false
+	explicitlyDisabled, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{
+		Text: "disabled subscription", Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1", SubscribeResult: &disabled,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if explicitlyDisabled.SubscribeResult || explicitlyDisabled.ResultSubscriptionStatus != resourceResultSubscriptionDisabled {
+		t.Fatalf("explicit false subscription = %#v", explicitlyDisabled)
+	}
+	bindMailboxResultSubscription(&explicitlyDisabled, "turn-2")
+	if explicitlyDisabled.ResultSubscriptionStatus != resourceResultSubscriptionDisabled {
+		t.Fatalf("bound explicit false subscription = %#v", explicitlyDisabled)
+	}
+
+	trueValue := true
+	system, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{
+		Text: "system message", Role: "system", SubscribeResult: &trueValue,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if system.SubscribeResult || system.ResultSubscriptionStatus != resourceResultSubscriptionDisabled {
+		t.Fatalf("system subscription = %#v", system)
+	}
+
+	var omitted resourceMailboxMessage
+	if err := json.Unmarshal([]byte(`{"id":"old","role":"agent","status":"delivered"}`), &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if !omitted.SubscribeResult || omitted.ResultSubscriptionStatus != "" {
+		t.Fatalf("old completed message subscription = %#v", omitted)
+	}
+	normalizeStoredMailboxMessage(&omitted)
+	if omitted.SubscribeResult || omitted.ResultSubscriptionStatus != resourceResultSubscriptionNone {
+		t.Fatalf("stored old completed message subscription = %#v", omitted)
+	}
+	var explicitFalse resourceMailboxMessage
+	if err := json.Unmarshal([]byte(`{"id":"new","role":"agent","status":"queued","subscribeResult":false}`), &explicitFalse); err != nil {
+		t.Fatal(err)
+	}
+	if explicitFalse.SubscribeResult || !explicitFalse.subscribeResultPresent {
+		t.Fatalf("explicit false JSON subscription = %#v", explicitFalse)
+	}
+}
+
 func TestResourceMailboxReceiptRetentionReturnsStableExpiredError(t *testing.T) {
 	root := t.TempDir()
 	if _, err := app.Initialize(root, "en"); err != nil {
@@ -270,7 +337,7 @@ func TestResourceMailboxModesAndPriority(t *testing.T) {
 		session.LaunchEnvironment["FORGE_WORKSPACE_INSTANCE_ID"] != runtimeConfig.InstanceID ||
 		session.LaunchEnvironment["FORGE_RESOURCE_ID"] != "project1.task1" {
 		fake.mu.Unlock()
-		t.Fatalf("resource generation creator environment = %#v", session.LaunchEnvironment)
+		t.Fatalf("resource generation provenance environment = %#v", session.LaunchEnvironment)
 	}
 	session.InputCapabilities.Steer = true
 	session.CurrentTurnID = "turn-first"
@@ -606,8 +673,7 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 ||
-		status.Creator == nil || status.Creator.Kind != app.CreatorKindUser {
+	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 {
 		t.Fatalf("resource status mismatch: %#v", status)
 	}
 

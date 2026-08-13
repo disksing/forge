@@ -43,13 +43,13 @@ func repairRepoWorktree(root string, repo TaskRepo) error {
 	}
 	storage := taskRepoStoragePath(repo)
 	if storage == "" {
-		return nil
+		return fmt.Errorf("repository storage path is not recorded")
 	}
 	if !filepath.IsAbs(storage) {
 		storage = filepath.Join(root, storage)
 	}
 	if !isDir(storage) {
-		return nil
+		return fmt.Errorf("repository storage path does not exist: %s", relPath(root, storage))
 	}
 	cmd := exec.Command("git", "-C", storage, "worktree", "repair", worktreePath)
 	if out, err := cmd.CombinedOutput(); err != nil {

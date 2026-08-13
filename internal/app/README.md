@@ -11,11 +11,10 @@ if err != nil {
 project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{
 	Description: "Example",
 	Slug: "example",
-	Creator: app.UserCreator(),
 })
 ```
 
-`Workspace` 保存规范化后的 root，可安全地在并发请求之间复用。API 不读取或修改进程 cwd；`OpenWorkspaceFrom` 的起点同样由调用方显式传入。应用层不启动 `forge` 子进程，也不向 stdout/stderr 写入协议或用户输出。返回值使用 `Project`、`Task`、`GenerationDiagnostic`、`WorkspaceTree`、`ResourceDetailView` 等类型；失败时使用 `APIError`，可通过 `errors.As` 或 `app.IsKind` 检查操作类别。
+`Workspace` 保存规范化后的 root，可安全地在并发请求之间复用。API 不读取或修改进程 cwd；`OpenWorkspaceFrom` 的起点同样由调用方显式传入。应用层不启动 `forge` 子进程，也不向 stdout/stderr 写入协议或用户输出。返回值使用 `Project`、`Task`、`WorkspaceTree`、`ResourceDetailView` 等类型；失败时使用 `APIError`，可通过 `errors.As` 或 `app.IsKind` 检查操作类别。
 
 主要入口：
 
@@ -25,12 +24,12 @@ project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{
 - `EnsureScheduler`、`Scheduler`、`AddSchedule`、`UpdateSchedule`、`RemoveSchedule`、`SetSchedulerSettings`：创建、读取和原子修改特殊 Scheduler 资源；
 - `Templates`、`Template`、`RenderTemplate`、`ValidateTemplateContent`、`CreateTemplate`、`MigrateTemplates`：模板发现、结构化校验、确定性渲染、脚手架和 V1 内容迁移；
 - `PreviewTask`：无副作用地计算最终标题、Markdown 与模板 digest；
-- `CreateProject`、`CreateProjectWithInput`、`CreateTask`、`ArchiveResource`：资源生命周期；
+- `CreateProject`、`CreateProjectWithInput`、`CreateTask`、`ArchiveResource`：资源生命周期。`ArchiveResource` 以可恢复目录移动为唯一提交点；Project 归档级联移动完整子树，Git 预检、开放子任务和移动后 worktree 修复问题通过 `ArchiveResult.Warnings` 返回，不会修改源码或阻断移动；
 - `GenerationDiagnostics`、`GenerationDiagnostic`：从 `.forge/runtime/resources/<resource-key>/` 的 resource-scoped generation store 派生只读 generation 诊断；不创建、修改或访问 AgentHub Session；
 - `Repositories`、`CloneRepository` 及 Task repository 方法：仓库数据。资源对话历史由 `forge serve` 的 Resource History API 提供；旧资源的 `log.jsonl` 仅由 `forge migrate` 迁移为 `artifacts/legacy-log.md`。
 
 跨进程写入使用 Workspace mutation lock。模板任务在同一 mutation lock 中重新读取并渲染；可选 digest 不匹配会在分配任务编号和创建 staging 目录前失败。CLI、HTTP handler 和 GUI 只负责适配输入输出，不解析 YAML、替换占位符或自行读写资源 schema。
 
-Workspace、Project 和 Task 的新建接口把规范化 creator 与 ID 分配、全部资源文件一起放在 mutation lock 的同一提交边界内。Project/Task 先写同文件系统 staging 目录，再原子 rename；Workspace 初始化使用 `.forge/initializing.json` 作为可恢复标记。旧资源缺少 creator 时保持未知，不推断或回填。默认兼容入口记录 `{kind:"user"}`，显式 Agent 来源记录 `{kind:"resource", workspaceInstanceId, resourceId}`。
+Workspace、Project 和 Task 的新建接口把 ID 分配、全部资源文件一起放在 mutation lock 的同一提交边界内。Project/Task 先写同文件系统 staging 目录，再原子 rename；Workspace 初始化使用 `.forge/initializing.json` 作为可恢复标记。旧 resource JSON 中的 creator/createdBy 字段只由一次性迁移清理，正常 API 不读取或写入这些字段。
 
 Scheduler 是固定 ID `scheduler` 的 Workspace 特殊资源，工作目录为 `scheduler/`。初始化和迁移只创建缺失文件、校验冲突并刷新 `AGENTS.md` 的 Forge managed block，不覆盖 `scheduler.md` 或已有调度项。`scheduler.json` 使用严格 schema 和格式化 JSON；所有修改与其他 Workspace 写入共享 mutation lock，并通过同目录临时文件、fsync、rename 和目录 fsync 原子提交。应用层只校验同 Workspace 的开放目标资源，不解释自然语言条件或 generation 执行状态。

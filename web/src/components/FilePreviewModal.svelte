@@ -13,11 +13,16 @@
   let loading = $state(false);
   let error = $state("");
   const scope = $derived(`detail-preview:${workspaceId}:${resourceId}`);
+  const selectionKey = $derived(selection ? `${workspaceId}:${resourceId}:${selection.section}:${selection.path}` : "");
   const rawURL = $derived(selection ? `/api/workspaces/${encodeURIComponent(workspaceId)}/${selection.section === "Wiki" ? "wiki/files/raw" : "files/raw"}?path=${encodeURIComponent(selection.path)}` : "");
+  let activeSelectionKey = "";
 
   $effect(() => {
     const current = selection;
     const requestScope = scope;
+    const currentSelectionKey = selectionKey;
+    if (currentSelectionKey === activeSelectionKey) return;
+    activeSelectionKey = currentSelectionKey;
     preview = null;
     error = "";
     if (!current) { client.requests.abort(requestScope); return; }

@@ -1,5 +1,5 @@
 import type { TaskTemplate } from "./create";
-import type { FileTreeModel, ResourceCreatorModel, ResourceFileModel, ResourceRepoModel } from "./detail";
+import type { FileTreeModel, ResourceFileModel, ResourceRepoModel } from "./detail";
 
 export interface ResourceRecord {
   id: string;
@@ -9,7 +9,6 @@ export interface ResourceRecord {
   description?: string;
   status?: string;
   archived?: boolean;
-  creator?: ResourceCreatorModel;
   agentBinding?: { kind: "profile" | "agent"; name: string };
   updatedAt?: string;
   children?: ResourceRecord[];
@@ -53,7 +52,6 @@ export interface ScheduleRecord {
   description: string;
   condition: string;
   target: string;
-  createdBy?: ResourceCreatorModel;
   createdAt: string;
   updatedAt: string;
 }
@@ -66,7 +64,6 @@ export interface SchedulerConfigRecord {
 }
 
 export interface WorkspaceTree {
-  creator?: ResourceCreatorModel;
   agentBinding?: { kind: "profile" | "agent"; name: string };
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];

@@ -66,7 +66,6 @@ type Workspace struct {
 // is first created.
 type InitializeOptions struct {
 	Language string
-	Creator  Creator
 }
 
 // OpenWorkspace validates and canonicalizes root without consulting cwd.
@@ -111,13 +110,12 @@ func canonicalWorkspaceRoot(root string) (string, error) {
 // change the process working directory and returns an opened handle after the
 // durable files have been written.
 func Initialize(root, language string) (*Workspace, error) {
-	return InitializeWithOptions(root, InitializeOptions{Language: language, Creator: UserCreator()})
+	return InitializeWithOptions(root, InitializeOptions{Language: language})
 }
 
-// InitializeWithOptions creates a Workspace with explicit immutable creator
-// provenance. Initialization is serialized by the Workspace application lock;
-// an on-disk marker makes an interrupted initialization recognizable and
-// safely retryable.
+// InitializeWithOptions creates a Workspace. Initialization is serialized by
+// the Workspace application lock; an on-disk marker makes an interrupted
+// initialization recognizable and safely retryable.
 func InitializeWithOptions(root string, options InitializeOptions) (*Workspace, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
@@ -137,30 +135,16 @@ func InitializeWithOptions(root string, options InitializeOptions) (*Workspace, 
 	if err != nil {
 		return nil, &APIError{Operation: "initialize Workspace", Kind: "workspace", Path: abs, Err: err}
 	}
-	creator, err := creatorOrUser(options.Creator)
-	if err != nil {
-		return nil, &APIError{Operation: "initialize Workspace", Kind: "creator", Path: abs, Err: err}
-	}
 	if err := withWorkspaceMutationLock(abs, func() error {
-		var existingMarker struct {
-			Creator *Creator `json:"creator"`
-		}
-		if err := readJSON(workspaceInitializationMarker(abs), &existingMarker); err == nil && existingMarker.Creator != nil {
-			existingCreator, normalizeErr := NormalizeCreator(*existingMarker.Creator)
-			if normalizeErr != nil {
-				return normalizeErr
-			}
-			if existingCreator != creator {
-				return errors.New("incomplete Workspace was created with different creator provenance")
-			}
-		} else if err != nil && !os.IsNotExist(err) {
+		var existingMarker map[string]any
+		if err := readJSON(workspaceInitializationMarker(abs), &existingMarker); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		marker := map[string]any{"version": 1, "creator": creator, "updatedAt": time.Now().Format(time.RFC3339Nano)}
+		marker := map[string]any{"version": 1, "updatedAt": time.Now().Format(time.RFC3339Nano)}
 		if err := writeJSON(workspaceInitializationMarker(abs), marker); err != nil {
 			return err
 		}
-		if err := initializeWorkspaceLocked(abs, language, creator); err != nil {
+		if err := initializeWorkspaceLocked(abs, language); err != nil {
 			return err
 		}
 		if err := os.Remove(workspaceInitializationMarker(abs)); err != nil && !os.IsNotExist(err) {
@@ -173,7 +157,7 @@ func InitializeWithOptions(root string, options InitializeOptions) (*Workspace, 
 	return OpenWorkspace(abs)
 }
 
-func initializeWorkspaceLocked(root, language string, creator Creator) error {
+func initializeWorkspaceLocked(root, language string) error {
 	if err := os.MkdirAll(filepath.Join(root, reposDir), 0o755); err != nil {
 		return err
 	}
@@ -184,25 +168,13 @@ func initializeWorkspaceLocked(root, language string, creator Creator) error {
 	if err != nil {
 		return err
 	}
-	config := Config{Version: 1, Language: language, InstanceID: instanceID, Creator: &creator, AgentBinding: defaultAgentBinding()}
+	config := Config{Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding()}
 	if err := readJSON(filepath.Join(root, configFile), &config); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	config.Version, config.Language = 1, language
 	if strings.TrimSpace(config.InstanceID) == "" {
 		config.InstanceID = instanceID
-	}
-	if config.Creator == nil {
-		config.Creator = &creator
-	} else {
-		existingCreator, normalizeErr := NormalizeCreator(*config.Creator)
-		if normalizeErr != nil {
-			return normalizeErr
-		}
-		if existingCreator != creator {
-			return errors.New("incomplete Workspace was created with different creator provenance")
-		}
-		config.Creator = &existingCreator
 	}
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
@@ -261,6 +233,9 @@ func (w *Workspace) migrate(language string) error {
 	language, err = normalizeLanguage(language)
 	if err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
+	}
+	if err := migrateLegacyMetadata(w.root); err != nil {
+		return &APIError{Operation: "migrate Workspace", Kind: "legacy_metadata", Workspace: w.root, Err: err}
 	}
 	if err := w.migrateLegacyTaskWorkFiles(language); err != nil {
 		return err
@@ -366,7 +341,6 @@ type TaskListResult struct {
 type CreateProjectInput struct {
 	Description string
 	Slug        string
-	Creator     Creator
 }
 
 // CreateTaskInput contains all typed inputs needed to create a task.
@@ -381,7 +355,6 @@ type CreateTaskInput struct {
 	ExpectedTemplateDigest string
 	Slug                   string
 	AgentBinding           AgentBinding
-	Creator                Creator
 }
 
 // TaskPreview is the side-effect-free result of resolving task content and
@@ -396,10 +369,12 @@ type TaskPreview struct {
 }
 
 // ArchiveResult describes an archive operation without relying on printed
-// paths.
+// paths. Warnings are non-blocking observations made before or after the
+// directory move; a successful result always means the move itself completed.
 type ArchiveResult struct {
-	ResourceID string
-	Path       string
+	ResourceID string           `json:"resourceId"`
+	Path       string           `json:"path"`
+	Warnings   []ArchiveWarning `json:"warnings,omitempty"`
 }
 
 // Tree returns the complete Workspace resource tree.
@@ -505,10 +480,10 @@ func (w *Workspace) Tasks(options TaskListOptions) (TaskListResult, error) {
 
 // CreateProject creates and returns a typed Project.
 func (w *Workspace) CreateProject(description, slug string) (Project, error) {
-	return w.CreateProjectWithInput(CreateProjectInput{Description: description, Slug: slug, Creator: UserCreator()})
+	return w.CreateProjectWithInput(CreateProjectInput{Description: description, Slug: slug})
 }
 
-// CreateProjectWithInput creates a project with explicit creator provenance.
+// CreateProjectWithInput creates a project.
 func (w *Workspace) CreateProjectWithInput(input CreateProjectInput) (Project, error) {
 	if err := w.require(); err != nil {
 		return Project{}, err
@@ -533,16 +508,12 @@ func (w *Workspace) createProject(input CreateProjectInput) (Project, error) {
 	if err := w.require(); err != nil {
 		return Project{}, err
 	}
-	creator, err := creatorOrUser(input.Creator)
-	if err != nil {
-		return Project{}, &APIError{Operation: "create project", Kind: "creator", Workspace: w.root, Err: err}
-	}
 	description, slug := input.Description, input.Slug
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: errors.New("description cannot be empty")}
 	}
-	slug, err = normalizeResourceSlug(slug)
+	slug, err := normalizeResourceSlug(slug)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
@@ -551,7 +522,6 @@ func (w *Workspace) createProject(input CreateProjectInput) (Project, error) {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
 	project := newProject(id, titleFromDescription(description), description)
-	project.Creator = &creator
 	cfg, err := readWorkspaceConfig(w.root)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
@@ -668,10 +638,6 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	if err := w.require(); err != nil {
 		return Task{}, err
 	}
-	creator, err := creatorOrUser(input.Creator)
-	if err != nil {
-		return Task{}, &APIError{Operation: "create task", Kind: "creator", Workspace: w.root, Err: err}
-	}
 	parentID := strings.TrimSpace(input.ProjectID)
 	if parentID == "" {
 		return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, Err: errors.New("project id is required")}
@@ -703,7 +669,6 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	staging := filepath.Join(parentPath, fmt.Sprintf(".forge-create-%s-%d", strings.ReplaceAll(id, ".", "-"), time.Now().UnixNano()))
 	defer os.RemoveAll(staging)
 	task := newTask(id, parentID, title, "")
-	task.Creator = &creator
 	if strings.TrimSpace(input.AgentBinding.Name) != "" || strings.TrimSpace(input.AgentBinding.Kind) != "" {
 		task.AgentBinding, err = NormalizeAgentBinding(input.AgentBinding)
 	} else {
@@ -732,7 +697,8 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 }
 
 // ArchiveResource moves an open project or task into its archive and returns
-// the resulting Workspace-relative path.
+// the resulting Workspace-relative path plus non-blocking warnings. A Project
+// move includes its complete child subtree.
 func (w *Workspace) ArchiveResource(id string) (ArchiveResult, error) {
 	if err := w.require(); err != nil {
 		return ArchiveResult{}, err
@@ -769,15 +735,15 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 	if pathExists(dst) {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Path: relPath(w.root, dst), Err: fmt.Errorf("archive destination already exists: %s", relPath(w.root, dst))}
 	}
+	var (
+		warnings []ArchiveWarning
+		children []archiveTaskReference
+	)
 	if isProject(resource) {
-		if err := ensureProjectTasksArchived(src, resource.(*Project)); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
-		}
+		children, warnings = collectProjectArchiveTasks(w.root, src, *resource.(*Project))
 	}
 	if task, ok := resource.(*Task); ok {
-		if err := ensureTaskRepoWorktreesMerged(w.root, *task); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
-		}
+		warnings = append(warnings, inspectTaskRepoWorktrees(w.root, *task)...)
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
@@ -785,10 +751,18 @@ func (w *Workspace) archiveResource(id string) (ArchiveResult, error) {
 	if err := os.Rename(src, dst); err != nil {
 		return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
 	}
-	if task, ok := resource.(*Task); ok {
-		if err := rewriteArchivedTaskReferences(w.root, dst, *task, relPath(w.root, src), relPath(w.root, dst)); err != nil {
-			return ArchiveResult{}, &APIError{Operation: "archive resource", Kind: "resource", Workspace: w.root, ResourceID: cleanID, Err: err}
+	for _, directory := range []string{filepath.Dir(src), filepath.Dir(dst)} {
+		if err := syncDirectory(directory); err != nil {
+			warning := archiveWarning("archive_sync_failed", fmt.Sprintf("archive directory move for %s completed, but syncing %s failed: %v", cleanID, relPath(w.root, directory), err))
+			warning.ResourceID = cleanID
+			warning.Path = relPath(w.root, directory)
+			warnings = append(warnings, warning)
 		}
 	}
-	return ArchiveResult{ResourceID: cleanID, Path: relPath(w.root, dst)}, nil
+	if task, ok := resource.(*Task); ok {
+		warnings = append(warnings, rewriteArchivedTaskReferences(w.root, dst, *task, relPath(w.root, src), relPath(w.root, dst))...)
+	} else {
+		warnings = append(warnings, archiveTaskReferencesAfterMove(w.root, src, dst, children)...)
+	}
+	return ArchiveResult{ResourceID: cleanID, Path: relPath(w.root, dst), Warnings: sortArchiveWarnings(warnings)}, nil
 }

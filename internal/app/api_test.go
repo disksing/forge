@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -76,45 +77,84 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	}
 }
 
-func TestCreatorProvenancePersistsAcrossWorkspaceProjectAndTask(t *testing.T) {
+func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T) {
 	root := t.TempDir()
-	creator, err := app.ResourceCreator("ws-source", "project7.task3")
+	workspace, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: creator})
+	project, err := workspace.CreateProject("Archive cascade", "cascade")
 	if err != nil {
 		t.Fatal(err)
 	}
-	runtime, err := workspace.RuntimeConfig()
-	if err != nil || runtime.Creator == nil || *runtime.Creator != creator {
-		t.Fatalf("Workspace creator = %#v, %v", runtime.Creator, err)
-	}
-	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: "Delegated project", Slug: "delegated", Creator: creator})
-	if err != nil || project.Creator == nil || *project.Creator != creator {
-		t.Fatalf("project creator = %#v, %v", project.Creator, err)
-	}
-	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Delegated task", Slug: "delegated", Creator: creator})
-	if err != nil || task.Creator == nil || *task.Creator != creator {
-		t.Fatalf("task creator = %#v, %v", task.Creator, err)
-	}
-	reloaded, err := app.OpenWorkspace(root)
+	first, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "first"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, err := reloaded.ResourceValue(task.ID)
-	if err != nil || value.Task == nil || value.Task.Creator == nil || *value.Task.Creator != creator {
-		t.Fatalf("reloaded task creator = %#v, %v", value.Task, err)
-	}
-	if _, err := reloaded.ArchiveResource(task.ID); err != nil {
+	second, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Another child", Slug: "second"})
+	if err != nil {
 		t.Fatal(err)
 	}
-	archived, err := reloaded.ResourceValue(task.ID)
-	if err != nil || !archived.Archived || archived.Task == nil || archived.Task.Creator == nil || *archived.Task.Creator != creator {
-		t.Fatalf("archived task creator = %#v, %v", archived, err)
+	repoPath := filepath.Join(root, "repos", "example")
+	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	worktreePath := filepath.Join(root, filepath.FromSlash(first.Path), "worktree", "example")
+	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.AddTaskRepo(app.TaskRepoInput{
+		TaskID: first.ID, Name: "example", WorktreePath: filepath.ToSlash(first.Path + "/worktree/example"),
+		Branch: "feature", TargetBranch: "main",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	projectValue, err := workspace.ResourceValue(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := workspace.ArchiveResource(project.ID)
+	if err != nil {
+		t.Fatalf("project archive failed: %v", err)
+	}
+	if result.Path != filepath.ToSlash(filepath.Join("archive", filepath.Base(filepath.FromSlash(projectValue.Path)))) {
+		t.Fatalf("unexpected project archive path: %#v", result)
+	}
+	openWarnings := 0
+	for _, warning := range result.Warnings {
+		if warning.Code == "open_child_task" {
+			openWarnings++
+		}
+	}
+	if openWarnings != 2 {
+		t.Fatalf("project archive warnings = %#v, want one open-child warning per child", result.Warnings)
+	}
+	firstDir := filepath.Base(filepath.FromSlash(first.Path))
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(result.Path), firstDir, "task.json")); err != nil {
+		t.Fatalf("first child was not moved with its project: %v", err)
+	}
+
+	archivedFirst, err := workspace.ResourceValue(first.ID)
+	if err != nil || archivedFirst.Task == nil || !archivedFirst.Archived {
+		t.Fatalf("archived first child = %#v, %v", archivedFirst, err)
+	}
+	if got := archivedFirst.Task.Repos[0].WorktreePath; !strings.HasPrefix(got, "archive/") || !strings.Contains(got, "/"+firstDir+"/worktree/example") {
+		t.Fatalf("first child worktree path was not repaired: %q", got)
+	}
+	archivedSecond, err := workspace.ResourceValue(second.ID)
+	if err != nil || archivedSecond.Task == nil || !archivedSecond.Archived {
+		t.Fatalf("archived second child = %#v, %v", archivedSecond, err)
+	}
+	listed, err := workspace.Tasks(app.TaskListOptions{ProjectID: project.ID, IncludeArchived: true})
+	if err != nil || len(listed.Tasks) != 2 || !listed.Tasks[0].Archived || !listed.Tasks[1].Archived {
+		t.Fatalf("archived project children = %#v, %v", listed, err)
+	}
+	detail, err := workspace.Resource(project.ID)
+	if err != nil || len(detail.Children) != 2 || !detail.Children[0].Archived || !detail.Children[1].Archived {
+		t.Fatalf("archived project detail children = %#v, %v", detail.Children, err)
 	}
 }
-
 func TestConcurrentResourceCreationAllocatesUniqueAtomicIDs(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {
@@ -148,9 +188,6 @@ func TestConcurrentResourceCreationAllocatesUniqueAtomicIDs(t *testing.T) {
 			t.Fatalf("duplicate project id %s", project.ID)
 		}
 		seen[project.ID] = true
-		if project.Creator == nil || project.Creator.Kind != app.CreatorKindUser {
-			t.Fatalf("default creator missing from %#v", project)
-		}
 	}
 	if len(seen) != count {
 		t.Fatalf("created %d projects, want %d", len(seen), count)
@@ -158,35 +195,6 @@ func TestConcurrentResourceCreationAllocatesUniqueAtomicIDs(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join(workspace.Root(), ".forge-create-*"))
 	if err != nil || len(matches) != 0 {
 		t.Fatalf("partial staging directories = %#v, %v", matches, err)
-	}
-}
-
-func TestInterruptedInitializationPreservesOriginalCreator(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".forge"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	creator, err := app.ResourceCreator("ws-source", "project1.task1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	marker, _ := json.Marshal(map[string]any{"version": 1, "creator": creator})
-	if err := os.WriteFile(filepath.Join(root, ".forge", "initializing.json"), append(marker, '\n'), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := app.OpenWorkspace(root); err == nil {
-		t.Fatal("incomplete Workspace unexpectedly opened")
-	}
-	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: app.UserCreator()}); err == nil {
-		t.Fatal("recovery changed creator provenance")
-	}
-	workspace, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: "en", Creator: creator})
-	if err != nil {
-		t.Fatal(err)
-	}
-	runtime, err := workspace.RuntimeConfig()
-	if err != nil || runtime.Creator == nil || *runtime.Creator != creator {
-		t.Fatalf("recovered creator = %#v, %v", runtime.Creator, err)
 	}
 }
 
