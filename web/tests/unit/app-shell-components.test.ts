@@ -138,11 +138,15 @@ describe("AppShell responsibility components", () => {
     const onToggleAttention = vi.fn(async () => undefined);
     const onDismiss = vi.fn(async () => undefined);
     const item: ShellAttentionItem = {
-      id: "project-a", type: "project", title: "Project A", ref: "#1", active: false, followed: true,
+      id: "project-a", type: "project", title: "Project A", ref: "#1", selected: true, activeTurn: false, followed: true,
       turnNumber: 2, agentName: "Codex", statusLabel: "Focused resource", status: emptyStatus,
     };
+    const activeItem: ShellAttentionItem = {
+      id: "task-b", type: "task", title: "Task B", ref: "#2", selected: false, activeTurn: true, followed: false,
+      turnNumber: 3, agentName: "Codex", statusLabel: "Resource working", status: emptyStatus,
+    };
     const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(AttentionList, { target, props: { items: [item], onSelect, onToggleAttention, onDismiss, onToast: vi.fn() } });
+    const component = mount(AttentionList, { target, props: { items: [item, activeItem], onSelect, onToggleAttention, onDismiss, onToast: vi.fn() } });
     cleanups.push(() => unmount(component));
     await tick();
 
@@ -154,6 +158,14 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector(".section-title")?.textContent).toBe("Activity");
     expect(target.querySelector(".activity-title")?.textContent).toContain("#1 · Agent Codex · Turn 2 · Focused resource");
     expect(target.querySelector(".activity-badge")?.textContent).toBe("Project");
+    const selectedRow = target.querySelector<HTMLElement>('[aria-label^="Project A."]')!;
+    const activeRow = target.querySelector<HTMLElement>('[aria-label^="Task B."]')!;
+    expect(selectedRow.classList.contains("selected")).toBe(true);
+    expect(selectedRow.getAttribute("aria-current")).toBe("page");
+    expect(selectedRow.hasAttribute("data-active-turn")).toBe(false);
+    expect(activeRow.classList.contains("selected")).toBe(false);
+    expect(activeRow.hasAttribute("aria-current")).toBe(false);
+    expect(activeRow.getAttribute("data-active-turn")).toBe("true");
   });
 
   it("PaneResizeHandle resizes and commits the Activity panel height", async () => {

@@ -91,7 +91,7 @@
       <div class="activity-row empty-attention"><Icon name="message-square" /><div><strong>No activity</strong><span>Follow a resource or start a turn.</span></div></div>
     {:else}
       {#each items as item (item.id)}
-        <button type="button" class={`activity-row ${statusClass(item.status)} ${item.active ? "active-turn" : ""}`} aria-label={`${item.title}. ${metadata(item)}`} title={item.statusLabel || undefined} onclick={() => select(item)}>
+        <button type="button" class={`activity-row ${statusClass(item.status)} ${item.selected ? "selected" : ""}`} aria-current={item.selected ? "page" : undefined} data-active-turn={item.activeTurn || undefined} aria-label={`${item.title}. ${metadata(item)}`} title={item.statusLabel || undefined} onclick={() => select(item)}>
           {#if item.status.hasTaskState}<StatusPresentation status={item.status} className="activity-status-icon" />{:else}<Icon name={iconName(item)} className="activity-status-fallback" />{/if}
           <span class="activity-title"><strong>{item.title}</strong><span class="activity-meta">{metadata(item)}</span></span>
           <span class="activity-badge">{resourceKind(item)}</span>

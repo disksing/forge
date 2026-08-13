@@ -56,11 +56,11 @@
   background: var(--ink-row);
 }
 
-:where([data-component-owner="attention-list"]) .activity-row.active-turn {
+:where([data-component-owner="attention-list"]) .activity-row.selected {
   background: var(--ink-deep);
 }
 
-:where([data-component-owner="attention-list"]) .activity-row.active-turn:hover {
+:where([data-component-owner="attention-list"]) .activity-row.selected:hover {
   background: var(--ink);
 }
 

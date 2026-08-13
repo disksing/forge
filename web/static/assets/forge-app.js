@@ -2450,9 +2450,9 @@ function zi(e, t) {
 			});
 			var E = R(C, 2);
 			X(L(E), { name: "x" }), k(E), k(S), k(d), z((e, n, r, i) => {
-				ai(d, 1, e), Y(d, "aria-label", n), Y(d, "title", H(t).statusLabel || void 0), K(_, H(t).title), K(y, r), K(x, i), Y(E, "aria-label", `Dismiss ${H(t).title}`);
+				ai(d, 1, e), Y(d, "aria-current", H(t).selected ? "page" : void 0), Y(d, "data-active-turn", H(t).activeTurn || void 0), Y(d, "aria-label", n), Y(d, "title", H(t).statusLabel || void 0), K(_, H(t).title), K(y, r), K(x, i), Y(E, "aria-label", `Dismiss ${H(t).title}`);
 			}, [
-				() => `activity-row ${n(H(t).status)} ${H(t).active ? "active-turn" : ""}`,
+				() => `activity-row ${n(H(t).status)} ${H(t).selected ? "selected" : ""}`,
 				() => `${H(t).title}. ${o(H(t))}`,
 				() => o(H(t)),
 				() => i(H(t))
@@ -9990,7 +9990,8 @@ function Bf(e) {
 		type: n,
 		title: r,
 		ref: n === "project" || n === "task" ? $d(e.id) : "",
-		active: !!e.runtime?.activeTurn,
+		selected: $.selectedId === e.id,
+		activeTurn: !!e.runtime?.activeTurn,
 		followed: !!e.attention?.followed,
 		turnNumber: Number(e.runtime?.turnNumber) || 0,
 		agentName: String(e.runtime?.agentName || "").trim(),

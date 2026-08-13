@@ -42,7 +42,8 @@ export interface ShellAttentionItem {
   type: "workspace" | "scheduler" | "project" | "task";
   title: string;
   ref: string;
-  active: boolean;
+  selected: boolean;
+  activeTurn: boolean;
   followed: boolean;
   turnNumber: number;
   agentName: string;

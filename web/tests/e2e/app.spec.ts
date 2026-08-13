@@ -547,6 +547,25 @@ test("follows and dismisses a resource from the tree and attention list", async 
   expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
 });
 
+test("highlights the selected Activity resource instead of every active turn", async ({ page }) => {
+  await installMockApi(page, "project1", false, true);
+  await page.goto("/w/ws-test/r/project1");
+
+  const projectRow = page.locator("#projectTree > .tree-item").first();
+  await projectRow.hover();
+  await projectRow.locator('[aria-label="Follow Migration project"]').click();
+
+  const selectedActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Migration project" });
+  const runningActivity = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
+  await expect(selectedActivity).toHaveClass(/\bselected\b/);
+  await expect(selectedActivity).toHaveAttribute("aria-current", "page");
+  await expect(selectedActivity).not.toHaveAttribute("data-active-turn");
+  await expect(runningActivity).not.toHaveClass(/\bselected\b/);
+  await expect(runningActivity).not.toHaveAttribute("aria-current");
+  await expect(runningActivity).toHaveAttribute("data-active-turn", "true");
+  await expect(runningActivity).toContainText("Resource working");
+});
+
 test("manages natural-language schedules from the fixed Scheduler resource", async ({ page }) => {
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
