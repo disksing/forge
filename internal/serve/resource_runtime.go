@@ -204,8 +204,6 @@ func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool
 	return agentRun{}, false, nil
 }
 
-
-
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
 // AgentHub's at-least-once capability makes an unknown response safe: Forge
 // retains the same stable ID until AgentHub durably accepts retry ownership.
@@ -485,6 +483,19 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	}
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
+		return
+	}
+	mailbox, mailboxErr := loadResourceMailbox(rt.workspace.Path)
+	if mailboxErr != nil {
+		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", mailboxErr))
+		return
+	}
+	lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+		Run: run, Session: &session, Mailbox: mailbox, Revision: run.UpdatedAt,
+	}))
+	switch lifecyclePlan.Operation {
+	case GenerationOperationFinalizeArchivedMailbox, GenerationOperationDeliverMessage,
+		GenerationOperationInterruptTurn, GenerationOperationWaitForMessageReceipt:
 		return
 	}
 	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {

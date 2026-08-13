@@ -181,17 +181,23 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 	if session.State != "ready" && session.State != "stopping" && session.State != "stopped" {
 		return nil
 	}
-	pending, err := mailboxPendingForResource(workspace.Path, latest.ResourceID)
+	mailbox, err := loadResourceMailbox(workspace.Path)
 	if err != nil {
 		return err
-	}
-	if pending && !latest.IdleSleepStopRequested {
-		return nil
 	}
 	_, archived, _, err := resourceExistsAndArchived(workspace.Path, latest.ResourceID)
 	if err != nil {
 		return err
 	} else if archived {
+		return nil
+	}
+	lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+		Run: latest, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: latest.UpdatedAt,
+	}))
+	switch lifecyclePlan.Operation {
+	case GenerationOperationNone, GenerationOperationWaitForSession,
+		GenerationOperationWaitForMessageReceipt, GenerationOperationWaitForTurnTerminal,
+		GenerationOperationDeliverMessage, GenerationOperationInterruptTurn:
 		return nil
 	}
 
@@ -200,7 +206,10 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 		if runtime.lifecycleStopInFlight {
 			return
 		}
-		if !runtime.run.IdleSleepStopRequested {
+		if lifecyclePlan.Operation == GenerationOperationStopSession {
+			ApplyLegacyLifecyclePlan(&runtime.run, lifecyclePlan)
+		}
+		if !runtime.run.IdleSleepStopRequested && lifecyclePlan.Intent == GenerationIntentIdle {
 			runtime.run.IdleSleepStopRequested = true
 		}
 		runtime.run.Status = "stopping"

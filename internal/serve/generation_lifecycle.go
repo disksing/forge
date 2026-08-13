@@ -227,7 +227,7 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 	if facts.ResourceArchived && facts.MailboxPending {
 		return finishGenerationPlan(plan, GenerationOperationFinalizeArchivedMailbox, reasonOr(reason, "resource_archived"), facts.NextMessage)
 	}
-	if !facts.CurrentGeneration || facts.GenerationID == "" {
+	if !facts.CurrentGeneration {
 		if facts.ResourceArchived {
 			return plan
 		}
@@ -235,6 +235,10 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 			return finishGenerationPlan(plan, GenerationOperationCreateGeneration, reasonOr(reason, "message_waiting"), facts.NextMessage)
 		}
 		return plan
+	}
+	if facts.MailboxPending && facts.NextMessage != nil &&
+		(facts.NextMessage.Status == GenerationMessageStatusDelivering || facts.NextMessage.Status == GenerationMessageStatusInterrupting || facts.NextMessage.AgentHubAccepted) {
+		return planMessage(plan, facts)
 	}
 
 	if intent != GenerationIntentNone {
@@ -268,6 +272,11 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 
 func planLifecycleIntent(plan GenerationLifecyclePlan, facts GenerationLifecycleFacts, intent GenerationLifecycleIntent, reason string) GenerationLifecyclePlan {
 	phase := observedGenerationPhase(facts)
+	if intent == GenerationIntentReplacement && facts.TurnActive && facts.NextMessage != nil &&
+		facts.NextMessage.RequestedMode == GenerationMessageModeInterrupt &&
+		facts.NextMessage.Status == GenerationMessageStatusQueued {
+		return planMessage(plan, facts)
+	}
 	if facts.TurnActive || facts.ApprovalPending || phase == GenerationPhaseActive {
 		return finishGenerationPlan(plan, GenerationOperationWaitForTurnTerminal, reasonOr(reason, "active_turn"), nil)
 	}
@@ -522,8 +531,39 @@ func GuardedLifecycleCommit(plan GenerationLifecyclePlan, facts GenerationLifecy
 	return true, commit()
 }
 
+// legacyLifecyclePlanStillCurrent re-reads the legacy store boundary after a
+// network effect. It is intentionally small and read-only; the caller decides
+// how to re-plan when the result is stale.
+func legacyLifecyclePlanStillCurrent(workspace guiWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
+	if strings.TrimSpace(plan.GenerationID) != "" {
+		current, found, err := currentResourceGeneration(workspace.Path, plan.Guard.ResourceID)
+		if err != nil {
+			return false, err
+		}
+		if !found || current.GenerationID != plan.GenerationID {
+			return false, nil
+		}
+	}
+	run, found, err := runByGenerationID(workspace.Path, plan.GenerationID)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, nil
+	}
+	mailbox, err := loadResourceMailbox(workspace.Path)
+	if err != nil {
+		return false, err
+	}
+	facts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+		Run: run, Session: session, Mailbox: mailbox, Revision: run.UpdatedAt,
+	})
+	return LifecycleGuardMatchesFacts(plan, facts), nil
+}
+
 func equalGuardField(expected, actual string) bool {
-	return strings.TrimSpace(expected) == strings.TrimSpace(actual)
+	expected = strings.TrimSpace(expected)
+	return expected == "" || expected == strings.TrimSpace(actual)
 }
 
 func nextMessageID(facts GenerationLifecycleFacts) string {
@@ -560,7 +600,7 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 		WorkspaceInstanceID: strings.TrimSpace(input.WorkspaceInstanceID),
 		ResourceID:          normalizedResourceID(run.ResourceID),
 		Revision:            strings.TrimSpace(input.Revision),
-		CurrentGeneration:   strings.TrimSpace(run.GenerationID) != "",
+		CurrentGeneration:   strings.TrimSpace(run.GenerationID) != "" || strings.TrimSpace(run.AgentHubSessionID) != "",
 		GenerationID:        strings.TrimSpace(run.GenerationID),
 		GenerationNumber:    run.Generation,
 		Phase:               legacyGenerationPhase(run.Status),
@@ -594,10 +634,13 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 		facts.Phase = legacyGenerationPhase(session.State)
 		facts.Lifecycle.Phase = facts.Phase
 	}
-	if facts.TurnID == "" {
+	if facts.TurnID == "" && !facts.SessionKnown {
 		facts.TurnID = strings.TrimSpace(run.CurrentTurnID)
 	}
 	facts.MailboxPending, facts.NextMessage = legacyMailboxFacts(input.Mailbox, facts.ResourceID, run.PendingMessages)
+	if facts.TurnID == "" && facts.NextMessage != nil {
+		facts.TurnID = firstNonEmpty(facts.NextMessage.InterruptTurnID, facts.NextMessage.TurnID)
+	}
 	if !input.Now.IsZero() && strings.TrimSpace(run.IdleDeadlineAt) != "" {
 		if deadline, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(run.IdleDeadlineAt)); err == nil {
 			facts.IdleDeadlineDue = !input.Now.Before(deadline)
