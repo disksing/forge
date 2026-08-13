@@ -83,6 +83,7 @@ type resourceMailboxMessage struct {
 	GenerationID              string                       `json:"generationId,omitempty"`
 	AgentHubSessionID         string                       `json:"agentHubSessionId,omitempty"`
 	TurnID                    string                       `json:"turnId,omitempty"`
+	TurnTerminalAt            string                       `json:"turnTerminalAt,omitempty"`
 	InterruptTurnID           string                       `json:"interruptTurnId,omitempty"`
 	InterruptAt               string                       `json:"interruptAt,omitempty"`
 	PromotedAt                string                       `json:"promotedAt,omitempty"`
@@ -90,6 +91,7 @@ type resourceMailboxMessage struct {
 	LastAttemptAt             string                       `json:"lastAttemptAt,omitempty"`
 	LastError                 string                       `json:"lastError,omitempty"`
 	LastErrorCode             string                       `json:"lastErrorCode,omitempty"`
+	receipt                   bool
 }
 
 type resourceMessageCausation struct {
@@ -182,7 +184,8 @@ type resourceMessageRequest struct {
 type resourceMessageResponse struct {
 	MessageID         string                       `json:"messageId"`
 	ResourceID        string                       `json:"resourceId"`
-	Text              string                       `json:"text"`
+	Text              string                       `json:"text,omitempty"`
+	Receipt           bool                         `json:"receipt,omitempty"`
 	RequestedMode     string                       `json:"requestedMode"`
 	ActualMode        string                       `json:"actualMode"`
 	DowngradeReason   string                       `json:"downgradeReason,omitempty"`
@@ -254,7 +257,7 @@ func cloneMailboxMessage(message resourceMailboxMessage) resourceMailboxMessage 
 	return cloned
 }
 
-func loadResourceMailboxLocked(workspacePath string) (resourceMailbox, error) {
+func loadLegacyResourceMailboxLocked(workspacePath string) (resourceMailbox, error) {
 	data, err := os.ReadFile(resourceMailboxPath(workspacePath))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -281,13 +284,13 @@ func loadResourceMailboxLocked(workspacePath string) (resourceMailbox, error) {
 	return mailbox, nil
 }
 
-func loadResourceMailbox(workspacePath string) (resourceMailbox, error) {
+func loadLegacyResourceMailbox(workspacePath string) (resourceMailbox, error) {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	return loadResourceMailboxLocked(workspacePath)
+	return loadLegacyResourceMailboxLocked(workspacePath)
 }
 
-func writeResourceMailboxLocked(workspacePath string, mailbox resourceMailbox) error {
+func writeLegacyResourceMailboxLocked(workspacePath string, mailbox resourceMailbox) error {
 	if err := ensureAgentDirs(workspacePath); err != nil {
 		return err
 	}
@@ -344,17 +347,17 @@ func writeResourceMailboxLocked(workspacePath string, mailbox resourceMailbox) e
 	return directory.Close()
 }
 
-func mutateResourceMailbox(workspacePath string, mutate func(*resourceMailbox) error) (resourceMailbox, error) {
+func mutateLegacyResourceMailbox(workspacePath string, mutate func(*resourceMailbox) error) (resourceMailbox, error) {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	mailbox, err := loadResourceMailboxLocked(workspacePath)
+	mailbox, err := loadLegacyResourceMailboxLocked(workspacePath)
 	if err != nil {
 		return resourceMailbox{}, err
 	}
 	if err := mutate(&mailbox); err != nil {
 		return resourceMailbox{}, err
 	}
-	if err := writeResourceMailboxLocked(workspacePath, mailbox); err != nil {
+	if err := writeLegacyResourceMailboxLocked(workspacePath, mailbox); err != nil {
 		return resourceMailbox{}, err
 	}
 	return mailbox, nil
@@ -364,10 +367,10 @@ func mutateResourceMailbox(workspacePath string, mutate func(*resourceMailbox) e
 // the Workspace mailbox. It writes the mailbox first, then clears legacy
 // queues. A crash between the two writes repeats the merge by stable id and
 // cannot lose or duplicate a mailbox item.
-func migrateLegacyResourceMailbox(workspacePath string) error {
+func migrateLegacyResourceMailboxV2(workspacePath string) error {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	mailbox, err := loadResourceMailboxLocked(workspacePath)
+	mailbox, err := loadLegacyResourceMailboxLocked(workspacePath)
 	if err != nil {
 		return err
 	}
@@ -416,7 +419,7 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 		}
 	}
 	if mailboxChanged {
-		if err := writeResourceMailboxLocked(workspacePath, mailbox); err != nil {
+		if err := writeLegacyResourceMailboxLocked(workspacePath, mailbox); err != nil {
 			return fmt.Errorf("persist migrated resource mailbox: %w", err)
 		}
 	}
@@ -439,7 +442,7 @@ func normalizedResourceID(resourceID string) string {
 func mailboxMessageResponse(message resourceMailboxMessage) resourceMessageResponse {
 	return resourceMessageResponse{
 		MessageID: message.ID, ResourceID: message.ResourceID,
-		Text:          message.Text,
+		Text: message.Text, Receipt: message.receipt,
 		RequestedMode: message.RequestedMode, ActualMode: message.ActualMode,
 		DowngradeReason: message.DowngradeReason, Status: publicResourceMessageStatus(message.Status),
 		AcceptedAt: message.AcceptedAt, PromotedAt: message.PromotedAt,
@@ -488,21 +491,19 @@ func mailboxCounts(mailbox resourceMailbox, resourceID string) (resourceMailboxC
 }
 
 func mailboxPendingForResource(workspacePath, resourceID string) (bool, error) {
-	mailbox, err := loadResourceMailbox(workspacePath)
+	mailbox, err := loadHotResourceMailbox(workspacePath, resourceID)
 	if err != nil {
 		return false, err
 	}
-	resourceID = normalizedResourceID(resourceID)
 	for _, message := range mailbox.Messages {
-		if normalizedResourceID(message.ResourceID) == resourceID &&
-			(message.Status == resourceMessageQueued || message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) {
+		if message.Status == resourceMessageQueued || message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting {
 			return true, nil
 		}
 	}
 	return false, nil
 }
 
-func mailboxMessageByID(workspacePath, messageID string) (resourceMailboxMessage, bool, error) {
+func legacyMailboxMessageByID(workspacePath, messageID string) (resourceMailboxMessage, bool, error) {
 	mailbox, err := loadResourceMailbox(workspacePath)
 	if err != nil {
 		return resourceMailboxMessage{}, false, err
@@ -515,7 +516,7 @@ func mailboxMessageByID(workspacePath, messageID string) (resourceMailboxMessage
 	return resourceMailboxMessage{}, false, nil
 }
 
-func updateMailboxMessage(workspacePath, messageID string, mutate func(*resourceMailboxMessage)) (resourceMailboxMessage, error) {
+func legacyUpdateMailboxMessage(workspacePath, messageID string, mutate func(*resourceMailboxMessage)) (resourceMailboxMessage, error) {
 	var updated resourceMailboxMessage
 	found := false
 	_, err := mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
@@ -559,7 +560,7 @@ func acceptMailboxMessage(workspacePath, resourceID string, request resourceMess
 		Role: role, Sender: request.Sender, SenderWorkspaceInstanceID: strings.TrimSpace(request.SenderWorkspaceInstanceID), RequestedMode: mode, ActualMode: mode,
 		Status: resourceMessageQueued, AcceptedAt: now, UpdatedAt: now,
 	}
-	_, err = mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
+	_, err = mutateResourceMailboxForResource(workspacePath, resourceID, func(mailbox *resourceMailbox) error {
 		mailbox.NextSequence++
 		message.Sequence = mailbox.NextSequence
 		mailbox.Messages = append(mailbox.Messages, cloneMailboxMessage(message))
@@ -590,12 +591,12 @@ func acceptGeneratedMailboxMessage(workspacePath string, expected resourceMailbo
 	}
 	expected.UpdatedAt = now
 	var result resourceMailboxMessage
-	_, err := mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
+	_, err := mutateResourceMailboxForResource(workspacePath, expected.ResourceID, func(mailbox *resourceMailbox) error {
 		for _, current := range mailbox.Messages {
 			if current.ID != expected.ID {
 				continue
 			}
-			if current.ResourceID != expected.ResourceID || current.Text != expected.Text || current.Role != expected.Role ||
+			if current.ResourceID != expected.ResourceID || (current.Text != "" && current.Text != expected.Text) || current.Role != expected.Role ||
 				current.Type != expected.Type || current.SenderWorkspaceInstanceID != expected.SenderWorkspaceInstanceID ||
 				!reflect.DeepEqual(current.Sender, expected.Sender) || !reflect.DeepEqual(current.Causation, expected.Causation) {
 				return &resourceAPIError{Code: "message_conflict", Message: "stable generated message id conflicts with a different mailbox message"}
@@ -614,11 +615,11 @@ func acceptGeneratedMailboxMessage(workspacePath string, expected resourceMailbo
 
 func markResourceMailboxArchived(workspacePath, resourceID string) error {
 	resourceID = normalizedResourceID(resourceID)
-	_, err := mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
+	_, err := mutateResourceMailboxForResource(workspacePath, resourceID, func(mailbox *resourceMailbox) error {
 		now := time.Now().Format(time.RFC3339Nano)
 		for index := range mailbox.Messages {
 			message := &mailbox.Messages[index]
-			if normalizedResourceID(message.ResourceID) != resourceID ||
+			if normalizedResourceID(message.ResourceID) != resourceID || message.receipt ||
 				(message.Status != resourceMessageQueued && message.Status != resourceMessageDelivering && message.Status != resourceMessageInterrupting) {
 				continue
 			}
@@ -748,7 +749,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 	if err != nil {
 		return resourceStatusResponse{}, err
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadResourceMailboxForResource(workspace.Path, resourceID)
 	if err != nil {
 		return resourceStatusResponse{}, err
 	}
@@ -1074,7 +1075,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		return markResourceMailboxArchived(workspace.Path, resourceID)
 	}
 	for iteration := 0; iteration < 32; iteration++ {
-		mailbox, err := loadResourceMailbox(workspace.Path)
+		mailbox, err := loadHotResourceMailbox(workspace.Path, resourceID)
 		if err != nil {
 			return err
 		}
@@ -1341,23 +1342,16 @@ func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspac
 	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
 		return err
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
 	if err != nil {
 		return err
 	}
-	resources := make(map[string]bool)
-	for _, message := range mailbox.Messages {
-		if message.Status == resourceMessageQueued || message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting {
-			resources[normalizedResourceID(message.ResourceID)] = true
-		}
-	}
-	ids := make([]string, 0, len(resources))
-	for id := range resources {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
 	var failures []string
-	for _, id := range ids {
+	for _, mailbox := range hotMailboxes {
+		if len(mailbox.Messages) == 0 {
+			continue
+		}
+		id := normalizedResourceID(mailbox.Messages[0].ResourceID)
 		if err := m.reconcileResourceMailboxLocked(ctx, workspace, id); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", id, err))
 		}
@@ -1378,6 +1372,8 @@ func resourceErrorStatus(err error) int {
 		return http.StatusBadRequest
 	case "resource_not_found", "message_not_found", "history_reference_not_found", "history_turn_not_found", "history_event_not_found", "session_missing":
 		return http.StatusNotFound
+	case "message_receipt_expired":
+		return http.StatusGone
 	case "resource_archived", "message_not_waiting", "steer_unavailable", "generation_unavailable", "generation_changed":
 		return http.StatusConflict
 	case "workspace_not_owned":
@@ -1465,7 +1461,7 @@ func (m *agentManager) handleResourceMessage(w http.ResponseWriter, r *http.Requ
 	}
 	message, found, err := mailboxMessageByID(workspace.Path, messageID)
 	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
+		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
 	if !found {

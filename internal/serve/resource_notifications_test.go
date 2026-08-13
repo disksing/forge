@@ -143,7 +143,7 @@ func TestCreatorTurnCallbackRoutesOnceWithStableCausation(t *testing.T) {
 	callback := sourceMailbox.Messages[0]
 	if callback.ID != updated.Notification.ID || callback.Type != resourceMessageTypeCreatorTurnResult || callback.Causation == nil ||
 		callback.Causation.MessageID != original.ID || callback.Causation.SourceWorkspaceInstanceID != targetRuntime.InstanceID ||
-		!strings.Contains(callback.Text, "Delegated work is complete.") || callback.Causation.TurnReference == "" {
+		callback.Text != "" || !callback.receipt || callback.Causation.TurnReference == "" {
 		t.Fatalf("callback message = %#v", callback)
 	}
 	fake.mu.Lock()

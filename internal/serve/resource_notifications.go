@@ -133,11 +133,14 @@ func updateNotificationReceipt(workspacePath, sourceMessageID string, mutate fun
 }
 
 func terminalNotificationReceipt(workspacePath, sourceMessageID, code, detail string) error {
-	return updateNotificationReceipt(workspacePath, sourceMessageID, func(receipt *resourceNotificationReceipt) {
+	if err := updateNotificationReceipt(workspacePath, sourceMessageID, func(receipt *resourceNotificationReceipt) {
 		receipt.Status = resourceNotificationTerminal
 		receipt.LastErrorCode = code
 		receipt.LastError = detail
-	})
+	}); err != nil {
+		return err
+	}
+	return removeMailboxNotificationOperation(workspacePath, sourceMessageID)
 }
 
 func mirrorNotificationDelivery(receipt *resourceNotificationReceipt, message resourceMailboxMessage) {
@@ -156,8 +159,35 @@ func mirrorNotificationDelivery(receipt *resourceNotificationReceipt, message re
 
 func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspace, sourceMessage resourceMailboxMessage, generated resourceMailboxMessage) error {
 	receipt := sourceMessage.Notification
-	if receipt == nil || receipt.Status == resourceNotificationTerminal || receipt.Status == resourceNotificationDelivered {
+	if receipt == nil {
 		return nil
+	}
+	if generated.ID != "" {
+		if err := upsertMailboxNotificationOperation(source.Path, sourceMessage.ID, mailboxNotificationOperationFromGenerated(sourceMessage, generated)); err != nil {
+			return err
+		}
+		latest, found, err := mailboxMessageByID(source.Path, sourceMessage.ID)
+		if err != nil || !found {
+			return err
+		}
+		sourceMessage = latest
+		receipt = sourceMessage.Notification
+	}
+	operation, operationFound, err := mailboxNotificationOperation(source.Path, sourceMessage.ID)
+	if err != nil {
+		return err
+	}
+	if !operationFound {
+		operation = mailboxNotificationOperationFromGenerated(sourceMessage, generated)
+		if operation.ID == "" {
+			operation.ID = receipt.ID
+		}
+		if err := upsertMailboxNotificationOperation(source.Path, sourceMessage.ID, operation); err != nil {
+			return err
+		}
+	}
+	if receipt.Status == resourceNotificationTerminal || receipt.Status == resourceNotificationDelivered {
+		return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
 	}
 	target, found, err := m.managedWorkspaceByInstanceID(receipt.TargetWorkspaceInstanceID)
 	if err != nil {
@@ -175,13 +205,27 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	if receipt.Status == resourceNotificationAccepted {
 		latest, messageFound, loadErr := mailboxMessageByID(target.Path, receipt.ID)
 		if loadErr != nil {
+			var apiErr *resourceAPIError
+			if errors.As(loadErr, &apiErr) && apiErr.Code == "message_receipt_expired" {
+				return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_message_expired", loadErr.Error())
+			}
 			return loadErr
 		}
 		if !messageFound {
 			return terminalNotificationReceipt(source.Path, sourceMessage.ID, "target_message_missing", "the previously accepted target mailbox message is missing")
 		}
-		return updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+		if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
 			mirrorNotificationDelivery(current, latest)
+		}); err != nil {
+			return err
+		}
+		if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
+			return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
+		}
+		return updateMailboxNotificationOperation(source.Path, sourceMessage.ID, func(current *resourceMailboxNotificationOp) {
+			current.DeliveryStatus = publicResourceMessageStatus(latest.Status)
+			current.LastError = latest.LastError
+			current.LastErrorCode = latest.LastErrorCode
 		})
 	}
 	exists, archived, _, inspectErr := resourceExistsAndArchived(target.Path, receipt.TargetResourceID)
@@ -214,6 +258,18 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	}); err != nil {
 		return err
 	}
+	if err := updateMailboxNotificationOperation(source.Path, sourceMessage.ID, func(current *resourceMailboxNotificationOp) {
+		current.Status = resourceNotificationAccepted
+		current.AcceptedAt = accepted.AcceptedAt
+		current.GeneratedText = ""
+		current.DeliveryStatus = publicResourceMessageStatus(accepted.Status)
+		current.DeliveredAt = accepted.DeliveredAt
+		current.TerminalAt = accepted.TerminalAt
+		current.LastError = accepted.LastError
+		current.LastErrorCode = accepted.LastErrorCode
+	}); err != nil {
+		return err
+	}
 	if accepted.Status == resourceMessageQueued || accepted.Status == resourceMessageDelivering || accepted.Status == resourceMessageInterrupting {
 		if err := m.reconcileResourceMailboxLocked(ctx, target, accepted.ResourceID); err != nil {
 			recordMailboxFailure(target.Path, accepted.ID, err)
@@ -223,9 +279,12 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	if err != nil || !found {
 		return err
 	}
-	return updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
+	if err := updateNotificationReceipt(source.Path, sourceMessage.ID, func(current *resourceNotificationReceipt) {
 		mirrorNotificationDelivery(current, latest)
-	})
+	}); err != nil {
+		return err
+	}
+	return removeMailboxNotificationOperation(source.Path, sourceMessage.ID)
 }
 
 func (m *agentManager) reconcileCreatorCallback(ctx context.Context, workspace guiWorkspace, instanceID string, mailbox resourceMailbox, message resourceMailboxMessage, client *agentHubClient) error {
@@ -331,26 +390,44 @@ func (m *agentManager) reconcileWorkspaceNotifications(ctx context.Context, work
 	if err != nil {
 		return err
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
 	if err != nil {
 		return err
 	}
-	messages := append([]resourceMailboxMessage(nil), mailbox.Messages...)
-	sort.SliceStable(messages, func(i, j int) bool { return messages[i].Sequence < messages[j].Sequence })
 	var failures []string
-	for _, message := range messages {
-		if message.Notification != nil && (message.Notification.Status == resourceNotificationAccepted || message.Notification.Status == resourceNotificationDelivered || message.Notification.Status == resourceNotificationTerminal) {
-			if err := m.routeNotification(ctx, workspace, message, resourceMailboxMessage{}); err != nil {
-				failures = append(failures, fmt.Sprintf("message %s notification receipt: %v", message.ID, err))
+	for _, mailbox := range hotMailboxes {
+		messages := append([]resourceMailboxMessage(nil), mailbox.Messages...)
+		sort.SliceStable(messages, func(i, j int) bool { return messages[i].Sequence < messages[j].Sequence })
+		for _, message := range messages {
+			if message.Notification != nil && (message.Notification.Status == resourceNotificationAccepted || message.Notification.Status == resourceNotificationDelivered || message.Notification.Status == resourceNotificationTerminal) {
+				if err := m.routeNotification(ctx, workspace, message, resourceMailboxMessage{}); err != nil {
+					failures = append(failures, fmt.Sprintf("message %s notification receipt: %v", message.ID, err))
+				}
+				continue
+			}
+			if err := m.reconcileTerminalNotice(ctx, workspace, instanceID, message); err != nil {
+				failures = append(failures, fmt.Sprintf("message %s terminal notice: %v", message.ID, err))
+				continue
+			}
+			if err := m.reconcileCreatorCallback(ctx, workspace, instanceID, mailbox, message, client); err != nil {
+				failures = append(failures, fmt.Sprintf("message %s creator callback: %v", message.ID, err))
+			}
+		}
+	}
+	operations, err := pendingResourceMailboxNotificationOperations(workspace.Path)
+	if err != nil {
+		return err
+	}
+	for _, operation := range operations {
+		source, found, sourceErr := mailboxMessageByID(workspace.Path, operation.SourceMessageID)
+		if sourceErr != nil || !found {
+			if sourceErr != nil {
+				failures = append(failures, fmt.Sprintf("operation %s source: %v", operation.ID, sourceErr))
 			}
 			continue
 		}
-		if err := m.reconcileTerminalNotice(ctx, workspace, instanceID, message); err != nil {
-			failures = append(failures, fmt.Sprintf("message %s terminal notice: %v", message.ID, err))
-			continue
-		}
-		if err := m.reconcileCreatorCallback(ctx, workspace, instanceID, mailbox, message, client); err != nil {
-			failures = append(failures, fmt.Sprintf("message %s creator callback: %v", message.ID, err))
+		if err := m.routeNotification(ctx, workspace, source, resourceMailboxOperationGeneratedMessage(operation)); err != nil {
+			failures = append(failures, fmt.Sprintf("operation %s: %v", operation.ID, err))
 		}
 	}
 	if len(failures) > 0 {

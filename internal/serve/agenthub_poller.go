@@ -706,4 +706,3 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		}()
 	}
 }
-
