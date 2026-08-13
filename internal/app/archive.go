@@ -152,7 +152,7 @@ func inspectTaskRepoWorktrees(root string, task Task) []ArchiveWarning {
 }
 
 func runGit(path string, args ...string) (string, error) {
-	cmd := exec.Command("git", append([]string{"-C", path}, args...)...)
+	cmd := exec.Command("git", append([]string{"--no-optional-locks", "-C", path}, args...)...)
 	output, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(output)), err
 }
