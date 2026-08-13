@@ -133,6 +133,28 @@ describe("AppShell responsibility components", () => {
     expect(onDragState).toHaveBeenLastCalledWith(null);
   });
 
+  it("ProjectTree chevron keeps a stable icon and reflects expansion with its class", async () => {
+    const expandedProject = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
+    const collapsedProject = { ...resource("project-b"), expanded: false, children: [resource("task-b", "task")] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [expandedProject, collapsedProject],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const expandedChevron = target.querySelector<HTMLElement>('[data-project-toggle="project-a"]')!;
+    const collapsedChevron = target.querySelector<HTMLElement>('[data-project-toggle="project-b"]')!;
+    expect(expandedChevron.classList.contains("expanded")).toBe(true);
+    expect(collapsedChevron.classList.contains("expanded")).toBe(false);
+    // The chevron uses a single icon and encodes direction through the
+    // expanded class (CSS rotation) so the icon itself never changes.
+    expect(expandedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
+    expect(collapsedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
+  });
+
   it("AttentionList exposes follow and dismiss controls without selecting the row", async () => {
     const onSelect = vi.fn(async () => undefined);
     const onToggleAttention = vi.fn(async () => undefined);
