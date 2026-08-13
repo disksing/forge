@@ -48,6 +48,16 @@ type agentRun struct {
 	AgentHubAgentName       string `json:"agentHubAgentName,omitempty"`
 	SourceExternalID        string `json:"sourceExternalId,omitempty"`
 	AgentHubStoppedObserved bool   `json:"agentHubStoppedObserved,omitempty"`
+	// IdleSinceAt and IdleDeadlineAt are the durable ready-boundary clock for
+	// automatic resource Session sleep. They are never derived from the
+	// generation projection's UpdatedAt, because ordinary polling must not
+	// postpone the deadline.
+	IdleSinceAt    string `json:"idleSinceAt,omitempty"`
+	IdleDeadlineAt string `json:"idleDeadlineAt,omitempty"`
+	// IdleSleepStopRequested is the durable Stop -> stopped -> Archive guard
+	// for automatic sleep. It keeps mailbox messages waiting while the old
+	// generation is still converging, including across a Forge restart.
+	IdleSleepStopRequested bool `json:"idleSleepStopRequested,omitempty"`
 	// ArchivedTaskStopRequested is the legacy-named durable progress marker for
 	// any archived Project/Task generation stop. It records that reconciliation
 	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are
@@ -103,8 +113,9 @@ type agentRunDetail struct {
 }
 
 const (
-	agentHubEventMaxCount = 500
-	agentUploadMaxBytes   = 512 * 1024 * 1024
+	agentHubEventMaxCount         = 500
+	agentUploadMaxBytes           = 512 * 1024 * 1024
+	defaultResourceIdleSleepAfter = 30 * time.Minute
 )
 
 type forgeNotice struct {
@@ -173,6 +184,7 @@ type agentRuntime struct {
 	agentHub              *agentHubClient
 	agentHubState         string
 	agentHubStopRequested bool
+	lifecycleStopInFlight bool
 	archivedProofFailed   bool
 }
 
@@ -184,6 +196,7 @@ type agentManager struct {
 	subscribers      map[string]map[chan agentStreamMessage]bool
 	schedulerDigests map[string]string
 	now              func() time.Time
+	idleSleepAfter   time.Duration
 }
 
 func newAgentManager(s *server) *agentManager {
@@ -193,6 +206,7 @@ func newAgentManager(s *server) *agentManager {
 		subscribers:      make(map[string]map[chan agentStreamMessage]bool),
 		schedulerDigests: make(map[string]string),
 		now:              time.Now,
+		idleSleepAfter:   defaultResourceIdleSleepAfter,
 	}
 }
 
@@ -897,6 +911,19 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 			run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
 			run.CompletionTurnID = latestTerminal.TurnID
 			run.CompletionAt = latestTerminal.Time
+			if session.State == "ready" && !run.IdleSleepStopRequested {
+				boundary := agentRunTime(latestTerminal.Time)
+				if boundary.IsZero() {
+					boundary = agentRunTime(run.CompletionAt)
+				}
+				if boundary.IsZero() {
+					boundary = agentRunTime(session.UpdatedAt)
+				}
+				if !boundary.IsZero() {
+					run.IdleSinceAt = boundary.Format(time.RFC3339Nano)
+					run.IdleDeadlineAt = boundary.Add(rt.manager.resourceIdleSleepAfter()).Format(time.RFC3339Nano)
+				}
+			}
 		}
 		run.CompletionPending = false
 	})
@@ -949,6 +976,7 @@ func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, err
 	previous := cloneAgentRun(rt.run)
 	previousState := rt.agentHubState
 	previousStopRequested := rt.agentHubStopRequested
+	previousLifecycleStopInFlight := rt.lifecycleStopInFlight
 	mutate(rt)
 	updated := cloneAgentRun(rt.run)
 	if reflect.DeepEqual(previous, updated) {
@@ -958,6 +986,7 @@ func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, err
 		rt.run = previous
 		rt.agentHubState = previousState
 		rt.agentHubStopRequested = previousStopRequested
+		rt.lifecycleStopInFlight = previousLifecycleStopInFlight
 		return previous, err
 	}
 	return updated, nil

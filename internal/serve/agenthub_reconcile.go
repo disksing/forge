@@ -119,6 +119,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 				run.Status = "stopped"
 				run.UpdatedAt = time.Now().Format(time.RFC3339)
 			}
+			run.IdleSleepStopRequested = false
 		})
 		if run.CompletionPending {
 			rt.recordTurnCompletion(session)
@@ -154,6 +155,7 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	_, _ = rt.mutateRuntime(func(runtime *agentRuntime) {
 		runtime.run.AgentHubStoppedObserved = true
 		runtime.run.Status = "stopped"
+		runtime.run.IdleSleepStopRequested = false
 		runtime.run.UpdatedAt = time.Now().Format(time.RFC3339)
 		runtime.agentHubState = session.State
 	})

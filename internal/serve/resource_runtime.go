@@ -216,7 +216,7 @@ func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool
 		if !agentRunMatchesResource(run, resourceID) || strings.TrimSpace(run.GenerationID) == "" {
 			continue
 		}
-		if isLiveAgentStatus(run.Status) && run.Status != "stopping" {
+		if isLiveAgentStatus(run.Status) || resourceGenerationLifecyclePending(run) {
 			return run, true, nil
 		}
 	}
@@ -515,9 +515,23 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
+	rt.lifecycleStopInFlight = true
+	rt.mu.Unlock()
+	defer func() {
+		rt.mu.Lock()
+		rt.lifecycleStopInFlight = false
+		rt.agentHubStopRequested = false
+		rt.mu.Unlock()
+	}()
+	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
 	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
+		return
+	}
+	cfg, _, cfgErr := m.agentHubRuntimeConfig()
+	if cfgErr != nil {
+		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", cfgErr))
 		return
 	}
 	session, err := client.GetSession(ctx, run.AgentHubSessionID)
@@ -525,15 +539,75 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource generation: %w", err))
 		return
 	}
-	if session.State != "stopped" && session.State != "archived" {
+	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
+		return
+	}
+	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {
+		// A message or provider action won the race after the ready snapshot.
+		// Never interrupt it for automatic sleep; the next ready boundary gets a
+		// fresh deadline.
+		_, _ = rt.mutateRun(func(run *agentRun) {
+			run.Status = forgeStatusForAgentHubState(session.State)
+			run.IdleSinceAt = ""
+			run.IdleDeadlineAt = ""
+			run.IdleSleepStopRequested = false
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		return
+	}
+	if session.State == "starting" {
+		_, _ = rt.mutateRun(func(run *agentRun) {
+			run.Status = "starting"
+			run.IdleSinceAt = ""
+			run.IdleDeadlineAt = ""
+			run.IdleSleepStopRequested = false
+			run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+		})
+		return
+	}
+	if session.State == "archived" {
+		// Archive may have happened after a successful Stop but before this
+		// process observed it. Reuse the existing durable proof path rather than
+		// treating an archived projection as proof by itself.
+		go rt.reconcileArchivedAgentHubSession(m, client, session)
+		return
+	}
+	if session.State == "ready" {
+		pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, run.ResourceID)
+		if pendingErr != nil {
+			rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", pendingErr))
+			return
+		}
+		if !run.IdleSleepStopRequested && !run.ReplacementPending && pending {
+			// No automatic Stop guard was persisted for this attempt and a
+			// mailbox item is already available; leave the Session ready so the
+			// normal mailbox reconciler can deliver it.
+			return
+		}
+		_, err = rt.mutateRuntime(func(runtime *agentRuntime) {
+			runtime.run.Status = "stopping"
+			runtime.run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
+			runtime.agentHubStopRequested = true
+		})
+		if err != nil {
+			rt.setRecoveryError(m, fmt.Errorf("persist retiring resource generation: %w", err))
+			return
+		}
 		session, err = client.Stop(ctx, run.AgentHubSessionID)
 		if err != nil {
 			rt.setRecoveryError(m, fmt.Errorf("retire resource generation: %w", err))
 			return
 		}
-		deadline := time.Now().Add(30 * time.Second)
+		if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+			rt.setRecoveryError(m, fmt.Errorf("Stop response for generation %s did not match its AgentHub source", run.GenerationID))
+			return
+		}
+	}
+	if session.State == "stopping" {
+		deadline := time.Now().Add(agentHubStopConfirmTimeout)
 		for session.State != "stopped" && session.State != "archived" && time.Now().Before(deadline) {
-			timer := time.NewTimer(200 * time.Millisecond)
+			timer := time.NewTimer(agentHubStopConfirmInterval)
 			select {
 			case <-ctx.Done():
 				timer.Stop()
@@ -542,23 +616,37 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 			}
 			session, err = client.GetSession(ctx, run.AgentHubSessionID)
 			if err != nil {
+				rt.setRecoveryError(m, fmt.Errorf("confirm retiring resource generation: %w", err))
+				return
+			}
+			if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+				rt.setRecoveryError(m, fmt.Errorf("confirmation for generation %s did not match its AgentHub source", run.GenerationID))
 				return
 			}
 		}
 	}
-	if session.State != "stopped" && session.State != "archived" {
+	if session.State == "archived" {
+		go rt.reconcileArchivedAgentHubSession(m, client, session)
 		return
 	}
-	if session.State != "archived" {
-		if _, err := client.Archive(ctx, run.AgentHubSessionID); err != nil {
-			rt.setRecoveryError(m, fmt.Errorf("archive retired resource generation: %w", err))
-			return
-		}
+	if session.State != "stopped" {
+		rt.setRecoveryError(m, fmt.Errorf("retiring resource generation %s did not reach durable stopped", run.GenerationID))
+		return
+	}
+	archived, err := client.Archive(ctx, run.AgentHubSessionID)
+	if err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("archive retired resource generation: %w", err))
+		return
+	}
+	if !agentHubSessionExactlyMatchesRun(cfg, run, archived) || archived.State != "archived" {
+		rt.setRecoveryError(m, fmt.Errorf("Archive response for generation %s was not a matching archived Session", run.GenerationID))
+		return
 	}
 	updated, err := rt.mutateRun(func(run *agentRun) {
 		run.Status = "stopped"
 		run.AgentHubStoppedObserved = true
 		run.ReplacementPending = false
+		run.IdleSleepStopRequested = false
 		run.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 	})
 	if err != nil {
