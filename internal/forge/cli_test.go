@@ -516,6 +516,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 		language         string
 		anchors          []string
 		wrongHeading     string
+		wrongInterrupt   string
 		inheritProject   string
 		inheritTask      string
 		inheritScheduler string
@@ -531,6 +532,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"forge message send",
 				"forge message show",
 				"steer` is the default",
+				"interrupt` first persists the message and locks it to the exact active Turn, interrupts only that Turn, waits for it to reach terminal state, and then opens a new Turn for the message; with no active Turn, it is handled as `enqueue`",
 				"Accepted messages are durable",
 				"at-least-once delivery boundary",
 				"Waiting messages are separate from resource state",
@@ -563,6 +565,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
 			},
 			wrongHeading:     "## 资源通信、通知、generation 与 history",
+			wrongInterrupt:   "interrupt` requests a change to the active Turn",
 			inheritProject:   "workspace root AGENTS.md (../AGENTS.md)",
 			inheritTask:      "workspace root AGENTS.md (../../AGENTS.md)",
 			inheritScheduler: "Always read the workspace root AGENTS.md (../AGENTS.md)",
@@ -577,6 +580,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"不得把 AgentHub Session ID、generation ID 或内部 run ID",
 				"使用 `forge message send` 和 `forge message show`",
 				"`steer` 是默认模式",
+				"`interrupt` 先持久化消息并锁定当前活动 Turn，只中断该 Turn，等待其进入 terminal 后再为这条消息开启新 Turn；没有活动 Turn 时按 `enqueue` 处理",
 				"已接受的消息会持久化",
 				"至少一次投递边界",
 				"waiting 消息与资源状态分开",
@@ -609,6 +613,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
 			},
 			wrongHeading:     "## Resource communication, notifications, generations, and history",
+			wrongInterrupt:   "interrupt` 请求改变活动 Turn",
 			inheritProject:   "workspace 根目录的 AGENTS.md（../AGENTS.md）",
 			inheritTask:      "workspace 根目录的 AGENTS.md（../../AGENTS.md）",
 			inheritScheduler: "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md）",
@@ -630,8 +635,8 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 							t.Fatalf("workspace prompt after %s is missing %q:\n%s", stage, want, rootAgents)
 						}
 					}
-					if strings.Contains(rootAgents, tc.wrongHeading) {
-						t.Fatalf("workspace prompt after %s contains the other language heading:\n%s", stage, rootAgents)
+					if strings.Contains(rootAgents, tc.wrongHeading) || strings.Contains(rootAgents, tc.wrongInterrupt) {
+						t.Fatalf("workspace prompt after %s contains wrong-language or stale interrupt guidance:\n%s", stage, rootAgents)
 					}
 
 					projectAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
