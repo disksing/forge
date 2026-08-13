@@ -7,6 +7,7 @@
 package generation
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -208,6 +209,49 @@ func (s *Store) Current(resourceID string) (Record, bool, error) {
 	return s.currentForKey(key, NormalizeResourceID(resourceID))
 }
 
+// NextGeneration returns the next monotonically increasing generation number
+// for one resource. It only inspects that resource's current file and retired
+// manifests; callers never need to load every resource in the Workspace.
+func (s *Store) NextGeneration(resourceID string) (int, error) {
+	if err := s.EnsureReady(); err != nil {
+		return 0, err
+	}
+	resourceID = NormalizeResourceID(resourceID)
+	key, err := ResourceKey(s.instanceID, resourceID)
+	if err != nil {
+		return 0, err
+	}
+	next := 1
+	err = withResourceLock(s.workspaceRoot, key, func() error {
+		if current, found, err := s.readCurrentForKey(key, resourceID); err != nil {
+			return err
+		} else if found && current.Generation >= next {
+			next = current.Generation + 1
+		}
+		entries, err := os.ReadDir(filepath.Join(s.resourceDir(key), retiredDirName))
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+				continue
+			}
+			record, found, err := readFileRecord(filepath.Join(s.resourceDir(key), retiredDirName, entry.Name()))
+			if err != nil {
+				return err
+			}
+			if found && record.Generation >= next {
+				next = record.Generation + 1
+			}
+		}
+		return nil
+	})
+	return next, err
+}
+
 // SaveCurrent atomically replaces one resource's current projection. It never
 // touches another resource or any retired manifest.
 func (s *Store) SaveCurrent(record Record) error {
@@ -296,11 +340,11 @@ func (s *Store) RetireCurrent(record Record, reason string) error {
 			return manifestErr
 		}
 		if manifestFound {
-			if !sameGenerationIdentity(manifest, record) {
+			if !sameGeneration(manifest, record) {
 				return fmt.Errorf("%w: generation %s", ErrImmutable, record.GenerationID)
 			}
 			if found {
-				if !sameGenerationIdentity(current, record) {
+				if !sameGeneration(current, record) {
 					return fmt.Errorf("%w: current generation %s changed before retirement", ErrCurrentConflict, record.GenerationID)
 				}
 				return s.removeCurrentForKey(key)
@@ -537,7 +581,7 @@ func (s *Store) writeRetiredForKey(key string, record Record, reason string) err
 	if existing, found, err := readFileRecord(path); err != nil {
 		return err
 	} else if found {
-		if existing.ID == manifest.ID && existing.GenerationID == manifest.GenerationID && string(existing.Payload) == string(manifest.Record) {
+		if sameGeneration(existing, record) {
 			return nil
 		}
 		return fmt.Errorf("%w: generation %s", ErrImmutable, record.GenerationID)
@@ -707,7 +751,9 @@ func (s *Store) writeMigratedRetired(stagingRoot string, record Record, reason s
 		Version: SchemaVersion, Kind: "retired", WorkspaceInstanceID: s.instanceID,
 		ResourceID: record.ResourceID, ID: record.ID, Generation: record.Generation,
 		GenerationID: record.GenerationID, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-		RetiredAt: time.Now().UTC().Format(time.RFC3339Nano), RetireReason: strings.TrimSpace(reason),
+		// Migration output must be deterministic so a retry after a partial
+		// promotion can compare the same immutable manifest byte-for-byte.
+		RetiredAt: record.UpdatedAt, RetireReason: strings.TrimSpace(reason),
 		Record: append(json.RawMessage(nil), record.Payload...),
 	})
 }
@@ -938,7 +984,18 @@ func readMarker(root string) (*marker, error) {
 
 func sameGeneration(left, right Record) bool {
 	return left.ID == right.ID && left.GenerationID == right.GenerationID &&
-		left.Generation == right.Generation && string(left.Payload) == string(right.Payload)
+		left.Generation == right.Generation && sameJSON(left.Payload, right.Payload)
+}
+
+func sameJSON(left, right []byte) bool {
+	var leftCompact, rightCompact bytes.Buffer
+	if err := json.Compact(&leftCompact, left); err != nil {
+		return bytes.Equal(left, right)
+	}
+	if err := json.Compact(&rightCompact, right); err != nil {
+		return bytes.Equal(left, right)
+	}
+	return bytes.Equal(leftCompact.Bytes(), rightCompact.Bytes())
 }
 
 func sameGenerationIdentity(left, right Record) bool {

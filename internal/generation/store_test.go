@@ -237,6 +237,41 @@ func TestStoreRetriesAfterMigrationFailureAndPartialSwitch(t *testing.T) {
 	}
 }
 
+func TestStoreReplaysPartiallyPromotedRetiredManifest(t *testing.T) {
+	root := t.TempDir()
+	store, err := Open(root, "instance-partial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := testRecord("project1.task1", "run-old", "gen-old", 1, `{"status":"archived"}`)
+	stagingRoot := filepath.Join(store.runtimeRoot(), stagingDirName)
+	if err := store.writeMigratedRetired(stagingRoot, record, "migrated_retired_generation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.promoteStaging(stagingRoot); err != nil {
+		t.Fatal(err)
+	}
+	key, err := ResourceKey(store.instanceID, record.ResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifestPath := filepath.Join(store.resourceDir(key), retiredDirName, base64.RawURLEncoding.EncodeToString([]byte(record.GenerationID))+".json")
+	first := mustReadTestFile(t, manifestPath)
+	if err := os.RemoveAll(stagingRoot); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.writeMigratedRetired(stagingRoot, record, "migrated_retired_generation"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.promoteStaging(stagingRoot); err != nil {
+		t.Fatalf("replaying partial promotion: %v", err)
+	}
+	second := mustReadTestFile(t, manifestPath)
+	if string(first) != string(second) {
+		t.Fatal("replaying migration changed an immutable retired manifest")
+	}
+}
+
 func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
 	root := t.TempDir()
 	store, err := Open(root, "instance-scale")
@@ -273,6 +308,9 @@ func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
 	current := testRecord("project1.task1", "run-current", "gen-current", 10001, `{"status":"idle"}`)
 	if err := store.SaveCurrent(current); err != nil {
 		t.Fatal(err)
+	}
+	if next, err := store.NextGeneration("project1.task1"); err != nil || next != 10002 {
+		t.Fatalf("next generation after scaled history = %d, err=%v", next, err)
 	}
 	retiredPath := filepath.Join(retiredDir, base64.RawURLEncoding.EncodeToString([]byte("gen-retired-00000"))+".json")
 	before := mustReadTestFile(t, retiredPath)

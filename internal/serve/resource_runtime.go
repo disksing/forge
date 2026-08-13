@@ -144,17 +144,11 @@ func resolvedAgentError(resolved resolvedResourceAgent, requested, fallback stri
 }
 
 func nextResourceGeneration(workspacePath, resourceID string) (int, error) {
-	runs, err := loadAgentRuns(workspacePath)
+	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
 		return 0, err
 	}
-	next := 1
-	for _, run := range runs {
-		if agentRunMatchesResource(run, resourceID) && run.Generation >= next {
-			next = run.Generation + 1
-		}
-	}
-	return next, nil
+	return store.NextGeneration(resourceID)
 }
 
 func resourceGenerationTitle(workspace guiWorkspace, resourceID string, generation int) (string, error) {
@@ -325,8 +319,6 @@ func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace gui
 
 func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
 	_ = binding
-	m.resourceMu.Lock()
-	defer m.resourceMu.Unlock()
 	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil || !found {
 		return err
