@@ -69,10 +69,10 @@
 
 <section class="workspace-switcher" data-component-owner="workspace-switcher">
   <div class="workspace-select-row">
-    <button id="workspaceSwitcher" class="workspace-switcher-button" type="button" aria-haspopup="listbox" aria-expanded={menuOpen} onclick={(event) => { event.stopPropagation(); menuOpen = !menuOpen; }}>
+    <button id="workspaceSwitcher" class="workspace-switcher-button" class:busy={Boolean(switchingId)} type="button" aria-haspopup="listbox" aria-expanded={menuOpen} onclick={(event) => { event.stopPropagation(); menuOpen = !menuOpen; }}>
       <span class="workspace-avatar" id="workspaceAvatar"><img src={activeWorkspace?.iconSrc || "/favicon.svg"} alt="" aria-hidden="true" /></span>
       <span class="workspace-switcher-name" id="workspaceSwitcherName">{activeWorkspace?.name || "Workspace"}</span>
-      <Icon name={switchingId ? "loader-circle" : "chevrons-up-down"} className="select-icon" />
+      <span class="workspace-switcher-icon workspace-switcher-icon-idle"><Icon name="chevrons-up-down" className="select-icon" /></span><span class="workspace-switcher-icon workspace-switcher-icon-busy"><Icon name="loader-circle" className="select-icon" /></span>
     </button>
     {#if menuOpen}
       <div id="workspaceMenu" class="workspace-menu" role="listbox">

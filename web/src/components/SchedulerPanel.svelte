@@ -99,7 +99,7 @@
   <label><span>Description</span><input bind:value={description} placeholder="What should the Scheduler understand?" /></label>
   <label><span>Condition</span><textarea bind:value={condition} rows="3" placeholder="For example: when the release branch is green after 09:00 Shanghai time"></textarea></label>
   <label><span>Target resource ID</span><input bind:value={target} placeholder="workspace, scheduler, project1, or project1.task1" /></label>
-  <button type="button" disabled={saving || !description.trim() || !condition.trim() || !target.trim()} onclick={saveSchedule}><Icon name={saving ? "loader-circle" : editingId ? "save" : "plus"} /><span>{editingId ? "Update schedule" : "Add schedule"}</span></button>
+  <button type="button" class:busy={saving} class:editing={Boolean(editingId)} disabled={saving || !description.trim() || !condition.trim() || !target.trim()} onclick={saveSchedule}><span class="schedule-icon schedule-icon-busy"><Icon name="loader-circle" /></span><span class="schedule-icon schedule-icon-editing"><Icon name="save" /></span><span class="schedule-icon schedule-icon-add"><Icon name="plus" /></span><span>{editingId ? "Update schedule" : "Add schedule"}</span></button>
 </div>
 
 <div class="schedule-list">

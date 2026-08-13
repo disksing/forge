@@ -135,22 +135,70 @@
   min-width: 0;
 }
 
-:where([data-component-owner="upload-dialog"]) .upload-item-heading>svg {
+:where([data-component-owner="upload-dialog"]) .upload-item-status-icon {
+  position: relative;
+  flex: 0 0 auto;
   width: 18px;
   height: 18px;
-  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-status-icon > * {
+  grid-area: 1 / 1;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-status-icon svg {
+  width: 18px;
+  height: 18px;
   color: #2980b9;
 }
 
-:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-heading>svg {
+:where([data-component-owner="upload-dialog"]) .upload-item-status-uploading,
+:where([data-component-owner="upload-dialog"]) .upload-item-status-success,
+:where([data-component-owner="upload-dialog"]) .upload-item-status-error {
+  visibility: hidden;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-status-queued,
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-status-success,
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-status-error {
+  visibility: hidden;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-status-uploading {
+  visibility: visible;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-uploading .upload-item-status-icon svg {
   animation: task-status-spin 1s linear infinite;
 }
 
-:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-heading>svg {
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-queued,
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-uploading,
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-error {
+  visibility: hidden;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-success {
+  visibility: visible;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-success .upload-item-status-icon svg {
   color: #27ae60;
 }
 
-:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-heading>svg,
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-queued,
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-uploading,
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-success {
+  visibility: hidden;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-error {
+  visibility: visible;
+}
+
+:where([data-component-owner="upload-dialog"]) .upload-item-error .upload-item-status-icon svg,
 :where([data-component-owner="upload-dialog"]) .upload-error {
   color: #e74c3c;
 }

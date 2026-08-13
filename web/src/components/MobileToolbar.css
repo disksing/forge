@@ -86,3 +86,21 @@ body[data-layout="split"].mobile-sidebar-open :where([data-component-owner="mobi
   }
 }
 
+:where([data-component-owner="mobile-toolbar"]) .mobile-immersive-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="mobile-toolbar"]) .mobile-immersive-icon-collapse {
+  display: none;
+}
+
+:where([data-component-owner="mobile-toolbar"]) .mobile-immersive-button.immersive .mobile-immersive-icon-expand {
+  display: none;
+}
+
+:where([data-component-owner="mobile-toolbar"]) .mobile-immersive-button.immersive .mobile-immersive-icon-collapse {
+  display: inline-flex;
+}
+

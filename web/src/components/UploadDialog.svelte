@@ -164,7 +164,7 @@
           {#each items as item (item.id)}
             {@const shown = presentation(item)}
             <div class:upload-item-success={item.status === "success"} class:upload-item-error={item.status === "error"} class:upload-item-uploading={item.status === "uploading"} class="upload-item">
-              <div class="upload-item-heading"><Icon name={shown.icon} /><span><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></span><em>{shown.label}</em></div>
+              <div class="upload-item-heading"><span class="upload-item-status-icon"><span class="upload-item-status upload-item-status-queued"><Icon name="clock-3" /></span><span class="upload-item-status upload-item-status-uploading"><Icon name="loader-circle" /></span><span class="upload-item-status upload-item-status-success"><Icon name="circle-check" /></span><span class="upload-item-status upload-item-status-error"><Icon name="triangle-alert" /></span></span><span><strong>{item.name}</strong><small>{formatBytes(item.size)}</small></span><em>{shown.label}</em></div>
               <div class="upload-progress" role="progressbar" aria-label={item.name} aria-valuemin="0" aria-valuemax="100" aria-valuenow={item.progress}><span style:width={`${item.progress}%`}></span></div>
               {#if item.status === "success"}<small class="upload-result-path">{item.path}</small>{/if}
               {#if item.status === "error"}<small class="upload-error">{item.error || "Upload failed"}</small>{/if}

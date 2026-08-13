@@ -99,6 +99,22 @@ describe("AppShell responsibility components", () => {
     expect(target.querySelector("#workspaceMenu")).toBeNull();
   });
 
+  it("WorkspaceSwitcher keeps its status icon static and toggles busy through a class", async () => {
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(WorkspaceSwitcher, { target, props: {
+      identity: "workspace-a", mobileSidebarOpen: false, activeWorkspaceId: "workspace-a",
+      workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a", iconSrc: "/favicon.svg" }],
+      onSwitch: vi.fn(async () => undefined), onAdd: vi.fn(), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const button = target.querySelector<HTMLButtonElement>("#workspaceSwitcher")!;
+    expect(button.querySelector('.workspace-switcher-icon-idle i[data-lucide="chevrons-up-down"]')).not.toBeNull();
+    expect(button.querySelector('.workspace-switcher-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(button.classList.contains("busy")).toBe(false);
+  });
+
   it("ProjectTree owns keyed rows, project toggles, selection, and typed drag transactions", async () => {
     const onToggle = vi.fn(async () => undefined);
     const onSelect = vi.fn(async () => undefined);

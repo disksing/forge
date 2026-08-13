@@ -2,6 +2,7 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import DetailPanel from "../../src/components/DetailPanel.svelte";
+import LogTimeline from "../../src/components/LogTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { DetailPanelModel } from "../../src/components/models";
 
@@ -269,5 +270,21 @@ describe("DetailPanel", () => {
     await tick();
     const expandedRow = target.querySelector<HTMLButtonElement>(".artifact-row.directory")!;
     expect(expandedRow.classList.contains("open")).toBe(true);
+  });
+
+  it("keeps the log load-more icon static and toggles busy through a class", async () => {
+    const target = document.createElement("div");
+    document.body.append(target);
+    const component = mount(LogTimeline, { target, props: {
+      resourceId: "project1.task1", logs: [], hasMore: true, loading: false, error: "",
+      onLoadMore: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
+    } });
+    mounted.push(component);
+    await tick();
+
+    const button = target.querySelector<HTMLButtonElement>(".log-load-more")!;
+    expect(button.querySelector('.log-load-icon-idle i[data-lucide="chevron-down"]')).not.toBeNull();
+    expect(button.querySelector('.log-load-icon-busy i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(button.classList.contains("busy")).toBe(false);
   });
 });
