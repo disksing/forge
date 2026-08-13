@@ -495,16 +495,18 @@ test("navigates resources and creates a task through the canonical application f
   await page.getByRole("button", { name: /Infrastructure task/ }).click();
   await expect(page).toHaveURL(/project1\.task1/);
   await expect(page.getByRole("heading", { name: /Infrastructure task/ }).first()).toBeVisible();
-  const bindingSelector = page.getByLabel("Binding target");
-  await expect(bindingSelector.locator("optgroup")).toHaveCount(2);
-  await expect(bindingSelector.locator("option")).toHaveText([
+  const bindingSelector = page.getByRole("button", { name: "Binding target" });
+  await bindingSelector.click();
+  const bindingMenu = page.getByRole("listbox", { name: "Binding target" });
+  await expect(bindingMenu.getByRole("group")).toHaveCount(2);
+  await expect(bindingMenu.getByRole("option")).toHaveText([
     "default (current: test-agent)",
     "fast (current: test-agent)",
     "review (current: other-agent)",
     "test-agent (default, fast)",
     "other-agent (review)",
   ]);
-  await bindingSelector.selectOption("agent:other-agent");
+  await bindingMenu.getByRole("option", { name: "other-agent (review)" }).click();
   await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
   await page.getByRole("button", { name: "Migration project", exact: true }).click();
   await page.getByRole("button", { name: "New Task" }).click();
