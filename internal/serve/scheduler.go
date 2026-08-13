@@ -57,8 +57,14 @@ func latestSchedulerTick(mailbox resourceMailbox) (resourceMailboxMessage, bool)
 	return latest, found
 }
 
-func cancelPendingSchedulerTicks(workspacePath string) error {
+func cancelPendingSchedulerTicks(ctx context.Context, workspacePath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	_, err := mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		now := time.Now().Format(time.RFC3339Nano)
 		for index := range store.Mailbox.Messages {
 			message := &store.Mailbox.Messages[index]
@@ -220,6 +226,9 @@ func (m *agentManager) reconcileSchedulerLocked(ctx context.Context, workspace g
 }
 
 func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
@@ -238,7 +247,7 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWork
 		return err
 	}
 	if len(config.Schedules) == 0 {
-		return cancelPendingSchedulerTicks(workspace.Path)
+		return cancelPendingSchedulerTicks(ctx, workspace.Path)
 	}
 	mailbox, err := loadResourceMailboxForResource(workspace.Path, app.SchedulerResourceID)
 	if err != nil {
@@ -319,8 +328,14 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWork
 			SourceResourceID: app.SchedulerResourceID, Reason: reason, ScheduleDigest: digest,
 		},
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	accepted, err := acceptGeneratedMailboxMessage(workspace.Path, message)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if err := checkpointSchedulerTickMessage(workspace.Path, accepted); err != nil {
