@@ -138,7 +138,7 @@ func TestStoreMigratesBothLegacyIndexesAndKeepsRollbackEvidence(t *testing.T) {
 	generationIndex := map[string]any{
 		"version": 1,
 		"generations": []map[string]any{
-			{"id": "run-old", "resourceId": "project1.task1", "generation": 1, "generationId": "gen-old", "status": "archived", "updatedAt": "2026-08-01T00:00:01Z"},
+			{"id": "run-old", "resourceId": "project1.task1", "generation": 1, "generationId": "gen-old", "status": "archived", "agentHubSessionId": "session-old", "updatedAt": "2026-08-01T00:00:01Z"},
 			{"id": "run-current", "resourceId": "project1.task1", "generation": 2, "generationId": "gen-current", "status": "idle", "updatedAt": "2026-08-01T00:00:02Z"},
 		},
 	}

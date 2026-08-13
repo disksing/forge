@@ -37,7 +37,6 @@ facts → PlanGeneration → durable receipt → network/store effect
 
 ## 兼容与回滚
 
-`AdaptLegacyGenerationFacts` 和 `ApplyLegacyLifecyclePlan` 是当前 `generations.json`/旧 mailbox projection 的唯一兼容边界。旧的 `ReplacementPending`、`IdleSleepStopRequested`、`ArchivedTaskStopRequested`、`AgentHubStoppedObserved` 以及进程内 stop flag 只在 adapter 中映射；planner 不认识这些字段。task320 generation store 完成后，应由其 Store adapter 提供同样的 canonical facts/receipt，不把一次性迁移放回 status/send/reconcile 热路径。
+`AdaptLegacyGenerationFacts` 和 `ApplyLegacyLifecyclePlan` 是现有 `agentRun`/旧 mailbox projection 的唯一兼容边界。generation store 已将这些 opaque payload 放入按资源拆分的 current/retired 文件；旧的 `ReplacementPending`、`IdleSleepStopRequested`、`ArchivedTaskStopRequested`、`AgentHubStoppedObserved` 以及进程内 stop flag 只在 adapter 中映射，planner 不认识这些字段。迁移只在 Store 首次打开时执行，ready marker 建立后不会把一次性 legacy 读取放回 status/send/reconcile 热路径；retired 与缺少 `generationId` 的 cold 记录也不进入 lifecycle current lookup。
 
 回滚代码时不得删除已写入的新 receipt 或 retired manifest；停止新版本写入后再由兼容 adapter 读取。若旧代码无法理解新 receipt，应先保留 mailbox/generation 数据并暂停 lifecycle 写入，不能用旧版本覆盖新版本的 current/retired 事实。
-

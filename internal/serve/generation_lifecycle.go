@@ -531,7 +531,8 @@ func GuardedLifecycleCommit(plan GenerationLifecyclePlan, facts GenerationLifecy
 	return true, commit()
 }
 
-// legacyLifecyclePlanStillCurrent re-reads the legacy store boundary after a
+// legacyLifecyclePlanStillCurrent re-reads the current generation store
+// boundary after a
 // network effect. It is intentionally small and read-only; the caller decides
 // how to re-plan when the result is stale.
 func legacyLifecyclePlanStillCurrent(workspace guiWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
@@ -544,7 +545,7 @@ func legacyLifecyclePlanStillCurrent(workspace guiWorkspace, plan GenerationLife
 			return false, nil
 		}
 	}
-	run, found, err := runByGenerationID(workspace.Path, plan.GenerationID)
+	run, found, err := currentRunByGenerationID(workspace.Path, plan.GenerationID)
 	if err != nil {
 		return false, err
 	}
@@ -574,10 +575,10 @@ func nextMessageID(facts GenerationLifecycleFacts) string {
 }
 
 // LegacyGenerationLifecycleInput is the compatibility boundary for the
-// current generations.json/mailbox projection. It is intentionally the only
-// place where old flags and old status values are translated into canonical
-// lifecycle facts. Future generation-store adapters can replace this input
-// without changing PlanGeneration.
+// legacy agentRun/mailbox projection. It is intentionally the only place
+// where old flags and old status values are translated into canonical
+// lifecycle facts. The resource-scoped generation store owns persistence;
+// changing its adapter does not change PlanGeneration.
 type LegacyGenerationLifecycleInput struct {
 	Run                   agentRun
 	Session               *agentHubSession

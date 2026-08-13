@@ -99,7 +99,7 @@ func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, worksp
 	if strings.TrimSpace(observed.GenerationID) == "" || client == nil {
 		return nil
 	}
-	run, found, err := runByGenerationID(workspace.Path, observed.GenerationID)
+	run, found, err := currentRunByGenerationID(workspace.Path, observed.GenerationID)
 	if err != nil || !found || run.ID != observed.ID || run.AgentHubSessionID != observed.AgentHubSessionID {
 		return err
 	}

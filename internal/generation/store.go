@@ -902,6 +902,9 @@ func decodeLegacyRun(raw json.RawMessage) (legacyRun, error) {
 }
 
 func legacyCurrentCandidate(run legacyRun) bool {
+	if strings.TrimSpace(run.Status) == "archived" {
+		return false
+	}
 	if len(run.PendingMessages) > 0 || run.ReplacementPending || run.IdleSleepStopRequested || run.ArchivedTaskStopRequested {
 		return true
 	}

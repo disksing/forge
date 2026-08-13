@@ -100,7 +100,11 @@ func retireStoredAgentRun(rt *agentRuntime, run agentRun, reason string) error {
 	if strings.TrimSpace(run.GenerationID) == "" || run.Retired {
 		return nil
 	}
-	run.RetireReason = strings.TrimSpace(reason)
+	reason = strings.TrimSpace(reason)
+	// RetireCurrent writes the immutable manifest from the durable current
+	// payload and stores the reason in the manifest envelope. Keep the
+	// payload unchanged here so a retry after the manifest/current crash edge
+	// compares the same generation bytes.
 	record, err := agentRunToGenerationRecord(run)
 	if err != nil {
 		return err
