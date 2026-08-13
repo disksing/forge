@@ -28,7 +28,8 @@
     const sidebar = document.getElementById("mobileSidebar");
     const workspace = document.querySelector<HTMLElement>(".workspace-panel");
     const chat = document.getElementById("agentPanel");
-    if (!app || !sidebar || !workspace || !chat) return;
+    const activity = document.querySelector<HTMLElement>(".attention-section");
+    if (!app || !sidebar || !workspace || !chat || !activity) return;
     // Two-column mode stacks details and chat in one column, so the sidebar
     // only has to leave room for the details minimum.
     const twoColumn = document.body.dataset.layout === "two";
@@ -36,7 +37,8 @@
     const startY = event.clientY;
     const startSidebar = sidebar.getBoundingClientRect().width;
     const startChat = chat.getBoundingClientRect().width;
-    const bodyClass = "resizing-x";
+    const startActivity = activity.getBoundingClientRect().height;
+    const bodyClass = kind === "sidebarAttentionHeight" ? "resizing-y" : "resizing-x";
     handle.classList.add("dragging");
     document.body.classList.add(bodyClass);
     const move = (moveEvent: PointerEvent) => {
@@ -47,6 +49,9 @@
       } else if (kind === "chatWidth") {
         const max = Math.max(320, workspace.getBoundingClientRect().width - 360 - 8);
         onPreview(kind, Math.min(max, Math.max(320, startChat - (moveEvent.clientX - startX))));
+      } else {
+        const max = Math.max(120, sidebar.getBoundingClientRect().height - 250);
+        onPreview(kind, Math.min(max, Math.max(84, startActivity - (moveEvent.clientY - startY))));
       }
     };
     const done = () => {
@@ -65,4 +70,4 @@
   }
 </script>
 
-<div {id} class={`resize-handle ${className}`} data-component-owner="pane-resize-handle" role="separator" aria-orientation="vertical" aria-label={label} onpointerdown={beginResize}></div>
+<div {id} class={`resize-handle ${className}`} data-component-owner="pane-resize-handle" role="separator" aria-orientation={kind === "sidebarAttentionHeight" ? "horizontal" : "vertical"} aria-label={label} onpointerdown={beginResize}></div>

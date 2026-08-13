@@ -731,6 +731,7 @@ function appShellAttentionModel(item: ResourceRecord): ShellAttentionItem {
 		active: Boolean(item.runtime?.activeTurn),
 		followed: Boolean(item.attention?.followed),
 		turnNumber: Number(item.runtime?.turnNumber) || 0,
+		agentName: String(item.runtime?.agentName || "").trim(),
 		statusLabel: state.label || (item.attention?.followed ? "Focused resource" : "Active turn"),
 		status: appShellStatusModel(state.statusPresentation)
 	};

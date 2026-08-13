@@ -10,6 +10,7 @@ const PANE_MAX_SIZE = 10_000;
 export interface PaneSizes {
 	sidebarWidth: number;
 	chatWidth: number;
+	sidebarAttentionHeight: number;
 }
 
 export interface MobilePaneState {
@@ -30,12 +31,14 @@ export type PaneName = keyof PaneSizes;
 
 const PANE_DEFAULTS: PaneSizes = Object.freeze({
 	sidebarWidth: 280,
-	chatWidth: 420
+	chatWidth: 420,
+	sidebarAttentionHeight: 210
 });
 
 const PANE_CSS_VARIABLES: Record<PaneName, string> = Object.freeze({
 	sidebarWidth: "--sidebar-width",
-	chatWidth: "--chat-width"
+	chatWidth: "--chat-width",
+	sidebarAttentionHeight: "--sidebar-attention-height"
 });
 
 function clamp(value: number, min: number, max: number): number {
@@ -53,7 +56,7 @@ function normalizeLayoutPreference(value: unknown): LayoutPreference {
 }
 
 export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): PaneSizes {
-	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown } : {};
+	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown; sidebarSessionHeight?: unknown } : {};
 	const sizes = { ...PANE_DEFAULTS };
 	if (finiteSize(source.sidebarWidth)) sizes.sidebarWidth = clamp(source.sidebarWidth, SIDEBAR_MIN_WIDTH, PANE_MAX_SIZE);
 	if (finiteSize(source.chatWidth)) sizes.chatWidth = clamp(source.chatWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
@@ -61,6 +64,8 @@ export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): P
 		const detailsWidth = clamp(source.detailsWidth, DETAILS_MIN_WIDTH, availableWorkspaceWidth - PANE_HANDLE_WIDTH - CHAT_MIN_WIDTH);
 		sizes.chatWidth = clamp(availableWorkspaceWidth - PANE_HANDLE_WIDTH - detailsWidth, CHAT_MIN_WIDTH, PANE_MAX_SIZE);
 	}
+	const attentionHeight = finiteSize(source.sidebarAttentionHeight) ? source.sidebarAttentionHeight : source.sidebarSessionHeight;
+	if (finiteSize(attentionHeight)) sizes.sidebarAttentionHeight = clamp(attentionHeight, 84, PANE_MAX_SIZE);
 	return sizes;
 }
 
@@ -92,7 +97,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 	function setPaneSize(name: string, value: number): void {
 		if (!Object.hasOwn(PANE_CSS_VARIABLES, name) || !Number.isFinite(value)) return;
 		const paneName = name as PaneName;
-		const minimum = paneName === "sidebarWidth" ? SIDEBAR_MIN_WIDTH : CHAT_MIN_WIDTH;
+		const minimum = paneName === "sidebarWidth" ? SIDEBAR_MIN_WIDTH : paneName === "chatWidth" ? CHAT_MIN_WIDTH : 84;
 		const next = Math.round(clamp(value, minimum, PANE_MAX_SIZE));
 		paneSizes[paneName] = next;
 		setCSSPixels(PANE_CSS_VARIABLES[paneName], next);
@@ -110,11 +115,13 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		const raw = readStoredPaneSizes();
 		paneSizes = normalizePaneSizes(raw, 0);
 		applyPaneSizes();
+		let migrated = finiteSize(raw.sidebarSessionHeight) && !finiteSize(raw.sidebarAttentionHeight);
 		if (finiteSize(raw.detailsWidth) && !finiteSize(raw.chatWidth) && !mobileQuery.matches) {
 			paneSizes = normalizePaneSizes(raw, workspacePanelWidth());
 			applyPaneSizes();
-			saveAllPaneSizes();
+			migrated = true;
 		}
+		if (migrated) saveAllPaneSizes();
 		try {
 			mobile.immersive = storage?.getItem(MOBILE_IMMERSIVE_KEY) === "1";
 		} catch (_) {
@@ -140,6 +147,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		const paneName = name as PaneName;
 		const saved = readStoredPaneSizes();
 		delete saved.detailsWidth;
+		delete saved.sidebarSessionHeight;
 		for (const candidate of Object.keys(PANE_CSS_VARIABLES) as PaneName[]) {
 			if (!finiteSize(saved[candidate])) saved[candidate] = paneSizes[candidate];
 		}

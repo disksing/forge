@@ -33,13 +33,26 @@ describe("route and pane layout controllers", () => {
 	it("normalizes legacy details width and persists committed pane sizes", () => {
 		expect(normalizePaneSizes({ detailsWidth: 500, sidebarWidth: 100 }, 1_200)).toEqual({
 			sidebarWidth: 220,
-			chatWidth: 692
+			chatWidth: 692,
+			sidebarAttentionHeight: 210
 		});
 		const layout = createPaneLayoutController(() => undefined, storage);
 		layout.initialize();
 		layout.previewPane("chatWidth", 510);
 		layout.commitPane("chatWidth");
 		expect(JSON.parse(storage.getItem("forge.gui.paneSizes") || "{}").chatWidth).toBe(510);
+	});
+
+	it("migrates the former sessions panel height to the Activity panel", () => {
+		storage.setItem("forge.gui.paneSizes", JSON.stringify({ sidebarWidth: 300, chatWidth: 480, sidebarSessionHeight: 260 }));
+		const layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(layout.snapshot().paneSizes.sidebarAttentionHeight).toBe(260);
+		expect(JSON.parse(storage.getItem("forge.gui.paneSizes") || "{}")).toEqual({
+			sidebarWidth: 300,
+			chatWidth: 480,
+			sidebarAttentionHeight: 260
+		});
 	});
 
 	function mockMatchMedia(matches: Record<string, boolean>): void {

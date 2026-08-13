@@ -45,6 +45,7 @@ export interface ShellAttentionItem {
   active: boolean;
   followed: boolean;
   turnNumber: number;
+  agentName: string;
   statusLabel: string;
   status: ShellStatusPresentation;
 }
@@ -69,7 +70,7 @@ export interface AppShellModel {
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
   attentionList: ShellAttentionItem[];
-  paneSizes: { sidebarWidth: number; chatWidth: number };
+  paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
   route: { path: string; revision: number; replace: boolean };

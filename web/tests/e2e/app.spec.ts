@@ -522,9 +522,25 @@ test("follows and dismisses a resource from the tree and attention list", async 
   const projectRow = page.locator("#projectTree > .tree-item").first();
   await projectRow.hover();
   await projectRow.locator('[aria-label="Follow Migration project"]').click();
-  const attentionRow = page.locator('[data-component-owner="attention-list"] .attention-item');
+  await expect(page.getByText("Activity", { exact: true })).toBeVisible();
+  const attentionRow = page.locator('[data-component-owner="attention-list"] button.activity-row');
   await expect(attentionRow).toHaveCount(1);
   await expect(attentionRow).toContainText("Migration project");
+  await expect(attentionRow).toContainText("#1 · No turns · Focused resource");
+  await expect(attentionRow.locator(".activity-badge")).toHaveText("Project");
+
+  const activityPanel = page.locator('[data-component-owner="attention-list"]');
+  const initialHeight = await activityPanel.evaluate((element) => element.getBoundingClientRect().height);
+  const resizeHandle = page.locator("#activityResize");
+  const handleBox = await resizeHandle.boundingBox();
+  if (!handleBox) throw new Error("Activity resize handle is not visible");
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y + handleBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y - 60);
+  await page.mouse.up();
+  await expect.poll(() => activityPanel.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(initialHeight + 40);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("forge.gui.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
+
   await attentionRow.hover();
   await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
   await expect(attentionRow).toHaveCount(0);

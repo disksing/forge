@@ -31,7 +31,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
     ],
     projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], attentionList: [],
-    paneSizes: { sidebarWidth: 280, chatWidth: 420 },
+    paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
     layout: { preference: "auto", effective: "three" },
     route: { path: "", revision: 0, replace: true },

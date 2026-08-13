@@ -24,7 +24,7 @@ export function createForgeAppChannels(): ForgeAppChannels {
   return {
     appShell: createModelChannel<AppShellModel>({
       identity: "", loading: true, error: "", version: "v0.1.0", activeWorkspaceId: "", workspaces: [], projects: [], attentionList: [],
-      paneSizes: { sidebarWidth: 280, chatWidth: 420 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
+      paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 }, mobile: { sidebarOpen: false, view: "details", immersive: false },
       layout: { preference: "auto", effective: "three" },
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onToggleProject: noopAsync, onSelectResource: noopAsync,
