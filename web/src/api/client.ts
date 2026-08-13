@@ -151,5 +151,3 @@ function apiHeaders(init?: HeadersInit): Headers {
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
   return headers;
 }
-
-export const apiClient = new ApiClient();

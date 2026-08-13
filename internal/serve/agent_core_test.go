@@ -2,9 +2,6 @@ package serve
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,35 +9,6 @@ import (
 
 	"github.com/disksing/forge/internal/app"
 )
-
-func TestActiveAgentRunDetailReturnsMetadataOnly(t *testing.T) {
-	workspace := t.TempDir()
-	manager := coreTestManager(t, workspace)
-	manager.registerRuntime(&agentRuntime{
-		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
-		run:       agentRun{ID: "run-one", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_one", Status: "idle"},
-	})
-
-	recorder := httptest.NewRecorder()
-	manager.getRun(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-one", nil), "workspace-one", "run-one")
-	if recorder.Code != http.StatusOK {
-		t.Fatalf("expected OK, got %d: %s", recorder.Code, recorder.Body.String())
-	}
-	var detail agentRunDetail
-	if err := json.Unmarshal(recorder.Body.Bytes(), &detail); err != nil {
-		t.Fatal(err)
-	}
-	if detail.Run.ID != "run-one" || detail.Run.AgentHubSessionID != "ses_one" || detail.Run.Status != "idle" {
-		t.Fatalf("unexpected run metadata: %#v", detail.Run)
-	}
-	// Event history is served by the AgentHub proxy, never embedded in the
-	// detail response.
-	for _, forbidden := range []string{`"events"`, `"eventsTruncated"`, `"eventsHasMore"`} {
-		if strings.Contains(recorder.Body.String(), forbidden) {
-			t.Fatalf("run detail must not embed event history, found %s in %s", forbidden, recorder.Body.String())
-		}
-	}
-}
 
 func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {
 	workspace := t.TempDir()
@@ -71,7 +39,7 @@ func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
 		LastOutputAt: "2026-01-01T00:00:02Z",
 	}
-	if err := rewriteAgentRuns(workspace, []agentRun{run}); err != nil {
+	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
 		t.Fatal(err)
 	}
 	tree := workspaceTree{Projects: []resourceSnapshot{{ID: "project1", Children: []resourceSnapshot{{ID: "project1.task1"}}}}}
@@ -82,61 +50,6 @@ func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	if runtime == nil || runtime.GenerationID != run.GenerationID || runtime.AgentName != run.AgentHubAgentName ||
 		runtime.Status != run.Status || runtime.LastOutputAt != run.LastOutputAt {
 		t.Fatalf("resource runtime was not enriched: %#v", runtime)
-	}
-}
-
-func TestListRunsFiltersWorkspaceScope(t *testing.T) {
-	workspace := t.TempDir()
-	now := "2026-01-01T00:00:00Z"
-	runs := []agentRun{
-		{ID: "workspace-run", WorkspaceID: "workspace-one", AgentHubSessionID: "ses_workspace", Title: "Workspace", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
-		{ID: "task-run", WorkspaceID: "workspace-one", ResourceID: "project1.task1", AgentHubSessionID: "ses_task", Title: "Task", Cwd: workspace, Status: "stopped", CreatedAt: now, UpdatedAt: now},
-	}
-	if err := rewriteAgentRuns(workspace, runs); err != nil {
-		t.Fatal(err)
-	}
-	manager := coreTestManager(t, workspace)
-	recorder := httptest.NewRecorder()
-	manager.listRuns(recorder, httptest.NewRequest(http.MethodGet, "/runs?resourceId=workspace", nil), "workspace-one")
-	var response struct {
-		Runs []agentRun `json:"runs"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.Code != http.StatusOK || len(response.Runs) != 1 || response.Runs[0].ID != "workspace-run" {
-		t.Fatalf("unexpected workspace run filter: code=%d runs=%#v", recorder.Code, response.Runs)
-	}
-}
-
-func TestListRunsSortsRFC3339TimestampsByInstant(t *testing.T) {
-	workspace := t.TempDir()
-	runs := []agentRun{
-		{
-			ID: "older", WorkspaceID: "workspace-one", ResourceID: "project1",
-			AgentHubSessionID: "ses_older", Status: "stopped",
-			CreatedAt: "2026-07-27T15:02:26+08:00", UpdatedAt: "2026-07-27T16:19:55+08:00",
-		},
-		{
-			ID: "newer", WorkspaceID: "workspace-one", ResourceID: "project1",
-			AgentHubSessionID: "ses_newer", Status: "idle",
-			CreatedAt: "2026-07-27T17:01:15+08:00", UpdatedAt: "2026-07-27T09:01:45.789913Z",
-		},
-	}
-	if err := rewriteAgentRuns(workspace, runs); err != nil {
-		t.Fatal(err)
-	}
-	manager := coreTestManager(t, workspace)
-	recorder := httptest.NewRecorder()
-	manager.listRuns(recorder, httptest.NewRequest(http.MethodGet, "/runs?resourceId=project1", nil), "workspace-one")
-	var response struct {
-		Runs []agentRun `json:"runs"`
-	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatal(err)
-	}
-	if recorder.Code != http.StatusOK || len(response.Runs) != 2 || response.Runs[0].ID != "newer" {
-		t.Fatalf("expected parsed RFC3339 instant ordering, code=%d runs=%#v", recorder.Code, response.Runs)
 	}
 }
 
@@ -197,11 +110,4 @@ func TestEndForgeSessionIgnoresAlreadyPrunedSession(t *testing.T) {
 	if err := manager.endForgeSession(context.Background(), guiWorkspace{Path: workspace}, "session-pruned"); err != nil {
 		t.Fatalf("already-pruned session should be treated as ended: %v", err)
 	}
-}
-
-func coreTestManager(t *testing.T, workspace string) *agentManager {
-	t.Helper()
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	writeCurrentTestConfig(t, configPath, workspace)
-	return newAgentManager(&server{config: configPath})
 }

@@ -67,13 +67,6 @@ func (m *agentManager) proxyAgentHubEvents(w http.ResponseWriter, r *http.Reques
 	m.proxyAgentHubJSON(w, r, workspaceID, runID, "events", []string{"after", "before", "latest", "limit", "start", "end"})
 }
 
-func (m *agentManager) proxyAgentHubTurns(w http.ResponseWriter, r *http.Request, workspaceID, runID, turnID string) {
-	suffix := "turns"
-	if turnID != "" {
-		suffix += "/" + url.PathEscape(turnID)
-	}
-	m.proxyAgentHubJSON(w, r, workspaceID, runID, suffix, []string{"after", "before", "latest", "limit"})
-}
 
 func (m *agentManager) proxyAgentHubJSON(w http.ResponseWriter, r *http.Request, workspaceID, runID, suffix string, queryKeys []string) {
 	run, client, status, err := m.resolveAgentHubProxyTarget(workspaceID, runID)

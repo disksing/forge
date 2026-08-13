@@ -82,19 +82,6 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 	return cfg, nil
 }
 
-func validateResourceAgentDefaults(defaults resourceAgentDefaults, profiles []agentHubProfileRoute) error {
-	known := make(map[string]bool, len(profiles))
-	for _, profile := range profiles {
-		known[strings.ToLower(strings.TrimSpace(profile.Key))] = true
-	}
-	for kind, name := range map[string]string{"Workspace": defaults.Workspace, "Project": defaults.Project, "Task": defaults.Task} {
-		if !known[strings.ToLower(strings.TrimSpace(name))] {
-			return fmt.Errorf("%s resource default references unknown Agent Profile %q", kind, name)
-		}
-	}
-	return nil
-}
-
 func effectiveResourceAgentDefaults(defaults resourceAgentDefaults, profiles []agentProfileRoute) resourceAgentDefaults {
 	defaults = normalizeResourceAgentDefaults(defaults)
 	globalAvailable := configuredAgentProfileName(profiles, "default") != ""

@@ -67,20 +67,3 @@ func (w *Workspace) Logs(resourceID string) ([]LogEntry, error) {
 	sortLogEntries(entries)
 	return entries, nil
 }
-
-// LogsPage returns one bounded newest-first page using a stable LogEntry ID
-// cursor. Logs remains the full-history API for CLI and in-process callers.
-func (w *Workspace) LogsPage(resourceID, cursor string, limit int) (LogPage, error) {
-	if err := w.require(); err != nil {
-		return LogPage{}, err
-	}
-	path, _, err := loadResource(w.root, strings.TrimSpace(resourceID))
-	if err != nil {
-		return LogPage{}, &APIError{Operation: "page resource logs", Kind: "log", Workspace: w.root, ResourceID: resourceID, Err: err}
-	}
-	page, err := readLogPage(path, cursor, limit)
-	if err != nil {
-		return LogPage{}, &APIError{Operation: "page resource logs", Kind: "log", Workspace: w.root, ResourceID: resourceID, Err: err}
-	}
-	return page, nil
-}

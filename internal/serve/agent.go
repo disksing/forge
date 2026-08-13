@@ -105,13 +105,6 @@ type resourceInboundMessage struct {
 	AcceptedAt string `json:"acceptedAt"`
 }
 
-// agentRunDetail is retained only for the unregistered pre-resource
-// compatibility handlers. Resource endpoints return resource/generation
-// responses and never expose this run-shaped envelope.
-type agentRunDetail struct {
-	Run agentRun `json:"run"`
-}
-
 const (
 	agentHubEventMaxCount         = 500
 	agentUploadMaxBytes           = 512 * 1024 * 1024
@@ -149,22 +142,6 @@ var agentIndexMu sync.Mutex
 type generationIndexDocument struct {
 	Version     int        `json:"version"`
 	Generations []agentRun `json:"generations"`
-}
-
-type startAgentRequest struct {
-	AgentName            string `json:"agentName"`
-	UserName             string `json:"userName,omitempty"`
-	AgentProfile         string `json:"agentProfile,omitempty"`
-	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
-	ResourceID           string `json:"resourceId"`
-	Title                string `json:"title"`
-	Prompt               string `json:"prompt"`
-	Cwd                  string `json:"cwd"`
-}
-
-type agentInputRequest struct {
-	Text     string `json:"text"`
-	UserName string `json:"userName,omitempty"`
 }
 
 type agentApprovalRequest struct {
@@ -210,122 +187,7 @@ func newAgentManager(s *server) *agentManager {
 	}
 }
 
-// handle is an unregistered compatibility dispatcher for pre-stage-six
-// in-process callers. server.handleWorkspace deliberately has no path that
-// invokes it; all public AgentHub traffic is routed through stable resources.
-func (m *agentManager) handle(w http.ResponseWriter, r *http.Request, workspaceID string, parts []string) {
-	if len(parts) == 0 || parts[0] != "runs" {
-		http.NotFound(w, r)
-		return
-	}
-	if len(parts) == 1 {
-		switch r.Method {
-		case http.MethodGet:
-			m.listRuns(w, r, workspaceID)
-		case http.MethodPost:
-			m.startRun(w, r, workspaceID)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	runID := parts[1]
-	if len(parts) == 2 {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.getRun(w, r, workspaceID, runID)
-		return
-	}
-	switch parts[2] {
-	case "input":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.sendInput(w, r, workspaceID, runID)
-	case "uploads":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.uploadFile(w, r, workspaceID, runID)
-	case "stop":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.stopRun(w, r, workspaceID, runID)
-	case "interrupt":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.interruptRun(w, r, workspaceID, runID)
-	case "resume":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.resumeRun(w, r, workspaceID, runID)
-	case "approval":
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.resolveApproval(w, r, workspaceID, runID)
-	case "events":
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.proxyAgentHubEvents(w, r, workspaceID, runID)
-	case "turns":
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		turnID := ""
-		if len(parts) > 3 {
-			turnID = parts[3]
-		}
-		m.proxyAgentHubTurns(w, r, workspaceID, runID, turnID)
-	case "stream":
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		m.proxyAgentHubStream(w, r, workspaceID, runID)
-	default:
-		http.NotFound(w, r)
-	}
-}
 
-func (m *agentManager) uploadFile(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	var run agentRun
-	if rt != nil {
-		rt.mu.Lock()
-		run = rt.run
-		rt.mu.Unlock()
-	} else {
-		run, err = loadAgentRun(workspace.Path, runID)
-		if err != nil {
-			writeError(w, err, http.StatusNotFound)
-			return
-		}
-	}
-	if run.WorkspaceID != workspaceID || !isAgentHubRun(run) {
-		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
-		return
-	}
-	storeAgentUpload(w, r, workspace.Path, run.Cwd)
-}
 
 func storeAgentUpload(w http.ResponseWriter, r *http.Request, workspacePath, cwd string) {
 	r.Body = http.MaxBytesReader(w, r.Body, agentUploadMaxBytes)
@@ -448,45 +310,6 @@ func createUniqueUpload(dir, name string) (string, string, *os.File, error) {
 	}
 }
 
-func (m *agentManager) listRuns(w http.ResponseWriter, r *http.Request, workspaceID string) {
-	workspace, err := m.server.workspace(workspaceID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	resourceID := strings.TrimSpace(r.URL.Query().Get("resourceId"))
-	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	filtered := runs[:0]
-	m.mu.Lock()
-	for _, run := range runs {
-		if !isAgentHubRun(run) {
-			continue
-		}
-		if rt := m.runtimes[run.ID]; rt != nil {
-			rt.mu.Lock()
-			run = rt.run
-			rt.mu.Unlock()
-		}
-		filtered = append(filtered, run)
-	}
-	m.mu.Unlock()
-	runs = filtered
-	sortAgentRunsNewestFirst(runs)
-	if resourceID != "" {
-		filtered := runs[:0]
-		for _, run := range runs {
-			if agentRunMatchesResource(run, resourceID) {
-				filtered = append(filtered, run)
-			}
-		}
-		runs = filtered
-	}
-	writeJSON(w, map[string]any{"runs": runs})
-}
 
 func isAgentHubRun(run agentRun) bool {
 	return strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != ""
@@ -571,11 +394,6 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 	return dirAbs, nil
 }
 
-func rewriteAgentRuns(workspacePath string, runs []agentRun) error {
-	agentIndexMu.Lock()
-	defer agentIndexMu.Unlock()
-	return writeAgentRunsIndexLocked(workspacePath, runs)
-}
 
 func (m *agentManager) registerRuntime(rt *agentRuntime) {
 	m.mu.Lock()
@@ -589,98 +407,9 @@ func (m *agentManager) removeRuntime(runID string) {
 	delete(m.runtimes, runID)
 }
 
-func (m *agentManager) getRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	if rt != nil {
-		writeJSON(w, agentRunDetail{Run: rt.snapshotRun()})
-		return
-	}
-	run, err := loadAgentRun(workspace.Path, runID)
-	if err != nil || !isAgentHubRun(run) {
-		if err == nil {
-			err = fmt.Errorf("run not found: %s", runID)
-		}
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	writeJSON(w, agentRunDetail{Run: run})
-}
 
-func (m *agentManager) sendInput(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil || rt == nil {
-		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
-		return
-	}
-	var req agentInputRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	text := strings.TrimSpace(req.Text)
-	if text == "" {
-		writeError(w, errors.New("text is required"), http.StatusBadRequest)
-		return
-	}
-	rt.mu.Lock()
-	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
-	rt.mu.Unlock()
-	if sessionID == "" {
-		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
-	}
-	m.sendAgentHubInput(w, r, rt, req, text)
-}
 
-func (m *agentManager) stopRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	if rt != nil {
-		m.stopAgentHubRuntime(w, r, rt)
-		return
-	}
-	run, err := loadAgentRun(workspace.Path, runID)
-	if err != nil || !isAgentHubRun(run) || strings.TrimSpace(run.AgentHubSessionID) != "" {
-		// An attached run needs its live runtime to drive the AgentHub stop.
-		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
-		return
-	}
-	m.stopUnattachedAgentHubRun(w, r, workspace, run, nil)
-}
 
-func (m *agentManager) resumeRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	workspace, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	if rt != nil {
-		run := rt.snapshotRun()
-		if strings.TrimSpace(run.AgentHubSessionID) != "" {
-			m.resumeAttachedAgentHubRun(w, r, rt)
-			return
-		}
-		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
-	}
-	run, err := loadAgentRun(workspace.Path, runID)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" {
-		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
-	}
-	m.resumeAgentHubRun(w, r, workspace, run)
-}
 
 func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	_, rt, err := m.workspaceRuntime(workspaceID, runID)
@@ -948,18 +677,6 @@ func isAgentHubTurnTerminal(eventType string) bool {
 	}
 }
 
-func (rt *agentRuntime) updateStatus(m *agentManager, status string) {
-	_, _ = rt.mutateRun(func(run *agentRun) {
-		run.Status = status
-		run.UpdatedAt = time.Now().Format(time.RFC3339)
-	})
-}
-
-func (rt *agentRuntime) setRun(run agentRun) {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	rt.run = run
-}
 
 // mutateRun is the single serialized persistence boundary for an existing
 // generation. The in-memory projection is published only after the complete
@@ -1015,13 +732,6 @@ func isLiveAgentStatus(status string) bool {
 
 func resourceRunHasActiveTurn(run agentRun) bool {
 	return run.Status == "running" || run.Status == "waiting_approval"
-}
-
-func (rt *agentRuntime) markIdle(m *agentManager) {
-	_, _ = rt.mutateRun(func(run *agentRun) {
-		run.Status = "idle"
-		run.UpdatedAt = time.Now().Format(time.RFC3339)
-	})
 }
 
 func (rt *agentRuntime) snapshotRun() agentRun {

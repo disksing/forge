@@ -145,7 +145,7 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-one/events?before=8&limit=250", nil)
 	recorder := httptest.NewRecorder()
-	manager.handle(recorder, request, workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "run-one")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("proxy events failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -163,7 +163,7 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	second := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-one/events?latest=true&limit=250", nil)
 	secondRecorder := httptest.NewRecorder()
-	manager.handle(secondRecorder, second, workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(secondRecorder, second, workspace.ID, "run-one")
 	if secondRecorder.Code != http.StatusOK {
 		t.Fatalf("proxy latest events failed: %d %s", secondRecorder.Code, secondRecorder.Body.String())
 	}
@@ -173,29 +173,19 @@ func TestAgentHubProxyEventsPassesQueryBodyAndCacheHeader(t *testing.T) {
 	}
 }
 
-func TestAgentHubProxyTurnsAndBoundedEvents(t *testing.T) {
-	fake := &proxyFakeAgentHub{turnsBody: `{"turn":{"id":"turn-one"},"latestEventId":9}`, eventsBody: `{"events":[]}`}
+func TestAgentHubProxyBoundedEvents(t *testing.T) {
+	fake := &proxyFakeAgentHub{eventsBody: `{"events":[]}`}
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace := newProxyTestManager(t, hub.URL)
 	registerProxyTestRun(manager, workspace, agentRun{ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle"})
 
-	turns := httptest.NewRecorder()
-	manager.handle(turns, httptest.NewRequest(http.MethodGet, "/runs/run-one/turns/turn-one", nil), workspace.ID, []string{"runs", "run-one", "turns", "turn-one"})
-	if turns.Code != http.StatusOK || turns.Body.String() != fake.turnsBody {
-		t.Fatalf("single Turn proxy = %d %s", turns.Code, turns.Body.String())
-	}
 	bounded := httptest.NewRecorder()
-	manager.handle(bounded, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?start=2&end=9&after=5&limit=3", nil), workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(bounded, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?start=2&end=9&after=5&limit=3", nil), workspace.ID, "run-one")
 	if bounded.Code != http.StatusOK {
 		t.Fatalf("bounded Event proxy = %d %s", bounded.Code, bounded.Body.String())
 	}
-	fake.mu.Lock()
-	defer fake.mu.Unlock()
-	if len(fake.turnsPaths) != 1 || fake.turnsPaths[0] != "/v1/sessions/ses_one/turns/turn-one" {
-		t.Fatalf("Turn path = %#v", fake.turnsPaths)
-	}
-	query := fake.eventsQueries[len(fake.eventsQueries)-1]
+	query := fake.eventsQuery(t, 0)
 	if query.Get("start") != "2" || query.Get("end") != "9" || query.Get("after") != "5" || query.Get("limit") != "3" {
 		t.Fatalf("bounded Event query = %s", query.Encode())
 	}
@@ -211,8 +201,8 @@ func TestAgentHubProxyEventsSingleUpstreamRequestPerClientPage(t *testing.T) {
 	})
 
 	latest := httptest.NewRecorder()
-	manager.handle(latest, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?latest=true&limit=250", nil),
-		workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(latest, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?latest=true&limit=250", nil),
+		workspace.ID, "run-one")
 	if latest.Code != http.StatusOK {
 		t.Fatalf("latest page failed: %d %s", latest.Code, latest.Body.String())
 	}
@@ -240,7 +230,7 @@ func TestAgentHubProxyEventsWithoutRuntimeLoadsRunFromDisk(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/workspace-one/agent/runs/run-disk/events?after=3&limit=10", nil)
 	recorder := httptest.NewRecorder()
-	manager.handle(recorder, request, workspace.ID, []string{"runs", "run-disk", "events"})
+	manager.proxyAgentHubEvents(recorder, request, workspace.ID, "run-disk")
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("proxy disk-run events failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -263,22 +253,22 @@ func TestAgentHubProxyEventsRunLookupFailures(t *testing.T) {
 	})
 
 	missing := httptest.NewRecorder()
-	manager.handle(missing, httptest.NewRequest(http.MethodGet, "/runs/run-missing/events", nil),
-		workspace.ID, []string{"runs", "run-missing", "events"})
+	manager.proxyAgentHubEvents(missing, httptest.NewRequest(http.MethodGet, "/runs/run-missing/events", nil),
+		workspace.ID, "run-missing")
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("unknown run must return 404, got %d: %s", missing.Code, missing.Body.String())
 	}
 
 	unbound := httptest.NewRecorder()
-	manager.handle(unbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/events", nil),
-		workspace.ID, []string{"runs", "run-unbound", "events"})
+	manager.proxyAgentHubEvents(unbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/events", nil),
+		workspace.ID, "run-unbound")
 	if unbound.Code != http.StatusConflict || !strings.Contains(unbound.Body.String(), "not attached to AgentHub") {
 		t.Fatalf("unbound run must return 409, got %d: %s", unbound.Code, unbound.Body.String())
 	}
 
 	streamUnbound := httptest.NewRecorder()
-	manager.handle(streamUnbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/stream", nil),
-		workspace.ID, []string{"runs", "run-unbound", "stream"})
+	manager.proxyAgentHubStream(streamUnbound, httptest.NewRequest(http.MethodGet, "/runs/run-unbound/stream", nil),
+		workspace.ID, "run-unbound")
 	if streamUnbound.Code != http.StatusConflict {
 		t.Fatalf("unbound stream must return 409, got %d: %s", streamUnbound.Code, streamUnbound.Body.String())
 	}
@@ -300,8 +290,8 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 	})
 
 	recorder := httptest.NewRecorder()
-	manager.handle(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?before=1&latest=true", nil),
-		workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(recorder, httptest.NewRequest(http.MethodGet, "/runs/run-one/events?before=1&latest=true", nil),
+		workspace.ID, "run-one")
 	if recorder.Code != http.StatusBadRequest || !strings.Contains(recorder.Body.String(), "invalid_event_cursor") {
 		t.Fatalf("upstream 400 must keep its status and code, got %d: %s", recorder.Code, recorder.Body.String())
 	}
@@ -311,8 +301,8 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 	fake.eventsBody = `{"error":{"code":"internal","message":"boom"}}`
 	fake.mu.Unlock()
 	failing := httptest.NewRecorder()
-	manager.handle(failing, httptest.NewRequest(http.MethodGet, "/runs/run-one/events", nil),
-		workspace.ID, []string{"runs", "run-one", "events"})
+	manager.proxyAgentHubEvents(failing, httptest.NewRequest(http.MethodGet, "/runs/run-one/events", nil),
+		workspace.ID, "run-one")
 	if failing.Code != http.StatusBadGateway || !strings.Contains(failing.Body.String(), "boom") {
 		t.Fatalf("upstream 500 must map to 502, got %d: %s", failing.Code, failing.Body.String())
 	}
@@ -321,7 +311,7 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 func proxyGUIServer(t *testing.T, manager *agentManager, workspaceID, runID, endpoint string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		manager.handle(w, r, workspaceID, []string{"runs", runID, endpoint})
+		manager.proxyAgentHubStream(w, r, workspaceID, runID)
 	}))
 	t.Cleanup(server.Close)
 	return server

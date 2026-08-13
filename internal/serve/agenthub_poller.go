@@ -707,8 +707,3 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 	}
 }
 
-func (rt *agentRuntime) agentHubStopped() bool {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	return rt.run.Status == "stopped" && rt.run.AgentHubStoppedObserved
-}
