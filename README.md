@@ -116,7 +116,7 @@ The Web sidebar has a server-owned Attention list below the resource tree. Proje
 
 ### Scheduler
 
-`forge init` and `forge migrate` non-destructively create the special `scheduler/` resource. Its formatted `scheduler.json` contains `schemaVersion`, an independent Agent/Profile binding, `wakeIntervalMinutes` (30 by default), and a `schedules` array. A schedule intentionally has only `id`, `description`, `condition`, `target`, immutable `createdBy`/`createdAt`, and `updatedAt`; conditions are natural language, not cron expressions. `scheduler.md` is optional durable judgment context maintained by the Scheduler Agent, while `AGENTS.md` explains the parent instructions, allowed files, duplicate-message behavior, and required target-message fields.
+`forge init` and `forge migrate` non-destructively create the special `scheduler/` resource. Its formatted `scheduler.json` contains `schemaVersion`, an independent Agent/Profile binding, `wakeIntervalMinutes` (30 by default), and a `schedules` array. A schedule intentionally has only `id`, `description`, `condition`, `target`, `createdAt`, and `updatedAt`; conditions are natural language, not cron expressions. `scheduler.md` is optional durable judgment context maintained by the Scheduler Agent, while `AGENTS.md` explains the parent instructions, allowed files, duplicate-message behavior, and required target-message fields.
 
 The Server sends enqueue-only `scheduler_tick` system messages. It does not interpret conditions itself. An empty schedule list produces no Turn; adding or changing a schedule requests an immediate coalesced tick. Otherwise the interval is measured from the end of the previous completed Server-triggered Scheduler Turn, so user chat with the Scheduler does not postpone its next wake. Restart recovery checks durable mailbox and canonical AgentHub Turn state before deciding whether one recovery tick is needed. Messages to schedule targets may repeat, and receivers use the schedule ID to handle duplicates.
 
@@ -125,7 +125,7 @@ The Scheduler may target only `workspace`, `scheduler`, or an open Project/Task 
 ```text
 forge scheduler list [--json]
 forge scheduler show --id=<schedule>
-forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
+forge scheduler add --description=<text> --condition=<text> --target=<resource>
 forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
 forge scheduler remove --id=<schedule>
 ```
@@ -291,13 +291,13 @@ Run `forge help` for full command descriptions. The current command surface is:
 
 ```text
 forge --version
-forge init [--language=<language>] [--creator=user|agent]
+forge init [--language=<language>]
 forge migrate [--language=<language>]
 
 forge repo add [--bare] <name> <url>
 forge repo list
 
-forge project create [--slug <slug>] [--creator=user|agent] <description>
+forge project create [--slug <slug>] <description>
 forge project list [--all]
 forge project show [--project=<project>]
 forge project archive [--project=<project>]
@@ -305,7 +305,7 @@ forge template list|show|validate|render|create|migrate ...
 
 forge scheduler list [--json]
 forge scheduler show --id=<schedule>
-forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
+forge scheduler add --description=<text> --condition=<text> --target=<resource>
 forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
 forge scheduler remove --id=<schedule>
 
@@ -321,7 +321,7 @@ forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<u
 forge message show --id=<message-id> [--server=<url>]
 forge resource archive --id=<resource>
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]
+forge task create [<title>] [--project=<project>] [--slug <slug>]
                   [--detail <detail>|--task-markdown <markdown>|--template=<name>]
                   [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
 forge task list [--project=<project>] [--all]
@@ -340,9 +340,9 @@ templates and Forge-managed `AGENTS.md` prompts. Existing workspaces without a
 language setting default to English. Use `forge migrate --language=zh-CN` (or
 `--language=en`) to switch languages.
 
-Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. `--creator=user` records generic user provenance; `--creator=agent` requires the verified `FORGE_WORKSPACE_ROOT`, `FORGE_WORKSPACE_INSTANCE_ID`, and `FORGE_RESOURCE_ID` context injected into resource generations. With no flag, a valid injected context selects Agent provenance and every other invocation selects user. Creator metadata is immutable provenance, not authorization. Creation sends no initial message and creates no generation; call `forge message send` separately, which lazily creates the first generation. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
+Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. Creation no longer persists resource creator metadata; Agent sender provenance remains on messages and is validated from the injected generation environment. Creation sends no initial message and creates no generation; call `forge message send` separately, which lazily creates the first generation. Each message defaults to `subscribeResult=true`; pass `--subscribe-result=false` to disable the Turn result for that input. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
 
-Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
+Subscribed terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. Same-sender messages in one Turn are grouped with their source IDs; different senders are independent. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages force `subscribeResult=false` and never recursively generate another notification. Use `forge message show` for delivery diagnostics and `forge history turn show` for Turn references.
 
 `forge migrate` upgrades supported resource metadata, performs the one-time versioned migration of generation records and mailbox `pendingMessages` into staged resource stores, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, migrates meaningful legacy task `work.md` content into a digest-marked chapter in `task.md` before removing the source, migrates pre-History resource `log.jsonl` into `artifacts/legacy-log.md` before removing the source, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. Known default explanatory comments are stripped only on exact deterministic matches; conflicts and uncertain content fail closed. Mailbox stores are committed before migrated queues are cleared, retries deduplicate by stable message ID, and retained legacy files provide rollback evidence. An older Forge that does not understand the new resource stores must not write the Workspace after migration; stop the new Server and use a compatible version or restore from backup. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
 

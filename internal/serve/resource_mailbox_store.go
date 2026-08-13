@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,6 +61,9 @@ type resourceMailboxReceipt struct {
 	Role                      string                       `json:"role,omitempty"`
 	Sender                    *agentHubMessageSender       `json:"sender,omitempty"`
 	SenderWorkspaceInstanceID string                       `json:"senderWorkspaceInstanceId,omitempty"`
+	SubscribeResult           bool                         `json:"subscribeResult"`
+	ResultSubscriptionStatus  string                       `json:"resultSubscriptionStatus,omitempty"`
+	ResultOperationID         string                       `json:"resultOperationId,omitempty"`
 	Type                      string                       `json:"type,omitempty"`
 	Causation                 *resourceMessageCausation    `json:"causation,omitempty"`
 	Notification              *resourceNotificationReceipt `json:"notification,omitempty"`
@@ -81,6 +85,37 @@ type resourceMailboxReceipt struct {
 	PromotedAt                string                       `json:"promotedAt,omitempty"`
 	LastError                 string                       `json:"lastError,omitempty"`
 	LastErrorCode             string                       `json:"lastErrorCode,omitempty"`
+	subscribeResultPresent    bool
+}
+
+// UnmarshalJSON applies the pre-subscribeResult default to old receipt files
+// while retaining an explicitly persisted false value.
+func (receipt *resourceMailboxReceipt) UnmarshalJSON(data []byte) error {
+	type mailboxReceiptAlias resourceMailboxReceipt
+	var decoded mailboxReceiptAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, present := fields["subscribeResult"]
+	decoded.subscribeResultPresent = present
+	if !present {
+		decoded.SubscribeResult = true
+	}
+	if decoded.Role == "system" {
+		decoded.SubscribeResult = false
+		decoded.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
+	}
+	message := mailboxMessageFromReceipt(resourceMailboxReceipt(decoded))
+	normalizeLegacyMailboxMessage(&message)
+	decoded.Type = message.Type
+	decoded.Causation = cloneMailboxCausation(message.Causation)
+	decoded.Notification = cloneNotificationReceipt(message.Notification)
+	*receipt = resourceMailboxReceipt(decoded)
+	return nil
 }
 
 type resourceMailboxExpiredEntry struct {
@@ -101,6 +136,7 @@ type resourceMailboxNotificationOp struct {
 	ID                        string                    `json:"id"`
 	Type                      string                    `json:"type"`
 	SourceMessageID           string                    `json:"sourceMessageId"`
+	SourceMessageIDs          []string                  `json:"sourceMessageIds,omitempty"`
 	SourceResourceID          string                    `json:"sourceResourceId"`
 	SourceWorkspaceInstanceID string                    `json:"sourceWorkspaceInstanceId"`
 	TargetWorkspaceInstanceID string                    `json:"targetWorkspaceInstanceId"`
@@ -382,6 +418,7 @@ func receiptFromMailboxMessage(message resourceMailboxMessage) resourceMailboxRe
 	return resourceMailboxReceipt{
 		ID: message.ID, Sequence: message.Sequence, ResourceID: normalizedResourceID(message.ResourceID),
 		Role: message.Role, Sender: sender, SenderWorkspaceInstanceID: message.SenderWorkspaceInstanceID,
+		SubscribeResult: message.SubscribeResult, ResultSubscriptionStatus: message.ResultSubscriptionStatus, ResultOperationID: message.ResultOperationID,
 		Type: message.Type, Causation: cloneMailboxCausation(message.Causation), Notification: cloneNotificationReceipt(message.Notification),
 		RequestedMode: message.RequestedMode, ActualMode: message.ActualMode, ModeFrozen: message.ModeFrozen,
 		DowngradeReason: message.DowngradeReason, Status: message.Status, AcceptedAt: message.AcceptedAt,
@@ -389,7 +426,8 @@ func receiptFromMailboxMessage(message resourceMailboxMessage) resourceMailboxRe
 		TurnTerminalAt: message.TurnTerminalAt, GenerationID: message.GenerationID,
 		AgentHubSessionID: message.AgentHubSessionID, TurnID: message.TurnID, InterruptTurnID: message.InterruptTurnID,
 		InterruptAt: message.InterruptAt, PromotedAt: message.PromotedAt, LastError: message.LastError,
-		LastErrorCode: message.LastErrorCode,
+		LastErrorCode:          message.LastErrorCode,
+		subscribeResultPresent: message.subscribeResultPresent,
 	}
 }
 
@@ -402,6 +440,7 @@ func mailboxMessageFromReceipt(receipt resourceMailboxReceipt) resourceMailboxMe
 	return resourceMailboxMessage{
 		ID: receipt.ID, Sequence: receipt.Sequence, ResourceID: normalizedResourceID(receipt.ResourceID),
 		Role: receipt.Role, Sender: sender, SenderWorkspaceInstanceID: receipt.SenderWorkspaceInstanceID,
+		SubscribeResult: receipt.SubscribeResult, ResultSubscriptionStatus: receipt.ResultSubscriptionStatus, ResultOperationID: receipt.ResultOperationID,
 		Type: receipt.Type, Causation: cloneMailboxCausation(receipt.Causation), Notification: cloneNotificationReceipt(receipt.Notification),
 		RequestedMode: receipt.RequestedMode, ActualMode: receipt.ActualMode, ModeFrozen: receipt.ModeFrozen,
 		DowngradeReason: receipt.DowngradeReason, Status: receipt.Status, AcceptedAt: receipt.AcceptedAt,
@@ -410,17 +449,58 @@ func mailboxMessageFromReceipt(receipt resourceMailboxReceipt) resourceMailboxMe
 		AgentHubSessionID: receipt.AgentHubSessionID, TurnID: receipt.TurnID, InterruptTurnID: receipt.InterruptTurnID,
 		InterruptAt: receipt.InterruptAt, PromotedAt: receipt.PromotedAt, LastError: receipt.LastError,
 		LastErrorCode: receipt.LastErrorCode, receipt: true,
+		subscribeResultPresent: receipt.subscribeResultPresent,
 	}
 }
 
 func cloneMailboxOperation(operation resourceMailboxNotificationOp) resourceMailboxNotificationOp {
 	cloned := operation
+	cloned.SourceMessageIDs = append([]string(nil), operation.SourceMessageIDs...)
 	if operation.GeneratedSender != nil {
 		value := *operation.GeneratedSender
 		cloned.GeneratedSender = &value
 	}
 	cloned.GeneratedCausation = cloneMailboxCausation(operation.GeneratedCausation)
 	return cloned
+}
+
+func mailboxOperationSourceIDs(operation resourceMailboxNotificationOp) []string {
+	ids := make([]string, 0, 1+len(operation.SourceMessageIDs))
+	seen := make(map[string]bool, 1+len(operation.SourceMessageIDs))
+	appendID := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		ids = append(ids, value)
+	}
+	appendID(operation.SourceMessageID)
+	for _, value := range operation.SourceMessageIDs {
+		appendID(value)
+	}
+	return ids
+}
+
+func mailboxOperationHasSource(operation resourceMailboxNotificationOp, messageID string) bool {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return false
+	}
+	for _, sourceID := range mailboxOperationSourceIDs(operation) {
+		if sourceID == messageID {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeMailboxOperationSources(operation *resourceMailboxNotificationOp) {
+	ids := mailboxOperationSourceIDs(*operation)
+	operation.SourceMessageIDs = ids
+	if len(ids) > 0 {
+		operation.SourceMessageID = ids[0]
+	}
 }
 
 func cloneResourceMailboxReceipt(receipt resourceMailboxReceipt) resourceMailboxReceipt {
@@ -486,6 +566,7 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 		for _, message := range hot.Messages {
 			message.ResourceID = normalizedResourceID(message.ResourceID)
 			message.receipt = false
+			normalizeStoredMailboxMessage(&message)
 			store.Mailbox.Messages = append(store.Mailbox.Messages, cloneMailboxMessage(message))
 			if message.Sequence > store.Mailbox.NextSequence {
 				store.Mailbox.NextSequence = message.Sequence
@@ -504,6 +585,9 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 		if store.Receipts.Expired == nil {
 			store.Receipts.Expired = []resourceMailboxExpiredEntry{}
 		}
+		for index := range store.Receipts.Receipts {
+			normalizeStoredMailboxReceipt(&store.Receipts.Receipts[index])
+		}
 	}
 	if found, err := readResourceMailboxJSON(resourceMailboxOutboxPath(store.Directory), &store.Outbox); err != nil {
 		return store, err
@@ -515,6 +599,7 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 			store.Outbox.Operations = []resourceMailboxNotificationOp{}
 		}
 		for i := range store.Outbox.Operations {
+			normalizeLegacyMailboxOperation(&store.Outbox.Operations[i])
 			store.Outbox.Operations[i] = cloneMailboxOperation(store.Outbox.Operations[i])
 		}
 	}
@@ -535,6 +620,7 @@ func loadResourceMailboxStoreInternal(workspacePath, resourceID string) (resourc
 		if _, exists := byID[receipt.ID]; exists {
 			continue
 		}
+		normalizeStoredMailboxReceipt(&receipt)
 		byID[receipt.ID] = mailboxMessageFromReceipt(receipt)
 		if receipt.Sequence > store.Mailbox.NextSequence {
 			store.Mailbox.NextSequence = receipt.Sequence
@@ -561,6 +647,9 @@ func mailboxMessageNeedsHot(message resourceMailboxMessage) bool {
 	if message.Notification != nil && message.Notification.Status != resourceNotificationDelivered && message.Notification.Status != resourceNotificationTerminal {
 		return true
 	}
+	if message.ResultSubscriptionStatus == resourceResultSubscriptionPending && message.Notification == nil {
+		return true
+	}
 	if message.Type == resourceMessageTypeSchedulerTick && message.Status == resourceMessageDelivered && strings.TrimSpace(message.TurnTerminalAt) == "" {
 		return true
 	}
@@ -569,6 +658,30 @@ func mailboxMessageNeedsHot(message resourceMailboxMessage) bool {
 		return true
 	}
 	return false
+}
+
+// normalizeStoredMailboxMessage prevents a pre-subscribeResult delivered
+// Agent input from becoming a new result subscription during recovery. Raw
+// JSON decoding still follows the public omitted=>true default; this legacy
+// exception is applied only when reading durable old mailbox state.
+func normalizeStoredMailboxMessage(message *resourceMailboxMessage) {
+	if message == nil {
+		return
+	}
+	if !message.subscribeResultPresent && message.Status == resourceMessageDelivered && message.Notification == nil && message.Type == "" {
+		message.SubscribeResult = false
+		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
+	}
+}
+
+func normalizeStoredMailboxReceipt(receipt *resourceMailboxReceipt) {
+	if receipt == nil {
+		return
+	}
+	if !receipt.subscribeResultPresent && receipt.Status == resourceMessageDelivered && receipt.Notification == nil && receipt.Type == "" {
+		receipt.SubscribeResult = false
+		receipt.ResultSubscriptionStatus = resourceResultSubscriptionNone
+	}
 }
 
 func mailboxMessageRetentionTime(message resourceMailboxMessage) time.Time {
@@ -1090,7 +1203,7 @@ func mailboxNotificationOperationFromMessage(message resourceMailboxMessage) (re
 		return resourceMailboxNotificationOp{}, false
 	}
 	return resourceMailboxNotificationOp{
-		ID: receipt.ID, Type: receipt.Type, SourceMessageID: message.ID,
+		ID: receipt.ID, Type: receipt.Type, SourceMessageID: message.ID, SourceMessageIDs: []string{message.ID},
 		SourceResourceID: message.ResourceID, SourceWorkspaceInstanceID: strings.TrimSpace(message.SenderWorkspaceInstanceID),
 		TargetWorkspaceInstanceID: receipt.TargetWorkspaceInstanceID, TargetResourceID: receipt.TargetResourceID,
 		GeneratedMessageID: receipt.ID, Status: receipt.Status, AcceptedAt: receipt.AcceptedAt,
@@ -1102,7 +1215,7 @@ func mailboxNotificationOperationFromMessage(message resourceMailboxMessage) (re
 func mailboxNotificationOperationFromGenerated(source resourceMailboxMessage, generated resourceMailboxMessage) resourceMailboxNotificationOp {
 	receipt := source.Notification
 	operation := resourceMailboxNotificationOp{
-		ID: generated.ID, Type: generated.Type, SourceMessageID: source.ID,
+		ID: generated.ID, Type: generated.Type, SourceMessageID: source.ID, SourceMessageIDs: []string{source.ID},
 		SourceResourceID: normalizedResourceID(source.ResourceID), SourceWorkspaceInstanceID: strings.TrimSpace(generated.SenderWorkspaceInstanceID),
 		GeneratedMessageID: generated.ID, GeneratedText: generated.Text, GeneratedSender: generated.Sender,
 		GeneratedCausation: generated.Causation, Status: resourceNotificationWaiting, UpdatedAt: time.Now().Format(time.RFC3339Nano),
@@ -1125,11 +1238,29 @@ func mailboxNotificationOperationFromGenerated(source resourceMailboxMessage, ge
 }
 
 func appendUniqueMailboxOperation(operations []resourceMailboxNotificationOp, operation resourceMailboxNotificationOp) []resourceMailboxNotificationOp {
+	normalizeMailboxOperationSources(&operation)
 	for index := range operations {
 		if operations[index].ID != operation.ID {
 			continue
 		}
 		current := operations[index]
+		currentIDs := mailboxOperationSourceIDs(current)
+		for _, sourceID := range mailboxOperationSourceIDs(operation) {
+			seen := false
+			for _, currentID := range currentIDs {
+				if currentID == sourceID {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				currentIDs = append(currentIDs, sourceID)
+			}
+		}
+		current.SourceMessageIDs = currentIDs
+		if len(currentIDs) > 0 {
+			current.SourceMessageID = currentIDs[0]
+		}
 		if operation.GeneratedText != "" {
 			current.GeneratedText = operation.GeneratedText
 		}
@@ -1542,6 +1673,7 @@ func resourceMailboxOperationGeneratedMessage(operation resourceMailboxNotificat
 	return resourceMailboxMessage{
 		ID: operation.GeneratedMessageID, ResourceID: operation.TargetResourceID, Text: operation.GeneratedText,
 		Role: "system", Sender: operation.GeneratedSender, SenderWorkspaceInstanceID: operation.SourceWorkspaceInstanceID,
+		SubscribeResult: false, ResultSubscriptionStatus: resourceResultSubscriptionDisabled,
 		Type: operation.Type, Causation: operation.GeneratedCausation,
 		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue, ModeFrozen: true,
 		Status: resourceMessageQueued, AcceptedAt: operation.AcceptedAt, UpdatedAt: operation.UpdatedAt,
@@ -1559,7 +1691,7 @@ func mailboxNotificationOperation(workspacePath, sourceMessageID string) (resour
 		return resourceMailboxNotificationOp{}, false, err
 	}
 	for _, operation := range store.Outbox.Operations {
-		if operation.SourceMessageID == sourceMessageID {
+		if mailboxOperationHasSource(operation, sourceMessageID) {
 			return cloneMailboxOperation(operation), true, nil
 		}
 	}
@@ -1567,14 +1699,39 @@ func mailboxNotificationOperation(workspacePath, sourceMessageID string) (resour
 }
 
 func upsertMailboxNotificationOperation(workspacePath string, sourceMessageID string, operation resourceMailboxNotificationOp) error {
-	source, found, err := mailboxMessageByID(workspacePath, sourceMessageID)
+	return upsertMailboxNotificationOperationForSources(workspacePath, []string{sourceMessageID}, operation)
+}
+
+func upsertMailboxNotificationOperationForSources(workspacePath string, sourceMessageIDs []string, operation resourceMailboxNotificationOp) error {
+	ids := make([]string, 0, len(sourceMessageIDs)+len(operation.SourceMessageIDs)+1)
+	seen := make(map[string]bool)
+	appendID := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			return
+		}
+		seen[value] = true
+		ids = append(ids, value)
+	}
+	for _, sourceID := range sourceMessageIDs {
+		appendID(sourceID)
+	}
+	for _, sourceID := range mailboxOperationSourceIDs(operation) {
+		appendID(sourceID)
+	}
+	if len(ids) == 0 {
+		return errors.New("source mailbox message is required")
+	}
+	sourceID := ids[0]
+	source, found, err := mailboxMessageByID(workspacePath, sourceID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return fmt.Errorf("source mailbox message not found: %s", sourceMessageID)
+		return fmt.Errorf("source mailbox message not found: %s", sourceID)
 	}
-	operation.SourceMessageID = sourceMessageID
+	operation.SourceMessageID = sourceID
+	operation.SourceMessageIDs = ids
 	operation.SourceResourceID = normalizedResourceID(source.ResourceID)
 	if operation.ID == "" && source.Notification != nil {
 		operation.ID = source.Notification.ID
@@ -1586,17 +1743,31 @@ func upsertMailboxNotificationOperation(workspacePath string, sourceMessageID st
 		operation.UpdatedAt = time.Now().Format(time.RFC3339Nano)
 	}
 	_, err = mutateResourceMailboxStoreForResource(workspacePath, source.ResourceID, func(store *resourceMailboxStore) error {
+		foundSources := make(map[string]bool, len(ids))
 		for index := range store.Mailbox.Messages {
-			if store.Mailbox.Messages[index].ID != sourceMessageID {
+			message := &store.Mailbox.Messages[index]
+			if !seen[message.ID] {
 				continue
 			}
-			if store.Mailbox.Messages[index].Notification == nil && operation.ID != "" {
-				store.Mailbox.Messages[index].Notification = &resourceNotificationReceipt{ID: operation.ID, Type: operation.Type, Status: operation.Status, TargetWorkspaceInstanceID: operation.TargetWorkspaceInstanceID, TargetResourceID: operation.TargetResourceID, CreatedAt: operation.UpdatedAt, UpdatedAt: operation.UpdatedAt}
+			if normalizedResourceID(message.ResourceID) != operation.SourceResourceID {
+				return fmt.Errorf("source mailbox message belongs to another resource: %s", message.ID)
 			}
-			store.Outbox.Operations = appendUniqueMailboxOperation(store.Outbox.Operations, operation)
-			return nil
+			foundSources[message.ID] = true
+			if message.Notification == nil && operation.ID != "" {
+				message.Notification = &resourceNotificationReceipt{ID: operation.ID, Type: operation.Type, Status: operation.Status, TargetWorkspaceInstanceID: operation.TargetWorkspaceInstanceID, TargetResourceID: operation.TargetResourceID, CreatedAt: operation.UpdatedAt, UpdatedAt: operation.UpdatedAt}
+			}
+			if operation.Type == resourceMessageTypeTurnResult && message.ResultSubscriptionStatus != resourceResultSubscriptionComplete {
+				message.ResultSubscriptionStatus = resourceResultSubscriptionPending
+				message.ResultOperationID = operation.ID
+			}
 		}
-		return fmt.Errorf("source mailbox message not found: %s", sourceMessageID)
+		for _, id := range ids {
+			if !foundSources[id] {
+				return fmt.Errorf("source mailbox message not found: %s", id)
+			}
+		}
+		store.Outbox.Operations = appendUniqueMailboxOperation(store.Outbox.Operations, operation)
+		return nil
 	})
 	return err
 }
@@ -1615,7 +1786,7 @@ func updateMailboxNotificationOperation(workspacePath, sourceMessageID string, m
 	}
 	before := cloneResourceMailboxStore(store)
 	for index := range store.Outbox.Operations {
-		if store.Outbox.Operations[index].SourceMessageID == sourceMessageID {
+		if mailboxOperationHasSource(store.Outbox.Operations[index], sourceMessageID) {
 			mutate(&store.Outbox.Operations[index])
 			store.Outbox.Operations[index].UpdatedAt = time.Now().Format(time.RFC3339Nano)
 		}
@@ -1638,7 +1809,7 @@ func removeMailboxNotificationOperation(workspacePath, sourceMessageID string) e
 	before := cloneResourceMailboxStore(store)
 	kept := store.Outbox.Operations[:0]
 	for _, operation := range store.Outbox.Operations {
-		if operation.SourceMessageID != sourceMessageID {
+		if !mailboxOperationHasSource(operation, sourceMessageID) {
 			kept = append(kept, operation)
 		}
 	}

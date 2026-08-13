@@ -40,20 +40,18 @@ type SchedulerConfig struct {
 // Schedule deliberately contains no execution projection. The Scheduler Agent
 // interprets Condition and keeps optional execution context in scheduler.md.
 type Schedule struct {
-	ID          string  `json:"id"`
-	Description string  `json:"description"`
-	Condition   string  `json:"condition"`
-	Target      string  `json:"target"`
-	CreatedBy   Creator `json:"createdBy"`
-	CreatedAt   string  `json:"createdAt"`
-	UpdatedAt   string  `json:"updatedAt"`
+	ID          string `json:"id"`
+	Description string `json:"description"`
+	Condition   string `json:"condition"`
+	Target      string `json:"target"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
 }
 
 type CreateScheduleInput struct {
 	Description string
 	Condition   string
 	Target      string
-	Creator     Creator
 }
 
 type UpdateScheduleInput struct {
@@ -309,9 +307,6 @@ func validateSchedule(schedule Schedule) error {
 	if _, err := time.Parse(time.RFC3339Nano, schedule.UpdatedAt); err != nil {
 		return errors.New("updatedAt must be RFC3339")
 	}
-	if _, err := NormalizeCreator(schedule.CreatedBy); err != nil {
-		return fmt.Errorf("createdBy: %w", err)
-	}
 	return nil
 }
 
@@ -402,12 +397,8 @@ func (w *Workspace) AddSchedule(input CreateScheduleInput) (Schedule, error) {
 	if err := w.require(); err != nil {
 		return Schedule{}, err
 	}
-	creator, err := creatorOrUser(input.Creator)
-	if err != nil {
-		return Schedule{}, &APIError{Operation: "add schedule", Kind: "creator", Workspace: w.root, Err: err}
-	}
 	var created Schedule
-	err = withWorkspaceMutationLock(w.root, func() error {
+	err := withWorkspaceMutationLock(w.root, func() error {
 		config, err := readSchedulerJSON(schedulerJSONPath(w.root))
 		if err != nil {
 			return err
@@ -421,7 +412,7 @@ func (w *Workspace) AddSchedule(input CreateScheduleInput) (Schedule, error) {
 			return err
 		}
 		now := time.Now().Format(time.RFC3339Nano)
-		created = Schedule{ID: id, Description: description, Condition: condition, Target: target, CreatedBy: creator, CreatedAt: now, UpdatedAt: now}
+		created = Schedule{ID: id, Description: description, Condition: condition, Target: target, CreatedAt: now, UpdatedAt: now}
 		config.Schedules = append(config.Schedules, created)
 		return writeSchedulerJSON(schedulerJSONPath(w.root), config)
 	})

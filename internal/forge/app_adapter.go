@@ -43,12 +43,12 @@ func applicationWorkspaceResourceJSON(id string) error {
 	return printJSON(detail)
 }
 
-func applicationProjectCreate(description, slug string, creator app.Creator) error {
+func applicationProjectCreate(description, slug string) error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
 		return err
 	}
-	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: description, Slug: slug, Creator: creator})
+	project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{Description: description, Slug: slug})
 	if err != nil {
 		return err
 	}
@@ -220,12 +220,12 @@ func applicationTaskRepoRemove(taskID, name string) error {
 	return printJSON(task)
 }
 
-func applicationInit(language string, creator app.Creator) error {
+func applicationInit(language string) error {
 	root, err := os.Getwd()
 	if err != nil {
 		return err
 	}
-	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: language, Creator: creator}); err != nil {
+	if _, err := app.InitializeWithOptions(root, app.InitializeOptions{Language: language}); err != nil {
 		return err
 	}
 	fmt.Printf("initialized AgentWorkspace at %s\n", root)

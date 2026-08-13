@@ -46,151 +46,94 @@ func appendNotificationTestMessage(t *testing.T, workspacePath string, message r
 	}
 }
 
-func TestCreatorTurnCallbackRoutesOnceWithStableCausation(t *testing.T) {
+func TestTurnResultSubscriptionsGroupBySenderAndTurn(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
-
-	sourceRoot := t.TempDir()
-	sourceApp, err := app.Initialize(sourceRoot, "en")
+	root := t.TempDir()
+	workspaceApp, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceProject, err := sourceApp.CreateProject("Source project", "source")
+	project, err := workspaceApp.CreateProject("Notification project", "notification")
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceTask, err := sourceApp.CreateTask(app.CreateTaskInput{ProjectID: sourceProject.ID, Title: "Source task", Slug: "source"})
+	for _, title := range []string{"Target", "Sender one", "Sender two"} {
+		if _, err := workspaceApp.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: title}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runtimeConfig, err := workspaceApp.RuntimeConfig()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sourceRuntime, err := sourceApp.RuntimeConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-	creator, err := app.ResourceCreator(sourceRuntime.InstanceID, sourceTask.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	targetRoot := t.TempDir()
-	targetApp, err := app.Initialize(targetRoot, "en")
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetProject, err := targetApp.CreateProject("Target project", "target")
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetTask, err := targetApp.CreateTask(app.CreateTaskInput{ProjectID: targetProject.ID, Title: "Target task", Slug: "target", Creator: creator})
-	if err != nil {
-		t.Fatal(err)
-	}
-	targetRuntime, err := targetApp.RuntimeConfig()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sourceWorkspace := guiWorkspace{ID: "source", Name: "Source", Path: sourceRoot}
-	targetWorkspace := guiWorkspace{ID: "target", Name: "Target", Path: targetRoot}
-	manager := newNotificationTestManager(t, hub.URL, []guiWorkspace{sourceWorkspace, targetWorkspace})
+	workspace := guiWorkspace{ID: "notification", Name: "Notification", Path: root}
+	manager := newNotificationTestManager(t, hub.URL, []guiWorkspace{workspace})
 	client, err := newAgentHubClient(hub.URL, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	run := agentRun{
-		ID: "run-target", WorkspaceID: targetWorkspace.ID, ResourceID: targetTask.ID,
-		Generation: 1, GenerationID: "gen-target", AgentHubSessionID: "ses-target", Status: "ready",
-		CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
-	}
-	if err := saveAgentRun(targetRoot, run); err != nil {
+	run := agentRun{ID: "run-target", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-target", AgentHubSessionID: "ses-target", Status: "ready", CreatedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano)}
+	if err := saveAgentRun(root, run); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
-	fake.turns[run.AgentHubSessionID] = map[string]agentHubTurn{
-		"turn-target": {
-			TurnID: "turn-target", Status: "completed", Closed: true,
-			Items: []agentHubTurnItem{{Type: "message", Role: "assistant", Text: "Delegated work is complete."}},
-		},
-	}
+	fake.turns[run.AgentHubSessionID] = map[string]agentHubTurn{"turn-target": {TurnID: "turn-target", Status: "completed", Closed: true, Items: []agentHubTurnItem{{Type: "message", Role: "assistant", Text: "The shared result."}}}}
 	fake.mu.Unlock()
 	now := time.Now().Format(time.RFC3339Nano)
-	original := resourceMailboxMessage{
-		ID: "msg-original", ResourceID: targetTask.ID, Text: "Please create it", Role: "agent",
-		Sender: &agentHubMessageSender{ID: sourceTask.ID, Name: sourceTask.ID}, SenderWorkspaceInstanceID: sourceRuntime.InstanceID,
-		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue, ModeFrozen: true,
-		Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now, DeliveredAt: now, TerminalAt: now,
-		GenerationID: run.GenerationID, AgentHubSessionID: run.AgentHubSessionID, TurnID: "turn-target",
+	appendMessage := func(id, sender string) {
+		appendNotificationTestMessage(t, root, resourceMailboxMessage{
+			ID: id, ResourceID: "project1.task1", Text: id, Role: "agent", Sender: &agentHubMessageSender{ID: sender, Name: sender}, SenderWorkspaceInstanceID: runtimeConfig.InstanceID,
+			SubscribeResult: true, ResultSubscriptionStatus: resourceResultSubscriptionPending, RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
+			Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now, DeliveredAt: now, TerminalAt: now, GenerationID: run.GenerationID, AgentHubSessionID: run.AgentHubSessionID, TurnID: "turn-target",
+		})
 	}
-	appendNotificationTestMessage(t, targetRoot, original)
-
-	for _, reconciler := range []*agentManager{manager, newNotificationTestManager(t, hub.URL, []guiWorkspace{sourceWorkspace, targetWorkspace})} {
-		if err := reconciler.reconcileWorkspaceNotifications(context.Background(), targetWorkspace, client); err != nil {
+	appendMessage("msg-one-a", "project1.task2")
+	appendMessage("msg-one-b", "project1.task2")
+	appendMessage("msg-two", "project1.task3")
+	if err := manager.reconcileWorkspaceNotifications(context.Background(), workspace, client); err != nil {
+		t.Fatal(err)
+	}
+	for _, check := range []struct {
+		resource string
+		wantIDs  []string
+	}{
+		{resource: "project1.task2", wantIDs: []string{"msg-one-a", "msg-one-b"}},
+		{resource: "project1.task3", wantIDs: []string{"msg-two"}},
+	} {
+		mailbox, err := loadResourceMailboxForResource(root, check.resource)
+		if err != nil {
 			t.Fatal(err)
 		}
+		if len(mailbox.Messages) != 1 || mailbox.Messages[0].Type != resourceMessageTypeTurnResult || mailbox.Messages[0].SubscribeResult {
+			t.Fatalf("result mailbox for %s = %#v", check.resource, mailbox.Messages)
+		}
+		result := mailbox.Messages[0]
+		if result.Causation == nil || len(result.Causation.SourceMessageIDs) != len(check.wantIDs) {
+			t.Fatalf("result causation for %s = %#v body=%q", check.resource, result.Causation, result.Text)
+		}
+		for _, id := range check.wantIDs {
+			found := false
+			for _, sourceID := range result.Causation.SourceMessageIDs {
+				if sourceID == id {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("result for %s omitted source %s: %#v", check.resource, id, result.Causation.SourceMessageIDs)
+			}
+		}
 	}
-	updated, found, err := mailboxMessageByID(targetRoot, original.ID)
-	if err != nil || !found || updated.Notification == nil || updated.Notification.Status != resourceNotificationDelivered || updated.Notification.DeliveryStatus != resourceMessageDelivered {
-		t.Fatalf("callback receipt = %#v, found=%v err=%v", updated.Notification, found, err)
-	}
-	sourceMailbox, err := loadResourceMailbox(sourceRoot)
-	if err != nil {
+	if err := manager.reconcileWorkspaceNotifications(context.Background(), workspace, client); err != nil {
 		t.Fatal(err)
 	}
-	if len(sourceMailbox.Messages) != 1 {
-		t.Fatalf("callback was duplicated: %#v", sourceMailbox.Messages)
-	}
-	callback := sourceMailbox.Messages[0]
-	if callback.ID != updated.Notification.ID || callback.Type != resourceMessageTypeCreatorTurnResult || callback.Causation == nil ||
-		callback.Causation.MessageID != original.ID || callback.Causation.SourceWorkspaceInstanceID != targetRuntime.InstanceID ||
-		callback.Text != "" || !callback.receipt || callback.Causation.TurnReference == "" {
-		t.Fatalf("callback message = %#v", callback)
-	}
-	fake.mu.Lock()
-	fake.turns[run.AgentHubSessionID]["turn-other"] = agentHubTurn{TurnID: "turn-other", Status: "completed", Closed: true}
-	fake.mu.Unlock()
-	other := original
-	other.ID = "msg-other-agent"
-	other.Sender = &agentHubMessageSender{ID: "project99.task1"}
-	other.TurnID = "turn-other"
-	appendNotificationTestMessage(t, targetRoot, other)
-	userTriggered := other
-	userTriggered.ID = "msg-user"
-	userTriggered.Role = "user"
-	userTriggered.Sender = nil
-	userTriggered.SenderWorkspaceInstanceID = ""
-	userTriggered.TurnID = "turn-user"
-	appendNotificationTestMessage(t, targetRoot, userTriggered)
-	if err := manager.reconcileWorkspaceNotifications(context.Background(), targetWorkspace, client); err != nil {
-		t.Fatal(err)
-	}
-	sourceMailbox, _ = loadResourceMailbox(sourceRoot)
-	if len(sourceMailbox.Messages) != 1 {
-		t.Fatalf("non-creator trigger produced a callback: %#v", sourceMailbox.Messages)
-	}
-	run.CompletionMarker = run.AgentHubSessionID + ":99"
-	run.CompletionState = "failed"
-	run.CompletionTurnID = "turn-crashed"
-	run.CompletionAt = time.Now().Format(time.RFC3339Nano)
-	if err := saveAgentRun(targetRoot, run); err != nil {
-		t.Fatal(err)
-	}
-	crashed := original
-	crashed.ID = "msg-crashed-turn"
-	crashed.TurnID = "turn-crashed"
-	appendNotificationTestMessage(t, targetRoot, crashed)
-	if err := manager.reconcileWorkspaceNotifications(context.Background(), targetWorkspace, client); err != nil {
-		t.Fatal(err)
-	}
-	sourceMailbox, _ = loadResourceMailbox(sourceRoot)
-	if len(sourceMailbox.Messages) != 2 {
-		t.Fatalf("crashed Turn callback missing: %#v", sourceMailbox.Messages)
-	}
-	crashCallback := sourceMailbox.Messages[1]
-	if crashCallback.Causation == nil || crashCallback.Causation.TurnStatus != "failed" ||
-		!crashCallback.Causation.HistoryUnavailable || crashCallback.Causation.TurnReference != "" ||
-		!strings.Contains(crashCallback.Text, "no Turn reference was manufactured") {
-		t.Fatalf("crashed Turn callback = %#v", crashCallback)
+	for _, resource := range []string{"project1.task2", "project1.task3"} {
+		mailbox, err := loadResourceMailboxForResource(root, resource)
+		if err != nil || len(mailbox.Messages) != 1 {
+			t.Fatalf("result duplicated for %s: %#v err=%v", resource, mailbox.Messages, err)
+		}
 	}
 }
 
@@ -273,10 +216,10 @@ func TestTerminalDeliveryNoticeRoutesToResourceSenderWithoutBounce(t *testing.T)
 	}
 }
 
-func TestCreatorCallbackTerminalVariantsDoNotInventContent(t *testing.T) {
+func TestTurnResultTerminalVariantsDoNotInventContent(t *testing.T) {
 	for _, status := range []string{"failed", "cancelled"} {
 		turn := agentHubTurn{TurnID: "turn-" + status, Status: status, Closed: true}
-		message := creatorCallbackMessage("project1.task1", turn, "", status == "failed")
+		message := turnResultMessage("project1.task1", "gen-1", turn, "", []string{"msg-1"}, status == "failed")
 		if !strings.Contains(message, "status `"+status+"`") {
 			t.Fatalf("%s callback omitted terminal status: %q", status, message)
 		}
@@ -305,15 +248,15 @@ func TestNotificationReceiptTerminatesWhenTargetWorkspaceIsUnavailable(t *testin
 		RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
 		Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now,
 		Notification: &resourceNotificationReceipt{
-			ID: "msg-notify-missing", Type: resourceMessageTypeCreatorTurnResult, Status: resourceNotificationWaiting,
+			ID: "msg-notify-missing", Type: resourceMessageTypeTurnResult, Status: resourceNotificationWaiting,
 			TargetWorkspaceInstanceID: "ws-missing", TargetResourceID: "project1.task1", CreatedAt: now, UpdatedAt: now,
 		},
 	}
 	appendNotificationTestMessage(t, root, source)
 	generated := resourceMailboxMessage{
 		ID: source.Notification.ID, ResourceID: "project1.task1", Text: "result",
-		Type:      resourceMessageTypeCreatorTurnResult,
-		Causation: &resourceMessageCausation{Type: resourceMessageTypeCreatorTurnResult, SourceWorkspaceInstanceID: "ws-source", SourceResourceID: "workspace"},
+		Type:      resourceMessageTypeTurnResult,
+		Causation: &resourceMessageCausation{Type: resourceMessageTypeTurnResult, SourceWorkspaceInstanceID: "ws-source", SourceResourceID: "workspace"},
 	}
 	if err := manager.routeNotification(context.Background(), workspace, source, generated); err != nil {
 		t.Fatal(err)

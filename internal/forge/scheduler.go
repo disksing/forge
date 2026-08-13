@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	schedulerAddUsage    = "usage: forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]"
+	schedulerAddUsage    = "usage: forge scheduler add --description=<text> --condition=<text> --target=<resource>"
 	schedulerShowUsage   = "usage: forge scheduler show --id=<schedule>"
 	schedulerUpdateUsage = "usage: forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]"
 	schedulerRemoveUsage = "usage: forge scheduler remove --id=<schedule>"
@@ -64,19 +64,15 @@ func runScheduler(args []string) error {
 		}
 		return fmt.Errorf("schedule not found: %s", values["id"])
 	case "add":
-		values, err := parseSchedulerOptions(args[1:], map[string]bool{"description": true, "condition": true, "target": true, "creator": true})
+		values, err := parseSchedulerOptions(args[1:], map[string]bool{"description": true, "condition": true, "target": true})
 		if err != nil || values["description"] == "" || values["condition"] == "" || values["target"] == "" {
 			return errors.New(schedulerAddUsage)
-		}
-		creator, err := resolveCreationCreator(values["creator"])
-		if err != nil {
-			return err
 		}
 		workspace, err := openApplicationWorkspace()
 		if err != nil {
 			return err
 		}
-		created, err := workspace.AddSchedule(app.CreateScheduleInput{Description: values["description"], Condition: values["condition"], Target: values["target"], Creator: creator})
+		created, err := workspace.AddSchedule(app.CreateScheduleInput{Description: values["description"], Condition: values["condition"], Target: values["target"]})
 		if err != nil {
 			return err
 		}

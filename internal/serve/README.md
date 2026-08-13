@@ -63,11 +63,12 @@ POST /api/workspaces/{workspaceId}/resources/{resourceId}/attention/dismiss
   "mode": "steer",
   "role": "agent",
   "sender": { "id": "project1.task1", "name": "project1.task1" },
-  "senderWorkspaceInstanceId": "ws-0123456789abcdef"
+  "senderWorkspaceInstanceId": "ws-0123456789abcdef",
+  "subscribeResult": true
 }
 ```
 
-发送响应包含 `messageId`、`resourceId`、正文（仍在 hot 中时）、`receipt` 标记、`requestedMode`、`actualMode`、`downgradeReason`、对外消息状态、接受/提升时间、可再次 GET 的 `reference`、当前 generation/Turn 关联以及可选的 `lastErrorCode`/`lastError`。结构化回传还包含 `type`、`causation` 和源消息上的 `notification` receipt。内部 `queued` 对外映射为 `waiting`。`GET .../messages/{messageId}` 对保留的冷 receipt 返回无正文但带 `receipt: true` 的诊断结果；超过 retention 返回稳定 `message_receipt_expired`（HTTP 410），不把已存在的消息伪装成从未存在。状态响应的公共状态只会是 `idle`、`working`、`attention_required`、`unavailable` 或 `archived`；消息等待数与 `waitingMessages` 单列，不会把 Task 标成 queued。状态还包含不可变 creator、显式绑定、当前 generation/replacement、Turn/steer capability 和最近错误；底层 AgentHub Session 状态仅作为诊断事实。`POST .../steer` 仅在活动 Turn 支持 steer 时把同一个 waiting mailbox 项立即插入，不创建新消息。稳定错误 code 还包括 `message_not_waiting`、`steer_unavailable` 和 `message_receipt_expired`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
+发送响应包含 `messageId`、`resourceId`、正文（仍在 hot 中时）、`receipt` 标记、`requestedMode`、`actualMode`、`downgradeReason`、对外消息状态、接受/提升时间、可再次 GET 的 `reference`、当前 generation/Turn 关联、`subscribeResult`/订阅状态以及可选的 `lastErrorCode`/`lastError`。结构化回传还包含 `type`、`causation` 和源消息上的 `notification` receipt。内部 `queued` 对外映射为 `waiting`。`GET .../messages/{messageId}` 对保留的冷 receipt 返回无正文但带 `receipt: true` 的诊断结果；超过 retention 返回稳定 `message_receipt_expired`（HTTP 410），不把已存在的消息伪装成从未存在。状态响应的公共状态只会是 `idle`、`working`、`attention_required`、`unavailable` 或 `archived`；消息等待数与 `waitingMessages` 单列，不会把 Task 标成 queued。状态不再展示 creator；显式绑定、当前 generation/replacement、Turn/steer capability 和最近错误仍可诊断。`POST .../steer` 仅在活动 Turn 支持 steer 时把同一个 waiting mailbox 项立即插入，不创建新消息。稳定错误 code 还包括 `message_not_waiting`、`steer_unavailable` 和 `message_receipt_expired`。provenance 只是来源元数据，不构成认证、授权或指令优先级。
 
 curl 示例：
 
@@ -94,6 +95,6 @@ ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/appro
 
 AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；Forge 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。恢复诊断使用独立 `forge.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
 
-资源 generation 向 AgentHub Session 注入 `FORGE_WORKSPACE_ROOT`、`FORGE_WORKSPACE_INSTANCE_ID` 和 `FORGE_RESOURCE_ID`，供本地 CLI 验证 Agent creator/sender provenance。创建仍由 CLI 或 GUI 委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。仅 creator 资源触发的 terminal Turn 会生成 `creator_turn_result`，`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两者在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息失败不会再生成通知。
+资源 generation 向 AgentHub Session 注入 `FORGE_WORKSPACE_ROOT`、`FORGE_WORKSPACE_INSTANCE_ID` 和 `FORGE_RESOURCE_ID`，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 GUI 委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
 
-持久 schema 升级是无损的：Workspace/Project/Task 的 `creator` 为可选字段，缺失表示旧数据；mailbox schema v1/v2 与 generation pending queue 只执行一次 staging/marker migration，旧 `.forge/runtime/mailbox.json` 保留为回滚证据，不会被新版本继续改写。迁移中断可重试，已提交资源按稳定 ID 合并，marker 只在资源 store 与 pending queue 收敛后写入；旧 Forge 只能回滚到仍理解旧文件的版本，不能在新 marker/store 上继续写入或覆盖新资源文档。`.forge/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `forge init`。发布前可备份 Workspace；代码回滚不要求改写资源 JSON，但跨 Workspace creator 回传必须暂停到再次升级。
+持久 schema 升级是无损的：一次性版本化迁移会删除 Workspace/Project/Task 中旧的 `creator`/`createdBy` 字段，并把已 durable 的旧 callback/outbox 类型转换为当前 `turn_result`；已完成历史不会重新批量通知。mailbox schema v1/v2 与 generation pending queue 只执行一次 staging/marker migration，旧 `.forge/runtime/mailbox.json` 保留为回滚证据，不会被新版本继续改写。迁移中断可重试，已提交资源按稳定 ID 合并，marker 只在资源 store 与 pending queue 收敛后写入；旧 Forge 只能回滚到仍理解旧文件的版本，不能在新 marker/store 上继续写入或覆盖新资源文档。`.forge/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `forge init`。发布前可备份 Workspace；代码回滚不要求改写资源 JSON，回滚前应暂停跨 Workspace 通知。

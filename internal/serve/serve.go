@@ -85,7 +85,6 @@ const (
 
 type workspaceTree struct {
 	Root          string             `json:"root"`
-	Creator       *app.Creator       `json:"creator,omitempty"`
 	AgentBinding  app.AgentBinding   `json:"agentBinding"`
 	Scheduler     resourceSnapshot   `json:"scheduler"`
 	Projects      []resourceSnapshot `json:"projects"`
@@ -114,7 +113,6 @@ type resourceSnapshot struct {
 	Title        string                     `json:"title"`
 	Path         string                     `json:"path"`
 	Archived     bool                       `json:"archived"`
-	Creator      *app.Creator               `json:"creator,omitempty"`
 	AgentBinding app.AgentBinding           `json:"agentBinding"`
 	Runtime      *resourceRuntimeSnapshot   `json:"runtime,omitempty"`
 	Attention    *resourceAttentionSnapshot `json:"attention,omitempty"`

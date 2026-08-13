@@ -32,9 +32,14 @@ const (
 )
 
 const (
-	resourceMessageTypeCreatorTurnResult = "creator_turn_result"
-	resourceMessageTypeDeliveryTerminal  = "delivery_terminal_notice"
-	resourceMessageTypeSchedulerTick     = "scheduler_tick"
+	resourceResultSubscriptionPending  = "pending"
+	resourceResultSubscriptionDisabled = "disabled"
+	resourceResultSubscriptionNone     = "none"
+	resourceResultSubscriptionComplete = "complete"
+
+	resourceMessageTypeTurnResult       = "turn_result"
+	resourceMessageTypeDeliveryTerminal = "delivery_terminal_notice"
+	resourceMessageTypeSchedulerTick    = "scheduler_tick"
 
 	resourceNotificationWaiting   = "waiting"
 	resourceNotificationAccepted  = "accepted"
@@ -68,6 +73,9 @@ type resourceMailboxMessage struct {
 	Role                      string                       `json:"role"`
 	Sender                    *agentHubMessageSender       `json:"sender,omitempty"`
 	SenderWorkspaceInstanceID string                       `json:"senderWorkspaceInstanceId,omitempty"`
+	SubscribeResult           bool                         `json:"subscribeResult"`
+	ResultSubscriptionStatus  string                       `json:"resultSubscriptionStatus,omitempty"`
+	ResultOperationID         string                       `json:"resultOperationId,omitempty"`
 	Type                      string                       `json:"type,omitempty"`
 	Causation                 *resourceMessageCausation    `json:"causation,omitempty"`
 	Notification              *resourceNotificationReceipt `json:"notification,omitempty"`
@@ -92,21 +100,49 @@ type resourceMailboxMessage struct {
 	LastError                 string                       `json:"lastError,omitempty"`
 	LastErrorCode             string                       `json:"lastErrorCode,omitempty"`
 	receipt                   bool
+	subscribeResultPresent    bool
+}
+
+// UnmarshalJSON keeps the public default (omitted subscribeResult means true)
+// for messages written by older Forge versions while preserving explicit false.
+func (message *resourceMailboxMessage) UnmarshalJSON(data []byte) error {
+	type mailboxMessageAlias resourceMailboxMessage
+	var decoded mailboxMessageAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	_, present := fields["subscribeResult"]
+	decoded.subscribeResultPresent = present
+	if !present {
+		decoded.SubscribeResult = true
+	}
+	if decoded.Role == "system" {
+		decoded.SubscribeResult = false
+		decoded.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
+	}
+	normalizeLegacyMailboxMessage((*resourceMailboxMessage)(&decoded))
+	*message = resourceMailboxMessage(decoded)
+	return nil
 }
 
 type resourceMessageCausation struct {
-	Type                      string `json:"type"`
-	SourceWorkspaceInstanceID string `json:"sourceWorkspaceInstanceId"`
-	SourceResourceID          string `json:"sourceResourceId"`
-	MessageID                 string `json:"messageId,omitempty"`
-	GenerationID              string `json:"generationId,omitempty"`
-	TurnID                    string `json:"turnId,omitempty"`
-	TurnReference             string `json:"turnReference,omitempty"`
-	TurnStatus                string `json:"turnStatus,omitempty"`
-	HistoryUnavailable        bool   `json:"historyUnavailable,omitempty"`
-	TerminalCode              string `json:"terminalCode,omitempty"`
-	Reason                    string `json:"reason,omitempty"`
-	ScheduleDigest            string `json:"scheduleDigest,omitempty"`
+	Type                      string   `json:"type"`
+	SourceWorkspaceInstanceID string   `json:"sourceWorkspaceInstanceId"`
+	SourceResourceID          string   `json:"sourceResourceId"`
+	MessageID                 string   `json:"messageId,omitempty"`
+	SourceMessageIDs          []string `json:"sourceMessageIds,omitempty"`
+	GenerationID              string   `json:"generationId,omitempty"`
+	TurnID                    string   `json:"turnId,omitempty"`
+	TurnReference             string   `json:"turnReference,omitempty"`
+	TurnStatus                string   `json:"turnStatus,omitempty"`
+	HistoryUnavailable        bool     `json:"historyUnavailable,omitempty"`
+	TerminalCode              string   `json:"terminalCode,omitempty"`
+	Reason                    string   `json:"reason,omitempty"`
+	ScheduleDigest            string   `json:"scheduleDigest,omitempty"`
 }
 
 type resourceNotificationReceipt struct {
@@ -160,7 +196,6 @@ type resourceStatusResponse struct {
 	Archived        bool                      `json:"archived"`
 	AcceptsMessages bool                      `json:"acceptsMessages"`
 	Binding         app.AgentBinding          `json:"binding"`
-	Creator         *app.Creator              `json:"creator,omitempty"`
 	ResolvedAgent   string                    `json:"resolvedAgent,omitempty"`
 	ResolvedProfile string                    `json:"resolvedProfile,omitempty"`
 	ConfigError     string                    `json:"configError,omitempty"`
@@ -179,28 +214,32 @@ type resourceMessageRequest struct {
 	Role                      string                 `json:"role,omitempty"`
 	Sender                    *agentHubMessageSender `json:"sender,omitempty"`
 	SenderWorkspaceInstanceID string                 `json:"senderWorkspaceInstanceId,omitempty"`
+	SubscribeResult           *bool                  `json:"subscribeResult,omitempty"`
 }
 
 type resourceMessageResponse struct {
-	MessageID         string                       `json:"messageId"`
-	ResourceID        string                       `json:"resourceId"`
-	Text              string                       `json:"text,omitempty"`
-	Receipt           bool                         `json:"receipt,omitempty"`
-	RequestedMode     string                       `json:"requestedMode"`
-	ActualMode        string                       `json:"actualMode"`
-	DowngradeReason   string                       `json:"downgradeReason,omitempty"`
-	Status            string                       `json:"status"`
-	AcceptedAt        string                       `json:"acceptedAt"`
-	PromotedAt        string                       `json:"promotedAt,omitempty"`
-	Reference         string                       `json:"reference"`
-	GenerationID      string                       `json:"generationId,omitempty"`
-	AgentHubSessionID string                       `json:"agentHubSessionId,omitempty"`
-	TurnID            string                       `json:"turnId,omitempty"`
-	LastError         string                       `json:"lastError,omitempty"`
-	LastErrorCode     string                       `json:"lastErrorCode,omitempty"`
-	Type              string                       `json:"type,omitempty"`
-	Causation         *resourceMessageCausation    `json:"causation,omitempty"`
-	Notification      *resourceNotificationReceipt `json:"notification,omitempty"`
+	MessageID                string                       `json:"messageId"`
+	ResourceID               string                       `json:"resourceId"`
+	Text                     string                       `json:"text,omitempty"`
+	Receipt                  bool                         `json:"receipt,omitempty"`
+	RequestedMode            string                       `json:"requestedMode"`
+	ActualMode               string                       `json:"actualMode"`
+	DowngradeReason          string                       `json:"downgradeReason,omitempty"`
+	Status                   string                       `json:"status"`
+	AcceptedAt               string                       `json:"acceptedAt"`
+	PromotedAt               string                       `json:"promotedAt,omitempty"`
+	Reference                string                       `json:"reference"`
+	GenerationID             string                       `json:"generationId,omitempty"`
+	AgentHubSessionID        string                       `json:"agentHubSessionId,omitempty"`
+	TurnID                   string                       `json:"turnId,omitempty"`
+	SubscribeResult          bool                         `json:"subscribeResult"`
+	ResultSubscriptionStatus string                       `json:"resultSubscriptionStatus,omitempty"`
+	ResultOperationID        string                       `json:"resultOperationId,omitempty"`
+	LastError                string                       `json:"lastError,omitempty"`
+	LastErrorCode            string                       `json:"lastErrorCode,omitempty"`
+	Type                     string                       `json:"type,omitempty"`
+	Causation                *resourceMessageCausation    `json:"causation,omitempty"`
+	Notification             *resourceNotificationReceipt `json:"notification,omitempty"`
 }
 
 type resourceAPIError struct {
@@ -209,6 +248,50 @@ type resourceAPIError struct {
 }
 
 func (e *resourceAPIError) Error() string { return e.Message }
+
+func isStableForgeResourceID(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "workspace" || value == app.SchedulerResourceID {
+		return true
+	}
+	parts := strings.Split(value, ".")
+	if len(parts) < 1 || len(parts) > 2 || !numericResourcePart(parts[0], "project") {
+		return false
+	}
+	return len(parts) == 1 || numericResourcePart(parts[1], "task")
+}
+
+func numericResourcePart(value, prefix string) bool {
+	if !strings.HasPrefix(value, prefix) {
+		return false
+	}
+	digits := strings.TrimPrefix(value, prefix)
+	if digits == "" {
+		return false
+	}
+	for _, character := range digits {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func bindMailboxResultSubscription(message *resourceMailboxMessage, turnID string) {
+	if !message.SubscribeResult {
+		message.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
+		message.ResultOperationID = ""
+		return
+	}
+	if message.Role != "agent" || message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
+		strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(turnID) == "" {
+		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
+		message.ResultOperationID = ""
+		return
+	}
+	message.ResultSubscriptionStatus = resourceResultSubscriptionPending
+	message.ResultOperationID = ""
+}
 
 func resourceMailboxPath(workspacePath string) string {
 	return filepath.Join(agentRoot(workspacePath), "mailbox.json")
@@ -277,6 +360,7 @@ func loadLegacyResourceMailboxLocked(workspacePath string) (resourceMailbox, err
 		mailbox.Messages = []resourceMailboxMessage{}
 	}
 	for _, message := range mailbox.Messages {
+		normalizeStoredMailboxMessage(&message)
 		if message.Sequence > mailbox.NextSequence {
 			mailbox.NextSequence = message.Sequence
 		}
@@ -449,6 +533,7 @@ func mailboxMessageResponse(message resourceMailboxMessage) resourceMessageRespo
 		AcceptedAt: message.AcceptedAt, PromotedAt: message.PromotedAt,
 		Reference: "messages/" + message.ID, GenerationID: message.GenerationID,
 		AgentHubSessionID: message.AgentHubSessionID, TurnID: message.TurnID,
+		SubscribeResult: message.SubscribeResult, ResultSubscriptionStatus: message.ResultSubscriptionStatus, ResultOperationID: message.ResultOperationID,
 		LastError: message.LastError, LastErrorCode: message.LastErrorCode,
 		Type: message.Type, Causation: message.Causation, Notification: message.Notification,
 	}
@@ -556,10 +641,23 @@ func acceptMailboxMessage(workspacePath, resourceID string, request resourceMess
 	}
 	resourceID = normalizedResourceID(resourceID)
 	now := time.Now().Format(time.RFC3339Nano)
+	subscribeResult := true
+	if request.SubscribeResult != nil {
+		subscribeResult = *request.SubscribeResult
+	}
+	if role == "system" {
+		subscribeResult = false
+	}
+	resultSubscriptionStatus := ""
+	if !subscribeResult {
+		resultSubscriptionStatus = resourceResultSubscriptionDisabled
+	}
 	message := resourceMailboxMessage{
 		ID: "msg-" + newRunID(), ResourceID: resourceID, Text: text,
-		Role: role, Sender: request.Sender, SenderWorkspaceInstanceID: strings.TrimSpace(request.SenderWorkspaceInstanceID), RequestedMode: mode, ActualMode: mode,
-		Status: resourceMessageQueued, AcceptedAt: now, UpdatedAt: now,
+		Role: role, Sender: request.Sender, SenderWorkspaceInstanceID: strings.TrimSpace(request.SenderWorkspaceInstanceID), SubscribeResult: subscribeResult,
+		ResultSubscriptionStatus: resultSubscriptionStatus, RequestedMode: mode, ActualMode: mode,
+		subscribeResultPresent: true,
+		Status:                 resourceMessageQueued, AcceptedAt: now, UpdatedAt: now,
 	}
 	_, err = mutateResourceMailboxForResource(workspacePath, resourceID, func(mailbox *resourceMailbox) error {
 		mailbox.NextSequence++
@@ -579,6 +677,10 @@ func acceptGeneratedMailboxMessage(workspacePath string, expected resourceMailbo
 	expected.ResourceID = normalizedResourceID(expected.ResourceID)
 	expected.Text = strings.TrimSpace(expected.Text)
 	expected.Role = "system"
+	expected.SubscribeResult = false
+	expected.ResultSubscriptionStatus = resourceResultSubscriptionDisabled
+	expected.ResultOperationID = ""
+	expected.subscribeResultPresent = true
 	expected.RequestedMode = resourceMessageModeEnqueue
 	expected.ActualMode = resourceMessageModeEnqueue
 	expected.ModeFrozen = true
@@ -668,35 +770,6 @@ func resourceExistsAndArchived(workspacePath, resourceID string) (bool, bool, ap
 	return true, value.Archived, binding, nil
 }
 
-func resourceCreator(workspacePath, resourceID string) (*app.Creator, error) {
-	resourceID = normalizedResourceID(resourceID)
-	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
-	if err != nil {
-		return nil, err
-	}
-	if resourceID == "workspace" {
-		runtime, err := forgeWorkspace.RuntimeConfig()
-		if err != nil {
-			return nil, err
-		}
-		return runtime.Creator, nil
-	}
-	if resourceID == app.SchedulerResourceID {
-		return nil, nil
-	}
-	value, err := forgeWorkspace.ResourceValue(resourceID)
-	if err != nil {
-		return nil, err
-	}
-	if value.Project != nil {
-		return value.Project.Creator, nil
-	}
-	if value.Task != nil {
-		return value.Task.Creator, nil
-	}
-	return nil, fmt.Errorf("resource creator is unavailable: %s", resourceID)
-}
-
 func waitingMailboxMessages(mailbox resourceMailbox, resourceID string) []resourceMessageResponse {
 	resourceID = normalizedResourceID(resourceID)
 	messages := make([]resourceMessageResponse, 0)
@@ -746,10 +819,6 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 		return resourceStatusResponse{}, &resourceAPIError{Code: "resource_not_found", Message: err.Error()}
 	}
 	status := resourceStatusResponse{ResourceID: resourceID, Exists: exists, Archived: archived, AcceptsMessages: exists && !archived, Binding: binding}
-	status.Creator, err = resourceCreator(workspace.Path, resourceID)
-	if err != nil {
-		return resourceStatusResponse{}, err
-	}
 	mailbox, err := loadResourceMailboxForResource(workspace.Path, resourceID)
 	if err != nil {
 		return resourceStatusResponse{}, err
@@ -851,6 +920,7 @@ func findCanonicalAgentHubMessage(ctx context.Context, client *agentHubClient, s
 			if canonical.Text != expected.Text || canonical.Role != expected.Role || !reflect.DeepEqual(canonical.Sender, expected.Sender) {
 				return agentHubInboundMessage{}, false, &resourceAPIError{Code: "message_conflict", Message: "stable message id conflicts with a different canonical AgentHub input"}
 			}
+			canonical.TurnID = event.TurnID
 			return canonical, true, nil
 		}
 		if len(events) == 0 || events[len(events)-1].ID <= cursor || events[len(events)-1].ID >= latest {
@@ -858,6 +928,29 @@ func findCanonicalAgentHubMessage(ctx context.Context, client *agentHubClient, s
 		}
 		cursor = events[len(events)-1].ID
 	}
+}
+
+// deliveredMailboxTurnID prefers the Turn ID attached to AgentHub's canonical
+// message.input event. The session response is a useful fallback for daemons
+// that return the current Turn projection but do not expose event metadata on
+// the delivery response. The pre-delivery mailbox Turn is only a last resort
+// for a steer that was already bound to an active Turn; an enqueue without an
+// exact response remains unsubscribed until a later canonical observation.
+func deliveredMailboxTurnID(ctx context.Context, client *agentHubClient, sessionID string, message resourceMailboxMessage, delivered, before agentHubSession) string {
+	if client != nil && strings.TrimSpace(sessionID) != "" {
+		if canonical, found, err := findCanonicalAgentHubMessage(ctx, client, sessionID, message); err == nil && found {
+			if turnID := strings.TrimSpace(canonical.TurnID); turnID != "" {
+				return turnID
+			}
+		}
+	}
+	if turnID := strings.TrimSpace(delivered.CurrentTurnID); turnID != "" {
+		return turnID
+	}
+	if turnID := strings.TrimSpace(before.CurrentTurnID); turnID != "" && message.ActualMode == resourceMessageModeSteer {
+		return turnID
+	}
+	return ""
 }
 
 func selectPendingMailboxMessage(mailbox resourceMailbox, resourceID string) (resourceMailboxMessage, bool) {
@@ -1438,6 +1531,15 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 							current.DowngradeReason = resourceMessageReasonRecoveredCanonical
 						}
 					}
+					turnID := strings.TrimSpace(canonical.TurnID)
+					if turnID == "" {
+						turnID = strings.TrimSpace(current.TurnID)
+					}
+					if turnID == "" && canonical.Steer {
+						turnID = strings.TrimSpace(session.CurrentTurnID)
+					}
+					current.TurnID = turnID
+					bindMailboxResultSubscription(current, turnID)
 				})
 				if persistErr != nil {
 					return persistErr
@@ -1457,11 +1559,13 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		if !stillCurrent {
 			return nil
 		}
+		turnID := deliveredMailboxTurnID(ctx, client, session.ID, message, delivered, session)
 		_, err = updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
 			current.Status = resourceMessageDelivered
 			current.DeliveredAt = time.Now().Format(time.RFC3339Nano)
 			current.TerminalAt = current.DeliveredAt
-			current.TurnID = delivered.CurrentTurnID
+			current.TurnID = turnID
+			bindMailboxResultSubscription(current, turnID)
 			current.LastError = ""
 			current.LastErrorCode = ""
 		})

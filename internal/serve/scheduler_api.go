@@ -41,7 +41,7 @@ func (s *server) handleScheduler(w http.ResponseWriter, r *http.Request, workspa
 				writeError(w, decodeErr, http.StatusBadRequest)
 				return
 			}
-			created, createErr := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: body.Description, Condition: body.Condition, Target: body.Target, Creator: app.UserCreator()})
+			created, createErr := forgeWorkspace.AddSchedule(app.CreateScheduleInput{Description: body.Description, Condition: body.Condition, Target: body.Target})
 			if createErr != nil {
 				writeError(w, createErr, http.StatusBadRequest)
 				return
