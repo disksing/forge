@@ -182,7 +182,7 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 	if session.State != "ready" && session.State != "stopping" && session.State != "stopped" {
 		return nil
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadHotResourceMailbox(workspace.Path, latest.ResourceID)
 	if err != nil {
 		return err
 	}

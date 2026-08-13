@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -102,7 +103,7 @@ func TestWorkspaceMailboxMigratesGenerationQueuesIdempotently(t *testing.T) {
 	}
 }
 
-func TestResourceMailboxVersionOneUpgradesWithoutLosingMessages(t *testing.T) {
+func TestResourceMailboxVersionOneMigratesToBoundedReceiptWithoutLosingMessage(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(agentRoot(root), 0o700); err != nil {
 		t.Fatal(err)
@@ -115,12 +116,126 @@ func TestResourceMailboxVersionOneUpgradesWithoutLosingMessages(t *testing.T) {
 	if err != nil || mailbox.Version != resourceMailboxVersion || len(mailbox.Messages) != 1 || mailbox.Messages[0].ID != "msg-v1" {
 		t.Fatalf("v1 mailbox upgrade = %#v, %v", mailbox, err)
 	}
-	if _, err := mutateResourceMailbox(root, func(*resourceMailbox) error { return nil }); err != nil {
+	if err := migrateLegacyResourceMailbox(root); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(resourceMailboxPath(root))
-	if err != nil || !strings.Contains(string(data), `"version": 2`) || !strings.Contains(string(data), `"msg-v1"`) {
-		t.Fatalf("persisted mailbox upgrade = %s, %v", data, err)
+	if err != nil || string(data) != legacy {
+		t.Fatalf("legacy mailbox was not retained as rollback evidence = %s, %v", data, err)
+	}
+	store, err := loadResourceMailboxStoreInternal(root, "workspace")
+	if err != nil || len(store.Receipts.Receipts) != 1 || store.Receipts.Receipts[0].ID != "msg-v1" {
+		t.Fatalf("migrated receipt store = %#v, %v", store.Receipts, err)
+	}
+	if message, found, lookupErr := mailboxMessageByID(root, "msg-v1"); lookupErr != nil || !found || !message.receipt || message.Text != "" {
+		t.Fatalf("migrated cold receipt lookup = %#v, found=%v err=%v", message, found, lookupErr)
+	}
+	var marker resourceMailboxMigrationMarker
+	if found, markerErr := readResourceMailboxJSON(resourceMailboxMigrationPath(root), &marker); markerErr != nil || !found || marker.Status != "committed" {
+		t.Fatalf("migration marker = %#v, found=%v err=%v", marker, found, markerErr)
+	}
+}
+
+func TestResourceMailboxReceiptRetentionReturnsStableExpiredError(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	previousCount, previousWindow := resourceMailboxReceiptRetentionCount, resourceMailboxReceiptRetentionWindow
+	previousExpiredCount, previousExpiredWindow := resourceMailboxExpiredRetentionCount, resourceMailboxExpiredRetentionWindow
+	defer func() {
+		resourceMailboxReceiptRetentionCount, resourceMailboxReceiptRetentionWindow = previousCount, previousWindow
+		resourceMailboxExpiredRetentionCount, resourceMailboxExpiredRetentionWindow = previousExpiredCount, previousExpiredWindow
+	}()
+	resourceMailboxReceiptRetentionCount = 2
+	resourceMailboxReceiptRetentionWindow = 0
+	resourceMailboxExpiredRetentionCount = 8
+	resourceMailboxExpiredRetentionWindow = 24 * time.Hour
+	now := time.Now()
+	_, err := mutateResourceMailboxForResource(root, "workspace", func(mailbox *resourceMailbox) error {
+		for index := 0; index < 3; index++ {
+			stamp := now.Add(time.Duration(index-3) * time.Minute).Format(time.RFC3339Nano)
+			mailbox.NextSequence++
+			mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+				ID: fmt.Sprintf("msg-retention-%d", index), Sequence: mailbox.NextSequence, ResourceID: "workspace",
+				Text: fmt.Sprintf("body-%d", index), Role: "user", RequestedMode: resourceMessageModeEnqueue,
+				ActualMode: resourceMessageModeEnqueue, Status: resourceMessageDelivered, AcceptedAt: stamp,
+				UpdatedAt: stamp, DeliveredAt: stamp, TerminalAt: stamp,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadResourceMailboxStoreForRead(root, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(store.Receipts.Receipts) != 2 || len(store.Receipts.Expired) != 1 {
+		t.Fatalf("receipt retention counts = receipts=%d expired=%d", len(store.Receipts.Receipts), len(store.Receipts.Expired))
+	}
+	latest, found, err := mailboxMessageByID(root, "msg-retention-2")
+	if err != nil || !found || !latest.receipt || latest.Text != "" {
+		t.Fatalf("retained receipt = %#v, found=%v err=%v", latest, found, err)
+	}
+	_, found, err = mailboxMessageByID(root, "msg-retention-0")
+	var apiErr *resourceAPIError
+	if found || !errors.As(err, &apiErr) || apiErr.Code != "message_receipt_expired" || resourceErrorStatus(err) != http.StatusGone {
+		t.Fatalf("expired receipt lookup = found=%v err=%v", found, err)
+	}
+	manager := newNotificationTestManager(t, "http://127.0.0.1:1", []guiWorkspace{{ID: "workspace", Path: root}})
+	recorder := httptest.NewRecorder()
+	manager.handleResourceMessage(recorder, httptest.NewRequest(http.MethodGet, "/messages/msg-retention-0", nil), "workspace", "msg-retention-0")
+	if recorder.Code != http.StatusGone || !strings.Contains(recorder.Body.String(), `"code":"message_receipt_expired"`) {
+		t.Fatalf("expired receipt HTTP response = %d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+func TestResourceMailboxHotStoreIsBoundedIndependentlyOfReceiptHistory(t *testing.T) {
+	root := t.TempDir()
+	if _, err := app.Initialize(root, "en"); err != nil {
+		t.Fatal(err)
+	}
+	previousCount, previousWindow := resourceMailboxReceiptRetentionCount, resourceMailboxReceiptRetentionWindow
+	defer func() {
+		resourceMailboxReceiptRetentionCount, resourceMailboxReceiptRetentionWindow = previousCount, previousWindow
+	}()
+	resourceMailboxReceiptRetentionCount = 32
+	resourceMailboxReceiptRetentionWindow = 0
+	const completed = 10000
+	_, err := mutateResourceMailboxForResource(root, "workspace", func(mailbox *resourceMailbox) error {
+		for index := 0; index < completed; index++ {
+			stamp := "2026-08-13T00:00:00Z"
+			mailbox.NextSequence++
+			mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+				ID: "msg-scale-" + fmt.Sprint(index), Sequence: mailbox.NextSequence, ResourceID: "workspace",
+				Text: "completed body that must leave hot storage", Role: "user", RequestedMode: resourceMessageModeEnqueue,
+				ActualMode: resourceMessageModeEnqueue, Status: resourceMessageDelivered, AcceptedAt: stamp,
+				UpdatedAt: stamp, DeliveredAt: stamp, TerminalAt: stamp,
+			})
+		}
+		mailbox.NextSequence++
+		mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
+			ID: "msg-scale-pending", Sequence: mailbox.NextSequence, ResourceID: "workspace", Text: "pending body",
+			Role: "user", RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
+			Status: resourceMessageQueued, AcceptedAt: time.Now().Format(time.RFC3339Nano), UpdatedAt: time.Now().Format(time.RFC3339Nano),
+		})
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hot, err := loadHotResourceMailbox(root, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := loadResourceMailboxStoreForRead(root, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hot.Messages) != 1 || hot.Messages[0].ID != "msg-scale-pending" || len(store.Receipts.Receipts) != 32 {
+		t.Fatalf("hot/receipt scale bounds = hot=%d %#v receipts=%d", len(hot.Messages), hot.Messages, len(store.Receipts.Receipts))
 	}
 }
 

@@ -57,11 +57,31 @@ func latestSchedulerTick(mailbox resourceMailbox) (resourceMailboxMessage, bool)
 	return latest, found
 }
 
-func cancelPendingSchedulerTicks(workspacePath string) error {
-	_, err := mutateResourceMailbox(workspacePath, func(mailbox *resourceMailbox) error {
+func cancelPendingSchedulerTicks(ctx context.Context, workspacePath string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	store, err := loadResourceMailboxStoreForRead(workspacePath, app.SchedulerResourceID)
+	if err != nil {
+		return err
+	}
+	needsMutation := false
+	for _, message := range store.Mailbox.Messages {
+		if message.ResourceID == app.SchedulerResourceID && message.Type == resourceMessageTypeSchedulerTick && message.Status == resourceMessageQueued {
+			needsMutation = true
+			break
+		}
+	}
+	if !needsMutation {
+		return nil
+	}
+	_, err = mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		now := time.Now().Format(time.RFC3339Nano)
-		for index := range mailbox.Messages {
-			message := &mailbox.Messages[index]
+		for index := range store.Mailbox.Messages {
+			message := &store.Mailbox.Messages[index]
 			if message.ResourceID != app.SchedulerResourceID || message.Type != resourceMessageTypeSchedulerTick || message.Status != resourceMessageQueued {
 				continue
 			}
@@ -71,6 +91,51 @@ func cancelPendingSchedulerTicks(workspacePath string) error {
 			message.LastErrorCode = "scheduler_empty"
 			message.LastError = "Scheduler tick was cancelled because the schedule list is empty"
 		}
+		store.Scheduler = schedulerCheckpointFromMessages(app.SchedulerResourceID, store.Mailbox.Messages)
+		return nil
+	})
+	return err
+}
+
+func markSchedulerTickTerminal(workspacePath string, message resourceMailboxMessage, turn agentHubTurn) error {
+	terminalAt := strings.TrimSpace(turn.EndedAt)
+	if terminalAt == "" {
+		terminalAt = strings.TrimSpace(turn.CompletedAt)
+	}
+	if terminalAt == "" {
+		terminalAt = time.Now().Format(time.RFC3339Nano)
+	}
+	_, err := mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
+		for index := range store.Mailbox.Messages {
+			if store.Mailbox.Messages[index].ID == message.ID {
+				store.Mailbox.Messages[index].TurnTerminalAt = terminalAt
+				if strings.TrimSpace(turn.TurnID) != "" {
+					store.Mailbox.Messages[index].TurnID = turn.TurnID
+				}
+			}
+		}
+		store.Scheduler = schedulerCheckpointFromMessages(app.SchedulerResourceID, store.Mailbox.Messages)
+		store.Scheduler.TurnTerminalAt = terminalAt
+		store.Scheduler.TurnStatus = strings.TrimSpace(turn.Status)
+		return nil
+	})
+	return err
+}
+
+func checkpointSchedulerTickMessage(workspacePath string, message resourceMailboxMessage) error {
+	_, err := mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
+		store.Scheduler = schedulerCheckpointFromMessages(app.SchedulerResourceID, store.Mailbox.Messages)
+		if store.Scheduler.LastTickMessageID == "" {
+			store.Scheduler.LastTickMessageID = message.ID
+			store.Scheduler.GenerationID = message.GenerationID
+			store.Scheduler.AgentHubSessionID = message.AgentHubSessionID
+			store.Scheduler.TurnID = message.TurnID
+			if message.Causation != nil {
+				store.Scheduler.ConfigDigest = message.Causation.ScheduleDigest
+				store.Scheduler.Reason = message.Causation.Reason
+			}
+			store.Scheduler.AcceptedAt = message.AcceptedAt
+		}
 		return nil
 	})
 	return err
@@ -78,10 +143,14 @@ func cancelPendingSchedulerTicks(workspacePath string) error {
 
 func schedulerTickTerminal(ctx context.Context, workspacePath string, message resourceMailboxMessage, client *agentHubClient) (agentHubTurn, bool, error) {
 	if message.Status == resourceMessageUndeliverable || message.Status == resourceMessageDeliveryUnknown {
+		_ = markSchedulerTickTerminal(workspacePath, message, agentHubTurn{Status: message.Status, Closed: true, EndedAt: message.TerminalAt})
 		return agentHubTurn{Status: message.Status, Closed: true, EndedAt: message.TerminalAt}, true, nil
 	}
 	if message.Status != resourceMessageDelivered || strings.TrimSpace(message.GenerationID) == "" {
 		return agentHubTurn{}, false, nil
+	}
+	if strings.TrimSpace(message.TurnTerminalAt) != "" {
+		return agentHubTurn{TurnID: message.TurnID, Status: "completed", Closed: true, EndedAt: message.TurnTerminalAt}, true, nil
 	}
 	run, found, err := runByGenerationID(workspacePath, message.GenerationID)
 	if err != nil {
@@ -99,22 +168,34 @@ func schedulerTickTerminal(ctx context.Context, workspacePath string, message re
 			_, _ = updateMailboxMessage(workspacePath, message.ID, func(current *resourceMailboxMessage) {
 				current.TurnID = turn.TurnID
 			})
+			if turn.Closed {
+				_ = markSchedulerTickTerminal(workspacePath, message, turn)
+			}
 			return turn, turn.Closed, nil
 		}
 		if !isLiveAgentStatus(run.Status) {
-			return agentHubTurn{Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}, true, nil
+			terminal := agentHubTurn{Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+			_ = markSchedulerTickTerminal(workspacePath, message, terminal)
+			return terminal, true, nil
 		}
 		return agentHubTurn{}, false, nil
 	}
 	turn, _, turnErr := client.SessionTurn(ctx, run.AgentHubSessionID, message.TurnID)
 	if turnErr == nil {
+		if turn.Closed {
+			_ = markSchedulerTickTerminal(workspacePath, message, turn)
+		}
 		return turn, turn.Closed, nil
 	}
 	if run.CompletionMarker != "" && run.CompletionTurnID == message.TurnID {
-		return agentHubTurn{TurnID: message.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}, true, nil
+		terminal := agentHubTurn{TurnID: message.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}
+		_ = markSchedulerTickTerminal(workspacePath, message, terminal)
+		return terminal, true, nil
 	}
 	if !isLiveAgentStatus(run.Status) {
-		return agentHubTurn{TurnID: message.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}, true, nil
+		terminal := agentHubTurn{TurnID: message.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+		_ = markSchedulerTickTerminal(workspacePath, message, terminal)
+		return terminal, true, nil
 	}
 	return agentHubTurn{}, false, turnErr
 }
@@ -159,6 +240,9 @@ func (m *agentManager) reconcileSchedulerLocked(ctx context.Context, workspace g
 }
 
 func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
@@ -177,16 +261,37 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWork
 		return err
 	}
 	if len(config.Schedules) == 0 {
-		return cancelPendingSchedulerTicks(workspace.Path)
+		return cancelPendingSchedulerTicks(ctx, workspace.Path)
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadResourceMailboxForResource(workspace.Path, app.SchedulerResourceID)
 	if err != nil {
 		return err
 	}
-	if pendingSchedulerTick(mailbox) {
+	hot := resourceMailbox{Version: mailbox.Version, NextSequence: mailbox.NextSequence, Messages: []resourceMailboxMessage{}}
+	for _, message := range mailbox.Messages {
+		if !message.receipt {
+			hot.Messages = append(hot.Messages, message)
+		}
+	}
+	if pendingSchedulerTick(hot) {
 		return nil
 	}
 	last, found := latestSchedulerTick(mailbox)
+	store, storeErr := loadResourceMailboxStoreForRead(workspace.Path, app.SchedulerResourceID)
+	if storeErr != nil {
+		return storeErr
+	}
+	if !found && strings.TrimSpace(store.Scheduler.LastTickMessageID) != "" {
+		checkpoint := store.Scheduler
+		last = resourceMailboxMessage{
+			ID: checkpoint.LastTickMessageID, ResourceID: app.SchedulerResourceID,
+			Status: resourceMessageDelivered, AcceptedAt: checkpoint.AcceptedAt,
+			GenerationID: checkpoint.GenerationID, AgentHubSessionID: checkpoint.AgentHubSessionID, TurnID: checkpoint.TurnID,
+			TurnTerminalAt: checkpoint.TurnTerminalAt,
+			Causation:      &resourceMessageCausation{Type: resourceMessageTypeSchedulerTick, SourceWorkspaceInstanceID: mailboxInstanceID(workspace.Path), SourceResourceID: app.SchedulerResourceID, Reason: checkpoint.Reason, ScheduleDigest: checkpoint.ConfigDigest},
+		}
+		found = true
+	}
 	reason, basis := "", ""
 	if !found {
 		if observedBefore && previousDigest != digest {
@@ -237,8 +342,17 @@ func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWork
 			SourceResourceID: app.SchedulerResourceID, Reason: reason, ScheduleDigest: digest,
 		},
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	accepted, err := acceptGeneratedMailboxMessage(workspace.Path, message)
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := checkpointSchedulerTickMessage(workspace.Path, accepted); err != nil {
 		return err
 	}
 	if accepted.Status == resourceMessageQueued || accepted.Status == resourceMessageDelivering || accepted.Status == resourceMessageInterrupting {
