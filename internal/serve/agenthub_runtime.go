@@ -1093,6 +1093,12 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 		}
 	}
 	rt.applyAgentHubSessionState(m, session)
+	updated := rt.snapshotRun()
+	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
+		if err := m.reconcileIdleGeneration(ctx, workspace, updated, session, client); err != nil {
+			rt.addForgeNotice(m, "warning", "resource/idle-sleep", err.Error())
+		}
+	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
 		go m.retireResourceGeneration(context.Background(), rt)
 	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {

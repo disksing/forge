@@ -108,6 +108,7 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	manager.now = func() time.Time { return time.Date(2026, 8, 1, 0, 0, 20, 0, time.UTC) }
 	cfg, _, err := manager.agentHubRuntimeConfig()
 	if err != nil {
 		t.Fatal(err)
@@ -579,6 +580,8 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 		ID: "run-idle", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_idle",
 		SourceExternalID: workspace.ID + "/run-idle", Status: "idle",
 		CompletionSessionID: "ses_idle",
+		IdleSinceAt:         "2026-08-01T00:00:10Z",
+		IdleDeadlineAt:      "2026-08-01T00:30:10Z",
 		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
 		LastOutputAt: "2026-08-01T00:00:10Z",
 	}, agentHubSession{ID: "ses_idle", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})

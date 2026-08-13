@@ -5485,6 +5485,12 @@ var tc = 20, nc = 250, rc = 80, ic = /* @__PURE__ */ new Set(["session.launch-en
 	turnReferenceForEvent(e, t, n) {
 		return [...e.segments.values()].filter((e) => e.generation.generationId === t).flatMap((e) => e.turns || []).find((e) => n >= e.startEventId && n <= e.lastEventId)?.reference || "";
 	}
+	openTurnReferenceForEvent(e, t) {
+		let n = String(t.turnId || "");
+		if (!n) return "";
+		let r = this.findTurnById(e, e.generationId, n);
+		return r && !r.closed ? r.reference : "";
+	}
 	eventBelongsToContext(e, t) {
 		let n = String(t.sessionId || "");
 		return !n || !e.status?.session?.id || n === e.status.session.id;
@@ -5502,7 +5508,7 @@ var tc = 20, nc = 250, rc = 80, ic = /* @__PURE__ */ new Set(["session.launch-en
 		let n = e.pendingEvents;
 		e.pendingEvents = [];
 		for (let t of n) {
-			let n = this.turnReferenceForEvent(e, e.generationId, Number(t.id));
+			let n = this.turnReferenceForEvent(e, e.generationId, Number(t.id)) || this.openTurnReferenceForEvent(e, t);
 			if (n) e.liveEvents.set(n, Js(Ks(e.liveEvents.get(n) || [], [t])));
 			else {
 				let n = String(t.turnId || "current");

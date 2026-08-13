@@ -137,6 +137,9 @@ type resourceGenerationStatus struct {
 	GenerationID       string `json:"generationId"`
 	Status             string `json:"status"`
 	ReplacementPending bool   `json:"replacementPending"`
+	IdleSinceAt        string `json:"idleSinceAt,omitempty"`
+	IdleDeadlineAt     string `json:"idleDeadlineAt,omitempty"`
+	IdleSleepRequested bool   `json:"idleSleepRequested,omitempty"`
 	TurnNumber         int    `json:"turnNumber,omitempty"`
 	AgentHubSessionID  string `json:"agentHubSessionId,omitempty"`
 }
@@ -779,8 +782,10 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 	status.Generation = &resourceGenerationStatus{
 		Generation: run.Generation, GenerationID: run.GenerationID,
 		Status: run.Status, ReplacementPending: run.ReplacementPending,
-		TurnNumber:        run.TurnNumber,
-		AgentHubSessionID: run.AgentHubSessionID,
+		IdleSinceAt: run.IdleSinceAt, IdleDeadlineAt: run.IdleDeadlineAt,
+		IdleSleepRequested: run.IdleSleepStopRequested,
+		TurnNumber:         run.TurnNumber,
+		AgentHubSessionID:  run.AgentHubSessionID,
 	}
 	if strings.TrimSpace(run.AgentHubSessionID) == "" || cfgErr != nil {
 		status.State = publicResourceState(archived, unavailableReason, status.Generation, nil, "")
@@ -1100,6 +1105,14 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 				recordMailboxFailure(workspace.Path, message.ID, err)
 				return err
 			}
+		}
+		// Automatic sleep owns the old generation until Stop has been
+		// confirmed and Archive has completed. A message accepted after the
+		// irreversible boundary remains in the Workspace mailbox; it must not
+		// be sent to the stopping/stopped Session or create a second generation
+		// beside it.
+		if run.IdleSleepStopRequested || resourceGenerationLifecyclePending(run) {
+			return nil
 		}
 		if run.ReplacementPending && message.Status == resourceMessageQueued {
 			if message.RequestedMode == resourceMessageModeSteer {

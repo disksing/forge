@@ -59,6 +59,62 @@ func TestInitializeCreatesSchedulerResource(t *testing.T) {
 	}
 }
 
+func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Guidance project", "guidance")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Guidance task", Slug: "guidance"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectDetail, err := workspace.Resource(project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskDetail, err := workspace.Resource(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paths := []string{
+		filepath.Join(root, "AGENTS.md"),
+		filepath.Join(workspace.SchedulerDir(), "AGENTS.md"),
+		filepath.Join(root, projectDetail.Path, "AGENTS.md"),
+		filepath.Join(root, taskDetail.Path, "AGENTS.md"),
+	}
+	rootAgents, err := os.ReadFile(paths[0])
+	if err != nil || !strings.Contains(string(rootAgents), "30 minutes of continuous idle") {
+		t.Fatalf("English generation guidance missing from Workspace root: %v\n%s", err, rootAgents)
+	}
+	if err := workspace.Migrate("zh-CN"); err != nil {
+		t.Fatal(err)
+	}
+	rootAgents, err = os.ReadFile(paths[0])
+	if err != nil || !strings.Contains(string(rootAgents), "连续空闲 30 分钟") {
+		t.Fatalf("Chinese generation guidance missing from Workspace root: %v\n%s", err, rootAgents)
+	}
+	projectAgents, err := os.ReadFile(paths[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	taskAgents, err := os.ReadFile(paths[3])
+	if err != nil {
+		t.Fatal(err)
+	}
+	schedulerAgents, err := os.ReadFile(paths[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projectAgents), "../AGENTS.md") || !strings.Contains(string(taskAgents), "../../AGENTS.md") || !strings.Contains(string(schedulerAgents), "../AGENTS.md") {
+		t.Fatal("resource prompts no longer inherit the Workspace root guidance")
+	}
+}
+
 func TestScheduleLifecycleValidatesTargetsAndPreservesProvenance(t *testing.T) {
 	workspace, err := app.Initialize(t.TempDir(), "en")
 	if err != nil {

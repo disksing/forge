@@ -390,12 +390,20 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 		turnFinished = (previousState == "running" || previousState == "waiting_approval") &&
 			(session.State == "ready" || session.State == "stopped")
 		runtime.run.Status = forgeStatusForAgentHubState(session.State)
+		m.projectResourceIdleState(&runtime.run, session, previousState, turnFinished)
 		runtime.run.AgentHubStoppedObserved = runtime.run.AgentHubStoppedObserved || session.State == "stopped"
 		if session.State == "stopped" {
-			// The durable terminal state resolves any ambiguity around the stop
-			// action. Clear the guard so an explicit out-of-band resume can be
-			// reclaimed again while the resource remains archived.
-			runtime.run.ArchivedTaskStopRequested = false
+			if runtime.run.IdleSleepStopRequested {
+				// Automatic sleep owns the full Stop -> Archive sequence. A stopped
+				// projection alone must not release the Forge session or clear the
+				// retry guard before Archive is confirmed.
+				runtime.run.AgentHubStoppedObserved = false
+			} else {
+				// The durable terminal state resolves any ambiguity around the stop
+				// action. Clear the guard so an explicit out-of-band resume can be
+				// reclaimed again while the resource remains archived.
+				runtime.run.ArchivedTaskStopRequested = false
+			}
 			runtime.agentHubStopRequested = false
 		}
 		if session.State == "ready" || session.State == "starting" {
@@ -468,13 +476,20 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 		rt.agentHub = client
 	}
 	rt.mu.Unlock()
+	if turnFinished {
+		// Mark the completion inspection before idle reconciliation can run. The
+		// terminal event timestamp, rather than this poll's ready projection,
+		// establishes the next durable idle boundary.
+		rt.prepareTurnCompletion(session)
+		rt.markTurnCompletionPending()
+	}
 
 	// A turn ends when the session leaves running/waiting_approval for ready or
 	// stopped. Record the durable completion before publishing the final state.
 	if turnFinished {
 		go func() {
 			rt.handleTurnFinished(m, session)
-			if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+			if session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
 		}()
@@ -482,11 +497,11 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 	if !turnFinished && (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
 		go func() {
 			rt.recordTurnCompletion(session)
-			if session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+			if session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
 		}()
-	} else if !turnFinished && session.State == "stopped" && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
+	} else if !turnFinished && session.State == "stopped" && !updated.IdleSleepStopRequested && updated.AgentHubStoppedObserved && strings.TrimSpace(updated.ForgeSessionID) != "" {
 		// Idempotent: releases the Forge session on the stopped edge and
 		// retries a release that failed on an earlier poll.
 		go rt.releaseForgeSessionAfterStopped(m)
@@ -499,6 +514,11 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message retry failed: "+err.Error())
 			}
 		}()
+	}
+	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
+		if err := m.reconcileIdleGeneration(ctx, workspace, updated, session, client); err != nil {
+			rt.addForgeNotice(m, "warning", "resource/idle-sleep", err.Error())
+		}
 	}
 }
 
@@ -608,9 +628,14 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		}
 		runtime.agentHubState = session.State
 		runtime.run.Status = forgeStatusForAgentHubState(session.State)
+		m.projectResourceIdleState(&runtime.run, session, previousState, turnFinished)
 		if session.State == "stopped" {
-			runtime.run.AgentHubStoppedObserved = true
-			runtime.run.ArchivedTaskStopRequested = false
+			if runtime.run.IdleSleepStopRequested {
+				runtime.run.AgentHubStoppedObserved = false
+			} else {
+				runtime.run.AgentHubStoppedObserved = true
+				runtime.run.ArchivedTaskStopRequested = false
+			}
 			runtime.agentHubStopRequested = false
 		}
 		if session.State == "ready" || session.State == "starting" {
@@ -649,20 +674,26 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		go rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
 	}
 	if turnFinished {
+		// Keep the idle sleeper behind the same durable terminal inspection when
+		// an action response, rather than the poller, observes the ready edge.
+		rt.prepareTurnCompletion(session)
+		rt.markTurnCompletionPending()
+	}
+	if turnFinished {
 		go func() {
 			rt.handleTurnFinished(m, session)
-			if session.State == "stopped" {
+			if session.State == "stopped" && !run.IdleSleepStopRequested {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
 		}()
 	} else if (session.State == "ready" || session.State == "stopped") && rt.completionHistoryPending(session) {
 		go func() {
 			rt.recordTurnCompletion(session)
-			if session.State == "stopped" {
+			if session.State == "stopped" && !run.IdleSleepStopRequested {
 				rt.releaseForgeSessionAfterStopped(m)
 			}
 		}()
-	} else if run.Status == "stopped" && run.AgentHubStoppedObserved {
+	} else if run.Status == "stopped" && !run.IdleSleepStopRequested && run.AgentHubStoppedObserved {
 		go rt.releaseForgeSessionAfterStopped(m)
 	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {

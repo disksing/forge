@@ -167,6 +167,49 @@ describe("resource conversation controller", () => {
     expect(latest.blocks).toEqual([]);
   });
 
+  it("keeps streamed events of the open turn inside its block instead of a transient orphan block", async () => {
+    const open = turn(3, "turn-a", 5, 7, false);
+    let historyCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      historyCalls++;
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const stream = FakeEventSource.instances[0];
+    // The open summary still ends at event 7; both streamed events are newer
+    // than the fetched head but clearly belong to the open turn.
+    stream.emit({ id: 8, type: "tool.event", turnId: "turn-a", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"] } } } });
+    stream.emit({ id: 9, type: "tool.event", turnId: "turn-a", sessionId: "session-3", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"], status: "completed" } } } });
+    await vi.waitFor(() => expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([8, 9]));
+    expect(latest.blocks).toHaveLength(1);
+    expect(latest.blocks[0].key).toBe("gen-3:turn-a");
+    // Events placed directly in the turn no longer detour through the orphan
+    // path, so no extra head refresh is needed.
+    expect(historyCalls).toBe(1);
+  });
+
+  it("still orphans and head-refreshes streamed events of an unknown turn", async () => {
+    const open = turn(3, "turn-a", 5, 7, false);
+    let historyCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async () => {
+      historyCalls++;
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [open] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl, { streamBatchWindowMs: 0 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    FakeEventSource.instances[0].emit({ id: 8, type: "tool.event", turnId: "turn-b", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["ls"] } } } });
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(2));
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a", "gen-3:turn-b:8"]);
+    await vi.waitFor(() => expect(historyCalls).toBe(2));
+  });
+
   it("places session-level lifecycle events in chronological order among turns", async () => {
     const closedTurn = turn(3, "turn-a", 4, 7);
     const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closedTurn] }], page: { limit: 20, hasMore: false } }));
