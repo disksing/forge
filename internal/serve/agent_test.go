@@ -56,10 +56,10 @@ func TestResourceUploadRejectsEscapingUploadSymlink(t *testing.T) {
 
 func TestSafeUploadNameRemovesPathsAndUnsafeCharacters(t *testing.T) {
 	for input, want := range map[string]string{
-		"../../notes.md":      "notes.md",
-		`..\..\windows.txt`:   "windows.txt",
-		"bad\x00name?.png":    "bad_name_.png",
-		" . ":                 "upload",
+		"../../notes.md":    "notes.md",
+		`..\..\windows.txt`: "windows.txt",
+		"bad\x00name?.png":  "bad_name_.png",
+		" . ":               "upload",
 		"截图 1.png":          "截图 1.png",
 	} {
 		if got := safeUploadName(input); got != want {

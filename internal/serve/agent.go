@@ -166,28 +166,28 @@ type agentRuntime struct {
 }
 
 type agentManager struct {
-	server           *server
-	mu               sync.Mutex
-	resourceMu       sync.Mutex
-	runtimes         map[string]*agentRuntime
-	subscribers      map[string]map[chan agentStreamMessage]bool
-	schedulerDigests map[string]string
-	now              func() time.Time
-	idleSleepAfter   time.Duration
+	server                *server
+	mu                    sync.Mutex
+	resourceControllersMu sync.Mutex
+	resourceControllers   map[string]*resourceController
+	runtimes              map[string]*agentRuntime
+	subscribers           map[string]map[chan agentStreamMessage]bool
+	schedulerDigests      map[string]string
+	now                   func() time.Time
+	idleSleepAfter        time.Duration
 }
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
-		server:           s,
-		runtimes:         make(map[string]*agentRuntime),
-		subscribers:      make(map[string]map[chan agentStreamMessage]bool),
-		schedulerDigests: make(map[string]string),
-		now:              time.Now,
-		idleSleepAfter:   defaultResourceIdleSleepAfter,
+		server:              s,
+		resourceControllers: make(map[string]*resourceController),
+		runtimes:            make(map[string]*agentRuntime),
+		subscribers:         make(map[string]map[chan agentStreamMessage]bool),
+		schedulerDigests:    make(map[string]string),
+		now:                 time.Now,
+		idleSleepAfter:      defaultResourceIdleSleepAfter,
 	}
 }
-
-
 
 func storeAgentUpload(w http.ResponseWriter, r *http.Request, workspacePath, cwd string) {
 	r.Body = http.MaxBytesReader(w, r.Body, agentUploadMaxBytes)
@@ -310,7 +310,6 @@ func createUniqueUpload(dir, name string) (string, string, *os.File, error) {
 	}
 }
 
-
 func isAgentHubRun(run agentRun) bool {
 	return strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != ""
 }
@@ -394,7 +393,6 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, 
 	return dirAbs, nil
 }
 
-
 func (m *agentManager) registerRuntime(rt *agentRuntime) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -406,10 +404,6 @@ func (m *agentManager) removeRuntime(runID string) {
 	defer m.mu.Unlock()
 	delete(m.runtimes, runID)
 }
-
-
-
-
 
 func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	_, rt, err := m.workspaceRuntime(workspaceID, runID)
@@ -676,7 +670,6 @@ func isAgentHubTurnTerminal(eventType string) bool {
 		return false
 	}
 }
-
 
 // mutateRun is the single serialized persistence boundary for an existing
 // generation. The in-memory projection is published only after the complete

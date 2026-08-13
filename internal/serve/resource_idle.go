@@ -12,7 +12,8 @@ import (
 // mailbox message accepted after Stop has become irreversible must wait for
 // this generation to finish instead of creating a second live generation.
 func resourceGenerationLifecyclePending(run agentRun) bool {
-	return run.Status == "stopped" && (run.IdleSleepStopRequested || run.ReplacementPending || run.ArchivedTaskStopRequested)
+	return (run.Status == "stopping" || run.Status == "stopped") &&
+		(run.IdleSleepStopRequested || run.ReplacementPending || run.ArchivedTaskStopRequested)
 }
 
 func (m *agentManager) resourceIdleSleepAfter() time.Duration {
@@ -85,15 +86,15 @@ func (m *agentManager) idleDeadlineDue(run agentRun) bool {
 }
 
 func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace guiWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
-	m.resourceMu.Lock()
-	defer m.resourceMu.Unlock()
-	return m.reconcileIdleGenerationLocked(ctx, workspace, observed, observedSession, client)
+	return m.withResourceController(ctx, workspace, observed.ResourceID, func() error {
+		return m.reconcileIdleGenerationLocked(ctx, workspace, observed, observedSession, client)
+	})
 }
 
 // reconcileIdleGenerationLocked is called after the normal AgentHub
-// projection and under resourceMu. It re-reads the exact generation and
-// Session before persisting the Stop guard, so an old poll response cannot
-// stop a replacement generation.
+// projection and under the resource controller. It re-reads the exact
+// generation and Session before persisting the Stop guard, so an old poll
+// response cannot stop a replacement generation.
 func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, workspace guiWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
 	if strings.TrimSpace(observed.GenerationID) == "" || client == nil {
 		return nil
@@ -220,6 +221,9 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 	if err != nil || !started {
 		return err
 	}
-	go m.retireResourceGeneration(context.WithoutCancel(ctx), rt)
+	_ = m.enqueueResourceController(workspace, run.ResourceID, func() error {
+		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
+		return nil
+	})
 	return nil
 }

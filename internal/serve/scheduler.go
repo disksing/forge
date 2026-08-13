@@ -148,10 +148,17 @@ func findSchedulerTickTurn(ctx context.Context, client *agentHubClient, sessionI
 	return best, found && best.TurnID != "", nil
 }
 
-// reconcileSchedulerLocked is called under resourceMu. It converts elapsed
-// Server time and durable Scheduler configuration changes into ordinary
-// enqueue-only mailbox messages. AgentHub remains the canonical Turn owner.
+// reconcileSchedulerLocked serializes Scheduler reconciliation with the
+// Scheduler resource controller. It converts elapsed Server time and durable
+// Scheduler configuration changes into ordinary enqueue-only mailbox
+// messages. AgentHub remains the canonical Turn owner.
 func (m *agentManager) reconcileSchedulerLocked(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+	return m.withResourceController(ctx, workspace, app.SchedulerResourceID, func() error {
+		return m.reconcileScheduler(ctx, workspace, client)
+	})
+}
+
+func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return err
