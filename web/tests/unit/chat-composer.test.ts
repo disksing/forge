@@ -208,4 +208,47 @@ describe("ChatComposer", () => {
 
     expect(target.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')?.disabled).toBe(true);
   });
+
+  it("keeps send and end-turn icons static and toggles busy state through classes", async () => {
+    const channel = createModelChannel(model({ canEndTurn: true }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const send = target.querySelector<HTMLButtonElement>(".tty-send-button")!;
+    const endTurn = target.querySelector<HTMLButtonElement>("#agentEndTurnButton")!;
+    // Idle and busy icons are both rendered statically so the lucide
+    // createIcons replacement never needs a later name update.
+    expect(send.querySelector('i[data-lucide="send"]')).not.toBeNull();
+    expect(send.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(endTurn.querySelector('i[data-lucide="pause"]')).not.toBeNull();
+    expect(endTurn.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
+    expect(send.classList.contains("busy")).toBe(false);
+    expect(endTurn.classList.contains("busy")).toBe(false);
+  });
+
+  it("switches the send button to its busy class while a send is in flight", async () => {
+    const result = deferred<{ accepted: boolean; clear: boolean }>();
+    const channel = createModelChannel(model({ onSend: vi.fn(() => result.promise) }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "send me";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    await tick();
+
+    const send = target.querySelector<HTMLButtonElement>(".tty-send-button")!;
+    expect(send.classList.contains("busy")).toBe(true);
+    expect(send.disabled).toBe(true);
+
+    result.resolve({ accepted: true, clear: true });
+    await result.promise;
+    await tick();
+    expect(send.classList.contains("busy")).toBe(false);
+  });
 });

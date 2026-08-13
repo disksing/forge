@@ -144,9 +144,9 @@
       <div class="tty-composer-options">
         <span class="tty-agent-binding"><AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={blocked || model.bindingSaving} ariaLabel="Binding target" onSelect={selectBinding} /></span>
         {#if model.canEndTurn}
-          <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><Icon name={model.endingTurn ? "loader-circle" : "pause"} /></button>
+          <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" class:busy={model.endingTurn} disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><span class="tty-composer-icon tty-composer-icon-idle"><Icon name="pause" /></span><span class="tty-composer-icon tty-composer-icon-busy"><Icon name="loader-circle" /></span></button>
         {/if}
-        <button type="submit" class="tty-send-button" title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><Icon name={sending ? "loader-circle" : "send"} /></button>
+        <button type="submit" class="tty-send-button" class:busy={sending} title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><span class="tty-composer-icon tty-composer-icon-idle"><Icon name="send" /></span><span class="tty-composer-icon tty-composer-icon-busy"><Icon name="loader-circle" /></span></button>
       </div>
     </div>
   </form>
