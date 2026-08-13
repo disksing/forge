@@ -205,6 +205,14 @@
   color: var(--faint-on-dark);
 }
 
+:where([data-component-owner="project-tree"]) .tree-item .chevron svg {
+  transition: transform 150ms ease;
+}
+
+:where([data-component-owner="project-tree"]) .tree-item .chevron.expanded svg {
+  transform: rotate(90deg);
+}
+
 :where([data-component-owner="project-tree"]) .tree-icon {
   color: var(--faint-on-dark);
 }
