@@ -201,7 +201,9 @@
 }
 
 /* The composer sits at the bottom of the viewport, so the menu opens upward
-   and scrolls within its own bounds instead of clipping off-screen. */
+   and scrolls within its own bounds instead of clipping off-screen. The
+   260px cap is a fallback; AgentBindingSelector measures the space above the
+   button and raises the cap so long agent lists stay visible. */
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-menu {
   position: absolute;
   right: 0;

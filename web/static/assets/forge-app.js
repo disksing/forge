@@ -3099,39 +3099,49 @@ Sr(["click"]);
 var ua = /* @__PURE__ */ W("<button type=\"button\" class=\"agent-binding-option\" role=\"option\"><span class=\"agent-binding-option-label\"> </span> <!></button>"), da = /* @__PURE__ */ W("<div class=\"agent-binding-group\" role=\"group\" aria-label=\"Profiles\"><div class=\"agent-binding-group-title\">Profiles</div> <!></div>"), fa = /* @__PURE__ */ W("<div class=\"agent-binding-group\" role=\"group\" aria-label=\"Agents\"><div class=\"agent-binding-group-title\">Agents</div> <!></div>"), pa = /* @__PURE__ */ W("<div class=\"agent-binding-menu\" role=\"listbox\" tabindex=\"-1\"><!> <!></div>"), ma = /* @__PURE__ */ W("<span class=\"agent-binding\"><button type=\"button\" class=\"agent-binding-button\" aria-haspopup=\"listbox\"><span class=\"agent-binding-label\"> </span> <!></button> <!></span>");
 function ha(e, t) {
 	j(t, !0);
-	let n = Ai(t, "disabled", 3, !1), r = Ai(t, "ariaLabel", 3, "Agent binding"), i = /* @__PURE__ */ N(p), a = /* @__PURE__ */ N(m), o = /* @__PURE__ */ N(() => h(t.value)), s = /* @__PURE__ */ N(() => [...H(i), ...H(a)].find((e) => h(e.value) === H(o))?.label || t.value.name || "Unavailable"), c = /* @__PURE__ */ F(!1), l = /* @__PURE__ */ F(void 0), u = /* @__PURE__ */ F(void 0);
+	let n = Ai(t, "disabled", 3, !1), r = Ai(t, "ariaLabel", 3, "Agent binding"), i = /* @__PURE__ */ N(m), a = /* @__PURE__ */ N(h), o = /* @__PURE__ */ N(() => g(t.value)), s = /* @__PURE__ */ N(() => [...H(i), ...H(a)].find((e) => g(e.value) === H(o))?.label || t.value.name || "Unavailable"), c = /* @__PURE__ */ F(!1), l = /* @__PURE__ */ F(void 0), u = /* @__PURE__ */ F(void 0);
 	bn(() => {
 		if (!H(c) || !H(u)) return;
+		d();
 		let e = H(u).querySelector("[aria-selected=\"true\"]") ?? H(u).querySelector(".agent-binding-option");
 		lr().then(() => e?.focus());
 	}), ji(() => {
 		let e = (e) => {
 			H(c) && e.target instanceof Node && !H(l)?.contains(e.target) && I(c, !1);
+		}, t = () => {
+			H(c) && d();
 		};
-		return document.addEventListener("mousedown", e), () => document.removeEventListener("mousedown", e);
+		return document.addEventListener("mousedown", e), window.addEventListener("resize", t), () => {
+			document.removeEventListener("mousedown", e), window.removeEventListener("resize", t);
+		};
 	});
-	function d(e) {
-		return e.trim().toLowerCase();
+	function d() {
+		if (!H(l) || !H(u)) return;
+		let e = H(l).getBoundingClientRect().top, t = Math.max(120, Math.floor(e - 14));
+		H(u).style.maxHeight = `${t}px`;
 	}
 	function f(e) {
-		return t.agents.find((t) => d(t.id) === d(e))?.label || e || "Unavailable";
+		return e.trim().toLowerCase();
 	}
-	function p() {
+	function p(e) {
+		return t.agents.find((t) => f(t.id) === f(e))?.label || e || "Unavailable";
+	}
+	function m() {
 		let e = t.profiles.map((e) => ({
 			value: {
 				kind: "profile",
 				name: e.key
 			},
-			label: `${e.key} (current: ${f(e.agentName || "")})`
+			label: `${e.key} (current: ${p(e.agentName || "")})`
 		}));
-		return t.value.kind === "profile" && !t.profiles.some((e) => d(e.key) === d(t.value.name)) && e.unshift({
+		return t.value.kind === "profile" && !t.profiles.some((e) => f(e.key) === f(t.value.name)) && e.unshift({
 			value: t.value,
 			label: `${t.value.name} (missing profile)`
 		}), e;
 	}
-	function m() {
+	function h() {
 		let e = t.agents.map((e) => {
-			let n = t.profiles.filter((t) => d(t.agentName || "") === d(e.id)).map((e) => e.key);
+			let n = t.profiles.filter((t) => f(t.agentName || "") === f(e.id)).map((e) => e.key);
 			return {
 				value: {
 					kind: "agent",
@@ -3140,29 +3150,29 @@ function ha(e, t) {
 				label: n.length ? `${e.label} (${n.join(", ")})` : e.label
 			};
 		});
-		return t.value.kind === "agent" && !t.agents.some((e) => d(e.id) === d(t.value.name)) && e.unshift({
+		return t.value.kind === "agent" && !t.agents.some((e) => f(e.id) === f(t.value.name)) && e.unshift({
 			value: t.value,
 			label: `${t.value.name} (missing agent)`
 		}), e;
 	}
-	function h(e) {
+	function g(e) {
 		return `${e.kind}:${encodeURIComponent(e.name)}`;
 	}
-	function g(e) {
-		I(c, !1), h(e.value) !== H(o) && t.onSelect(e.value);
-	}
 	function _(e) {
+		I(c, !1), g(e.value) !== H(o) && t.onSelect(e.value);
+	}
+	function v(e) {
 		e.key === "Escape" && (e.stopPropagation(), I(c, !1));
 	}
-	var v = ma(), y = L(v), b = L(y), x = L(b, !0);
-	k(b), X(R(b, 2), {
+	var y = ma(), b = L(y), x = L(b), S = L(x, !0);
+	k(x), X(R(x, 2), {
 		name: "chevrons-up-down",
 		className: "agent-binding-icon"
-	}), k(y);
-	var S = R(y, 2), C = (e) => {
+	}), k(b);
+	var C = R(b, 2), w = (e) => {
 		var t = pa(), n = L(t), s = (e) => {
 			var t = da();
-			J(R(L(t), 2), 17, () => H(i), (e) => h(e.value), (e, t) => {
+			J(R(L(t), 2), 17, () => H(i), (e) => g(e.value), (e, t) => {
 				var n = ua(), r = L(n), i = L(r, !0);
 				k(r);
 				var a = R(r, 2), s = (e) => {
@@ -3170,12 +3180,12 @@ function ha(e, t) {
 						name: "check",
 						className: "agent-binding-check"
 					});
-				}, c = /* @__PURE__ */ N(() => h(H(t).value) === H(o));
+				}, c = /* @__PURE__ */ N(() => g(H(t).value) === H(o));
 				q(a, (e) => {
 					H(c) && e(s);
 				}), k(n), z((e, r) => {
 					Y(n, "aria-selected", e), Y(n, "data-binding", r), K(i, H(t).label);
-				}, [() => h(H(t).value) === H(o), () => h(H(t).value)]), U("click", n, () => g(H(t))), G(e, n);
+				}, [() => g(H(t).value) === H(o), () => g(H(t).value)]), U("click", n, () => _(H(t))), G(e, n);
 			}), k(t), G(e, t);
 		};
 		q(n, (e) => {
@@ -3183,7 +3193,7 @@ function ha(e, t) {
 		});
 		var c = R(n, 2), l = (e) => {
 			var t = fa();
-			J(R(L(t), 2), 17, () => H(a), (e) => h(e.value), (e, t) => {
+			J(R(L(t), 2), 17, () => H(a), (e) => g(e.value), (e, t) => {
 				var n = ua(), r = L(n), i = L(r, !0);
 				k(r);
 				var a = R(r, 2), s = (e) => {
@@ -3191,25 +3201,25 @@ function ha(e, t) {
 						name: "check",
 						className: "agent-binding-check"
 					});
-				}, c = /* @__PURE__ */ N(() => h(H(t).value) === H(o));
+				}, c = /* @__PURE__ */ N(() => g(H(t).value) === H(o));
 				q(a, (e) => {
 					H(c) && e(s);
 				}), k(n), z((e, r) => {
 					Y(n, "aria-selected", e), Y(n, "data-binding", r), K(i, H(t).label);
-				}, [() => h(H(t).value) === H(o), () => h(H(t).value)]), U("click", n, () => g(H(t))), G(e, n);
+				}, [() => g(H(t).value) === H(o), () => g(H(t).value)]), U("click", n, () => _(H(t))), G(e, n);
 			}), k(t), G(e, t);
 		};
 		q(c, (e) => {
 			H(a).length && e(l);
-		}), k(t), ki(t, (e) => I(u, e), () => H(u)), z(() => Y(t, "aria-label", r())), U("keydown", t, _), G(e, t);
+		}), k(t), ki(t, (e) => I(u, e), () => H(u)), z(() => Y(t, "aria-label", r())), U("keydown", t, v), G(e, t);
 	};
-	q(S, (e) => {
-		H(c) && e(C);
-	}), k(v), ki(v, (e) => I(l, e), () => H(l)), z(() => {
-		y.disabled = n(), Y(y, "aria-expanded", H(c)), Y(y, "aria-label", r()), K(x, H(s));
-	}), U("click", y, () => {
+	q(C, (e) => {
+		H(c) && e(w);
+	}), k(y), ki(y, (e) => I(l, e), () => H(l)), z(() => {
+		b.disabled = n(), Y(b, "aria-expanded", H(c)), Y(b, "aria-label", r()), K(S, H(s));
+	}), U("click", b, () => {
 		I(c, !H(c));
-	}), G(e, v), M();
+	}), G(e, y), M();
 }
 Sr(["click", "keydown"]);
 //#endregion
