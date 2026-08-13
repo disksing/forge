@@ -143,7 +143,7 @@ forge message send --to=project1.task2 --mode=interrupt "Stop the current approa
 forge message show --id=msg-run-0123456789abcdef
 ```
 
-These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. History lists and Turn/Event details default to formatted text for direct reading; pass `--json` for the complete structured response. `forge message show` returns a body only while the message is hot; a retained cold receipt is explicitly marked as a receipt and remains queryable by its status and provenance, while an aged-out ID returns `message_receipt_expired`/HTTP 410 and an ID beyond the expired-index window returns `message_not_found`. These commands never write mailbox files directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority. `forge session list` and `forge session show` are read-only generation diagnostics derived from the local generation index and never contact AgentHub.
+These commands infer the sending resource from the current directory, attach `role=agent` and its stable resource ID as provenance, and contact the owning `forge serve` address discovered from `.forge/serve.lock`. `--server=<url>` is an explicit override. History lists and Turn/Event details default to formatted text for direct reading; pass `--json` for the complete structured response. `forge message show` returns a body only while the message is hot; a retained cold receipt is explicitly marked as a receipt and remains queryable by its status and provenance, while an aged-out ID returns `message_receipt_expired`/HTTP 410 and an ID beyond the expired-index window returns `message_not_found`. These commands never write mailbox files directly or start a second Server. Provenance is metadata only, not authentication, authorization, or instruction priority.
 
 Useful overrides:
 
@@ -325,9 +325,6 @@ forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=use
 forge task list [--project=<project>] [--all]
 forge task show|archive ...
 forge task repo add|list|remove ...
-
-forge session list
-forge session show --id=<generationId>
 
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
