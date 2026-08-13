@@ -25,7 +25,12 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
     unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false,
     waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
     onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(),
-    onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(), ...overrides,
+    onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
+    agentBinding: { kind: "profile", name: "default" },
+    agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
+    agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
+    bindingSaving: false, onSaveAgentBinding: vi.fn(async () => undefined),
+    ...overrides,
   };
 }
 
@@ -133,5 +138,72 @@ describe("ChatComposer", () => {
     await tick();
 
     expect(target.querySelector<HTMLButtonElement>(".tty-message-steer")?.disabled).toBe(true);
+  });
+
+  it("renders the current agent binding in the composer options bar", async () => {
+    const channel = createModelChannel(model());
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const bar = target.querySelector<HTMLElement>(".tty-composer-bar")!;
+    const selector = bar.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+    expect(selector).not.toBeNull();
+    expect(selector.value).toBe("profile:default");
+    expect(selector.disabled).toBe(false);
+    expect(bar.querySelector("#agentUploadButton")).not.toBeNull();
+  });
+
+  it("saves a new agent binding as soon as the selection changes", async () => {
+    const onSaveAgentBinding = vi.fn(async () => undefined);
+    const channel = createModelChannel(model({
+      agentProfiles: [
+        { key: "default", description: "Default", agentName: "fake-agent" },
+        { key: "fast", description: "Fast", agentName: "fake-agent" },
+      ],
+      agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }, { id: "other-agent", label: "Other Agent", summary: "other" }],
+      onSaveAgentBinding,
+    }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const selector = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+    selector.value = "agent:other-agent";
+    selector.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(onSaveAgentBinding).toHaveBeenCalledWith({ kind: "agent", name: "other-agent" }));
+  });
+
+  it("keeps the selector controlled until the saved binding is published", async () => {
+    const channel = createModelChannel(model({
+      agents: [{ id: "other-agent", label: "Other Agent", summary: "other" }],
+      onSaveAgentBinding: vi.fn(async () => undefined),
+    }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const selector = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+    selector.value = "agent:other-agent";
+    selector.dispatchEvent(new Event("change", { bubbles: true }));
+    await tick();
+    expect(selector.value).toBe("profile:default");
+
+    channel.publish(model({ agentBinding: { kind: "agent", name: "other-agent" }, agents: [{ id: "other-agent", label: "Other Agent", summary: "other" }] }));
+    await tick();
+    expect(selector.value).toBe("agent:other-agent");
+  });
+
+  it("disables the binding selector while a binding is being saved", async () => {
+    const channel = createModelChannel(model({ bindingSaving: true }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')?.disabled).toBe(true);
   });
 });

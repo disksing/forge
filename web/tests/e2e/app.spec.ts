@@ -575,7 +575,6 @@ test("navigates resources and creates a task through the canonical application f
     "other-agent (review)",
   ]);
   await bindingSelector.selectOption("agent:other-agent");
-  await page.getByRole("button", { name: "Bind" }).click();
   await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
   await page.getByRole("button", { name: "Migration project", exact: true }).click();
   await page.getByRole("button", { name: "New Task" }).click();

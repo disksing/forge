@@ -3,9 +3,11 @@
 
   import { onMount, tick } from "svelte";
 
+  import AgentBindingSelector from "./AgentBindingSelector.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
   import type { ComposerModel } from "./models";
+  import type { ResourceAgentBindingModel } from "../models/detail";
 
   let { channel }: { channel: ModelChannel<ComposerModel> } = $props();
   // svelte-ignore state_referenced_locally
@@ -111,6 +113,10 @@
     input.style.height = `${nextHeight}px`;
     input.style.overflowY = input.scrollHeight > 160 ? "auto" : "hidden";
   }
+
+  function selectBinding(binding: ResourceAgentBindingModel): void {
+    void model.onSaveAgentBinding(binding);
+  }
 </script>
 
 {#if model.waitingMessages.length}
@@ -132,17 +138,16 @@
   </section>
 {/if}
 <form id="ttyForm" class="tty-input" onsubmit={send}>
-    <span>&gt;</span>
     <textarea id="ttyInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || "Message this resource"} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>
-    <span class="tty-composer-group">
+    <div class="tty-composer-bar">
       <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files" disabled={Boolean(model.unavailableReason)} onclick={model.onOpenUpload}><Icon name="plus" /></button>
-      <button type="submit" class="tty-send-button" title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><Icon name={sending ? "loader-circle" : "send"} /></button>
-    </span>
-    {#if model.canEndTurn}
-      <span class="tty-composer-divider" aria-hidden="true"></span>
-      <span class="tty-composer-group">
-        <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><Icon name={model.endingTurn ? "loader-circle" : "pause"} /></button>
-      </span>
-    {/if}
+      <div class="tty-composer-options">
+        <span class="tty-agent-binding"><AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={blocked || model.bindingSaving} ariaLabel="Binding target" onSelect={selectBinding} /></span>
+        {#if model.canEndTurn}
+          <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><Icon name={model.endingTurn ? "loader-circle" : "pause"} /></button>
+        {/if}
+        <button type="submit" class="tty-send-button" title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><Icon name={sending ? "loader-circle" : "send"} /></button>
+      </div>
+    </div>
   </form>
   {#if error}<div class="tty-composer-error" role="alert"><span>{error}</span><button type="button" class="secondary-button" disabled={sending} onclick={() => send()}>Retry</button></div>{/if}
