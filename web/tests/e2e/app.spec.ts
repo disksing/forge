@@ -133,7 +133,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = []): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
@@ -182,7 +182,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         compatible: true,
         catalog: {
           providers: [{ id: "test", name: "Test Provider", enabled: true }],
-          agents: [{ name: "test-agent", providerId: "test", available: true }, { name: "other-agent", providerId: "test", available: true }],
+          agents: ["test-agent", "other-agent", ...extraAgents].map((name) => ({ name, providerId: "test", available: true })),
           probes: [],
         },
       });
@@ -559,6 +559,26 @@ test("navigates resources and creates a task through the canonical application f
   await expect(page).toHaveURL(/project1\.task3/);
   await expect(page.getByRole("heading", { name: "Created from baseline", exact: true }).first()).toBeVisible();
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("grows the agent binding menu to fit long agent lists", async ({ page }) => {
+  const extraAgents = ["gpt-5.3-codex-spark", "gpt-5.6-sol", "kimi-k3", "grok-4.5", "gemini-3.1-pro", "gpt-5.6-luna", "pi-kimi", "deepseek-v4-pro"];
+  await installMockApi(page, "project1.task1", false, false, false, extraAgents);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const bindingSelector = page.getByRole("button", { name: "Binding target" });
+  await bindingSelector.click();
+  const bindingMenu = page.getByRole("listbox", { name: "Binding target" });
+  await expect(bindingMenu.getByRole("option")).toHaveCount(13);
+
+  // The menu opens upward from the bottom of the viewport and should size to
+  // the space above the composer instead of a fixed 260px cap, keeping every
+  // option visible without scrolling.
+  const options = bindingMenu.getByRole("option");
+  for (let index = 0; index < 13; index += 1) {
+    await expect(options.nth(index)).toBeInViewport();
+  }
+  expect((await bindingMenu.boundingBox())!.height).toBeGreaterThan(260);
 });
 
 test("navigates to a newly created project", async ({ page }) => {

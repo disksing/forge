@@ -42,6 +42,7 @@
 
   $effect(() => {
     if (!open || !menu) return;
+    fitMenuToViewport();
     const target = menu.querySelector<HTMLElement>('[aria-selected="true"]') ?? menu.querySelector<HTMLElement>(".agent-binding-option");
     void tick().then(() => target?.focus());
   });
@@ -50,9 +51,28 @@
     const outside = (event: MouseEvent) => {
       if (open && event.target instanceof Node && !root?.contains(event.target)) open = false;
     };
+    const onResize = () => {
+      if (open) fitMenuToViewport();
+    };
     document.addEventListener("mousedown", outside);
-    return () => document.removeEventListener("mousedown", outside);
+    window.addEventListener("resize", onResize);
+    return () => {
+      document.removeEventListener("mousedown", outside);
+      window.removeEventListener("resize", onResize);
+    };
   });
+
+  // The composer sits at the bottom of the viewport and the menu opens
+  // upward, so the usable height is the distance from the button to the top
+  // of the viewport minus the gap above the button and a small top margin.
+  // Grow the menu up to that space instead of a fixed cap so long agent lists
+  // stay visible instead of being clipped into a small scroll area.
+  function fitMenuToViewport(): void {
+    if (!root || !menu) return;
+    const top = root.getBoundingClientRect().top;
+    const maxHeight = Math.max(120, Math.floor(top - 14));
+    menu.style.maxHeight = `${maxHeight}px`;
+  }
 
   function normalize(value: string): string {
     return value.trim().toLowerCase();
