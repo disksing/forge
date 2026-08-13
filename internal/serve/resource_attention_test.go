@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/disksing/forge/internal/app"
@@ -154,6 +155,51 @@ func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 	}
 	if len(tree.AttentionList) != 1 || tree.AttentionList[0].Runtime == nil || tree.AttentionList[0].Runtime.GenerationID != "gen-old-active" {
 		t.Fatalf("active older generation was not retained: %#v", tree.AttentionList)
+	}
+}
+
+func TestResourceAttentionSortsByTurnBoundariesInsteadOfRuntimeUpdates(t *testing.T) {
+	server, workspace := attentionTestServer(t)
+	forgeWorkspace, err := app.OpenWorkspace(workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resourceIDs := []string{"project1"}
+	for _, title := range []string{"Running older", "Idle older", "Idle newer"} {
+		task, createErr := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: title})
+		if createErr != nil {
+			t.Fatal(createErr)
+		}
+		resourceIDs = append(resourceIDs, task.ID)
+	}
+	for _, resourceID := range resourceIDs {
+		if _, err := server.mutateResourceAttentionAtPath(workspace, resourceID, func(state *resourceAttentionState) {
+			state.Followed = true
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runs := []agentRun{
+		{ID: "run-running-newer", ResourceID: resourceIDs[0], Generation: 1, GenerationID: "gen-running-newer", AgentHubSessionID: "session-running-newer", Status: "running", CurrentTurnID: "turn-running-newer", TurnStartedAt: "2026-08-13T00:00:20Z", UpdatedAt: "2026-08-13T00:00:21Z"},
+		{ID: "run-running-older", ResourceID: resourceIDs[1], Generation: 1, GenerationID: "gen-running-older", AgentHubSessionID: "session-running-older", Status: "running", CurrentTurnID: "turn-running-older", TurnStartedAt: "2026-08-13T00:00:10Z", UpdatedAt: "2026-08-13T00:00:59Z"},
+		{ID: "run-idle-older", ResourceID: resourceIDs[2], Generation: 1, GenerationID: "gen-idle-older", AgentHubSessionID: "session-idle-older", Status: "idle", CompletionAt: "2026-08-13T00:00:30Z", UpdatedAt: "2026-08-13T00:01:00Z"},
+		{ID: "run-idle-newer", ResourceID: resourceIDs[3], Generation: 1, GenerationID: "gen-idle-newer", AgentHubSessionID: "session-idle-newer", Status: "idle", CompletionAt: "2026-08-13T00:00:40Z", UpdatedAt: "2026-08-13T00:00:41Z"},
+	}
+	if err := rewriteAgentRuns(workspace, runs); err != nil {
+		t.Fatal(err)
+	}
+
+	tree, err := server.treeAt(context.Background(), workspace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make([]string, 0, len(tree.AttentionList))
+	for _, item := range tree.AttentionList {
+		got = append(got, item.ID)
+	}
+	want := []string{resourceIDs[0], resourceIDs[1], resourceIDs[3], resourceIDs[2]}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Activity order = %v, want %v", got, want)
 	}
 }
 

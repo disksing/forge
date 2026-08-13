@@ -132,12 +132,20 @@ func TestAgentHubPollerProjectsTurnStartAndClearsStaleTurnIDAtReady(t *testing.T
 	}); err != nil {
 		t.Fatal(err)
 	}
+	fake.mu.Lock()
+	fake.turns["ses_activity_turn"] = map[string]agentHubTurn{
+		"turn-activity": {ID: "turn-activity", TurnID: "turn-activity", Status: "running", StartedAt: "2026-08-01T00:00:05Z"},
+	}
+	fake.mu.Unlock()
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	waitForRuntimeTest(t, func() bool {
+		return pollerRunState(manager.runtimeByID("run-activity-turn")).TurnStartedAt == "2026-08-01T00:00:05Z"
+	})
 	run := pollerRunState(manager.runtimeByID("run-activity-turn"))
-	if run.Status != "running" || run.CurrentTurnID != "turn-activity" || run.LastTurnID != "turn-activity" || run.TurnNumber != 1 {
+	if run.Status != "running" || run.CurrentTurnID != "turn-activity" || run.LastTurnID != "turn-activity" || run.TurnNumber != 1 || run.TurnStartedAt != "2026-08-01T00:00:05Z" {
 		t.Fatalf("poller did not project the started Turn: %#v", run)
 	}
 

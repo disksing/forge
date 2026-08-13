@@ -1464,6 +1464,7 @@ type resourceRuntimeSnapshot struct {
 	ReplacementPending bool   `json:"replacementPending,omitempty"`
 	TurnNumber         int    `json:"turnNumber,omitempty"`
 	ActiveTurn         bool   `json:"activeTurn,omitempty"`
+	TurnStartedAt      string `json:"turnStartedAt,omitempty"`
 }
 
 func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
@@ -1493,7 +1494,7 @@ func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspace
 				AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
 				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
 				CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
-				TurnNumber: run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run),
+				TurnNumber: run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run), TurnStartedAt: run.TurnStartedAt,
 			}
 		}
 		for i := range item.Children {

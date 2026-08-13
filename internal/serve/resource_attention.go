@@ -346,7 +346,7 @@ func resourceRuntimeSnapshotForRun(run agentRun) *resourceRuntimeSnapshot {
 		AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
 		CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
 		CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
-		TurnNumber: run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run),
+		TurnNumber: run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run), TurnStartedAt: run.TurnStartedAt,
 	}
 }
 
@@ -367,15 +367,19 @@ func resourceAttentionVisible(item resourceSnapshot) bool {
 	return attention.DismissedTurn == nil || item.Runtime.TurnNumber > *attention.DismissedTurn
 }
 
-func resourceAttentionUpdatedAt(item resourceSnapshot) time.Time {
+func resourceAttentionSortTime(item resourceSnapshot) time.Time {
 	if item.Runtime == nil {
 		return time.Time{}
 	}
-	value, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(item.Runtime.UpdatedAt))
+	value := item.Runtime.CompletionAt
+	if item.Runtime.ActiveTurn {
+		value = item.Runtime.TurnStartedAt
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
 	if err != nil {
 		return time.Time{}
 	}
-	return value
+	return parsed
 }
 
 func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspaceTree) error {
@@ -442,9 +446,9 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 		if leftActive != rightActive {
 			return leftActive
 		}
-		leftUpdated, rightUpdated := resourceAttentionUpdatedAt(left), resourceAttentionUpdatedAt(right)
-		if !leftUpdated.Equal(rightUpdated) {
-			return leftUpdated.After(rightUpdated)
+		leftTime, rightTime := resourceAttentionSortTime(left), resourceAttentionSortTime(right)
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
 		}
 		if left.Title != right.Title {
 			return left.Title < right.Title

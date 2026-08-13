@@ -52,6 +52,7 @@ export interface ResourceRuntime {
   replacementPending?: boolean;
   turnNumber?: number;
   activeTurn?: boolean;
+  turnStartedAt?: string;
 }
 
 export interface ScheduleRecord {

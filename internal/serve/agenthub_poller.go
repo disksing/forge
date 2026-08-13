@@ -380,6 +380,8 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 
 	turnFinished := false
 	turnStarted := false
+	refreshTurnStartedAt := false
+	startedTurnID := ""
 	updated, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
 		previousState := runtime.agentHubState
 		if previousState == "" {
@@ -423,6 +425,11 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 				turnStarted = true
 				runtime.run.LastTurnID = turnID
 			}
+			if turnStarted || strings.TrimSpace(runtime.run.TurnStartedAt) == "" {
+				runtime.run.TurnStartedAt = observedAgentHubTurnStartedAt(session)
+				refreshTurnStartedAt = true
+				startedTurnID = turnID
+			}
 			runtime.run.CurrentTurnID = turnID
 		}
 		// LastOutputAt degenerates to the AgentHub session update time: without a
@@ -452,6 +459,9 @@ func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, wor
 				rt.addForgeNotice(m, "warning", "agenthub/reconcile", "Persist generation turn ordinal: "+persistErr.Error())
 			}
 		}
+	}
+	if refreshTurnStartedAt {
+		go rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
 	}
 	rt.mu.Lock()
 	if rt.agentHub == nil {
@@ -524,12 +534,41 @@ func activeAgentHubTurnID(session agentHubSession) string {
 	return strings.TrimSpace(session.CurrentTurnID)
 }
 
+func observedAgentHubTurnStartedAt(session agentHubSession) string {
+	if !agentRunTime(session.UpdatedAt).IsZero() {
+		return session.UpdatedAt
+	}
+	return time.Now().Format(time.RFC3339Nano)
+}
+
+// refreshAgentHubTurnStartedAt replaces the stable first-observed timestamp
+// with AgentHub's canonical Turn start time. It runs once per newly observed
+// Turn and never lets a late response overwrite a newer Turn.
+func (rt *agentRuntime) refreshAgentHubTurnStartedAt(sessionID, turnID string, client *agentHubClient) {
+	sessionID = strings.TrimSpace(sessionID)
+	turnID = strings.TrimSpace(turnID)
+	if client == nil || sessionID == "" || turnID == "" {
+		return
+	}
+	turn, _, err := client.SessionTurn(context.Background(), sessionID, turnID)
+	if err != nil || agentRunTime(turn.StartedAt).IsZero() {
+		return
+	}
+	_, _ = rt.mutateRun(func(run *agentRun) {
+		if strings.TrimSpace(run.AgentHubSessionID) == sessionID && run.LastTurnID == turnID {
+			run.TurnStartedAt = turn.StartedAt
+		}
+	})
+}
+
 // applyAgentHubSessionState projects an AgentHub action or session response
 // onto the local run. A running/waiting_approval -> ready/stopped edge is the
 // only status signal that schedules durable canonical terminal inspection.
 func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agentHubSession) {
 	turnFinished := false
 	turnStarted := false
+	refreshTurnStartedAt := false
+	startedTurnID := ""
 	run, persistErr := rt.mutateRuntime(func(runtime *agentRuntime) {
 		previousState := runtime.agentHubState
 		if previousState == "" {
@@ -559,6 +598,11 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 			if runtime.run.LastTurnID != turnID {
 				turnStarted = true
 				runtime.run.LastTurnID = turnID
+			}
+			if turnStarted || strings.TrimSpace(runtime.run.TurnStartedAt) == "" {
+				runtime.run.TurnStartedAt = observedAgentHubTurnStartedAt(session)
+				refreshTurnStartedAt = true
+				startedTurnID = turnID
 			}
 			runtime.run.CurrentTurnID = turnID
 		}
@@ -597,6 +641,12 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 				rt.addForgeNotice(m, "warning", "agenthub/action", "Persist generation turn ordinal: "+persistErr.Error())
 			}
 		}
+	}
+	if refreshTurnStartedAt {
+		rt.mu.Lock()
+		client := rt.agentHub
+		rt.mu.Unlock()
+		go rt.refreshAgentHubTurnStartedAt(session.ID, startedTurnID, client)
 	}
 	if turnFinished {
 		go func() {

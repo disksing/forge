@@ -51,7 +51,7 @@ PUT  /api/workspaces/{workspaceId}/resources/{resourceId}/attention
 POST /api/workspaces/{workspaceId}/resources/{resourceId}/attention/dismiss
 ```
 
-`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含 `attention.followed` 与 `attention.dismissedTurn`，runtime 快照包含资源级的 `turnNumber` 和 `activeTurn`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准，ready/stopped 快照即使残留上一个 `currentTurnId` 也会被清理。Turn 结束后，只有已关注且当前资源 turn ordinal 大于 dismiss ordinal 的资源继续保留。缺少 `dismissedTurn` 表示用户从未 dismiss 过该资源。`PUT .../attention` 接收 `{ "followed": true|false }`；重新关注会清除 dismiss 边界，使资源立即可见。`POST .../attention/dismiss` 记录当前资源 turn ordinal。创建 Project/Task 和向任意资源发送已接受的消息都会自动关注对应资源。关注状态持久化在 `.forge/gui-state.json`，浏览器写入导航 UI 状态时会保留该字段。
+`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含 `attention.followed` 与 `attention.dismissedTurn`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准，ready/stopped 快照即使残留上一个 `currentTurnId` 也会被清理。Activity 先列出 active 资源：active 组按当前 Turn 的 `turnStartedAt` 倒序，idle 组按最近规范终态的 `completionAt` 倒序，同时间再按标题和资源 ID 稳定排序；输出和轮询变化的 `updatedAt` 不参与排序。Turn 结束后，只有已关注且当前资源 turn ordinal 大于 dismiss ordinal 的资源继续保留。缺少 `dismissedTurn` 表示用户从未 dismiss 过该资源。`PUT .../attention` 接收 `{ "followed": true|false }`；重新关注会清除 dismiss 边界，使资源立即可见。`POST .../attention/dismiss` 记录当前资源 turn ordinal。创建 Project/Task 和向任意资源发送已接受的消息都会自动关注对应资源。关注状态持久化在 `.forge/gui-state.json`，浏览器写入导航 UI 状态时会保留该字段。
 
 发送正文示例：
 

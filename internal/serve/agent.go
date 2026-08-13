@@ -67,6 +67,7 @@ type agentRun struct {
 	TurnNumber    int    `json:"turnNumber,omitempty"`
 	CurrentTurnID string `json:"currentTurnId,omitempty"`
 	LastTurnID    string `json:"lastTurnId,omitempty"`
+	TurnStartedAt string `json:"turnStartedAt,omitempty"`
 	// CompletionCursor is the last durable AgentHub event cursor inspected for
 	// a completed turn. CompletionMarker is only advanced from canonical
 	// turn.* terminal events, so status projections cannot manufacture a
