@@ -274,14 +274,6 @@ func validateAttentionResource(path, resourceID string) error {
 	return nil
 }
 
-func latestAgentHubResourceRuns(workspacePath string) (map[string]agentRun, error) {
-	runs, err := loadAgentRuns(workspacePath)
-	if err != nil {
-		return nil, fmt.Errorf("load resource generations for attention list: %w", err)
-	}
-	return selectLatestAgentHubResourceRuns(runs), nil
-}
-
 func selectLatestAgentHubResourceRuns(runs []agentRun) map[string]agentRun {
 	byResourceID := make(map[string]agentRun)
 	for _, run := range runs {

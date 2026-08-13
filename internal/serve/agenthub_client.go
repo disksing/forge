@@ -447,14 +447,6 @@ type agentHubResumeRequest struct {
 	LaunchEnvironment map[string]string `json:"launchEnvironment,omitempty"`
 }
 
-func (c *agentHubClient) Resume(ctx context.Context, sessionID string, launchEnvironment map[string]string) (agentHubSession, error) {
-	var response struct {
-		Session agentHubSession `json:"session"`
-	}
-	err := c.doJSON(ctx, http.MethodPost, sessionPath(sessionID)+"/resume",
-		agentHubResumeRequest{LaunchEnvironment: launchEnvironment}, &response)
-	return response.Session, err
-}
 
 func (c *agentHubClient) Archive(ctx context.Context, sessionID string) (agentHubSession, error) {
 	var response struct {

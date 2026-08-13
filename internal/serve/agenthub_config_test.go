@@ -395,19 +395,6 @@ func TestLoadConfigDoesNotPersistSchedulerMigration(t *testing.T) {
 	}
 }
 
-func TestAgentHubRunAgentResolvesCustomProfileNamedScheduler(t *testing.T) {
-	name, err := resolveAgentHubRunAgent(config{
-		Version:       agentHubConfigVersion,
-		AgentProfiles: []agentProfileRoute{{Key: "scheduler", AgentName: "scheduler-agent"}},
-	}, startAgentRequest{AgentProfile: " SCHEDULER "})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if name != "scheduler-agent" {
-		t.Fatalf("custom scheduler profile resolved to %q", name)
-	}
-}
-
 func configuredAgentHubProfileTarget(routes []agentHubProfileRoute, key string) string {
 	route, ok := findAgentHubProfileRoute(routes, key)
 	if !ok {

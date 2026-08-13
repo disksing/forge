@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentNotice, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -183,7 +183,6 @@ const updateAgentDraft = agentDraftController.update;
 
 const agentOperations = createAgentOperationController(() => {
 	if (!appBooted) return;
-	renderAgent();
 	renderTTYComposer();
 	refreshIcons();
 });
@@ -369,7 +368,7 @@ const settingsController = createSettingsController({
 		publishViewModels();
 	},
 	renderWorkspace: renderWorkspaceSelect,
-	renderAgentViews: () => { applyAgentConfig(); renderAgent(); renderTTYComposer(); },
+	renderAgentViews: () => { applyAgentConfig(); renderTTYComposer(); },
 	toast,
 	onIconsChanged: refreshIcons
 });
@@ -386,7 +385,6 @@ function publishAllViewModels() {
 	renderCreateDialog();
 	renderAgentUploadDialog();
 	renderTTYComposer();
-	renderAgent();
 	renderTTY();
 	renderSettingsModal();
 }
@@ -639,7 +637,6 @@ async function autoRefresh() {
 function publishViewModels() {
 	renderAppShell();
 	renderDetails();
-	renderAgent();
 	renderTTY();
 	refreshIcons();
 	renderCreateDialog();
@@ -648,7 +645,6 @@ function publishViewModels() {
 function renderSelectionPanels() {
 	renderAppShell();
 	renderDetails();
-	renderAgent();
 	renderTTY();
 	refreshIcons();
 	renderCreateDialog();
@@ -1200,7 +1196,6 @@ function handleSvelteAgentEvent(workspaceId: string, resourceId: string, event: 
 		"approval.resolved"
 	].includes(event.type)) refreshResourceMessageStatus().then(publishViewModels).catch((err) => console.warn("agent refresh failed", err));
 }
-function handleSvelteForgeNotice(_workspaceId: string, _resourceId: string, _notice: AgentNotice): void {}
 function clearAgentRenderTimer(): void {
 	if (controllerState.agent.renderTimer) window.clearTimeout(controllerState.agent.renderTimer);
 	controllerState.agent.renderTimer = null;
@@ -1219,7 +1214,6 @@ function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
 	}
 	return items;
 }
-function renderAgent(): void {}
 function agentConfigSummary(agent: AgentConfig | null | undefined): string {
 	if (!agent) return "";
 	const parts = [providerName(agent.providerId)];
@@ -1247,7 +1241,7 @@ function renderTTY(_options: RenderOptions = {}): void {
 		agentName: agentDisplayName(configured || selectedAgentConfig()),
 		project: projectAgentEvents,
 		onEvent: handleSvelteAgentEvent,
-		onNotice: handleSvelteForgeNotice,
+		onNotice: () => {},
 		onApproval: resolveResourceApproval,
 		onToast: toast,
 		onIconsChanged: refreshIcons
@@ -1606,7 +1600,6 @@ function installControllerListeners(): void {
 	else if (event.key === "Escape" && (controllerState.agent.optionsOpen || controllerState.agent.historyOpen)) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
-		renderAgent();
 		renderTTYComposer();
 		refreshIcons();
 	}
@@ -1622,7 +1615,6 @@ function installControllerListeners(): void {
 	if (outsideAgentPanelMenu) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
-		renderAgent();
 		renderTTYComposer();
 		refreshIcons();
 	}

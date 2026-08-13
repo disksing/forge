@@ -34,26 +34,26 @@ func TestInitializeCreatesSchedulerResource(t *testing.T) {
 		t.Fatalf("Scheduler detail = %#v, %v", detail, err)
 	}
 	for _, name := range []string{"scheduler.json", "scheduler.md", "AGENTS.md"} {
-		info, statErr := os.Stat(filepath.Join(workspace.SchedulerDir(), name))
+		info, statErr := os.Stat(filepath.Join(workspace.Root(), "scheduler", name))
 		if statErr != nil || !info.Mode().IsRegular() {
 			t.Fatalf("Scheduler file %s = %#v, %v", name, info, statErr)
 		}
 	}
-	agents, err := os.ReadFile(filepath.Join(workspace.SchedulerDir(), "AGENTS.md"))
+	agents, err := os.ReadFile(filepath.Join(workspace.Root(), "scheduler", "AGENTS.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(agents), "../AGENTS.md") || !strings.Contains(string(agents), "schedule ID") {
 		t.Fatalf("Scheduler guidance is incomplete:\n%s", agents)
 	}
-	inside, err := workspace.IsSchedulerPath(filepath.Join(workspace.SchedulerDir(), "nested"))
+	inside, err := workspace.IsSchedulerPath(filepath.Join(workspace.Root(), "scheduler", "nested"))
 	if err == nil || inside {
 		t.Fatal("a nonexistent nested path unexpectedly matched")
 	}
-	if err := os.Mkdir(filepath.Join(workspace.SchedulerDir(), "nested"), 0o755); err != nil {
+	if err := os.Mkdir(filepath.Join(workspace.Root(), "scheduler", "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	inside, err = workspace.IsSchedulerPath(filepath.Join(workspace.SchedulerDir(), "nested"))
+	inside, err = workspace.IsSchedulerPath(filepath.Join(workspace.Root(), "scheduler", "nested"))
 	if err != nil || !inside {
 		t.Fatalf("Scheduler path match = %v, %v", inside, err)
 	}
@@ -83,7 +83,7 @@ func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
 	}
 	paths := []string{
 		filepath.Join(root, "AGENTS.md"),
-		filepath.Join(workspace.SchedulerDir(), "AGENTS.md"),
+		filepath.Join(workspace.Root(), "scheduler", "AGENTS.md"),
 		filepath.Join(root, projectDetail.Path, "AGENTS.md"),
 		filepath.Join(root, taskDetail.Path, "AGENTS.md"),
 	}
@@ -235,7 +235,7 @@ func TestSchedulerSettingsAndConcurrentScheduleWrites(t *testing.T) {
 		}
 		seen[schedule.ID] = true
 	}
-	data, err := os.ReadFile(filepath.Join(workspace.SchedulerDir(), "scheduler.json"))
+	data, err := os.ReadFile(filepath.Join(workspace.Root(), "scheduler", "scheduler.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,11 +255,11 @@ func TestMigratePreservesSchedulerContentAndRejectsUnsafeConflicts(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	markdownPath := filepath.Join(workspace.SchedulerDir(), "scheduler.md")
+	markdownPath := filepath.Join(workspace.Root(), "scheduler", "scheduler.md")
 	if err := os.WriteFile(markdownPath, []byte("# Durable scheduler notes\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	agentsPath := filepath.Join(workspace.SchedulerDir(), "AGENTS.md")
+	agentsPath := filepath.Join(workspace.Root(), "scheduler", "AGENTS.md")
 	agents, err := os.ReadFile(agentsPath)
 	if err != nil {
 		t.Fatal(err)

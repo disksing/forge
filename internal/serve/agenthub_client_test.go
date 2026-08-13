@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -122,14 +121,11 @@ func TestAgentHubClientContract(t *testing.T) {
 	if _, err := client.Stop(ctx, "ses_1"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Resume(ctx, "ses_1", nil); err != nil {
-		t.Fatal(err)
-	}
 	archived, err := client.Archive(ctx, "ses_1")
 	if err != nil || archived.State != "archived" {
 		t.Fatalf("archive: %+v, %v", archived, err)
 	}
-	if len(methods) != 14 {
+	if len(methods) != 13 {
 		t.Fatalf("expected all client operations, got %d: %v", len(methods), methods)
 	}
 	wantReplies := []agentHubApprovalReply{
@@ -139,40 +135,6 @@ func TestAgentHubClientContract(t *testing.T) {
 	}
 	if fmt.Sprint(approvalReplies) != fmt.Sprint(wantReplies) {
 		t.Fatalf("unexpected approval payloads: got %#v want %#v", approvalReplies, wantReplies)
-	}
-}
-
-func TestAgentHubClientResumeLaunchEnvironmentOverlay(t *testing.T) {
-	var bodies []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/v1/sessions/ses_1/resume" {
-			http.NotFound(w, r)
-			return
-		}
-		data, _ := io.ReadAll(r.Body)
-		bodies = append(bodies, string(data))
-		w.Header().Set("Content-Type", "application/json")
-		writeFakeAgentHubJSON(t, w, sessionEnvelope("ses_1", "starting"))
-	}))
-	defer server.Close()
-	client, err := newAgentHubClient(server.URL, server.Client())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.Resume(context.Background(), "ses_1", map[string]string{"CUSTOM_ENV": "value"}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.Resume(context.Background(), "ses_1", nil); err != nil {
-		t.Fatal(err)
-	}
-	if len(bodies) != 2 {
-		t.Fatalf("expected two resume requests, got %d", len(bodies))
-	}
-	if bodies[0] != `{"launchEnvironment":{"CUSTOM_ENV":"value"}}` {
-		t.Fatalf("resume overlay was not sent: %s", bodies[0])
-	}
-	if bodies[1] != `{}` {
-		t.Fatalf("resume without an overlay must use an empty body: %s", bodies[1])
 	}
 }
 

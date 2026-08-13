@@ -50,7 +50,6 @@ type resourceHistoryOptions struct {
 }
 
 type serveLockMetadata struct {
-	PID           int    `json:"pid"`
 	Address       string `json:"address"`
 	WorkspacePath string `json:"workspacePath"`
 }

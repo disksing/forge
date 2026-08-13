@@ -46,7 +46,7 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 		Generation: 1, GenerationID: "gen-attention", AgentHubSessionID: "session-attention",
 		Status: "idle", TurnNumber: 3, Title: "Attention", Cwd: workspace, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := rewriteAgentRuns(workspace, []agentRun{run}); err != nil {
+	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -85,7 +85,7 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 	}
 
 	run.TurnNumber = 4
-	if err := rewriteAgentRuns(workspace, []agentRun{run}); err != nil {
+	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
 		t.Fatal(err)
 	}
 	tree, err = server.treeAt(context.Background(), workspace)
@@ -100,7 +100,7 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	if err := rewriteAgentRuns(workspace, []agentRun{{
+	if err := rewriteTestAgentRuns(workspace, []agentRun{{
 		ID: "run-active-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
 		Generation: 1, GenerationID: "gen-active-attention", AgentHubSessionID: "session-active-attention",
 		Status: "running", CurrentTurnID: "turn-active", TurnNumber: 2, Title: "Active", Cwd: workspace, CreatedAt: now, UpdatedAt: now,
@@ -143,7 +143,7 @@ func TestResourceActiveTurnIgnoresStaleTurnIDOnIdleGeneration(t *testing.T) {
 func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	if err := rewriteAgentRuns(workspace, []agentRun{
+	if err := rewriteTestAgentRuns(workspace, []agentRun{
 		{ID: "run-old-active", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 1, GenerationID: "gen-old-active", AgentHubSessionID: "session-old-active", Status: "running", CurrentTurnID: "turn-old", TurnNumber: 4, Title: "Old", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
 		{ID: "run-new-idle", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 2, GenerationID: "gen-new-idle", AgentHubSessionID: "session-new-idle", Status: "idle", TurnNumber: 4, Title: "New", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
 	}); err != nil {
@@ -185,7 +185,7 @@ func TestResourceAttentionSortsByTurnBoundariesInsteadOfRuntimeUpdates(t *testin
 		{ID: "run-idle-older", ResourceID: resourceIDs[2], Generation: 1, GenerationID: "gen-idle-older", AgentHubSessionID: "session-idle-older", Status: "idle", CompletionAt: "2026-08-13T00:00:30Z", UpdatedAt: "2026-08-13T00:01:00Z"},
 		{ID: "run-idle-newer", ResourceID: resourceIDs[3], Generation: 1, GenerationID: "gen-idle-newer", AgentHubSessionID: "session-idle-newer", Status: "idle", CompletionAt: "2026-08-13T00:00:40Z", UpdatedAt: "2026-08-13T00:00:41Z"},
 	}
-	if err := rewriteAgentRuns(workspace, runs); err != nil {
+	if err := rewriteTestAgentRuns(workspace, runs); err != nil {
 		t.Fatal(err)
 	}
 

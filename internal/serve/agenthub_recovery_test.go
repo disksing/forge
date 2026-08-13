@@ -88,7 +88,7 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 		}
 	}
 	fake.mu.Unlock()
-	if err := rewriteAgentRuns(workspace.Path, runs); err != nil {
+	if err := rewriteTestAgentRuns(workspace.Path, runs); err != nil {
 		t.Fatal(err)
 	}
 

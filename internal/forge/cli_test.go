@@ -2365,21 +2365,6 @@ func writeTestResourceJSON(t *testing.T, path string, value any) {
 	}
 }
 
-func stripHTMLComments(s string) string {
-	for {
-		start := strings.Index(s, "<!--")
-		if start < 0 {
-			return s
-		}
-		end := strings.Index(s[start+4:], "-->")
-		if end < 0 {
-			return s[:start]
-		}
-		end += start + 7
-		s = s[:start] + s[end:]
-	}
-}
-
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

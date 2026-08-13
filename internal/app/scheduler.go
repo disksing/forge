@@ -85,14 +85,6 @@ func schedulerJSONPath(root string) string {
 	return filepath.Join(schedulerPath(root), schedulerJSONFile)
 }
 
-// SchedulerDir returns the canonical Scheduler resource working directory.
-func (w *Workspace) SchedulerDir() string {
-	if w == nil {
-		return ""
-	}
-	return schedulerPath(w.root)
-}
-
 // IsSchedulerPath reports whether start is the Scheduler directory or one of
 // its descendants. It is used only for CLI provenance/resource selection.
 func (w *Workspace) IsSchedulerPath(start string) (bool, error) {

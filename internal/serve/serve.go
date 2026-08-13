@@ -13,7 +13,6 @@ import (
 	"io/fs"
 	"log"
 	"mime"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -279,24 +278,6 @@ func Main(args []string) error {
 
 	log.Printf("forge serve listening on http://%s", addr)
 	return http.ListenAndServe(addr, mux)
-}
-
-func (s *server) internalEndpoint() string {
-	addr := strings.TrimSpace(s.addr)
-	if addr == "" {
-		addr = "127.0.0.1:4936"
-	}
-	if strings.HasPrefix(addr, "http://") || strings.HasPrefix(addr, "https://") {
-		return strings.TrimRight(addr, "/")
-	}
-	host, port, err := net.SplitHostPort(addr)
-	if err == nil {
-		if host == "" || host == "0.0.0.0" || host == "::" {
-			host = "127.0.0.1"
-		}
-		return "http://" + net.JoinHostPort(host, port)
-	}
-	return "http://" + strings.TrimRight(addr, "/")
 }
 
 func (s *server) handleWorkspaces(w http.ResponseWriter, r *http.Request) {
@@ -1919,11 +1900,6 @@ func writeJSON(w http.ResponseWriter, value any) {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 	_ = encoder.Encode(value)
-}
-
-func writeRawJSON(w http.ResponseWriter, data []byte) {
-	w.Header().Set("Content-Type", "application/json")
-	_, _ = w.Write(data)
 }
 
 func writeError(w http.ResponseWriter, err error, status int) {

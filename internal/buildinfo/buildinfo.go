@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-const linkerPath = "github.com/disksing/forge/internal/buildinfo"
-
 // Branch and SHA are intended to be set by release builds via -ldflags.
 var (
 	Branch = "unknown"
@@ -35,10 +33,6 @@ func Current() Info {
 func Text(program string) string {
 	info := Current()
 	return fmt.Sprintf("%s branch=%s sha=%s\n", program, info.Branch, info.SHA)
-}
-
-func LDFlagsFor(info Info) string {
-	return fmt.Sprintf("-X %s.Branch=%s -X %s.SHA=%s", linkerPath, clean(info.Branch), linkerPath, clean(info.SHA))
 }
 
 func clean(value string) string {

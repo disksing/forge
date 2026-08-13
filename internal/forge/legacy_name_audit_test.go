@@ -16,17 +16,12 @@ func TestRetiredRunNameIsConfinedToMigrationAndFixtures(t *testing.T) {
 	root := filepath.Clean(filepath.Join("..", ".."))
 	retiredName := regexp.MustCompile(`(?i)auto[-_ ]?run`)
 	allowed := map[string]bool{
-		"internal/app/api_test.go":                      true,
-		"internal/app/self_driving_migration.go":        true,
-		"internal/app/template_legacy_migration.go":     true,
-		"internal/app/template_test.go":                 true,
-		"internal/forge/cli_test.go":                    true,
-		"internal/forge/legacy_name_audit_test.go":      true,
-		"internal/forge/self_driving_migration.go":      true,
-		"internal/serve/self_driving_migration.go":      true,
-		"internal/serve/self_driving_migration_test.go": true,
-		"internal/serve/self_driving_start_test.go":     true,
-		"internal/serve/template_api_test.go":           true,
+		"internal/app/api_test.go":                  true,
+		"internal/app/template_legacy_migration.go": true,
+		"internal/app/template_test.go":             true,
+		"internal/forge/cli_test.go":                true,
+		"internal/forge/legacy_name_audit_test.go":  true,
+		"internal/serve/template_api_test.go":       true,
 	}
 	textExtensions := map[string]bool{
 		".css": true, ".go": true, ".html": true, ".js": true,

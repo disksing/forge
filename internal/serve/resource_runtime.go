@@ -32,25 +32,6 @@ func sourceLookupKey(instanceID, externalID string) string {
 	return strings.TrimSpace(instanceID) + "\x00" + strings.TrimSpace(externalID)
 }
 
-func resourceAcceptsMessages(workspacePath, resourceID string) error {
-	resourceID = strings.TrimSpace(resourceID)
-	if resourceID == "" || resourceID == "workspace" || resourceID == app.SchedulerResourceID {
-		return nil
-	}
-	forgeWorkspace, err := app.OpenWorkspace(workspacePath)
-	if err != nil {
-		return err
-	}
-	value, err := forgeWorkspace.ResourceValue(resourceID)
-	if err != nil {
-		return err
-	}
-	if value.Archived {
-		return fmt.Errorf("resource %s is archived and no longer accepts messages", resourceID)
-	}
-	return nil
-}
-
 func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace guiWorkspace, resourceID string) (bool, error) {
 	runs, err := loadAgentRuns(workspace.Path)
 	if err != nil {
@@ -223,44 +204,7 @@ func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool
 	return agentRun{}, false, nil
 }
 
-func newResourceMessage(text, userName string) resourceInboundMessage {
-	role, sender := agentHubMessageProvenance(userName)
-	return resourceInboundMessage{
-		ID: "msg-" + newRunID(), Text: strings.TrimSpace(text), Role: role,
-		Sender: sender, AcceptedAt: time.Now().Format(time.RFC3339Nano),
-	}
-}
 
-func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) error {
-	if err := migrateLegacyResourceMailbox(rt.workspace.Path); err != nil {
-		return err
-	}
-	run := rt.snapshotRun()
-	_, err := mutateResourceMailbox(rt.workspace.Path, func(mailbox *resourceMailbox) error {
-		for _, existing := range mailbox.Messages {
-			if existing.ID == message.ID {
-				return nil
-			}
-		}
-		mailbox.NextSequence++
-		actual := resourceMessageModeSteer
-		if message.Steer != nil && !*message.Steer {
-			actual = resourceMessageModeEnqueue
-		}
-		acceptedAt := strings.TrimSpace(message.AcceptedAt)
-		if acceptedAt == "" {
-			acceptedAt = time.Now().Format(time.RFC3339Nano)
-		}
-		mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
-			ID: message.ID, Sequence: mailbox.NextSequence, ResourceID: normalizedResourceID(run.ResourceID),
-			Text: message.Text, Role: message.Role, Sender: message.Sender,
-			RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: message.Steer != nil, Status: resourceMessageQueued,
-			AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
-		})
-		return nil
-	})
-	return err
-}
 
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
 // AgentHub's at-least-once capability makes an unknown response safe: Forge

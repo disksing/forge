@@ -110,18 +110,6 @@ export interface AgentTurnItem {
   data?: Record<string, unknown>;
 }
 
-export interface AgentTurn {
-  id: string;
-  turnId?: string;
-  status?: string;
-  closed: boolean;
-  startEventId: number;
-  endEventId?: number;
-  firstEventId: number;
-  lastEventId: number;
-  items: AgentTurnItem[];
-}
-
 export interface ResourceHistoryGeneration {
   generation: number;
   generationId: string;
