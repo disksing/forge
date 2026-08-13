@@ -141,6 +141,21 @@ describe("DetailPanel", () => {
     expect(selected?.textContent).toContain("Task");
   });
 
+  it("does not expose a retired Work tab for legacy detail data", async () => {
+    const initial = resourceModel();
+    const legacyWork = { name: "work.md", path: "project1/task1/work.md", content: "# Legacy checkpoint", contentHash: "legacy-work" };
+    const { channel, target } = mountModel(resourceModel({ detail: { ...initial.detail!, files: [...initial.detail!.files!, legacyWork] } }));
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    expect(tabs.find((tab) => tab.textContent?.trim() === "Work")).toBeUndefined();
+    expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Task");
+
+    channel.publish({ ...initial, detail: { ...initial.detail!, files: initial.detail!.files } });
+    await tick();
+    expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Task");
+  });
+
   it("keeps document and log DOM identity across unrelated refreshes and appends", async () => {
     const initial = resourceModel();
     const { channel, target } = mountModel(initial);

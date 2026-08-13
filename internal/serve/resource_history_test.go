@@ -124,10 +124,11 @@ func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 		{ID: "run-2", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-2", AgentHubSessionID: "ses-missing", Title: "Task (gen #2)", BindingKind: "profile", BindingName: "default", AgentHubAgentName: "fake-agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
 		{ID: "run-1", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-1", AgentHubSessionID: "ses-1", Title: "Original title (gen #1)", BindingKind: "agent", BindingName: "Old agent", AgentHubAgentName: "Old agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
 	}
-	for _, run := range runs {
-		if err := saveAgentRun(workspace.Path, run); err != nil {
-			t.Fatal(err)
-		}
+	if err := saveAgentRun(workspace.Path, runs[0]); err != nil {
+		t.Fatal(err)
+	}
+	for _, run := range runs[1:] {
+		saveRetiredAgentRunForTest(t, workspace.Path, run, "history_fixture")
 	}
 	fake.mu.Lock()
 	fake.turns["ses-3"] = []agentHubTurn{historyTestTurn("turn-a", 1, true), historyTestTurn("turn-b", 5, false)}
@@ -302,14 +303,14 @@ func TestResourceHistoryReferencesSurviveRestartAndResourceArchive(t *testing.T)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	for _, run := range []agentRun{
+	runs := []agentRun{
 		{ID: "run-new", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-new", AgentHubSessionID: "ses-new", Status: "idle", CreatedAt: now, UpdatedAt: now},
 		{ID: "run-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-old", AgentHubSessionID: "ses-old", Status: "archived", CreatedAt: now, UpdatedAt: now},
-	} {
-		if err := saveAgentRun(workspace.Path, run); err != nil {
-			t.Fatal(err)
-		}
 	}
+	if err := saveAgentRun(workspace.Path, runs[0]); err != nil {
+		t.Fatal(err)
+	}
+	saveRetiredAgentRunForTest(t, workspace.Path, runs[1], "history_fixture")
 	fake.mu.Lock()
 	fake.turns["ses-new"] = []agentHubTurn{historyTestTurn("same-turn-id", 10, true)}
 	fake.turns["ses-old"] = []agentHubTurn{historyTestTurn("same-turn-id", 1, true)}

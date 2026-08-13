@@ -382,7 +382,8 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 	for _, message := range mailbox.Messages {
 		seen[message.ID] = true
 	}
-	mailboxChanged, runsChanged := false, false
+	mailboxChanged := false
+	updatedRuns := make([]agentRun, 0)
 	for runIndex := range runs {
 		for _, legacy := range runs[runIndex].PendingMessages {
 			if strings.TrimSpace(legacy.ID) == "" || seen[legacy.ID] {
@@ -413,9 +414,9 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 			seen[legacy.ID] = true
 			mailboxChanged = true
 		}
-		if len(runs[runIndex].PendingMessages) > 0 {
+		if len(runs[runIndex].PendingMessages) > 0 && !runs[runIndex].Retired && !runs[runIndex].Legacy {
 			runs[runIndex].PendingMessages = nil
-			runsChanged = true
+			updatedRuns = append(updatedRuns, runs[runIndex])
 		}
 	}
 	if mailboxChanged {
@@ -423,8 +424,8 @@ func migrateLegacyResourceMailboxV2(workspacePath string) error {
 			return fmt.Errorf("persist migrated resource mailbox: %w", err)
 		}
 	}
-	if runsChanged {
-		if err := writeAgentRunsIndexLocked(workspacePath, runs); err != nil {
+	for _, run := range updatedRuns {
+		if err := saveAgentRun(workspacePath, run); err != nil {
 			return fmt.Errorf("clear migrated generation queues: %w", err)
 		}
 	}
@@ -894,6 +895,24 @@ func runByGenerationID(workspacePath, generationID string) (agentRun, bool, erro
 	return agentRun{}, false, nil
 }
 
+// currentRunByGenerationID is the lifecycle-facing lookup. History and
+// notification code may inspect retired manifests through runByGenerationID,
+// but a retired or cold generation must never be reintroduced as a mutable
+// mailbox execution target.
+func currentRunByGenerationID(workspacePath, generationID string) (agentRun, bool, error) {
+	runs, err := loadAgentRunsCurrent(workspacePath)
+	if err != nil {
+		return agentRun{}, false, err
+	}
+	generationID = strings.TrimSpace(generationID)
+	for _, run := range runs {
+		if run.GenerationID == generationID && !run.Retired && !run.Legacy {
+			return run, true, nil
+		}
+	}
+	return agentRun{}, false, nil
+}
+
 func (m *agentManager) ensureRuntime(workspace guiWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
 	rt := m.runtimeByID(run.ID)
 	if rt != nil {
@@ -1150,7 +1169,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 		var rt *agentRuntime
 		var client *agentHubClient
 		if message.GenerationID != "" && (message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) {
-			associated, associatedFound, associatedErr := runByGenerationID(workspace.Path, message.GenerationID)
+			associated, associatedFound, associatedErr := currentRunByGenerationID(workspace.Path, message.GenerationID)
 			if associatedErr != nil {
 				return associatedErr
 			}
@@ -1164,6 +1183,19 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 			}
 		}
 		if rt == nil {
+			if message.GenerationID != "" && (message.Status == resourceMessageDelivering || message.Status == resourceMessageInterrupting) {
+				now := time.Now().Format(time.RFC3339Nano)
+				if _, err := updateMailboxMessage(workspace.Path, message.ID, func(current *resourceMailboxMessage) {
+					current.Status = resourceMessageDeliveryUnknown
+					current.UpdatedAt = now
+					current.TerminalAt = now
+					current.LastErrorCode = "generation_retired"
+					current.LastError = "the generation was retired before the delivery outcome could be confirmed"
+				}); err != nil {
+					return err
+				}
+				continue
+			}
 			run, rt, client, err = m.ensureMailboxGeneration(ctx, workspace, resourceID)
 			if err != nil {
 				recordMailboxFailure(workspace.Path, message.ID, err)

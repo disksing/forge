@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -23,7 +24,50 @@ func openTestForgeWorkspace(t *testing.T, path, language string) *app.Workspace 
 func rewriteTestAgentRuns(workspacePath string, runs []agentRun) error {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	return writeAgentRunsIndexLocked(workspacePath, runs)
+	byResource := make(map[string][]agentRun)
+	for _, run := range runs {
+		byResource[normalizedResourceID(run.ResourceID)] = append(byResource[normalizedResourceID(run.ResourceID)], run)
+	}
+	for _, resourceRuns := range byResource {
+		sort.SliceStable(resourceRuns, func(i, j int) bool {
+			if resourceRuns[i].Generation != resourceRuns[j].Generation {
+				return resourceRuns[i].Generation < resourceRuns[j].Generation
+			}
+			return resourceRuns[i].ID < resourceRuns[j].ID
+		})
+		for _, run := range resourceRuns[:len(resourceRuns)-1] {
+			record, err := agentRunToGenerationRecord(run)
+			if err != nil {
+				return err
+			}
+			store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
+			if err != nil {
+				return err
+			}
+			if err := store.SaveRetired(record, "test_fixture"); err != nil {
+				return err
+			}
+		}
+		if err := saveAgentRun(workspacePath, resourceRuns[len(resourceRuns)-1]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func saveRetiredAgentRunForTest(t *testing.T, workspacePath string, run agentRun, reason string) {
+	t.Helper()
+	store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := agentRunToGenerationRecord(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveRetired(record, reason); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // newResourceMessage and enqueueResourceMessage reconstruct the retired

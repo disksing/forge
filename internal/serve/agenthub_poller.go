@@ -96,7 +96,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			failures = append(failures, fmt.Sprintf("%s: inspect resources: %v", workspace.ID, openErr))
 			continue
 		}
-		runs, loadErr := loadAgentRuns(workspace.Path)
+		runs, loadErr := loadAgentRunsCurrent(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue

@@ -363,8 +363,8 @@ Commands:
     context defaults to agent, and every other invocation defaults to user.
 
   forge migrate [--language=<language>]
-    Refresh forge-managed AGENTS.md blocks in the enclosing workspace. Pass
-    --language to switch the workspace language between en and zh-CN.
+    Refresh forge-managed AGENTS.md blocks and migrate legacy task history before
+    removing obsolete files. Pass --language to switch between en and zh-CN.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -395,7 +395,7 @@ Commands:
 
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
-    directory, including task.json, task.md, work.md, log.jsonl, artifacts/,
+    directory, including task.json, task.md, log.jsonl, artifacts/,
     worktree/, and task-local AGENTS.md. <title> is written to task.json and
     shown by task list. --detail initializes the Background section in the
     default task.md scaffold. --task-markdown writes the complete task.md file
@@ -496,7 +496,7 @@ Commands:
     --server explicitly overrides its diagnostic address.
 
   forge session list
-    List read-only generation diagnostics derived from .forge/runtime/generations.json.
+    List read-only generation diagnostics derived from the resource-scoped generation store.
     This diagnostic command never changes generation state or contacts AgentHub.
 
   forge session show --id=<generationId>

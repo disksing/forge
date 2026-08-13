@@ -92,8 +92,8 @@ The GUI has no built-in authentication. Its default loopback address is appropri
 The main UI is split into navigation, resource details, and agent chat:
 
 - **Navigation:** switch workspaces, open the fixed Scheduler entry, expand the project/task tree, and monitor each resource's current runtime state.
-- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, `work.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
-- **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
+- **Details:** render Scheduler context, schedules, `project.md`, `task.md`, and logs; browse templates and artifacts; preview the workspace Wiki; inspect repository/worktree metadata; and render tracked plus untracked Git diffs.
+- **Chat:** select a Workspace, Scheduler, Project, or Task and send a message directly; Forge lazily creates or reuses that work subject's current generation. The resource timeline continues across generation boundaries, shows explicit history gaps, and pages older Turns without exposing Session lifecycle controls. A new generation recovers from the brief, bounded recent resource history, task-worktree Git state, and artifacts rather than a second permanent progress file. Waiting mailbox messages appear above the composer and can be inserted into the active Turn without changing message ID when steer is supported.
 - **Settings:** set the browser-local user name used for chat provenance, add or remove workspaces, choose one of the bundled workspace icons, edit the user-owned portion of workspace `AGENTS.md`, inspect the read-only AgentHub catalog, map Profiles to catalog agents, and choose the one-time Profile defaults for newly created Workspaces, Projects, and Tasks. The user name defaults to `User` and is not written to server configuration or workspace data.
 
 The desktop panes are resizable. On smaller screens, navigation becomes a drawer and details/chat become switchable views.
@@ -104,7 +104,7 @@ Forge does not import provider adapters, spawn provider CLIs, probe provider hea
 
 Every user message is sent to AgentHub with provenance `role=user` and the browser-local name configured in Settings. The timeline shows that name with a `USER` label; missing or invalid names fall back to `User`.
 
-Forge persists generation records in `<workspace>/.forge/runtime/generations.json`. Mailbox state is resource-scoped under `<workspace>/.forge/runtime/resources/<resource-key>/`, where the key is a hash of the stable Workspace instance ID and normalized resource ID. Each resource has an atomic hot/receipt/outbox/scheduler bundle: hot state retains complete messages while delivery, recovery, notification, or Scheduler turn-boundary work is unresolved; terminal messages become minimal receipts without body text. Receipts retain at most 2,048 entries and seven days, and their bounded expired index returns `message_receipt_expired` (HTTP 410) before the ID is eventually forgotten. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Turn association. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
+Forge persists each resource generation under `<workspace>/.forge/runtime/resources/<resource-key>/`: one mutable `current.json` and immutable retired manifests in `generations/`. The resource key is derived from the stable Workspace instance ID and normalized resource ID, so it is unambiguous and independent of the Workspace path. A versioned `generation-store.json` marker and staging directory make migration from the old `.forge/runtime/generations.json` and `.forge/gui-agent/runs.json` repeatable; those legacy files remain as rollback evidence, while records without a generation ID are isolated as cold history. The same resource directory contains the atomic mailbox `hot.json`, `receipts.json`, `outbox.json`, `scheduler.json`, and `commit.json`: hot state retains complete messages while delivery, recovery, notification, or Scheduler turn-boundary work is unresolved; terminal messages become minimal receipts without body text. Receipts retain at most 2,048 entries and seven days, and their bounded expired index returns `message_receipt_expired` (HTTP 410) before the ID is eventually forgotten. Accepted messages are fsynced before success is returned and retain stable IDs, provenance, requested/actual mode, downgrade reason, delivery state, timestamps, diagnostics, and any generation/Turn association. Generated notification bodies are kept in the recoverable outbox only until target acceptance; source and target retain bounded summaries while AgentHub history remains canonical. Upgrading stages generation records, mailbox schema v1/v2, and legacy `pendingMessages` by stable resource, writes the new stores first, deduplicates by stable ID, and only then clears legacy queues, so an interrupted migration can be repeated without loss. AgentHub assumes durable at-least-once delivery responsibility before Forge marks an item delivered; a delivered item means accepted by AgentHub, not that its Turn is complete.
 
 A ready current generation is automatically slept after 30 minutes of continuous idle when there is no active Turn or approval, pending mailbox delivery, or lifecycle convergence. Forge persists the ready boundary, safely Stop-confirms-Archive the exact AgentHub Session, and retains the resource as an addressable idle resource; a later user, agent, system, or Scheduler message lazily creates the next generation. Polling and Server restarts do not reset the deadline, and the resource history remains continuous across generations.
 
@@ -235,14 +235,17 @@ Templates without `schema-version` remain visible as legacy V1 templates with de
 AgentWorkspace/
   AGENTS.md                   global human and agent instructions
   forge.json                  workspace configuration
-  .forge/runtime/generations.json  durable resource generation records
-  .forge/runtime/resources/        per-resource hot mailbox, receipts, outbox, and Scheduler checkpoint
-    <resource-key>/hot.json        unresolved complete messages only
-    <resource-key>/receipts.json   bounded terminal receipts and expired-ID index
-    <resource-key>/outbox.json     recoverable notification operations
-    <resource-key>/scheduler.json  latest Scheduler tick checkpoint
-    .mailbox-migration.json        durable one-time migration marker
-    .message-locations/            rebuildable message lookup index
+  .forge/runtime/generation-store.json  generation store schema/migration marker
+  .forge/runtime/resources/<resource-key>/  current/retired generations plus mailbox bundle
+    current.json                    mutable current generation record
+    generations/                    immutable retired generation manifests
+    hot.json                         unresolved complete mailbox messages only
+    receipts.json                    bounded terminal receipts and expired-ID index
+    outbox.json                      recoverable notification operations
+    scheduler.json                   latest Scheduler tick checkpoint
+    commit.json                      mailbox multi-document recovery marker
+  .forge/runtime/resources/.mailbox-migration.json  durable mailbox migration marker
+  .forge/runtime/resources/.message-locations/       rebuildable message lookup index
   wiki/
     index.md                  long-lived workspace knowledge
   scheduler/
@@ -262,7 +265,6 @@ AgentWorkspace/
       AGENTS.md               generated task launch card
       task.json               task and repository metadata
       task.md                 durable task contract
-      work.md                 replaceable recovery checkpoint
       log.jsonl               append-only task timeline
       artifacts/              reports, screenshots, uploads, patches
       worktree/               task-owned Git worktrees
@@ -277,7 +279,6 @@ Open/archive state is represented by directory location. Human-readable director
 | File | Role |
 | --- | --- |
 | `project.md`, `task.md` | Durable contracts: background, scope, acceptance criteria, stable constraints, decisions, and contract-changing questions. |
-| task `work.md` | Current focus, next actions, blockers, and just enough transient state to resume. It is replaced as work advances. |
 | `log.jsonl` | Append-only chronological events and completed-step history, written with `forge project log` or `forge task log`. |
 | `project.json`, `task.json` | Versioned structured facts Forge understands. Arbitrary notes belong in Markdown. |
 | `AGENTS.md` | Workspace operating rules plus generated project/task launch cards. Forge rewrites only its marked managed block. |
@@ -349,7 +350,7 @@ Workspace, Project, and Task creation is local and uses the shared `internal/app
 
 Creator-triggered terminal Turn results and terminal cross-resource delivery failures return through the source resource's recoverable outbox as structured system messages with stable `type`, `causation`, and receipt metadata. The generated body is retained only until the target mailbox accepts it; after that, source and target retain bounded summaries while AgentHub canonical history remains the content source. Generated messages never recursively generate another failure notice. Use `forge message show` for delivery diagnostics and `forge history turn show` for callback Turn references.
 
-`forge migrate` upgrades supported resource metadata, performs the one-time versioned mailbox migration from legacy `mailbox.json` and generation `pendingMessages` into staged resource stores, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. The mailbox marker is written only after resource stores are committed and migrated pending queues are cleared; retries deduplicate by stable message ID, and the old `mailbox.json` remains as rollback evidence. An older Forge that does not understand the new resource stores must not write the Workspace after this migration; stop the new Server and use a version that still understands the retained legacy file, or restore from a backup. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
+`forge migrate` upgrades supported resource metadata, performs the one-time versioned migration of generation records and mailbox `pendingMessages` into staged resource stores, isolates upgrade-incompatible legacy `forge-sessions.json` and `.forge-sessions.lock` files under `.forge/legacy/`, migrates meaningful legacy task `work.md` content into a digest-marked chapter in `task.md` before removing the source, removes obsolete project recovery files, restores a missing Wiki index, creates or validates the Scheduler resource, and refreshes Forge-managed `AGENTS.md` blocks. Known default explanatory comments are stripped only on exact deterministic matches; conflicts and uncertain content fail closed. Mailbox stores are committed before migrated queues are cleared, retries deduplicate by stable message ID, and retained legacy files provide rollback evidence. An older Forge that does not understand the new resource stores must not write the Workspace after migration; stop the new Server and use a compatible version or restore from backup. It is safe to run repeatedly and preserves generation, mailbox, Scheduler, and user content outside these markers:
 
 ```markdown
 <!-- managed by forge cli -->

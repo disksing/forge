@@ -180,11 +180,6 @@ func createResourceFilesWithMarkdown(dir string, resource Resource, markdown, la
 	if err := os.WriteFile(filepath.Join(dir, markdownFileName(resource)), []byte(markdown), 0o644); err != nil {
 		return err
 	}
-	if !isProject(resource) {
-		if err := os.WriteFile(filepath.Join(dir, "work.md"), []byte(defaultWorkMD(resource, language)), 0o644); err != nil {
-			return err
-		}
-	}
 	logTitle := localizedCreationLogTitle(resource, language)
 	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
 		return err
@@ -628,7 +623,7 @@ func taskMarkdown(title string, detail string, language string) string {
 	}
 	detail = strings.TrimSpace(detail)
 	if detail == "" {
-		detail = "<!-- Why this work exists. Keep the durable contract here; task execution state belongs in work.md. -->"
+		detail = "<!-- Why this work exists. Keep the durable task contract here. -->"
 	}
 	return fmt.Sprintf(`# %s
 
@@ -645,74 +640,6 @@ func taskMarkdown(title string, detail string, language string) string {
 <!-- List observable results that mean this is done. -->
 - TBD
 `, title, detail)
-}
-
-func defaultWorkMD(resource Resource, language string) string {
-	if language == languageSimplifiedChinese {
-		return defaultWorkMDZH(resource)
-	}
-	meta := resource.resourceMeta()
-	label := "Task"
-	focus := "Clarify the task contract in task.md, then record the current execution state and next action here."
-	return fmt.Sprintf(`# Work
-
-## Focus
-
-%s %s has been created. %s
-
-<!--
-Optional modules. Copy only useful modules below this comment, keep them current, and delete empty modules.
-Do not restate the task background, scope, acceptance criteria, or stable decisions here; keep those in task.md.
-
-## Todo
-Use for short-term actions needed by the next agent. Put completed history in log.jsonl.
-- [ ] Next concrete action.
-
-## Blockers
-Use only when work cannot continue without user input or an external change.
-- Blocker: what is blocked, what is needed, and who or what can resolve it.
-
-## Active Work
-Use when there is an in-progress implementation, investigation, or review thread with local state worth preserving.
-- Focus: current thread.
-- Files: relevant paths.
-- Notes: state needed to resume.
-
-## Paused Work
-Use when temporarily switching away from unfinished work.
-- Paused thread: where to resume, why it paused, and what should happen next.
-
-## Resume Plan
-Use after interruption or handoff when order matters.
-1. First recovery step.
-2. Next recovery step.
-
-## Context
-Use for useful transient context that is not durable enough for task.md.
-- Fact, assumption, or constraint relevant to resuming.
-
-## Resources
-Use for unpredictable links and external ids that do not belong in task.json.
-- PR: URL or id.
-- CI: run id or URL.
-- Image: tag.
-- Deployment: URL.
-- Related task: id.
-
-## Verification
-Use for checks already run or still needed when that helps the next agent.
-- [x] Command or check that passed.
-- [ ] Command or check not run yet.
-
-## Notes
-Use sparingly for recovery notes that do not fit another module.
-- Note.
--->
-`, label, meta.ID, focus)
-}
-
-func workMDGuidance(resourceName string) string {
-	return fmt.Sprintf("Use %s as a replaceable recovery checkpoint: record only the current focus, next actions, blockers, and state needed to resume. Do not repeat the task contract or append completed-step history. Keep optional modules only when useful, delete empty modules, and put arbitrary resource links or IDs in Resources.", resourceName)
 }
 
 func markdownGuidance(resourceName string) string {
@@ -749,18 +676,18 @@ func taskAgentsPrompt(resource Resource, language string) string {
 - When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 `
 	}
-	readLine := "Read task.json, task.md, work.md, and log.jsonl before acting."
+	readLine := "Read task.json, task.md, and log.jsonl before acting; use the bounded resource history recovery procedure in the Workspace guidance for a new generation."
 	updateLine := "If the task involves a new repository, update this task's task.json."
 	structuredLine := jsonGuidance("task.json")
 	backgroundLine := markdownGuidance("task.md")
-	recoveryLine := workMDGuidance("work.md")
-	pendingLine := "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md; ask the user to resolve them before implementation when necessary. Keep short-lived execution questions in work.md. When investigation produces a durable decision, promote it to task.md and remove the temporary work.md note."
+	recoveryLine := "Recover transient execution context by querying `forge task history --project=<project> --task=<task> --limit=20`, skipping the input currently executing and expanding only relevant, failed, or non-converged Turns with `forge history turn show --ref=...`; then inspect task-owned worktree Git state and related artifacts. Report any history gap and do not create a second permanent progress file."
+	pendingLine := "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md; ask the user to resolve them before implementation when necessary. Record durable decisions in task.md."
 	if isProject(resource) {
 		readLine = "Read project.json, project.md, and log.jsonl before acting."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = jsonGuidance("project.json")
 		backgroundLine = markdownGuidance("project.md")
-		recoveryLine = "Keep transient implementation state in task work.md files; projects do not have a work.md recovery snapshot."
+		recoveryLine = "Recover transient project execution context by querying `forge project history --project=<project> --limit=20`, skipping the input currently executing and expanding only relevant, failed, or non-converged Turns with `forge history turn show --ref=...`; then inspect selected tasks' Git state and artifacts. Report any history gap and keep durable decisions in project.md."
 		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
 		extra = `
 - Project content templates live in templates/*.md. Use schema-version: 2 with title, optional description/task-title, fields, and a Markdown body. Supported field types are text, textarea, select, and boolean.

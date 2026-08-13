@@ -39,7 +39,8 @@
       preview = null;
       diffRepo = null;
       expanded = new Set();
-      activeTab = tabMemory.get(identity) || initialTab(next);
+      const remembered = tabMemory.get(identity);
+      activeTab = remembered && remembered !== "work" ? remembered : initialTab(next);
       const content = document.getElementById("detailsContent");
       if (content) content.scrollTop = 0;
     } else if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) {
@@ -65,7 +66,6 @@
     if (value.resourceType === "scheduler") return "schedules";
     if (value.resourceType === "project" && detailFiles.some((file) => file.name === "project.md")) return "project";
     if (detailFiles.some((file) => file.name === "task.md")) return "task";
-    if (detailFiles.some((file) => file.name === "work.md")) return "work";
     if (value.resourceType === "project") return "project";
     if (value.resourceType === "task") return "task";
     return "logs";
@@ -80,7 +80,6 @@
     const result: Array<{ id: string; label: string; icon: string }> = [];
     if (fileNames.has("project.md")) result.push({ id: "project", label: "Project", icon: "file-text" });
     if (fileNames.has("task.md")) result.push({ id: "task", label: "Task", icon: "file-text" });
-    if (fileNames.has("work.md")) result.push({ id: "work", label: "Work", icon: "file-text" });
     if (model.resourceType === "project" || model.detail.template) result.push({ id: "template", label: "Template", icon: "layout-template" });
     result.push({ id: "logs", label: "Logs", icon: "history" }, { id: "artifacts", label: "Artifacts", icon: "paperclip" });
     if (model.resourceType === "task") result.push({ id: "worktrees", label: "Worktrees", icon: "folder-git-2" });
@@ -91,8 +90,7 @@
 	if (file.name === "scheduler.md") return "context";
     if (file.name === "project.md") return "project";
     if (file.name === "task.md") return "task";
-    if (file.name === "work.md") return "work";
-    return tabs.find((tab) => ["project", "task", "work"].includes(tab.id))?.id || "";
+    return tabs.find((tab) => ["project", "task"].includes(tab.id))?.id || "";
   }
 
   function selectTab(tab: string): void {

@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/forge/internal/generation"
 )
 
 type runtimeFakeAgentHub struct {
@@ -508,6 +509,7 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	}
 	server := &server{config: configPath, addr: "127.0.0.1:4936"}
 	manager := newAgentManager(server)
+	manager.now = func() time.Time { return time.Date(2026, 8, 1, 0, 0, 20, 0, time.UTC) }
 	server.agents = manager
 	return manager, workspace, configPath
 }
@@ -873,8 +875,15 @@ func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
 	if err != nil || len(runs) != 1 || runs[0].ID != "run-legacy" {
 		t.Fatalf("migrated runs=%#v err=%v", runs, err)
 	}
-	if _, err := os.Stat(agentIndexPath(workspacePath)); err != nil {
-		t.Fatalf("new runtime index missing: %v", err)
+	if _, err := os.Stat(filepath.Join(workspacePath, ".forge", "runtime", "generation-store.json")); err != nil {
+		t.Fatalf("generation store marker missing: %v", err)
+	}
+	store, err := generation.Open(workspacePath, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if current, err := store.ListCurrent(); err != nil || len(current) != 0 {
+		t.Fatalf("missing-generation legacy record entered current lifecycle state: current=%#v err=%v", current, err)
 	}
 	if _, err := os.Stat(legacyPath); err != nil {
 		t.Fatalf("legacy rollback copy was removed: %v", err)

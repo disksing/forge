@@ -446,7 +446,7 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		runs, loadErr := loadAgentRuns(workspace.Path)
+		runs, loadErr := loadAgentRunsCurrent(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue

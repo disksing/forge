@@ -292,7 +292,7 @@ func selectLatestAgentHubResourceRuns(runs []agentRun) map[string]agentRun {
 }
 
 func attentionAgentHubResourceRuns(workspacePath string) (map[string]agentRun, error) {
-	runs, err := loadAgentRuns(workspacePath)
+	runs, err := loadAgentRunsCurrent(workspacePath)
 	if err != nil {
 		return nil, fmt.Errorf("load resource generations for active attention turns: %w", err)
 	}
