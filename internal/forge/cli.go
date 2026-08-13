@@ -177,8 +177,6 @@ func runProject(args []string) error {
 			return err
 		}
 		return applicationArchiveResource(projectID)
-	case "log":
-		return runResourceLog("project", args[1:])
 	case "repo":
 		return errors.New("projects do not manage repositories or worktrees; use forge task repo <subcommand> [--project=<project>] [--task=<task>] ...")
 	default:
@@ -260,8 +258,6 @@ func runTask(args []string) error {
 		return runTaskHistory(args[1:])
 	case "repo":
 		return runTaskRepo(args[1:])
-	case "log":
-		return runResourceLog("task", args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
 	}
@@ -292,7 +288,7 @@ func printUsage() {
 
 How Forge works:
   All workspace data lives on the filesystem as project/task directories,
-  JSON/Markdown files, logs, artifacts, and task worktrees. Agents may inspect
+  JSON/Markdown files, resource History, artifacts, and task worktrees. Agents may inspect
   other resources, but write only the Workspace files owned by their starting
   resource and its task worktrees. The web service is provided by forge serve.
 
@@ -308,9 +304,6 @@ Usage:
   forge project list [--all]
   forge project show [--project=<project>]
   forge project archive [--project=<project>]
-  forge project log add [--project=<project>] [--details <text>|--details -] <title>
-  forge project log list [--project=<project>] [--json]
-
   forge template list [--project=<project>] [--json]
   forge template show [--project=<project>] [--json|--raw|--schema] <name>
   forge template validate [--project=<project>] [<name>|--all] [--json]
@@ -334,8 +327,6 @@ Usage:
   forge task list [--project=<project>] [--all]
   forge task show [--project=<project>] [--task=<task>]
   forge task archive [--project=<project>] [--task=<task>]
-  forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
-  forge task log list [--project=<project>] [--task=<task>] [--json]
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
   forge task repo list [--project=<project>] [--task=<task>]
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
@@ -363,8 +354,9 @@ Commands:
     context defaults to agent, and every other invocation defaults to user.
 
   forge migrate [--language=<language>]
-    Refresh forge-managed AGENTS.md blocks and migrate legacy task history before
-    removing obsolete files. Pass --language to switch between en and zh-CN.
+    Refresh forge-managed AGENTS.md blocks and migrate legacy task/resource
+    history before removing obsolete files. Pass --language to switch between
+    en and zh-CN.
 
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
@@ -376,7 +368,8 @@ Commands:
 
   forge project create [--slug <slug>] [--creator=user|agent] <description>
     Create the next top-level project directory, including project.json,
-    project.md, log.jsonl, artifacts/, templates/, and project-local AGENTS.md.
+    project.md, artifacts/, templates/, and project-local AGENTS.md. Conversation
+    history is created lazily through resource History.
     Use --slug <slug> to append a human-readable suffix to the directory name.
     Creation is local and does not create a generation or send a message.
 
@@ -395,8 +388,9 @@ Commands:
 
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
-    directory, including task.json, task.md, log.jsonl, artifacts/,
-    worktree/, and task-local AGENTS.md. <title> is written to task.json and
+    directory, including task.json, task.md, work.md, artifacts/, worktree/,
+    and task-local AGENTS.md. Conversation history is created lazily through
+    resource History. <title> is written to task.json and
     shown by task list. --detail initializes the Background section in the
     default task.md scaffold. --task-markdown writes the complete task.md file
     and is mutually exclusive with --detail. <project> may be a full id such as
@@ -430,23 +424,6 @@ Commands:
   forge task archive [--project=<project>] [--task=<task>]
     Move an open task into its project archive. <task> follows the same rules
     as forge task show.
-
-  forge task log add [--project=<project>] [--task=<task>] [--details <text>|--details -] <title>
-    Prepend a structured entry to a task's log.jsonl. When --details - is
-    provided, details are read from standard input. Task selection follows
-    forge task show.
-
-  forge task log list [--project=<project>] [--task=<task>] [--json]
-    List a task's structured log entries newest first. Use --json to print
-    entries as formatted JSON. Task selection follows forge task show.
-
-  forge project log add [--project=<project>] [--details <text>|--details -] <title>
-    Prepend a structured entry to a project's log.jsonl. Project selection
-    follows forge project show.
-
-  forge project log list [--project=<project>] [--json]
-    List a project's structured log entries newest first. Use --json to print
-    entries as formatted JSON. Project selection follows forge project show.
 
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge

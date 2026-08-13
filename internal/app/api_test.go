@@ -46,14 +46,6 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 		t.Fatalf("inferred task = %q, %v, %v", got, ok, err)
 	}
 
-	if _, err := workspace.AddLog(task.ID, "API exercised", "typed mutation"); err != nil {
-		t.Fatal(err)
-	}
-	logs, err := workspace.Logs(task.ID)
-	if err != nil || len(logs) != 2 || logs[0].Title != "API exercised" {
-		t.Fatalf("logs = %#v, %v", logs, err)
-	}
-
 	repoPath := filepath.Join(root, "repos", "example")
 	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -63,7 +55,7 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 		t.Fatalf("updated task repos = %#v, %v", updated.Repos, err)
 	}
 	detail, err := workspace.Resource(task.ID)
-	if err != nil || len(detail.Repos) != 1 || len(detail.Logs) != 2 {
+	if err != nil || len(detail.Repos) != 1 {
 		t.Fatalf("resource detail = %#v, %v", detail, err)
 	}
 	tree, err := workspace.Tree()

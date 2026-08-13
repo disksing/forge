@@ -14,12 +14,10 @@ import (
 	"log"
 	"mime"
 	"net/http"
-	"net/url"
 	"os"
 	"os/exec"
 	urlpath "path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -151,12 +149,6 @@ type guiState struct {
 	ProjectOrder     []string                          `json:"projectOrder,omitempty"`
 	TaskOrder        map[string][]string               `json:"taskOrder,omitempty"`
 	Attention        map[string]resourceAttentionState `json:"attention,omitempty"`
-}
-
-type resourceLogRequest struct {
-	paged  bool
-	cursor string
-	limit  int
 }
 
 type server struct {
@@ -421,12 +413,7 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			writeError(w, errors.New("resource id is required"), http.StatusBadRequest)
 			return
 		}
-		logRequest, err := parseResourceLogRequest(r.URL.Query())
-		if err != nil {
-			writeError(w, err, http.StatusBadRequest)
-			return
-		}
-		detail, err := s.resource(r.Context(), id, parts[2], logRequest)
+		detail, err := s.resource(r.Context(), id, parts[2])
 		if err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -1521,39 +1508,7 @@ func resourceRuntimeRunNewer(left, right agentRun) bool {
 	return left.ID > right.ID
 }
 
-func parseResourceLogRequest(values url.Values) (resourceLogRequest, error) {
-	request := resourceLogRequest{}
-	cursorValues, cursorSet := values["logsCursor"]
-	limitValues, limitSet := values["logsLimit"]
-	if !cursorSet && !limitSet {
-		return request, nil
-	}
-	if len(cursorValues) > 1 || len(limitValues) > 1 {
-		return request, errors.New("resource log pagination parameters must not be repeated")
-	}
-	request.paged = true
-	if cursorSet {
-		request.cursor = cursorValues[0]
-		if strings.TrimSpace(request.cursor) == "" {
-			return resourceLogRequest{}, errors.New("logsCursor cannot be empty")
-		}
-	}
-	request.limit = app.DefaultResourceLogPageLimit
-	if cursorSet {
-		request.limit = app.OlderResourceLogPageLimit
-	}
-	if limitSet {
-		value := strings.TrimSpace(limitValues[0])
-		parsed, err := strconv.Atoi(value)
-		if err != nil || parsed <= 0 || parsed > app.MaxResourceLogPageLimit {
-			return resourceLogRequest{}, fmt.Errorf("logsLimit must be an integer between 1 and %d", app.MaxResourceLogPageLimit)
-		}
-		request.limit = parsed
-	}
-	return request, nil
-}
-
-func (s *server) resource(ctx context.Context, id string, resourceID string, logRequest resourceLogRequest) (app.ResourceDetailView, error) {
+func (s *server) resource(ctx context.Context, id string, resourceID string) (app.ResourceDetailView, error) {
 	_ = ctx
 	workspace, err := s.workspace(id)
 	if err != nil {
@@ -1562,9 +1517,6 @@ func (s *server) resource(ctx context.Context, id string, resourceID string, log
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return app.ResourceDetailView{}, err
-	}
-	if logRequest.paged {
-		return forgeWorkspace.ResourcePage(resourceID, logRequest.cursor, logRequest.limit)
 	}
 	return forgeWorkspace.Resource(resourceID)
 }

@@ -180,10 +180,6 @@ func createResourceFilesWithMarkdown(dir string, resource Resource, markdown, la
 	if err := os.WriteFile(filepath.Join(dir, markdownFileName(resource)), []byte(markdown), 0o644); err != nil {
 		return err
 	}
-	logTitle := localizedCreationLogTitle(resource, language)
-	if err := os.WriteFile(filepath.Join(dir, logJSONLFile), []byte(defaultLogJSONL(logTitle)), 0o644); err != nil {
-		return err
-	}
 	return os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(taskAgentsBlock(resource, language)+"\n"), 0o644)
 }
 
@@ -670,20 +666,20 @@ func taskAgentsPrompt(resource Resource, language string) string {
 		agentsLine = "Always read the workspace root AGENTS.md (../AGENTS.md) for global Workspace file-role rules."
 	} else if _, ok := resource.(*Task); ok {
 		extra = `
-- This task belongs to a project. Read the parent project directory's project.json, project.md, and log.jsonl when you need broader context.
+- This task belongs to a project. Read the parent project directory's project.json and project.md when you need broader context; use project History for conversation context.
 - Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
 - When creating a task, prefer an existing suitable template from the current project's templates/ directory whenever one is available.
 - When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
 `
 	}
-	readLine := "Read task.json, task.md, and log.jsonl before acting; use the bounded resource history recovery procedure in the Workspace guidance for a new generation."
+	readLine := "Read task.json, task.md, and work.md before acting; use resource History when conversation context is needed."
 	updateLine := "If the task involves a new repository, update this task's task.json."
 	structuredLine := jsonGuidance("task.json")
 	backgroundLine := markdownGuidance("task.md")
 	recoveryLine := "Recover transient execution context by querying `forge task history --project=<project> --task=<task> --limit=20`, skipping the input currently executing and expanding only relevant, failed, or non-converged Turns with `forge history turn show --ref=...`; then inspect task-owned worktree Git state and related artifacts. Report any history gap and do not create a second permanent progress file."
 	pendingLine := "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md; ask the user to resolve them before implementation when necessary. Record durable decisions in task.md."
 	if isProject(resource) {
-		readLine = "Read project.json, project.md, and log.jsonl before acting."
+		readLine = "Read project.json and project.md before acting; use project History when conversation context is needed."
 		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
 		structuredLine = jsonGuidance("project.json")
 		backgroundLine = markdownGuidance("project.md")
@@ -728,7 +724,7 @@ You are working inside a %s.
 - %s
 - %s
 - %s
-- Record important execution events with `+"`forge task log add <title> --details <details>`"+` when working in a task, or `+"`forge project log add <title> --details <details>`"+` when working in a project.
+- Read conversation and execution events through the resource History commands.
 - Put generated reports, screenshots, patches, and other outputs under artifacts/.
 %s
 `, title, scope, agentsLine, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)

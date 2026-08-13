@@ -45,8 +45,6 @@ type ResourceDetailView struct {
 	Creator      *Creator            `json:"creator,omitempty"`
 	AgentBinding AgentBinding        `json:"agentBinding"`
 	Repos        []TaskRepo          `json:"repos,omitempty"`
-	Logs         []LogEntry          `json:"logs,omitempty"`
-	LogPage      *LogPage            `json:"logPage,omitempty"`
 	Files        []ResourceFile      `json:"files,omitempty"`
 	Artifacts    []FileTreeEntry     `json:"artifacts"`
 	Worktrees    []FileTreeEntry     `json:"worktrees"`
@@ -181,15 +179,6 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 }
 
 func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView, error) {
-	logs, err := readLogEntries(entry.Path)
-	if err != nil {
-		return ResourceDetailView{}, err
-	}
-	sortLogEntries(logs)
-	return buildResourceDetailAtWithLogs(root, entry, logs)
-}
-
-func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogEntry) (ResourceDetailView, error) {
 	meta := entry.Resource.resourceMeta()
 	detail := ResourceDetailView{
 		ID:           meta.ID,
@@ -201,7 +190,6 @@ func buildResourceDetailAtWithLogs(root string, entry resourceEntry, logs []LogE
 		Archived:     isArchivedPath(root, entry.Path),
 		Creator:      meta.Creator,
 		AgentBinding: meta.AgentBinding,
-		Logs:         logs,
 		Files:        readResourceFiles(root, entry.Path, entry.Resource),
 		Artifacts:    readFileTree(root, filepath.Join(entry.Path, "artifacts")),
 		Worktrees:    []FileTreeEntry{},

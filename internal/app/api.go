@@ -265,6 +265,9 @@ func (w *Workspace) migrate(language string) error {
 	if err := w.migrateLegacyTaskWorkFiles(language); err != nil {
 		return err
 	}
+	if err := migrateLegacyLogs(w.root); err != nil {
+		return &APIError{Operation: "migrate legacy resource logs", Kind: "legacy_log", Workspace: w.root, Err: err}
+	}
 	if err := isolateLegacySessionProjection(w.root); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "session_projection", Workspace: w.root, Err: err}
 	}
@@ -427,32 +430,6 @@ func (w *Workspace) Resource(id string) (ResourceDetailView, error) {
 	if err != nil {
 		return ResourceDetailView{}, &APIError{Operation: "read resource detail", Kind: "resource", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
 	}
-	return detail, nil
-}
-
-// ResourcePage returns resource metadata and one bounded log page for GUI
-// detail views. Resource and Logs intentionally retain their historical
-// full-history behavior for in-process and CLI-compatible callers.
-func (w *Workspace) ResourcePage(id, cursor string, limit int) (ResourceDetailView, error) {
-	if err := w.require(); err != nil {
-		return ResourceDetailView{}, err
-	}
-	if cleanID(id) == SchedulerResourceID {
-		return w.schedulerResourceDetail()
-	}
-	path, resource, err := loadResource(w.root, cleanID(id))
-	if err != nil {
-		return ResourceDetailView{}, &APIError{Operation: "read resource", Kind: "resource", Workspace: w.root, ResourceID: id, Err: err}
-	}
-	page, err := readLogPage(path, cursor, limit)
-	if err != nil {
-		return ResourceDetailView{}, &APIError{Operation: "read paged resource detail", Kind: "log", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
-	}
-	detail, err := buildResourceDetailAtWithLogs(w.root, resourceEntry{Resource: resource, Path: path}, page.Entries)
-	if err != nil {
-		return ResourceDetailView{}, &APIError{Operation: "read paged resource detail", Kind: "resource", Workspace: w.root, ResourceID: id, Path: relPath(w.root, path), Err: err}
-	}
-	detail.LogPage = &page
 	return detail, nil
 }
 

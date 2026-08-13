@@ -131,48 +131,6 @@ func applicationTaskList(options taskListOptions) error {
 	return nil
 }
 
-func applicationLogAdd(kind, projectID, taskID, title, details string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	resourceID, err := resolveLogResource(kind, projectID, taskID)
-	if err != nil {
-		return err
-	}
-	entry, err := workspace.AddLog(resourceID, title, details)
-	if err != nil {
-		return err
-	}
-	return printJSON(entry)
-}
-
-func applicationLogList(kind, projectID, taskID string, jsonOutput bool) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	resourceID, err := resolveLogResource(kind, projectID, taskID)
-	if err != nil {
-		return err
-	}
-	entries, err := workspace.Logs(resourceID)
-	if err != nil {
-		return err
-	}
-	if jsonOutput {
-		return printJSON(entries)
-	}
-	for _, entry := range entries {
-		fmt.Printf("%s\t%s", entry.Time, entry.Title)
-		if entry.Details != "" {
-			fmt.Printf("\t%s", entry.Details)
-		}
-		fmt.Println()
-	}
-	return nil
-}
-
 func applicationSessionList() error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {
