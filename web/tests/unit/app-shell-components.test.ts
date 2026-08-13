@@ -166,6 +166,7 @@ describe("AppShell responsibility components", () => {
     expect(activeRow.classList.contains("selected")).toBe(false);
     expect(activeRow.hasAttribute("aria-current")).toBe(false);
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
+    expect(activeRow.querySelector('[aria-label="Dismiss Task B"]')).toBeNull();
     expect([...selectedRow.children].map((child) => child.className)).toEqual([
       "activity-status", "activity-title", "activity-badge", "activity-actions",
     ]);

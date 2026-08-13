@@ -103,8 +103,10 @@
               <!-- svelte-ignore a11y_no_static_element_interactions -->
               <span class:followed={item.followed} class="attention-star" role="button" tabindex="0" aria-label={item.followed ? `Unfollow ${item.title}` : `Follow ${item.title}`} title={item.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, item)} onkeydown={(event) => controlKeydown(event, (keyEvent) => toggleAttention(keyEvent, item))}><Icon name="star" /></span>
             {/if}
-            <!-- svelte-ignore a11y_no_static_element_interactions -->
-            <span class="attention-dismiss" role="button" tabindex="0" aria-label={`Dismiss ${item.title}`} title="Dismiss" onclick={(event) => dismiss(event, item)} onkeydown={(event) => controlKeydown(event, (keyEvent) => dismiss(keyEvent, item))}><Icon name="x" /></span>
+            {#if !item.activeTurn}
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <span class="attention-dismiss" role="button" tabindex="0" aria-label={`Dismiss ${item.title}`} title="Dismiss" onclick={(event) => dismiss(event, item)} onkeydown={(event) => controlKeydown(event, (keyEvent) => dismiss(keyEvent, item))}><Icon name="x" /></span>
+            {/if}
           </span>
         </button>
       {/each}

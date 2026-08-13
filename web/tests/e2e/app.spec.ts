@@ -570,6 +570,7 @@ test("highlights the selected Activity resource instead of every active turn", a
   await expect(runningActivity).not.toHaveAttribute("aria-current");
   await expect(runningActivity).toHaveAttribute("data-active-turn", "true");
   await expect(runningActivity).toContainText("Resource working");
+  await expect(runningActivity.locator('[aria-label="Dismiss Infrastructure task"]')).toHaveCount(0);
 });
 
 test("keeps a newly created task Activity row aligned when its first turn starts", async ({ page }) => {
