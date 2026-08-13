@@ -248,4 +248,26 @@ describe("DetailPanel", () => {
     expect(textarea.value).toBe("unsaved local draft");
     expect(target.textContent).toContain("AGENTS.md changed on disk");
   });
+
+  it("keeps file-browser directory icons stable and toggles expansion with a class", async () => {
+    const { target } = mountModel(resourceModel());
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Artifacts"))!.click();
+    await tick();
+
+    const directoryRow = target.querySelector<HTMLButtonElement>(".artifact-row.directory")!;
+    expect(directoryRow).not.toBeNull();
+    expect(directoryRow.classList.contains("open")).toBe(false);
+    // The chevron stays a single stable icon; direction comes from the open class.
+    expect(directoryRow.querySelector('.artifact-chevron i[data-lucide="chevron-right"]')).not.toBeNull();
+    expect(directoryRow.querySelector('.artifact-chevron i[data-lucide="chevron-down"]')).toBeNull();
+    // Folder and folder-open are both rendered and switched through the open class.
+    expect(directoryRow.querySelector('.artifact-folder-icon i[data-lucide="folder"]')).not.toBeNull();
+    expect(directoryRow.querySelector('.artifact-folder-icon i[data-lucide="folder-open"]')).not.toBeNull();
+
+    directoryRow.click();
+    await tick();
+    const expandedRow = target.querySelector<HTMLButtonElement>(".artifact-row.directory")!;
+    expect(expandedRow.classList.contains("open")).toBe(true);
+  });
 });

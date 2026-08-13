@@ -359,6 +359,26 @@
   height: 16px;
 }
 
+:where([data-component-owner="chat-composer"]) .tty-composer-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-composer-icon-busy {
+  display: none;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-button.busy .tty-composer-icon-idle,
+:where([data-component-owner="chat-composer"]) .tty-composer-action.busy .tty-composer-icon-idle {
+  display: none;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-button.busy .tty-composer-icon-busy,
+:where([data-component-owner="chat-composer"]) .tty-composer-action.busy .tty-composer-icon-busy {
+  display: inline-flex;
+}
+
 :where([data-component-owner="chat-composer"]) .tty-composer-error {
   display: flex;
   align-items: center;

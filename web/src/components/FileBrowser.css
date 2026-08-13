@@ -61,6 +61,35 @@
   width: 0;
 }
 
+:where([data-component-owner="file-browser"]) .artifact-chevron svg {
+  transition: transform 150ms ease;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.open .artifact-chevron svg {
+  transform: rotate(90deg);
+}
+
+:where([data-component-owner="file-browser"]) .artifact-folder-icon {
+  display: grid;
+  place-items: center;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-folder-icon > * {
+  grid-area: 1 / 1;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-folder-icon > :nth-child(2) {
+  visibility: hidden;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.open .artifact-folder-icon > :nth-child(1) {
+  visibility: hidden;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row.open .artifact-folder-icon > :nth-child(2) {
+  visibility: visible;
+}
+
 :where([data-component-owner="file-browser"]) .artifact-icon {
   color: #5c6b7a;
 }

@@ -27,8 +27,8 @@
         {@const directory = row.entry.type === "directory"}
         {@const open = expanded.has(`${title}:${row.entry.path}`)}
         <div class="artifact-node">
-          <button type="button" class:directory class:file={!directory} class:active={activePath === `${title}:${row.entry.path}`} class="artifact-row" style={`--depth: ${row.depth}`} onclick={() => directory ? onToggle(`${title}:${row.entry.path}`) : onPreview(title, row.entry.path)}>
-            <span class="artifact-main"><span class="artifact-chevron">{#if directory}<Icon name={open ? "chevron-down" : "chevron-right"} />{/if}</span><Icon name={directory ? open ? "folder-open" : "folder" : fileIcon(row.entry.name)} className={directory ? "artifact-icon artifact-icon-dir" : "artifact-icon"} /><span class="artifact-name" title={row.entry.path}>{row.entry.name}</span></span>
+          <button type="button" class:directory class:file={!directory} class:active={activePath === `${title}:${row.entry.path}`} class:open={directory && open} class="artifact-row" style={`--depth: ${row.depth}`} onclick={() => directory ? onToggle(`${title}:${row.entry.path}`) : onPreview(title, row.entry.path)}>
+            <span class="artifact-main"><span class="artifact-chevron">{#if directory}<Icon name="chevron-right" />{/if}</span>{#if directory}<span class="artifact-folder-icon"><Icon name="folder" className="artifact-icon artifact-icon-dir" /><Icon name="folder-open" className="artifact-icon artifact-icon-dir" /></span>{:else}<Icon name={fileIcon(row.entry.name)} className="artifact-icon" />{/if}<span class="artifact-name" title={row.entry.path}>{row.entry.name}</span></span>
             <span class="artifact-side">{#if !directory}<a class="artifact-download" href={rawURL(title, row.entry.path, true)} download={row.entry.name} title={`Download ${row.entry.name}`} aria-label={`Download ${row.entry.name}`} onclick={(event) => event.stopPropagation()}><Icon name="download" className="artifact-download-icon" /></a>{/if}<small>{directory ? `${(row.entry.children || []).length} items` : formatBytes(row.entry.size || 0)}</small></span>
           </button>
         </div>
