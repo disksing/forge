@@ -148,9 +148,9 @@ describe("ChatComposer", () => {
     await tick();
 
     const bar = target.querySelector<HTMLElement>(".tty-composer-bar")!;
-    const selector = bar.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
+    const selector = bar.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')!;
     expect(selector).not.toBeNull();
-    expect(selector.value).toBe("profile:default");
+    expect(selector.textContent).toContain("default (current: Fake Agent)");
     expect(selector.disabled).toBe(false);
     expect(bar.querySelector("#agentUploadButton")).not.toBeNull();
   });
@@ -170,9 +170,10 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const selector = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
-    selector.value = "agent:other-agent";
-    selector.dispatchEvent(new Event("change", { bubbles: true }));
+    const selector = target.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')!;
+    selector.click();
+    await tick();
+    target.querySelector<HTMLButtonElement>('[data-binding="agent:other-agent"]')!.click();
     await vi.waitFor(() => expect(onSaveAgentBinding).toHaveBeenCalledWith({ kind: "agent", name: "other-agent" }));
   });
 
@@ -186,15 +187,16 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const selector = target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')!;
-    selector.value = "agent:other-agent";
-    selector.dispatchEvent(new Event("change", { bubbles: true }));
+    const selector = target.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')!;
+    selector.click();
     await tick();
-    expect(selector.value).toBe("profile:default");
+    target.querySelector<HTMLButtonElement>('[data-binding="agent:other-agent"]')!.click();
+    await tick();
+    expect(selector.textContent).toContain("default (current: fake-agent)");
 
     channel.publish(model({ agentBinding: { kind: "agent", name: "other-agent" }, agents: [{ id: "other-agent", label: "Other Agent", summary: "other" }] }));
     await tick();
-    expect(selector.value).toBe("agent:other-agent");
+    expect(selector.textContent).toContain("Other Agent");
   });
 
   it("disables the binding selector while a binding is being saved", async () => {
@@ -204,6 +206,6 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    expect(target.querySelector<HTMLSelectElement>('[aria-label="Binding target"]')?.disabled).toBe(true);
+    expect(target.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')?.disabled).toBe(true);
   });
 });
