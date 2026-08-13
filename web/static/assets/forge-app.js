@@ -5741,25 +5741,29 @@ function Ec(e, t) {
 var Dc = /* @__PURE__ */ W("<details data-component-owner=\"event-timeline\" class=\"agent-reasoning-note\"><summary><!><span> </span><span class=\"agent-reasoning-chevron\"><!></span></summary> <p> </p></details>");
 function Oc(e, t) {
 	j(t, !0);
-	let n = Ai(t, "onExpand", 3, () => {});
-	function r() {
+	let n = Ai(t, "onExpand", 3, () => {}), r = /* @__PURE__ */ F(Qt(!!t.item.active)), i = !!t.item.active;
+	bn(() => {
+		let e = !!t.item.active;
+		e !== i && (i = e, I(r, e, !0));
+	});
+	function a() {
 		if (t.item.active) return "Thinking…";
 		if (!t.item.startTime || !t.item.time) return "Thought";
 		let e = Math.round((new Date(t.item.time).getTime() - new Date(t.item.startTime).getTime()) / 1e3);
 		return !Number.isFinite(e) || e < 0 ? "Thought" : e < 60 ? `Thought for ${e} ${e === 1 ? "second" : "seconds"}` : `Thought for ${Math.floor(e / 60)}m${e % 60}s`;
 	}
-	var i = Dc(), a = L(i), o = L(a);
-	X(o, { name: "brain-circuit" });
-	var s = R(o), c = L(s, !0);
-	k(s);
-	var l = R(s);
-	X(L(l), { name: "chevron-right" }), k(l), k(a);
-	var u = R(a, 2), d = L(u, !0);
-	k(u), k(i), z((e) => {
-		i.open = t.item.active, K(c, e), K(d, t.item.text || "");
-	}, [() => r()]), xr("toggle", i, (e) => {
-		e.currentTarget.open && n()();
-	}), G(e, i), M();
+	var o = Dc(), s = L(o), c = L(s);
+	X(c, { name: "brain-circuit" });
+	var l = R(c), u = L(l, !0);
+	k(l);
+	var d = R(l);
+	X(L(d), { name: "chevron-right" }), k(d), k(s);
+	var f = R(s, 2), p = L(f, !0);
+	k(f), k(o), z((e) => {
+		o.open = H(r), K(u, e), K(p, t.item.text || "");
+	}, [() => a()]), xr("toggle", o, (e) => {
+		I(r, e.currentTarget.open, !0), e.currentTarget.open && n()();
+	}), G(e, o), M();
 }
 //#endregion
 //#region src/components/TimelineMessage.svelte

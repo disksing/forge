@@ -9,6 +9,7 @@ import TimelineMessage from "../../src/components/TimelineMessage.svelte";
 import TimelineNotice from "../../src/components/TimelineNotice.svelte";
 import ToolGroup from "../../src/components/ToolGroup.svelte";
 import ToolItem from "../../src/components/ToolItem.svelte";
+import ThinkingBlockHarness from "../fixtures/ThinkingBlockHarness.svelte";
 import UnknownEvent from "../../src/components/UnknownEvent.svelte";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -47,6 +48,35 @@ describe("timeline rendering components", () => {
 
     const completed = mounted(ThinkingBlock, { item: { kind: "thinking", startTime: "2026-01-01T00:00:00Z", time: "2026-01-01T00:01:05Z" } });
     expect(completed.textContent).toContain("Thought for 1m5s");
+  });
+
+  it("keeps a user-toggled thinking block open when timeline items rebuild", async () => {
+    const onExpand = vi.fn();
+    const container = target();
+    const harness = mount(ThinkingBlockHarness, { target: container, props: { item: { kind: "thinking", text: "draft" }, onExpand } });
+    cleanups.push(() => unmount(harness));
+    const details = container.querySelector<HTMLDetailsElement>("details");
+    expect(details?.open).toBe(false);
+
+    // The user expands the completed block manually.
+    details!.open = true;
+    details!.dispatchEvent(new Event("toggle"));
+    await tick();
+    expect(onExpand).toHaveBeenCalledTimes(1);
+
+    // A new event rebuilds the timeline item with a fresh object identity;
+    // the manually opened block must stay open.
+    harness.replaceItem({ kind: "thinking", text: "draft" });
+    await tick();
+    expect(details?.open).toBe(true);
+
+    // Active-state transitions still drive the open state.
+    harness.replaceItem({ kind: "thinking", text: "draft", active: true });
+    await tick();
+    expect(details?.open).toBe(true);
+    harness.replaceItem({ kind: "thinking", text: "draft", active: false });
+    await tick();
+    expect(details?.open).toBe(false);
   });
 
   it("renders tool groups and tool items with stable summaries, statuses, details, and toggle callbacks", async () => {
