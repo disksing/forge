@@ -103,6 +103,44 @@ describe("resource conversation controller", () => {
     expect(fetchImpl.mock.calls.some(([url]) => String(url).includes("/resources/task-a/events?"))).toBe(true);
   });
 
+  it("expands a compact tool with the complete bounded Turn event range", async () => {
+    const closed = turn(3, "closed", 5, 8);
+    const compact = {
+      turn: closed,
+      latestEventId: 8,
+      items: [
+        { type: "message", role: "user", text: "run it", startEventId: 5, endEventId: 5, startedAt: closed.startedAt, endedAt: closed.startedAt },
+        { type: "tool", startEventId: 6, endEventId: 7, startedAt: closed.startedAt, endedAt: closed.startedAt, count: 1 },
+        { type: "message", role: "assistant", text: "done", startEventId: 8, endEventId: 8, startedAt: closed.startedAt, endedAt: closed.startedAt },
+      ],
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(compact);
+      if (path.includes("/events?")) return response({ events: [
+        { id: 5, type: "message.input", turnId: "closed", sessionId: "session-3", data: { text: "run it", role: "user" } },
+        { id: 6, type: "tool.event", turnId: "closed", sessionId: "session-3", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"] } } } },
+        { id: 7, type: "tool.event", turnId: "closed", sessionId: "session-3", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"], status: "completed" } } } },
+        { id: 8, type: "message.assistant.delta", turnId: "closed", sessionId: "session-3", data: { text: "done" } },
+      ], page: { hasMore: false, nextAfter: 8 } });
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [closed] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
+    await value.loadTurn(closed.reference);
+    expect(latest.blocks[0].items?.find((item) => item.kind === "tools")?.compact).toBe(true);
+
+    await value.expandRange("gen-3", 6, 7);
+
+    expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([5, 6, 7, 8]);
+    const rangeRequest = fetchImpl.mock.calls.find(([url]) => String(url).includes("/events?"));
+    expect(String(rangeRequest?.[0])).toContain("start=5");
+    expect(String(rangeRequest?.[0])).toContain("end=8");
+  });
+
   it("coalesces repeated terminal events while the canonical Turn is materializing", async () => {
     const open = turn(3, "turn-a", 5, 7, false);
     const closed = turn(3, "turn-a", 5, 8);

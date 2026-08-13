@@ -178,11 +178,16 @@ export class ChatSessionController {
   async expandRange(generationId: string, start: number, end: number): Promise<void> {
     const context = this.activeContext();
     if (!context || generationId !== context.generationId || start <= 0 || end < start) return;
-    const generation = context.requestGeneration;
-    const events = await this.fetchEventRange(context, start, end, generation, `range:${start}:${end}`);
-    if (!this.isCurrent(context, generation)) return;
     const reference = this.turnReferenceForEvent(context, generationId, start);
-    if (!reference) return;
+    const summary = reference ? this.findTurn(context, reference) : undefined;
+    if (!reference || !summary || end > summary.lastEventId) return;
+    const generation = context.requestGeneration;
+    // A block renders either compact Turn items or canonical raw Events. Load
+    // the complete bounded Turn when expanding one compact range so messages
+    // around the requested tool/thinking item remain visible as its details
+    // replace the compact projection.
+    const events = await this.fetchEventRange(context, summary.startEventId, summary.lastEventId, generation, `range:${start}:${end}`);
+    if (!this.isCurrent(context, generation)) return;
     context.liveEvents.set(reference, compactTimelineEvents(mergeCanonicalEvents([...(context.liveEvents.get(reference) || []), ...events])));
     this.emit();
   }
