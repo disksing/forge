@@ -111,7 +111,7 @@ The extraction reduced the stateful roots while retaining the complete behavior 
 
 ## Performance gates
 
-`tests/fixtures/performance.ts` provides deterministic stress fixtures. The unit suite enforces these deliberately generous CI budgets to catch order-of-magnitude regressions and unbounded DOM growth:
+`tests/fixtures/performance.ts` provides deterministic stress fixtures. These tests mount large stress fixtures and assert wall-clock budgets plus bounded DOM growth, so they are deliberately opt-in: they are not part of the default `npm test` run and are excluded from CI. Run them on demand with `npm run test:perf` when performance-sensitive components such as the Project/Task tree, History timeline, Markdown rendering, or event canonicalization change. The budgets are deliberately generous to catch order-of-magnitude regressions and unbounded DOM growth:
 
 | Scenario | Fixture | Budget |
 | --- | ---: | ---: |
@@ -131,7 +131,10 @@ npm ci
 npm run check
 npm test
 npm run build
+npm run test:perf
 npm run test:e2e
 ```
+
+`npm run test:perf` runs the opt-in performance and bounded-DOM gates described above; the regular `npm test` suite excludes them.
 
 `npm run dev` proxies `/api` to Forge on `127.0.0.1:4936`. Run development and browser tests only against an isolated Workspace.
