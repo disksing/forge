@@ -258,6 +258,16 @@ func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, work
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
 		return
 	}
+	run := rt.snapshotRun()
+	if err := m.withResourceController(r.Context(), rt.workspace, run.ResourceID, func() error {
+		m.interruptRunLocked(w, r, workspaceID, rt)
+		return nil
+	}); err != nil {
+		writeError(w, err, http.StatusBadGateway)
+	}
+}
+
+func (m *agentManager) interruptRunLocked(w http.ResponseWriter, r *http.Request, workspaceID string, rt *agentRuntime) {
 	// Serialize End Turn with dispatch and Close Session on this Session only;
 	// Task desired-state persistence must remain independent.
 	rt.turnActionMu.Lock()
@@ -346,6 +356,16 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 }
 
 func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentApprovalRequest) {
+	run := rt.snapshotRun()
+	if err := m.withResourceController(r.Context(), rt.workspace, run.ResourceID, func() error {
+		m.resolveAgentHubApprovalLocked(w, r, rt, req)
+		return nil
+	}); err != nil {
+		writeError(w, err, http.StatusBadGateway)
+	}
+}
+
+func (m *agentManager) resolveAgentHubApprovalLocked(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentApprovalRequest) {
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	if strings.TrimSpace(req.RequestID) == "" {
@@ -446,7 +466,6 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 			}
 		}
 	}
-	m.resourceMu.Lock()
 	for _, workspace := range cfg.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
@@ -455,7 +474,6 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 			failures = append(failures, fmt.Sprintf("%s mailbox: %v", workspace.ID, mailboxErr))
 		}
 	}
-	m.resourceMu.Unlock()
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}
@@ -469,6 +487,12 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 // carries the sessions found by the single instance-wide startup query.
 // Live runs may recreate a missing AgentHub session from the source tuple.
 func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
+	return m.withResourceController(ctx, workspace, run.ResourceID, func() error {
+		return m.recoverAgentHubRunLocked(ctx, cfg, client, workspace, run, candidates)
+	})
+}
+
+func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: runSourceInstanceID(cfg, run), ExternalID: run.SourceExternalID}
 	live := isLiveAgentStatus(run.Status)
 	if len(candidates) == 0 && live {
@@ -543,25 +567,31 @@ func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, clien
 	rt.applyAgentHubSessionState(m, session)
 	updated := rt.snapshotRun()
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
-		if err := m.reconcileIdleGeneration(ctx, workspace, updated, session, client); err != nil {
+		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addForgeNotice(m, "warning", "resource/idle-sleep", err.Error())
 		}
 	}
 	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
-		go m.retireResourceGeneration(context.Background(), rt)
+		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+			m.retireResourceGenerationLocked(context.Background(), rt)
+			return nil
+		})
 	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
-		go func() {
-			if err := rt.deliverPendingResourceMessages(context.Background(), m); err != nil {
+		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, run.ResourceID); err != nil {
 				rt.addForgeNotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
 			}
-		}()
+			return nil
+		})
 	}
 	if session.State == "archived" {
 		// The service missed the stopped edge while it was down. Release the
 		// Forge session only when the archived session provably passed
 		// through durable stopped; anything else keeps failing closed. Runs
 		// asynchronously so a long event replay never blocks startup.
-		go rt.reconcileArchivedAgentHubSession(m, client, session)
+		_ = m.enqueueRuntimeOperation(rt, func() {
+			rt.reconcileArchivedAgentHubSession(m, client, session)
+		})
 	}
 	return nil
 }

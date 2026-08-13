@@ -963,6 +963,29 @@ func recordMailboxFailure(workspacePath, messageID string, err error) {
 
 func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
 	resourceID = normalizedResourceID(resourceID)
+	var message resourceMailboxMessage
+	err := m.withResourceController(ctx, workspace, resourceID, func() error {
+		var err error
+		message, err = m.acceptResourceMessageDurable(ctx, workspace, resourceID, request)
+		if err != nil {
+			return err
+		}
+		if reconcileErr := m.reconcileResourceMailboxLocked(ctx, workspace, resourceID); reconcileErr != nil {
+			recordMailboxFailure(workspace.Path, message.ID, reconcileErr)
+		}
+		if updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID); loadErr == nil && found {
+			message = updated
+		}
+		return nil
+	})
+	return message, err
+}
+
+// acceptResourceMessageDurable validates the resource and persists the
+// mailbox acceptance. It deliberately does not contact AgentHub; callers must
+// wake the resource controller after this short durable boundary.
+func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspace guiWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
+	resourceID = normalizedResourceID(resourceID)
 	if err := m.server.requireWorkspaceOwnership(workspace.Path); err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
 	}
@@ -987,20 +1010,51 @@ func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiW
 	if err != nil {
 		return resourceMailboxMessage{}, err
 	}
-	if err := m.reconcileResourceMailboxLocked(ctx, workspace, resourceID); err != nil {
-		recordMailboxFailure(workspace.Path, message.ID, err)
-	}
-	updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID)
-	if loadErr != nil {
-		return message, nil
-	}
-	if found {
-		return updated, nil
-	}
+	_ = ctx
 	return message, nil
 }
 
 func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace guiWorkspace, messageID string) (resourceMailboxMessage, error) {
+	resourceID, err := mailboxMessageResourceID(workspace.Path, messageID)
+	if err != nil {
+		return resourceMailboxMessage{}, err
+	}
+	var message resourceMailboxMessage
+	err = m.withResourceController(ctx, workspace, resourceID, func() error {
+		var err error
+		message, err = m.promoteWaitingMessageLocked(ctx, workspace, messageID)
+		if err != nil {
+			return err
+		}
+		if reconcileErr := m.reconcileResourceMailboxLocked(ctx, workspace, message.ResourceID); reconcileErr != nil {
+			recordMailboxFailure(workspace.Path, message.ID, reconcileErr)
+		}
+		if updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID); loadErr == nil && found {
+			message = updated
+		}
+		return nil
+	})
+	return message, err
+}
+
+// mailboxMessageResourceID reads the stable resource address before a
+// controller operation begins. The mailbox lookup is durable and does not
+// contact AgentHub.
+func mailboxMessageResourceID(workspacePath, messageID string) (string, error) {
+	if err := migrateLegacyResourceMailbox(workspacePath); err != nil {
+		return "", err
+	}
+	message, found, err := mailboxMessageByID(workspacePath, messageID)
+	if err != nil {
+		return "", err
+	}
+	if !found {
+		return "", &resourceAPIError{Code: "message_not_found", Message: fmt.Sprintf("mailbox message not found: %s", messageID)}
+	}
+	return normalizedResourceID(message.ResourceID), nil
+}
+
+func (m *agentManager) promoteWaitingMessageLocked(ctx context.Context, workspace guiWorkspace, messageID string) (resourceMailboxMessage, error) {
 	if err := m.server.requireWorkspaceOwnership(workspace.Path); err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
 	}
@@ -1054,13 +1108,6 @@ func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace guiW
 	})
 	if err != nil {
 		return resourceMailboxMessage{}, err
-	}
-	if err := m.reconcileResourceMailboxLocked(ctx, workspace, message.ResourceID); err != nil {
-		recordMailboxFailure(workspace.Path, message.ID, err)
-	}
-	updated, found, loadErr := mailboxMessageByID(workspace.Path, message.ID)
-	if loadErr == nil && found {
-		return updated, nil
 	}
 	return message, nil
 }
@@ -1357,12 +1404,28 @@ func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspac
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	var failures []string
+	type result struct {
+		resourceID string
+		err        error
+	}
+	results := make(chan result, len(ids))
 	for _, id := range ids {
-		if err := m.reconcileResourceMailboxLocked(ctx, workspace, id); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: %v", id, err))
+		resourceID := id
+		go func() {
+			err := m.withResourceController(ctx, workspace, resourceID, func() error {
+				return m.reconcileResourceMailboxLocked(ctx, workspace, resourceID)
+			})
+			results <- result{resourceID: resourceID, err: err}
+		}()
+	}
+	var failures []string
+	for range ids {
+		outcome := <-results
+		if outcome.err != nil {
+			failures = append(failures, fmt.Sprintf("%s: %v", outcome.resourceID, outcome.err))
 		}
 	}
+	sort.Strings(failures)
 	if len(failures) > 0 {
 		return errors.New(strings.Join(failures, "; "))
 	}
@@ -1379,7 +1442,7 @@ func resourceErrorStatus(err error) int {
 		return http.StatusBadRequest
 	case "resource_not_found", "message_not_found", "history_reference_not_found", "history_turn_not_found", "history_event_not_found", "session_missing":
 		return http.StatusNotFound
-	case "resource_archived", "message_not_waiting", "steer_unavailable", "generation_unavailable", "generation_changed":
+	case "resource_archived", "message_not_waiting", "steer_unavailable", "generation_unavailable", "generation_changed", "active_turn":
 		return http.StatusConflict
 	case "workspace_not_owned":
 		return http.StatusConflict
@@ -1405,9 +1468,12 @@ func (m *agentManager) handleResourceStatus(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	m.resourceMu.Lock()
-	status, statusErr := m.resourceStatus(r.Context(), workspace, resourceID)
-	m.resourceMu.Unlock()
+	var status resourceStatusResponse
+	statusErr := m.withResourceController(r.Context(), workspace, resourceID, func() error {
+		var err error
+		status, err = m.resourceStatus(r.Context(), workspace, resourceID)
+		return err
+	})
 	if statusErr != nil {
 		writeError(w, statusErr, resourceErrorStatus(statusErr))
 		return
@@ -1432,22 +1498,30 @@ func (m *agentManager) handleResourceMessages(w http.ResponseWriter, r *http.Req
 		writeError(w, &resourceAPIError{Code: "invalid_request", Message: err.Error()}, http.StatusBadRequest)
 		return
 	}
-	m.resourceMu.Lock()
-	message, sendErr := m.acceptResourceMessage(r.Context(), workspace, normalizedResourceID(resourceID), request)
-	m.resourceMu.Unlock()
+	resourceID = normalizedResourceID(resourceID)
+	var message resourceMailboxMessage
+	sendErr := m.withResourceController(r.Context(), workspace, resourceID, func() error {
+		var err error
+		message, err = m.acceptResourceMessageDurable(r.Context(), workspace, resourceID, request)
+		return err
+	})
 	if sendErr != nil {
 		writeError(w, sendErr, resourceErrorStatus(sendErr))
 		return
 	}
+	if wakeErr := m.enqueueResourceController(workspace, resourceID, func() error {
+		if err := m.reconcileResourceMailboxLocked(context.Background(), workspace, resourceID); err != nil {
+			recordMailboxFailure(workspace.Path, message.ID, err)
+		}
+		return nil
+	}); wakeErr != nil {
+		recordMailboxFailure(workspace.Path, message.ID, wakeErr)
+	}
 	response := mailboxMessageResponse(message)
 	response.Reference = fmt.Sprintf("/api/workspaces/%s/messages/%s", workspaceID, message.ID)
-	if message.Status != resourceMessageDelivered {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusAccepted)
-		_ = json.NewEncoder(w).Encode(response)
-		return
-	}
-	writeJSON(w, response)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(response)
 }
 
 func (m *agentManager) handleResourceMessage(w http.ResponseWriter, r *http.Request, workspaceID, messageID string) {
@@ -1489,9 +1563,7 @@ func (m *agentManager) handleResourceMessageSteer(w http.ResponseWriter, r *http
 		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
 		return
 	}
-	m.resourceMu.Lock()
 	message, promoteErr := m.promoteWaitingMessage(r.Context(), workspace, messageID)
-	m.resourceMu.Unlock()
 	if promoteErr != nil {
 		writeError(w, promoteErr, resourceErrorStatus(promoteErr))
 		return

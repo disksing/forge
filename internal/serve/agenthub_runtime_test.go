@@ -40,6 +40,7 @@ type runtimeFakeAgentHub struct {
 	extraAgents        []string
 	stopHook           func(string)
 	resumeHook         func(string)
+	messageHook        func(string, agentHubInboundMessage)
 	messageSteers      []bool
 	messageRoles       []string
 	messageSenders     []*agentHubMessageSender
@@ -147,6 +148,12 @@ func (f *runtimeFakeAgentHub) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	if len(parts) == 4 && parts[3] == "messages" {
 		var body agentHubInboundMessage
 		_ = json.NewDecoder(r.Body).Decode(&body)
+		f.mu.Lock()
+		messageHook := f.messageHook
+		f.mu.Unlock()
+		if messageHook != nil {
+			messageHook(id, body)
+		}
 		f.mu.Lock()
 		f.messageSteers = append(f.messageSteers, body.Steer)
 		f.messageRoles = append(f.messageRoles, body.Role)
@@ -548,11 +555,9 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	}
 	role, sender := agentHubMessageProvenance(request.UserName)
 	recorder := httptest.NewRecorder()
-	manager.resourceMu.Lock()
 	message, err := manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{
 		Text: request.Prompt, Mode: resourceMessageModeSteer, Role: role, Sender: sender,
 	})
-	manager.resourceMu.Unlock()
 	if err != nil {
 		writeError(recorder, err, resourceErrorStatus(err))
 		return recorder, agentRun{}
@@ -988,11 +993,9 @@ func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWor
 	}
 	role, sender := agentHubMessageProvenance(request.UserName)
 	recorder := httptest.NewRecorder()
-	manager.resourceMu.Lock()
 	message, sendErr := manager.acceptResourceMessage(context.Background(), workspace, normalizedResourceID(resourceID), resourceMessageRequest{
 		Text: request.Text, Mode: resourceMessageModeSteer, Role: role, Sender: sender,
 	})
-	manager.resourceMu.Unlock()
 	if sendErr != nil {
 		writeError(recorder, sendErr, resourceErrorStatus(sendErr))
 		return recorder

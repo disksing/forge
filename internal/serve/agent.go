@@ -168,24 +168,26 @@ type agentRuntime struct {
 }
 
 type agentManager struct {
-	server           *server
-	mu               sync.Mutex
-	resourceMu       sync.Mutex
-	runtimes         map[string]*agentRuntime
-	subscribers      map[string]map[chan agentStreamMessage]bool
-	schedulerDigests map[string]string
-	now              func() time.Time
-	idleSleepAfter   time.Duration
+	server                *server
+	mu                    sync.Mutex
+	resourceControllersMu sync.Mutex
+	resourceControllers   map[string]*resourceController
+	runtimes              map[string]*agentRuntime
+	subscribers           map[string]map[chan agentStreamMessage]bool
+	schedulerDigests      map[string]string
+	now                   func() time.Time
+	idleSleepAfter        time.Duration
 }
 
 func newAgentManager(s *server) *agentManager {
 	return &agentManager{
-		server:           s,
-		runtimes:         make(map[string]*agentRuntime),
-		subscribers:      make(map[string]map[chan agentStreamMessage]bool),
-		schedulerDigests: make(map[string]string),
-		now:              time.Now,
-		idleSleepAfter:   defaultResourceIdleSleepAfter,
+		server:              s,
+		resourceControllers: make(map[string]*resourceController),
+		runtimes:            make(map[string]*agentRuntime),
+		subscribers:         make(map[string]map[chan agentStreamMessage]bool),
+		schedulerDigests:    make(map[string]string),
+		now:                 time.Now,
+		idleSleepAfter:      defaultResourceIdleSleepAfter,
 	}
 }
 
