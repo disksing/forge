@@ -26,6 +26,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     ],
     workspaceIconSavingId: "",
     userName: "User",
+    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
@@ -49,6 +50,9 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onRemoveWorkspace: vi.fn(async () => undefined),
     onWorkspaceIcon: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
+    onLayoutPreference: vi.fn(),
+    onFontScale: vi.fn(),
+    onResetFontScales: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
@@ -135,6 +139,44 @@ describe("settings domain panels", () => {
 
     saveButton.click();
     await vi.waitFor(() => expect(current.onToast).toHaveBeenCalledWith("user save failed"));
+  });
+
+  it("routes appearance layout and font scale changes through the settings model", async () => {
+    const current = model({ appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1.1, chat: 1 } } });
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "appearance", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const options = [...target.querySelectorAll<HTMLButtonElement>(".layout-option")];
+    expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["true", "false", "false", "false"]);
+    expect(options[0].classList.contains("active")).toBe(true);
+    expect(target.querySelectorAll(".layout-diagram svg")).toHaveLength(4);
+
+    options[2].click();
+    expect(current.onLayoutPreference).toHaveBeenCalledWith("two");
+
+    const detailsSlider = target.querySelector<HTMLInputElement>('input[aria-label="Details text size"]')!;
+    expect(detailsSlider.value).toBe("110");
+    input(detailsSlider, "120");
+    expect(current.onFontScale).toHaveBeenCalledWith("details", 1.2);
+
+    const reset = target.querySelector<HTMLButtonElement>(".appearance-reset")!;
+    expect(reset.disabled).toBe(false);
+    reset.click();
+    expect(current.onResetFontScales).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the appearance reset while every column uses the default text size", async () => {
+    const current = model();
+    const draft = createSettingsDraft(current);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsPanelHarness, { target, props: { panel: "appearance", model: current, initialDraft: draft } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector<HTMLButtonElement>(".appearance-reset")?.disabled).toBe(true);
   });
 
   it("owns AgentHub draft dirtiness, read-only catalog projection, save pending, and errors", async () => {

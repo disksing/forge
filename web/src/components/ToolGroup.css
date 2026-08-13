@@ -6,7 +6,7 @@
   border-radius: 0;
   background: transparent;
   color: #5c6b7a;
-  font-size: 12px;
+  font-size: calc(12px * var(--chat-font-scale, 1));
 }
 
 :where([data-component-owner="event-timeline"]) .agent-tool-group>summary {

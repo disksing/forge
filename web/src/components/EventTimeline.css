@@ -17,7 +17,7 @@
   border-radius: 6px;
   background: transparent;
   color: #8a97a5;
-  font-size: 12px;
+  font-size: calc(12px * var(--chat-font-scale, 1));
   font-weight: 700;
 }
 
@@ -52,7 +52,7 @@
   gap: 8px;
   margin: 18px 0 10px;
   color: #6c7885;
-  font-size: 11px;
+  font-size: calc(11px * var(--chat-font-scale, 1));
   text-transform: uppercase;
   letter-spacing: .06em;
 }
@@ -85,7 +85,7 @@
   border-radius: 8px;
   color: #72521c;
   background: #fffaf0;
-  font-size: 12px;
+  font-size: calc(12px * var(--chat-font-scale, 1));
 }
 
 :where([data-component-owner="event-timeline"]) .conversation-gap span,
@@ -100,7 +100,7 @@
 :where([data-component-owner="event-timeline"]) .turn-summary-preview {
   margin: 8px 0;
   color: #7c8792;
-  font-size: 12px;
+  font-size: calc(12px * var(--chat-font-scale, 1));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -118,7 +118,7 @@
   gap: 7px;
   margin: 10px 0;
   color: #74808c;
-  font-size: 12px;
+  font-size: calc(12px * var(--chat-font-scale, 1));
   font-weight: 600;
 }
 

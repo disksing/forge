@@ -11,6 +11,7 @@
   const tabs: Array<{ id: SettingsTab; icon: string; label: string; sharesAgentDraft: boolean }> = [
     { id: "workspace", icon: "hard-drive", label: "Workspace", sharesAgentDraft: false },
     { id: "user", icon: "user-round", label: "User", sharesAgentDraft: false },
+    { id: "appearance", icon: "palette", label: "Appearance", sharesAgentDraft: false },
     { id: "agenthub", icon: "network", label: "AgentHub", sharesAgentDraft: true },
     { id: "profiles", icon: "route", label: "Profiles", sharesAgentDraft: true },
     { id: "notifications", icon: "bell", label: "Notifications", sharesAgentDraft: false },

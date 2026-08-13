@@ -1,4 +1,4 @@
-import type { AgentOption, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
+import type { AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
 import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
 export type SettingsAgent = AgentConfig;
@@ -44,6 +44,10 @@ export interface SettingsControllerDependencies {
 	workspaceIcons: SettingsModel["workspaceIcons"];
 	userName(): string;
 	saveUser(name: string): string;
+	appearance(): AppearanceSettings;
+	setLayoutPreference(preference: AppearanceSettings["layout"]): void;
+	setFontScale(column: keyof AppearanceSettings["fontScales"], value: number): void;
+	resetFontScales(): void;
 	notificationPreferences(): NotificationPreferences;
 	setBrowserNotifications(enabled: boolean): void;
 	setCompletionSound(enabled: boolean): void;
@@ -119,6 +123,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			workspaceIcons: dependencies.workspaceIcons,
 			workspaceIconSavingId: state.workspaceIconSavingId,
 			userName: dependencies.userName(),
+			appearance: dependencies.appearance(),
 			agentHub: {
 				configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646",
 				connected: Boolean(hub.connected),
@@ -146,6 +151,18 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				const normalized = dependencies.saveUser(name);
 				dependencies.toast(normalized === "User" ? "User name reset to User." : `User name saved as ${normalized}.`);
 				return normalized;
+			},
+			onLayoutPreference: (preference) => {
+				dependencies.setLayoutPreference(preference);
+				render();
+			},
+			onFontScale: (column, value) => {
+				dependencies.setFontScale(column, value);
+				render();
+			},
+			onResetFontScales: () => {
+				dependencies.resetFontScales();
+				render();
 			},
 			onSaveAgentHub: async (draft) => { syncDraft(draft); await saveAgentSettings(); },
 			onBrowserNotifications: dependencies.setBrowserNotifications,

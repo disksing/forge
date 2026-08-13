@@ -1,6 +1,7 @@
 const PANE_SIZE_KEY = "forge.gui.paneSizes";
 const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
 const LAYOUT_PREFERENCE_KEY = "forge.gui.layoutPreference";
+const FONT_SCALE_KEY = "forge.gui.fontScales";
 const PANE_HANDLE_WIDTH = 8;
 const SIDEBAR_MIN_WIDTH = 220;
 const DETAILS_MIN_WIDTH = 360;
@@ -26,6 +27,10 @@ export interface LayoutState {
 	preference: LayoutPreference;
 	effective: EffectiveLayout;
 }
+
+export type FontScaleColumn = "sidebar" | "details" | "chat";
+
+export type FontScales = Record<FontScaleColumn, number>;
 
 export type PaneName = keyof PaneSizes;
 
@@ -55,6 +60,32 @@ function normalizeLayoutPreference(value: unknown): LayoutPreference {
 	return LAYOUT_PREFERENCES.includes(value as LayoutPreference) ? value as LayoutPreference : "auto";
 }
 
+const FONT_SCALE_MIN = 0.8;
+const FONT_SCALE_MAX = 1.4;
+const FONT_SCALE_DEFAULT = 1;
+
+const FONT_SCALE_COLUMNS: FontScaleColumn[] = ["sidebar", "details", "chat"];
+
+const FONT_SCALE_CSS_VARIABLES: Record<FontScaleColumn, string> = Object.freeze({
+	sidebar: "--sidebar-font-scale",
+	details: "--details-font-scale",
+	chat: "--chat-font-scale"
+});
+
+function normalizeFontScale(value: unknown): number {
+	if (!finiteSize(value)) return FONT_SCALE_DEFAULT;
+	return Math.round(clamp(value, FONT_SCALE_MIN, FONT_SCALE_MAX) * 100) / 100;
+}
+
+export function normalizeFontScales(raw: unknown): FontScales {
+	const source = raw && typeof raw === "object" ? raw as Partial<FontScales> : {};
+	return {
+		sidebar: normalizeFontScale(source.sidebar),
+		details: normalizeFontScale(source.details),
+		chat: normalizeFontScale(source.chat)
+	};
+}
+
 export function normalizePaneSizes(raw: unknown, availableWorkspaceWidth = 0): PaneSizes {
 	const source = raw && typeof raw === "object" ? raw as Partial<PaneSizes> & { detailsWidth?: unknown; sidebarSessionHeight?: unknown } : {};
 	const sizes = { ...PANE_DEFAULTS };
@@ -73,6 +104,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 	let paneSizes = { ...PANE_DEFAULTS };
 	let mobile: MobilePaneState = { sidebarOpen: false, view: "details", immersive: false };
 	let layoutPreference: LayoutPreference = "auto";
+	let fontScales: FontScales = normalizeFontScales(null);
 	const mobileQuery = window.matchMedia("(max-width: 980px)");
 	const twoColumnQuery = window.matchMedia("(max-width: 1440px)");
 
@@ -84,6 +116,24 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		} catch (_) {
 			return {};
 		}
+	}
+
+	function readStoredFontScales(): Record<string, unknown> {
+		if (!storage) return {};
+		try {
+			const saved = JSON.parse(storage.getItem(FONT_SCALE_KEY) || "{}");
+			return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+		} catch (_) {
+			return {};
+		}
+	}
+
+	function applyFontScale(column: FontScaleColumn): void {
+		document.documentElement.style.setProperty(FONT_SCALE_CSS_VARIABLES[column], String(fontScales[column]));
+	}
+
+	function applyFontScales(): void {
+		for (const column of FONT_SCALE_COLUMNS) applyFontScale(column);
 	}
 
 	function workspacePanelWidth(): number {
@@ -134,6 +184,8 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 			layoutPreference = "auto";
 		}
 		applyLayout();
+		fontScales = normalizeFontScales(readStoredFontScales());
+		applyFontScales();
 		const onLayoutMediaChange = () => {
 			applyLayout();
 			onChange();
@@ -183,9 +235,23 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		onChange();
 	}
 
-	function cycleLayoutPreference(): void {
-		const next = LAYOUT_PREFERENCES[(LAYOUT_PREFERENCES.indexOf(layoutPreference) + 1) % LAYOUT_PREFERENCES.length];
-		setLayoutPreference(next);
+	function setFontScale(column: FontScaleColumn, value: number): void {
+		if (!Object.hasOwn(FONT_SCALE_CSS_VARIABLES, column)) return;
+		fontScales[column] = normalizeFontScale(value);
+		applyFontScale(column);
+		try {
+			storage?.setItem(FONT_SCALE_KEY, JSON.stringify(fontScales));
+		} catch (_) {}
+		onChange();
+	}
+
+	function resetFontScales(): void {
+		fontScales = normalizeFontScales(null);
+		applyFontScales();
+		try {
+			storage?.removeItem(FONT_SCALE_KEY);
+		} catch (_) {}
+		onChange();
 	}
 
 	function setMobileSidebar(open: boolean): void {
@@ -215,10 +281,11 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 		commitPane,
 		syncViewport,
 		setLayoutPreference,
-		cycleLayoutPreference,
+		setFontScale,
+		resetFontScales,
 		setMobileSidebar,
 		setMobileView,
 		setMobileImmersive,
-		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile }, layout: { preference: layoutPreference, effective: effectiveLayout() } })
+		snapshot: () => ({ paneSizes: { ...paneSizes }, mobile: { ...mobile }, layout: { preference: layoutPreference, effective: effectiveLayout() }, fontScales: { ...fontScales } })
 	};
 }

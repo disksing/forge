@@ -4,6 +4,7 @@
   import { onMount } from "svelte";
 
   import AgentHubSettingsPanel from "./AgentHubSettingsPanel.svelte";
+  import AppearanceSettingsPanel from "./AppearanceSettingsPanel.svelte";
   import Icon from "./Icon.svelte";
   import type { ModelChannel } from "./model-channel";
   import type { SettingsDraft, SettingsModel } from "./models";
@@ -63,6 +64,8 @@
         <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onToast={model.onToast} />
       {:else if draft.tab === "user"}
         <UserSettingsPanel bind:draft bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
+      {:else if draft.tab === "appearance"}
+        <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} />
       {:else if draft.tab === "agenthub"}
         <AgentHubSettingsPanel agentHub={model.agentHub} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToast={model.onToast} />
       {:else if draft.tab === "profiles"}

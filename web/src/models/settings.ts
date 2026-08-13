@@ -33,8 +33,13 @@ export interface AgentHubSettings {
   resourceDefaults?: ResourceProfileDefaults;
 }
 
+export interface AppearanceSettings {
+  layout: "auto" | "three" | "two" | "split";
+  fontScales: { sidebar: number; details: number; chat: number };
+}
+
 export interface SettingsDraft {
-  tab: "workspace" | "user" | "agenthub" | "profiles" | "notifications";
+  tab: "workspace" | "user" | "appearance" | "agenthub" | "profiles" | "notifications";
   workspacePath: string;
   createWorkspace: boolean;
   userName: string;
@@ -55,6 +60,7 @@ export interface SettingsModel {
   workspaceIcons: Array<{ id: string; label: string; src: string }>;
   workspaceIconSavingId: string;
   userName: string;
+  appearance: AppearanceSettings;
   agentHub: AgentHubSettings;
   profiles: ProfileDraft[];
   agents: AgentOption[];
@@ -64,6 +70,9 @@ export interface SettingsModel {
   onRemoveWorkspace: (id: string, draft: SettingsDraft) => Promise<void>;
   onWorkspaceIcon: (id: string, icon: string, draft: SettingsDraft) => Promise<void>;
   onSaveUser: (name: string) => Promise<string>;
+  onLayoutPreference: (preference: AppearanceSettings["layout"]) => void;
+  onFontScale: (column: keyof AppearanceSettings["fontScales"], value: number) => void;
+  onResetFontScales: () => void;
   onSaveAgentHub: (draft: SettingsDraft) => Promise<void>;
   onBrowserNotifications: (enabled: boolean) => void;
   onCompletionSound: (enabled: boolean) => void;

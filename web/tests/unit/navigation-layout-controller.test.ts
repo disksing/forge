@@ -91,18 +91,37 @@ describe("route and pane layout controllers", () => {
 		expect(document.body.dataset.layout).toBe("single");
 	});
 
-	it("cycles the layout preference through auto, three, two, and split", () => {
+	it("applies, clamps, and persists per-column font scales", () => {
 		mockMatchMedia({});
+		const changed = vi.fn();
+		let layout = createPaneLayoutController(changed, storage);
+		layout.initialize();
+		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1, details: 1, chat: 1 });
+		expect(document.documentElement.style.getPropertyValue("--sidebar-font-scale")).toBe("1");
+
+		layout.setFontScale("sidebar", 1.25);
+		layout.setFontScale("details", 0.5);
+		layout.setFontScale("chat", 2);
+		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1.25, details: 0.8, chat: 1.4 });
+		expect(document.documentElement.style.getPropertyValue("--sidebar-font-scale")).toBe("1.25");
+		expect(document.documentElement.style.getPropertyValue("--details-font-scale")).toBe("0.8");
+		expect(document.documentElement.style.getPropertyValue("--chat-font-scale")).toBe("1.4");
+		expect(JSON.parse(storage.getItem("forge.gui.fontScales") || "{}")).toEqual({ sidebar: 1.25, details: 0.8, chat: 1.4 });
+		expect(changed).toHaveBeenCalledTimes(3);
+
+		layout = createPaneLayoutController(() => undefined, storage);
+		layout.initialize();
+		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1.25, details: 0.8, chat: 1.4 });
+
+		layout.resetFontScales();
+		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1, details: 1, chat: 1 });
+		expect(storage.getItem("forge.gui.fontScales")).toBeNull();
+	});
+
+	it("ignores malformed stored font scales", () => {
+		storage.setItem("forge.gui.fontScales", JSON.stringify({ sidebar: "wide", details: 3, chat: 1.1 }));
 		const layout = createPaneLayoutController(() => undefined, storage);
 		layout.initialize();
-		expect(layout.snapshot().layout.preference).toBe("auto");
-		layout.cycleLayoutPreference();
-		expect(layout.snapshot().layout).toEqual({ preference: "three", effective: "three" });
-		layout.cycleLayoutPreference();
-		expect(layout.snapshot().layout).toEqual({ preference: "two", effective: "two" });
-		layout.cycleLayoutPreference();
-		expect(layout.snapshot().layout).toEqual({ preference: "split", effective: "split" });
-		layout.cycleLayoutPreference();
-		expect(layout.snapshot().layout).toEqual({ preference: "auto", effective: "three" });
+		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1, details: 1.4, chat: 1.1 });
 	});
 });

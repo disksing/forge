@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 const root = resolve(import.meta.dirname, "../..");
 const components = [
+  "AppearanceSettingsPanel",
   "AttentionList",
   "ApprovalCard",
   "AppShell",
@@ -21,7 +22,6 @@ const components = [
   "EventTimeline",
   "FileBrowser",
   "FilePreviewModal",
-  "LayoutSwitcher",
   "LogTimeline",
   "LifecycleNotice",
   "MarkdownDocument",
@@ -48,6 +48,7 @@ const components = [
 ] as const;
 
 const owners: Record<(typeof components)[number], string> = {
+  AppearanceSettingsPanel: "appearance-settings-panel",
   AttentionList: "attention-list",
   ApprovalCard: "event-timeline",
   AppShell: "app-shell",
@@ -64,7 +65,6 @@ const owners: Record<(typeof components)[number], string> = {
   EventTimeline: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
-  LayoutSwitcher: "layout-switcher",
   LogTimeline: "log-timeline",
   LifecycleNotice: "event-timeline",
   MarkdownDocument: "markdown-document",
@@ -157,7 +157,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "LayoutSwitcher", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "LifecycleNotice", "LogTimeline", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceAgentsEditor", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

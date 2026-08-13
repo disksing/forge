@@ -16,7 +16,7 @@
   margin-bottom: 6px;
   padding: 0 8px;
   color: var(--faint-on-dark);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -39,7 +39,7 @@
   border-radius: 6px;
   background: transparent;
   color: #c7d0da;
-  font-size: 13px;
+  font-size: calc(13px * var(--sidebar-font-scale, 1));
   text-align: left;
   transition: background-color 150ms ease, color 150ms ease;
 }
@@ -112,14 +112,14 @@
 
 :where([data-component-owner="attention-list"]) .activity-title strong {
   color: #ecf0f3;
-  font-size: 13px;
+  font-size: calc(13px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
 
 :where([data-component-owner="attention-list"]) .activity-meta {
   margin-top: 1px;
   color: var(--faint-on-dark);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
 }
 
@@ -133,7 +133,7 @@
   border: 1px solid var(--blue);
   border-radius: 4px;
   color: #7fb3d9;
-  font-size: 10px;
+  font-size: calc(10px * var(--sidebar-font-scale, 1));
   font-weight: 700;
 }
 
@@ -203,12 +203,12 @@
 
 :where([data-component-owner="attention-list"]) .empty-attention strong {
   color: #c7d0da;
-  font-size: 12px;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
 }
 
 :where([data-component-owner="attention-list"]) .empty-attention span {
   color: var(--faint-on-dark);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
 }
 
 @media (max-width:980px) {

@@ -8,7 +8,7 @@
 
 :where([data-component-owner="project-tree"]) .section-title {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -100,7 +100,7 @@
   gap: 4px;
   overflow: hidden;
   color: var(--faint-on-dark);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
   letter-spacing: normal;
 }
@@ -131,12 +131,12 @@
 :where([data-component-owner="project-tree"]) .tree-item .resource-ref {
   flex-shrink: 0;
   color: var(--faint-on-dark);
-  font-size: 12px;
+  font-size: calc(12px * var(--sidebar-font-scale, 1));
 }
 
 :where([data-component-owner="project-tree"]) .task-item {
   padding-left: 28px;
-  font-size: 13px;
+  font-size: calc(13px * var(--sidebar-font-scale, 1));
 }
 
 :where([data-component-owner="project-tree"]) .section-title button {
@@ -162,7 +162,7 @@
   margin-bottom: 6px;
   padding: 0 8px;
   color: var(--faint-on-dark);
-  font-size: 11px;
+  font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -176,7 +176,7 @@
   padding: 6px 8px;
   border-radius: 6px;
   color: #d3dbe3;
-  font-size: 14px;
+  font-size: calc(14px * var(--sidebar-font-scale, 1));
   font-weight: 500;
 }
 
@@ -216,7 +216,7 @@
 
 :where([data-component-owner="project-tree"]) .task-item {
   padding-left: 30px;
-  font-size: 13px;
+  font-size: calc(13px * var(--sidebar-font-scale, 1));
 }
 
 :where([data-component-owner="project-tree"]) .task-group {
@@ -307,7 +307,7 @@
   :where([data-component-owner="project-tree"]) .project-task-summary {
     max-width: 42%;
     gap: 3px;
-    font-size: 10px;
+    font-size: calc(10px * var(--sidebar-font-scale, 1));
   }
   :where([data-component-owner="project-tree"]) .tree-item .name {
     gap: 4px;

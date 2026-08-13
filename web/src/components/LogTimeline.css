@@ -20,7 +20,7 @@
 :where([data-component-owner="log-timeline"]) .log-load-error {
   margin: 10px 0 0;
   color: #c0392b;
-  font-size: 12px;
+  font-size: calc(12px * var(--details-font-scale, 1));
 }
 
 :where([data-component-owner="log-timeline"]) .log-entry {
@@ -102,14 +102,14 @@
 
 :where([data-component-owner="log-timeline"]) .log-time strong {
   color: #2c3e50;
-  font-size: 13px;
+  font-size: calc(13px * var(--details-font-scale, 1));
   font-weight: 700;
 }
 
 :where([data-component-owner="log-timeline"]) .log-time small {
   overflow: hidden;
   color: #5c6b7a;
-  font-size: 11px;
+  font-size: calc(11px * var(--details-font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -118,14 +118,14 @@
   min-width: 0;
   overflow-wrap: anywhere;
   color: #2c3e50;
-  font-size: 14px;
+  font-size: calc(14px * var(--details-font-scale, 1));
   font-weight: 700;
 }
 
 :where([data-component-owner="log-timeline"]) .log-details {
   padding: 0 0 12px 204px;
   color: #4a5560;
-  font-size: 14px;
+  font-size: calc(14px * var(--details-font-scale, 1));
   line-height: 1.6;
 }
 

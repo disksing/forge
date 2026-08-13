@@ -23,6 +23,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     workspaceIcons: [{ id: "", label: "Forge default", src: "/favicon.svg" }],
     workspaceIconSavingId: "",
     userName: "User",
+    appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
       connected: true,
@@ -42,6 +43,9 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onRemoveWorkspace: vi.fn(async () => undefined),
     onWorkspaceIcon: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
+    onLayoutPreference: vi.fn(),
+    onFontScale: vi.fn(),
+    onResetFontScales: vi.fn(),
     onSaveAgentHub: vi.fn(async () => undefined),
     onBrowserNotifications: vi.fn(),
     onCompletionSound: vi.fn(),
@@ -67,7 +71,7 @@ describe("SettingsModal coordination", () => {
     await tick();
 
     const tabs = [...target.querySelectorAll<HTMLButtonElement>(".settings-tab")];
-    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "AgentHub", "Profiles", "Notifications"]);
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["Workspace", "User", "Appearance", "AgentHub", "Profiles", "Notifications"]);
     tabs.find((tab) => tab.textContent?.includes("AgentHub"))!.click();
     await tick();
 
@@ -148,7 +152,7 @@ describe("SettingsModal coordination", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    target.querySelector<HTMLButtonElement>('.settings-tab:nth-of-type(3)')!.click();
+    target.querySelector<HTMLButtonElement>('.settings-tab:nth-of-type(4)')!.click();
     await tick();
     input(target.querySelector<HTMLInputElement>("#settingsAgentHubEndpoint")!, "http://dirty");
     await tick();

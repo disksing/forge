@@ -46,7 +46,7 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
     onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
     onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onDismissAttention: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
-    onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onLayoutCycle: vi.fn(), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(), onIconsChanged: vi.fn(),
     onHistoryNavigation: vi.fn(async () => undefined),
     ...overrides,
   };
@@ -245,26 +245,5 @@ describe("AppShell", () => {
 
     detailsTab.click();
     expect(onMobileView).toHaveBeenCalledWith("details");
-  });
-
-  it("cycles the manual layout preference through the layout switcher", async () => {
-    const onLayoutCycle = vi.fn();
-    const initial = model({ onLayoutCycle });
-    const channel = createModelChannel(initial);
-    const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(AppShell, { target, props: { channel } });
-    cleanups.push(() => unmount(component));
-    await tick();
-
-    const switcher = target.querySelector<HTMLButtonElement>(".brand-band .layout-switcher")!;
-    expect(switcher.getAttribute("aria-label")).toContain("Auto");
-    expect(switcher.querySelector("[data-lucide]")?.getAttribute("data-lucide")).toBe("layout-grid");
-
-    switcher.click();
-    expect(onLayoutCycle).toHaveBeenCalledTimes(1);
-    channel.publish({ ...initial, layout: { preference: "split", effective: "split" } });
-    await tick();
-    expect(switcher.getAttribute("aria-label")).toContain("sidebar collapsed");
-    expect(switcher.querySelector("[data-lucide]")?.getAttribute("data-lucide")).toBe("panel-left-close");
   });
 });

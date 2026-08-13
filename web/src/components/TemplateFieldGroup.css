@@ -28,7 +28,7 @@
   background-position: right 10px center;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--details-font-scale, 1));
   outline: none;
   appearance: none;
 }

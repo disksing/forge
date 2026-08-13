@@ -8,7 +8,7 @@
 :where([data-component-owner="detail-panel"]) .title-row h1 .resource-ref-badge {
   display: inline-block;
   margin-left: 10px;
-  font-size: 15px;
+  font-size: calc(15px * var(--details-font-scale, 1));
   font-weight: 500;
 }
 
@@ -20,7 +20,7 @@
   background: #f4f5f7;
   padding: 3px 8px;
   color: #5c6b7a;
-  font-size: 11px;
+  font-size: calc(11px * var(--details-font-scale, 1));
   font-weight: 700;
   line-height: 1.2;
   vertical-align: middle;
@@ -32,7 +32,7 @@
   background: var(--accent);
   color: #fff;
   padding: 0 12px;
-  font-size: 13px;
+  font-size: calc(13px * var(--details-font-scale, 1));
   font-weight: 700;
 }
 
@@ -60,7 +60,7 @@
   gap: 8px;
   margin-bottom: 14px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--details-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -107,7 +107,7 @@
 
 :where([data-component-owner="detail-panel"]) .title-row h1 {
   margin: 0;
-  font-size: 24px;
+  font-size: calc(24px * var(--details-font-scale, 1));
   line-height: 1.25;
 }
 
@@ -118,7 +118,7 @@
 
 :where([data-component-owner="detail-panel"]) .content-section h3 {
   margin: 0 0 12px;
-  font-size: 15px;
+  font-size: calc(15px * var(--details-font-scale, 1));
 }
 
 :where([data-component-owner="detail-panel"]) .details-actions {
@@ -161,7 +161,7 @@
   background: transparent;
   color: var(--muted);
   font: inherit;
-  font-size: 13px;
+  font-size: calc(13px * var(--details-font-scale, 1));
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -185,7 +185,7 @@
   border-radius: 4px;
   background: var(--bg);
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--details-font-scale, 1));
   font-weight: 600;
 }
 
@@ -197,13 +197,13 @@
 
 :where([data-component-owner="detail-panel"]) .breadcrumb {
   margin-bottom: 14px;
-  font-size: 12px;
+  font-size: calc(12px * var(--details-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
 }
 
 :where([data-component-owner="detail-panel"]) .title-row h1 {
-  font-size: 24px;
+  font-size: calc(24px * var(--details-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0;
 }
@@ -221,7 +221,7 @@
   border-radius: 6px;
   background: #fff;
   color: #2b3440;
-  font-size: 13px;
+  font-size: calc(13px * var(--details-font-scale, 1));
   font-weight: 700;
   box-shadow: none;
 }
@@ -257,7 +257,7 @@
   gap: 8px;
   margin-bottom: 14px;
   color: #2c3e50;
-  font-size: 15px;
+  font-size: calc(15px * var(--details-font-scale, 1));
   font-weight: 700;
 }
 
@@ -270,7 +270,7 @@
 :where([data-component-owner="detail-panel"]) .content-section p {
   margin: 0;
   color: #4a5560;
-  font-size: 14px;
+  font-size: calc(14px * var(--details-font-scale, 1));
   line-height: 1.6;
 }
 
@@ -320,19 +320,19 @@
 
 :where([data-component-owner="detail-panel"]) .worktree-main strong {
   color: #2b3440;
-  font-size: 14px;
+  font-size: calc(14px * var(--details-font-scale, 1));
 }
 
 :where([data-component-owner="detail-panel"]) .worktree-main span {
   margin-top: 3px;
   color: #5c6b7a;
-  font-size: 12px;
+  font-size: calc(12px * var(--details-font-scale, 1));
 }
 
 :where([data-component-owner="detail-panel"]) .worktree-main small {
   margin-top: 3px;
   color: #8a97a5;
-  font-size: 11px;
+  font-size: calc(11px * var(--details-font-scale, 1));
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 

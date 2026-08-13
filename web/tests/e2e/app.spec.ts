@@ -1024,7 +1024,7 @@ test("merges details and chat into one tabbed column in the two-column layout", 
   await expect(page.locator("#detailsResize")).toBeVisible();
 });
 
-test("lets users cycle the layout manually, including the collapsed-sidebar split", async ({ page }) => {
+test("lets users switch the layout from the Appearance settings tab, including the collapsed-sidebar split", async ({ page }) => {
   await installShellMockApi(page);
   await page.goto("/w/ws-a/r/project1.task1");
 
@@ -1032,18 +1032,23 @@ test("lets users cycle the layout manually, including the collapsed-sidebar spli
   await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
   await expect(page.locator(".workspace-view-tabs")).toBeHidden();
 
-  // auto -> three -> two: the tabbed column appears even on a wide window.
-  const brandSwitcher = page.locator(".brand-band .layout-switcher");
-  await brandSwitcher.click();
-  await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
-  await brandSwitcher.click();
+  const openAppearanceTab = async () => {
+    await page.locator("#systemSettingsButton").click();
+    await page.locator(".settings-tab", { hasText: "Appearance" }).click();
+    await expect(page.locator('[data-component-owner="appearance-settings-panel"]')).toBeVisible();
+  };
+
+  // Two columns: the tabbed column appears even on a wide window.
+  await openAppearanceTab();
+  await expect(page.locator(".layout-option.active")).toContainText("Auto");
+  await page.locator(".layout-option", { hasText: "Two columns" }).click();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "two");
   await expect(page.locator(".workspace-view-tabs")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeHidden();
   await expect(page.locator("#agentPanel")).toBeHidden();
 
-  // two -> split: the sidebar collapses into a drawer, details and chat sit side by side.
-  await brandSwitcher.click();
+  // Split: the sidebar collapses into a drawer, details and chat sit side by side.
+  await page.locator(".layout-option", { hasText: "Split" }).click();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "split");
   await expect(page.locator("#mobileSidebar")).toBeHidden();
   await expect(page.locator(".workspace-toolbar")).toBeVisible();
@@ -1051,6 +1056,7 @@ test("lets users cycle the layout manually, including the collapsed-sidebar spli
   await expect(page.locator("#agentPanel")).toBeVisible();
   await expect(page.locator("#detailsResize")).toBeVisible();
   await expect(page.locator("#sidebarResize")).toBeHidden();
+  await page.locator(".settings-close").click();
 
   // The drawer opens from the toolbar and closes from the backdrop.
   await page.locator("#splitMenuButton").click();
@@ -1059,10 +1065,42 @@ test("lets users cycle the layout manually, including the collapsed-sidebar spli
   await page.locator("#mobileSidebarBackdrop").click({ position: { x: 800, y: 400 } });
   await expect(page.locator("body")).not.toHaveClass(/mobile-sidebar-open/);
 
-  // The preference persists across reloads; cycling again returns to auto.
+  // The preference persists across reloads; switching back to auto restores the follow-width behavior.
   await page.reload();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "split");
-  await page.locator(".workspace-toolbar .layout-switcher").click();
+  await page.locator("#splitMenuButton").click();
+  await openAppearanceTab();
+  await expect(page.locator(".layout-option.active")).toContainText("Split");
+  await page.locator(".layout-option", { hasText: "Auto" }).click();
   await expect(page.locator("body")).toHaveAttribute("data-layout", "three");
   await expect(page.locator("#mobileSidebar")).toBeVisible();
+});
+
+test("lets users scale the text of each column independently from the Appearance settings tab", async ({ page }) => {
+  await installShellMockApi(page);
+  await page.goto("/w/ws-a/r/project1.task1");
+
+  await page.locator("#systemSettingsButton").click();
+  await page.locator(".settings-tab", { hasText: "Appearance" }).click();
+
+  const rootStyle = () => page.evaluate(() => ({
+    sidebar: document.documentElement.style.getPropertyValue("--sidebar-font-scale"),
+    details: document.documentElement.style.getPropertyValue("--details-font-scale"),
+    chat: document.documentElement.style.getPropertyValue("--chat-font-scale"),
+  }));
+  expect(await rootStyle()).toEqual({ sidebar: "1", details: "1", chat: "1" });
+
+  await page.locator('input[aria-label="Sidebar text size"]').fill("125");
+  await page.locator('input[aria-label="Chat text size"]').fill("85");
+  expect(await rootStyle()).toEqual({ sidebar: "1.25", details: "1", chat: "0.85" });
+  await expect(page.locator('input[aria-label="Sidebar text size"]')).toHaveValue("125");
+
+  // Scales persist across reloads and the reset restores every column.
+  await page.reload();
+  expect(await rootStyle()).toEqual({ sidebar: "1.25", details: "1", chat: "0.85" });
+  await page.locator("#systemSettingsButton").click();
+  await page.locator(".settings-tab", { hasText: "Appearance" }).click();
+  await page.locator(".appearance-reset").click();
+  expect(await rootStyle()).toEqual({ sidebar: "1", details: "1", chat: "1" });
+  await expect(page.locator(".appearance-reset")).toBeDisabled();
 });

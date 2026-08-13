@@ -29,7 +29,7 @@ export function createForgeAppChannels(): ForgeAppChannels {
       route: { path: "", revision: 0, replace: true },
       onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onToggleProject: noopAsync, onSelectResource: noopAsync,
       onReorder: noopAsync, onDragState: noop, onToggleAttention: noopAsync, onDismissAttention: noopAsync, onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
-      onMobileImmersive: noop, onLayoutCycle: noop, onToast: noop, onIconsChanged: noop, onHistoryNavigation: noopAsync,
+      onMobileImmersive: noop, onToast: noop, onIconsChanged: noop, onHistoryNavigation: noopAsync,
     }),
     create: createModelChannel<CreateDialogModel>({
       open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", titleOverride: false, description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false },
@@ -38,9 +38,11 @@ export function createForgeAppChannels(): ForgeAppChannels {
     }),
     settings: createModelChannel<SettingsModel>({
       open: false, identity: "", dataVersion: 0, initialTab: "workspace", workspaces: [], activeWorkspaceId: "", workspaceIcons: [{ id: "", label: "Forge default", src: "/favicon.svg" }], workspaceIconSavingId: "", userName: "User",
+      appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
       agentHub: { configuredEndpoint: "", connected: false, compatible: false, error: "", apiVersion: "", version: "", capabilities: [], providers: [], agents: [], resourceDefaults: { workspace: "default", project: "default", task: "default" } }, profiles: [], agents: [],
       notifications: { browser: false, sound: false, permission: "default", permissionError: "", soundError: "" },
       onClose: noop, onAddWorkspace: noopAsync, onRemoveWorkspace: noopAsync, onWorkspaceIcon: noopAsync, onSaveUser: async (name) => name, onSaveAgentHub: noopAsync,
+      onLayoutPreference: noop, onFontScale: noop, onResetFontScales: noop,
       onBrowserNotifications: noop, onCompletionSound: noop, onToast: noop, onIconsChanged: noop,
     }),
     upload: createModelChannel<UploadDialogModel>({ open: false, identity: "", workspaceId: "", resourceId: "", onDone: noop, onIconsChanged: noop }),

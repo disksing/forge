@@ -352,6 +352,13 @@ const settingsController = createSettingsController({
 		if (!userSettingsController) throw new Error("User settings are unavailable.");
 		return userSettingsController.save(name);
 	},
+	appearance: () => {
+		const snapshot = paneLayoutController.snapshot();
+		return { layout: snapshot.layout.preference, fontScales: snapshot.fontScales };
+	},
+	setLayoutPreference: (preference) => paneLayoutController.setLayoutPreference(preference),
+	setFontScale: (column, value) => paneLayoutController.setFontScale(column, value),
+	resetFontScales: () => paneLayoutController.resetFontScales(),
 	notificationPreferences: () => notificationController?.preferences() || { browser: false, sound: false, permission: "unsupported", permissionError: "", soundError: "" },
 	setBrowserNotifications: (enabled) => notificationController?.setBrowserEnabled(enabled),
 	setCompletionSound: (enabled) => notificationController?.setSoundEnabled(enabled),
@@ -777,7 +784,6 @@ function renderAppShell() {
 		onMobileSidebar: (open) => setMobileSidebar(open),
 		onMobileView: (view) => setMobileView(view),
 		onMobileImmersive: (immersive) => setMobileImmersive(immersive),
-		onLayoutCycle: () => paneLayoutController.cycleLayoutPreference(),
 		onHistoryNavigation: (pathname) => handleHistoryNavigation(pathname),
 		onToast: toast,
 		onIconsChanged: refreshIcons

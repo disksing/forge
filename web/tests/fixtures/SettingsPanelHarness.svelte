@@ -1,12 +1,13 @@
 <script lang="ts">
   import AgentHubSettingsPanel from "../../src/components/AgentHubSettingsPanel.svelte";
+  import AppearanceSettingsPanel from "../../src/components/AppearanceSettingsPanel.svelte";
   import NotificationSettingsPanel from "../../src/components/NotificationSettingsPanel.svelte";
   import ProfilesSettingsPanel from "../../src/components/ProfilesSettingsPanel.svelte";
   import type { SettingsDraft, SettingsModel } from "../../src/components/models";
   import UserSettingsPanel from "../../src/components/UserSettingsPanel.svelte";
   import WorkspaceSettingsPanel from "../../src/components/WorkspaceSettingsPanel.svelte";
 
-  type Panel = "workspace" | "user" | "agenthub" | "profiles" | "notifications";
+  type Panel = "workspace" | "user" | "appearance" | "agenthub" | "profiles" | "notifications";
 
   let { panel, model, initialDraft }: { panel: Panel; model: SettingsModel; initialDraft: SettingsDraft } = $props();
   // svelte-ignore state_referenced_locally
@@ -26,6 +27,8 @@
   <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onToast={model.onToast} />
 {:else if panel === "user"}
   <UserSettingsPanel bind:draft bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
+{:else if panel === "appearance"}
+  <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} />
 {:else if panel === "agenthub"}
   <AgentHubSettingsPanel agentHub={model.agentHub} bind:draft bind:pending onDirty={markDirty} onSaveAgentHub={model.onSaveAgentHub} onToast={model.onToast} />
 {:else if panel === "profiles"}

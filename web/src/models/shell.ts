@@ -91,7 +91,6 @@ export interface AppShellModel {
   onMobileSidebar: (open: boolean) => void;
   onMobileView: (view: "details" | "chat") => void;
   onMobileImmersive: (immersive: boolean) => void;
-  onLayoutCycle: () => void;
   onHistoryNavigation: (pathname: string) => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;
