@@ -54,12 +54,12 @@ func TestVersion(t *testing.T) {
 func TestSchedulerCommandsManageNaturalLanguageSchedules(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		createdOutput := run(t, "scheduler", "add", "--description", "Review release", "--condition", "when the release branch is green", "--target", "workspace", "--creator=user")
+		createdOutput := run(t, "scheduler", "add", "--description", "Review release", "--condition", "when the release branch is green", "--target", "workspace")
 		var created app.Schedule
 		if err := json.Unmarshal([]byte(createdOutput), &created); err != nil {
 			t.Fatal(err)
 		}
-		if created.ID == "" || created.Description != "Review release" || created.Target != "workspace" || created.CreatedBy.Kind != app.CreatorKindUser {
+		if created.ID == "" || created.Description != "Review release" || created.Target != "workspace" {
 			t.Fatalf("created schedule = %#v", created)
 		}
 		listed := run(t, "scheduler", "list")
@@ -238,53 +238,6 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 	})
 }
 
-func TestCreateCreatorFlagAndInjectedAgentContext(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		run(t, "project", "create", "Source project")
-		if err := os.Chdir(filepath.Join(root, "project1")); err != nil {
-			t.Fatal(err)
-		}
-		run(t, "task", "create", "Source task")
-		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
-			t.Fatal(err)
-		}
-		workspace, err := app.OpenWorkspace(root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		runtime, err := workspace.RuntimeConfig()
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv(forgeWorkspaceRootEnvironment, root)
-		t.Setenv(forgeWorkspaceInstanceEnvironment, runtime.InstanceID)
-		t.Setenv(forgeResourceIDEnvironment, "project1.task1")
-
-		run(t, "project", "create", "Agent delegated project")
-		delegated, err := workspace.ResourceValue("project2")
-		if err != nil || delegated.Project == nil || delegated.Project.Creator == nil {
-			t.Fatalf("delegated project = %#v, %v", delegated, err)
-		}
-		want, _ := app.ResourceCreator(runtime.InstanceID, "project1.task1")
-		if *delegated.Project.Creator != want {
-			t.Fatalf("delegated creator = %#v, want %#v", delegated.Project.Creator, want)
-		}
-
-		run(t, "project", "create", "--creator=user", "Explicit user project")
-		explicitUser, err := workspace.ResourceValue("project3")
-		if err != nil || explicitUser.Project.Creator == nil || explicitUser.Project.Creator.Kind != app.CreatorKindUser {
-			t.Fatalf("explicit user creator = %#v, %v", explicitUser.Project, err)
-		}
-
-		t.Setenv(forgeWorkspaceInstanceEnvironment, "wrong-instance")
-		if _, err := runErr(t, "project", "create", "Invalid Agent project"); err == nil || !strings.Contains(err.Error(), "does not match") {
-			t.Fatalf("invalid injected Agent context was accepted: %v", err)
-		}
-		run(t, "project", "create", "--creator=user", "User ignores invalid Agent context")
-	})
-}
-
 func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected forge start to be unknown, got %v", err)
@@ -427,10 +380,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"relevant `artifacts/`",
 				"task.json` contains structured state",
 				"task.md` the durable contract",
-				"Use the resource History commands for conversation history.",
+				"log.jsonl` the historical timeline",
 				"You may use `sed`, `rg`, or `less` on the resolved paths.",
 				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
+				"forge task log list --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "只读检查其他项目/任务资源",
@@ -445,10 +398,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"相关 `artifacts/`",
 				"`task.json` 是结构化状态",
 				"`task.md` 是长期约定",
-				"对话历史使用资源 History 命令",
+				"`log.jsonl` 是历史时间线",
 				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
 				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
+				"forge task log list --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "Read-only inspection of other project/task resources",
@@ -528,8 +481,8 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"at-least-once delivery boundary",
 				"Waiting messages are separate from resource state",
 				"AgentHub accepting a message does not mean that its target Turn has completed",
-				"creator_turn_result",
-				"does not automatically reply when the target Turn completes normally",
+				"subscribeResult",
+				"turn_result",
 				"undeliverable",
 				"delivery_unknown",
 				"delivery_terminal_notice",
@@ -552,7 +505,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"Resource creation is local and creates neither an initial message nor a generation",
 				"forge workspace status [--server=<url>]",
 				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
 			},
 			wrongHeading:     "## 资源通信、通知、generation 与 history",
 			wrongInterrupt:   "interrupt` requests a change to the active Turn",
@@ -575,8 +528,8 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"至少一次投递边界",
 				"waiting 消息与资源状态分开",
 				"AgentHub 接受消息不等于目标 Turn 已完成",
-				"creator_turn_result",
-				"目标 Turn 正常完成不会自动回复发送者",
+				"subscribeResult",
+				"turn_result",
 				"undeliverable",
 				"delivery_unknown",
 				"delivery_terminal_notice",
@@ -599,7 +552,7 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"资源创建仅在本地完成，不附带初始消息，也不创建 generation",
 				"forge workspace status [--server=<url>]",
 				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
 			},
 			wrongHeading:     "## Resource communication, notifications, generations, and history",
 			wrongInterrupt:   "interrupt` 请求改变活动 Turn",
