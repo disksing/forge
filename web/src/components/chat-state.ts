@@ -470,6 +470,19 @@ export class ChatSessionController {
       .flatMap((segment) => segment.turns || []).find((turn) => eventId >= turn.startEventId && eventId <= turn.lastEventId)?.reference || "";
   }
 
+  // A streamed event of the open Turn usually arrives before the next history
+  // refresh advances the summary's lastEventId, so the id range lookup misses
+  // it. Falling back to the turnId keeps mid-turn events inside the existing
+  // Turn block; otherwise every event bounces through a transient orphan block
+  // that renders below the Turn and folds back on the next head refresh, which
+  // makes the working indicator jitter on each tool call.
+  private openTurnReferenceForEvent(context: ResourceChatContext, event: AgentEvent): string {
+    const turnId = String(event.turnId || "");
+    if (!turnId) return "";
+    const summary = this.findTurnById(context, context.generationId, turnId);
+    return summary && !summary.closed ? summary.reference : "";
+  }
+
   private eventBelongsToContext(context: ResourceChatContext, event: AgentEvent): boolean {
     const sessionId = String(event.sessionId || "");
     return !sessionId || !context.status?.session?.id || sessionId === context.status.session.id;
@@ -495,7 +508,7 @@ export class ChatSessionController {
     const pending = context.pendingEvents;
     context.pendingEvents = [];
     for (const event of pending) {
-      const reference = this.turnReferenceForEvent(context, context.generationId, Number(event.id));
+      const reference = this.turnReferenceForEvent(context, context.generationId, Number(event.id)) || this.openTurnReferenceForEvent(context, event);
       if (reference) context.liveEvents.set(reference, compactTimelineEvents(mergeCanonicalEventBatch(context.liveEvents.get(reference) || [], [event])));
       else {
         const turnId = String(event.turnId || "current");
