@@ -138,33 +138,6 @@ func applicationTaskList(options taskListOptions) error {
 	return nil
 }
 
-func applicationSessionList() error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	sessions, err := workspace.GenerationDiagnostics()
-	if err != nil {
-		return err
-	}
-	for _, session := range sessions {
-		fmt.Println(formatSessionDiagnostic(session))
-	}
-	return nil
-}
-
-func applicationSessionShow(id string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	session, err := workspace.GenerationDiagnostic(id)
-	if err != nil {
-		return err
-	}
-	return printJSON(session)
-}
-
 func applicationRepoList() error {
 	workspace, err := openApplicationWorkspace()
 	if err != nil {

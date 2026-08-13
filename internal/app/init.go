@@ -180,9 +180,6 @@ forge history turn show --ref=<reference> [--server=<url>] [--json]
 forge history event show --ref=<reference> [--server=<url>] [--json]
 forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
 forge message show --id=<message-id> [--server=<url>]
-forge session list
-forge session show --id=<generationId>
-
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
@@ -206,7 +203,6 @@ Notes:
 - ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
 - ` + "`forge task history`" + ` and ` + "`forge project history`" + ` read bounded resource History; use ` + "`forge history turn show --ref=...`" + ` for a selected Turn.
 - ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
-- ` + "`forge session list`" + ` and ` + "`forge session show --id=<generationId>`" + ` provide read-only diagnostics derived from resource generations. They do not create, modify, end, take over, or contact AgentHub Sessions.
 - ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and their resource runtime state for GUI and tool integrations.
 - ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
 - Creator Turn results and terminal delivery notices arrive as durable structured system messages in the resource mailbox. Use ` + "`forge message show`" + ` and ` + "`forge history turn show`" + ` with their stable references for diagnosis.

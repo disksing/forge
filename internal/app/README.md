@@ -15,7 +15,7 @@ project, err := workspace.CreateProjectWithInput(app.CreateProjectInput{
 })
 ```
 
-`Workspace` 保存规范化后的 root，可安全地在并发请求之间复用。API 不读取或修改进程 cwd；`OpenWorkspaceFrom` 的起点同样由调用方显式传入。应用层不启动 `forge` 子进程，也不向 stdout/stderr 写入协议或用户输出。返回值使用 `Project`、`Task`、`GenerationDiagnostic`、`WorkspaceTree`、`ResourceDetailView` 等类型；失败时使用 `APIError`，可通过 `errors.As` 或 `app.IsKind` 检查操作类别。
+`Workspace` 保存规范化后的 root，可安全地在并发请求之间复用。API 不读取或修改进程 cwd；`OpenWorkspaceFrom` 的起点同样由调用方显式传入。应用层不启动 `forge` 子进程，也不向 stdout/stderr 写入协议或用户输出。返回值使用 `Project`、`Task`、`WorkspaceTree`、`ResourceDetailView` 等类型；失败时使用 `APIError`，可通过 `errors.As` 或 `app.IsKind` 检查操作类别。
 
 主要入口：
 

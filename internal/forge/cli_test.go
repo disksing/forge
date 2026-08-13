@@ -289,9 +289,9 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 	if _, err := runErr(t, "start"); err == nil || !strings.Contains(err.Error(), `unknown command "start"`) {
 		t.Fatalf("expected forge start to be unknown, got %v", err)
 	}
-	for _, subcommand := range []string{"lock", "unlock", "new", "bind-agenthub", "heartbeat", "end"} {
-		if _, err := runErr(t, "session", subcommand, "--id=test"); err == nil || !strings.Contains(err.Error(), "unknown session subcommand") {
-			t.Fatalf("expected forge session %s to be unknown, got %v", subcommand, err)
+	for _, args := range [][]string{{"session"}, {"session", "list"}, {"session", "show", "--id=test"}} {
+		if _, err := runErr(t, args...); err == nil || !strings.Contains(err.Error(), `unknown command "session"`) {
+			t.Fatalf("expected removed forge session command to be unknown for %v, got %v", args, err)
 		}
 	}
 	serveHelp := run(t, "serve", "--help")
@@ -538,7 +538,6 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"binding switch, crash, or lifecycle convergence",
 				"old generations are read-only",
 				"must not Resume, Stop, or otherwise manage AgentHub Sessions directly",
-				"forge session list/show",
 				"forge workspace history",
 				"forge project history",
 				"forge task history",
@@ -586,7 +585,6 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 				"绑定切换、崩溃或生命周期收敛",
 				"旧 generation 只读保留",
 				"不需也不应 Resume、Stop 或直接管理 AgentHub Session",
-				"forge session list/show",
 				"forge workspace history",
 				"forge project history",
 				"forge task history",
@@ -972,7 +970,6 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge template list [--project=<project>] [--json]",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
-		"  forge session list\n  forge session show --id=<generationId>",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"Commands:",
 		"  forge init [--language=<language>] [--creator=user|agent]",
@@ -981,7 +978,6 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"  forge project create [--slug <slug>] [--creator=user|agent] <description>",
 		"  forge task create [<title>] [--project=<project>] [--slug <slug>] [--creator=user|agent]",
 		"  forge template list|show|validate|render|create|migrate ...",
-		"  forge session list\n    List read-only generation diagnostics derived from the resource-scoped generation store.",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 	}
 	offset := 0
@@ -991,6 +987,9 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 			t.Fatalf("expected help marker %q after offset %d, got:\n%s", marker, offset, help)
 		}
 		offset += index + len(marker)
+	}
+	if strings.Contains(help, "forge session") {
+		t.Fatalf("removed forge session command remains in help:\n%s", help)
 	}
 }
 
@@ -1198,41 +1197,6 @@ func TestResourceLocatorRejectsDuplicateIDs(t *testing.T) {
 		out, err := runErr(t, "project", "show", "--project=project1")
 		if err == nil || !strings.Contains(err.Error(), "multiple resource directories") {
 			t.Fatalf("expected duplicate resource error, got stdout %q and error %v", out, err)
-		}
-	})
-}
-
-func TestSessionListAndShowAreReadOnlyAgentHubDiagnostics(t *testing.T) {
-	withTempCwd(t, func(root string) {
-		run(t, "init")
-		path := filepath.Join(root, ".forge", "runtime", "generations.json")
-		store := `{"version":1,"generations":[` +
-			`{"id":"run-internal","resourceId":"workspace","generation":1,"generationId":"gen-one","title":"Workspace generation","status":"idle","agentHubSessionId":"ses_one","createdAt":"2026-01-02T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z"}]}`
-		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(store), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		before := readFile(t, path)
-
-		listed := run(t, "session", "list")
-		if !strings.Contains(listed, "gen-one\tworkspace\tgen #1\tidle") || strings.Contains(listed, "run-internal") {
-			t.Fatalf("unexpected read-only session list:\n%s", listed)
-		}
-		shown := run(t, "session", "show", "--id", "gen-one")
-		if !strings.Contains(shown, `"agentHubSessionId": "ses_one"`) {
-			t.Fatalf("unexpected generation JSON:\n%s", shown)
-		}
-		if _, err := runErr(t, "session", "show", "--id=gen-one", "--id", "gen-one"); err == nil || !strings.Contains(err.Error(), sessionShowUsage) {
-			t.Fatalf("duplicate generation ID flag should be rejected, got %v", err)
-		}
-		if _, err := runErr(t, "session", "show", "--id", "run-internal"); err == nil || !strings.Contains(err.Error(), "generation not found") {
-			t.Fatalf("internal run ID should not be exposed, got %v", err)
-		}
-		run(t, "workspace", "tree", "--json")
-		if after := readFile(t, path); after != before {
-			t.Fatalf("read-only diagnostics rewrote the store:\nbefore:\n%s\nafter:\n%s", before, after)
 		}
 	})
 }

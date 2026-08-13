@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+func nextFlagValue(args []string, i *int) (string, bool) {
+	if *i+1 >= len(args) || strings.HasPrefix(args[*i+1], "--") {
+		return "", false
+	}
+	*i = *i + 1
+	return args[*i], true
+}
+
 func workspaceTreeJSON() error {
 	return applicationWorkspaceTreeJSON()
 }

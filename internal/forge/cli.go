@@ -60,8 +60,6 @@ func Run(args []string) error {
 		return runMessage(args[1:])
 	case "history":
 		return runHistory(args[1:])
-	case "session":
-		return runSession(args[1:])
 	case "workspace":
 		return runWorkspace(args[1:])
 	case "migrate":
@@ -335,9 +333,6 @@ Usage:
   forge scheduler add --description=<text> --condition=<text> --target=<resource> [--creator=user|agent]
   forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
   forge scheduler remove --id=<schedule>
-  forge session list
-  forge session show --id=<generationId>
-
   forge workspace tree --json
   forge workspace resource --id=<resource> --json
 
@@ -441,7 +436,7 @@ Commands:
 
   forge workspace|project|task status ... [--server=<url>]
     Query the owning forge serve process for the selected work subject's
-    public state, generation and Session diagnostics, message counts, waiting
+    public resource state and generation status, message counts, waiting
     messages, steer capability, and recent delivery error. Selection follows
     the corresponding show command; Workspace status selects the Workspace.
 
@@ -471,14 +466,6 @@ Commands:
     Query the current delivery record for a stable mailbox message id.
     Status and message commands discover the owner from <workspace>/.forge/serve.lock;
     --server explicitly overrides its diagnostic address.
-
-  forge session list
-    List read-only generation diagnostics derived from the resource-scoped generation store.
-    This diagnostic command never changes generation state or contacts AgentHub.
-
-  forge session show --id=<generationId>
-    Print one generation diagnostic as formatted JSON. The stable generationId
-    is the only accepted address; this command never contacts AgentHub.
 
   forge workspace tree --json
     Print a lightweight JSON tree of open projects, open tasks, and resource

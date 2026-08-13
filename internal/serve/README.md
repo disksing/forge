@@ -86,7 +86,7 @@ Forge 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconci
 
 同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。资源级 `scheduler.json` checkpoint 保留最近 tick 的稳定 ID、generation/Session/Turn、配置 digest 和 delivery/Turn terminal 边界，即使 tick receipt 已 compact，Server 重启也不会重复或丢失恢复判断。
 
-资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 Forge Session store 或写入 API。公共 CLI 只保留 `forge session list/show` 作为从 generation index 派生的只读诊断，不提供手工创建、绑定、心跳、接管或结束入口，也不会访问 AgentHub。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，GUI 不再提供 Session 新建、切换、恢复或关闭控件。
+资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 Forge Session store 或写入 API。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，GUI 不再提供 Session 新建、切换、恢复或关闭控件。
 
 ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/approval、待处理 mailbox 投递或生命周期收敛时由 Forge 自动休眠。空闲边界持久化在 generation 记录中，reconciler 会重新核对精确 AgentHub Session，在资源/Turn 互斥边界内执行 Stop、确认 durable `stopped` 后 Archive；旧 generation 变为只读历史，资源本身仍是可寻址的 idle 资源。之后的 user、agent、system 或 Scheduler 消息保留在 mailbox，并在旧代际归档后按需创建新 generation 投递；普通轮询和 Server 重启不会重置计时。
 

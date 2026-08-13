@@ -1,7 +1,7 @@
 <script lang="ts">
   import "./DetailPanel.css";
 
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
 
   import { ApiClient } from "../api/client";
   import type { ModelChannel } from "./model-channel";
@@ -25,6 +25,9 @@
   let diffRepo = $state<ResourceRepoModel | null>(null);
   const tabMemory = new Map<string, string>();
   const client = new ApiClient();
+  let refreshVersion = 0;
+
+  type PreviewScrollState = { key: string; scrollTop: number; scrollLeft: number };
 
   const files = $derived((model.detail?.files || []).filter((file) => file.name !== "AGENTS.md"));
   const fileNames = $derived(new Set(files.map((file) => file.name)));
@@ -32,6 +35,8 @@
   const activePreviewPath = $derived(preview ? `${preview.section}:${preview.path}` : "");
 
   onMount(() => channel.subscribe((next) => {
+    const previewScrollState = capturePreviewScrollState();
+    const currentRefreshVersion = ++refreshVersion;
     model = next;
     if (next.identity !== identity) {
       if (identity && activeTab) tabMemory.set(identity, activeTab);
@@ -46,7 +51,10 @@
     } else if (tabs.length && !tabs.some((tab) => tab.id === activeTab)) {
       activeTab = tabs[0].id;
     }
-    queueMicrotask(next.onIconsChanged);
+    void tick().then(() => {
+      if (currentRefreshVersion === refreshVersion) restorePreviewScrollState(previewScrollState);
+      next.onIconsChanged();
+    });
   }));
 
   onMount(() => {
@@ -131,6 +139,29 @@
 
   function openPreview(section: string, path: string): void {
     preview = { section, path };
+  }
+
+  function previewKey(value: { section: string; path: string }): string {
+    return `${value.section}:${value.path}`;
+  }
+
+  function capturePreviewScrollState(): PreviewScrollState | null {
+    if (!preview) return null;
+    const scroller = document.querySelector<HTMLElement>("[data-preview-scroll]");
+    if (!scroller) return null;
+    return {
+      key: previewKey(preview),
+      scrollTop: scroller.scrollTop,
+      scrollLeft: scroller.scrollLeft,
+    };
+  }
+
+  function restorePreviewScrollState(snapshot: PreviewScrollState | null): void {
+    if (!snapshot || !preview || snapshot.key !== previewKey(preview)) return;
+    const scroller = document.querySelector<HTMLElement>("[data-preview-scroll]");
+    if (!scroller) return;
+    scroller.scrollTop = snapshot.scrollTop;
+    scroller.scrollLeft = snapshot.scrollLeft;
   }
 
   function toastError(message: string): void {
