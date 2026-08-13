@@ -51,6 +51,31 @@ func waitForFakeSessionState(t *testing.T, fake *runtimeFakeAgentHub, sessionID,
 	})
 }
 
+func waitForIdleGenerationRetirement(t *testing.T, manager *agentManager, workspacePath, runID string) agentRun {
+	t.Helper()
+	var stored agentRun
+	waitForRuntimeTest(t, func() bool {
+		candidate, err := loadAgentRun(workspacePath, runID)
+		if err != nil || candidate.Status != "stopped" || !candidate.AgentHubStoppedObserved ||
+			candidate.IdleSleepStopRequested || candidate.ReplacementPending {
+			return false
+		}
+		rt := manager.runtimeByID(runID)
+		if rt != nil {
+			rt.mu.Lock()
+			lifecycleStopInFlight := rt.lifecycleStopInFlight
+			agentHubStopRequested := rt.agentHubStopRequested
+			rt.mu.Unlock()
+			if lifecycleStopInFlight || agentHubStopRequested {
+				return false
+			}
+		}
+		stored = candidate
+		return true
+	})
+	return stored
+}
+
 func fakeStopCalls(fake *runtimeFakeAgentHub) int {
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
@@ -65,9 +90,11 @@ func TestResourceIdleSleepHonorsDeadlineAndArchivesAllResourceKinds(t *testing.T
 	deadline := time.Date(2026, 8, 1, 0, 30, 0, 0, time.UTC)
 	manager.now = func() time.Time { return deadline.Add(-time.Second) }
 	resources := []string{"workspace", "project1", "project1.task1", app.SchedulerResourceID}
+	runs := make([]agentRun, 0, len(resources))
 	for index, resourceID := range resources {
 		run := idleTestRun(workspace, resourceID, "run-idle-"+string(rune('a'+index)), "ses-idle-"+string(rune('a'+index)), deadline)
 		seedIdleTestRun(t, fake, workspace, run, "ready")
+		runs = append(runs, run)
 	}
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
@@ -86,8 +113,9 @@ func TestResourceIdleSleepHonorsDeadlineAndArchivesAllResourceKinds(t *testing.T
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for index := range resources {
-		waitForFakeSessionState(t, fake, "ses-idle-"+string(rune('a'+index)), "archived")
+	for _, run := range runs {
+		waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+		waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	}
 	if got := fakeStopCalls(fake); got != len(resources) {
 		t.Fatalf("each resource kind must be stopped exactly once: got %d, want %d", got, len(resources))
@@ -186,6 +214,7 @@ func TestResourceIdleSleepMessageAfterStopWaitsForArchiveThenCreatesGeneration(t
 	if err := <-pollDone; err != nil {
 		t.Fatal(err)
 	}
+	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	if message.LastError != "" {
 		t.Fatal(message.LastError)
 	}
@@ -220,12 +249,9 @@ func TestResourceIdleSleepRecoversOverdueDeadlineAfterRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+	stored := waitForIdleGenerationRetirement(t, restarted, workspace.Path, run.ID)
 	if got := fakeStopCalls(fake); got != 1 {
 		t.Fatalf("overdue restart recovery issued %d Stop calls, want 1", got)
-	}
-	stored, err := loadAgentRun(workspace.Path, run.ID)
-	if err != nil {
-		t.Fatal(err)
 	}
 	if stored.Status != "stopped" || stored.IdleSleepStopRequested {
 		t.Fatalf("restart recovery did not complete the durable sleep lifecycle: %#v", stored)
@@ -257,6 +283,7 @@ func TestResourceIdleSleepRetriesAmbiguousStopWithoutDuplicateAfterConvergence(t
 		t.Fatal(err)
 	}
 	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	if got := fakeStopCalls(fake); got != 2 {
 		t.Fatalf("ambiguous Stop did not retry exactly once: %d", got)
 	}
@@ -292,6 +319,7 @@ func TestResourceIdleSleepSchedulerTickCreatesReplacementGeneration(t *testing.T
 		t.Fatal(err)
 	}
 	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+	waitForIdleGenerationRetirement(t, manager, workspace.Path, run.ID)
 	var tick resourceMailboxMessage
 	waitForRuntimeTest(t, func() bool {
 		mailbox, loadErr := loadResourceMailbox(workspace.Path)
