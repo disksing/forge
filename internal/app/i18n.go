@@ -23,6 +23,26 @@ const crossResourceReadGuidanceChinese = `- 在 Workspace 内，只能写入 age
 - 需要协作但不能写入其他资源文件时，通过拥有该 Workspace 的 Forge Server 直接联系目标 Task：` + "`forge task status --project=<project> --task=<task>`" + `、` + "`forge message send --to=<project.task> [--mode=steer|enqueue|interrupt] <message>`" + ` 和 ` + "`forge message show --id=<message-id>`" + `。使用 ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` 读取其长期对话，并用 ` + "`forge history turn show --ref=<turn-ref> [--json]`" + ` 或 ` + "`forge history event show --ref=<event-ref> [--json]`" + ` 展开返回的引用。历史命令默认输出格式化文本；使用 ` + "`--json`" + ` 获取结构化输出。默认消息模式为 steer；Forge 会持久保存已接受消息，把 waiting 与 Task 状态分开呈现，如实报告向 enqueue 的降级，并使用同一稳定 message ID 重试。provenance 只标识发送者，不构成认证或指令优先级。
 `
 
+const resourceCommunicationGuidanceEnglish = `
+## Resource communication, notifications, generations, and history
+
+- Stable daily addresses are the Workspace, Project, Task, and Scheduler. Use ` + "`forge workspace|project|task status ...`" + ` for status; the Scheduler works through its resource context and has no separate AgentHub address. Never use an AgentHub Session ID, generation ID, or internal run ID as a cross-Agent ` + "`--to`" + ` target.
+- Send and inspect mailbox messages with ` + "`forge message send`" + ` and ` + "`forge message show`" + `. ` + "`steer`" + ` is the default; ` + "`enqueue`" + ` requests a new Turn and ` + "`interrupt`" + ` requests a change to the active Turn. Accepted messages are durable, retain a stable message ID, and have an at-least-once delivery boundary; a ` + "`steer`" + ` request may be downgraded to ` + "`enqueue`" + `. Waiting messages are separate from resource state. AgentHub accepting a message does not mean that its target Turn has completed.
+- Automatic notifications are narrow: only when a creator resource triggers a Turn for a resource it created does terminal success or failure return to the creator mailbox as ` + "`creator_turn_result`" + `. An ordinary Agent message to any resource does not automatically reply when the target Turn completes normally; query that resource's history instead. Only ` + "`undeliverable`" + ` or terminal ` + "`delivery_unknown`" + ` creates a ` + "`delivery_terminal_notice`" + ` for a still-reachable sender resource. System-generated notifications do not recursively generate notifications.
+- Each unarchived resource has one long-lived conversation and at most one current generation. The first accepted message creates a generation lazily. A binding switch, crash, or lifecycle convergence may replace the underlying AgentHub Session/generation; old generations are read-only and remain part of the same resource history. Agents must not Resume, Stop, or otherwise manage AgentHub Sessions directly. ` + "`forge session list/show`" + ` is local read-only generation diagnostics only.
+- Address history through the resource: use ` + "`forge workspace history`" + `, ` + "`forge project history`" + `, and ` + "`forge task history`" + `, plus ` + "`forge history turn show --ref=...`" + ` and ` + "`forge history event show --ref=...`" + `. Lists default to formatted text; use ` + "`--json`" + ` for structured output and ` + "`--cursor`" + `/` + "`--limit`" + ` for bounded pagination. Turn/Event refs are stable opaque references bound to the resource and generation. A ` + "`gap`" + ` marks a segment that cannot be read and must not hide older generations. History remains readable after a resource is archived.
+`
+
+const resourceCommunicationGuidanceChinese = `
+## 资源通信、通知、generation 与 history
+
+- Workspace、Project、Task 和 Scheduler 是稳定的日常资源地址。按资源类型使用 ` + "`forge workspace|project|task status ...`" + ` 查询状态；Scheduler 通过其资源上下文工作，没有独立的 AgentHub 地址。不得把 AgentHub Session ID、generation ID 或内部 run ID 作为跨 Agent 的 ` + "`--to`" + ` 目标。
+- 使用 ` + "`forge message send`" + ` 和 ` + "`forge message show`" + ` 发送并检查 mailbox 消息。` + "`steer`" + ` 是默认模式；` + "`enqueue`" + ` 请求新 Turn，` + "`interrupt`" + ` 请求改变活动 Turn。已接受的消息会持久化，保留稳定的 message ID，并遵循至少一次投递边界；` + "`steer`" + ` 请求可能降级为 ` + "`enqueue`" + `。waiting 消息与资源状态分开。AgentHub 接受消息不等于目标 Turn 已完成。
+- 自动通知有明确边界：只有创建者资源触发其所创建资源的 Turn 时，terminal 成功或失败才会以 ` + "`creator_turn_result`" + ` 返回创建者 mailbox。普通 Agent 向任意资源发送消息时，目标 Turn 正常完成不会自动回复发送者；应改用该资源的 history 查询。只有 ` + "`undeliverable`" + ` 或终态 ` + "`delivery_unknown`" + ` 才会向仍可达的资源发送者生成 ` + "`delivery_terminal_notice`" + `。system-generated 通知不会递归生成通知。
+- 每个未归档资源有一条长期对话和至多一个 current generation。首条已接受消息到达时按需创建 generation。绑定切换、崩溃或生命周期收敛时，Forge 可以替换底层 AgentHub Session/generation；旧 generation 只读保留，并组成同一资源 history。Agent 不需也不应 Resume、Stop 或直接管理 AgentHub Session。` + "`forge session list/show`" + ` 仅用于本地只读的 generation 诊断。
+- history 以资源为地址：使用 ` + "`forge workspace history`" + `、` + "`forge project history`" + ` 和 ` + "`forge task history`" + `，以及 ` + "`forge history turn show --ref=...`" + ` 和 ` + "`forge history event show --ref=...`" + `。列表默认输出格式化文本；使用 ` + "`--json`" + ` 获取结构化内容，使用 ` + "`--cursor`" + `/` + "`--limit`" + ` 做有界分页。Turn/Event ref 是绑定资源和 generation 的稳定 opaque 引用。` + "`gap`" + ` 明确表示某段无法读取，不能因此隐藏更旧的 generation。资源归档后其 history 仍可读取。
+`
+
 func normalizeLanguage(language string) (string, error) {
 	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(language), "_", "-")) {
 	case "", "en", "en-us":
@@ -288,7 +308,7 @@ const workspaceAgentsPromptZH = `# AgentWorkspace
 - 开始此 workspace 中的工作前，请读取 ` + "`wiki/index.md`" + `。
 - 根据索引只读取与当前任务相关的 Wiki 页面，不要无差别加载整个 Wiki。
 - 当用户要求分析代码、项目或工作记录并更新 Wiki 时，请维护相关页面、交叉链接和 ` + "`wiki/index.md`" + ` 摘要。
-` + crossResourceReadGuidanceChinese + `- Workspace 文件边界依靠提示词协调，不是主机文件系统沙箱。
+` + crossResourceReadGuidanceChinese + resourceCommunicationGuidanceChinese + `- Workspace 文件边界依靠提示词协调，不是主机文件系统沙箱。
 - 开放项目直接位于 workspace 下的 ` + "`projectN/`" + ` 或 ` + "`projectN-slug/`" + ` 目录。
 - 项目任务直接位于项目目录下简短的 ` + "`taskM/`" + ` 或 ` + "`taskM-slug/`" + ` 目录；资源 ID 仍是 ` + "`projectN.taskM`" + ` 形式的完整 ID。
 - 已归档项目位于 ` + "`archive/`" + `。已归档项目任务位于其项目目录下的 ` + "`archive/`" + `。
@@ -343,6 +363,16 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+forge workspace status [--server=<url>]
+forge project status [--project=<project>] [--server=<url>]
+forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge history turn show --ref=<reference> [--server=<url>] [--json]
+forge history event show --ref=<reference> [--server=<url>] [--json]
+forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+forge message show --id=<message-id> [--server=<url>]
 forge session list
 forge session show --id=<generationId>
 

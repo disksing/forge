@@ -123,7 +123,7 @@ This directory is an AgentWorkspace managed by forge.
 - Before starting work in this workspace, read ` + "`wiki/index.md`" + `.
 - Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
 - When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
-` + crossResourceReadGuidanceEnglish + `- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
+` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
@@ -178,6 +178,16 @@ forge task log list [--project=<project>] [--task=<task>] [--json]
 forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
 forge task repo list [--project=<project>] [--task=<task>]
 forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+forge workspace status [--server=<url>]
+forge project status [--project=<project>] [--server=<url>]
+forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+forge history turn show --ref=<reference> [--server=<url>] [--json]
+forge history event show --ref=<reference> [--server=<url>] [--json]
+forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--server=<url>] <message>
+forge message show --id=<message-id> [--server=<url>]
 forge session list
 forge session show --id=<generationId>
 

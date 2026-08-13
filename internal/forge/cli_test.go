@@ -510,6 +510,155 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 	}
 }
 
+func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
+	cases := []struct {
+		name             string
+		language         string
+		anchors          []string
+		wrongHeading     string
+		inheritProject   string
+		inheritTask      string
+		inheritScheduler string
+	}{
+		{
+			name:     "English",
+			language: "en",
+			anchors: []string{
+				"## Resource communication, notifications, generations, and history",
+				"Stable daily addresses are the Workspace, Project, Task, and Scheduler.",
+				"forge workspace|project|task status ...",
+				"Never use an AgentHub Session ID, generation ID, or internal run ID",
+				"forge message send",
+				"forge message show",
+				"steer` is the default",
+				"Accepted messages are durable",
+				"at-least-once delivery boundary",
+				"Waiting messages are separate from resource state",
+				"AgentHub accepting a message does not mean that its target Turn has completed",
+				"creator_turn_result",
+				"does not automatically reply when the target Turn completes normally",
+				"undeliverable",
+				"delivery_unknown",
+				"delivery_terminal_notice",
+				"System-generated notifications do not recursively generate notifications",
+				"Each unarchived resource has one long-lived conversation and at most one current generation",
+				"binding switch, crash, or lifecycle convergence",
+				"old generations are read-only",
+				"must not Resume, Stop, or otherwise manage AgentHub Sessions directly",
+				"forge session list/show",
+				"forge workspace history",
+				"forge project history",
+				"forge task history",
+				"forge history turn show --ref=...",
+				"forge history event show --ref=...",
+				"Lists default to formatted text",
+				"--json",
+				"--cursor`/`--limit",
+				"stable opaque references bound to the resource and generation",
+				"A `gap` marks a segment that cannot be read",
+				"History remains readable after a resource is archived",
+				"Resource creation is local and creates neither an initial message nor a generation",
+				"forge workspace status [--server=<url>]",
+				"forge task history [--project=<project>] [--task=<task>]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+			},
+			wrongHeading:     "## 资源通信、通知、generation 与 history",
+			inheritProject:   "workspace root AGENTS.md (../AGENTS.md)",
+			inheritTask:      "workspace root AGENTS.md (../../AGENTS.md)",
+			inheritScheduler: "Always read the workspace root AGENTS.md (../AGENTS.md)",
+		},
+		{
+			name:     "Simplified Chinese",
+			language: "zh-CN",
+			anchors: []string{
+				"## 资源通信、通知、generation 与 history",
+				"Workspace、Project、Task 和 Scheduler 是稳定的日常资源地址。",
+				"forge workspace|project|task status ...",
+				"不得把 AgentHub Session ID、generation ID 或内部 run ID",
+				"使用 `forge message send` 和 `forge message show`",
+				"`steer` 是默认模式",
+				"已接受的消息会持久化",
+				"至少一次投递边界",
+				"waiting 消息与资源状态分开",
+				"AgentHub 接受消息不等于目标 Turn 已完成",
+				"creator_turn_result",
+				"目标 Turn 正常完成不会自动回复发送者",
+				"undeliverable",
+				"delivery_unknown",
+				"delivery_terminal_notice",
+				"system-generated 通知不会递归生成通知",
+				"每个未归档资源有一条长期对话和至多一个 current generation",
+				"绑定切换、崩溃或生命周期收敛",
+				"旧 generation 只读保留",
+				"不需也不应 Resume、Stop 或直接管理 AgentHub Session",
+				"forge session list/show",
+				"forge workspace history",
+				"forge project history",
+				"forge task history",
+				"forge history turn show --ref=...",
+				"forge history event show --ref=...",
+				"列表默认输出格式化文本",
+				"--json",
+				"--cursor`/`--limit",
+				"稳定 opaque 引用",
+				"`gap` 明确表示某段无法读取",
+				"资源归档后其 history 仍可读取",
+				"资源创建仅在本地完成，不附带初始消息，也不创建 generation",
+				"forge workspace status [--server=<url>]",
+				"forge task history [--project=<project>] [--task=<task>]",
+				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt]",
+			},
+			wrongHeading:     "## Resource communication, notifications, generations, and history",
+			inheritProject:   "workspace 根目录的 AGENTS.md（../AGENTS.md）",
+			inheritTask:      "workspace 根目录的 AGENTS.md（../../AGENTS.md）",
+			inheritScheduler: "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md）",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withTempCwd(t, func(root string) {
+				run(t, "init", "--language", tc.language)
+				run(t, "project", "create", "Communication guidance project")
+				run(t, "task", "create", "--project=project1", "Communication guidance task")
+
+				assertPrompts := func(stage string) {
+					t.Helper()
+					rootAgents := readFile(t, filepath.Join(root, "AGENTS.md"))
+					for _, want := range tc.anchors {
+						if !strings.Contains(rootAgents, want) {
+							t.Fatalf("workspace prompt after %s is missing %q:\n%s", stage, want, rootAgents)
+						}
+					}
+					if strings.Contains(rootAgents, tc.wrongHeading) {
+						t.Fatalf("workspace prompt after %s contains the other language heading:\n%s", stage, rootAgents)
+					}
+
+					projectAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
+					if !strings.Contains(projectAgents, tc.inheritProject) || strings.Contains(projectAgents, tc.anchors[0]) {
+						t.Fatalf("project prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, projectAgents)
+					}
+					taskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
+					if !strings.Contains(taskAgents, tc.inheritTask) || strings.Contains(taskAgents, tc.anchors[0]) {
+						t.Fatalf("task prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, taskAgents)
+					}
+					schedulerAgents := readFile(t, filepath.Join(root, "scheduler", "AGENTS.md"))
+					if !strings.Contains(schedulerAgents, tc.inheritScheduler) || strings.Contains(schedulerAgents, tc.anchors[0]) {
+						t.Fatalf("Scheduler prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, schedulerAgents)
+					}
+				}
+
+				assertPrompts("init")
+				if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+					t.Fatal(err)
+				}
+				run(t, "migrate", "--language", tc.language)
+				assertPrompts("migrate")
+			})
+		})
+	}
+}
+
 func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		if _, err := runErr(t, "init", "--language=fr"); err == nil || !strings.Contains(err.Error(), "unsupported language") {
