@@ -233,6 +233,22 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		return false
 	}
+	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
+	if mailboxErr == nil {
+		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+			Run: run, Session: &session, ResourceArchived: true, Mailbox: mailbox, Revision: run.UpdatedAt,
+		}))
+		switch lifecyclePlan.Operation {
+		case GenerationOperationFinalizeArchivedMailbox:
+			_ = markResourceMailboxArchived(workspace.Path, run.ResourceID)
+			return true
+		case GenerationOperationWaitForTurnTerminal, GenerationOperationWaitForSession,
+			GenerationOperationWaitForMessageReceipt, GenerationOperationRetireGeneration:
+			return true
+		case GenerationOperationNone:
+			return false
+		}
+	}
 	effectContext := context.WithoutCancel(ctx)
 	if session.State == "stopped" && run.GenerationID != "" {
 		if _, err := client.Archive(effectContext, session.ID); err != nil {

@@ -517,6 +517,19 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
 		return
 	}
+	mailbox, mailboxErr := loadResourceMailbox(rt.workspace.Path)
+	if mailboxErr != nil {
+		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", mailboxErr))
+		return
+	}
+	lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+		Run: run, Session: &session, Mailbox: mailbox, Revision: run.UpdatedAt,
+	}))
+	switch lifecyclePlan.Operation {
+	case GenerationOperationFinalizeArchivedMailbox, GenerationOperationDeliverMessage,
+		GenerationOperationInterruptTurn, GenerationOperationWaitForMessageReceipt:
+		return
+	}
 	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {
 		// A message or provider action won the race after the ready snapshot.
 		// Never interrupt it for automatic sleep; the next ready boundary gets a

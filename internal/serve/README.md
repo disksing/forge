@@ -2,6 +2,8 @@
 
 `internal/serve` 提供静态 Web UI、Workspace HTTP API，以及以资源 generation 为边界的 AgentHub 对话、输入、审批、停止、恢复和对账。Workspace 文件操作直接调用 `internal/app`，不会启动 `forge` 子进程。
 
+Generation 生命周期的 canonical facts、operation 优先级、网络 effect 与 guarded commit 边界见 [`generation_lifecycle.md`](generation_lifecycle.md)。planner 是纯决策层；resource controller 串行化同一稳定 resource 的调度；store adapter 负责 durable receipt/current/retired 事实；AgentHub client 只负责网络副作用。统一恢复顺序为 `facts → plan → effect → guarded commit → replan`，旧 generation 的过期结果不得覆盖新 current。
+
 ## 配置与所有权
 
 持久化 GUI 配置使用 schema version 4，包含 Workspace、AgentHub endpoint、Forge instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 GUI 创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 Forge 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
