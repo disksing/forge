@@ -233,7 +233,7 @@ func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Contex
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		return false
 	}
-	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
+	mailbox, mailboxErr := loadHotResourceMailbox(workspace.Path, run.ResourceID)
 	if mailboxErr == nil {
 		lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
 			Run: run, Session: &session, ResourceArchived: true, Mailbox: mailbox, Revision: run.UpdatedAt,

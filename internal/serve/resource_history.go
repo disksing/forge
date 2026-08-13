@@ -343,7 +343,7 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace guiWor
 			return resourceHistoryPage{}, &resourceAPIError{Code: "invalid_history_cursor", Message: "history cursor generation no longer belongs to this resource"}
 		}
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadResourceMailboxForResource(workspace.Path, resourceID)
 	if err != nil {
 		return resourceHistoryPage{}, err
 	}
@@ -477,7 +477,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace guiWor
 		}
 		return resourceHistoryTurnDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadResourceMailboxForResource(workspace.Path, resourceID)
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}

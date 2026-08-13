@@ -551,7 +551,7 @@ func legacyLifecyclePlanStillCurrent(workspace guiWorkspace, plan GenerationLife
 	if !found {
 		return false, nil
 	}
-	mailbox, err := loadResourceMailbox(workspace.Path)
+	mailbox, err := loadHotResourceMailbox(workspace.Path, plan.Guard.ResourceID)
 	if err != nil {
 		return false, err
 	}

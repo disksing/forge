@@ -61,7 +61,21 @@ func cancelPendingSchedulerTicks(ctx context.Context, workspacePath string) erro
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	_, err := mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
+	store, err := loadResourceMailboxStoreForRead(workspacePath, app.SchedulerResourceID)
+	if err != nil {
+		return err
+	}
+	needsMutation := false
+	for _, message := range store.Mailbox.Messages {
+		if message.ResourceID == app.SchedulerResourceID && message.Type == resourceMessageTypeSchedulerTick && message.Status == resourceMessageQueued {
+			needsMutation = true
+			break
+		}
+	}
+	if !needsMutation {
+		return nil
+	}
+	_, err = mutateResourceMailboxStoreForResource(workspacePath, app.SchedulerResourceID, func(store *resourceMailboxStore) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

@@ -508,7 +508,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		rt.setRecoveryError(m, fmt.Errorf("retiring AgentHub Session %s does not match generation %s", session.ID, run.GenerationID))
 		return
 	}
-	mailbox, mailboxErr := loadResourceMailbox(rt.workspace.Path)
+	mailbox, mailboxErr := loadHotResourceMailbox(rt.workspace.Path, run.ResourceID)
 	if mailboxErr != nil {
 		rt.setRecoveryError(m, fmt.Errorf("inspect retiring resource mailbox: %w", mailboxErr))
 		return
