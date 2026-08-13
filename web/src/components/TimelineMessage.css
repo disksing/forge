@@ -6,11 +6,11 @@
   border-left: 2px solid transparent;
 }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.assistant { border-left-color: #c9d2dc; }
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant,
+:where([data-component-owner="event-timeline"]) .agent-message-row.agent { border-left-color: #c9d2dc; }
 :where([data-component-owner="event-timeline"]) .agent-message-row.user { border-left-color: var(--ink); }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.system,
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent { border-left-color: #dfe4ea; }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system { border-left-color: #dfe4ea; }
 
 :where([data-component-owner="event-timeline"]) .agent-message-main { flex: 1; min-width: 0; }
 
@@ -43,11 +43,9 @@
   background: transparent;
 }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble p,
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble p { color: #7c8896; font-size: calc(12px * var(--chat-font-scale, 1)); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble p { color: #7c8896; font-size: calc(12px * var(--chat-font-scale, 1)); }
 
-:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong,
-:where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong { color: #8a97a5; font-weight: 600; }
+:where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-meta strong { color: #8a97a5; font-weight: 600; }
 
 :where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-role-tag { text-transform: uppercase; letter-spacing: 0.04em; }
 

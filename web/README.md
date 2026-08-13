@@ -89,7 +89,7 @@ Form state is keyed by explicit identity, not refresh frequency. Republishing a 
 
 ### Event timeline boundary
 
-`EventTimeline.svelte` is the only owner of the active resource/generation chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-generation tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, the shared `TimelineNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant Markdown remains inside `.markdown-rendered`.
+`EventTimeline.svelte` is the only owner of the active resource/generation chat identity, `ChatSessionController`, projector identity, history pagination, selection deferral, scroll anchoring/auto-fill, and the per-generation tool expansion cache. It delegates event markup to typed renderers: `TimelineMessage`, `ThinkingBlock`, `ToolGroup`/`ToolItem`, `ApprovalCard`, `LifecycleNotice`, the shared `TimelineNotice`, and `UnknownEvent`. Approval drafts and pending actions remain local to their keyed approval card; sanitized assistant and agent-to-agent Markdown remains inside `.markdown-rendered`.
 
 `chat-state.ts` owns HTTP/SSE context generations, accepted resource/generation identities, the 80 ms stream publication window, notice reconciliation, and cleanup of requests, streams, and flush timers. It consumes the side-effect-free `timeline-events.ts` module for canonical merge, batched insertion, append healing, and cumulative ACP tool-update compaction. Rendering components never open network streams outside this controller.
 

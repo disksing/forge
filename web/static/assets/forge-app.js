@@ -5826,7 +5826,7 @@ function Fc(e, t) {
 		k(n), z(() => K(r, t.item.text || "")), G(e, n);
 	};
 	q(x, (e) => {
-		H(n) === "assistant" ? e(S) : e(C, -1);
+		H(n) === "assistant" || H(n) === "agent" ? e(S) : e(C, -1);
 	}), k(b), k(c), k(s), z((e, t) => {
 		si(s, 1, `agent-message-row ${H(n) === "assistant" ? "assistant final" : H(n)}`), K(d, e), K(y, t);
 	}, [() => r(), () => i()]), G(e, s), M();

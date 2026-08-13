@@ -39,7 +39,7 @@
       <span>{clock()}</span>
     </div>
     <div class="agent-message-bubble">
-      {#if role === "assistant"}<div class="agent-message-content markdown-rendered">{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
+      {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered">{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
     </div>
   </div>
 </div>

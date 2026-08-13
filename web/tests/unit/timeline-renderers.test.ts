@@ -37,8 +37,13 @@ describe("timeline rendering components", () => {
     expect(assistant.querySelector("strong")?.textContent).toBe("Codex");
     expect(assistant.querySelector(".markdown-rendered")?.innerHTML).toContain("&lt;script&gt;unsafe&lt;/script&gt;");
 
-    const agent = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "delegated", sender: { name: "Builder", sessionId: "session-2" }, steer: true }, agentName: "Codex" });
+    const agent = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "delegated `code`", sender: { name: "Builder", sessionId: "session-2" }, steer: true }, agentName: "Codex" });
     expect(agent.textContent).toMatch(/Builder\s+agent\s+steer\s+from session session-2/);
+    expect(agent.querySelector(".markdown-rendered")?.innerHTML).toContain("delegated `code`");
+
+    const user = mounted(TimelineMessage, { item: { kind: "message", role: "user", text: "plain `code`", sender: { name: "disksing" } }, agentName: "Codex" });
+    expect(user.querySelector(".markdown-rendered")).toBeNull();
+    expect(user.querySelector(".agent-message-bubble p")?.textContent).toBe("plain `code`");
   });
 
   it("renders active and completed thinking duration states", () => {
