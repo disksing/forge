@@ -15,12 +15,12 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
+		ID: "run-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_live",
 		SourceExternalID: workspace.ID + "/run-live", ForgeSessionID: "session-live",
 		Status: "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_live", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-stopped", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_stopped",
+		ID: "run-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_stopped",
 		SourceExternalID: workspace.ID + "/run-stopped", Status: "stopped",
 		AgentHubStoppedObserved: true,
 		CreatedAt:               "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
@@ -78,7 +78,7 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 		id := fmt.Sprintf("run-%03d", index)
 		sessionID := "ses_" + id
 		runs = append(runs, agentRun{
-			ID: id, WorkspaceID: workspace.ID, AgentHubSessionID: sessionID,
+			ID: id, WorkspaceID: workspace.ID, ResourceID: fmt.Sprintf("project1.task%d", index+1), AgentHubSessionID: sessionID,
 			SourceExternalID: workspace.ID + "/" + id, Status: "stopped",
 			AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now,
 		})

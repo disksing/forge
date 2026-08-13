@@ -124,7 +124,12 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 		if run.CompletionPending {
 			rt.recordTurnCompletion(session)
 		}
-		rt.releaseForgeSessionAfterStopped(m)
+		if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
+			return
+		}
+		if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
+			rt.addForgeNotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
+		}
 		return
 	}
 
@@ -164,5 +169,10 @@ func (rt *agentRuntime) reconcileArchivedAgentHubSession(m *agentManager, client
 	// the Forge session.
 	rt.prepareTurnCompletion(session)
 	rt.recordTurnCompletionHistory(session, history, latestCursor)
-	rt.releaseForgeSessionAfterStopped(m)
+	if err := rt.releaseForgeSessionAfterStopped(m); err != nil {
+		return
+	}
+	if err := retireStoredAgentRun(rt, rt.snapshotRun(), "agenthub_archived"); err != nil {
+		rt.addForgeNotice(m, "warning", "generation/retire", "Persist archived generation manifest: "+err.Error())
+	}
 }

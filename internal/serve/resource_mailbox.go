@@ -379,7 +379,8 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 	for _, message := range mailbox.Messages {
 		seen[message.ID] = true
 	}
-	mailboxChanged, runsChanged := false, false
+	mailboxChanged := false
+	updatedRuns := make([]agentRun, 0)
 	for runIndex := range runs {
 		for _, legacy := range runs[runIndex].PendingMessages {
 			if strings.TrimSpace(legacy.ID) == "" || seen[legacy.ID] {
@@ -410,9 +411,9 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 			seen[legacy.ID] = true
 			mailboxChanged = true
 		}
-		if len(runs[runIndex].PendingMessages) > 0 {
+		if len(runs[runIndex].PendingMessages) > 0 && !runs[runIndex].Retired && !runs[runIndex].Legacy {
 			runs[runIndex].PendingMessages = nil
-			runsChanged = true
+			updatedRuns = append(updatedRuns, runs[runIndex])
 		}
 	}
 	if mailboxChanged {
@@ -420,8 +421,8 @@ func migrateLegacyResourceMailbox(workspacePath string) error {
 			return fmt.Errorf("persist migrated resource mailbox: %w", err)
 		}
 	}
-	if runsChanged {
-		if err := writeAgentRunsIndexLocked(workspacePath, runs); err != nil {
+	for _, run := range updatedRuns {
+		if err := saveAgentRun(workspacePath, run); err != nil {
 			return fmt.Errorf("clear migrated generation queues: %w", err)
 		}
 	}

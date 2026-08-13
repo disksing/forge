@@ -32,7 +32,6 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 	return cfg, client, nil
 }
 
-
 // validateAgentHubRunAgent runs before Forge creates a session or changes the
 // task. AgentHub may reject an unavailable configured target during session
 // creation, but validating against the catalog first prevents an unavailable
@@ -61,7 +60,6 @@ func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, reque
 	}
 	return "", fmt.Errorf("AgentHub agent %q is unavailable or not present in the catalog", requested)
 }
-
 
 const (
 	agentHubDefaultUserName   = "User"
@@ -254,12 +252,6 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 	m.publishNotice(runID, notice)
 }
 
-
-
-
-
-
-
 func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	_, rt, err := m.workspaceRuntime(workspaceID, runID)
 	if err != nil || rt == nil {
@@ -406,11 +398,6 @@ func normalizeAgentHubApprovalReply(req agentApprovalRequest) (agentHubApprovalR
 	return reply, nil
 }
 
-
-
-
-
-
 // recoverAgentHubRuns rebuilds lightweight runtime projections at startup from
 // one AgentHub session list and the local run indexes. It never reads event
 // history and never opens event streams.
@@ -439,7 +426,7 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		runs, loadErr := loadAgentRuns(workspace.Path)
+		runs, loadErr := loadAgentRunsCurrent(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue

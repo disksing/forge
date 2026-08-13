@@ -33,7 +33,7 @@ func sourceLookupKey(instanceID, externalID string) string {
 }
 
 func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace guiWorkspace, resourceID string) (bool, error) {
-	runs, err := loadAgentRuns(workspace.Path)
+	runs, err := loadAgentRunsCurrent(workspace.Path)
 	if err != nil {
 		return false, err
 	}
@@ -189,22 +189,23 @@ func resourceGenerationTitle(workspace guiWorkspace, resourceID string, generati
 }
 
 func currentResourceGeneration(workspacePath, resourceID string) (agentRun, bool, error) {
-	runs, err := loadAgentRuns(workspacePath)
+	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
 		return agentRun{}, false, err
 	}
-	for _, run := range runs {
-		if !agentRunMatchesResource(run, resourceID) || strings.TrimSpace(run.GenerationID) == "" {
-			continue
-		}
-		if isLiveAgentStatus(run.Status) || resourceGenerationLifecyclePending(run) {
-			return run, true, nil
-		}
+	record, found, err := store.Current(resourceID)
+	if err != nil || !found {
+		return agentRun{}, found, err
 	}
-	return agentRun{}, false, nil
+	run, err := generationRecordToAgentRun(record)
+	if err != nil {
+		return agentRun{}, false, err
+	}
+	if !agentRunMatchesResource(run, resourceID) || strings.TrimSpace(run.GenerationID) == "" {
+		return agentRun{}, false, nil
+	}
+	return run, true, nil
 }
-
-
 
 // deliverPendingResourceMessages retries only messages carrying stable IDs.
 // AgentHub's at-least-once capability makes an unknown response safe: Forge
@@ -316,9 +317,19 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 
 func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
 	_ = binding
+	m.resourceMu.Lock()
+	defer m.resourceMu.Unlock()
 	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil || !found {
 		return err
+	}
+	// A hand-written or pre-profile legacy projection has no binding to
+	// reconcile. Keep it attached to its current generation until an explicit
+	// profile binding is persisted; otherwise a startup poll could replace a
+	// valid run merely because its old projection predates profile metadata.
+	if strings.TrimSpace(run.BindingKind) == "" && strings.TrimSpace(run.BindingName) == "" &&
+		strings.TrimSpace(run.AgentHubAgentName) == "" && strings.TrimSpace(run.ResolvedProfile) == "" {
+		return nil
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
@@ -470,6 +481,10 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	rt.mu.Lock()
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
+	if run.Retired {
+		return
+	}
+	automaticSleep := run.IdleSleepStopRequested
 	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
 		return
 	}
@@ -595,6 +610,14 @@ func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRu
 	})
 	if err != nil {
 		rt.setRecoveryError(m, fmt.Errorf("persist retired generation: %w", err))
+		return
+	}
+	retireReason := "generation_replaced"
+	if automaticSleep {
+		retireReason = "idle_sleep"
+	}
+	if err := retireStoredAgentRun(rt, updated, retireReason); err != nil {
+		rt.setRecoveryError(m, fmt.Errorf("persist retired generation manifest: %w", err))
 		return
 	}
 	pending, pendingErr := mailboxPendingForResource(rt.workspace.Path, updated.ResourceID)

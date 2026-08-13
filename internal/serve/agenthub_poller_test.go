@@ -4,11 +4,13 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/disksing/forge/internal/app"
+	"github.com/disksing/forge/internal/generation"
 )
 
 // seedPollerRun registers an AgentHub session in the fake and persists the
@@ -43,12 +45,12 @@ func TestAgentHubPollerReconcilesMultipleRunsWithSingleList(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-a", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_a",
+		ID: "run-a", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_a",
 		SourceExternalID: workspace.ID + "/run-a", Status: "running",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_a", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
 	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-b", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_b",
+		ID: "run-b", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_b",
 		SourceExternalID: workspace.ID + "/run-b", Status: "starting",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_b", State: "stopped", UpdatedAt: "2026-08-01T00:00:11Z"})
@@ -224,7 +226,8 @@ func TestAgentHubPollerStopsSessionForArchivedTask(t *testing.T) {
 	waitForRuntimeTest(t, func() bool {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
-		return fake.sessions["ses_archived_task"].State == "stopped"
+		state := fake.sessions["ses_archived_task"].State
+		return state == "stopped" || state == "archived"
 	})
 	fake.mu.Lock()
 	actions := append([]string(nil), fake.actions...)
@@ -316,11 +319,13 @@ func TestAgentHubPollerStopsProjectSessionWhenProjectArchived(t *testing.T) {
 	waitForRuntimeTest(t, func() bool {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
-		return fake.sessions["ses_project"].State == "stopped"
+		state := fake.sessions["ses_project"].State
+		return state == "stopped" || state == "archived"
 	})
 	fake.mu.Lock()
 	defer fake.mu.Unlock()
-	if fake.sessions["ses_project"].State != "stopped" || strings.Count(strings.Join(fake.actions, ","), "stop") != 1 {
+	state := fake.sessions["ses_project"].State
+	if (state != "stopped" && state != "archived") || strings.Count(strings.Join(fake.actions, ","), "stop") != 1 {
 		t.Fatalf("archived project session was not reclaimed: session=%#v actions=%#v", fake.sessions["ses_project"], fake.actions)
 	}
 }
@@ -502,9 +507,9 @@ func TestAgentHubPollerMissingSessionMarksLiveRunRecovering(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := "2026-08-01T00:00:01Z"
 	for _, run := range []agentRun{
-		{ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_gone_live", Status: "running", CreatedAt: now, UpdatedAt: now},
-		{ID: "run-stopped", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_gone_stopped", Status: "stopped", AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now},
-		{ID: "run-recovering", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_gone_recovering", Status: "recovering", CreatedAt: now, UpdatedAt: now},
+		{ID: "run-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_gone_live", Status: "running", CreatedAt: now, UpdatedAt: now},
+		{ID: "run-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_gone_stopped", Status: "stopped", AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "run-recovering", WorkspaceID: workspace.ID, ResourceID: app.SchedulerResourceID, AgentHubSessionID: "ses_gone_recovering", Status: "recovering", CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := saveAgentRun(workspace.Path, run); err != nil {
 			t.Fatal(err)
@@ -514,16 +519,24 @@ func TestAgentHubPollerMissingSessionMarksLiveRunRecovering(t *testing.T) {
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// An archived session never reached durable stopped and disappears from the
-	// non-archived list, so the live run conservatively moves to recovering.
-	if got := pollerRunState(manager.runtimeByID("run-live")).Status; got != "recovering" {
-		t.Fatalf("live run with a vanished session = %q, want recovering", got)
+	// Generation IDs are required for lifecycle ownership. These legacy-shaped
+	// records have no generation ID and therefore remain cold, isolated history
+	// rather than being reconciled or recreated by the poller.
+	current, err := loadAgentRunsCurrent(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := pollerRunState(manager.runtimeByID("run-stopped")).Status; got != "stopped" {
-		t.Fatalf("stopped run must keep its terminal state, got %q", got)
+	if len(current) != 0 {
+		t.Fatalf("records without generation IDs must stay out of current lifecycle state: %#v", current)
 	}
-	if got := pollerRunState(manager.runtimeByID("run-recovering")).Status; got != "recovering" {
-		t.Fatalf("recovering run must stay recovering, got %q", got)
+	all, err := loadAgentRuns(workspace.Path)
+	if err != nil || len(all) != 3 {
+		t.Fatalf("legacy records were not retained as history: runs=%#v err=%v", all, err)
+	}
+	for _, runID := range []string{"run-live", "run-stopped", "run-recovering"} {
+		if manager.runtimeByID(runID) != nil {
+			t.Fatalf("cold legacy run %s unexpectedly entered lifecycle reconciliation", runID)
+		}
 	}
 }
 
@@ -533,7 +546,7 @@ func TestAgentHubPollerReadyClearsStoppedObserved(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-resumed", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_resumed",
+		ID: "run-resumed", WorkspaceID: workspace.ID, ResourceID: "workspace", AgentHubSessionID: "ses_resumed",
 		SourceExternalID: workspace.ID + "/run-resumed", Status: "stopped",
 		AgentHubStoppedObserved: true,
 		CreatedAt:               "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
@@ -585,7 +598,19 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 		CreatedAt:           "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:10Z",
 		LastOutputAt: "2026-08-01T00:00:10Z",
 	}, agentHubSession{ID: "ses_idle", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	indexPath := agentIndexPath(workspace.Path)
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtimeConfig, err := forgeWorkspace.RuntimeConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := generation.ResourceKey(runtimeConfig.InstanceID, "workspace")
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := filepath.Join(workspace.Path, ".forge", "runtime", "resources", key, "current.json")
 	before := mustReadFile(t, indexPath)
 
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
@@ -596,8 +621,6 @@ func TestAgentHubPollerSkipsSaveWhenProjectionUnchanged(t *testing.T) {
 	}
 	after := mustReadFile(t, indexPath)
 	if string(before) != string(after) {
-		t.Fatalf("unchanged projection must not rewrite runs.json:\nbefore:\n%s\nafter:\n%s", before, after)
+		t.Fatalf("unchanged projection must not rewrite resource generation files:\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 }
-
-

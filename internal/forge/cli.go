@@ -496,7 +496,7 @@ Commands:
     --server explicitly overrides its diagnostic address.
 
   forge session list
-    List read-only generation diagnostics derived from .forge/runtime/generations.json.
+    List read-only generation diagnostics derived from the resource-scoped generation store.
     This diagnostic command never changes generation state or contacts AgentHub.
 
   forge session show --id=<generationId>
