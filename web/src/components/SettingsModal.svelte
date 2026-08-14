@@ -25,6 +25,7 @@
   let pending = $state("");
 
   onMount(() => channel.subscribe((next) => {
+    const previousModel = model;
     model = next;
     if (next.identity !== identity) {
       identity = next.identity;
@@ -32,8 +33,11 @@
       draft = createSettingsDraft(next);
       pending = "";
     } else if (next.dataVersion !== dataVersion && !draft.dirty) {
+      const userNameDraft = draft.userName;
+      const preserveUserNameDraft = userNameDraft !== previousModel.userName;
       dataVersion = next.dataVersion;
       draft = createSettingsDraft(next);
+      if (preserveUserNameDraft) draft.userName = userNameDraft;
     }
     queueMicrotask(next.onIconsChanged);
   }));

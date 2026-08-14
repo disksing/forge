@@ -61,6 +61,25 @@ function input(element: HTMLInputElement, value: string): void {
 }
 
 describe("SettingsModal coordination", () => {
+  it("preserves a user draft while settings data refreshes and saves it", async () => {
+    const initial = model({ initialTab: "user", userName: "" });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(SettingsModal, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    input(target.querySelector<HTMLInputElement>("#settingsUserName")!, "Probe");
+    channel.publish({ ...initial, dataVersion: 2, userName: "" });
+    await tick();
+
+    const name = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    expect(name.value).toBe("Probe");
+    name.form!.requestSubmit();
+    await vi.waitFor(() => expect(initial.onSaveUser).toHaveBeenCalledWith("Probe"));
+    expect(name.value).toBe("Probe");
+  });
+
   it("composes all domain panels and preserves a dirty focused draft across data refreshes", async () => {
     const initial = model();
     const channel = createModelChannel(initial);

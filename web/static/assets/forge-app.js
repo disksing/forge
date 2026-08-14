@@ -7799,7 +7799,13 @@ function qu(e, t) {
 	j(t, !0);
 	let n = /* @__PURE__ */ F(Qt(t.channel.current())), r = /* @__PURE__ */ F(""), i = /* @__PURE__ */ F(-1), a = /* @__PURE__ */ F(Qt(su(V(n)))), o = /* @__PURE__ */ F("");
 	Ai(() => t.channel.subscribe((e) => {
-		I(n, e, !0), e.identity === V(r) ? e.dataVersion !== V(i) && !V(a).dirty && (I(i, e.dataVersion, !0), I(a, su(e), !0)) : (I(r, e.identity, !0), I(i, e.dataVersion, !0), I(a, su(e), !0), I(o, "")), queueMicrotask(e.onIconsChanged);
+		let t = V(n);
+		if (I(n, e, !0), e.identity !== V(r)) I(r, e.identity, !0), I(i, e.dataVersion, !0), I(a, su(e), !0), I(o, "");
+		else if (e.dataVersion !== V(i) && !V(a).dirty) {
+			let n = V(a).userName, r = n !== t.userName;
+			I(i, e.dataVersion, !0), I(a, su(e), !0), r && (V(a).userName = n);
+		}
+		queueMicrotask(e.onIconsChanged);
 	})), Ai(() => {
 		let e = (e) => {
 			V(n).open && e.key === "Escape" && (e.preventDefault(), V(n).onClose(V(a).dirty));
