@@ -26,14 +26,29 @@ describe("shell projection", () => {
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ taskCount: 2, runningCount: 1 });
   });
 
-  it("shows a resumable stopped generation as sleeping, not retired", () => {
+  it("keeps resumable stopped generations sleeping while using the ordinary task icon", () => {
     const task = tree.projects[0].children![0];
-    task.runtime = { generationId: "gen-task1", status: "idle-suspended", resumable: true };
-    expect(projection.taskOperationalState(task).session).toMatchObject({
-      kind: "resource-suspended",
-      label: "Resource sleeping",
-    });
+    for (const status of ["idle-suspended", "stopped"]) {
+      task.runtime = { generationId: "gen-task1", status, resumable: true };
+      const state = projection.taskOperationalState(task);
+      expect(state.session).toMatchObject({
+        kind: "resource-suspended",
+        label: "Resource sleeping",
+      });
+      expect(state.label).toBe("Resource sleeping");
+      expect(state.statusPresentation).toMatchObject({
+        hasTaskState: false,
+        statuses: [],
+      });
+    }
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ runningCount: 0 });
+
+    const project = tree.projects[0];
+    project.runtime = { generationId: "gen-project1", status: "idle-suspended", resumable: true };
+    expect(projection.taskOperationalState(project).statusPresentation).toMatchObject({
+      hasTaskState: true,
+      statuses: [{ iconName: "pause-circle" }],
+    });
   });
 
   it("uses the ordinary task icon for an idle generation while preserving its ready label", () => {

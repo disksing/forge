@@ -130,7 +130,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = []): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle"): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
@@ -212,7 +212,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         children: tasks.map((resource) => resource.id === "project1.task1" ? {
           ...resource,
           attention: attentionStates[resource.id],
-          ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : "idle", agentName: "test-agent", updatedAt: now, turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
+          ...(runtimeExists ? { runtime: { generation: 1, generationId: "gen-1", status: turnRunning ? "running" : initialIdleStatus, agentName: "test-agent", updatedAt: now, resumable: initialIdleStatus === "idle-suspended", turnNumber: turnRunning ? 1 : 0, activeTurn: turnRunning } } : {}),
         } : { ...resource, attention: attentionStates[resource.id] }),
       };
       const attentionCandidates = [projectSnapshot, ...projectSnapshot.children];
@@ -629,6 +629,22 @@ test("uses the ordinary file icon for an idle task in the tree and Activity", as
   await expect(activityRow).toContainText("Resource ready");
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
+});
+
+test("uses the ordinary file icon for a sleeping task in the tree and Activity", async ({ page }) => {
+  await installMockApi(page, "project1.task1", false, false, false, [], "idle-suspended");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
+  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="pause-circle"]')).toHaveCount(0);
+  await taskRow.hover();
+  await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
+
+  const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
+  await expect(activityRow).toContainText("Resource sleeping");
+  await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
+  await expect(activityRow.locator('.activity-status [data-lucide="pause-circle"]')).toHaveCount(0);
 });
 
 test("highlights the selected Activity resource instead of every active turn", async ({ page }) => {

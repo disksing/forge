@@ -134,8 +134,8 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   function taskOperationalState(item: ResourceRecord): TaskOperationalState {
     const status = resourceStatusState(item.runtime);
     const label = status?.label || "";
-    const hideIdleTaskStatus = item.type === "task" && status?.kind === "resource-idle";
-    const statusPresentation = operationalStatusPresentation(hideIdleTaskStatus ? [] : [status]);
+    const hideRestingTaskStatus = item.type === "task" && ["resource-idle", "resource-suspended"].includes(status?.kind || "");
+    const statusPresentation = operationalStatusPresentation(hideRestingTaskStatus ? [] : [status]);
     return { session: status, statusPresentation, className: statusPresentation.className, label };
   }
 
