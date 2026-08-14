@@ -111,6 +111,10 @@
   async function toggleAttention(event: Event, item: ShellResourceItem): Promise<void> {
     event.preventDefault();
     event.stopPropagation();
+    // Pointer clicks focus the star (tabindex="0"), and the
+    // tree-item:focus-within rule would then pin it visible even after the
+    // pointer leaves the row. Drop that focus; keyboard toggles keep it.
+    if (event instanceof MouseEvent) (event.currentTarget as HTMLElement | null)?.blur();
     try {
       await onToggleAttention(item.id, !item.followed);
     } catch (reason) {

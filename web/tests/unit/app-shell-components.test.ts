@@ -171,6 +171,32 @@ describe("AppShell responsibility components", () => {
     expect(collapsedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
   });
 
+  it("ProjectTree follow star drops pointer focus but keeps keyboard focus", async () => {
+    const onToggleAttention = vi.fn(async () => undefined);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [resource("project-a")],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect: vi.fn(async () => undefined),
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention, onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    // A pointer click must blur the star: a focused star keeps the row's
+    // focus-within rule active, pinning it visible after the pointer leaves.
+    const star = target.querySelector<HTMLElement>('[aria-label="Follow project-a"]')!;
+    star.focus();
+    star.click();
+    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", true));
+    expect(document.activeElement).not.toBe(star);
+
+    // Keyboard toggles keep focus so the visible focus ring is not lost.
+    star.focus();
+    star.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(star);
+  });
+
   it("AttentionList exposes follow and dismiss controls without selecting the row", async () => {
     const onSelect = vi.fn(async () => undefined);
     const onToggleAttention = vi.fn(async () => undefined);
@@ -188,10 +214,14 @@ describe("AppShell responsibility components", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    target.querySelector<HTMLElement>('[aria-label="Unfollow Project A"]')!.click();
+    const unfollow = target.querySelector<HTMLElement>('[aria-label="Unfollow Project A"]')!;
+    unfollow.focus();
+    unfollow.click();
     target.querySelector<HTMLElement>('[aria-label="Dismiss Project A"]')!.click();
     await vi.waitFor(() => expect(onToggleAttention).toHaveBeenCalledWith("project-a", false));
     await vi.waitFor(() => expect(onDismiss).toHaveBeenCalledWith("project-a"));
+    // Pointer clicks blur the star so focus-within does not pin it visible.
+    expect(document.activeElement).not.toBe(unfollow);
     expect(onSelect).not.toHaveBeenCalled();
     expect(target.querySelector(".section-title")?.textContent).toBe("Activity");
     expect(target.querySelector(".activity-title")?.textContent).toContain("#1 · Agent Codex · Turn 2 · Focused resource");

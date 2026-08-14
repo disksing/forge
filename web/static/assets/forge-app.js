@@ -2398,7 +2398,7 @@ function Vi(e, t) {
 		}
 	}
 	async function s(e, n) {
-		e.preventDefault(), e.stopPropagation();
+		e.preventDefault(), e.stopPropagation(), e instanceof MouseEvent && e.currentTarget?.blur();
 		try {
 			await t.onToggleAttention(n.id, !n.followed);
 		} catch (e) {
@@ -2583,7 +2583,7 @@ function ea(e, t) {
 		}
 	}
 	async function p(e, n) {
-		e.preventDefault(), e.stopPropagation();
+		e.preventDefault(), e.stopPropagation(), e instanceof MouseEvent && e.currentTarget?.blur();
 		try {
 			await t.onToggleAttention(n.id, !n.followed);
 		} catch (e) {
