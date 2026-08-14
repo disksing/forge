@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -82,5 +82,15 @@ describe("timeline event algorithms", () => {
     expect(items.find((item) => item.kind === "message")?.text).toBe("hello");
     expect(items.find((item) => item.kind === "tools")?.calls?.[0].status).toBe("completed");
     expect(items.find((item) => item.kind === "lifecycle")?.text).toBe("Session stopped · provider completed");
+  });
+
+  it("hides raw lifecycle names returned by compact history", () => {
+    expect([
+      "session.created",
+      "session.provider",
+      "session.launch-environment",
+      "turn.started",
+      "turn.completed",
+    ].every((value) => isHiddenConversationLifecycleText(value))).toBe(true);
   });
 });

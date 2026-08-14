@@ -9,6 +9,7 @@ const HIDDEN_CONVERSATION_EVENT_TYPES = new Set([
 ]);
 
 const HIDDEN_CONVERSATION_LIFECYCLE_TEXT = new Set([
+  ...HIDDEN_CONVERSATION_EVENT_TYPES,
   "Session created",
   "Turn started",
   "Turn completed",
