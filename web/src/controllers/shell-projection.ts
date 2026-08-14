@@ -175,8 +175,32 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     return parts.join("|");
   }
 
+  // archiveRedirectTarget resolves the resource that should become selected after
+  // archiving resourceId. It follows the tree view ordering (custom project/task
+  // order applied on top of the tree), matching what the user sees in the sidebar.
+  function archiveRedirectTarget(resourceId: string, projectOrder: string[], taskOrder: Record<string, string[]>): string {
+    const tree = dependencies.tree();
+    if (!tree) return "workspace";
+    const projects = applyCustomOrder(tree.projects || [], projectOrder);
+    for (const project of projects) {
+      const tasks = applyCustomOrder(project.children || [], taskOrder[project.id]);
+      const taskIndex = tasks.findIndex((task) => task.id === resourceId);
+      if (taskIndex < 0) continue;
+      if (taskIndex + 1 < tasks.length) return tasks[taskIndex + 1].id;
+      if (taskIndex - 1 >= 0) return tasks[taskIndex - 1].id;
+      return project.id;
+    }
+    const projectIndex = projects.findIndex((project) => project.id === resourceId);
+    if (projectIndex >= 0) {
+      if (projectIndex + 1 < projects.length) return projects[projectIndex + 1].id;
+      if (projectIndex - 1 >= 0) return projects[projectIndex - 1].id;
+    }
+    return "workspace";
+  }
+
   return {
     applyCustomOrder,
+    archiveRedirectTarget,
     moveIdInList,
     noTaskOperationalState,
     operationalStatusPresentation,

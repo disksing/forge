@@ -315,6 +315,7 @@ const WORKSPACE_ICONS: WorkspaceIconOption[] = [
 const WORKSPACE_ICON_BY_ID = new Map(WORKSPACE_ICONS.map((item) => [item.id, item]));
 const {
 	applyCustomOrder,
+	archiveRedirectTarget,
 	moveIdInList,
 	projectTaskSummary,
 	resourceRefText,
@@ -1416,6 +1417,7 @@ function renderCreateDialog(): void {
 	createDialogController.render();
 }
 async function archiveResource(resourceId: string): Promise<void> {
+	const redirectTarget = archiveRedirectTarget(resourceId, controllerState.projectOrder, controllerState.taskOrder);
 	const result = await api<ArchiveResponse>(`/api/workspaces/${controllerState.activeWorkspaceId}/archive`, {
 		method: "POST",
 		body: JSON.stringify({ resourceId })
@@ -1424,7 +1426,7 @@ async function archiveResource(resourceId: string): Promise<void> {
 	toast(warnings.length > 0
 		? [`Archived.`, ...warnings.map((warning) => `Warning: ${warning.message}`)].join("\n")
 		: "Archived.");
-	controllerState.selectedId = "workspace";
+	controllerState.selectedId = redirectTarget;
 	await loadTree();
 }
 function findResource(id: string): ResourceRecord | null {
