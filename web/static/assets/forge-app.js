@@ -7672,24 +7672,27 @@ Cr(["click"]);
 var Lu = /* @__PURE__ */ U("<div class=\"settings-panel\" data-component-owner=\"user-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>User</h2><p>Choose the name shown for messages you send from this browser.</p></div> <form id=\"settingsUserForm\" class=\"settings-user-form\"><label><span>Name</span> <input id=\"settingsUserName\" maxlength=\"80\" placeholder=\"User\"/> <small>Stored only in this browser. Empty values use User.</small></label> <div class=\"settings-form-actions\"><button type=\"submit\"><!><span>Save</span></button></div></form></div>");
 function Ru(e, t) {
 	j(t, !0);
-	let n = ki(t, "draft", 15), r = ki(t, "pending", 15);
-	async function i(e) {
-		if (e.preventDefault(), !r()) {
-			r("user");
+	let n = ki(t, "pending", 15);
+	async function r(e) {
+		if (e.preventDefault(), !n()) {
+			n("user");
 			try {
-				n(n().userName = await t.onSaveUser(n().userName), !0);
+				t.onUserNameInput(await t.onSaveUser(t.userName));
 			} catch (e) {
 				t.onToast(lu(e));
 			} finally {
-				r("");
+				n("");
 			}
 		}
 	}
-	var a = Lu(), o = R(L(a), 2), s = L(o), c = R(L(s), 2);
-	_i(c), A(2), k(s);
-	var l = R(s, 2), u = L(l);
-	X(L(u), { name: "save" }), A(), k(u), k(l), k(o), k(a), z(() => u.disabled = r() === "user"), Sr("submit", o, i), Ci(c, () => n().userName, (e) => n(n().userName = e, !0)), W(e, a), M();
+	var i = Lu(), a = R(L(i), 2), o = L(a), s = R(L(o), 2);
+	_i(s), A(2), k(o);
+	var c = R(o, 2), l = L(c);
+	X(L(l), { name: "save" }), A(), k(l), k(c), k(a), k(i), z(() => {
+		vi(s, t.userName), l.disabled = n() === "user";
+	}), Sr("submit", a, r), H("input", s, (e) => t.onUserNameInput(e.currentTarget.value)), W(e, i), M();
 }
+Cr(["input"]);
 //#endregion
 //#region src/components/WorkspaceSettingsPanel.svelte
 var zu = /* @__PURE__ */ U("<span class=\"settings-pill\">Active</span>"), Bu = /* @__PURE__ */ U("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), Vu = /* @__PURE__ */ U("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), Hu = /* @__PURE__ */ U("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), Uu = /* @__PURE__ */ U("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), Wu = /* @__PURE__ */ U("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
@@ -7797,13 +7800,13 @@ Cr(["click"]);
 var Ku = /* @__PURE__ */ U("<button class=\"settings-overlay modal-enter\" type=\"button\" aria-label=\"Close settings\"></button> <div class=\"settings-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"System Settings\"><!> <div class=\"settings-content\"><button type=\"button\" class=\"settings-close\" title=\"Close\" aria-label=\"Close\"><!></button> <!></div></div>", 1);
 function qu(e, t) {
 	j(t, !0);
-	let n = /* @__PURE__ */ F(Qt(t.channel.current())), r = /* @__PURE__ */ F(""), i = /* @__PURE__ */ F(-1), a = /* @__PURE__ */ F(Qt(su(V(n)))), o = /* @__PURE__ */ F("");
+	let n = /* @__PURE__ */ F(Qt(t.channel.current())), r = /* @__PURE__ */ F(""), i = /* @__PURE__ */ F(-1), a = /* @__PURE__ */ F(Qt(su(V(n)))), o = /* @__PURE__ */ F(Qt(V(n).userName)), s = /* @__PURE__ */ F("");
 	Ai(() => t.channel.subscribe((e) => {
 		let t = V(n);
-		if (I(n, e, !0), e.identity !== V(r)) I(r, e.identity, !0), I(i, e.dataVersion, !0), I(a, su(e), !0), I(o, "");
+		if (I(n, e, !0), e.identity !== V(r)) I(r, e.identity, !0), I(i, e.dataVersion, !0), I(a, su(e), !0), I(o, e.userName, !0), I(s, "");
 		else if (e.dataVersion !== V(i) && !V(a).dirty) {
-			let n = V(a).userName, r = n !== t.userName;
-			I(i, e.dataVersion, !0), I(a, su(e), !0), r && (V(a).userName = n);
+			let n = V(a).tab, r = V(o) !== t.userName;
+			I(i, e.dataVersion, !0), I(a, su(e), !0), V(a).tab = n, r ? V(a).userName = V(o) : I(o, e.userName, !0);
 		}
 		queueMicrotask(e.onIconsChanged);
 	})), Ai(() => {
@@ -7812,12 +7815,12 @@ function qu(e, t) {
 		};
 		return document.addEventListener("keydown", e), () => document.removeEventListener("keydown", e);
 	});
-	function s() {
+	function c() {
 		V(a).dirty = !0;
 	}
-	var c = Mr(), l = un(c), u = (e) => {
-		var t = Ku(), r = un(t), i = R(r, 2), c = L(i);
-		Iu(c, {
+	var l = Mr(), u = un(l), d = (e) => {
+		var t = Ku(), r = un(t), i = R(r, 2), l = L(i);
+		Iu(l, {
 			get activeTab() {
 				return V(a).tab;
 			},
@@ -7826,9 +7829,9 @@ function qu(e, t) {
 			},
 			onSelect: (e) => V(a).tab = e
 		});
-		var l = R(c, 2), u = L(l);
-		X(L(u), { name: "x" }), k(u);
-		var d = R(u, 2), f = (e) => {
+		var u = R(l, 2), d = L(u);
+		X(L(d), { name: "x" }), k(d);
+		var f = R(d, 2), p = (e) => {
 			Gu(e, {
 				get workspaces() {
 					return V(n).workspaces;
@@ -7858,34 +7861,34 @@ function qu(e, t) {
 					I(a, e, !0);
 				},
 				get pending() {
-					return V(o);
+					return V(s);
 				},
 				set pending(e) {
-					I(o, e, !0);
+					I(s, e, !0);
 				}
 			});
-		}, p = (e) => {
+		}, m = (e) => {
 			Ru(e, {
+				get userName() {
+					return V(o);
+				},
+				onUserNameInput: (e) => {
+					I(o, e, !0), V(a).userName = e;
+				},
 				get onSaveUser() {
 					return V(n).onSaveUser;
 				},
 				get onToast() {
 					return V(n).onToast;
 				},
-				get draft() {
-					return V(a);
-				},
-				set draft(e) {
-					I(a, e, !0);
-				},
 				get pending() {
-					return V(o);
+					return V(s);
 				},
 				set pending(e) {
-					I(o, e, !0);
+					I(s, e, !0);
 				}
 			});
-		}, m = (e) => {
+		}, h = (e) => {
 			Su(e, {
 				get appearance() {
 					return V(n).appearance;
@@ -7900,12 +7903,12 @@ function qu(e, t) {
 					return V(n).onResetFontScales;
 				}
 			});
-		}, h = (e) => {
+		}, g = (e) => {
 			mu(e, {
 				get agentHub() {
 					return V(n).agentHub;
 				},
-				onDirty: s,
+				onDirty: c,
 				get onSaveAgentHub() {
 					return V(n).onSaveAgentHub;
 				},
@@ -7919,18 +7922,18 @@ function qu(e, t) {
 					I(a, e, !0);
 				},
 				get pending() {
-					return V(o);
+					return V(s);
 				},
 				set pending(e) {
-					I(o, e, !0);
+					I(s, e, !0);
 				}
 			});
-		}, g = (e) => {
+		}, _ = (e) => {
 			Mu(e, {
 				get agents() {
 					return V(n).agents;
 				},
-				onDirty: s,
+				onDirty: c,
 				get onSaveAgentHub() {
 					return V(n).onSaveAgentHub;
 				},
@@ -7944,13 +7947,13 @@ function qu(e, t) {
 					I(a, e, !0);
 				},
 				get pending() {
-					return V(o);
+					return V(s);
 				},
 				set pending(e) {
-					I(o, e, !0);
+					I(s, e, !0);
 				}
 			});
-		}, _ = (e) => {
+		}, v = (e) => {
 			Tu(e, {
 				get notifications() {
 					return V(n).notifications;
@@ -7963,13 +7966,13 @@ function qu(e, t) {
 				}
 			});
 		};
-		K(d, (e) => {
-			V(a).tab === "workspace" ? e(f) : V(a).tab === "user" ? e(p, 1) : V(a).tab === "appearance" ? e(m, 2) : V(a).tab === "agenthub" ? e(h, 3) : V(a).tab === "profiles" ? e(g, 4) : e(_, -1);
-		}), k(l), k(i), H("click", r, () => V(n).onClose(V(a).dirty)), H("click", u, () => V(n).onClose(V(a).dirty)), W(e, t);
+		K(f, (e) => {
+			V(a).tab === "workspace" ? e(p) : V(a).tab === "user" ? e(m, 1) : V(a).tab === "appearance" ? e(h, 2) : V(a).tab === "agenthub" ? e(g, 3) : V(a).tab === "profiles" ? e(_, 4) : e(v, -1);
+		}), k(u), k(i), H("click", r, () => V(n).onClose(V(a).dirty)), H("click", d, () => V(n).onClose(V(a).dirty)), W(e, t);
 	};
-	K(l, (e) => {
-		V(n).open && e(u);
-	}), W(e, c), M();
+	K(u, (e) => {
+		V(n).open && e(d);
+	}), W(e, l), M();
 }
 Cr(["click"]);
 //#endregion

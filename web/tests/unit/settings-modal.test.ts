@@ -69,11 +69,17 @@ describe("SettingsModal coordination", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    input(target.querySelector<HTMLInputElement>("#settingsUserName")!, "Probe");
+    const name = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    input(name, "Probe");
+    await tick();
+    expect(name.value).toBe("Probe");
+    channel.publish({ ...initial, dataVersion: 1, userName: "Remote User" });
+    await tick();
+    expect(name.value).toBe("Probe");
     channel.publish({ ...initial, dataVersion: 2, userName: "" });
     await tick();
 
-    const name = target.querySelector<HTMLInputElement>("#settingsUserName")!;
+    expect(target.querySelector("[data-component-owner=\"user-settings-panel\"]")).toBeTruthy();
     expect(name.value).toBe("Probe");
     name.form!.requestSubmit();
     await vi.waitFor(() => expect(initial.onSaveUser).toHaveBeenCalledWith("Probe"));

@@ -26,7 +26,7 @@
 {#if panel === "workspace"}
   <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onToast={model.onToast} />
 {:else if panel === "user"}
-  <UserSettingsPanel bind:draft bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
+  <UserSettingsPanel userName={draft.userName} onUserNameInput={(value) => draft.userName = value} bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
 {:else if panel === "appearance"}
   <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} />
 {:else if panel === "agenthub"}

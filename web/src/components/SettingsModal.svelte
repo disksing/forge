@@ -22,6 +22,8 @@
   let dataVersion = $state(-1);
   // svelte-ignore state_referenced_locally
   let draft = $state<SettingsDraft>(createSettingsDraft(model));
+  // svelte-ignore state_referenced_locally
+  let userNameDraft = $state(model.userName);
   let pending = $state("");
 
   onMount(() => channel.subscribe((next) => {
@@ -31,13 +33,16 @@
       identity = next.identity;
       dataVersion = next.dataVersion;
       draft = createSettingsDraft(next);
+      userNameDraft = next.userName;
       pending = "";
     } else if (next.dataVersion !== dataVersion && !draft.dirty) {
-      const userNameDraft = draft.userName;
+      const activeTab = draft.tab;
       const preserveUserNameDraft = userNameDraft !== previousModel.userName;
       dataVersion = next.dataVersion;
       draft = createSettingsDraft(next);
+      draft.tab = activeTab;
       if (preserveUserNameDraft) draft.userName = userNameDraft;
+      else userNameDraft = next.userName;
     }
     queueMicrotask(next.onIconsChanged);
   }));
@@ -67,7 +72,7 @@
       {#if draft.tab === "workspace"}
         <WorkspaceSettingsPanel workspaces={model.workspaces} activeWorkspaceId={model.activeWorkspaceId} workspaceIcons={model.workspaceIcons} bind:draft bind:pending onAddWorkspace={model.onAddWorkspace} onRemoveWorkspace={model.onRemoveWorkspace} onWorkspaceIcon={model.onWorkspaceIcon} onToast={model.onToast} />
       {:else if draft.tab === "user"}
-        <UserSettingsPanel bind:draft bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
+        <UserSettingsPanel userName={userNameDraft} onUserNameInput={(value) => { userNameDraft = value; draft.userName = value; }} bind:pending onSaveUser={model.onSaveUser} onToast={model.onToast} />
       {:else if draft.tab === "appearance"}
         <AppearanceSettingsPanel appearance={model.appearance} onLayoutPreference={model.onLayoutPreference} onFontScale={model.onFontScale} onResetFontScales={model.onResetFontScales} />
       {:else if draft.tab === "agenthub"}

@@ -6,12 +6,14 @@
   import { settingsErrorMessage } from "./settings-draft";
 
   let {
-    draft = $bindable(),
+    userName,
+    onUserNameInput,
     pending = $bindable(),
     onSaveUser,
     onToast,
   }: {
-    draft: SettingsDraft;
+    userName: string;
+    onUserNameInput: (value: string) => void;
     pending: string;
     onSaveUser: SettingsModel["onSaveUser"];
     onToast: SettingsModel["onToast"];
@@ -22,7 +24,7 @@
     if (pending) return;
     pending = "user";
     try {
-      draft.userName = await onSaveUser(draft.userName);
+      onUserNameInput(await onSaveUser(userName));
     } catch (error) {
       onToast(settingsErrorMessage(error));
     } finally {
@@ -36,7 +38,7 @@
   <form id="settingsUserForm" class="settings-user-form" onsubmit={saveUser}>
     <label>
       <span>Name</span>
-      <input id="settingsUserName" bind:value={draft.userName} maxlength="80" placeholder="User" />
+      <input id="settingsUserName" value={userName} oninput={(event) => onUserNameInput((event.currentTarget as HTMLInputElement).value)} maxlength="80" placeholder="User" />
       <small>Stored only in this browser. Empty values use User.</small>
     </label>
     <div class="settings-form-actions"><button type="submit" disabled={pending === "user"}><Icon name="save" /><span>Save</span></button></div>

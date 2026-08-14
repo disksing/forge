@@ -131,7 +131,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle"): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
@@ -173,6 +173,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         harness.settingsBodies.push(request.postDataJSON());
         return json(route, {});
       }
+      if (settingsRefreshDelayMs) await new Promise((resolve) => setTimeout(resolve, settingsRefreshDelayMs));
       return json(route, {
         config: { agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }] },
         connected: true,
@@ -1003,7 +1004,7 @@ test("keeps the Create Task split usable across desktop and mobile layouts", asy
 });
 
 test("preserves composer draft through upload and Settings", async ({ page }) => {
-  const harness = await installMockApi(page);
+  const harness = await installMockApi(page, "project1.task1", false, false, false, [], "idle", 500);
   await page.goto("/w/ws-test/r/project1.task1");
 
   const input = page.locator("#ttyInput");
@@ -1023,7 +1024,34 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await page.getByRole("button", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "System Settings" });
   await settings.getByRole("button", { name: "User" }).click();
-  await settings.getByLabel("Name").fill("Migration User");
+  const name = settings.getByLabel("Name");
+  await page.evaluate(() => {
+    const state = window as Window & { __settingsPublicationTimer?: number };
+    state.__settingsPublicationTimer = window.setInterval(() => window.dispatchEvent(new StorageEvent("storage", {
+      key: "forge.gui.user.v1",
+      newValue: JSON.stringify({ version: 1, name: "Remote User" }),
+    })), 10);
+  });
+  try {
+    await name.fill("Locator Probe");
+    await page.waitForTimeout(100);
+    await expect(name).toHaveValue("Locator Probe");
+  } finally {
+    await page.evaluate(() => {
+      const state = window as Window & { __settingsPublicationTimer?: number };
+      if (state.__settingsPublicationTimer) window.clearInterval(state.__settingsPublicationTimer);
+      delete state.__settingsPublicationTimer;
+    });
+  }
+  await name.fill("");
+  await name.pressSequentially("Sequential Probe");
+  await expect(name).toHaveValue("Sequential Probe");
+  await name.fill("");
+  await name.focus();
+  await page.keyboard.type("Native Probe");
+  await expect(name).toHaveValue("Native Probe");
+  await name.fill("Migration User");
+  await expect(name).toHaveValue("Migration User");
   await settings.getByRole("button", { name: "Save" }).click();
   await settings.getByRole("button", { name: "AgentHub" }).click();
   await settings.getByLabel("Endpoint").fill("http://127.0.0.1:5656");
