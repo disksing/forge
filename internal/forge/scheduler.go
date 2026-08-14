@@ -17,6 +17,10 @@ const (
 )
 
 func runScheduler(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printSchedulerHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("scheduler requires a subcommand")
 	}

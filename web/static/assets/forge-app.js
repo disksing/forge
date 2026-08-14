@@ -10838,7 +10838,7 @@ async function Up(e, t) {
 		})
 	});
 	if (!Sp(n, r) || $.selectedId !== "workspace") throw Error("The workspace changed before AGENTS.md finished saving.");
-	return $.workspaceAgents = i, $.workspaceAgentsDraft = Bp(i.content || ""), $.workspaceAgentsDirty = !1, i;
+	return $.workspaceAgents = i, $.workspaceAgentsDraft = Bp(i.content || ""), $.workspaceAgentsDirty = !1, bp(), i;
 }
 function Wp() {
 	$.previewRequestVersion++, $.preview = null, bp();

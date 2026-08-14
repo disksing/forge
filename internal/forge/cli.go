@@ -66,14 +66,17 @@ func Run(args []string) error {
 	case "serve":
 		return serve.Main(args[1:])
 	case "help", "-h", "--help":
-		printUsage()
-		return nil
+		return runHelp(args[1:])
 	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
 }
 
 func runResource(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printResourceHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("resource requires a subcommand")
 	}
@@ -93,6 +96,10 @@ func runResource(args []string) error {
 }
 
 func runWorkspace(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printWorkspaceHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("workspace requires a subcommand")
 	}
@@ -118,6 +125,10 @@ func runWorkspace(args []string) error {
 }
 
 func runRepo(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printRepoHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("repo requires a subcommand")
 	}
@@ -135,6 +146,10 @@ func runRepo(args []string) error {
 }
 
 func runProject(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printProjectHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("project requires a subcommand")
 	}
@@ -178,6 +193,10 @@ func runProject(args []string) error {
 }
 
 func runTask(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printTaskHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("task requires a subcommand")
 	}
@@ -252,6 +271,10 @@ func runTask(args []string) error {
 }
 
 func runTaskRepo(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printTaskRepoHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("task repo requires a subcommand")
 	}
@@ -272,7 +295,7 @@ func runMigrate(args []string) error {
 }
 
 func printUsage() {
-	fmt.Println(`forge manages a local AgentWorkspace.
+	fmt.Print(`forge manages a local AgentWorkspace.
 
 How Forge works:
   All workspace data lives on the filesystem as project/task directories,
@@ -284,49 +307,17 @@ Usage:
   forge --version
   forge init [--language=<language>]
   forge migrate [--language=<language>]
-
-  forge repo add [--bare] <name> <url>
-  forge repo list
-
-  forge project create [--slug <slug>] <description>
-  forge project list [--all]
-  forge project show [--project=<project>]
-  forge project archive [--project=<project>]
-  forge template list [--project=<project>] [--json]
-  forge template show [--project=<project>] [--json|--raw|--schema] <name>
-  forge template validate [--project=<project>] [<name>|--all] [--json]
-  forge template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
-  forge template create [--project=<project>] [--title=<title>] <name>
-  forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
-
-  forge workspace status [--server=<url>]
-  forge project status [--project=<project>] [--server=<url>]
-  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  forge history turn show --ref=<turn-ref> [--server=<url>] [--json]
-  forge history event show --ref=<event-ref> [--server=<url>] [--json]
-  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-  forge message show --id=<message-id> [--server=<url>]
-  forge resource archive --id=<resource>
-
-  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
-  forge task list [--project=<project>] [--all]
-  forge task show [--project=<project>] [--task=<task>]
-  forge task archive [--project=<project>] [--task=<task>]
-  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-  forge task repo list [--project=<project>] [--task=<task>]
-  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-  forge scheduler list [--json]
-  forge scheduler show --id=<schedule>
-  forge scheduler add --description=<text> --condition=<text> --target=<resource>
-  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
-  forge scheduler remove --id=<schedule>
-  forge workspace tree --json
-  forge workspace resource --id=<resource> --json
-
+  forge repo <command>
+  forge project <command>
+  forge task <command>
+  forge scheduler <command>
+  forge template <command>
+  forge workspace <command>
+  forge resource <command>
+  forge message <command>
+  forge history <command>
   forge serve [--addr=<address>] [--workspace=<path>] [--version]
+  forge help [<command>]
 
 Commands:
   forge --version
@@ -341,6 +332,119 @@ Commands:
     history before removing obsolete files. Pass --language to switch between
     en and zh-CN.
 
+  forge repo <command>
+    Manage repositories known to the workspace. Subcommands: add, list.
+
+  forge project <command>
+    Manage projects. Subcommands: create, list, show, archive, status, history.
+
+  forge task <command>
+    Manage tasks. Subcommands: create, list, show, archive, status, history,
+    repo.
+
+  forge scheduler <command>
+    Manage natural-language schedules. Subcommands: list, show, add, update,
+    remove.
+
+  forge template <command>
+    Manage project-local content templates. Subcommands: list, show, validate,
+    render, create, migrate.
+
+  forge workspace <command>
+    Query workspace state. Subcommands: status, history, tree, resource.
+
+  forge resource <command>
+    Manage resources. Subcommands: archive.
+
+  forge message <command>
+    Send and inspect mailbox messages. Subcommands: send, show.
+
+  forge history <command>
+    Read resource conversation history. Subcommands: turn show, event show.
+
+  forge serve [--addr=<address>] [--workspace=<path>] [--version]
+    Start the Forge web service: Workspace API, AgentHub session orchestration
+    and recovery, and the static web UI.
+
+  forge help [<command>]
+    Show help for forge or one of its subcommands.
+
+Use "forge help <command>" to see the subcommands of <command>.
+`)
+}
+
+func runHelp(args []string) error {
+	if len(args) == 0 {
+		printUsage()
+		return nil
+	}
+	if len(args) != 1 {
+		return errors.New("usage: forge help [<command>]")
+	}
+	switch args[0] {
+	case "init":
+		printInitHelp()
+	case "migrate":
+		printMigrateHelp()
+	case "repo":
+		printRepoHelp()
+	case "project":
+		printProjectHelp()
+	case "task":
+		printTaskHelp()
+	case "scheduler":
+		printSchedulerHelp()
+	case "template":
+		printTemplateHelp()
+	case "workspace":
+		printWorkspaceHelp()
+	case "resource":
+		printResourceHelp()
+	case "message":
+		printMessageHelp()
+	case "history":
+		printHistoryHelp()
+	case "serve":
+		serve.PrintHelp()
+	default:
+		return fmt.Errorf("unknown help topic %q", args[0])
+	}
+	return nil
+}
+
+func isHelpCommand(arg string) bool {
+	return arg == "help" || arg == "-h" || arg == "--help"
+}
+
+func printInitHelp() {
+	fmt.Print(`Usage:
+  forge init [--language=<language>]
+
+Commands:
+  forge init [--language=<language>]
+    Initialize the current directory as a new AgentWorkspace. Fails when run
+    from inside an existing workspace. Supported languages: en, zh-CN.
+`)
+}
+
+func printMigrateHelp() {
+	fmt.Print(`Usage:
+  forge migrate [--language=<language>]
+
+Commands:
+  forge migrate [--language=<language>]
+    Refresh forge-managed AGENTS.md blocks and migrate legacy task/resource
+    history before removing obsolete files. Pass --language to switch between
+    en and zh-CN.
+`)
+}
+
+func printRepoHelp() {
+	fmt.Print(`Usage:
+  forge repo add [--bare] <name> <url>
+  forge repo list
+
+Commands:
   forge repo add [--bare] <name> <url>
     Clone <url> into repos/<name> as a normal checkout by default. <name> may
     include path segments, for example disksing/forge. Use --bare to clone into
@@ -348,7 +452,19 @@ Commands:
 
   forge repo list
     List repositories known to the workspace.
+`)
+}
 
+func printProjectHelp() {
+	fmt.Print(`Usage:
+  forge project create [--slug <slug>] <description>
+  forge project list [--all]
+  forge project show [--project=<project>]
+  forge project archive [--project=<project>]
+  forge project status [--project=<project>] [--server=<url>]
+  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+
+Commands:
   forge project create [--slug <slug>] <description>
     Create the next top-level project directory, including project.json,
     project.md, artifacts/, templates/, and project-local AGENTS.md. Conversation
@@ -369,28 +485,44 @@ Commands:
     project22 or just a number such as 22. When omitted, Forge uses the project
     containing the current working directory.
 
+  forge project status [--project=<project>] [--server=<url>]
+    Query the owning forge serve process for the project's public resource
+    state and generation status, message counts, waiting messages, steer
+    capability, and recent delivery error. <project> follows the same rules as
+    forge project show.
+
+  forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+    Read one bounded newest-first page of the project's long-lived conversation
+    through the owning forge serve process. Results are grouped into ordered
+    generation segments. Explicit gap segments identify missing, unavailable, or
+    damaged AgentHub history without hiding older generations. The default
+    output is formatted text; use --json for the complete structured response.
+`)
+}
+
+func printTaskHelp() {
+	fmt.Print(`Usage:
+  forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name> [--field <name>=<value>...] [--fields <file>]] [--title <title>] [--dry-run] [--json]
+  forge task list [--project=<project>] [--all]
+  forge task show [--project=<project>] [--task=<task>]
+  forge task archive [--project=<project>] [--task=<task>]
+  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  forge task repo <command>
+
+Commands:
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
     directory, including task.json, task.md, artifacts/, worktree/,
     and task-local AGENTS.md. Conversation history is created lazily through
-    resource History. <title> is written to task.json and
-    shown by task list. --detail initializes the Background section in the
-    default task.md scaffold. --task-markdown writes the complete task.md file
-    and is mutually exclusive with --detail. <project> may be a full id such as
-    project22 or just a number such as 22. When omitted, Forge uses the project
-    containing the current working directory. Send the first message
-    separately with forge message send; that delivery creates a generation
-    lazily. If CLI output is ambiguous, query before attempting another create.
-
-  forge template list|show|validate|render|create|migrate ...
-    Manage project-local schema V2 content templates. Templates declare typed
-    fields and deterministic title/Markdown rendering. list and validate
-    include invalid templates. show defaults
-    to metadata, field requirements, diagnostics, and the complete Markdown
-    body; use --raw for the original file, --json for structured template data,
-    or --schema for schema metadata and diagnostics. render and task create
-    --dry-run have no side effects. migrate previews legacy V1 conversion
-    unless --write is provided.
+    resource History. <title> is written to task.json and shown by task list.
+    --detail initializes the Background section in the default task.md scaffold.
+    --task-markdown writes the complete task.md file and is mutually exclusive
+    with --detail. <project> may be a full id such as project22 or just a number
+    such as 22. When omitted, Forge uses the project containing the current
+    working directory. Send the first message separately with forge message
+    send; that delivery creates a generation lazily. If CLI output is ambiguous,
+    query before attempting another create.
 
   forge task list [--project=<project>] [--all]
     List open tasks in a project. Use --all to include archived tasks.
@@ -408,6 +540,31 @@ Commands:
     Move an open task into its project archive. <task> follows the same rules
     as forge task show.
 
+  forge task status [--project=<project>] [--task=<task>] [--server=<url>]
+    Query the owning forge serve process for the task's public resource state
+    and generation status, message counts, waiting messages, steer capability,
+    and recent delivery error. Task selection follows forge task show.
+
+  forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+    Read one bounded newest-first page of the task's long-lived conversation
+    through the owning forge serve process. Results are grouped into ordered
+    generation segments. Explicit gap segments identify missing, unavailable, or
+    damaged AgentHub history without hiding older generations. The default
+    output is formatted text; use --json for the complete structured response.
+
+  forge task repo <command>
+    Manage repositories recorded in a task's task.json. Subcommands: add, list,
+    remove.
+`)
+}
+
+func printTaskRepoHelp() {
+	fmt.Print(`Usage:
+  forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
+  forge task repo list [--project=<project>] [--task=<task>]
+  forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
+
+Commands:
   forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
     Add or update a repository entry in a task's task.json. By default, forge
     records repos/<repo-name> and <task>/worktree/<repo-leaf>. Optional flags
@@ -421,41 +578,77 @@ Commands:
   forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
     Remove a repository entry from a task's task.json. Task selection follows
     forge task show.
+`)
+}
 
-  forge workspace|project|task status ... [--server=<url>]
-    Query the owning forge serve process for the selected work subject's
-    public resource state and generation status, message counts, waiting
-    messages, steer capability, and recent delivery error. Selection follows
-    the corresponding show command; Workspace status selects the Workspace.
+func printSchedulerHelp() {
+	fmt.Print(`Usage:
+  forge scheduler list [--json]
+  forge scheduler show --id=<schedule>
+  forge scheduler add --description=<text> --condition=<text> --target=<resource>
+  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+  forge scheduler remove --id=<schedule>
 
-  forge workspace|project|task history ... [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-    Read one bounded newest-first page of the selected resource's long-lived
+Commands:
+  forge scheduler list [--json]
+    List schedules. Use --json for structured output.
+
+  forge scheduler show --id=<schedule>
+    Print one schedule as JSON.
+
+  forge scheduler add --description=<text> --condition=<text> --target=<resource>
+    Create a natural-language schedule. <resource> is a stable resource id such
+    as workspace or project1.task1.
+
+  forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+    Update one or more fields of an existing schedule.
+
+  forge scheduler remove --id=<schedule>
+    Remove a schedule.
+`)
+}
+
+func printTemplateHelp() {
+	fmt.Print(`Usage:
+  forge template list [--project=<project>] [--json]
+  forge template show [--project=<project>] [--json|--raw|--schema] <name>
+  forge template validate [--project=<project>] [<name>|--all] [--json]
+  forge template render [--project=<project>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--json] <name>
+  forge template create [--project=<project>] [--title=<title>] <name>
+  forge template migrate [--project=<project>] [<name>|--all] [--write] [--json]
+
+Commands:
+  forge template list|show|validate|render|create|migrate ...
+    Manage project-local schema V2 content templates. Templates declare typed
+    fields and deterministic title/Markdown rendering. list and validate
+    include invalid templates. show defaults to metadata, field requirements,
+    diagnostics, and the complete Markdown body; use --raw for the original
+    file, --json for structured template data, or --schema for schema metadata
+    and diagnostics. render and task create --dry-run have no side effects.
+    migrate previews legacy V1 conversion unless --write is provided.
+`)
+}
+
+func printWorkspaceHelp() {
+	fmt.Print(`Usage:
+  forge workspace status [--server=<url>]
+  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+  forge workspace tree --json
+  forge workspace resource --id=<resource> --json
+
+Commands:
+  forge workspace status [--server=<url>]
+    Query the owning forge serve process for the Workspace's public resource
+    state and generation status, message counts, waiting messages, steer
+    capability, and recent delivery error.
+
+  forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
+    Read one bounded newest-first page of the Workspace's long-lived
     conversation through the owning forge serve process. Results are grouped
     into ordered generation segments. Explicit gap segments identify missing,
     unavailable, or damaged AgentHub history without hiding older generations.
     The default output is formatted text; use --json for the complete structured
     response.
-
-  forge history turn|event show --ref=<reference> [--server=<url>] [--json]
-    Expand a stable opaque reference returned by a resource history page or
-    Turn detail. Turn details contain complete compact messages and Event
-    ranges; Event details read one canonical AgentHub Event on demand. Neither
-    command requires or accepts a run or AgentHub Session id. The default
-    output is formatted text; use --json for the complete structured response.
-
-  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-    Persist a message in the target resource mailbox through the owning
-    forge serve process. steer is the default. Each message subscribes to its
-    Turn result by default; pass --subscribe-result=false to disable it. The
-    current directory's stable
-    work-subject id and Workspace instance id are sent as role=agent
-    provenance. A valid injected Forge resource environment takes precedence
-    over cwd; provenance is not authentication or instruction priority.
-
-  forge message show --id=<message-id> [--server=<url>]
-    Query the current delivery record for a stable mailbox message id.
-    Status and message commands discover the owner from <workspace>/.forge/serve.lock;
-    --server explicitly overrides its diagnostic address.
 
   forge workspace tree --json
     Print a lightweight JSON tree of open projects, open tasks, and resource
@@ -464,13 +657,54 @@ Commands:
   forge workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,
     artifacts, worktrees, and task repository metadata.
+`)
+}
 
-  forge serve [--addr=<address>] [--workspace=<path>] [--version]
-    Start the Forge web service: Workspace API, AgentHub session orchestration
-    and recovery, and the static web UI. Workspace
-    operations use the in-process application API; FORGE_AGENTHUB_URL
-    overrides the persisted AgentHub endpoint; FORGE_GUI_CONFIG selects the
-    GUI configuration file.`)
+func printResourceHelp() {
+	fmt.Print(`Usage:
+  forge resource archive --id=<resource>
+
+Commands:
+  forge resource archive --id=<resource>
+    Archive the resource identified by <resource>, for example project1.task1.
+`)
+}
+
+func printMessageHelp() {
+	fmt.Print(`Usage:
+  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+  forge message show --id=<message-id> [--server=<url>]
+
+Commands:
+  forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
+    Persist a message in the target resource mailbox through the owning forge
+    serve process. steer is the default. Each message subscribes to its Turn
+    result by default; pass --subscribe-result=false to disable it. The current
+    directory's stable work-subject id and Workspace instance id are sent as
+    role=agent provenance. A valid injected Forge resource environment takes
+    precedence over cwd; provenance is not authentication or instruction
+    priority.
+
+  forge message show --id=<message-id> [--server=<url>]
+    Query the current delivery record for a stable mailbox message id. Status
+    and message commands discover the owner from <workspace>/.forge/serve.lock;
+    --server explicitly overrides its diagnostic address.
+`)
+}
+
+func printHistoryHelp() {
+	fmt.Print(`Usage:
+  forge history turn show --ref=<reference> [--server=<url>] [--json]
+  forge history event show --ref=<reference> [--server=<url>] [--json]
+
+Commands:
+  forge history turn|event show --ref=<reference> [--server=<url>] [--json]
+    Expand a stable opaque reference returned by a resource history page or Turn
+    detail. Turn details contain complete compact messages and Event ranges;
+    Event details read one canonical AgentHub Event on demand. Neither command
+    requires or accepts a run or AgentHub Session id. The default output is
+    formatted text; use --json for the complete structured response.
+`)
 }
 
 func parseProjectCreateArgs(args []string) (createResourceOptions, error) {

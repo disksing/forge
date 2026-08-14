@@ -387,6 +387,10 @@ func runTaskStatus(args []string) error {
 }
 
 func runMessage(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printMessageHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("message requires a subcommand")
 	}
@@ -678,6 +682,10 @@ func parseHistoryShowArgs(args []string) (resourceHistoryOptions, error) {
 }
 
 func runHistory(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printHistoryHelp()
+		return nil
+	}
 	if len(args) < 2 || (args[0] != "turn" && args[0] != "event") || args[1] != "show" {
 		return errors.New(historyShowUsage)
 	}

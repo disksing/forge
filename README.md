@@ -289,7 +289,7 @@ Archive is a reversible, non-destructive directory move. Archiving a Project mov
 
 ## CLI Reference
 
-Run `forge help` for full command descriptions. The current command surface is:
+Run `forge help` for the top-level command list, and `forge help <command>` (or `<command> --help`) for subcommand details. The current command surface is:
 
 ```text
 forge --version

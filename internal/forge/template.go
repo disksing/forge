@@ -37,6 +37,10 @@ type templateCLIOptions struct {
 }
 
 func runTemplate(args []string) error {
+	if len(args) > 0 && isHelpCommand(args[0]) {
+		printTemplateHelp()
+		return nil
+	}
 	if len(args) == 0 {
 		return errors.New("template requires a subcommand")
 	}

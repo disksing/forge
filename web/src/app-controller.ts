@@ -1034,6 +1034,7 @@ async function saveWorkspaceAgentsFromDetail(content: string, expectedContentHas
 	controllerState.workspaceAgents = saved;
 	controllerState.workspaceAgentsDraft = workspaceAgentsUserContent(saved.content || "");
 	controllerState.workspaceAgentsDirty = false;
+	publishViewModels();
 	return saved;
 }
 function closePreview(): void {
