@@ -11,6 +11,7 @@ const HIDDEN_CONVERSATION_EVENT_TYPES = new Set([
 ]);
 
 const HIDDEN_CONVERSATION_LIFECYCLE_TEXT = new Set([
+  ...HIDDEN_CONVERSATION_EVENT_TYPES,
   "Session created",
   "Turn started",
   "Turn completed",
@@ -46,9 +47,7 @@ export function projectConversationEvents(events: AgentEvent[]): TimelineItem[] 
 
 export function isHiddenConversationLifecycleText(value: string | undefined): boolean {
   const text = String(value || "");
-  // Compact history items may carry the raw event type ("turn.started")
-  // instead of the humanized label ("Turn started"); hide both forms.
-  return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || HIDDEN_CONVERSATION_EVENT_TYPES.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
+  return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {

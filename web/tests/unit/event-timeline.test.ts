@@ -76,12 +76,14 @@ describe("EventTimeline", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = history("task-a");
     fixture.detail.items.push(
-      { type: "lifecycle", role: "", text: "Session created", startEventId: 2, endEventId: 2, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
-      { type: "lifecycle", role: "", text: "Agent connected · gpt-5.6-sol · via codex", startEventId: 3, endEventId: 3, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
-      { type: "lifecycle", role: "", text: "Turn started", startEventId: 4, endEventId: 4, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
-      { type: "lifecycle", role: "", text: "Turn completed", startEventId: 5, endEventId: 5, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
-      { type: "lifecycle", role: "", text: "turn.started", startEventId: 6, endEventId: 6, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
-      { type: "lifecycle", role: "", text: "session.created", startEventId: 7, endEventId: 7, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "session.created", startEventId: 2, endEventId: 2, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "session.provider", startEventId: 3, endEventId: 3, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "turn.started", startEventId: 4, endEventId: 4, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "turn.completed", startEventId: 5, endEventId: 5, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "Session created", startEventId: 6, endEventId: 6, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "Agent connected · gpt-5.6-sol · via codex", startEventId: 7, endEventId: 7, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "Turn started", startEventId: 8, endEventId: 8, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
+      { type: "lifecycle", role: "", text: "Turn completed", startEventId: 9, endEventId: 9, startedAt: fixture.turn.startedAt, endedAt: fixture.turn.startedAt },
     );
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a"));
@@ -92,12 +94,14 @@ describe("EventTimeline", () => {
 
     await vi.waitFor(() => expect(target.textContent).toContain("message task-a"));
     expect(target.textContent).toContain("Generation 1");
+    expect(target.textContent).not.toContain("session.created");
+    expect(target.textContent).not.toContain("session.provider");
+    expect(target.textContent).not.toContain("turn.started");
+    expect(target.textContent).not.toContain("turn.completed");
     expect(target.textContent).not.toContain("Session created");
     expect(target.textContent).not.toContain("Agent connected");
     expect(target.textContent).not.toContain("Turn started");
     expect(target.textContent).not.toContain("Turn completed");
-    expect(target.textContent).not.toContain("turn.started");
-    expect(target.textContent).not.toContain("session.created");
     expect(target.querySelector("[data-generation-id='gen-task-a']")).not.toBeNull();
     expect(FakeEventSource.instances[0].url).toContain("/resources/task-a/stream?");
   });

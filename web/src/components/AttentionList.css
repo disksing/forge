@@ -32,7 +32,7 @@
   width: 100%;
   min-height: 44px;
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto auto;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
   align-items: start;
   gap: 8px;
   padding: 8px 8px 8px 20px;
@@ -45,7 +45,7 @@
 }
 
 :where([data-component-owner="attention-list"]) .activity-row.has-task-status-dual {
-  grid-template-columns: 36px minmax(0, 1fr) auto auto;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
 }
 
 :where([data-component-owner="attention-list"]) button.activity-row {
@@ -121,20 +121,6 @@
   color: var(--faint-on-dark);
   font-size: calc(11px * var(--sidebar-font-scale, 1));
   font-weight: 600;
-}
-
-:where([data-component-owner="attention-list"]) .activity-badge {
-  min-width: 56px;
-  height: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 7px;
-  border: 1px solid var(--blue);
-  border-radius: 4px;
-  color: #7fb3d9;
-  font-size: calc(10px * var(--sidebar-font-scale, 1));
-  font-weight: 700;
 }
 
 :where([data-component-owner="attention-list"]) .activity-actions {

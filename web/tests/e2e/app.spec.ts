@@ -596,7 +596,6 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await expect(attentionRow).toHaveCount(1);
   await expect(attentionRow).toContainText("Migration project");
   await expect(attentionRow).toContainText("#1 · No turns · Focused resource");
-  await expect(attentionRow.locator(".activity-badge")).toHaveText("Project");
 
   const activityPanel = page.locator('[data-component-owner="attention-list"]');
   const initialHeight = await activityPanel.evaluate((element) => element.getBoundingClientRect().height);
@@ -614,6 +613,22 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
   await expect(attentionRow).toHaveCount(0);
   expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
+});
+
+test("uses the ordinary file icon for an idle task in the tree and Activity", async ({ page }) => {
+  await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
+  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="message-square"]')).toHaveCount(0);
+  await taskRow.hover();
+  await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
+
+  const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
+  await expect(activityRow).toContainText("Resource ready");
+  await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
+  await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
 });
 
 test("highlights the selected Activity resource instead of every active turn", async ({ page }) => {
@@ -644,13 +659,11 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   await expect(activityRow).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-status")).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-title")).toHaveCount(1);
-  await expect(activityRow.locator(":scope > .activity-badge")).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-actions")).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
 
   const before = await activityRow.evaluate((row) => ({
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
-    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
   const input = page.locator("#ttyInput");
@@ -664,11 +677,9 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   const after = await activityRow.evaluate((row) => ({
     directChildren: row.children.length,
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
-    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
-  expect(after.directChildren).toBe(4);
-  expect(Math.abs(after.titleTop - after.badgeTop)).toBeLessThan(2);
+  expect(after.directChildren).toBe(3);
   expect(Math.abs(after.titleTop - after.actionsTop)).toBeLessThan(2);
   expect(Math.abs(after.titleTop - before.titleTop)).toBeLessThan(2);
 });

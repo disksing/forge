@@ -2370,7 +2370,7 @@ function Fi(e, t) {
 }
 //#endregion
 //#region src/components/AttentionList.svelte
-var Ii = /* @__PURE__ */ U("<div class=\"activity-row empty-attention\"><!><div><strong>No activity</strong><span>Follow a resource or start a turn.</span></div></div>"), Li = /* @__PURE__ */ U("<span role=\"button\" tabindex=\"0\"><!></span>"), Ri = /* @__PURE__ */ U("<span class=\"attention-dismiss\" role=\"button\" tabindex=\"0\" title=\"Dismiss\"><!></span>"), zi = /* @__PURE__ */ U("<button type=\"button\"><span class=\"activity-status\" aria-hidden=\"true\"><span class=\"activity-status-fallback-slot\"><!></span> <span class=\"activity-status-runtime-slot\"><!></span></span> <span class=\"activity-title\"><strong> </strong><span class=\"activity-meta\"> </span></span> <span class=\"activity-badge\"> </span> <span class=\"activity-actions\"><!> <!></span></button>"), Bi = /* @__PURE__ */ U("<section class=\"attention-section\" data-component-owner=\"attention-list\"><div class=\"section-title\"><span>Activity</span></div> <nav class=\"attention-list\" aria-label=\"Activity list\"><!></nav></section>");
+var Ii = /* @__PURE__ */ U("<div class=\"activity-row empty-attention\"><!><div><strong>No activity</strong><span>Follow a resource or start a turn.</span></div></div>"), Li = /* @__PURE__ */ U("<span role=\"button\" tabindex=\"0\"><!></span>"), Ri = /* @__PURE__ */ U("<span class=\"attention-dismiss\" role=\"button\" tabindex=\"0\" title=\"Dismiss\"><!></span>"), zi = /* @__PURE__ */ U("<button type=\"button\"><span class=\"activity-status\" aria-hidden=\"true\"><span class=\"activity-status-fallback-slot\"><!></span> <span class=\"activity-status-runtime-slot\"><!></span></span> <span class=\"activity-title\"><strong> </strong><span class=\"activity-meta\"> </span></span> <span class=\"activity-actions\"><!> <!></span></button>"), Bi = /* @__PURE__ */ U("<section class=\"attention-section\" data-component-owner=\"attention-list\"><div class=\"section-title\"><span>Activity</span></div> <nav class=\"attention-list\" aria-label=\"Activity list\"><!></nav></section>");
 function Vi(e, t) {
 	j(t, !0);
 	function n(e) {
@@ -2380,12 +2380,9 @@ function Vi(e, t) {
 		return e.type === "project" ? "folder" : e.type === "task" ? "file-text" : e.type === "scheduler" ? "calendar-clock" : "home";
 	}
 	function i(e) {
-		return e.type === "project" ? "Project" : e.type === "task" ? "Task" : e.type === "scheduler" ? "Scheduler" : "Workspace";
-	}
-	function a(e) {
 		return e.type === "project" || e.type === "task";
 	}
-	function o(e) {
+	function a(e) {
 		return [
 			e.ref || e.id,
 			e.agentName ? `Agent ${e.agentName}` : "",
@@ -2393,14 +2390,14 @@ function Vi(e, t) {
 			e.statusLabel
 		].filter(Boolean).join(" · ");
 	}
-	async function s(e) {
+	async function o(e) {
 		try {
 			await t.onSelect(e.id);
 		} catch (e) {
 			t.onToast(e instanceof Error ? e.message : String(e));
 		}
 	}
-	async function c(e, n) {
+	async function s(e, n) {
 		e.preventDefault(), e.stopPropagation();
 		try {
 			await t.onToggleAttention(n.id, !n.followed);
@@ -2408,7 +2405,7 @@ function Vi(e, t) {
 			t.onToast(e instanceof Error ? e.message : String(e));
 		}
 	}
-	async function l(e, n) {
+	async function c(e, n) {
 		e.preventDefault(), e.stopPropagation();
 		try {
 			await t.onDismiss(n.id);
@@ -2416,68 +2413,65 @@ function Vi(e, t) {
 			t.onToast(e instanceof Error ? e.message : String(e));
 		}
 	}
-	function u(e, t) {
+	function l(e, t) {
 		(e.key === "Enter" || e.key === " ") && t(e);
 	}
-	var d = Bi(), f = R(L(d), 2), p = L(f), m = (e) => {
+	var u = Bi(), d = R(L(u), 2), f = L(d), p = (e) => {
 		var t = Ii();
 		X(L(t), { name: "message-square" }), A(), k(t), W(e, t);
-	}, h = (e) => {
-		var d = Mr();
-		q(un(d), 17, () => t.items, (e) => e.id, (e, t) => {
-			var d = zi(), f = L(d), p = L(f), m = L(p);
+	}, m = (e) => {
+		var u = Mr();
+		q(un(u), 17, () => t.items, (e) => e.id, (e, t) => {
+			var u = zi(), d = L(u), f = L(d), p = L(f);
 			{
 				let e = /* @__PURE__ */ N(() => r(V(t)));
-				X(m, {
+				X(p, {
 					get name() {
 						return V(e);
 					},
 					className: "activity-status-fallback"
 				});
 			}
-			k(p);
-			var h = R(p, 2);
-			Fi(L(h), {
+			k(f);
+			var m = R(f, 2);
+			Fi(L(m), {
 				get status() {
 					return V(t).status;
 				},
 				className: "activity-status-icon"
-			}), k(h), k(f);
-			var g = R(f, 2), _ = L(g), v = L(_, !0);
-			k(_);
-			var y = R(_), b = L(y, !0);
-			k(y), k(g);
-			var x = R(g, 2), S = L(x, !0);
-			k(x);
-			var C = R(x, 2), w = L(C), T = (e) => {
+			}), k(m), k(d);
+			var h = R(d, 2), g = L(h), _ = L(g, !0);
+			k(g);
+			var v = R(g), y = L(v, !0);
+			k(v), k(h);
+			var b = R(h, 2), x = L(b), S = (e) => {
 				var n = Li();
 				let r;
 				X(L(n), { name: "star" }), k(n), z(() => {
 					r = J(n, 1, "attention-star", null, r, { followed: V(t).followed }), Y(n, "aria-label", V(t).followed ? `Unfollow ${V(t).title}` : `Follow ${V(t).title}`), Y(n, "title", V(t).followed ? "Unfollow" : "Follow");
-				}), H("click", n, (e) => c(e, V(t))), H("keydown", n, (e) => u(e, (e) => c(e, V(t)))), W(e, n);
-			}, E = /* @__PURE__ */ N(() => a(V(t)));
-			K(w, (e) => {
-				V(E) && e(T);
+				}), H("click", n, (e) => s(e, V(t))), H("keydown", n, (e) => l(e, (e) => s(e, V(t)))), W(e, n);
+			}, C = /* @__PURE__ */ N(() => i(V(t)));
+			K(x, (e) => {
+				V(C) && e(S);
 			});
-			var D = R(w, 2), ee = (e) => {
+			var w = R(x, 2), T = (e) => {
 				var n = Ri();
-				X(L(n), { name: "x" }), k(n), z(() => Y(n, "aria-label", `Dismiss ${V(t).title}`)), H("click", n, (e) => l(e, V(t))), H("keydown", n, (e) => u(e, (e) => l(e, V(t)))), W(e, n);
+				X(L(n), { name: "x" }), k(n), z(() => Y(n, "aria-label", `Dismiss ${V(t).title}`)), H("click", n, (e) => c(e, V(t))), H("keydown", n, (e) => l(e, (e) => c(e, V(t)))), W(e, n);
 			};
-			K(D, (e) => {
-				V(t).activeTurn || e(ee);
-			}), k(C), k(d), z((e, n, r, i) => {
-				J(d, 1, e), Y(d, "aria-current", V(t).selected ? "page" : void 0), Y(d, "data-active-turn", V(t).activeTurn || void 0), Y(d, "aria-label", n), Y(d, "title", V(t).statusLabel || void 0), Y(p, "hidden", V(t).status.hasTaskState), Y(h, "hidden", !V(t).status.hasTaskState), G(v, V(t).title), G(b, r), G(S, i);
+			K(w, (e) => {
+				V(t).activeTurn || e(T);
+			}), k(b), k(u), z((e, n, r) => {
+				J(u, 1, e), Y(u, "aria-current", V(t).selected ? "page" : void 0), Y(u, "data-active-turn", V(t).activeTurn || void 0), Y(u, "aria-label", n), Y(u, "title", V(t).statusLabel || void 0), Y(f, "hidden", V(t).status.hasTaskState), Y(m, "hidden", !V(t).status.hasTaskState), G(_, V(t).title), G(y, r);
 			}, [
 				() => `activity-row ${n(V(t).status)} ${V(t).selected ? "selected" : ""}`,
-				() => `${V(t).title}. ${o(V(t))}`,
-				() => o(V(t)),
-				() => i(V(t))
-			]), H("click", d, () => s(V(t))), W(e, d);
-		}), W(e, d);
+				() => `${V(t).title}. ${a(V(t))}`,
+				() => a(V(t))
+			]), H("click", u, () => o(V(t))), W(e, u);
+		}), W(e, u);
 	};
-	K(p, (e) => {
-		t.items.length === 0 ? e(m) : e(h, -1);
-	}), k(f), k(d), W(e, d), M();
+	K(f, (e) => {
+		t.items.length === 0 ? e(p) : e(m, -1);
+	}), k(d), k(u), W(e, u), M();
 }
 Cr(["click", "keydown"]);
 //#endregion
@@ -4792,6 +4786,7 @@ var vs = /* @__PURE__ */ new Set([
 	"turn.started",
 	"turn.completed"
 ]), ys = /* @__PURE__ */ new Set([
+	...vs,
 	"Session created",
 	"Turn started",
 	"Turn completed"
@@ -4810,7 +4805,7 @@ function xs(e) {
 }
 function Ss(e) {
 	let t = String(e || "");
-	return ys.has(t) || vs.has(t) || t === "Agent connected" || t.startsWith("Agent connected ·");
+	return ys.has(t) || t === "Agent connected" || t.startsWith("Agent connected ·");
 }
 function Cs(e) {
 	let t = /* @__PURE__ */ new Map();
@@ -9691,7 +9686,7 @@ function Zd(e) {
 		};
 	}
 	function u(e) {
-		let t = s(e.runtime), n = t?.label || "", r = l([t]);
+		let t = s(e.runtime), n = t?.label || "", r = l(e.type === "task" && t?.kind === "resource-idle" ? [] : [t]);
 		return {
 			session: t,
 			statusPresentation: r,
