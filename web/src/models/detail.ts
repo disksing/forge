@@ -95,6 +95,7 @@ export interface DetailPanelModel {
   agentBinding: ResourceAgentBindingModel;
   agentProfiles: ResourceAgentProfileModel[];
   agents: AgentOption[];
+  resolveResourceTitle: (resourceId: string) => string | null;
   onNavigate: (resourceId: string) => void;
   onCreateTask: (projectId: string) => void;
   onArchive: (resourceId: string) => void;

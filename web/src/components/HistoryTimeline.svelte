@@ -14,11 +14,14 @@
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
+  import type { ResourceTitleResolver } from "./markdown";
 
-  let { workspaceId, resourceId, artifacts = [], onOpenLegacy, onIconsChanged }: {
+  let { workspaceId, resourceId, artifacts = [], resolveResourceTitle, onNavigate, onOpenLegacy, onIconsChanged }: {
     workspaceId: string;
     resourceId: string;
     artifacts?: FileTreeModel[];
+    resolveResourceTitle: ResourceTitleResolver;
+    onNavigate: (resourceId: string) => void;
     onOpenLegacy: (path: string) => void;
     onIconsChanged: () => void;
   } = $props();
@@ -150,7 +153,7 @@
               {#each blockItems(block) as item (timelineKey(item))}
                 <div class="history-item" data-history-kind={item.kind}>
                   {#if item.kind === "message"}
-                    <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} />
+                    <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} {workspaceId} {resolveResourceTitle} {onNavigate} />
                   {:else if item.kind === "thinking"}
                     <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
                   {:else if item.kind === "tools"}

@@ -30,7 +30,7 @@ function model(resourceId: string): EventTimelineModel {
   return {
     identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
     status: { resourceId, state: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { generation: 1, generationId: `gen-${resourceId}`, status: "idle" }, session: { id: `session-${resourceId}`, state: "idle" } },
-    agentName: "Test Agent", project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
   };
 }
 

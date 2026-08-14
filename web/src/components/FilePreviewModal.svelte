@@ -5,10 +5,11 @@
 
   import type { ApiClient } from "../api/client";
   import Icon from "./Icon.svelte";
-  import { formatBytes, isMarkdownFile, markdownHTML } from "./detail";
+  import { formatBytes, isMarkdownFile } from "./detail";
+  import { markdownHTML, markdownResourceNavigation, type ResourceTitleResolver } from "./markdown";
   import type { FilePreviewModel } from "./models";
 
-  let { client, workspaceId, resourceId, selection, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string } | null; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
+  let { client, workspaceId, resourceId, selection, resolveResourceTitle, onNavigate, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string } | null; resolveResourceTitle: ResourceTitleResolver; onNavigate: (resourceId: string) => void; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
   let preview = $state<FilePreviewModel | null>(null);
   let loading = $state(false);
   let error = $state("");
@@ -50,7 +51,7 @@
       {:else if error}<div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>Preview unavailable</strong><span>{error}</span></div>
       {:else if preview?.image}<div class="image-preview" data-preview-scroll><img src={rawURL} alt={preview.name || selection.path} /></div>
       {:else if preview?.binary}<div class="file-modal-empty"><Icon name="file-warning" /><strong>{preview.name || selection.path}</strong><span>Binary file, {formatBytes(preview.size || 0)}.</span></div>
-      {:else if isMarkdownFile(preview?.path || selection.path)}<div class="modal-markdown markdown-rendered" data-preview-scroll>{@html markdownHTML(preview?.content || "")}</div>
+      {:else if isMarkdownFile(preview?.path || selection.path)}<div class="modal-markdown markdown-rendered" data-preview-scroll use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate }}>{@html markdownHTML(preview?.content || "", { workspaceId, resolveResourceTitle })}</div>
       {:else}<pre class="modal-preview-content" data-preview-scroll>{preview?.content || ""}</pre>{/if}
     </div>
   </div>

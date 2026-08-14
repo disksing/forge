@@ -258,6 +258,8 @@ export interface EventTimelineModel {
   resourceId: string;
   status: ResourceMessageStatus | null;
   agentName: string;
+  resolveResourceTitle: (resourceId: string) => string | null;
+  onNavigate: (resourceId: string) => void;
   project: (events: AgentEvent[]) => TimelineItem[];
   onEvent: (workspaceId: string, resourceId: string, event: AgentEvent) => void;
   onNotice: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;

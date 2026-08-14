@@ -69,10 +69,11 @@ const schedulerResource = {
 };
 
 function resourceDetail(resource: MockResource) {
+  const resourceReference = resource.id === "project1.task1" ? "\n\nRelated: [[project1.task2]]." : "";
   return {
     ...resource,
     files: [
-      { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
+      { name: resource.type === "project" ? "project.md" : "task.md", path: `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}`, content: `# ${resource.title}\n\nBaseline content with a stable selection target.${resourceReference}\n\n${longDetailBody}`, contentHash: `${resource.id}-brief-v1` },
     ],
     artifacts: [{ name: "notes.md", path: `${resource.path}/artifacts/notes.md`, type: "file", size: 24 }],
     repos: resource.type === "task" ? [{ name: "forge", worktreePath: `${resource.path}/worktree/forge`, branch: "topic", targetBranch: "master" }] : [],
@@ -819,6 +820,19 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
   expect(harness.agentsBodies[0]).toMatchObject({ content: editorDraft, expectedContentHash: "agents-v1" });
   await panel.getByRole("button", { name: /index\.md/ }).click();
   await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
+});
+
+test("resolves Markdown resource references and navigates through the SPA", async ({ page }) => {
+  await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const reference = page.locator('[data-doc-file="task.md"] a[data-forge-resource-id="project1.task2"]');
+  await expect(reference).toHaveText("Follow-up task");
+  await expect(reference).toHaveAttribute("href", "/w/ws-test/r/project1.task2");
+  await reference.click();
+
+  await expect(page).toHaveURL(/\/w\/ws-test\/r\/project1\.task2$/);
+  await expect(page.getByRole("heading", { name: "Follow-up task", exact: true })).toBeVisible();
 });
 
 test("renders History turn detail with conversation timeline components", async ({ page }) => {

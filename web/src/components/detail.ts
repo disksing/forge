@@ -1,15 +1,8 @@
 import type { FileTreeModel } from "./models";
+export { markdownHTML } from "./markdown";
 
 export function isMarkdownFile(path = ""): boolean {
   return /\.(md|markdown|mdown|mkdn)$/i.test(path);
-}
-
-export function markdownHTML(content: string): string {
-  if (window.marked && window.DOMPurify) {
-    window.marked.setOptions({ breaks: true, gfm: true });
-    return window.DOMPurify.sanitize(window.marked.parse(String(content ?? "")));
-  }
-  return `<pre>${escapeHTML(content)}</pre>`;
 }
 
 export function stripForgeManagedBlocks(content: string): string {
@@ -62,8 +55,4 @@ export function flattenFiles(entries: FileTreeModel[], expanded: Set<string>, se
     }
   }
   return result;
-}
-
-function escapeHTML(value: string): string {
-  return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }

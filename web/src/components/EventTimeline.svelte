@@ -212,7 +212,7 @@
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
               {#if item.kind === "message"}
-                <TimelineMessage {item} agentName={model.agentName} />
+                <TimelineMessage {item} agentName={model.agentName} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
               {:else if item.kind === "thinking"}
                 <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "tools"}

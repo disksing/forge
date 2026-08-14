@@ -901,6 +901,7 @@ function detailPanelModel(): DetailPanelModel {
 			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
 		agentProfiles: (controllerState.config?.agentProfiles || []).map((profile) => ({ key: profile.key, description: profile.description, agentName: profile.agentName })),
 		agents: svelteAgentOptions(),
+		resolveResourceTitle,
 		onNavigate: (resourceId: string) => openBreadcrumbResource(resourceId).catch((err) => toast(errorMessage(err))),
 		onCreateTask: (projectId: string) => showTaskForm(projectId),
 		onArchive: (resourceId: string) => archiveResource(resourceId).catch((err) => toast(errorMessage(err))),
@@ -1200,6 +1201,8 @@ function renderTTY(_options: RenderOptions = {}): void {
 		resourceId,
 		status,
 		agentName: agentDisplayName(agent),
+		resolveResourceTitle,
+		onNavigate: (targetResourceId: string) => selectResource(targetResourceId).catch((err) => toast(errorMessage(err))),
 		project: projectConversationEvents,
 		onEvent: handleSvelteAgentEvent,
 		onNotice: () => {},
@@ -1431,6 +1434,11 @@ function findResource(id: string): ResourceRecord | null {
 		for (const task of project.children || []) if (task.id === id) return task;
 	}
 	return null;
+}
+function resolveResourceTitle(id: string): string | null {
+	if (id === "workspace") return workspaceName();
+	const resource = findResource(id);
+	return resource ? String(resource.title || resource.id).trim() || resource.id : null;
 }
 function ensureValidSelection(): boolean {
 	if (controllerState.selectedId === "workspace" || findResource(controllerState.selectedId)) return false;

@@ -2,8 +2,9 @@
   import "./TimelineMessage.css";
 
   import type { TimelineItem } from "./models";
+  import { markdownHTML, markdownResourceNavigation, type ResourceTitleResolver } from "./markdown";
 
-  let { item, agentName }: { item: TimelineItem; agentName: string } = $props();
+  let { item, agentName, workspaceId = "", resolveResourceTitle = () => null, onNavigate = () => {} }: { item: TimelineItem; agentName: string; workspaceId?: string; resolveResourceTitle?: ResourceTitleResolver; onNavigate?: (resourceId: string) => void } = $props();
   let role = $derived(["assistant", "system", "agent"].includes(String(item.role)) ? String(item.role) : "user");
 
   function senderName(): string {
@@ -21,7 +22,7 @@
   function markdown(): string {
     const source = String(item.text || "");
     if (!window.marked || !window.DOMPurify) return escapeHTML(source).replaceAll("\n", "<br>");
-    return window.DOMPurify.sanitize(window.marked.parse(source));
+    return markdownHTML(source, { workspaceId, resolveResourceTitle });
   }
 
   function escapeHTML(value: string): string {
@@ -39,7 +40,7 @@
       <span>{clock()}</span>
     </div>
     <div class="agent-message-bubble">
-      {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered">{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
+      {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered" use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate }}>{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
     </div>
   </div>
 </div>
