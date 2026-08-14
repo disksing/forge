@@ -169,4 +169,22 @@ describe("CSS ownership", () => {
     expect(css).toContain(':where([data-component-owner="workspace-switcher"]) .workspace-switcher-button');
     expect(css).not.toContain(':where([data-component-owner="workspace-switcher"]).workspace-switcher-button');
   });
+
+  it("keeps the selected Activity row background while hovered", () => {
+    const css = read("src/components/AttentionList.css");
+    const body = (selector: string) => {
+      const start = css.indexOf(selector);
+      expect(start).toBeGreaterThanOrEqual(0);
+      return css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1);
+    };
+    const backgroundOf = (selector: string) => {
+      const match = body(selector).match(/background:\s*([^;]+);/);
+      expect(match, selector).not.toBeNull();
+      return match![1].trim();
+    };
+    // Hovering the open resource must not wash out its selected state.
+    expect(backgroundOf('.activity-row.selected:hover')).toBe(backgroundOf('.activity-row.selected'));
+    // Non-selected rows keep the dedicated hover tint.
+    expect(backgroundOf('.activity-row:hover')).toBe("var(--ink-row)");
+  });
 });

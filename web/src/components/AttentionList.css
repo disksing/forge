@@ -60,8 +60,10 @@
   background: var(--ink-deep);
 }
 
+/* The currently open resource keeps its selected background while hovered
+   instead of shifting to the generic hover tint. */
 :where([data-component-owner="attention-list"]) .activity-row.selected:hover {
-  background: var(--ink);
+  background: var(--ink-deep);
 }
 
 :where([data-component-owner="attention-list"]) .activity-status {
