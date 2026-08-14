@@ -615,6 +615,22 @@ test("follows and dismisses a resource from the tree and attention list", async 
   expect(harness.attentionBodies.map((entry) => entry.method)).toEqual(["PUT", "POST"]);
 });
 
+test("uses the ordinary file icon for an idle task in the tree and Activity", async ({ page }) => {
+  await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const taskRow = page.locator("#projectTree .task-item", { hasText: "Infrastructure task" });
+  await expect(taskRow.locator('[data-lucide="file-text"]')).toHaveCount(1);
+  await expect(taskRow.locator('[data-lucide="message-square"]')).toHaveCount(0);
+  await taskRow.hover();
+  await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
+
+  const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
+  await expect(activityRow).toContainText("Resource ready");
+  await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
+  await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
+});
+
 test("highlights the selected Activity resource instead of every active turn", async ({ page }) => {
   await installMockApi(page, "project1", false, true);
   await page.goto("/w/ws-test/r/project1");

@@ -35,4 +35,26 @@ describe("shell projection", () => {
     });
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ runningCount: 0 });
   });
+
+  it("uses the ordinary task icon for an idle generation while preserving its ready label", () => {
+    const task = tree.projects[0].children![0];
+    task.runtime = { generationId: "gen-task1", status: "idle" };
+    const state = projection.taskOperationalState(task);
+    expect(state.session).toMatchObject({
+      kind: "resource-idle",
+      label: "Resource ready",
+    });
+    expect(state.label).toBe("Resource ready");
+    expect(state.statusPresentation).toMatchObject({
+      hasTaskState: false,
+      statuses: [],
+    });
+
+    const project = tree.projects[0];
+    project.runtime = { generationId: "gen-project1", status: "idle" };
+    expect(projection.taskOperationalState(project).statusPresentation).toMatchObject({
+      hasTaskState: true,
+      statuses: [{ iconName: "message-square" }],
+    });
+  });
 });
