@@ -1,0 +1,98 @@
+/* AgentPanelHeader styles. Keep selectors within the documented ownership boundary. */
+
+/* 56px session header for the chat column, aligned with the brand band and
+the details header via --pane-header-height (option A). */
+:where([data-component-owner="agent-panel-header"]).agent-panel-header {
+  flex: 0 0 auto;
+  height: var(--pane-header-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: #fff;
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-status-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--faint);
+}
+
+:where([data-component-owner="agent-panel-header"])[data-state="working"] .agent-status-dot {
+  background: var(--green);
+  animation: agent-header-pulse 1.6s ease-in-out infinite;
+}
+
+:where([data-component-owner="agent-panel-header"])[data-state="attention_required"] .agent-status-dot {
+  background: var(--amber);
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(14px * var(--chat-font-scale, 1));
+  font-weight: 600;
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-state {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: calc(12px * var(--chat-font-scale, 1));
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-queued {
+  flex: 0 0 auto;
+  color: var(--blue);
+  font-size: calc(11px * var(--chat-font-scale, 1));
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-right {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.35;
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-model {
+  color: var(--faint);
+  font-size: calc(11px * var(--chat-font-scale, 1));
+  white-space: nowrap;
+}
+
+:where([data-component-owner="agent-panel-header"]) .agent-header-turn {
+  color: var(--muted);
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+@keyframes agent-header-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where([data-component-owner="agent-panel-header"])[data-state="working"] .agent-status-dot {
+    animation: none;
+  }
+}
+
+/* Narrow chat column: drop the model summary first to avoid overflow. */
+@media (max-width: 1200px) {
+  :where([data-component-owner="agent-panel-header"]) .agent-header-model {
+    display: none;
+  }
+}

@@ -1,4 +1,4 @@
-import type { AgentEvent, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
+import type { AgentEvent, AgentPanelHeaderModel, ComposerContext, ComposerModel, EventTimelineModel, ResourceMessageStatus, TimelineItem, UploadDialogModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -28,6 +28,7 @@ export interface ForgeViewPublisher {
   renderUploadDialog(model: UploadDialogModel): void;
   renderComposer(model: ComposerModel): void;
   renderEventTimeline(model: EventTimelineModel): void;
+  renderAgentPanelHeader(model: AgentPanelHeaderModel): void;
   renderDetailPanel(model: DetailPanelModel): void;
   renderToast(model: ToastModel): void;
 }
@@ -1180,12 +1181,25 @@ function renderTTY(_options: RenderOptions = {}): void {
 	const resourceId = selectedAgentResourceId();
 	const status = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	const configured = (controllerState.config?.agents || []).find((agent) => agent.id === status?.resolvedAgent);
+	const agent = configured || selectedAgentConfig();
+	const runtime = findResource(resourceId)?.runtime;
+	publisher.renderAgentPanelHeader({
+		identity: `${controllerState.activeWorkspaceId}:${resourceId}`,
+		workspaceId: controllerState.activeWorkspaceId,
+		resourceId,
+		status,
+		agentName: agentDisplayName(agent),
+		modelSummary: agentConfigSummary(agent),
+		turnNumber: Number(status?.generation?.turnNumber) || Number(runtime?.turnNumber) || 0,
+		turnStartedAt: String(runtime?.turnStartedAt || ""),
+		onIconsChanged: refreshIcons
+	});
 	publisher.renderEventTimeline({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}`,
 		workspaceId: controllerState.activeWorkspaceId,
 		resourceId,
 		status,
-		agentName: agentDisplayName(configured || selectedAgentConfig()),
+		agentName: agentDisplayName(agent),
 		project: projectConversationEvents,
 		onEvent: handleSvelteAgentEvent,
 		onNotice: () => {},

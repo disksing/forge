@@ -1,5 +1,5 @@
 import { createModelChannel, type ModelChannel } from "./components/model-channel";
-import type { EventTimelineModel, UploadDialogModel, ComposerModel } from "./models/chat";
+import type { AgentPanelHeaderModel, EventTimelineModel, UploadDialogModel, ComposerModel } from "./models/chat";
 import type { ToastModel } from "./models/common";
 import type { CreateDialogModel } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
@@ -14,6 +14,7 @@ export interface ForgeAppChannels {
   composer: ModelChannel<ComposerModel>;
   detail: ModelChannel<DetailPanelModel>;
   timeline: ModelChannel<EventTimelineModel>;
+  agentHeader: ModelChannel<AgentPanelHeaderModel>;
   toast: ModelChannel<ToastModel>;
 }
 
@@ -49,6 +50,7 @@ export function createForgeAppChannels(): ForgeAppChannels {
     composer: createModelChannel<ComposerModel>({ identity: "", workspaceId: "", resourceId: "", draft: "", draftKey: "", draftResetVersion: 0, unavailableReason: "Loading work status.", sending: false, canEndTurn: false, endingTurn: false, waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", agentBinding: { kind: "profile", name: "default" }, agentProfiles: [], agents: [], bindingSaving: false, onDraft: noop, onSend: async () => ({ accepted: false, clear: false }), onOpenUpload: noop, onEndTurn: noop, onSteerWaiting: noopAsync, onSaveAgentBinding: noopAsync, onIconsChanged: noop }),
     detail: createModelChannel<DetailPanelModel>({ identity: "", workspaceId: "", workspaceName: "", resourceId: "", resourceType: "", resourceTitle: "", parent: null, loading: false, detail: null, wiki: null, workspaceAgents: null, agentBinding: { kind: "profile", name: "default" }, agentProfiles: [], agents: [], onNavigate: noop, onCreateTask: noop, onArchive: noop, onSaveWorkspaceAgents: async () => ({ path: "AGENTS.md" }), onSaveAgentBinding: noopAsync, onToast: noop, onIconsChanged: noop }),
     timeline: createModelChannel<EventTimelineModel>({ identity: "", workspaceId: "", resourceId: "", status: null, agentName: "Agent", project: () => [], onEvent: noop, onNotice: noop, onApproval: noopAsync, onToast: noop, onIconsChanged: noop }),
+    agentHeader: createModelChannel<AgentPanelHeaderModel>({ identity: "", workspaceId: "", resourceId: "", status: null, agentName: "Agent", modelSummary: "", turnNumber: 0, turnStartedAt: "", onIconsChanged: noop }),
     toast: createModelChannel<ToastModel>({ message: "", revision: 0 }),
   };
 }

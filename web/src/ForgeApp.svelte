@@ -1,5 +1,6 @@
 <script lang="ts">
   import AppShell from "./components/AppShell.svelte";
+  import AgentPanelHeader from "./components/AgentPanelHeader.svelte";
   import ChatComposer from "./components/ChatComposer.svelte";
   import CreateDialog from "./components/CreateDialog.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
@@ -16,6 +17,7 @@
   {#snippet details()}<DetailPanel channel={channels.detail} />{/snippet}
   {#snippet timeline()}<EventTimeline channel={channels.timeline} />{/snippet}
   {#snippet composer()}<ChatComposer channel={channels.composer} />{/snippet}
+  {#snippet agentHeader()}<AgentPanelHeader channel={channels.agentHeader} />{/snippet}
 </AppShell>
 <div data-component-owner="toast" style="display: contents"><Toast channel={channels.toast} /></div>
 <div data-component-owner="upload-dialog" style="display: contents"><UploadDialog channel={channels.upload} /></div>

@@ -36,7 +36,7 @@
 }
 
 :where([data-component-owner="app-shell"]) .brand-band {
-  height: 54px;
+  height: var(--pane-header-height);
   display: flex;
   align-items: center;
   gap: 10px;

@@ -31,5 +31,7 @@
   --details-min-width: 360px;
   --chat-min-width: 320px;
   --pane-handle-width: 8px;
+  /* Unified fixed height for the header band of every column (option A). */
+  --pane-header-height: 56px;
   --sidebar-attention-height: 210px;
 }

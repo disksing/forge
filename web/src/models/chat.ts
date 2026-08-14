@@ -238,6 +238,20 @@ export interface ChatContextSnapshot {
   error: string;
 }
 
+export interface AgentPanelHeaderModel {
+  identity: string;
+  workspaceId: string;
+  resourceId: string;
+  status: ResourceMessageStatus | null;
+  agentName: string;
+  /** "Provider · model" summary of the resolved agent, may be empty. */
+  modelSummary: string;
+  turnNumber: number;
+  /** ISO timestamp of the running turn, empty when unknown. */
+  turnStartedAt: string;
+  onIconsChanged: () => void;
+}
+
 export interface EventTimelineModel {
   identity: string;
   workspaceId: string;

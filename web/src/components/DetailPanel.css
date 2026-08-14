@@ -5,7 +5,7 @@
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-:where([data-component-owner="detail-panel"]) .title-row h1 .resource-ref-badge {
+:where([data-component-owner="detail-panel"]) .details-title .resource-ref-badge {
   display: inline-block;
   margin-left: 10px;
   font-size: calc(15px * var(--details-font-scale, 1));
@@ -24,7 +24,11 @@
 
 :where([data-component-owner="detail-panel"]) .details-header {
   flex: 0 0 auto;
-  padding: 24px 32px;
+  height: var(--pane-header-height);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 24px;
   border-bottom: 1px solid var(--line);
   background: #fff;
 }
@@ -40,16 +44,25 @@
 }
 
 :where([data-component-owner="detail-panel"]) .breadcrumb {
+  flex: 0 1 auto;
+  min-width: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 8px;
-  margin-bottom: 14px;
+  overflow: hidden;
+  white-space: nowrap;
   color: var(--muted);
-  font-size: calc(12px * var(--details-font-scale, 1));
+  font-size: calc(11px * var(--details-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+/* Small muted prefix in front of the title, separated by a dot. */
+:where([data-component-owner="detail-panel"]) .breadcrumb::after {
+  content: "·";
+  color: var(--faint);
 }
 
 :where([data-component-owner="detail-panel"]) .breadcrumb-link {
@@ -57,6 +70,10 @@
   border: 0;
   background: transparent;
   padding: 0;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: inherit;
   font: inherit;
   letter-spacing: inherit;
@@ -76,24 +93,19 @@
   border-radius: 4px;
 }
 
-:where([data-component-owner="detail-panel"]) .breadcrumb-link.current {
-  color: var(--accent);
-}
-
 :where([data-component-owner="detail-panel"]) .breadcrumb-separator {
   color: var(--muted);
 }
 
-:where([data-component-owner="detail-panel"]) .title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-:where([data-component-owner="detail-panel"]) .title-row h1 {
+:where([data-component-owner="detail-panel"]) .details-title {
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0;
-  font-size: calc(24px * var(--details-font-scale, 1));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(17px * var(--details-font-scale, 1));
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -108,6 +120,8 @@
 }
 
 :where([data-component-owner="detail-panel"]) .details-actions {
+  flex: 0 0 auto;
+  margin-left: auto;
   display: flex;
   gap: 8px;
 }
@@ -119,11 +133,6 @@
 
 :where([data-component-owner="detail-panel"]) .template-row.invalid {
   border-color: var(--red);
-}
-
-:where([data-component-owner="detail-panel"]) .details-header {
-  padding: 24px 32px 22px;
-  border-bottom-color: var(--line);
 }
 
 :where([data-component-owner="detail-panel"]) .details-tabs {
@@ -179,19 +188,6 @@
   border-color: var(--accent);
   background: var(--accent);
   color: #fff;
-}
-
-:where([data-component-owner="detail-panel"]) .breadcrumb {
-  margin-bottom: 14px;
-  font-size: calc(12px * var(--details-font-scale, 1));
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-:where([data-component-owner="detail-panel"]) .title-row h1 {
-  font-size: calc(24px * var(--details-font-scale, 1));
-  font-weight: 700;
-  letter-spacing: 0;
 }
 
 :where([data-component-owner="detail-panel"]) .details-actions {
@@ -338,15 +334,6 @@
 
   :where([data-component-owner="detail-panel"]) .details-tabs {
     padding: 0 10px;
-  }
-
-  :where([data-component-owner="detail-panel"]) .title-row {
-    flex-direction: column;
-  }
-
-  :where([data-component-owner="detail-panel"]) .details-actions {
-    width: 100%;
-    flex-wrap: wrap;
   }
 
   :where([data-component-owner="detail-panel"]) .worktree-row {

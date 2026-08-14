@@ -160,7 +160,7 @@
 {#if !model.workspaceId}
   <div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>
 {:else if model.resourceType === "workspace"}
-  <div class="details-header"><nav class="breadcrumb" aria-label="Location"><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button></nav><div class="title-row"><h1>{model.workspaceName}</h1></div></div>
+  <div class="details-header"><h1 class="details-title">{model.workspaceName}</h1></div>
   <div id="detailsContent" class="details-content">
     <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
     {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
@@ -172,9 +172,8 @@
     <nav class="breadcrumb" aria-label="Location">
       <button type="button" class="breadcrumb-link" onclick={() => model.onNavigate("workspace")}>{model.workspaceName}</button>
       {#if model.parent}<span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link" onclick={() => model.onNavigate(model.parent?.id || "workspace")}>{model.parent.title}</button>{/if}
-      <span class="breadcrumb-separator">/</span><button type="button" class="breadcrumb-link current" onclick={() => model.onNavigate(model.resourceId)}>{model.resourceTitle}</button>
     </nav>
-    <div class="title-row"><h1>{model.resourceTitle}{#if model.resourceType !== "scheduler"}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code>{/if}</h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}{#if model.resourceType !== "scheduler"}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button>{/if}</div>{/if}</div>
+    <h1 class="details-title">{model.resourceTitle}{#if model.resourceType !== "scheduler"}<code class="resource-ref-badge">{resourceReference(model.resourceId)}</code>{/if}</h1>{#if model.detail}<div class="details-actions">{#if model.resourceType === "project"}<button type="button" id="newTaskButton" onclick={() => model.onCreateTask(model.resourceId)}><Icon name="plus" /><span>New Task</span></button>{/if}{#if model.resourceType !== "scheduler"}<button type="button" class="danger" id="archiveButton" onclick={() => model.onArchive(model.resourceId)}><Icon name="archive" /><span>Archive</span></button>{/if}</div>{/if}
   </div>
   {#if model.loading || !model.detail}<div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="loader-circle" className="empty-state-icon" /><strong>Loading details...</strong></div></div>
   {:else}

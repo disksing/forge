@@ -14,6 +14,7 @@ const publisher: ForgeViewPublisher = {
   renderUploadDialog: channels.upload.publish,
   renderComposer: channels.composer.publish,
   renderEventTimeline: channels.timeline.publish,
+  renderAgentPanelHeader: channels.agentHeader.publish,
   renderDetailPanel: channels.detail.publish,
   renderToast: channels.toast.publish,
 };

@@ -19,7 +19,7 @@ describe("application composition", () => {
 
   it("composes every published channel under ForgeApp", () => {
     const source = read("src/ForgeApp.svelte");
-    for (const component of ["AppShell", "DetailPanel", "EventTimeline", "ChatComposer", "Toast", "UploadDialog", "CreateDialog", "SettingsModal"]) {
+    for (const component of ["AppShell", "DetailPanel", "EventTimeline", "ChatComposer", "AgentPanelHeader", "Toast", "UploadDialog", "CreateDialog", "SettingsModal"]) {
       expect(source).toContain(`<${component}`);
     }
   });
