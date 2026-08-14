@@ -1,3 +1,5 @@
+import { buildTimeline } from "../../vendor/agenthub-event-timeline";
+
 import type { AgentEvent, TimelineItem } from "./models";
 
 const HIDDEN_CONVERSATION_EVENT_TYPES = new Set([
@@ -23,9 +25,30 @@ export function visibleConversationTimelineItems(events: AgentEvent[], items: Ti
   return items.filter((item) => item.key === undefined || !hiddenKeys.has(String(item.key)));
 }
 
+// projectConversationEvents turns canonical events into conversation timeline
+// items, hiding routine lifecycle noise and annotating compact ranges so
+// callers can lazily expand them. Shared by the live Chat timeline and the
+// read-only History view.
+export function projectConversationEvents(events: AgentEvent[]): TimelineItem[] {
+  const sourceEvents = events || [];
+  const items = visibleConversationTimelineItems(sourceEvents, buildTimeline(sourceEvents) as TimelineItem[]);
+  const byID = new Map(sourceEvents.map((event) => [Number(event.id), event]));
+  for (const item of items) {
+    const event = byID.get(Number(item.key));
+    const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;
+    if (!range) continue;
+    item.compact = true;
+    item.rangeStartEventId = Number(range.start) || Number(event?.id) || 0;
+    item.rangeEndEventId = Number(range.end) || item.rangeStartEventId;
+  }
+  return items;
+}
+
 export function isHiddenConversationLifecycleText(value: string | undefined): boolean {
   const text = String(value || "");
-  return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
+  // Compact history items may carry the raw event type ("turn.started")
+  // instead of the humanized label ("Turn started"); hide both forms.
+  return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || HIDDEN_CONVERSATION_EVENT_TYPES.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
 }
 
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {

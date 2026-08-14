@@ -794,6 +794,20 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
   await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");
 });
 
+test("renders History turn detail with conversation timeline components", async ({ page }) => {
+  await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("tab", { name: "History" }).click();
+  const history = panel.locator('[data-component-owner="history-timeline"]');
+  const firstTurn = history.locator(".history-turn").first();
+  await firstTurn.locator(".history-turn-header").click();
+  const firstItem = firstTurn.locator(".history-item").first();
+  await expect(firstItem.locator(".agent-message-row")).toBeVisible();
+  await expect(firstItem).toContainText("gen-1 baseline message 1");
+  await expect(history.locator(".history-item-label")).toHaveCount(0);
+});
+
 test("shows a working indicator for the active Turn", async ({ page }) => {
   await installMockApi(page, "project1.task1", false, true);
   await page.goto("/w/ws-test/r/project1.task1");

@@ -180,7 +180,7 @@ export class ChatSessionController {
 
   async expandRange(generationId: string, start: number, end: number): Promise<void> {
     const context = this.activeContext();
-    if (!context || generationId !== context.generationId || start <= 0 || end < start) return;
+    if (!context || !generationId || start <= 0 || end < start) return;
     const reference = this.turnReferenceForEvent(context, generationId, start);
     const summary = reference ? this.findTurn(context, reference) : undefined;
     if (!reference || !summary || end > summary.lastEventId) return;
@@ -189,7 +189,7 @@ export class ChatSessionController {
     // the complete bounded Turn when expanding one compact range so messages
     // around the requested tool/thinking item remain visible as its details
     // replace the compact projection.
-    const events = await this.fetchEventRange(context, summary.startEventId, summary.lastEventId, generation, `range:${start}:${end}`);
+    const events = await this.fetchEventRange(context, generationId, summary.startEventId, summary.lastEventId, generation, `range:${start}:${end}`);
     if (!this.isCurrent(context, generation)) return;
     context.liveEvents.set(reference, compactTimelineEvents(mergeCanonicalEvents([...(context.liveEvents.get(reference) || []), ...events])));
     this.emit();
@@ -381,14 +381,14 @@ export class ChatSessionController {
   private async loadTurnRange(context: ResourceChatContext, detail: ResourceHistoryTurnDetail, generation: number): Promise<AgentEvent[]> {
     const start = Math.max(1, Number(detail.turn.startEventId) || 1);
     const end = Math.max(start, Number(detail.turn.lastEventId) || 0, Number(detail.latestEventId) || 0);
-    return this.fetchEventRange(context, start, end, generation, `live-turn:${detail.turn.reference}`);
+    return this.fetchEventRange(context, detail.turn.generation.generationId || context.generationId, start, end, generation, `live-turn:${detail.turn.reference}`);
   }
 
-  private async fetchEventRange(context: ResourceChatContext, start: number, end: number, generation: number, scope: string): Promise<AgentEvent[]> {
+  private async fetchEventRange(context: ResourceChatContext, generationId: string, start: number, end: number, generation: number, scope: string): Promise<AgentEvent[]> {
     let after = start - 1;
     let events: AgentEvent[] = [];
     while (after < end) {
-      const query = new URLSearchParams({ generationId: context.generationId, start: String(start), end: String(end), after: String(after), limit: String(EVENT_LIMIT) });
+      const query = new URLSearchParams({ generationId, start: String(start), end: String(end), after: String(after), limit: String(EVENT_LIMIT) });
       const page = await this.api.latest<EventPage>(`${resourceBase(context)}/events?${query}`, { scope: requestScope(context, scope) });
       if (!this.isCurrent(context, generation)) return [];
       const batch = normalizeEvents(page.events).filter((event) => this.eventBelongsToContext(context, event));

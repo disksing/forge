@@ -452,6 +452,30 @@ func resourceHistoryRunByReference(workspace guiWorkspace, resourceID string, re
 	return agentRun{}, &resourceAPIError{Code: "history_reference_not_found", Message: "history reference generation was not found"}
 }
 
+// resourceHistoryRunByGeneration resolves any generation recorded in the
+// resource History, not just the current one, so read-only event paging can
+// expand compact Turn ranges from older generations. An unknown generation
+// keeps the generation_changed semantics live clients already handle.
+func resourceHistoryRunByGeneration(workspace guiWorkspace, resourceID, generationID string) (agentRun, error) {
+	resourceID = normalizedResourceID(resourceID)
+	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
+		return agentRun{}, err
+	}
+	runs, err := resourceHistoryRuns(workspace.Path, resourceID)
+	if err != nil {
+		return agentRun{}, err
+	}
+	for _, run := range runs {
+		if run.GenerationID == generationID {
+			if strings.TrimSpace(run.AgentHubSessionID) == "" {
+				return agentRun{}, &resourceAPIError{Code: "session_missing", Message: "generation has no AgentHub Session reference"}
+			}
+			return run, nil
+		}
+	}
+	return agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
+}
+
 func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace guiWorkspace, resourceID, value string) (resourceHistoryTurnDetail, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {

@@ -3,9 +3,16 @@
 
   import { onMount } from "svelte";
 
+  import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
   import Icon from "./Icon.svelte";
-  import type { ModelChannel } from "./model-channel";
+  import LifecycleNotice from "./LifecycleNotice.svelte";
+  import ThinkingBlock from "./ThinkingBlock.svelte";
+  import TimelineMessage from "./TimelineMessage.svelte";
+  import TimelineNotice from "./TimelineNotice.svelte";
+  import { projectConversationEvents } from "./timeline-events";
+  import ToolGroup from "./ToolGroup.svelte";
+  import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
 
   let { workspaceId, resourceId, artifacts = [], onOpenLegacy, onIconsChanged }: {
@@ -18,6 +25,8 @@
 
   let snapshot = $state<ChatContextSnapshot>(emptySnapshot());
   let controller: ChatSessionController | undefined;
+  let notice = $state("");
+  let openTools = $state(new Map<string, boolean>());
   const legacyArtifact = $derived(findArtifact(artifacts, "legacy-log.md"));
 
   onMount(() => {
@@ -68,20 +77,36 @@
     if (block.kind === "turn" && block.turn?.reference) void controller?.loadTurn(block.turn.reference);
   }
 
-  function itemText(item: TimelineItem): string {
-    return item.text || item.preview || item.detail || item.question || item.reply || item.type || "Activity";
+  function blockLoaded(block: ConversationBlock): boolean {
+    return Boolean(block.items || block.events);
   }
 
-  function itemLabel(item: TimelineItem): string {
-    switch (item.kind) {
-      case "message": return item.role === "assistant" ? "Agent" : item.sender?.name || item.role || "Message";
-      case "thinking": return "Thinking";
-      case "tools": return "Tool activity";
-      case "approval": return "Approval";
-      case "error": return "Provider error";
-      case "lifecycle": return "Lifecycle";
-      default: return item.type || "Activity";
-    }
+  // Expanded Turns render through the same item components as the live Chat
+  // timeline so History stays readable instead of dumping raw text rows.
+  function blockItems(block: ConversationBlock): TimelineItem[] {
+    return block.events ? projectConversationEvents(block.events) : block.items || [];
+  }
+
+  function timelineKey(item: TimelineItem): string {
+    return `${item.generationId || snapshot.generationId}:${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
+  }
+
+  function toolOpen(item: TimelineItem): boolean {
+    return openTools.get(timelineKey(item)) ?? false;
+  }
+
+  function rememberToolOpen(item: TimelineItem, open: boolean): void {
+    openTools = new Map(openTools).set(timelineKey(item), open);
+    if (open) void expandCompact(item);
+  }
+
+  function expandCompact(item: TimelineItem): Promise<void> | undefined {
+    if (!item.compact || !item.generationId || !item.rangeStartEventId || !item.rangeEndEventId) return;
+    return controller?.expandRange(item.generationId, item.rangeStartEventId, item.rangeEndEventId);
+  }
+
+  function readOnlyApproval(): Promise<void> {
+    return Promise.reject(new Error("This is a read-only History view. Answer pending approvals from the Chat tab."));
   }
 
   function turnKey(block: ConversationBlock): string {
@@ -96,6 +121,7 @@
     <div class="history-state history-error"><Icon name="triangle-alert" /><strong>History unavailable</strong><span>{snapshot.error}</span><button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button></div>
   {:else}
     {#if snapshot.hasMoreBefore}<button type="button" class="secondary-button history-load-older" disabled={snapshot.loadingOlder} onclick={() => controller?.loadOlder()}><Icon name="chevrons-up" />{snapshot.loadingOlder ? "Loading older History..." : "Load older History"}</button>{/if}
+    {#if notice}<TimelineNotice title="History" text={notice} error />{/if}
     {#if snapshot.loaded && !snapshot.blocks.length && legacyArtifact}
       <div class="history-legacy"><Icon name="archive-restore" /><span><strong>Legacy history</strong><small>Conversation history from before resource History was available was migrated to Artifacts.</small></span><button type="button" class="secondary-button" onclick={() => onOpenLegacy(legacyArtifact)}>Open legacy history</button></div>
     {:else if snapshot.loaded && !snapshot.blocks.length}
@@ -112,17 +138,33 @@
         <div class="history-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History gap</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
       {:else if block.turn}
         <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
-          <button type="button" class="history-turn-header" onclick={() => loadTurn(block)} aria-expanded={Boolean(block.items)}>
+          <button type="button" class="history-turn-header" onclick={() => loadTurn(block)} aria-expanded={blockLoaded(block)}>
             <span class="history-turn-title"><strong>Turn</strong><small>{formatTime(block.turn.startedAt)} · {formatDuration(block.turn.durationMs)} · {block.turn.status || "unknown"}</small></span>
             <span class="history-turn-preview">{block.turn.finalReplyPreview || block.turn.triggerPreview || "Select to load conversation detail"}</span>
-            <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={block.items ? "chevron-up" : "chevron-down"} /></span>
+            <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={blockLoaded(block) ? "chevron-up" : "chevron-down"} /></span>
           </button>
           {#if block.loading}<div class="history-detail-state"><Icon name="loader-circle" className="spin" />Loading Turn detail...</div>{/if}
           {#if block.error}<div class="history-detail-state history-error"><Icon name="triangle-alert" />{block.error}</div>{/if}
-          {#if block.items}
+          {#if blockLoaded(block)}
             <div class="history-items">
-              {#each block.items as item (`${block.key}:${String(item.key || item.type)}`)}
-                <div class="history-item" data-history-kind={item.kind}><span class="history-item-label">{itemLabel(item)}</span><span class="history-item-text">{itemText(item)}</span>{#if item.kind === "tools" && item.calls?.length}<span class="history-tool-calls">{item.calls.map((call) => call.name || "tool").join(", ")}</span>{/if}</div>
+              {#each blockItems(block) as item (timelineKey(item))}
+                <div class="history-item" data-history-kind={item.kind}>
+                  {#if item.kind === "message"}
+                    <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} />
+                  {:else if item.kind === "thinking"}
+                    <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
+                  {:else if item.kind === "tools"}
+                    <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+                  {:else if item.kind === "approval"}
+                    <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={readOnlyApproval} onToast={(message) => (notice = message)} />
+                  {:else if item.kind === "lifecycle"}
+                    <LifecycleNotice {item} />
+                  {:else if item.kind === "error"}
+                    <TimelineNotice title="Provider error" text={item.text || ""} error />
+                  {:else}
+                    <UnknownEvent {item} />
+                  {/if}
+                </div>
               {/each}
             </div>
           {/if}
