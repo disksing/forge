@@ -918,20 +918,21 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		"Agents may inspect\n  other resources, but write only the Workspace files owned by their starting\n  resource and its task worktrees.",
 		"The web service is provided by forge serve.",
 		"Usage:",
-		"  forge init [--language=<language>]\n  forge migrate [--language=<language>]",
-		"  forge repo add [--bare] <name> <url>\n  forge repo list",
-		"  forge project create [--slug <slug>] <description>",
-		"  forge template list [--project=<project>] [--json]",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
-		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
-		"Commands:",
-		"  forge init [--language=<language>]",
+		"  forge --version\n  forge init [--language=<language>]",
 		"  forge migrate [--language=<language>]",
-		"  forge repo add [--bare] <name> <url>",
-		"  forge project create [--slug <slug>] <description>",
-		"  forge task create [<title>] [--project=<project>] [--slug <slug>]",
-		"  forge template list|show|validate|render|create|migrate ...",
+		"  forge repo <command>",
+		"  forge project <command>",
+		"  forge task <command>",
+		"  forge scheduler <command>",
+		"  forge template <command>",
+		"  forge workspace <command>",
+		"  forge resource <command>",
+		"  forge message <command>",
+		"  forge history <command>",
 		"  forge serve [--addr=<address>] [--workspace=<path>] [--version]",
+		"  forge help [<command>]",
+		"Commands:",
+		"Use \"forge help <command>\" to see the subcommands of <command>.",
 	}
 	offset := 0
 	for _, marker := range expected {
@@ -941,8 +942,50 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 		}
 		offset += index + len(marker)
 	}
+	// The top-level help lists only first-level subcommands; it must not expand
+	// second-level command surfaces.
+	for _, expanded := range []string{
+		"forge repo add [--bare]",
+		"forge project create [--slug <slug>] <description>",
+		"forge task create [<title>]",
+		"forge template list [--project=<project>]",
+		"forge scheduler add",
+		"forge workspace tree --json",
+		"forge resource archive --id=<resource>",
+		"forge message send",
+		"forge history turn show",
+	} {
+		if strings.Contains(help, expanded) {
+			t.Fatalf("top-level help expands second-level command %q:\n%s", expanded, help)
+		}
+	}
 	if strings.Contains(help, "forge session") {
 		t.Fatalf("removed forge session command remains in help:\n%s", help)
+	}
+}
+
+func TestTaskHelpVariants(t *testing.T) {
+	for _, args := range [][]string{
+		{"help", "task"},
+		{"task", "help"},
+		{"task", "--help"},
+		{"task", "-h"},
+	} {
+		out := run(t, args...)
+		for _, marker := range []string{
+			"forge task create [<title>]",
+			"forge task list [--project=<project>] [--all]",
+			"forge task show [--project=<project>] [--task=<task>]",
+			"forge task archive [--project=<project>] [--task=<task>]",
+			"forge task status [--project=<project>] [--task=<task>] [--server=<url>]",
+			"forge task history [--project=<project>] [--task=<task>]",
+			"forge task repo <command>",
+			"Print a task's task.json as formatted JSON",
+		} {
+			if !strings.Contains(out, marker) {
+				t.Fatalf("expected %v help to contain %q, got:\n%s", args, marker, out)
+			}
+		}
 	}
 }
 
@@ -2116,7 +2159,7 @@ func TestTemplateShowIncludesBodyAndPreservesOutputModes(t *testing.T) {
 		}
 	})
 
-	help := strings.Join(strings.Fields(run(t, "help")), " ")
+	help := strings.Join(strings.Fields(run(t, "help", "template")), " ")
 	for _, marker := range []string{
 		"show defaults to metadata, field requirements, diagnostics, and the complete Markdown body",
 		"--raw for the original file, --json for structured template data,",

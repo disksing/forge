@@ -8,6 +8,10 @@ import (
 )
 
 func runInit(args []string) error {
+	if len(args) == 1 && isHelpCommand(args[0]) {
+		printInitHelp()
+		return nil
+	}
 	language, err := parseInitOptions(args)
 	if err != nil {
 		return fmt.Errorf("usage: forge init [--language=<language>]: %w", err)
@@ -16,6 +20,10 @@ func runInit(args []string) error {
 }
 
 func runWorkspaceMigrate(args []string) error {
+	if len(args) == 1 && isHelpCommand(args[0]) {
+		printMigrateHelp()
+		return nil
+	}
 	language, err := parseLanguageOption(args)
 	if err != nil {
 		return fmt.Errorf("usage: forge migrate [--language=<language>]: %w", err)

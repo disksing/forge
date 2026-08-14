@@ -187,6 +187,11 @@ Environment overrides:
   FORGE_GUI_CONFIG    GUI configuration file path
 `
 
+// PrintHelp writes the forge serve usage text to stdout.
+func PrintHelp() {
+	fmt.Print(serveUsage)
+}
+
 // Main runs the forge serve subcommand.
 func Main(args []string) error {
 	for _, arg := range args {
