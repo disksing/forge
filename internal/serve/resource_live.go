@@ -45,7 +45,20 @@ func (m *agentManager) handleResourceEvents(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	_, run, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
+	workspace, err := m.server.workspace(workspaceID)
+	if err != nil {
+		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
+		return
+	}
+	var run agentRun
+	if generationID := strings.TrimSpace(r.URL.Query().Get("generationId")); generationID != "" {
+		// Events are read-only: any generation recorded in the resource History
+		// may be paged, so the History view can expand compact Turn ranges from
+		// older generations too.
+		run, err = resourceHistoryRunByGeneration(workspace, resourceID, generationID)
+	} else {
+		run, err = m.currentResourceRun(workspace, resourceID)
+	}
 	if err != nil {
 		writeError(w, err, resourceErrorStatus(err))
 		return

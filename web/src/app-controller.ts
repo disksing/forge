@@ -19,8 +19,7 @@ import { createUserSettingsController } from "./controllers/user-settings-contro
 import { ApiError } from "./api/client";
 import { errorMessage } from "./runtime/errors";
 import { ResourceScope } from "./runtime/resource-scope";
-import { buildTimeline as buildAgentHubTimeline } from "../vendor/agenthub-event-timeline";
-import { visibleConversationTimelineItems } from "./components/timeline-events";
+import { projectConversationEvents } from "./components/timeline-events";
 
 export interface ForgeViewPublisher {
   renderAppShell(model: AppShellModel): void;
@@ -1162,20 +1161,6 @@ function clearAgentRenderTimer(): void {
 	if (controllerState.agent.renderTimer) window.clearTimeout(controllerState.agent.renderTimer);
 	controllerState.agent.renderTimer = null;
 }
-function projectAgentEvents(events: AgentEvent[]): TimelineItem[] {
-	const sourceEvents = events || [];
-	const items = visibleConversationTimelineItems(sourceEvents, buildAgentHubTimeline(sourceEvents) as TimelineItem[]);
-	const byID = new Map(sourceEvents.map((event) => [Number(event.id), event]));
-	for (const item of items) {
-		const event = byID.get(Number(item.key));
-		const range = event?.data?.compactRange as { start?: number; end?: number } | undefined;
-		if (!range) continue;
-		item.compact = true;
-		item.rangeStartEventId = Number(range.start) || Number(event?.id) || 0;
-		item.rangeEndEventId = Number(range.end) || item.rangeStartEventId;
-	}
-	return items;
-}
 function agentConfigSummary(agent: AgentConfig | null | undefined): string {
 	if (!agent) return "";
 	const parts = [providerName(agent.providerId)];
@@ -1201,7 +1186,7 @@ function renderTTY(_options: RenderOptions = {}): void {
 		resourceId,
 		status,
 		agentName: agentDisplayName(configured || selectedAgentConfig()),
-		project: projectAgentEvents,
+		project: projectConversationEvents,
 		onEvent: handleSvelteAgentEvent,
 		onNotice: () => {},
 		onApproval: resolveResourceApproval,

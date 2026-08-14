@@ -272,6 +272,24 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 		t.Fatalf("stale generation response = %d %s", mismatch.Code, mismatch.Body.String())
 	}
 
+	oldRun := agentRun{
+		ID: "run-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 0, GenerationID: "gen-old", AgentHubSessionID: "ses-old",
+		Status: "stopped", CreatedAt: now, UpdatedAt: now,
+	}
+	saveRetiredAgentRunForTest(t, workspace.Path, oldRun, "history_fixture")
+	fake.base.mu.Lock()
+	fake.base.sessions["ses-old"] = agentHubSession{ID: "ses-old", State: "stopped"}
+	fake.base.events["ses-old"] = []agentHubEvent{{ID: 2, SessionID: "ses-old", Type: "message.input", Time: now, Data: json.RawMessage(`{"text":"archived"}`)}}
+	fake.base.mu.Unlock()
+
+	historical := httptest.NewRecorder()
+	manager.server.handleWorkspace(historical, httptest.NewRequest(http.MethodGet,
+		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/events?generationId=gen-old&after=0&limit=10", nil))
+	if historical.Code != http.StatusOK || historical.Header().Get("X-Forge-Generation-ID") != "gen-old" || !strings.Contains(historical.Body.String(), `"id":2`) {
+		t.Fatalf("historical generation events response = %d headers=%v body=%s", historical.Code, historical.Header(), historical.Body.String())
+	}
+
 	upload := httptest.NewRecorder()
 	request := agentUploadRequest(t, "notes.txt", "resource attachment")
 	request.URL.Path = "/api/workspaces/" + workspace.ID + "/resources/project1.task1/uploads"
@@ -292,7 +310,7 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 		t.Fatalf("resource attachment = %q err=%v", data, err)
 	}
 	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(runs) != 1 {
+	if err != nil || len(runs) != 2 {
 		t.Fatalf("upload created or removed a generation: runs=%#v err=%v", runs, err)
 	}
 }

@@ -141,6 +141,42 @@ describe("resource conversation controller", () => {
     expect(String(rangeRequest?.[0])).toContain("end=8");
   });
 
+  it("expands a compact tool from a non-current generation", async () => {
+    const closed = turn(2, "closed", 5, 8);
+    const compact = {
+      turn: closed,
+      latestEventId: 8,
+      items: [
+        { type: "tool", startEventId: 6, endEventId: 7, startedAt: closed.startedAt, endedAt: closed.startedAt, count: 1 },
+      ],
+    };
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-")) return response(compact);
+      if (path.includes("/events?")) return response({ events: [
+        { id: 6, type: "tool.event", turnId: "closed", sessionId: "session-2", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"] } } } },
+        { id: 7, type: "tool.event", turnId: "closed", sessionId: "session-2", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["true"], status: "completed" } } } },
+      ], page: { hasMore: false, nextAfter: 7 } });
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }, { generation: generation(2), turns: [closed] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    // The read-only History view activates without a runtime status, so the
+    // context has no current generation; expansion must still resolve the
+    // owning generation from the compact item itself.
+    value.activate("workspace-a", "task-a", null);
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(1));
+    await value.loadTurn(closed.reference);
+    expect(latest.blocks[0].items?.find((item) => item.kind === "tools")?.compact).toBe(true);
+
+    await value.expandRange("gen-2", 6, 7);
+
+    expect(latest.blocks[0].events?.map((event) => event.id)).toEqual([6, 7]);
+    const rangeRequest = fetchImpl.mock.calls.find(([url]) => String(url).includes("/events?"));
+    expect(String(rangeRequest?.[0])).toContain("generationId=gen-2");
+  });
+
   it("coalesces repeated terminal events while the canonical Turn is materializing", async () => {
     const open = turn(3, "turn-a", 5, 7, false);
     const closed = turn(3, "turn-a", 5, 8);
