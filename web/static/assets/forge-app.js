@@ -5205,7 +5205,11 @@ var Rs = 20, zs = 250, Bs = 80, Vs = /* @__PURE__ */ new Set([
 				e.error = "A Forge notice could not be decoded.", this.emit();
 			}
 		}), i.onerror = () => {
-			this.isActiveStream(e, i, r) || i.close();
+			if (!this.isActiveStream(e, i, r)) {
+				i.close();
+				return;
+			}
+			i.readyState === 2 && (e.stream = null, e.streamGeneration++);
 		};
 	}
 	async loadTurnRange(e, t, n) {

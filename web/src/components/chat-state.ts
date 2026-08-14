@@ -374,7 +374,18 @@ export class ChatSessionController {
       }
     });
     stream.onerror = () => {
-      if (!this.isActiveStream(context, stream, streamGeneration)) stream.close();
+      if (!this.isActiveStream(context, stream, streamGeneration)) {
+        stream.close();
+        return;
+      }
+      // Native EventSource retries transient failures while CONNECTING. A
+      // fatal HTTP/SSE response moves it to CLOSED, where it will never retry;
+      // release that dead object so a later status transition (notably a
+      // stopped generation resuming) can establish a new stream.
+      if (stream.readyState === 2) {
+        context.stream = null;
+        context.streamGeneration++;
+      }
     };
   }
 

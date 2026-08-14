@@ -315,6 +315,61 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	}
 }
 
+func TestResourceStreamAllowsResumableSuspendedCurrentGeneration(t *testing.T) {
+	fake := newHistoryFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	now := time.Now().Format(time.RFC3339Nano)
+	run := agentRun{
+		ID: "run-suspended", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-suspended", AgentHubSessionID: "ses-suspended",
+		Status: "idle-suspended", IdleSleepStopRequested: true, CreatedAt: now, UpdatedAt: now,
+	}
+	if err := saveAgentRun(workspace.Path, run); err != nil {
+		t.Fatal(err)
+	}
+	fake.base.mu.Lock()
+	fake.base.sessions[run.AgentHubSessionID] = agentHubSession{ID: run.AgentHubSessionID, State: "stopped"}
+	fake.base.events[run.AgentHubSessionID] = []agentHubEvent{{
+		ID: 1, SessionID: run.AgentHubSessionID, Type: "session.state", Time: now,
+		Data: json.RawMessage(`{"state":"stopped"}`),
+	}}
+	fake.base.mu.Unlock()
+
+	stream := httptest.NewRecorder()
+	manager.server.handleWorkspace(stream, httptest.NewRequest(http.MethodGet,
+		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/stream?generationId=gen-suspended", nil))
+	if stream.Code != http.StatusOK || stream.Header().Get("X-Forge-Generation-ID") != run.GenerationID || !strings.Contains(stream.Body.String(), `"state":"stopped"`) {
+		t.Fatalf("suspended resource stream response = %d headers=%v body=%s", stream.Code, stream.Header(), stream.Body.String())
+	}
+}
+
+func TestResourceEventStreamabilityFollowsGenerationLifecycle(t *testing.T) {
+	base := agentRun{Status: "stopped", AgentHubSessionID: "ses-current"}
+	tests := []struct {
+		name string
+		run  agentRun
+		want bool
+	}{
+		{name: "live idle", run: agentRun{Status: "idle"}, want: true},
+		{name: "idle suspended", run: agentRun{Status: "idle-suspended", AgentHubSessionID: "ses-current"}, want: true},
+		{name: "recoverable stopped", run: base, want: true},
+		{name: "missing session", run: agentRun{Status: "stopped"}, want: false},
+		{name: "resume unavailable", run: func() agentRun { value := base; value.SessionResumeUnavailable = true; return value }(), want: false},
+		{name: "replacement pending", run: func() agentRun { value := base; value.ReplacementPending = true; return value }(), want: false},
+		{name: "archive requested", run: func() agentRun { value := base; value.ArchivedTaskStopRequested = true; return value }(), want: false},
+		{name: "retired", run: agentRun{Status: "archived", AgentHubSessionID: "ses-current"}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isResourceEventStreamable(test.run); got != test.want {
+				t.Fatalf("isResourceEventStreamable(%#v) = %v, want %v", test.run, got, test.want)
+			}
+		})
+	}
+}
+
 func TestResourceHistoryReferencesSurviveRestartAndResourceArchive(t *testing.T) {
 	fake := newHistoryFakeAgentHub()
 	hub := httptest.NewServer(fake)

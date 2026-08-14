@@ -77,13 +77,22 @@ func (m *agentManager) handleResourceStream(w http.ResponseWriter, r *http.Reque
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	if !isLiveAgentStatus(run.Status) {
+	if !isResourceEventStreamable(run) {
 		err := &resourceAPIError{Code: "generation_unavailable", Message: "resource current generation is not live"}
 		writeError(w, err, http.StatusConflict)
 		return
 	}
 	w.Header().Set("X-Forge-Generation-ID", run.GenerationID)
 	m.proxyAgentHubStream(w, r, workspaceID, run.ID)
+}
+
+func isResourceEventStreamable(run agentRun) bool {
+	if isLiveAgentStatus(run.Status) {
+		return true
+	}
+	return (run.Status == "idle-suspended" || run.Status == "stopped") &&
+		strings.TrimSpace(run.AgentHubSessionID) != "" &&
+		!run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested
 }
 
 func (m *agentManager) handleResourceApproval(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {

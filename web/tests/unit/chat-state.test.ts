@@ -39,11 +39,13 @@ class FakeEventSource {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
   closed = false;
+  readyState = 0;
   private readonly listeners = new Map<string, (event: MessageEvent) => void>();
   constructor(url: string) { this.url = url; FakeEventSource.instances.push(this); }
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void { this.listeners.set(type, listener as (event: MessageEvent) => void); }
-  close(): void { this.closed = true; }
+  close(): void { this.closed = true; this.readyState = 2; }
   emit(event: AgentEvent): void { this.onmessage?.(new MessageEvent("message", { data: JSON.stringify(event) })); }
+  failPermanently(): void { this.readyState = 2; this.onerror?.(new Event("error")); }
 }
 
 function controller(fetchImpl: typeof fetch, callbacks: ConstructorParameters<typeof ChatSessionController>[0] = {}) {
@@ -239,6 +241,29 @@ describe("resource conversation controller", () => {
     expect(first.closed).toBe(true);
     expect(latest.identity).toBe("workspace-a:task-b");
     expect(latest.blocks).toEqual([]);
+  });
+
+  it("reconnects after a fatal stream failure when the same generation resumes", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }], page: { limit: 20, hasMore: false } }));
+    const value = controller(fetchImpl);
+    value.activate("workspace-a", "task-a", {
+      ...status(),
+      generation: { ...status().generation!, status: "idle-suspended", resumable: true },
+      session: { ...status().session, state: "stopped" },
+    });
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+
+    const failed = FakeEventSource.instances[0];
+    failed.failPermanently();
+    value.activate("workspace-a", "task-a", {
+      ...status(),
+      state: "working",
+      generation: { ...status().generation!, status: "running", resumable: false },
+      session: { ...status().session, state: "running", currentTurnId: "turn-resumed" },
+    });
+
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[1].url).toContain("generationId=gen-3");
   });
 
   it("keeps streamed events of the open turn inside its block instead of a transient orphan block", async () => {
