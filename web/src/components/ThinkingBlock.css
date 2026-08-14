@@ -1,19 +1,22 @@
+/* Thinking is activity, not conversation: keep it indented on a thin
+   muted rail so dialogue messages stay visually dominant. */
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note {
   width: 100%;
-  margin: 12px 0 0;
+  margin: 4px 0 4px 26px;
   border: 0;
-  border-top: 1px solid #e3e7ec;
+  border-left: 2px solid var(--line-soft);
+  padding-left: 12px;
   border-radius: 0;
   background: transparent;
-  color: #8a97a5;
-  font-size: calc(12px * var(--chat-font-scale, 1));
+  color: var(--faint);
+  font-size: calc(11.5px * var(--chat-font-scale, 1));
 }
 
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note summary {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 2px;
+  padding: 5px 2px;
   cursor: pointer;
   font-weight: 600;
   list-style: none;
@@ -33,7 +36,7 @@
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note p {
   margin: 0;
   padding: 0 2px 8px 21px;
-  color: #8a97a5;
+  color: var(--faint);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
