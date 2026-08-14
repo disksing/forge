@@ -371,7 +371,7 @@ Commands:
 
   forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
     Create the next task under the project in a short taskN/ or taskN-<slug>/
-    directory, including task.json, task.md, work.md, artifacts/, worktree/,
+    directory, including task.json, task.md, artifacts/, worktree/,
     and task-local AGENTS.md. Conversation history is created lazily through
     resource History. <title> is written to task.json and
     shown by task list. --detail initializes the Background section in the

@@ -43,8 +43,12 @@ func TestInitializeCreatesSchedulerResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(agents), "../AGENTS.md") || !strings.Contains(string(agents), "schedule ID") {
+	if !strings.Contains(string(agents), "../AGENTS.md") || !strings.Contains(string(agents), "schedule ID") || !strings.Contains(string(agents), "不要把它当作长期历史") {
 		t.Fatalf("Scheduler guidance is incomplete:\n%s", agents)
+	}
+	schedulerMarkdown, err := os.ReadFile(filepath.Join(workspace.Root(), "scheduler", "scheduler.md"))
+	if err != nil || !strings.Contains(string(schedulerMarkdown), "后续调度判断所需的最小上下文") {
+		t.Fatalf("Scheduler context guidance is incomplete: %v\n%s", err, schedulerMarkdown)
 	}
 	inside, err := workspace.IsSchedulerPath(filepath.Join(workspace.Root(), "scheduler", "nested"))
 	if err == nil || inside {

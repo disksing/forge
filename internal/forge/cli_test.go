@@ -380,10 +380,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"relevant `artifacts/`",
 				"task.json` contains structured state",
 				"task.md` the durable contract",
-				"log.jsonl` the historical timeline",
+				"Use the resource History commands for conversation and execution history.",
 				"You may use `sed`, `rg`, or `less` on the resolved paths.",
 				"forge task show --project=<project> --task=<task>",
-				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge task history --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "只读检查其他项目/任务资源",
@@ -398,10 +398,10 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				"相关 `artifacts/`",
 				"`task.json` 是结构化状态",
 				"`task.md` 是长期约定",
-				"`log.jsonl` 是历史时间线",
+				"对话和执行历史使用资源 History 命令",
 				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
 				"forge task show --project=<project> --task=<task>",
-				"forge task log list --project=<project> --task=<task> [--json]",
+				"forge task history --project=<project> --task=<task> [--json]",
 				"forge workspace resource --id=<project.task> --json",
 			},
 			wrong: "Read-only inspection of other project/task resources",
@@ -1727,11 +1727,11 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, "When starting a new generation") || !strings.Contains(first, "--limit=20") || !strings.Contains(first, "do not create a second permanent progress file") {
 			t.Fatalf("expected workspace AGENTS.md to describe bounded generation recovery, got:\n%s", first)
 		}
-		if !strings.Contains(first, "task.json` contains structured state, `task.md` the durable contract, and `work.md` the current recovery checkpoint") {
-			t.Fatalf("expected workspace AGENTS.md to distinguish structured facts, contracts, and recovery state, got:\n%s", first)
+		if !strings.Contains(first, "Tasks own `task.json`, `task.md`, `AGENTS.md`, `artifacts/`, and `worktree/`; their conversation is available through resource History.") {
+			t.Fatalf("expected workspace AGENTS.md to describe task-owned files and resource History, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Keep current state in `work.md`") || !strings.Contains(first, "resource History for chronological conversation and execution events") {
-			t.Fatalf("expected workspace AGENTS.md to distinguish current state from History, got:\n%s", first)
+		if !strings.Contains(first, "Read chronological conversation and execution events through resource History.") {
+			t.Fatalf("expected workspace AGENTS.md to direct chronological context to History, got:\n%s", first)
 		}
 		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
 			if !strings.Contains(first, want) {

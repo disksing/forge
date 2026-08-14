@@ -123,8 +123,7 @@ This directory is an AgentWorkspace managed by forge.
 - Before starting work in this workspace, read ` + "`wiki/index.md`" + `.
 - Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
 - When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
-` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- ` + "`task.json`" + ` contains structured state, ` + "`task.md`" + ` the durable contract, and ` + "`work.md`" + ` the current recovery checkpoint.
-- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
+` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
 - Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
 - Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
 - Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
@@ -134,23 +133,24 @@ This directory is an AgentWorkspace managed by forge.
 - Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
 - Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
 - Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `; their conversation is available through resource History.
-- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`work.md`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `; their conversation is available through resource History.
+- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `; their conversation is available through resource History.
 - Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
 - Read-only inspection of other task directories is allowed without an extra lock; use the state files and Forge commands described above.
 - Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
 - ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
 - Treat ` + "`project.md`" + ` and ` + "`task.md`" + ` as durable contracts. Keep why the work exists, scope and non-scope, acceptance criteria, stable constraints, durable decisions, and contract-changing open questions there.
 - Treat task ` + "`task.md`" + ` as the durable contract. For a new generation, recover transient context from bounded resource history, the task worktree's Git state, and related artifacts; do not create a second permanent progress file.
-- Keep current state in ` + "`work.md`" + ` and use resource History for chronological conversation and execution events.
+- Read chronological conversation and execution events through resource History.
 - Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief; promote durable answers there after confirmation.
 - Prefer forge commands for creating, listing, and archiving tasks.
-- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, task recovery state in ` + "`work.md`" + `, and conversation history in resource History.
+- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, transient recovery inputs in bounded History plus Git and artifacts, and conversation history in resource History.
 
 ## forge CLI
 
 Use forge for deterministic workspace operations:
 
 ` + "```bash" + `
+forge --version
 forge init [--language=<language>]
 forge migrate [--language=<language>]
 
@@ -180,6 +180,13 @@ forge history turn show --ref=<reference> [--server=<url>] [--json]
 forge history event show --ref=<reference> [--server=<url>] [--json]
 forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
 forge message show --id=<message-id> [--server=<url>]
+forge resource archive --id=<resource>
+
+forge scheduler list [--json]
+forge scheduler show --id=<schedule>
+forge scheduler add --description=<text> --condition=<text> --target=<resource>
+forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
+forge scheduler remove --id=<schedule>
 forge workspace tree --json
 forge workspace resource --id=<resource> --json
 
