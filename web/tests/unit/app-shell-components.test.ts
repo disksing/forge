@@ -195,7 +195,6 @@ describe("AppShell responsibility components", () => {
     expect(onSelect).not.toHaveBeenCalled();
     expect(target.querySelector(".section-title")?.textContent).toBe("Activity");
     expect(target.querySelector(".activity-title")?.textContent).toContain("#1 · Agent Codex · Turn 2 · Focused resource");
-    expect(target.querySelector(".activity-badge")?.textContent).toBe("Project");
     const selectedRow = target.querySelector<HTMLElement>('[aria-label^="Project A."]')!;
     const activeRow = target.querySelector<HTMLElement>('[aria-label^="Task B."]')!;
     expect(selectedRow.classList.contains("selected")).toBe(true);
@@ -206,10 +205,10 @@ describe("AppShell responsibility components", () => {
     expect(activeRow.getAttribute("data-active-turn")).toBe("true");
     expect(activeRow.querySelector('[aria-label="Dismiss Task B"]')).toBeNull();
     expect([...selectedRow.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-badge", "activity-actions",
+      "activity-status", "activity-title", "activity-actions",
     ]);
     expect([...activeRow.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-badge", "activity-actions",
+      "activity-status", "activity-title", "activity-actions",
     ]);
   });
 

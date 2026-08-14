@@ -596,7 +596,6 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await expect(attentionRow).toHaveCount(1);
   await expect(attentionRow).toContainText("Migration project");
   await expect(attentionRow).toContainText("#1 · No turns · Focused resource");
-  await expect(attentionRow.locator(".activity-badge")).toHaveText("Project");
 
   const activityPanel = page.locator('[data-component-owner="attention-list"]');
   const initialHeight = await activityPanel.evaluate((element) => element.getBoundingClientRect().height);
@@ -644,13 +643,11 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   await expect(activityRow).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-status")).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-title")).toHaveCount(1);
-  await expect(activityRow.locator(":scope > .activity-badge")).toHaveCount(1);
   await expect(activityRow.locator(":scope > .activity-actions")).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
 
   const before = await activityRow.evaluate((row) => ({
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
-    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
   const input = page.locator("#ttyInput");
@@ -664,11 +661,9 @@ test("keeps a newly created task Activity row aligned when its first turn starts
   const after = await activityRow.evaluate((row) => ({
     directChildren: row.children.length,
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
-    badgeTop: row.querySelector(".activity-badge")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
-  expect(after.directChildren).toBe(4);
-  expect(Math.abs(after.titleTop - after.badgeTop)).toBeLessThan(2);
+  expect(after.directChildren).toBe(3);
   expect(Math.abs(after.titleTop - after.actionsTop)).toBeLessThan(2);
   expect(Math.abs(after.titleTop - before.titleTop)).toBeLessThan(2);
 });

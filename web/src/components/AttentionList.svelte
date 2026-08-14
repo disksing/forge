@@ -30,13 +30,6 @@
     return "home";
   }
 
-  function resourceKind(item: ShellAttentionItem): string {
-    if (item.type === "project") return "Project";
-    if (item.type === "task") return "Task";
-    if (item.type === "scheduler") return "Scheduler";
-    return "Workspace";
-  }
-
   function canFollow(item: ShellAttentionItem): boolean {
     return item.type === "project" || item.type === "task";
   }
@@ -97,7 +90,6 @@
             <span class="activity-status-runtime-slot" hidden={!item.status.hasTaskState}><StatusPresentation status={item.status} className="activity-status-icon" /></span>
           </span>
           <span class="activity-title"><strong>{item.title}</strong><span class="activity-meta">{metadata(item)}</span></span>
-          <span class="activity-badge">{resourceKind(item)}</span>
           <span class="activity-actions">
             {#if canFollow(item)}
               <!-- svelte-ignore a11y_no_static_element_interactions -->

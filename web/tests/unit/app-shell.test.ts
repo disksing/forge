@@ -99,7 +99,7 @@ describe("AppShell", () => {
     const row = target.querySelector<HTMLElement>('[data-component-owner="attention-list"] button.activity-row')!;
     const status = row.querySelector<HTMLElement>(".activity-status")!;
     expect([...row.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-badge", "activity-actions",
+      "activity-status", "activity-title", "activity-actions",
     ]);
     const fallbackSlot = status.querySelector<HTMLElement>(".activity-status-fallback-slot")!;
     const runtimeSlot = status.querySelector<HTMLElement>(".activity-status-runtime-slot")!;
@@ -120,7 +120,7 @@ describe("AppShell", () => {
 
     expect(target.querySelector('[data-component-owner="attention-list"] button.activity-row')).toBe(row);
     expect([...row.children].map((child) => child.className)).toEqual([
-      "activity-status", "activity-title", "activity-badge", "activity-actions",
+      "activity-status", "activity-title", "activity-actions",
     ]);
     expect(row.querySelector(".activity-status")).toBe(status);
     expect(fallbackSlot.hidden).toBe(true);
