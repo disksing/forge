@@ -1,8 +1,78 @@
 import { describe, expect, it } from "vitest";
 
-import { configWithAgentHubCatalog } from "../../src/controllers/settings-controller";
+import { createSettingsController, configWithAgentHubCatalog } from "../../src/controllers/settings-controller";
+import type { SettingsModel } from "../../src/components/models";
+import type { ForgeSettingsConfig } from "../../src/controllers/settings-controller";
 
 describe("SettingsController", () => {
+	function settingsDependencies(activeWorkspaceId: string, base: ForgeSettingsConfig, publish: (model: SettingsModel) => void) {
+		return {
+			config: () => base,
+			setConfig: () => undefined,
+			activeWorkspaceId: () => activeWorkspaceId,
+			setActiveWorkspaceId: () => undefined,
+			selectWorkspaceResource: () => undefined,
+			request: async <T>(path: string): Promise<T> => {
+				if (path === "/api/workspaces") return base as T;
+				if (path === "/api/settings/agenthub") return {} as T;
+				throw new Error(`Unexpected request: ${path}`);
+			},
+			publish,
+			agentOptions: () => [],
+			workspaceIcons: [],
+			userName: () => "User",
+			saveUser: (name: string) => name,
+			appearance: () => ({ layout: "auto" as const, fontScales: { sidebar: 1, details: 1, chat: 1 } }),
+			setLayoutPreference: () => undefined,
+			setFontScale: () => undefined,
+			resetFontScales: () => undefined,
+			notificationPreferences: () => ({ browser: false, sound: false, permission: "default" as const, permissionError: "", soundError: "" }),
+			setBrowserNotifications: () => undefined,
+			setCompletionSound: () => undefined,
+			flushDraft: () => undefined,
+			resetAgentState: () => undefined,
+			reloadWorkspaceContext: async () => undefined,
+			clearWorkspaceContext: () => undefined,
+			renderWorkspace: () => undefined,
+			renderAgentViews: () => undefined,
+			toast: () => undefined,
+			onIconsChanged: () => undefined,
+		};
+	}
+
+	it("marks the routed Workspace active even when the persisted fallback points elsewhere", async () => {
+		const published: SettingsModel[] = [];
+		const config: ForgeSettingsConfig = {
+			activeId: "workspace-c",
+			workspaces: [
+				{ id: "workspace-a", name: "Workspace A", path: "/tmp/a" },
+				{ id: "workspace-c", name: "Workspace C", path: "/tmp/c" },
+			],
+			agents: [],
+			agentProfiles: [],
+		};
+		const controller = createSettingsController(settingsDependencies("workspace-a", config, (model) => published.push(model)));
+
+		await controller.open();
+
+		expect(published.at(-1)?.activeWorkspaceId).toBe("workspace-a");
+	});
+
+	it("keeps the routed Workspace marker aligned when route and persisted fallback match", async () => {
+		const published: SettingsModel[] = [];
+		const config: ForgeSettingsConfig = {
+			activeId: "workspace-a",
+			workspaces: [{ id: "workspace-a", name: "Workspace A", path: "/tmp/a" }],
+			agents: [],
+			agentProfiles: [],
+		};
+		const controller = createSettingsController(settingsDependencies("workspace-a", config, (model) => published.push(model)));
+
+		await controller.open();
+
+		expect(published.at(-1)?.activeWorkspaceId).toBe("workspace-a");
+	});
+
 	it("joins AgentHub availability and profiles into the Forge configuration without mutating the base", () => {
 		const base = {
 			activeId: "alpha",

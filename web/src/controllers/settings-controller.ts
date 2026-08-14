@@ -119,7 +119,10 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			dataVersion: state.dataVersion,
 			initialTab: state.tab,
 			workspaces: data.workspaces || [],
-			activeWorkspaceId: data.activeId || dependencies.activeWorkspaceId(),
+			// The settings marker describes the Workspace currently being browsed.
+			// `data.activeId` is the persisted fallback used when there is no route;
+			// it can differ from the route while the user is viewing another Workspace.
+			activeWorkspaceId: dependencies.activeWorkspaceId(),
 			workspaceIcons: dependencies.workspaceIcons,
 			workspaceIconSavingId: state.workspaceIconSavingId,
 			userName: dependencies.userName(),

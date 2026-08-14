@@ -9659,7 +9659,7 @@ function ff(e) {
 			dataVersion: n.dataVersion,
 			initialTab: n.tab,
 			workspaces: i.workspaces || [],
-			activeWorkspaceId: i.activeId || e.activeWorkspaceId(),
+			activeWorkspaceId: e.activeWorkspaceId(),
 			workspaceIcons: e.workspaceIcons,
 			workspaceIconSavingId: n.workspaceIconSavingId,
 			userName: e.userName(),
