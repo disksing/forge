@@ -8,6 +8,7 @@ const runtimeDir = join(tmpdir(), `forge-frontend-e2e-${port}`);
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: "./tests/e2e/global-setup.ts",
   globalTeardown: "./tests/e2e/global-teardown.ts",
   fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
