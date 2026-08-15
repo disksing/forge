@@ -28,6 +28,10 @@
   gap: 8px;
 }
 
+:where([data-component-owner="file-preview-modal"]) .file-modal-actions > .secondary-button {
+  width: auto;
+}
+
 :where([data-component-owner="file-preview-modal"]) .file-modal-open,
 :where([data-component-owner="file-preview-modal"]) .file-modal-download {
   text-decoration: none;

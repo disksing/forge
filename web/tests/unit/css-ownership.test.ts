@@ -176,6 +176,14 @@ describe("CSS ownership", () => {
     expect(filePreview).toBeLessThan(Math.min(...higherPriorityDialogs));
   });
 
+  it("keeps file preview header actions at their intrinsic width on narrow layouts", () => {
+    const css = read("src/components/FilePreviewModal.css");
+    const selector = ':where([data-component-owner="file-preview-modal"]) .file-modal-actions > .secondary-button';
+    const start = css.indexOf(selector);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(css.slice(css.indexOf("{", start), css.indexOf("}", start) + 1)).toContain("width: auto;");
+  });
+
   it("marks nested component roots with the same owner used by their CSS", () => {
     for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
