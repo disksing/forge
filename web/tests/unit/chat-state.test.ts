@@ -332,6 +332,39 @@ describe("resource conversation controller", () => {
     expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gen-2:new"]);
   });
 
+  it("keeps an in-flight status sync alive across a parent view refresh", async () => {
+    const oldTurn = turn(1, "old", 1, 2);
+    const newTurn = turn(2, "new", 3, 4);
+    const pendingStatus = deferredResponse();
+    let statusCalls = 0;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.endsWith("/status")) {
+        statusCalls++;
+        return statusCalls === 1 ? pendingStatus.promise : response(status(1));
+      }
+      return response({
+        resourceId: "task-a",
+        segments: [{ generation: generation(1), turns: [oldTurn] }, { generation: generation(2), turns: [newTurn] }],
+        page: { limit: 20, hasMore: false },
+      });
+    });
+    const value = controller(fetchImpl, { statusSyncIntervalMs: 10 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status(1));
+    await vi.waitFor(() => expect(statusCalls).toBe(1));
+
+    // The app-level status model can be republished while the controller's
+    // own request is still waiting on the AgentHub session. It must not cancel
+    // that request before it observes the replacement Generation.
+    value.activate("workspace-a", "task-a", status(1));
+    pendingStatus.resolve(response(status(2)));
+
+    await vi.waitFor(() => expect(latest.generationId).toBe("gen-2"));
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gen-2:new"]);
+  });
+
   it("discards stale history responses across rapid multi-generation switches", async () => {
     const pending = [deferredResponse(), deferredResponse(), deferredResponse()];
     let historyCalls = 0;

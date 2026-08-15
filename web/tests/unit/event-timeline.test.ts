@@ -217,6 +217,41 @@ describe("EventTimeline", () => {
     expect(target.querySelector("[data-generation-id='gen-task-a-2'] small")?.textContent).toBe("idle");
   });
 
+  it("adds a replacement Generation to the mounted Chat without a channel refresh", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = multiGenerationHistory("task-a");
+    let currentGeneration = 1;
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path.endsWith("/status")) {
+        return new Response(JSON.stringify(status("task-a", `gen-${currentGeneration}`, currentGeneration)), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (path.includes("/history/turns/ref-")) {
+        const index = Number(path.match(/ref-(\d+)/)?.[1] || 0) - 1;
+        return new Response(JSON.stringify(fixture.details[index]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const page = {
+        ...fixture.page,
+        segments: fixture.page.segments.slice(0, currentGeneration),
+      };
+      return new Response(JSON.stringify(page), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const channel = createModelChannel(generationModel("task-a", 1, "gen-1", "deepseek"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.querySelector("[data-generation-id='gen-1']")).not.toBeNull());
+    currentGeneration = 2;
+
+    await vi.waitFor(() => expect(target.querySelector("[data-generation-id='gen-2']")).not.toBeNull(), { timeout: 4000 });
+    expect(target.textContent).toContain("codex reply");
+    expect(channel.current().status?.generation?.generationId).toBe("gen-1");
+  });
+
   it("invalidates the old resource view and stream immediately on resource switch", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);

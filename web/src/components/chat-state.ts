@@ -105,8 +105,10 @@ export class ChatSessionController {
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, resourceId);
     const nextGeneration = String(status?.generation?.generationId || "");
     if (this.isStaleStatus(context, status, nextGeneration)) return;
+    // Parent view-model refreshes may carry the previous status while this
+    // controller is waiting for the AgentHub-backed status request. Keep the
+    // poll alive; generation ordering below rejects an older response.
     this.startStatusSync(context);
-    this.api.requests.abort(requestScope(context, "status"));
     const generationChanged = Boolean(context.generationId && nextGeneration && context.generationId !== nextGeneration);
     context.status = status;
     context.generationId = nextGeneration;

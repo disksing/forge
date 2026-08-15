@@ -5257,7 +5257,7 @@ var oc = 20, sc = 250, cc = 80, lc = 2e3, uc = /* @__PURE__ */ new Set([
 		}
 		let a = this.contexts.get(r) ?? this.createContext(e, t), o = String(n?.generation?.generationId || "");
 		if (this.isStaleStatus(a, n, o)) return;
-		this.startStatusSync(a), this.api.requests.abort(_c(a, "status"));
+		this.startStatusSync(a);
 		let s = !!(a.generationId && o && a.generationId !== o);
 		a.status = n, a.generationId = o, s ? (this.resetForGeneration(a), this.loadInitial(a)) : !a.loaded && !a.loading ? this.loadInitial(a) : this.realtime && this.connect(a), (i || s) && this.emit();
 	}
