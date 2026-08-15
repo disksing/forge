@@ -201,8 +201,8 @@ Long-lived Workspace knowledge lives in wiki/. Read wiki/index.md first, then on
 
 ### Repositories
 
-- repos/ contains shared source checkouts used for reading and creating worktrees.
-- Make code changes in a Task-owned worktree/.
+- repos/ contains shared source checkouts used only for reading and creating worktrees; never modify them directly.
+- All code changes must be made in a Task-owned worktree/.
 - Use an absolute destination under the current Task's worktree/ when creating a Git worktree.
 - Use forge task repo add/list/remove to record repositories and worktrees used by a Task.
 
@@ -273,7 +273,7 @@ forge template show --project=<project> <name>
 forge task create --project=<project> --template=<name> --field <name>=<value>
 ~~~
 
-For code changes, create a Task-owned worktree and record it with forge task repo add. Projects do not own code worktrees.
+For code changes, you must create a Task-owned worktree and record it with forge task repo add. Never modify shared source checkouts under repos/ directly. Projects do not own code worktrees.
 
 Archiving is not deletion, but it ends the resource's open work state. Check that work and deliverables have been saved before archiving.
 
