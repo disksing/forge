@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testConfigFile       = "forge.json"
+	testConfigFile       = "workspace.json"
 	testReposDir         = "repos"
 	testArchiveDir       = "archive"
 	testWikiDir          = "wiki"
@@ -1742,7 +1742,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 
 		if pathExists(filepath.Join(root, "project1", "task1", testConfigFile)) {
-			t.Fatal("migrate from task should not create nested forge.json")
+			t.Fatal("migrate from task should not create nested workspace.json")
 		}
 		if pathExists(filepath.Join(root, "project1", "task1", testReposDir)) {
 			t.Fatal("migrate from task should not create nested repos directory")

@@ -285,7 +285,7 @@ func TestMigratePreservesSchedulerContentAndRejectsUnsafeConflicts(t *testing.T)
 	if err := os.Remove(filepath.Join(unsafeRoot, "scheduler", "scheduler.json")); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(unsafeRoot, "forge.json"), filepath.Join(unsafeRoot, "scheduler", "scheduler.json")); err != nil {
+	if err := os.Symlink(filepath.Join(unsafeRoot, "workspace.json"), filepath.Join(unsafeRoot, "scheduler", "scheduler.json")); err != nil {
 		t.Fatal(err)
 	}
 	if err := unsafeWorkspace.Migrate(""); err == nil || !app.IsKind(err, "scheduler") {

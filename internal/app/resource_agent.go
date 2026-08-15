@@ -102,7 +102,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 			changed = true
 		}
 		if changed {
-			if err := writeJSON(filepath.Join(w.root, configFile), cfg); err != nil {
+			if err := writeWorkspaceConfig(w.root, cfg); err != nil {
 				return err
 			}
 		}
@@ -204,7 +204,7 @@ func (w *Workspace) SetResourceAgentBinding(id string, binding AgentBinding) (Ag
 				return err
 			}
 			cfg.AgentBinding = binding
-			return writeJSON(filepath.Join(w.root, configFile), cfg)
+			return writeWorkspaceConfig(w.root, cfg)
 		}
 		if strings.TrimSpace(id) == SchedulerResourceID {
 			cfg, err := readSchedulerJSON(schedulerJSONPath(w.root))

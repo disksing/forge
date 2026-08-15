@@ -2,7 +2,6 @@ package app
 
 import (
 	"fmt"
-	"path/filepath"
 	"strings"
 )
 
@@ -29,7 +28,7 @@ func NormalizeLanguage(language string) (string, error) {
 
 func readWorkspaceConfig(root string) (Config, error) {
 	config := Config{}
-	if err := readJSON(filepath.Join(root, configFile), &config); err != nil {
+	if err := readJSON(workspaceConfigPath(root), &config); err != nil {
 		return Config{}, err
 	}
 	language, err := normalizeLanguage(config.Language)

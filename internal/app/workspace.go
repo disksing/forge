@@ -10,11 +10,41 @@ import (
 )
 
 const (
-	configFile = "forge.json"
-	reposDir   = "repos"
-	archiveDir = "archive"
-	wikiDir    = "wiki"
+	workspaceConfigFile       = "workspace.json"
+	legacyWorkspaceConfigFile = "forge.json"
+	reposDir                  = "repos"
+	archiveDir                = "archive"
+	wikiDir                   = "wiki"
 )
+
+func workspaceConfigPath(root string) string {
+	canonical := filepath.Join(root, workspaceConfigFile)
+	if pathExists(canonical) {
+		return canonical
+	}
+	legacy := filepath.Join(root, legacyWorkspaceConfigFile)
+	if pathExists(legacy) {
+		return legacy
+	}
+	return canonical
+}
+
+func hasWorkspaceConfig(root string) bool {
+	return pathExists(filepath.Join(root, workspaceConfigFile)) ||
+		pathExists(filepath.Join(root, legacyWorkspaceConfigFile))
+}
+
+func writeWorkspaceConfig(root string, config Config) error {
+	canonical := filepath.Join(root, workspaceConfigFile)
+	if err := writeJSON(canonical, config); err != nil {
+		return err
+	}
+	legacy := filepath.Join(root, legacyWorkspaceConfigFile)
+	if err := os.Remove(legacy); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
 
 func pathExists(path string) bool {
 	_, err := os.Stat(path)

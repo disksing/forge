@@ -89,7 +89,7 @@ func OpenWorkspace(root string) (*Workspace, error) {
 	if !isDir(canonical) {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Workspace: canonical, Path: canonical, Err: errors.New("workspace root is not a directory")}
 	}
-	if !pathExists(filepath.Join(canonical, configFile)) && !isDir(filepath.Join(canonical, reposDir)) {
+	if !hasWorkspaceConfig(canonical) && !isDir(filepath.Join(canonical, reposDir)) {
 		return nil, &APIError{Operation: "open Workspace", Kind: "workspace", Workspace: canonical, Path: canonical, Err: errors.New("could not find AgentWorkspace root; run forge init first")}
 	}
 	return &Workspace{root: canonical}, nil
@@ -169,7 +169,7 @@ func initializeWorkspaceLocked(root, language string) error {
 		return err
 	}
 	config := Config{Version: 1, Language: language, InstanceID: instanceID, AgentBinding: defaultAgentBinding()}
-	if err := readJSON(filepath.Join(root, configFile), &config); err != nil && !os.IsNotExist(err) {
+	if err := readJSON(workspaceConfigPath(root), &config); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	config.Version, config.Language = 1, language
@@ -179,7 +179,7 @@ func initializeWorkspaceLocked(root, language string) error {
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
 	}
-	if err := writeJSON(filepath.Join(root, configFile), config); err != nil {
+	if err := writeWorkspaceConfig(root, config); err != nil {
 		return err
 	}
 	if err := ensureWorkspaceWiki(root, language); err != nil {
@@ -268,7 +268,7 @@ func (w *Workspace) migrate(language string) error {
 	if strings.TrimSpace(config.AgentBinding.Name) == "" {
 		config.AgentBinding = defaultAgentBinding()
 	}
-	if err := writeJSON(filepath.Join(w.root, configFile), config); err != nil {
+	if err := writeWorkspaceConfig(w.root, config); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
 	if err := ensureOpenResourceBindings(w.root, ResourceAgentDefaults{Project: "default", Task: "default"}); err != nil {

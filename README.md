@@ -241,7 +241,7 @@ Templates without `schema-version` remain visible as legacy V1 templates with de
 ```text
 AgentWorkspace/
   AGENTS.md                   global human and agent instructions
-  forge.json                  workspace configuration
+  workspace.json              workspace configuration
   .forge/runtime/generation-store.json  generation store schema/migration marker
   .forge/runtime/resources/<resource-key>/  current/retired generations plus mailbox bundle
     current.json                    mutable current generation record
@@ -348,10 +348,13 @@ forge serve [--addr=<address>] [--workspace=<path>] [--version]
 `forge agent list` queries the owning `forge serve` process for the configured Forge Agent Profiles and the read-only AgentHub agent catalog. The default output lists profiles (key, agent, description) followed by agents (name, provider, availability); pass `--json` for the complete structured result including profiles, providers, and probes.
 
 `forge init` and `forge migrate` accept `--language=en` or `--language=zh-CN`.
-The selected language is stored in `forge.json` and controls generated Markdown
+The selected language is stored in `workspace.json` and controls generated Markdown
 templates and Forge-managed `AGENTS.md` prompts. Existing workspaces without a
 language setting default to English. Use `forge migrate --language=zh-CN` (or
 `--language=en`) to switch languages.
+
+Existing workspaces using the former `forge.json` name remain readable. Run
+`forge migrate` once to write `workspace.json` and remove the old file.
 
 Workspace, Project, and Task creation is local and uses the shared `internal/app` application boundary. Creation no longer persists resource creator metadata; Agent sender provenance remains on messages and is validated from the injected generation environment. Creation sends no initial message and creates no generation; call `forge message send` separately, which lazily creates the first generation. A message that actually opens a Turn subscribes to that Turn's result by default; a message delivered as steer into an existing Turn does not. A steer request downgraded to enqueue becomes an opener and does subscribe. Pass `--subscribe-result=false` to disable the result for an opening message. If a create command commits but its output is lost, query the resource before deciding whether to issue a new create operation.
 
