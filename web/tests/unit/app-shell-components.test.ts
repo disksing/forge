@@ -196,6 +196,36 @@ describe("AppShell responsibility components", () => {
     expect(row.contains(document.activeElement)).toBe(false);
   });
 
+  it("ProjectTree row click drops pointer focus but keeps keyboard focus", async () => {
+    const onSelect = vi.fn(async () => undefined);
+    const project = { ...resource("project-a"), expanded: true, children: [resource("task-a", "task")] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle: vi.fn(async () => undefined), onSelect,
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    // A pointer click on the row focuses the row button in browsers; a
+    // focused row keeps its focus-within rule active, pinning the follow
+    // star visible after the pointer leaves. Selection must drop focus.
+    const row = target.querySelector<HTMLElement>(".task-item")!;
+    row.focus();
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1 }));
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledWith("task-a"));
+    expect(document.activeElement).not.toBe(row);
+    expect(row.contains(document.activeElement)).toBe(false);
+
+    // Keyboard activation (detail === 0) keeps focus so keyboard
+    // navigation position is not lost.
+    row.focus();
+    row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }));
+    await vi.waitFor(() => expect(onSelect).toHaveBeenCalledTimes(2));
+    expect(document.activeElement).toBe(row);
+  });
+
   it("ProjectTree follow star drops pointer focus but keeps keyboard focus", async () => {
     const onToggleAttention = vi.fn(async () => undefined);
     const target = document.body.appendChild(document.createElement("div"));
