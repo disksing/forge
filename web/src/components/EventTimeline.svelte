@@ -13,6 +13,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
+  import { markTurnFinalAssistant } from "./timeline-events";
   import { toolGroupKey } from "./tool-group";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
@@ -111,7 +112,8 @@
   }
 
   function blockItems(block: ConversationBlock): TimelineItem[] {
-    return block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
+    const items = block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
+    return markTurnFinalAssistant(items);
   }
 
   function blockAgentName(block: ConversationBlock): string {

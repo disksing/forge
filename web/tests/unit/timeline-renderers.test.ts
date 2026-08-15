@@ -46,6 +46,22 @@ describe("timeline rendering components", () => {
     expect(user.querySelector(".agent-message-bubble p")?.textContent).toBe("plain `code`");
   });
 
+  it("scopes the ink rail to the turn's final assistant message", () => {
+    const progress = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "working on it", turnFinal: false }, agentName: "Codex" });
+    expect(progress.querySelector(".agent-message-row")?.classList.contains("final")).toBe(false);
+
+    const finalReply = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "done", turnFinal: true }, agentName: "Codex" });
+    expect(finalReply.querySelector(".agent-message-row")?.classList.contains("final")).toBe(true);
+
+    // Unannotated items keep the previous final styling.
+    const plain = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "done" }, agentName: "Codex" });
+    expect(plain.querySelector(".agent-message-row")?.classList.contains("final")).toBe(true);
+
+    // Other roles never carry the final class.
+    const agent = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "note", sender: { name: "Builder" } }, agentName: "Codex" });
+    expect(agent.querySelector(".agent-message-row")?.classList.contains("final")).toBe(false);
+  });
+
   it("renders active and completed thinking duration states", () => {
     const active = mounted(ThinkingBlock, { item: { kind: "thinking", active: true, text: "working" } });
     expect(active.querySelector("details")?.open).toBe(true);
