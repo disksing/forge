@@ -15,6 +15,10 @@
   gap: 8px;
 }
 
+:where([data-component-owner="markdown-editor"]) .markdown-editor-save-actions {
+  margin-left: auto;
+}
+
 :where([data-component-owner="markdown-editor"]) .markdown-editor-toolbar {
   justify-content: space-between;
 }

@@ -69,7 +69,7 @@ describe("DetailPanel", () => {
     }), { headers: { "content-type": "application/json" } })));
     const { target } = mountModel(resourceModel({ onSaveMarkdownFile: save }));
     await tick();
-    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
     edit.click();
     await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
     const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -360,7 +360,7 @@ describe("DetailPanel", () => {
     });
     const { target } = mountModel(initial);
     await tick();
-    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
     edit.click();
     await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
     const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;

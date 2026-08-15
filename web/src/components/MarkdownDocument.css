@@ -34,7 +34,7 @@
 }
 
 :where([data-component-owner="markdown-document"]) .markdown-document-actions + .markdown-view > :first-child {
-  padding-right: 132px;
+  padding-right: 190px;
 }
 
 :where([data-component-owner="markdown-document"]) .markdown-preview .markdown-view {

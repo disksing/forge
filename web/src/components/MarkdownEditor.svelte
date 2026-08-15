@@ -56,11 +56,11 @@
     { tag: tags.monospace, color: "#8c3b2d", backgroundColor: "#f4f1ed" },
   ]);
 
-  let { identity, file, onSave, onDone, onToast, onIconsChanged }: {
+  let { identity, file, mode, onSave, onToast, onIconsChanged }: {
     identity: string;
     file: FilePreviewModel;
+    mode: "edit" | "annotate";
     onSave: (content: string, expectedContentHash: string) => Promise<FilePreviewModel>;
-    onDone: () => void;
     onToast: (message: string) => void;
     onIconsChanged: () => void;
   } = $props();
@@ -80,6 +80,7 @@
   let error = $state("");
   let copyFallback = $state("");
   let annotationCounter = 0;
+  const readOnly = $derived(mode === "annotate");
   const dirty = $derived(draft !== baseline);
   const localWork = $derived(dirty || annotations.length > 0);
   const conflict = $derived(Boolean(localWork && incomingHash && baselineHash && incomingHash !== baselineHash));
@@ -96,12 +97,17 @@
       const session = markdownEditorSessions.get(nextIdentity);
       baseline = session?.baseline ?? nextContent;
       baselineHash = session?.baselineHash ?? nextHash;
-      draft = session?.draft ?? nextContent;
-      annotations = session?.annotations.map((annotation) => ({ ...annotation })) ?? [];
+      if (mode === "annotate") {
+        draft = nextContent;
+        annotations = (session?.annotations ?? []).map((annotation) => ({ ...annotation }));
+      } else {
+        draft = session?.draft ?? nextContent;
+        annotations = [];
+      }
       error = "";
       copyFallback = "";
-      createEditor(draft, annotations);
-    } else if (!localWork && nextHash !== baselineHash) {
+      createEditor(mode === "annotate" ? nextContent : draft, mode === "annotate" ? annotations : []);
+    } else if (mode === "edit" && !localWork && nextHash !== baselineHash) {
       baseline = nextContent;
       baselineHash = nextHash;
       replaceEditorContent(nextContent);
@@ -127,6 +133,8 @@
           highlightActiveLine(),
           highlightActiveLineGutter(),
           EditorState.lineSeparator.of(lineSeparator),
+          EditorState.readOnly.of(readOnly),
+          EditorView.editable.of(!readOnly),
           markdown({ base: markdownLanguage }),
           syntaxHighlighting(markdownHighlight),
           annotationField,
@@ -167,7 +175,8 @@
 
   function persistSession(): void {
     if (!currentIdentity) return;
-    if (draft === baseline && annotations.length === 0) {
+    const hasLocalWork = mode === "edit" ? draft !== baseline : annotations.length > 0;
+    if (!hasLocalWork) {
       markdownEditorSessions.delete(currentIdentity);
       return;
     }
@@ -284,29 +293,26 @@
     manualCopy?.select();
     onToast("Automatic clipboard access is unavailable. Press Cmd/Ctrl+C to copy the selected text.");
   }
-
-  function done(): void {
-    persistSession();
-    onDone();
-  }
 </script>
 
 <section class="markdown-editor-shell" data-component-owner="markdown-editor" data-editor-identity={identity}>
   <div class="markdown-editor-toolbar">
-    <div class="markdown-editor-primary-actions">
-      <button type="button" class="secondary-button" disabled={!canAnnotate} onclick={addAnnotation}><Icon name="message-square-plus" /><span>Add annotation</span></button>
-      <button type="button" class="secondary-button" disabled={!annotations.length} onclick={copyAnnotations}><Icon name="copy" /><span>Copy annotations</span></button>
-    </div>
-    <div class="markdown-editor-save-actions">
-      <button type="button" class="secondary-button" onclick={done}>Done</button>
-      <button type="button" class:busy={saving} disabled={saving || !dirty} onclick={save}><Icon name={saving ? "loader-circle" : "save"} /><span>{saving ? "Saving" : "Save"}</span></button>
-    </div>
+    {#if mode === "annotate"}
+      <div class="markdown-editor-primary-actions">
+        <button type="button" class="secondary-button" disabled={!canAnnotate} onclick={addAnnotation}><Icon name="message-square-plus" /><span>Add annotation</span></button>
+        <button type="button" class="secondary-button" disabled={!annotations.length} onclick={copyAnnotations}><Icon name="copy" /><span>Copy annotations</span></button>
+      </div>
+    {:else}
+      <div class="markdown-editor-save-actions">
+        <button type="button" class:busy={saving} disabled={saving || !dirty} onclick={save}><Icon name={saving ? "loader-circle" : "save"} /><span>{saving ? "Saving" : "Save"}</span></button>
+      </div>
+    {/if}
   </div>
-  {#if conflict}<p class="markdown-editor-alert" role="alert">This file changed on disk while you were editing. Your draft and annotations are preserved; saving will report a conflict.</p>{/if}
+  {#if mode === "edit" && conflict}<p class="markdown-editor-alert" role="alert">This file changed on disk while you were editing. Your draft is preserved; saving will report a conflict.</p>{/if}
   {#if error}<p class="markdown-editor-alert" role="alert">{error}</p>{/if}
-  <div class:with-annotations={annotations.length > 0} class="markdown-editor-layout">
+  <div class:with-annotations={mode === "annotate" && annotations.length > 0} class="markdown-editor-layout">
     <div class="markdown-editor-host" bind:this={host}></div>
-    {#if annotations.length}
+    {#if mode === "annotate" && annotations.length}
       <aside class="markdown-annotation-panel" aria-label="Annotations">
         <header><strong>Annotations</strong><span>{annotations.length}</span></header>
         {#each annotations as annotation (annotation.id)}

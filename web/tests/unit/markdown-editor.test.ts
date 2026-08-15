@@ -16,8 +16,8 @@ function mountEditor(overrides: Record<string, unknown> = {}) {
     props: {
       identity: `ws:project1.task1:task-${++identityCounter}.md`,
       file: { path: "project1/task1/task.md", name: "task.md", content: "# Title\n\nSelected text here.\n", contentHash: "base-hash" },
+      mode: "edit",
       onSave,
-      onDone: vi.fn(),
       onToast,
       onIconsChanged: vi.fn(),
       ...overrides,
@@ -40,10 +40,10 @@ afterEach(async () => {
 });
 
 describe("MarkdownEditor", () => {
-  it("maps annotations through edits and copies agent-readable locations without an instruction preface", async () => {
+  it("annotates read-only Markdown and copies agent-readable locations without an instruction preface", async () => {
     const writeText = vi.fn(async (_text: string) => undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
-    const { target, onToast } = mountEditor();
+    const { target, onToast } = mountEditor({ mode: "annotate" });
     await tick();
     const view = editorView(target);
     const start = view.state.doc.toString().indexOf("Selected text");
@@ -59,16 +59,18 @@ describe("MarkdownEditor", () => {
     comment.dispatchEvent(new InputEvent("input", { bubbles: true }));
     await tick();
 
-    view.dispatch({ changes: { from: 0, insert: "Intro\n" } });
-    await tick();
-    expect(target.querySelector(".annotation-location")?.textContent).toBe("L4:C1–L4:C14");
+    // Annotate mode is read-only.
+    expect(view.state.readOnly).toBe(true);
+    expect(view.contentDOM.getAttribute("contenteditable")).toBe("false");
+    expect(target.querySelector(".annotation-location")?.textContent).toBe("L3:C1–L3:C14");
+    expect(target.querySelector(".markdown-editor-save-actions")).toBeNull();
 
     const copy = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Copy annotations"))!;
     copy.click();
     await vi.waitFor(() => expect(writeText).toHaveBeenCalledOnce());
     const exported = writeText.mock.calls[0][0];
     expect(exported).toContain("文件：project1/task1/task.md");
-    expect(exported).toContain("位置：L4:C1–L4:C14");
+    expect(exported).toContain("位置：L3:C1–L3:C14");
     expect(exported).toContain("> Selected text");
     expect(exported).toContain("批注：Make this requirement measurable.");
     expect(exported).not.toContain("请处理");
@@ -85,6 +87,7 @@ describe("MarkdownEditor", () => {
 
     const save = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
     expect(save.disabled).toBe(false);
+    expect(target.querySelector(".markdown-editor-primary-actions")).toBeNull();
     save.click();
     await vi.waitFor(() => expect(onSave).toHaveBeenCalledOnce());
     expect(onSave).toHaveBeenCalledWith("# Title\n\nSelected text here.\n\n**Bold addition**\n", "base-hash");

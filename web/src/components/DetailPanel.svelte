@@ -21,7 +21,7 @@
   let identity = $state("");
   let activeTab = $state("");
   let expanded = $state(new Set<string>());
-  let preview = $state<{ section: string; path: string; edit?: boolean } | null>(null);
+  let preview = $state<{ section: string; path: string; mode?: "edit" | "annotate" } | null>(null);
   let diffRepo = $state<ResourceRepoModel | null>(null);
   const tabMemory = new Map<string, string>();
   const client = new ApiClient();
@@ -136,8 +136,8 @@
     return `/api/workspaces/${encodeURIComponent(model.workspaceId)}/files/raw?path=${encodeURIComponent(path)}${suffix}`;
   }
 
-  function openPreview(section: string, path: string, edit = false): void {
-    preview = { section, path, edit };
+  function openPreview(section: string, path: string, mode?: "edit" | "annotate"): void {
+    preview = { section, path, mode };
   }
 
   function openLinkedFile(path: string): void {
@@ -145,7 +145,11 @@
   }
 
   function openEditor(path: string): void {
-    openPreview("Files", path, true);
+    openPreview("Files", path, "edit");
+  }
+
+  function openAnnotator(path: string): void {
+    openPreview("Files", path, "annotate");
   }
 
   function deleteArtifact(path: string): void {
@@ -205,7 +209,7 @@
   </div>
   <div id="detailsContent" class="details-content">
     <div hidden={activeTab !== "agents"}>
-      {#if agentsFile}<MarkdownDocument file={agentsFile} workspaceId={model.workspaceId} editable={true} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} />
+      {#if agentsFile}<MarkdownDocument file={agentsFile} workspaceId={model.workspaceId} editable={true} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} onAnnotate={openAnnotator} />
       {:else if model.workspaceAgents?.error}<div class="content-section"><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>AGENTS.md unavailable</strong><span>{model.workspaceAgents.error}</span></div></div>
       {:else}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="loader-circle" /><strong>Loading AGENTS.md...</strong></div></div>{/if}
     </div>
@@ -229,7 +233,7 @@
       {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>{/each}
     </div>
     <div id="detailsContent" class="details-content">
-      {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} editable={!model.detail.archived && (model.resourceType === "project" || model.resourceType === "task")} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} /></div>{/each}
+      {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} editable={!model.detail.archived && (model.resourceType === "project" || model.resourceType === "task")} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} onAnnotate={openAnnotator} /></div>{/each}
       {#if model.resourceType === "project" && !fileNames.has("project.md")}<div class="content-section" hidden={activeTab !== "project"}><div class="file-modal-empty detail-missing"><Icon name="file-text" /><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>{/if}
       {#if model.resourceType === "task" && !fileNames.has("task.md")}<div class="content-section" hidden={activeTab !== "task"}><div class="file-modal-empty detail-missing"><Icon name="file-text" /><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>{/if}
       {#if model.resourceType === "scheduler" && model.detail.scheduler}<div hidden={activeTab !== "schedules"}><SchedulerPanel workspaceId={model.workspaceId} config={model.detail.scheduler} onChanged={model.onRefreshScheduler || (async () => undefined)} onToast={model.onToast} /></div>{/if}

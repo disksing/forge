@@ -662,14 +662,42 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
   await expect.poll(() => refreshRequests).toBe(1);
 });
 
-test("edits Markdown source, annotates a selection, copies the review, and saves with a content hash", async ({ page }) => {
+test("edits Markdown source through the dialog and saves with a content hash", async ({ page }) => {
   const harness = await installMockApi(page, "project1.task1");
   await page.goto("/w/ws-test/r/project1.task1");
   const panel = page.locator("#detailsPanel");
-  await panel.getByRole("button", { name: "Edit / Annotate" }).click();
+  await panel.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "File preview" });
   const editor = dialog.locator('[data-component-owner="markdown-editor"]');
   await expect(editor.locator(".cm-editor")).toBeVisible();
+  // Edit mode shows only Save; annotate controls and Done are absent.
+  await expect(editor.getByRole("button", { name: "Add annotation" })).toHaveCount(0);
+  await expect(editor.getByRole("button", { name: "Done" })).toHaveCount(0);
+
+  await editor.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\nSaved from Playwright.\n");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => harness.markdownBodies.length).toBe(1);
+  expect(harness.markdownBodies[0]).toMatchObject({
+    path: "project1-migration/task1-infrastructure/task.md",
+    expectedContentHash: "project1.task1-brief-v1",
+  });
+  expect(harness.markdownBodies[0].content).toContain("Saved from Playwright.");
+  await expect(panel.locator('[data-doc-file="task.md"] .markdown-view')).toContainText("Saved from Playwright.");
+  await dialog.getByRole("button", { name: "Close" }).click();
+});
+
+test("annotates read-only Markdown through the dialog and copies the review", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("button", { name: "Annotate", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "File preview" });
+  const editor = dialog.locator('[data-component-owner="markdown-editor"]');
+  await expect(editor.locator(".cm-editor")).toBeVisible();
+  // Annotate mode has no Save button; the document is read-only.
+  await expect(editor.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
 
   await editor.locator(".cm-line", { hasText: "stable selection target" }).click({ clickCount: 3 });
   const addAnnotation = editor.getByRole("button", { name: "Add annotation" });
@@ -687,16 +715,10 @@ test("edits Markdown source, annotates a selection, copies the review, and saves
 
   await editor.locator(".cm-content").click();
   await page.keyboard.press("Control+End");
-  await page.keyboard.type("\nSaved from Playwright.\n");
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
-  await expect.poll(() => harness.markdownBodies.length).toBe(1);
-  expect(harness.markdownBodies[0]).toMatchObject({
-    path: "project1-migration/task1-infrastructure/task.md",
-    expectedContentHash: "project1.task1-brief-v1",
-  });
-  expect(harness.markdownBodies[0].content).toContain("Saved from Playwright.");
-  await editor.getByRole("button", { name: "Done" }).click();
-  await expect(panel.locator('[data-doc-file="task.md"] .markdown-view')).toContainText("Saved from Playwright.");
+  await page.keyboard.type("Should not be saved.");
+  await expect(editor.locator(".cm-content")).not.toContainText("Should not be saved");
+  await expect.poll(() => harness.markdownBodies.length).toBe(0);
+  await dialog.getByRole("button", { name: "Close" }).click();
 });
 
 test("grows the agent binding menu to fit long agent lists", async ({ page }) => {
@@ -984,7 +1006,7 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
   await panel.locator(".breadcrumb").getByRole("button", { name: "Isolated E2E", exact: true }).click();
   await expect(panel.getByRole("tab", { name: "AGENTS.md" })).toHaveAttribute("aria-selected", "true");
   await expect(panel.locator('[data-doc-file="AGENTS.md"]')).toContainText("Workspace guidance");
-  await panel.getByRole("button", { name: "Edit / Annotate" }).click();
+  await panel.getByRole("button", { name: "Edit", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "File preview" });
   const editor = dialog.locator('[data-component-owner="markdown-editor"]');
   await expect(editor.locator(".cm-editor")).toBeVisible();
@@ -995,7 +1017,8 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
   await expect.poll(() => harness.agentsBodies.length).toBe(1);
   expect(harness.agentsBodies[0]).toMatchObject({ expectedContentHash: "agents-v1" });
   expect(harness.agentsBodies[0].content).toContain("Edited workspace guidance.");
-  await editor.getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator('[data-doc-file="AGENTS.md"]')).toContainText("Edited workspace guidance.");
+  await dialog.getByRole("button", { name: "Close" }).click();
   await panel.getByRole("tab", { name: "Wiki" }).click();
   await panel.getByRole("button", { name: /index\.md/ }).click();
   await expect(page.getByRole("dialog", { name: "File preview" })).toContainText("Stable wiki content");

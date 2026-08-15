@@ -108,7 +108,7 @@ describe("Workspace AGENTS save flow", () => {
     expect(target.querySelector('[data-doc-file="AGENTS.md"]')).not.toBeNull();
     expect(target.textContent).toContain("Generated guidance.");
 
-    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Edit")!;
     edit.click();
     await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
     const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
