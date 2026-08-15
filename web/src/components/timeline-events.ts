@@ -50,6 +50,27 @@ export function isHiddenConversationLifecycleText(value: string | undefined): bo
   return HIDDEN_CONVERSATION_LIFECYCLE_TEXT.has(text) || text === "Agent connected" || text.startsWith("Agent connected ·");
 }
 
+// markTurnFinalAssistant annotates the assistant messages of a single turn's
+// item list: the last assistant message is the turn's final reply
+// (turnFinal=true) while earlier mid-turn progress updates get
+// turnFinal=false, so the UI can mute their rail. Items of other roles pass
+// through untouched. Blocks are already turn-scoped, so the last assistant
+// message within a block is the turn's last message.
+export function markTurnFinalAssistant(items: TimelineItem[]): TimelineItem[] {
+  let lastAssistant = -1;
+  for (let index = items.length - 1; index >= 0; index--) {
+    if (items[index]?.kind === "message" && items[index]?.role === "assistant") {
+      lastAssistant = index;
+      break;
+    }
+  }
+  return items.map((item, index) => {
+    if (item.kind !== "message" || item.role !== "assistant") return item;
+    const turnFinal = index === lastAssistant;
+    return item.turnFinal === turnFinal ? item : { ...item, turnFinal };
+  });
+}
+
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
   const byId = new Map<number, AgentEvent>();
   for (const incoming of events) {

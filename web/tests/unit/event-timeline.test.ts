@@ -143,6 +143,33 @@ describe("EventTimeline", () => {
     expect(target.querySelector(".turn-working-indicator")).toBeNull();
   });
 
+  it("mutes the rail of mid-turn assistant progress updates and keeps the final reply in ink", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const startedAt = "2026-08-12T00:00:00Z";
+    const fixture = history("task-a", [
+      { type: "message", role: "user", text: "question", startEventId: 1, endEventId: 1, startedAt, endedAt: startedAt },
+      { type: "message", role: "assistant", text: "progress update", startEventId: 2, endEventId: 2, startedAt, endedAt: startedAt },
+      { type: "message", role: "assistant", text: "final reply", startEventId: 3, endEventId: 3, startedAt, endedAt: startedAt },
+    ]);
+    Object.assign(fixture.turn, { eventCount: 3, lastEventId: 3, endEventId: 3 });
+    fixture.detail.turn = fixture.turn;
+    fixture.detail.latestEventId = 3;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.textContent).toContain("final reply"));
+    const rows = [...target.querySelectorAll<HTMLElement>(".agent-message-row.assistant")];
+    expect(rows).toHaveLength(2);
+    expect(rows[0].classList.contains("final")).toBe(false);
+    expect(rows[1].classList.contains("final")).toBe(true);
+    expect(target.querySelector(".agent-message-row.user")?.classList.contains("final")).toBe(false);
+  });
+
   it("keeps the generation boundary while hiding routine lifecycle detail", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);

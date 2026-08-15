@@ -1,7 +1,9 @@
 /* Linear-minimal messages use role rails instead of bordered bubbles.
    The rail sits on the message body so the sender name outdents to its left.
    Role colors reuse the existing page palette: user = green, the bound
-   assistant = ink, other agents = blue, system = gray. */
+   assistant = ink, other agents = blue, system = gray. Only the turn's final
+   assistant message keeps the ink rail; mid-turn progress updates fall back
+   to the muted base gray so the last message of a turn stands out. */
 :where([data-component-owner="event-timeline"]) .agent-message-row {
   display: flex;
   min-width: 0;
@@ -71,7 +73,7 @@
   border-radius: 0 8px 8px 0;
   background: var(--bg);
 }
-:where([data-component-owner="event-timeline"]) .agent-message-row.assistant .agent-message-bubble { border-left-color: var(--ink); }
+:where([data-component-owner="event-timeline"]) .agent-message-row.assistant.final .agent-message-bubble { border-left-color: var(--ink); }
 :where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-bubble { border-left-color: var(--blue); }
 :where([data-component-owner="event-timeline"]) .agent-message-row.system .agent-message-bubble { border-left-color: #dfe4ea; }
 

@@ -565,13 +565,13 @@ test("navigates resources and creates a task through the canonical application f
   const bindingMenu = page.getByRole("listbox", { name: "Binding target" });
   await expect(bindingMenu.getByRole("group")).toHaveCount(2);
   await expect(bindingMenu.getByRole("option")).toHaveText([
-    "default (current: test-agent)",
-    "fast (current: test-agent)",
-    "review (current: other-agent)",
-    "test-agent (default, fast)",
-    "other-agent (review)",
+    "default test-agent",
+    "fast test-agent",
+    "review other-agent",
+    "test-agent default, fast",
+    "other-agent review",
   ]);
-  await bindingMenu.getByRole("option", { name: "other-agent (review)" }).click();
+  await bindingMenu.getByRole("option", { name: "other-agent review" }).click();
   await expect.poll(() => harness.bindingBodies).toEqual([{ kind: "agent", name: "other-agent" }]);
   await page.getByRole("button", { name: "Migration project", exact: true }).click();
   await page.getByRole("button", { name: "New Task" }).click();

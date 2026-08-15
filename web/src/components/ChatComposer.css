@@ -304,12 +304,28 @@
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-group-title {
-  padding: 5px 8px 3px;
-  color: #758291;
-  font-size: calc(10px * var(--chat-font-scale, 1));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 5px;
+  color: #334150;
+  font-size: calc(11px * var(--chat-font-scale, 1));
   font-weight: 700;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-group-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: #e3e8ee;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: #d8dee5;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option {
@@ -317,7 +333,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 12px;
   padding: 6px 8px;
   border: 0;
   border-radius: 5px;
@@ -328,11 +344,23 @@
   cursor: pointer;
 }
 
-:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option-label {
+:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option-primary {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option-secondary {
+  flex: 0 1 auto;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: #758291;
+  text-align: right;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option:hover,

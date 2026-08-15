@@ -24,6 +24,8 @@
   interface BindingOption {
     value: ResourceAgentBindingModel;
     label: string;
+    primary: string;
+    secondary: string;
   }
 
   const profileOptions = $derived(profileSelections());
@@ -87,9 +89,11 @@
     const options = profiles.map((profile) => ({
       value: { kind: "profile", name: profile.key } as ResourceAgentBindingModel,
       label: `${profile.key} (current: ${agentLabel(profile.agentName || "")})`,
+      primary: profile.key,
+      secondary: agentLabel(profile.agentName || ""),
     }));
     if (value.kind === "profile" && !profiles.some((profile) => normalize(profile.key) === normalize(value.name))) {
-      options.unshift({ value, label: `${value.name} (missing profile)` });
+      options.unshift({ value, label: `${value.name} (missing profile)`, primary: value.name, secondary: "missing profile" });
     }
     return options;
   }
@@ -102,10 +106,12 @@
       return {
         value: { kind: "agent", name: agent.id } as ResourceAgentBindingModel,
         label: routes.length ? `${agent.label} (${routes.join(", ")})` : agent.label,
+        primary: agent.label,
+        secondary: routes.join(", "),
       };
     });
     if (value.kind === "agent" && !agents.some((agent) => normalize(agent.id) === normalize(value.name))) {
-      options.unshift({ value, label: `${value.name} (missing agent)` });
+      options.unshift({ value, label: `${value.name} (missing agent)`, primary: value.name, secondary: "missing agent" });
     }
     return options;
   }
@@ -135,22 +141,25 @@
   {#if open}
     <div class="agent-binding-menu" role="listbox" aria-label={ariaLabel} tabindex="-1" bind:this={menu} onkeydown={keydown}>
       {#if profileOptions.length}
-        <div class="agent-binding-group" role="group" aria-label="Profiles">
-          <div class="agent-binding-group-title">Profiles</div>
+        <div class="agent-binding-group" role="group" aria-label="Profile">
+          <div class="agent-binding-group-title">Profile</div>
           {#each profileOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
-              <span class="agent-binding-option-label">{option.label}</span>
+              <span class="agent-binding-option-primary">{option.primary}</span>
+              {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
               {#if serialize(option.value) === selectedValue}<Icon name="check" className="agent-binding-check" />{/if}
             </button>
           {/each}
         </div>
       {/if}
       {#if agentOptions.length}
-        <div class="agent-binding-group" role="group" aria-label="Agents">
-          <div class="agent-binding-group-title">Agents</div>
+        {#if profileOptions.length}<div class="agent-binding-divider"></div>{/if}
+        <div class="agent-binding-group" role="group" aria-label="Agent">
+          <div class="agent-binding-group-title">Agent</div>
           {#each agentOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
-              <span class="agent-binding-option-label">{option.label}</span>
+              <span class="agent-binding-option-primary">{option.primary}</span>
+              {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
               {#if serialize(option.value) === selectedValue}<Icon name="check" className="agent-binding-check" />{/if}
             </button>
           {/each}

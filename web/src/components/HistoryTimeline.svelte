@@ -11,7 +11,7 @@
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
   import { toolGroupKey } from "./tool-group";
-  import { projectConversationEvents } from "./timeline-events";
+  import { markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
@@ -103,9 +103,10 @@
   // Expanded Turns render through the same item components as the live Chat
   // timeline so History stays readable instead of dumping raw text rows.
   function blockItems(block: ConversationBlock): TimelineItem[] {
-    return block.events
+    const items = block.events
       ? projectConversationEvents(block.events).map((item) => ({ ...item, generationId: block.generation.generationId }))
       : block.items || [];
+    return markTurnFinalAssistant(items);
   }
 
   function timelineKey(item: TimelineItem): string {
