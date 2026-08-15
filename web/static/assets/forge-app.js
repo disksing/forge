@@ -2569,7 +2569,9 @@ function ar(n, i) {
 						return c(a);
 					},
 					onSave: O,
-					onDone: () => x(p, !1),
+					onDone: () => {
+						i.selection.edit ? i.onClose() : x(p, !1);
+					},
 					get onToast() {
 						return i.onError;
 					},
