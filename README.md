@@ -311,6 +311,8 @@ forge scheduler add --description=<text> --condition=<text> --target=<resource>
 forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
 forge scheduler remove --id=<schedule>
 
+forge agent list [--server=<url>] [--json]
+
 forge workspace status [--server=<url>]
 forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
 forge project status [--project=<project>] [--server=<url>]
@@ -335,6 +337,8 @@ forge workspace resource --id=<resource> --json
 
 forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ```
+
+`forge agent list` queries the owning `forge serve` process for the read-only AgentHub agent catalog. The default output lists each agent's name, provider, and availability; pass `--json` for the full catalog including providers and probes.
 
 `forge init` and `forge migrate` accept `--language=en` or `--language=zh-CN`.
 The selected language is stored in `forge.json` and controls generated Markdown

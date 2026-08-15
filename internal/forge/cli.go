@@ -53,6 +53,8 @@ func Run(args []string) error {
 		return runScheduler(args[1:])
 	case "template":
 		return runTemplate(args[1:])
+	case "agent":
+		return runAgent(args[1:])
 	case "resource":
 		return runResource(args[1:])
 	case "message":
@@ -312,6 +314,7 @@ Usage:
   forge task <command>
   forge scheduler <command>
   forge template <command>
+  forge agent <command>
   forge workspace <command>
   forge resource <command>
   forge message <command>
@@ -349,6 +352,10 @@ Commands:
   forge template <command>
     Manage project-local content templates. Subcommands: list, show, validate,
     render, create, migrate.
+
+  forge agent <command>
+    Query the AgentHub agent catalog through the owning forge serve process.
+    Subcommands: list.
 
   forge workspace <command>
     Query workspace state. Subcommands: status, history, tree, resource.
@@ -396,6 +403,8 @@ func runHelp(args []string) error {
 		printSchedulerHelp()
 	case "template":
 		printTemplateHelp()
+	case "agent":
+		printAgentHelp()
 	case "workspace":
 		printWorkspaceHelp()
 	case "resource":
