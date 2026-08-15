@@ -135,7 +135,7 @@
       primary: profile.key,
       secondary: agentLabel(profile.agentName || ""),
     }));
-    if (value.kind === "profile" && !profiles.some((profile) => normalize(profile.key) === normalize(value.name))) {
+    if (value.name && value.kind === "profile" && !profiles.some((profile) => normalize(profile.key) === normalize(value.name))) {
       options.unshift({ value, label: `${value.name} (missing profile)`, primary: value.name, secondary: "missing profile" });
     }
     return options;
@@ -153,7 +153,7 @@
         secondary: routes.join(", "),
       };
     });
-    if (value.kind === "agent" && !agents.some((agent) => normalize(agent.id) === normalize(value.name))) {
+    if (value.name && value.kind === "agent" && !agents.some((agent) => normalize(agent.id) === normalize(value.name))) {
       options.unshift({ value, label: `${value.name} (missing agent)`, primary: value.name, secondary: "missing agent" });
     }
     return options;

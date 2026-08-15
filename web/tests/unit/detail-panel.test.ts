@@ -446,6 +446,9 @@ describe("DetailPanel", () => {
 
     selectors[1].click();
     await tick();
+    // An inherited (empty) binding must not inject a missing-profile placeholder.
+    expect(target.querySelector('[data-binding="profile:"]')).toBeNull();
+    expect(target.textContent).not.toContain("missing profile");
     target.querySelector<HTMLButtonElement>('[data-binding="profile:default"]')!.click();
     await vi.waitFor(() => expect(saveTaskDefault).toHaveBeenCalledWith("project1", { kind: "profile", name: "default" }));
 

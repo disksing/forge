@@ -1014,7 +1014,7 @@ function $e(e, n) {
 			primary: e.key,
 			secondary: P(e.agentName || "")
 		}));
-		return n.value.kind === "profile" && !n.profiles.some((e) => M(e.key) === M(n.value.name)) && e.unshift({
+		return n.value.name && n.value.kind === "profile" && !n.profiles.some((e) => M(e.key) === M(n.value.name)) && e.unshift({
 			value: n.value,
 			label: `${n.value.name} (missing profile)`,
 			primary: n.value.name,
@@ -1034,7 +1034,7 @@ function $e(e, n) {
 				secondary: t.join(", ")
 			};
 		});
-		return n.value.kind === "agent" && !n.agents.some((e) => M(e.id) === M(n.value.name)) && e.unshift({
+		return n.value.name && n.value.kind === "agent" && !n.agents.some((e) => M(e.id) === M(n.value.name)) && e.unshift({
 			value: n.value,
 			label: `${n.value.name} (missing agent)`,
 			primary: n.value.name,
