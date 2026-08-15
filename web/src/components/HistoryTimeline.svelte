@@ -234,7 +234,7 @@
                   <span class="history-turn-time">{formatTime(block.turn.startedAt)}</span>
                   <span class="history-status-pill" data-tone={statusTone(block.turn.status)}>{turnStatusText(block)}</span>
                   <span class="history-turn-duration">{formatDuration(block.turn.durationMs)}</span>
-                  <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={isTurnExpanded(block) ? "chevron-up" : "chevron-down"} /></span>
+                  <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <span class="history-turn-chevron" class:expanded={isTurnExpanded(block)}><Icon name="chevron-down" /></span></span>
                 </span>
                 {#if turnTriggerText(block)}
                   <span class="history-turn-trigger"><span class="history-turn-trigger-label">Trigger</span><span class="history-turn-trigger-text">{turnTriggerText(block)}</span></span>

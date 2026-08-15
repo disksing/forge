@@ -114,16 +114,21 @@ describe("HistoryTimeline", () => {
 
     await vi.waitFor(() => expect(target.querySelectorAll(".history-turn")).toHaveLength(1));
     const header = target.querySelector(".history-turn-header") as HTMLElement;
+    const chevron = () => target.querySelector(".history-turn-chevron");
     expect(target.querySelector(".history-items")).toBeNull();
+    expect(chevron()?.classList.contains("expanded")).toBe(false);
 
     header.click();
     await vi.waitFor(() => expect(target.querySelector(".history-items")).toBeTruthy());
+    expect(chevron()?.classList.contains("expanded")).toBe(true);
 
     header.click();
     await tick();
     expect(target.querySelector(".history-items")).toBeNull();
+    expect(chevron()?.classList.contains("expanded")).toBe(false);
 
     header.click();
     await vi.waitFor(() => expect(target.querySelector(".history-items")).toBeTruthy());
+    expect(chevron()?.classList.contains("expanded")).toBe(true);
   });
 });

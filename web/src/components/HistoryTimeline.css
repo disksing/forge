@@ -181,6 +181,21 @@
   white-space: nowrap;
 }
 
+/* The chevron stays a single icon and rotates with the expanded state so
+   lucide never has to re-render a swapped data-lucide name. */
+[data-component-owner="history-timeline"] .history-turn-chevron {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+[data-component-owner="history-timeline"] .history-turn-chevron svg {
+  transition: transform 150ms ease;
+}
+
+[data-component-owner="history-timeline"] .history-turn-chevron.expanded svg {
+  transform: rotate(180deg);
+}
+
 [data-component-owner="history-timeline"] .history-turn-preview {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
