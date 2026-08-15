@@ -161,7 +161,7 @@
   background: var(--panel);
 }
 
-:where([data-component-owner="app-shell"]) .tty-panel {
+:where([data-component-owner="app-shell"]) .chat-panel {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -169,7 +169,7 @@
   background: #fff;
 }
 
-:where([data-component-owner="app-shell"]) .tty-log {
+:where([data-component-owner="app-shell"]) .chat-timeline {
   flex: 1;
   min-width: 0;
   overflow-x: hidden;
@@ -180,7 +180,7 @@
   line-height: 1.55;
 }
 
-:where([data-component-owner="app-shell"]) .tty-composer {
+:where([data-component-owner="app-shell"]) .chat-composer {
   flex: 0 0 auto;
   background: var(--bg);
 }
@@ -200,11 +200,11 @@
   border-left: 0;
 }
 
-:where([data-component-owner="app-shell"]) .tty-panel {
+:where([data-component-owner="app-shell"]) .chat-panel {
   box-shadow: none;
 }
 
-:where([data-component-owner="app-shell"]) .tty-log {
+:where([data-component-owner="app-shell"]) .chat-timeline {
   background: var(--bg);
   padding: 10px 12px;
 }
@@ -381,7 +381,7 @@ body[data-layout="split"] :where([data-component-owner="app-shell"]) .agent-pane
     display: flex;
     min-height: 0;
   }
-  :where([data-component-owner="app-shell"]) .tty-composer {
+  :where([data-component-owner="app-shell"]) .chat-composer {
     padding-bottom: env(safe-area-inset-bottom, 0px);
     background: #fff;
   }

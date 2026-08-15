@@ -142,7 +142,7 @@
   </div>
   <section id="detailsPanel" class="details-panel" data-component-owner="detail-panel">{#if details}{@render details()}{/if}</section>
   <PaneResizeHandle id="detailsResize" kind="chatWidth" className="details-resize" label="Resize chat panel" onPreview={model.onPanePreview} onCommit={model.onPaneCommit} />
-  <aside id="agentPanel" class="agent-panel"><div class="tty-panel">{#if agentHeader}{@render agentHeader()}{/if}<div id="ttyLog" class="tty-log" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="ttyComposer" class="tty-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
+  <aside id="agentPanel" class="agent-panel"><div class="chat-panel">{#if agentHeader}{@render agentHeader()}{/if}<div id="chatTimeline" class="chat-timeline" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="chatComposer" class="chat-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
 </main>
 </div>
 {#if doctorOpen}<DoctorDialog snapshot={model.doctor} onClose={() => { doctorOpen = false; }} onRefresh={model.onRefreshDoctor} onIconsChanged={model.onIconsChanged} />{/if}

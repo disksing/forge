@@ -161,7 +161,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", fetchMock);
     const viewModel = model("task-a");
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel: createModelChannel(viewModel) } });
     cleanups.push(() => unmount(component));
 
@@ -190,7 +190,7 @@ describe("EventTimeline", () => {
     active.status!.session = { ...active.status!.session, state: "running", currentTurnId: "turn-1" };
     const channel = createModelChannel(active);
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
@@ -225,7 +225,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
@@ -254,7 +254,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
@@ -279,7 +279,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a", status("task-a", "gen-task-a", 1, "working", "starting", "starting")));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
@@ -334,7 +334,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", fetchImpl);
     const channel = createModelChannel(generationModel("task-a", 1, "gen-1", "deepseek"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
@@ -356,7 +356,7 @@ describe("EventTimeline", () => {
     }));
     const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
     await vi.waitFor(() => expect(target.textContent).toContain("message task-a"));
@@ -385,7 +385,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", fetchImpl);
     const channel = createModelChannel(generationModel("task-a", 3, "gen-3", "deepseek"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const component = mount(EventTimeline, { target, props: { channel } });
 
     await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
@@ -409,7 +409,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const metrics = mockScrollMetrics(target, { scrollHeight: 1000, clientHeight: 500 });
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -439,7 +439,7 @@ describe("EventTimeline", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
     const channel = createModelChannel(model("task-a"));
     const target = document.body.appendChild(document.createElement("div"));
-    target.className = "tty-log";
+    target.className = "chat-timeline";
     const metrics = mockScrollMetrics(target, { scrollHeight: 1000, clientHeight: 500 });
     const component = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(component));
@@ -487,7 +487,7 @@ describe("EventTimeline", () => {
     }));
 
     const chatTarget = document.body.appendChild(document.createElement("div"));
-    chatTarget.className = "tty-log";
+    chatTarget.className = "chat-timeline";
     const chat = mount(EventTimeline, { target: chatTarget, props: { channel: createModelChannel(model("task-a", status("task-a"), projectConversationEvents)) } });
     cleanups.push(() => unmount(chat));
     await vi.waitFor(() => expect(chatTarget.querySelector(".agent-tool-group")).not.toBeNull());

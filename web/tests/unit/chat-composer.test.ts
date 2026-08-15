@@ -41,7 +41,7 @@ describe("ChatComposer", () => {
     const component = mount(ChatComposer, { target, props: { channel } });
     cleanups.push(() => unmount(component));
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "typed immediately";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
     await tick();
@@ -55,7 +55,7 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "typed while runs load";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
     channel.publish(model({ unavailableReason: "" }));
@@ -73,10 +73,10 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "message for run a";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    target.querySelector<HTMLFormElement>("#chatForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await tick();
 
     channel.publish(model({ identity: "workspace-a:task-b:draft-b", resourceId: "task-b", draftKey: "draft-b", draft: "draft for task b" }));
@@ -85,7 +85,7 @@ describe("ChatComposer", () => {
     await result.promise;
     await tick();
 
-    expect(target.querySelector<HTMLTextAreaElement>("#ttyInput")?.value).toBe("draft for task b");
+    expect(target.querySelector<HTMLTextAreaElement>("#chatInput")?.value).toBe("draft for task b");
   });
 
   it("keeps failed text and offers an explicit retry", async () => {
@@ -96,10 +96,10 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "retry me";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    target.querySelector<HTMLFormElement>("#chatForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(target.querySelector("[role=alert]")?.textContent).toContain("temporary failure"));
     expect(input.value).toBe("retry me");
     expect(target.querySelector("[data-send-state=\"submitting\"]")).toBeNull();
@@ -119,13 +119,13 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "slow mouse message";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    target.querySelector<HTMLFormElement>("#chatForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await tick();
 
-    const feedback = target.querySelector<HTMLElement>(".tty-send-feedback")!;
+    const feedback = target.querySelector<HTMLElement>(".chat-send-feedback")!;
     expect(feedback.dataset.sendState).toBe("submitting");
     expect(feedback.getAttribute("role")).toBe("status");
     expect(feedback.textContent).toContain("Submitting");
@@ -136,7 +136,7 @@ describe("ChatComposer", () => {
     result.resolve({ accepted: true, clear: true });
     await result.promise;
     await tick();
-    expect(target.querySelector(".tty-send-feedback")).toBeNull();
+    expect(target.querySelector(".chat-send-feedback")).toBeNull();
     expect(input.value).toBe("");
   });
 
@@ -149,20 +149,20 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "keyboard message";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
     await tick();
 
     expect(onSend).toHaveBeenCalledTimes(1);
-    expect(target.querySelector(".tty-send-feedback")?.textContent).toContain("keyboard message");
-    expect(target.querySelector<HTMLButtonElement>(".tty-send-button")?.disabled).toBe(true);
+    expect(target.querySelector(".chat-send-feedback")?.textContent).toContain("keyboard message");
+    expect(target.querySelector<HTMLButtonElement>(".chat-send-button")?.disabled).toBe(true);
 
     result.resolve({ accepted: true, clear: true });
     await result.promise;
     await tick();
-    expect(target.querySelector(".tty-send-feedback")).toBeNull();
+    expect(target.querySelector(".chat-send-feedback")).toBeNull();
   });
 
   it("recovers the draft when the send is rejected without an exception", async () => {
@@ -173,14 +173,14 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "keep this after rejection";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    target.querySelector<HTMLFormElement>("#chatForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
 
     await vi.waitFor(() => expect(target.querySelector("[role=alert]")?.textContent).toContain("Message was not accepted"));
     expect(input.value).toBe("keep this after rejection");
-    expect(target.querySelector(".tty-send-feedback")).toBeNull();
+    expect(target.querySelector(".chat-send-feedback")).toBeNull();
   });
 
   it("shows waiting messages above the input and steers the same message id", async () => {
@@ -195,10 +195,10 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const queue = target.querySelector<HTMLElement>(".tty-message-queue")!;
+    const queue = target.querySelector<HTMLElement>(".chat-message-queue")!;
     expect(queue.textContent).toContain("Please check the failing test");
-    expect(queue.compareDocumentPosition(target.querySelector("#ttyForm")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    queue.querySelector<HTMLButtonElement>(".tty-message-steer")!.click();
+    expect(queue.compareDocumentPosition(target.querySelector("#chatForm")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    queue.querySelector<HTMLButtonElement>(".chat-message-steer")!.click();
     await vi.waitFor(() => expect(onSteerWaiting).toHaveBeenCalledWith("msg-waiting"));
   });
 
@@ -211,7 +211,7 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    expect(target.querySelector<HTMLButtonElement>(".tty-message-steer")?.disabled).toBe(true);
+    expect(target.querySelector<HTMLButtonElement>(".chat-message-steer")?.disabled).toBe(true);
   });
 
   it("shows the stop policy notice and lets the user dismiss it", async () => {
@@ -237,7 +237,7 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const bar = target.querySelector<HTMLElement>(".tty-composer-bar")!;
+    const bar = target.querySelector<HTMLElement>(".chat-composer-bar")!;
     const selector = bar.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')!;
     expect(selector).not.toBeNull();
     expect(selector.textContent).toContain("default (current: Fake Agent)");
@@ -340,7 +340,7 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const send = target.querySelector<HTMLButtonElement>(".tty-send-button")!;
+    const send = target.querySelector<HTMLButtonElement>(".chat-send-button")!;
     const endTurn = target.querySelector<HTMLButtonElement>("#agentEndTurnButton")!;
     // Idle and busy icons are both rendered statically so the lucide
     // createIcons replacement never needs a later name update.
@@ -360,13 +360,13 @@ describe("ChatComposer", () => {
     cleanups.push(() => unmount(component));
     await tick();
 
-    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    const input = target.querySelector<HTMLTextAreaElement>("#chatInput")!;
     input.value = "send me";
     input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    target.querySelector<HTMLFormElement>("#chatForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await tick();
 
-    const send = target.querySelector<HTMLButtonElement>(".tty-send-button")!;
+    const send = target.querySelector<HTMLButtonElement>(".chat-send-button")!;
     expect(send.classList.contains("busy")).toBe(true);
     expect(send.disabled).toBe(true);
 

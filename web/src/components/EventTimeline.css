@@ -49,7 +49,7 @@
   display: inline-flex;
 }
 
-:where([data-component-owner="event-timeline"]) .tty-empty {
+:where([data-component-owner="event-timeline"]) .chat-timeline-empty {
   min-height: 100%;
   display: grid;
   place-items: center;
@@ -59,8 +59,8 @@
   text-align: center;
 }
 
-:where([data-component-owner="event-timeline"]) .tty-empty strong,
-:where([data-component-owner="event-timeline"]) .tty-empty span {
+:where([data-component-owner="event-timeline"]) .chat-timeline-empty strong,
+:where([data-component-owner="event-timeline"]) .chat-timeline-empty span {
   display: block;
 }
 
