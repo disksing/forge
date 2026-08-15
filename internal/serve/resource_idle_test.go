@@ -2,7 +2,10 @@ package serve
 
 import (
 	"context"
+	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -438,6 +441,168 @@ func TestStoppedSessionResumeTemporaryFailureRetainsMailboxAndGeneration(t *test
 	fake.mu.Unlock()
 	if resumeCount != 1 {
 		t.Fatalf("ambiguous Resume was replayed after ready observation: %d attempts", resumeCount)
+	}
+}
+
+func TestStoppedSessionResumeFailurePersistsBackoff(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	now := time.Date(2026, 8, 1, 1, 0, 0, 0, time.UTC)
+	manager.now = func() time.Time { return now }
+	run := idleTestRun(workspace, "project1.task1", "run-resume-backoff", "ses-resume-backoff", now)
+	run.Status = "stopped"
+	run.IdleSinceAt = ""
+	run.IdleDeadlineAt = ""
+	run.IdleSleepStopRequested = true
+	seedIdleTestRun(t, fake, workspace, run, "stopped")
+	fake.mu.Lock()
+	fake.failNextResume = true
+	fake.mu.Unlock()
+	message, err := acceptMailboxMessage(workspace.Path, run.ResourceID, resourceMessageRequest{Text: "retry after backoff", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err == nil {
+		t.Fatal("first temporary Resume failure unexpectedly succeeded")
+	}
+	current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
+	if err != nil || !found || current.ResumeFailureCount != 1 || current.ResumeRetryAt == "" || current.ResumeLastError == "" {
+		t.Fatalf("resume backoff was not persisted: current=%#v found=%v err=%v", current, found, err)
+	}
+	if retryAt, parseErr := time.Parse(time.RFC3339Nano, current.ResumeRetryAt); parseErr != nil || !retryAt.Equal(now.Add(resumeRetryBase)) {
+		t.Fatalf("first retry boundary = %q, parseErr=%v", current.ResumeRetryAt, parseErr)
+	}
+	fake.mu.Lock()
+	resumeCount := len(fake.resumeEnvironments)
+	stoppedSession := fake.sessions[run.AgentHubSessionID]
+	fake.mu.Unlock()
+	if resumeCount != 1 {
+		t.Fatalf("first reconciliation issued %d Resume attempts", resumeCount)
+	}
+	mailbox, err := loadHotResourceMailbox(workspace.Path, run.ResourceID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	backoffPlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
+		Run: current, Session: &stoppedSession, Mailbox: mailbox, Now: now, Revision: current.UpdatedAt,
+	}))
+	if backoffPlan.Operation != GenerationOperationWaitForSession || backoffPlan.Reason != "resume_backoff" {
+		t.Fatalf("persisted retry boundary produced %#v", backoffPlan)
+	}
+	// Rebuild the manager to prove the retry boundary is recovered from the
+	// generation manifest rather than relying on process-local state.
+	restarted := newAgentManager(manager.server)
+	restarted.now = func() time.Time { return now }
+	manager.server.agents = restarted
+	manager = restarted
+
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake.mu.Lock()
+	resumeCount = len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeCount != 1 {
+		t.Fatalf("Resume retried before durable backoff elapsed: %d attempts", resumeCount)
+	}
+
+	now = now.Add(resumeRetryBase)
+	if err := manager.withResourceController(context.Background(), workspace, run.ResourceID, func() error {
+		return manager.reconcileResourceMailboxLocked(context.Background(), workspace, run.ResourceID)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		updated, messageFound, loadErr := mailboxMessageByID(workspace.Path, message.ID)
+		return loadErr == nil && messageFound && updated.Status == resourceMessageDelivered
+	})
+	current, found, err = currentResourceGeneration(workspace.Path, run.ResourceID)
+	if err != nil || !found || current.ResumeFailureCount != 0 || current.ResumeRetryAt != "" || current.ResumeLastError != "" {
+		t.Fatalf("successful Resume did not clear backoff: current=%#v found=%v err=%v", current, found, err)
+	}
+	fake.mu.Lock()
+	resumeCount = len(fake.resumeEnvironments)
+	fake.mu.Unlock()
+	if resumeCount != 2 {
+		t.Fatalf("Resume attempts after backoff = %d, want 2", resumeCount)
+	}
+}
+
+func TestManualEndGenerationRetiresAndNextMessageCreatesSuccessor(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := idleTestRun(workspace, "project1.task1", "run-manual-end", "ses-manual-end", time.Now())
+	run.Status = "idle"
+	run.IdleSinceAt = ""
+	run.IdleDeadlineAt = ""
+	seedIdleTestRun(t, fake, workspace, run, "ready")
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost,
+		"/api/workspaces/"+workspace.ID+"/resources/"+run.ResourceID+"/generation/end?generationId="+run.GenerationID, nil)
+	manager.server.handleWorkspace(recorder, request)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("end generation response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	waitForRuntimeTest(t, func() bool {
+		_, currentFound, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		return loadErr == nil && !currentFound
+	})
+	waitForFakeSessionState(t, fake, run.AgentHubSessionID, "archived")
+	fake.mu.Lock()
+	actions := append([]string(nil), fake.actions...)
+	fake.mu.Unlock()
+	if !slices.Contains(actions, "stop") {
+		t.Fatalf("manual end skipped safe Session retirement: actions=%#v", actions)
+	}
+
+	message, err := manager.acceptResourceMessage(context.Background(), workspace, run.ResourceID, resourceMessageRequest{Text: "open the successor", Mode: resourceMessageModeEnqueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitForRuntimeTest(t, func() bool {
+		current, currentFound, loadErr := currentResourceGeneration(workspace.Path, run.ResourceID)
+		if loadErr != nil || !currentFound || current.Generation <= run.Generation || current.GenerationID == run.GenerationID {
+			return false
+		}
+		updated, messageFound, messageErr := mailboxMessageByID(workspace.Path, message.ID)
+		return messageErr == nil && messageFound && updated.Status == resourceMessageDelivered && updated.GenerationID == current.GenerationID
+	})
+	current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
+	if err != nil || !found || current.AgentHubAgentName != run.AgentHubAgentName {
+		t.Fatalf("successor did not preserve the resource binding: current=%#v found=%v err=%v", current, found, err)
+	}
+}
+
+func TestManualEndGenerationRejectsActiveTurn(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	run := idleTestRun(workspace, "project1.task1", "run-manual-active", "ses-manual-active", time.Now())
+	run.Status = "running"
+	run.CurrentTurnID = "turn-active"
+	seedIdleTestRun(t, fake, workspace, run, "running")
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost,
+		"/api/workspaces/"+workspace.ID+"/resources/"+run.ResourceID+"/generation/end?generationId="+run.GenerationID, nil)
+	manager.server.handleWorkspace(recorder, request)
+	if recorder.Code != http.StatusConflict || !strings.Contains(recorder.Body.String(), "active_turn") {
+		t.Fatalf("active Turn response = %d %s", recorder.Code, recorder.Body.String())
+	}
+	current, found, err := currentResourceGeneration(workspace.Path, run.ResourceID)
+	if err != nil || !found || current.GenerationID != run.GenerationID || current.ReplacementPending {
+		t.Fatalf("active generation was mutated: current=%#v found=%v err=%v", current, found, err)
 	}
 }
 

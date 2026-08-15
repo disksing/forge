@@ -158,6 +158,7 @@ type GenerationLifecycleFacts struct {
 	// until AgentHub reports an explicit terminal resume failure.
 	SessionResumable         bool   `json:"sessionResumable"`
 	SessionResumeUnavailable bool   `json:"sessionResumeUnavailable"`
+	ResumeBackoffActive      bool   `json:"resumeBackoffActive"`
 	TurnID                   string `json:"turnId,omitempty"`
 	TurnActive               bool   `json:"turnActive"`
 	ApprovalPending          bool   `json:"approvalPending"`
@@ -264,6 +265,9 @@ func PlanGeneration(facts GenerationLifecycleFacts) GenerationLifecyclePlan {
 	}
 	if phase == GenerationPhaseStopped && facts.MailboxPending && facts.NextMessage != nil &&
 		facts.SessionKnown && facts.SessionResumable && !facts.SessionResumeUnavailable {
+		if facts.ResumeBackoffActive {
+			return finishGenerationPlan(plan, GenerationOperationWaitForSession, "resume_backoff", facts.NextMessage)
+		}
 		return finishGenerationPlan(plan, GenerationOperationResumeSession, "resume_stopped_session", facts.NextMessage)
 	}
 	if phase == GenerationPhaseStopped && facts.SessionResumeUnavailable {
@@ -354,6 +358,9 @@ func planReceiptRecovery(plan GenerationLifecyclePlan, facts GenerationLifecycle
 		}
 		if facts.MailboxPending && facts.NextMessage != nil && observedGenerationPhase(facts) == GenerationPhaseStopped &&
 			facts.SessionKnown && facts.SessionResumable {
+			if facts.ResumeBackoffActive {
+				return finishGenerationPlan(plan, GenerationOperationWaitForSession, "resume_backoff", facts.NextMessage), true
+			}
 			return finishGenerationPlan(plan, GenerationOperationResumeSession, "retry_resume", facts.NextMessage), true
 		}
 		return GenerationLifecyclePlan{}, false
@@ -377,6 +384,9 @@ func planMessage(plan GenerationLifecyclePlan, facts GenerationLifecycleFacts) G
 	}
 	if phase == GenerationPhaseStopped {
 		if facts.SessionKnown && facts.SessionResumable && !facts.SessionResumeUnavailable {
+			if facts.ResumeBackoffActive {
+				return finishGenerationPlan(plan, GenerationOperationWaitForSession, "resume_backoff", message)
+			}
 			return finishGenerationPlan(plan, GenerationOperationResumeSession, "resume_stopped_session", message)
 		}
 		return finishGenerationPlan(plan, GenerationOperationWaitForStopped, "generation_not_deliverable", message)
@@ -691,6 +701,11 @@ func AdaptLegacyGenerationFacts(input LegacyGenerationLifecycleInput) Generation
 		facts.SessionResumable = session.State == "stopped" && strings.TrimSpace(facts.SessionID) != ""
 	}
 	facts.SessionResumeUnavailable = run.SessionResumeUnavailable
+	if !input.Now.IsZero() && strings.TrimSpace(run.ResumeRetryAt) != "" {
+		if retryAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(run.ResumeRetryAt)); err == nil {
+			facts.ResumeBackoffActive = input.Now.Before(retryAt)
+		}
+	}
 	if run.LifecycleReceipt != nil {
 		facts.Lifecycle.Receipt = *run.LifecycleReceipt
 	}
@@ -807,6 +822,9 @@ func legacyLifecycleReason(run agentRun, resourceArchived bool) string {
 		return "resource_archived"
 	}
 	if run.ReplacementPending {
+		if run.ManualStopRequested {
+			return "manual_generation_stop"
+		}
 		return "binding_changed"
 	}
 	if run.SessionResumeUnavailable {

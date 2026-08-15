@@ -663,6 +663,16 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 		}
 		runtime.agentHubState = session.State
 		runtime.run.Status = forgeStatusForAgentHubState(session.State)
+		if session.State == "starting" || session.State == "ready" || session.State == "running" || session.State == "waiting_approval" {
+			runtime.run.ResumeFailureCount = 0
+			runtime.run.ResumeRetryAt = ""
+			runtime.run.ResumeLastError = ""
+			if runtime.run.LifecycleReceipt != nil && runtime.run.LifecycleReceipt.Operation == GenerationOperationResumeSession {
+				receipt := *runtime.run.LifecycleReceipt
+				receipt.State = GenerationReceiptSucceeded
+				runtime.run.LifecycleReceipt = &receipt
+			}
+		}
 		m.projectResourceIdleState(&runtime.run, session, previousState, turnFinished)
 		if session.State == "stopped" {
 			if runtime.run.IdleSleepStopRequested {

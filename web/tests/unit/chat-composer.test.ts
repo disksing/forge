@@ -22,9 +22,9 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
   return {
     identity: "workspace-a:task-a:draft-a", workspaceId: "workspace-a", resourceId: "task-a",
     draft: "", draftKey: "draft-a", draftResetVersion: 0,
-    unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false, stopNotice: "",
+    unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false, canEndGeneration: true, endingGeneration: false, stopNotice: "",
     waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
-    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(), onDismissStopNotice: vi.fn(),
+    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(), onEndGeneration: vi.fn(), onDismissStopNotice: vi.fn(),
     onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
@@ -297,6 +297,40 @@ describe("ChatComposer", () => {
     await tick();
 
     expect(target.querySelector<HTMLButtonElement>('[aria-label="Binding target"]')?.disabled).toBe(true);
+  });
+
+  it("shows end-generation only when end-turn is absent", async () => {
+    const onEndGeneration = vi.fn();
+    const channel = createModelChannel(model({ onEndGeneration }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector("#agentEndTurnButton")).toBeNull();
+    const endGeneration = target.querySelector<HTMLButtonElement>("#agentEndGenerationButton")!;
+    expect(endGeneration).not.toBeNull();
+    endGeneration.click();
+    expect(onEndGeneration).toHaveBeenCalledTimes(1);
+
+    channel.publish(model({ canEndTurn: true, canEndGeneration: true }));
+    await tick();
+    expect(target.querySelector("#agentEndTurnButton")).not.toBeNull();
+    expect(target.querySelector("#agentEndGenerationButton")).toBeNull();
+  });
+
+  it("disables end-generation while retirement is in progress", async () => {
+    const channel = createModelChannel(model({ endingGeneration: true }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const button = target.querySelector<HTMLButtonElement>("#agentEndGenerationButton")!;
+    expect(button.disabled).toBe(true);
+    expect(button.classList.contains("busy")).toBe(true);
+    expect(button.querySelector('i[data-lucide="archive"]')).not.toBeNull();
+    expect(button.querySelector('i[data-lucide="loader-circle"]')).not.toBeNull();
   });
 
   it("keeps send and end-turn icons static and toggles busy state through classes", async () => {

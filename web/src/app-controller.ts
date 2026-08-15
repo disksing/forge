@@ -1224,9 +1224,11 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 	const resourceId = selectedAgentResourceId();
 	if (controllerState.activeWorkspaceId && resourceId) restoreAgentDraftForResource(resourceId);
 	const stopTurnPending = agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === resourceId;
+	const endGenerationPending = agentOperations.active("generation-end") && agentOperations.key("generation-end") === resourceId;
 	const messageStatus = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	const workspaceId = controllerState.activeWorkspaceId;
 	const stopNoticeKey = `${workspaceId}:${resourceId}`;
+	const canEndTurn = Boolean(stopTurnPending || ["running", "waiting_approval"].includes(String(messageStatus?.session?.state || "")));
 	publisher.renderComposer({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.ttyDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
@@ -1236,8 +1238,10 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
 		unavailableReason: !messageStatus ? "Loading work status." : !messageStatus.acceptsMessages ? (messageStatus.archived ? "This resource is archived." : messageStatus.configError || "This resource cannot accept messages.") : "",
 		sending: agentOperations.isSending(resourceMutationKey(controllerState.activeWorkspaceId, resourceId)),
-		canEndTurn: Boolean(stopTurnPending || ["running", "waiting_approval"].includes(String(messageStatus?.session?.state || ""))),
+		canEndTurn,
 		endingTurn: stopTurnPending,
+		canEndGeneration: Boolean(messageStatus?.acceptsMessages && messageStatus?.generation?.generationId && !canEndTurn),
+		endingGeneration: Boolean(endGenerationPending || messageStatus?.generation?.replacementPending),
 		stopNotice: controllerState.stopNotice?.key === stopNoticeKey ? controllerState.stopNotice.text : "",
 		waitingMessages: messageStatus?.waitingMessages || [],
 		canSteerWaiting: Boolean(messageStatus?.canSteerWaiting),
@@ -1252,6 +1256,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
+		onEndGeneration: () => endAgentGeneration().catch((err) => toast(err.message)),
 		onDismissStopNotice: dismissStopNotice,
 		onSteerWaiting: steerWaitingMessage,
 		onSaveAgentBinding: async (binding) => {
@@ -1371,6 +1376,24 @@ async function stopAgentTurn(): Promise<void> {
 		controllerState.stopNotice = { key: `${workspaceId}:${resourceId}`, text: notice };
 		await refreshResourceMessageStatus(workspaceId, resourceId);
 		publishViewModels();
+	} finally {
+		agentOperations.finish(operation);
+	}
+}
+
+async function endAgentGeneration(): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = selectedAgentResourceId();
+	const generationId = controllerState.messageStatus?.generation?.generationId || "";
+	if (!workspaceId || !resourceId || !generationId) return;
+	if (!window.confirm("End this generation? Its AgentHub session will be stopped and archived. Your next message will start a new generation.")) return;
+	const operation = agentOperations.begin("generation-end", resourceId);
+	if (!operation) return;
+	try {
+		await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/generation/end?generationId=${encodeURIComponent(generationId)}`, { method: "POST" });
+		await Promise.all([refreshResourceMessageStatus(workspaceId, resourceId), refreshTreeAfterResourceMutation()]);
+		publishViewModels();
+		toast("Generation is ending. Your next message will start a new generation.");
 	} finally {
 		agentOperations.finish(operation);
 	}

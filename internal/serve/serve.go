@@ -418,6 +418,10 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.agents.handleResourceEndTurn(w, r, id, parts[2])
 			return
 		}
+		if len(parts) == 5 && parts[3] == "generation" && parts[4] == "end" {
+			s.agents.handleResourceEndGeneration(w, r, id, parts[2])
+			return
+		}
 		if len(parts) == 4 && parts[3] == "uploads" {
 			s.agents.handleResourceUpload(w, r, id, parts[2])
 			return

@@ -6,7 +6,27 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 )
+
+const (
+	resumeRetryBase = 5 * time.Second
+	resumeRetryMax  = 5 * time.Minute
+)
+
+func resumeRetryDelay(failureCount int) time.Duration {
+	if failureCount <= 1 {
+		return resumeRetryBase
+	}
+	delay := resumeRetryBase
+	for attempt := 1; attempt < failureCount && delay < resumeRetryMax; attempt++ {
+		delay *= 2
+		if delay >= resumeRetryMax {
+			return resumeRetryMax
+		}
+	}
+	return delay
+}
 
 // resumeStoppedGenerationLocked is the runtime adapter for the canonical
 // ResumeSession operation. The resource controller has already serialized the
@@ -76,6 +96,13 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 			}
 			if terminal {
 				current.SessionResumeUnavailable = true
+				current.ResumeFailureCount = 0
+				current.ResumeRetryAt = ""
+				current.ResumeLastError = ""
+			} else {
+				current.ResumeFailureCount++
+				current.ResumeRetryAt = m.resourceNow().Add(resumeRetryDelay(current.ResumeFailureCount)).Format(time.RFC3339Nano)
+				current.ResumeLastError = strings.TrimSpace(resumeErr.Error())
 			}
 		})
 		if persistErr != nil {
@@ -124,6 +151,9 @@ func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, worksp
 		if current.ID == latest.ID && current.GenerationID == latest.GenerationID && current.AgentHubSessionID == latest.AgentHubSessionID {
 			current.LifecycleReceipt = &receipt
 			current.SessionResumeUnavailable = false
+			current.ResumeFailureCount = 0
+			current.ResumeRetryAt = ""
+			current.ResumeLastError = ""
 		}
 	}); err != nil {
 		return false, false, err

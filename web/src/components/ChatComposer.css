@@ -304,6 +304,15 @@
   color: var(--amber-deep);
 }
 
+:where([data-component-owner="chat-composer"]) .tty-end-generation-button {
+  color: #8a5a63;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-end-generation-button:hover:not(:disabled) {
+  background: #f8ecef;
+  color: #713f49;
+}
+
 :where([data-component-owner="chat-composer"]) .tty-composer-action:disabled {
   cursor: not-allowed;
   opacity: 0.58;

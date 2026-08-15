@@ -26,18 +26,21 @@ import (
 type agentRun struct {
 	// agentRun is the internal persisted generation record. ID is an
 	// implementation key only; resource APIs address records by GenerationID.
-	ID                   string `json:"id"`
-	WorkspaceID          string `json:"workspaceId"`
-	ResourceID           string `json:"resourceId,omitempty"`
-	Generation           int    `json:"generation,omitempty"`
-	GenerationID         string `json:"generationId,omitempty"`
-	SourceInstanceID     string `json:"sourceInstanceId,omitempty"`
-	BindingKind          string `json:"bindingKind,omitempty"`
-	BindingName          string `json:"bindingName,omitempty"`
-	ProfileRevision      string `json:"profileRevision,omitempty"`
-	ResolvedProfile      string `json:"resolvedProfile,omitempty"`
-	AgentConfigError     string `json:"agentConfigError,omitempty"`
-	ReplacementPending   bool   `json:"replacementPending,omitempty"`
+	ID                 string `json:"id"`
+	WorkspaceID        string `json:"workspaceId"`
+	ResourceID         string `json:"resourceId,omitempty"`
+	Generation         int    `json:"generation,omitempty"`
+	GenerationID       string `json:"generationId,omitempty"`
+	SourceInstanceID   string `json:"sourceInstanceId,omitempty"`
+	BindingKind        string `json:"bindingKind,omitempty"`
+	BindingName        string `json:"bindingName,omitempty"`
+	ProfileRevision    string `json:"profileRevision,omitempty"`
+	ResolvedProfile    string `json:"resolvedProfile,omitempty"`
+	AgentConfigError   string `json:"agentConfigError,omitempty"`
+	ReplacementPending bool   `json:"replacementPending,omitempty"`
+	// ManualStopRequested distinguishes an explicit user request from
+	// binding-driven replacement. A later message creates the successor lazily.
+	ManualStopRequested  bool   `json:"manualStopRequested,omitempty"`
 	AgentProfile         string `json:"agentProfile,omitempty"`
 	AgentSelectionReason string `json:"agentSelectionReason,omitempty"`
 	// ForgeSessionID is retained only for the unexposed legacy agent-run
@@ -74,6 +77,11 @@ type agentRun struct {
 	// that this exact Session cannot be resumed (or its identity no longer
 	// matches). It then permits the existing replacement/retirement path.
 	SessionResumeUnavailable bool `json:"sessionResumeUnavailable,omitempty"`
+	// Resume retry state is durable so a Server restart cannot turn a temporary
+	// AgentHub failure into a tight Resume loop.
+	ResumeFailureCount int    `json:"resumeFailureCount,omitempty"`
+	ResumeRetryAt      string `json:"resumeRetryAt,omitempty"`
+	ResumeLastError    string `json:"resumeLastError,omitempty"`
 	// ArchivedTaskStopRequested is the legacy-named durable progress marker for
 	// any archived Project/Task generation stop. It records that reconciliation
 	// has entered the Stop -> stopped -> Archive sequence; unknown outcomes are

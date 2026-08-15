@@ -21,6 +21,8 @@ export interface ComposerModel {
   sending: boolean;
   canEndTurn: boolean;
   endingTurn: boolean;
+  canEndGeneration: boolean;
+  endingGeneration: boolean;
   stopNotice: string;
   waitingMessages: WaitingMessage[];
   canSteerWaiting: boolean;
@@ -33,6 +35,7 @@ export interface ComposerModel {
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
   onEndTurn: () => void;
+  onEndGeneration: () => void;
   onDismissStopNotice: () => void;
   onSteerWaiting: (messageId: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;

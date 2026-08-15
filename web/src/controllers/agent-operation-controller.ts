@@ -1,5 +1,6 @@
 export type AgentOperationKind =
-	| "turn-stop";
+	| "turn-stop"
+	| "generation-end";
 
 export interface AgentOperationLease {
 	kind: AgentOperationKind;

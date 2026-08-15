@@ -27,6 +27,16 @@ describe("AgentOperationController", () => {
 		expect(operations.finish(current)).toBe(true);
 	});
 
+	it("tracks generation end independently from turn stop", () => {
+		const operations = createAgentOperationController(() => undefined);
+		const stop = operations.begin("turn-stop", "resource-a");
+		const end = operations.begin("generation-end", "resource-a");
+
+		expect(stop).not.toBeNull();
+		expect(end).not.toBeNull();
+		expect(operations.active("generation-end")).toBe(true);
+	});
+
 	it("deduplicates pending sends by Workspace and Resource key", () => {
 		const operations = createAgentOperationController(() => undefined);
 		expect(operations.startSending("workspace:resource-a")).toBe(true);

@@ -516,6 +516,7 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		return
 	}
 	automaticSleep := run.IdleSleepStopRequested
+	manualStop := run.ManualStopRequested
 	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
 		return
 	}
@@ -713,7 +714,9 @@ func (m *agentManager) retireResourceGenerationLocked(ctx context.Context, rt *a
 		return
 	}
 	retireReason := "generation_replaced"
-	if automaticSleep {
+	if manualStop {
+		retireReason = "manual_generation_stop"
+	} else if automaticSleep {
 		retireReason = "idle_sleep"
 	}
 	if err := retireStoredAgentRun(rt, updated, retireReason); err != nil {

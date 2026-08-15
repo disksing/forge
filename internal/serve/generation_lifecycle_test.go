@@ -114,6 +114,17 @@ func TestPlanGenerationLifecycleTable(t *testing.T) {
 			reason:    "resume_stopped_session",
 		},
 		{
+			name: "stopped current generation honors resume backoff",
+			mutate: func(f *GenerationLifecycleFacts) {
+				f.SessionState = "stopped"
+				f.MailboxPending = true
+				f.NextMessage = generationMessage(GenerationMessageModeEnqueue, GenerationMessageStatusQueued)
+				f.ResumeBackoffActive = true
+			},
+			operation: GenerationOperationWaitForSession,
+			reason:    "resume_backoff",
+		},
+		{
 			name: "stopped current generation waits without demand",
 			mutate: func(f *GenerationLifecycleFacts) {
 				f.SessionState = "stopped"
