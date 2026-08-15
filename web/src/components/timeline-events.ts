@@ -71,6 +71,33 @@ export function markTurnFinalAssistant(items: TimelineItem[]): TimelineItem[] {
   });
 }
 
+// markTurnAgentRuns annotates where the turn's bound agent starts talking.
+// Reasoning and tool calls often precede the first assistant progress
+// update; without this annotation the agent's name only rendered on the
+// first message, visually attaching it to the progress update instead of
+// the first event of the turn. The head of each uninterrupted run of
+// agent-attributed items (thinking, tools, approvals, assistant messages)
+// gets agentStart and carries the name; later items of the same run get
+// agentContinuation so the name is not repeated between activity rows.
+// Runs break on user, system, and other-agent messages and on non-agent
+// notices. Blocks are already turn-scoped, so runs never cross blocks.
+export function markTurnAgentRuns(items: TimelineItem[]): TimelineItem[] {
+  let inRun = false;
+  return items.map((item) => {
+    const attributed = item.kind === "thinking" || item.kind === "tools" || item.kind === "approval" ||
+      (item.kind === "message" && item.role === "assistant");
+    if (!attributed) {
+      inRun = false;
+      return item.agentStart || item.agentContinuation ? { ...item, agentStart: false, agentContinuation: false } : item;
+    }
+    if (!inRun) {
+      inRun = true;
+      return item.agentStart && !item.agentContinuation ? item : { ...item, agentStart: true, agentContinuation: false };
+    }
+    return !item.agentStart && item.agentContinuation ? item : { ...item, agentStart: false, agentContinuation: true };
+  });
+}
+
 export function mergeCanonicalEvents(events: AgentEvent[]): AgentEvent[] {
   const byId = new Map<number, AgentEvent>();
   for (const incoming of events) {

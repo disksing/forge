@@ -11,7 +11,7 @@
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
   import { toolGroupKey } from "./tool-group";
-  import { markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
+  import { markTurnAgentRuns, markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
@@ -127,7 +127,11 @@
     const items = block.events
       ? projectConversationEvents(block.events).map((item) => ({ ...item, generationId: block.generation.generationId }))
       : block.items || [];
-    return markTurnFinalAssistant(items);
+    return markTurnAgentRuns(markTurnFinalAssistant(items));
+  }
+
+  function blockAgentName(block: ConversationBlock): string {
+    return block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent";
   }
 
   function timelineKey(item: TimelineItem): string {
@@ -248,8 +252,11 @@
                 <div class="history-items">
                   {#each blockItems(block) as item (timelineKey(item))}
                     <div class="history-item" data-history-kind={item.kind}>
+                      {#if item.agentStart && item.kind !== "message"}
+                        <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong></div>
+                      {/if}
                       {#if item.kind === "message"}
-                        <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} {workspaceId} {resolveResourceTitle} {onNavigate} {onOpenFile} />
+                        <TimelineMessage {item} agentName={blockAgentName(block)} {workspaceId} {resolveResourceTitle} {onNavigate} {onOpenFile} />
                       {:else if item.kind === "thinking"}
                         <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
                       {:else if item.kind === "tools"}

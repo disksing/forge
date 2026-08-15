@@ -37,7 +37,7 @@
 <div data-component-owner="event-timeline" class={`agent-message-row ${rowClass}`}>
   <div class="agent-message-main">
     <div class="agent-message-meta">
-      <strong>{senderName()}</strong>
+      {#if role !== "assistant" || !item.agentContinuation}<strong>{senderName()}</strong>{/if}
       {#if role !== "assistant"}<span class="agent-message-tag agent-message-role-tag">{role}</span>{/if}
       {#if item.steer}<span class="agent-message-tag">steer</span>{/if}
       {#if role === "agent" && item.sender?.sessionId}<span class="agent-message-source" title={item.sender.sessionId}>from session {item.sender.sessionId}</span>{/if}

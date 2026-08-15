@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, isHiddenConversationLifecycleText, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, isHiddenConversationLifecycleText, markTurnAgentRuns, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -127,5 +127,56 @@ describe("timeline event algorithms", () => {
   it("leaves a turn without assistant messages untouched", () => {
     const items: TimelineItem[] = [{ kind: "message", role: "user", text: "question" }];
     expect(markTurnFinalAssistant(items)[0]).toBe(items[0]);
+  });
+
+  it("attaches the agent run start to the first event before any progress update", () => {
+    const items: TimelineItem[] = [
+      { kind: "message", role: "user", text: "question" },
+      { kind: "thinking", text: "reasoning" },
+      { kind: "tools", calls: [] },
+      { kind: "message", role: "assistant", text: "progress update" },
+      { kind: "message", role: "assistant", text: "final reply" },
+    ];
+
+    const marked = markTurnAgentRuns(items);
+
+    expect(marked[0]).toBe(items[0]);
+    expect(marked[1]).toMatchObject({ agentStart: true, agentContinuation: false });
+    expect(marked[2]).toMatchObject({ agentStart: false, agentContinuation: true });
+    expect(marked[3]).toMatchObject({ agentStart: false, agentContinuation: true });
+    expect(marked[4]).toMatchObject({ agentStart: false, agentContinuation: true });
+    expect(items[1].agentStart).toBeUndefined();
+  });
+
+  it("starts a new agent run after user, system, or other-agent messages", () => {
+    const items: TimelineItem[] = [
+      { kind: "message", role: "assistant", text: "progress" },
+      { kind: "approval", approvalId: "a1" },
+      { kind: "message", role: "user", text: "steer", steer: true },
+      { kind: "thinking", text: "reconsidering" },
+      { kind: "message", role: "agent", text: "delegated", sender: { name: "Builder" } },
+      { kind: "message", role: "assistant", text: "final reply" },
+    ];
+
+    const marked = markTurnAgentRuns(items);
+
+    expect(marked[0]).toMatchObject({ agentStart: true, agentContinuation: false });
+    expect(marked[1]).toMatchObject({ agentStart: false, agentContinuation: true });
+    expect(marked[2]).toBe(items[2]);
+    expect(marked[3]).toMatchObject({ agentStart: true, agentContinuation: false });
+    expect(marked[4]).toBe(items[4]);
+    expect(marked[5]).toMatchObject({ agentStart: true, agentContinuation: false });
+  });
+
+  it("keeps item identity when agent run annotations are already correct", () => {
+    const items: TimelineItem[] = [
+      { kind: "thinking", text: "reasoning", agentStart: true, agentContinuation: false },
+      { kind: "message", role: "assistant", text: "final reply", agentStart: false, agentContinuation: true },
+    ];
+
+    const marked = markTurnAgentRuns(items);
+
+    expect(marked[0]).toBe(items[0]);
+    expect(marked[1]).toBe(items[1]);
   });
 });
