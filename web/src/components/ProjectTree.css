@@ -241,7 +241,8 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-item .drag-handle {
-  display: none;
+  display: grid;
+  visibility: hidden;
   width: 16px;
   height: 16px;
   place-items: center;
@@ -262,7 +263,7 @@
 }
 
 :where([data-component-owner="project-tree"]) .tree-item:hover .drag-handle {
-  display: grid;
+  visibility: visible;
 }
 
 :where([data-component-owner="project-tree"]) .attention-star {
