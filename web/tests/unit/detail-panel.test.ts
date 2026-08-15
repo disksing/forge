@@ -59,17 +59,21 @@ afterEach(async () => {
 });
 
 describe("DetailPanel", () => {
-  it("opens the lazy Markdown source editor and saves through the resource callback", async () => {
+  it("opens the Markdown editor dialog and saves through the resource callback", async () => {
     const save = vi.fn(async (path: string, content: string) => ({ path, name: "task.md", content, contentHash: "saved-hash" }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      path: "project1/task1/task.md", name: "task.md", content: "# Stable detail\n\nSelected text.", contentHash: "doc-a",
+    }), { headers: { "content-type": "application/json" } })));
     const { target } = mountModel(resourceModel({ onSaveMarkdownFile: save }));
     await tick();
     const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
     edit.click();
-    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
-    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
+    const view = EditorView.findFromDOM(dialog.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "\nAdded in browser.\n" } });
     await tick();
-    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    const saveButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
     saveButton.click();
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save).toHaveBeenCalledWith("project1/task1/task.md", "# Stable detail\n\nSelected text.\nAdded in browser.\n", "doc-a");
@@ -100,7 +104,7 @@ describe("DetailPanel", () => {
 
     const documentSection = target.querySelector('[data-doc-file="task.md"]')!;
     expect(documentSection.querySelector("h3")).toBeNull();
-    expect(documentSection.querySelector(".markdown-open-file")).not.toBeNull();
+    expect(documentSection.querySelector(".markdown-document-actions button")).not.toBeNull();
 
     const artifactsSection = target.querySelector('[data-component-owner="file-browser"]')!;
     expect(artifactsSection.querySelector("h3")).toBeNull();
@@ -339,11 +343,14 @@ describe("DetailPanel", () => {
     // The managed block is no longer hidden from the rendered document.
     expect(target.querySelector('[data-doc-file="AGENTS.md"]')).not.toBeNull();
     expect(target.textContent).toContain("Generated guidance.");
-    expect(target.querySelector(".markdown-open-file")).not.toBeNull();
+    expect(target.querySelector(".markdown-document-actions button")).not.toBeNull();
   });
 
-  it("edits workspace AGENTS.md through the Markdown source editor", async () => {
+  it("edits workspace AGENTS.md through the Markdown editor dialog", async () => {
     const save = vi.fn(async (_content: string, _hash: string) => ({ path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\nEdited.\n", contentHash: "saved-hash" }));
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a",
+    }), { headers: { "content-type": "application/json" } })));
     const initial = resourceModel({
       identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
       workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a" },
@@ -353,11 +360,12 @@ describe("DetailPanel", () => {
     await tick();
     const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
     edit.click();
-    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
-    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
+    const view = EditorView.findFromDOM(dialog.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "\nEdited.\n" } });
     await tick();
-    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    const saveButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
     saveButton.click();
     await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
     expect(save).toHaveBeenCalledWith("# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n\nEdited.\n", "hash-a");

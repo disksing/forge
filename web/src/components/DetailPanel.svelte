@@ -20,7 +20,7 @@
   let identity = $state("");
   let activeTab = $state("");
   let expanded = $state(new Set<string>());
-  let preview = $state<{ section: string; path: string } | null>(null);
+  let preview = $state<{ section: string; path: string; edit?: boolean } | null>(null);
   let diffRepo = $state<ResourceRepoModel | null>(null);
   const tabMemory = new Map<string, string>();
   const client = new ApiClient();
@@ -38,6 +38,7 @@
   } as ResourceFileModel : null);
   const tabs = $derived(resourceTabs());
   const activePreviewPath = $derived(preview ? `${preview.section}:${preview.path}` : "");
+  const filePreviewEditable = $derived(model.resourceType === "workspace" ? Boolean(preview && (preview.path === "AGENTS.md" || preview.path === "")) : !model.detail?.archived && (model.resourceType === "project" || model.resourceType === "task"));
 
   onMount(() => channel.subscribe((next) => {
     const previewScrollState = capturePreviewScrollState();
@@ -134,12 +135,16 @@
     return `/api/workspaces/${encodeURIComponent(model.workspaceId)}/files/raw?path=${encodeURIComponent(path)}${suffix}`;
   }
 
-  function openPreview(section: string, path: string): void {
-    preview = { section, path };
+  function openPreview(section: string, path: string, edit = false): void {
+    preview = { section, path, edit };
   }
 
   function openLinkedFile(path: string): void {
     openPreview("Files", path);
+  }
+
+  function openEditor(path: string): void {
+    openPreview("Files", path, true);
   }
 
   function deleteArtifact(path: string): void {
@@ -150,8 +155,11 @@
     }).catch((err) => toastError(err instanceof Error ? err.message : String(err)));
   }
 
-  function saveWorkspaceAgents(_path: string, content: string, expectedContentHash: string): Promise<FilePreviewModel> {
-    return model.onSaveWorkspaceAgents(content, expectedContentHash);
+  function saveMarkdownViaModal(path: string, content: string, expectedContentHash: string): Promise<FilePreviewModel> {
+    if (model.resourceType === "workspace" && (path === "AGENTS.md" || path === "")) {
+      return model.onSaveWorkspaceAgents(content, expectedContentHash);
+    }
+    return model.onSaveMarkdownFile(path, content, expectedContentHash);
   }
 
   function previewKey(value: { section: string; path: string }): string {
@@ -191,7 +199,7 @@
   </div>
   <div id="detailsContent" class="details-content">
     <div hidden={activeTab !== "agents"}>
-      {#if agentsFile}<MarkdownDocument file={agentsFile} workspaceId={model.workspaceId} editable={true} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSave={saveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
+      {#if agentsFile}<MarkdownDocument file={agentsFile} workspaceId={model.workspaceId} editable={true} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} />
       {:else if model.workspaceAgents?.error}<div class="content-section"><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>AGENTS.md unavailable</strong><span>{model.workspaceAgents.error}</span></div></div>
       {:else}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="loader-circle" /><strong>Loading AGENTS.md...</strong></div></div>{/if}
     </div>
@@ -215,7 +223,7 @@
       {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>{/each}
     </div>
     <div id="detailsContent" class="details-content">
-      {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} editable={!model.detail.archived} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSave={model.onSaveMarkdownFile} onToast={model.onToast} onIconsChanged={model.onIconsChanged} /></div>{/each}
+      {#each files as file (file.path || file.name)}<div hidden={activeTab !== documentTab(file)}><MarkdownDocument {file} workspaceId={model.workspaceId} editable={!model.detail.archived && (model.resourceType === "project" || model.resourceType === "task")} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onEdit={openEditor} /></div>{/each}
       {#if model.resourceType === "project" && !fileNames.has("project.md")}<div class="content-section" hidden={activeTab !== "project"}><div class="file-modal-empty detail-missing"><Icon name="file-text" /><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>{/if}
       {#if model.resourceType === "task" && !fileNames.has("task.md")}<div class="content-section" hidden={activeTab !== "task"}><div class="file-modal-empty detail-missing"><Icon name="file-text" /><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>{/if}
       {#if model.resourceType === "scheduler" && model.detail.scheduler}<div hidden={activeTab !== "schedules"}><SchedulerPanel workspaceId={model.workspaceId} config={model.detail.scheduler} onChanged={model.onRefreshScheduler || (async () => undefined)} onToast={model.onToast} /></div>{/if}
@@ -230,5 +238,5 @@
   {/if}
 {/if}
 
-<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={!model.detail?.archived && (model.resourceType === "project" || model.resourceType === "task")} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={model.onSaveMarkdownFile} onClose={() => preview = null} onError={toastError} onIconsChanged={model.onIconsChanged} />
+<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={filePreviewEditable} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={saveMarkdownViaModal} onClose={() => preview = null} onError={toastError} onIconsChanged={model.onIconsChanged} />
 <DiffModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} repo={diffRepo} onClose={() => diffRepo = null} onError={toastError} onIconsChanged={model.onIconsChanged} />

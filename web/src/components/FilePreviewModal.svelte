@@ -10,7 +10,7 @@
   import type { FilePreviewModel } from "./models";
   import LazyMarkdownEditor from "./LazyMarkdownEditor.svelte";
 
-  let { client, workspaceId, resourceId, selection, editable, resolveResourceTitle, onNavigate, onOpenFile, onSaveMarkdown, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string } | null; editable: boolean; resolveResourceTitle: ResourceTitleResolver; onNavigate: (resourceId: string) => void; onOpenFile?: (path: string) => void; onSaveMarkdown: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
+  let { client, workspaceId, resourceId, selection, editable, resolveResourceTitle, onNavigate, onOpenFile, onSaveMarkdown, onClose, onError, onIconsChanged }: { client: ApiClient; workspaceId: string; resourceId: string; selection: { section: string; path: string; edit?: boolean } | null; editable: boolean; resolveResourceTitle: ResourceTitleResolver; onNavigate: (resourceId: string) => void; onOpenFile?: (path: string) => void; onSaveMarkdown: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>; onClose: () => void; onError: (message: string) => void; onIconsChanged: () => void } = $props();
   let preview = $state<FilePreviewModel | null>(null);
   let loading = $state(false);
   let error = $state("");
@@ -29,7 +29,7 @@
     activeSelectionKey = currentSelectionKey;
     preview = null;
     error = "";
-    editing = false;
+    editing = editable && current?.edit === true;
     if (!current) { client.requests.abort(requestScope); return; }
     loading = true;
     void client.latest<FilePreviewModel>(`/api/workspaces/${encodeURIComponent(workspaceId)}/files?path=${encodeURIComponent(current.path)}`, { scope: requestScope })

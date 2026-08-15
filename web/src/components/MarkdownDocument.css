@@ -25,9 +25,16 @@
 }
 
 :where([data-component-owner="markdown-document"]) .markdown-document-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
   display: flex;
-  justify-content: flex-end;
-  margin-bottom: 8px;
+  gap: 8px;
+}
+
+:where([data-component-owner="markdown-document"]) .markdown-document-actions + .markdown-view > :first-child {
+  padding-right: 132px;
 }
 
 :where([data-component-owner="markdown-document"]) .markdown-preview .markdown-view {

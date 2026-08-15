@@ -445,6 +445,18 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       }
       if (filePath === "AGENTS.md") return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
       if (filePath.startsWith("wiki/")) return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
+      const documentCandidates: MockResource[] = [project, ...project.children];
+      if (createdProject) documentCandidates.push(createdProject);
+      if (createdTask) documentCandidates.push(createdTask);
+      const documentFile = documentCandidates
+        .map((resource) => ({ resource, file: resourceDetail(resource).files[0] }))
+        .find(({ resource }) => `${resource.path}/${resource.type === "project" ? "project.md" : "task.md"}` === filePath)?.file;
+      if (documentFile) {
+        const file = documentFile.path === "project1-migration/task1-infrastructure/task.md" && savedTaskBrief
+          ? { ...documentFile, content: savedTaskBrief.content, contentHash: savedTaskBrief.contentHash }
+          : documentFile;
+        return json(route, file);
+      }
       return json(route, { path: filePath, name: filePath.split("/").pop(), content: `# Preview\n\nContent for ${filePath}\n\n${longDetailBody}`, contentHash: `hash-${filePath}` });
     }
     if (path === "/api/workspaces/ws-test/diff") return json(route, { path: url.searchParams.get("path"), branch: "topic", base: "master", diff: "diff --git a/a.txt b/a.txt\nnew file mode 100644\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+detail diff\n", hasChanges: true });
@@ -655,7 +667,8 @@ test("edits Markdown source, annotates a selection, copies the review, and saves
   await page.goto("/w/ws-test/r/project1.task1");
   const panel = page.locator("#detailsPanel");
   await panel.getByRole("button", { name: "Edit / Annotate" }).click();
-  const editor = panel.locator('[data-component-owner="markdown-editor"]');
+  const dialog = page.getByRole("dialog", { name: "File preview" });
+  const editor = dialog.locator('[data-component-owner="markdown-editor"]');
   await expect(editor.locator(".cm-editor")).toBeVisible();
 
   await editor.locator(".cm-line", { hasText: "stable selection target" }).click({ clickCount: 3 });
@@ -972,7 +985,8 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
   await expect(panel.getByRole("tab", { name: "AGENTS.md" })).toHaveAttribute("aria-selected", "true");
   await expect(panel.locator('[data-doc-file="AGENTS.md"]')).toContainText("Workspace guidance");
   await panel.getByRole("button", { name: "Edit / Annotate" }).click();
-  const editor = panel.locator('[data-component-owner="markdown-editor"]');
+  const dialog = page.getByRole("dialog", { name: "File preview" });
+  const editor = dialog.locator('[data-component-owner="markdown-editor"]');
   await expect(editor.locator(".cm-editor")).toBeVisible();
   await editor.locator(".cm-content").click();
   await page.keyboard.press("Control+End");

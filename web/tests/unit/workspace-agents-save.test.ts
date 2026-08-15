@@ -18,8 +18,9 @@ function json(value: unknown, status = 200): Response {
     ok: status >= 200 && status < 300,
     status,
     statusText: status === 200 ? "OK" : "Conflict",
+    headers: new Headers({ "content-type": "application/json" }),
     json: async () => value,
-  } as Response;
+  } as unknown as Response;
 }
 
 describe("Workspace AGENTS save flow", () => {
@@ -109,12 +110,13 @@ describe("Workspace AGENTS save flow", () => {
 
     const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
     edit.click();
-    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
-    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
+    const dialog = target.querySelector<HTMLElement>('[role="dialog"]')!;
+    const view = EditorView.findFromDOM(dialog.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "\nEdited.\n" } });
     await tick();
 
-    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    const saveButton = Array.from(dialog.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
     saveButton.click();
     await vi.waitFor(() => expect(saveBodies).toHaveLength(1));
     expect(saveBodies[0]).toEqual({
