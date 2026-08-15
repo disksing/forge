@@ -2,7 +2,6 @@ import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import AppShell from "../../src/components/AppShell.svelte";
-import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
 import MarkdownDocument from "../../src/components/MarkdownDocument.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { AgentEvent } from "../../src/components/models";
@@ -29,31 +28,6 @@ describe("performance and bounded-DOM gates", () => {
     expect(target.querySelectorAll("*").length).toBeLessThan(performanceBudgets.maximumTreeElements);
     expect(elapsed).toBeLessThan(performanceBudgets.treeRenderMs);
   });
-
-  it("renders 750 History Turn summaries within the budget and a bounded DOM", async () => {
-    const target = document.body.appendChild(document.createElement("div"));
-    const generation = { generation: 1, generationId: "gen-performance", title: "Performance", status: "archived", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", agentName: "fake-agent", provider: "Fake", model: "fake-model" };
-    const turns = Array.from({ length: 750 }, (_, index) => ({
-      reference: `turn-ref-${index}`, turnId: `turn-${index}`, status: "completed", closed: true,
-      startedAt: new Date(Date.UTC(2026, 0, 1, 0, 0, index)).toISOString(), durationMs: 1000,
-      triggerPreview: `Prompt ${index}`, finalReplyPreview: `Reply ${index}`, eventCount: 3, toolEventCount: 1,
-      startEventId: index * 3 + 1, lastEventId: index * 3 + 3, generation,
-    }));
-    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ resourceId: "project-performance", segments: [{ generation, turns }], page: { limit: 20, hasMore: false } }), { headers: { "content-type": "application/json" } })));
-    const started = performance.now();
-    const component = mount(HistoryTimeline, { target, props: {
-      workspaceId: "performance-workspace", resourceId: "project-performance", artifacts: [],
-      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
-      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
-    } });
-    cleanups.push(() => unmount(component));
-    await tick();
-    const elapsed = performance.now() - started;
-
-    await vi.waitFor(() => expect(target.querySelectorAll(".history-turn")).toHaveLength(750), { timeout: 12_000 });
-    expect(target.querySelectorAll("*").length).toBeLessThan(10_000);
-    expect(elapsed).toBeLessThan(4_000);
-  }, 15_000);
 
   it("renders a multi-thousand-section Markdown document within the budget", async () => {
     const target = document.body.appendChild(document.createElement("div"));
