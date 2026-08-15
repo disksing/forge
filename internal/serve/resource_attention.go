@@ -138,14 +138,6 @@ func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate f
 	return attention, nil
 }
 
-func (s *server) followResource(path, resourceID string) error {
-	_, err := s.mutateResourceAttentionAtPath(path, resourceID, func(state *resourceAttentionState) {
-		state.Followed = true
-		state.DismissedTurn = nil
-	})
-	return err
-}
-
 // allocateResourceTurnNumber advances the resource-wide turn ordinal. It is
 // separate from the generation record because a replacement generation must
 // not reset the dismiss boundary of the resource.

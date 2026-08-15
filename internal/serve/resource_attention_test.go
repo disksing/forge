@@ -203,7 +203,7 @@ func TestResourceAttentionSortsByTurnBoundariesInsteadOfRuntimeUpdates(t *testin
 	}
 }
 
-func TestAcceptResourceMessageAutomaticallyFollowsResource(t *testing.T) {
+func TestAcceptResourceMessageDoesNotFollowResource(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	manager := newAgentManager(server)
 	server.agents = manager
@@ -218,12 +218,12 @@ func TestAcceptResourceMessageAutomaticallyFollowsResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.Followed || state.DismissedTurn != nil {
-		t.Fatalf("message did not auto-follow resource: %#v", state)
+	if state.Followed {
+		t.Fatalf("message unexpectedly followed resource: %#v", state)
 	}
 }
 
-func TestCreateProjectAndTaskAutomaticallyFollowResources(t *testing.T) {
+func TestCreateProjectAndTaskDoNotFollowResources(t *testing.T) {
 	workspace := t.TempDir()
 	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
@@ -247,8 +247,8 @@ func TestCreateProjectAndTaskAutomaticallyFollowResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.Followed {
-		t.Fatalf("created project was not followed: %#v", state)
+	if state.Followed {
+		t.Fatalf("created project was unexpectedly followed: %#v", state)
 	}
 
 	taskResponse := attentionRequest(t, server, http.MethodPost, "/api/workspaces/workspace-one/tasks", `{"project":"project1","title":"Created task"}`)
@@ -265,8 +265,8 @@ func TestCreateProjectAndTaskAutomaticallyFollowResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !state.Followed {
-		t.Fatalf("created task was not followed: %#v", state)
+	if state.Followed {
+		t.Fatalf("created task was unexpectedly followed: %#v", state)
 	}
 }
 
