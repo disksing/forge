@@ -132,6 +132,59 @@
   font-size: calc(11px * var(--chat-font-scale, 1));
 }
 
+:where([data-component-owner="chat-composer"]) .tty-send-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 12px 8px;
+  padding: 8px 10px;
+  border: 1px solid #c9ddef;
+  border-radius: 6px;
+  background: #f4f9fd;
+  color: #31536e;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  line-height: 18px;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-feedback > svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--blue);
+  animation: tty-send-feedback-pulse 1.1s ease-in-out infinite;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-feedback-content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-feedback-content strong {
+  font-weight: 700;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-send-feedback-text {
+  max-height: 54px;
+  overflow: auto;
+  color: #547089;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@keyframes tty-send-feedback-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where([data-component-owner="chat-composer"]) .tty-send-feedback > svg {
+    animation: none;
+  }
+}
+
 :where([data-component-owner="chat-composer"]) .tty-input {
   display: flex;
   flex-direction: column;

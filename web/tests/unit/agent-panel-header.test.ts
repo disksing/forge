@@ -30,6 +30,7 @@ function model(overrides: Partial<AgentPanelHeaderModel> = {}): AgentPanelHeader
     workspaceId: "workspace-a",
     resourceId: "task-a",
     status: status(),
+    submitting: false,
     agentName: "kimi-k3",
     modelSummary: "Kimi · kimi-k2-0905",
     turnNumber: 3,
@@ -72,6 +73,19 @@ describe("AgentPanelHeader", () => {
     expect(header.dataset.state).toBe("idle");
     expect(target.querySelector(".agent-header-state")?.textContent).toBe("Idle");
     expect(target.querySelector(".agent-header-turn")?.textContent).toBe("Idle · Turn 3 completed");
+  });
+
+  it("shows submitting while the first message is waiting for acceptance", async () => {
+    const { target } = mountModel(model({
+      status: status({ state: "idle", session: { state: "idle" } }),
+      submitting: true,
+    }));
+    await tick();
+
+    const header = target.querySelector<HTMLElement>(".agent-panel-header")!;
+    expect(header.dataset.state).toBe("submitting");
+    expect(target.querySelector(".agent-header-state")?.textContent).toBe("Submitting");
+    expect(target.querySelector(".agent-header-turn")?.textContent).toBe("Message pending");
   });
 
   it("shows the attention state and the queued count", async () => {

@@ -15,8 +15,9 @@
     model = next;
   }));
 
-  const stateKey = $derived(!model.resourceId ? "empty" : model.status?.state || "loading");
-  const stateLabel = $derived(stateKey === "working" ? "Working"
+  const stateKey = $derived(!model.resourceId ? "empty" : model.submitting ? "submitting" : model.status?.state || "loading");
+  const stateLabel = $derived(stateKey === "submitting" ? "Submitting"
+    : stateKey === "working" ? "Working"
     : stateKey === "idle" ? "Idle"
     : stateKey === "attention_required" ? "Attention required"
     : stateKey === "unavailable" ? "Unavailable"
@@ -46,6 +47,7 @@
 
   const turnText = $derived.by(() => {
     const turn = model.turnNumber;
+    if (stateKey === "submitting") return "Message pending";
     if (stateKey === "idle") return turn > 0 ? `Idle · Turn ${turn} completed` : "";
     if (stateKey === "empty" || stateKey === "loading") return "";
     if (Number.isFinite(turnStart)) {

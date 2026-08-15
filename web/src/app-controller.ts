@@ -184,7 +184,7 @@ const updateAgentDraft = agentDraftController.update;
 
 const agentOperations = createAgentOperationController(() => {
 	if (!appBooted) return;
-	renderTTYComposer();
+	renderTTY();
 	refreshIcons();
 });
 const paneLayoutController = createPaneLayoutController(() => renderAppShell());
@@ -1200,6 +1200,7 @@ function renderTTY(_options: RenderOptions = {}): void {
 		workspaceId: controllerState.activeWorkspaceId,
 		resourceId,
 		status,
+		submitting: agentOperations.isSending(resourceMutationKey(controllerState.activeWorkspaceId, resourceId)),
 		agentName: agentDisplayName(agent),
 		modelSummary: agentConfigSummary(agent),
 		turnNumber: Number(status?.generation?.turnNumber) || Number(runtime?.turnNumber) || 0,

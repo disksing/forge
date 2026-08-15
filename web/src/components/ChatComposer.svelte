@@ -17,6 +17,7 @@
   let resetVersion = $state(initialModel.draftResetVersion);
   let draft = $state(initialModel.draft);
   let sending = $state(false);
+  let pendingText = $state("");
   let error = $state("");
   let queueError = $state("");
   let multiline = $state(false);
@@ -32,6 +33,7 @@
       resetVersion = next.draftResetVersion;
       draft = next.draft;
       sending = false;
+      pendingText = "";
       error = "";
       queueError = "";
       multiline = false;
@@ -65,12 +67,23 @@
     const requestIdentity = identity;
     const requestContext = context();
     sending = true;
+    pendingText = text;
     error = "";
     try {
       const result = await model.onSend(text, requestContext);
-      if (identity === requestIdentity && result.accepted && result.clear && draft === text) updateDraft("");
+      if (identity !== requestIdentity) return;
+      if (!result.accepted) {
+        pendingText = "";
+        error = "Message was not accepted. Please try again.";
+        return;
+      }
+      if (result.clear && draft === text) updateDraft("");
+      pendingText = "";
     } catch (reason) {
-      if (identity === requestIdentity) error = reason instanceof Error ? reason.message : String(reason);
+      if (identity === requestIdentity) {
+        pendingText = "";
+        error = reason instanceof Error ? reason.message : String(reason);
+      }
     } finally {
       if (identity === requestIdentity) {
         sending = false;
@@ -142,6 +155,12 @@
     </div>
     {#if queueError}<div class="tty-message-queue-error" role="alert">{queueError}</div>{/if}
   </section>
+{/if}
+{#if pendingText}
+  <div class="tty-send-feedback" data-send-state="submitting" role="status" aria-live="polite">
+    <Icon name="loader-circle" />
+    <span class="tty-send-feedback-content"><strong>Submitting</strong><span class="tty-send-feedback-text">{pendingText}</span></span>
+  </div>
 {/if}
 <form id="ttyForm" class="tty-input" onsubmit={send}>
     <textarea id="ttyInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || "Message this resource"} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>

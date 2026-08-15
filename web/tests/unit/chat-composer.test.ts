@@ -102,11 +102,85 @@ describe("ChatComposer", () => {
     target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
     await vi.waitFor(() => expect(target.querySelector("[role=alert]")?.textContent).toContain("temporary failure"));
     expect(input.value).toBe("retry me");
+    expect(target.querySelector("[data-send-state=\"submitting\"]")).toBeNull();
 
     target.querySelector<HTMLButtonElement>("[role=alert] button")!.click();
     await vi.waitFor(() => expect(onSend).toHaveBeenCalledTimes(2));
     await tick();
     expect(input.value).toBe("");
+  });
+
+  it("shows immediate pending feedback for a slow mouse send", async () => {
+    const result = deferred<{ accepted: boolean; clear: boolean }>();
+    const onSend = vi.fn(() => result.promise);
+    const channel = createModelChannel(model({ onSend }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "slow mouse message";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+    await tick();
+
+    const feedback = target.querySelector<HTMLElement>(".tty-send-feedback")!;
+    expect(feedback.dataset.sendState).toBe("submitting");
+    expect(feedback.getAttribute("role")).toBe("status");
+    expect(feedback.textContent).toContain("Submitting");
+    expect(feedback.textContent).toContain("slow mouse message");
+    expect(input.value).toBe("slow mouse message");
+    expect(onSend).toHaveBeenCalledWith("slow mouse message", expect.objectContaining({ resourceId: "task-a" }));
+
+    result.resolve({ accepted: true, clear: true });
+    await result.promise;
+    await tick();
+    expect(target.querySelector(".tty-send-feedback")).toBeNull();
+    expect(input.value).toBe("");
+  });
+
+  it("shows the same pending feedback for keyboard send", async () => {
+    const result = deferred<{ accepted: boolean; clear: boolean }>();
+    const onSend = vi.fn(() => result.promise);
+    const channel = createModelChannel(model({ onSend }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "keyboard message";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", metaKey: true, bubbles: true, cancelable: true }));
+    await tick();
+
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(target.querySelector(".tty-send-feedback")?.textContent).toContain("keyboard message");
+    expect(target.querySelector<HTMLButtonElement>(".tty-send-button")?.disabled).toBe(true);
+
+    result.resolve({ accepted: true, clear: true });
+    await result.promise;
+    await tick();
+    expect(target.querySelector(".tty-send-feedback")).toBeNull();
+  });
+
+  it("recovers the draft when the send is rejected without an exception", async () => {
+    const onSend = vi.fn(async () => ({ accepted: false, clear: false }));
+    const channel = createModelChannel(model({ onSend }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    const input = target.querySelector<HTMLTextAreaElement>("#ttyInput")!;
+    input.value = "keep this after rejection";
+    input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    target.querySelector<HTMLFormElement>("#ttyForm")!.dispatchEvent(new SubmitEvent("submit", { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => expect(target.querySelector("[role=alert]")?.textContent).toContain("Message was not accepted"));
+    expect(input.value).toBe("keep this after rejection");
+    expect(target.querySelector(".tty-send-feedback")).toBeNull();
   });
 
   it("shows waiting messages above the input and steers the same message id", async () => {

@@ -213,6 +213,7 @@ export interface TimelineItem {
   type?: string;
   preview?: string;
   calls?: Array<Record<string, unknown> & { key?: string | number; callId?: string; name?: string; summary?: string; status?: string; output?: string; error?: string; method?: string; rawPreview?: string }>;
+  toolCallCount?: number;
   approvalId?: string;
   title?: string;
   detail?: string;
@@ -245,6 +246,7 @@ export interface AgentPanelHeaderModel {
   workspaceId: string;
   resourceId: string;
   status: ResourceMessageStatus | null;
+  submitting: boolean;
   agentName: string;
   /** "Provider · model" summary of the resolved agent, may be empty. */
   modelSummary: string;
