@@ -1,4 +1,4 @@
-import type { AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
+import type { AgentOption, AppearanceSettings, NotificationPreferences, ResourceDefaultBinding, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
 import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
 export type SettingsAgent = AgentConfig;
@@ -20,7 +20,11 @@ export interface AgentHubData {
 	};
 	config?: {
 		agentProfiles?: SettingsProfile[];
-		resourceDefaults?: { workspace?: string; project?: string; task?: string };
+		resourceDefaults?: {
+			workspace?: ResourceDefaultBinding | string;
+			project?: ResourceDefaultBinding | string;
+			task?: ResourceDefaultBinding | string;
+		};
 	};
 }
 
@@ -59,6 +63,24 @@ export interface SettingsControllerDependencies {
 	renderAgentViews(): void;
 	toast(message: string): void;
 	onIconsChanged(): void;
+}
+
+// The server always persists the structured binding form, but older configs
+// and fixtures may still carry the legacy profile-name string.
+function resourceDefaultBinding(value: ResourceDefaultBinding | string | undefined): ResourceDefaultBinding {
+	if (value && typeof value === "object") {
+		return { kind: value.kind === "agent" ? "agent" : "profile", name: value.name || "default" };
+	}
+	const name = typeof value === "string" ? value.trim() : "";
+	return name ? { kind: "profile", name } : { kind: "profile", name: "default" };
+}
+
+function defaultResourceDefaults() {
+	return {
+		workspace: resourceDefaultBinding(undefined),
+		project: resourceDefaultBinding(undefined),
+		task: resourceDefaultBinding(undefined)
+	};
 }
 
 export function configWithAgentHubCatalog(base: ForgeSettingsConfig, agentHub: AgentHubData): ForgeSettingsConfig {
@@ -138,9 +160,9 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				providers: catalog.providers || [],
 				agents: catalog.agents || [],
 				resourceDefaults: {
-					workspace: hub.config?.resourceDefaults?.workspace || "default",
-					project: hub.config?.resourceDefaults?.project || "default",
-					task: hub.config?.resourceDefaults?.task || "default"
+					workspace: resourceDefaultBinding(hub.config?.resourceDefaults?.workspace),
+					project: resourceDefaultBinding(hub.config?.resourceDefaults?.project),
+					task: resourceDefaultBinding(hub.config?.resourceDefaults?.task)
 				}
 			},
 			profiles: (data.agentProfiles || []).map((profile) => ({ ...profile })),
@@ -294,7 +316,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			body: JSON.stringify({
 				endpoint: state.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
 				agentProfiles: (state.data?.agentProfiles || []).map((profile) => ({ ...profile })),
-				resourceDefaults: state.data?.agentHub?.config?.resourceDefaults || { workspace: "default", project: "default", task: "default" }
+				resourceDefaults: state.data?.agentHub?.config?.resourceDefaults || defaultResourceDefaults()
 			})
 		});
 		await refresh();

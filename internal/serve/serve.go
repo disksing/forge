@@ -42,9 +42,40 @@ type config struct {
 }
 
 type resourceAgentDefaults struct {
-	Workspace string `json:"workspace"`
-	Project   string `json:"project"`
-	Task      string `json:"task"`
+	Workspace resourceDefaultBinding `json:"workspace"`
+	Project   resourceDefaultBinding `json:"project"`
+	Task      resourceDefaultBinding `json:"task"`
+}
+
+// resourceDefaultBinding selects the Agent binding applied to newly created
+// resources of one kind. Kind is "profile" or "agent".
+type resourceDefaultBinding struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// UnmarshalJSON accepts both the structured form and the legacy profile-name
+// string used before resource defaults could target an Agent directly.
+func (binding *resourceDefaultBinding) UnmarshalJSON(data []byte) error {
+	var legacy string
+	if err := json.Unmarshal(data, &legacy); err == nil {
+		name := strings.TrimSpace(legacy)
+		if name == "" {
+			*binding = resourceDefaultBinding{}
+			return nil
+		}
+		*binding = resourceDefaultBinding{Kind: "profile", Name: name}
+		return nil
+	}
+	var structured struct {
+		Kind string `json:"kind"`
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(data, &structured); err != nil {
+		return err
+	}
+	*binding = resourceDefaultBinding{Kind: structured.Kind, Name: structured.Name}
+	return nil
 }
 
 type agentProfileRoute struct {
@@ -612,7 +643,7 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		return
 	}
 	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Project})
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: effectiveDefaults.Project.Kind, Name: effectiveDefaults.Project.Name})
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -698,7 +729,7 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		return
 	}
 	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Task})
+	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: effectiveDefaults.Task.Kind, Name: effectiveDefaults.Task.Name})
 	if err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -1241,13 +1272,11 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		return guiWorkspace{}, err
 	}
 	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-		Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
-	}); err != nil {
+	if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
 		return guiWorkspace{}, err
 	}
 	if initializedNow {
-		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: "profile", Name: effectiveDefaults.Workspace}); err != nil {
+		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: effectiveDefaults.Workspace.Kind, Name: effectiveDefaults.Workspace.Name}); err != nil {
 			return guiWorkspace{}, err
 		}
 	}
@@ -1284,9 +1313,7 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 			return fmt.Errorf("open Workspace %s for resource runtime: %w", workspace.ID, err)
 		}
 		effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-		if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
-		}); err != nil {
+		if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
 		}
 		if _, err := forgeWorkspace.EnsureScheduler(); err != nil {

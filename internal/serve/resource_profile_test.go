@@ -22,7 +22,11 @@ func TestResolveResourceAgentPreservesMissingBindingAndUsesTypedFallback(t *test
 	}
 	cfg := config{
 		AgentProfiles:    []agentProfileRoute{{Key: "default", AgentName: "global-agent"}, {Key: "task-fast", AgentName: "task-agent"}},
-		ResourceDefaults: resourceAgentDefaults{Workspace: "default", Project: "default", Task: "task-fast"},
+		ResourceDefaults: resourceAgentDefaults{
+			Workspace: resourceDefaultBinding{Kind: "profile", Name: "default"},
+			Project:   resourceDefaultBinding{Kind: "profile", Name: "default"},
+			Task:      resourceDefaultBinding{Kind: "profile", Name: "task-fast"},
+		},
 	}
 	resolved, err := manager.resolveResourceAgent(workspace, "project1.task1", cfg)
 	if err != nil {
@@ -86,7 +90,7 @@ func TestResolveResourceAgentFallsBackGloballyThenFailsActionably(t *testing.T) 
 	if _, err := forgeWorkspace.SetResourceAgentBinding("project1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
 		t.Fatal(err)
 	}
-	cfg := config{AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "global-agent"}}, ResourceDefaults: resourceAgentDefaults{Project: "missing-default"}}
+	cfg := config{AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "global-agent"}}, ResourceDefaults: resourceAgentDefaults{Project: resourceDefaultBinding{Kind: "profile", Name: "missing-default"}}}
 	resolved, err := manager.resolveResourceAgent(workspace, "project1", cfg)
 	if err != nil || resolved.ResolvedProfile != "default" || resolved.AgentName != "global-agent" {
 		t.Fatalf("global fallback = %#v, %v", resolved, err)
@@ -95,5 +99,64 @@ func TestResolveResourceAgentFallsBackGloballyThenFailsActionably(t *testing.T) 
 	resolved, err = manager.resolveResourceAgent(workspace, "project1", cfg)
 	if err == nil || !strings.Contains(err.Error(), "configure one of these Profiles") || !strings.Contains(resolved.ConfigError, "missing-default") {
 		t.Fatalf("unresolved global default = %#v, %v", resolved, err)
+	}
+}
+
+func TestResolveResourceAgentFallsBackToAgentDefault(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.SetResourceAgentBinding("project1.task1", app.AgentBinding{Kind: "profile", Name: "deleted"}); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config{
+		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "global-agent"}},
+		ResourceDefaults: resourceAgentDefaults{
+			Task: resourceDefaultBinding{Kind: "agent", Name: "task-agent"},
+		},
+	}
+	resolved, err := manager.resolveResourceAgent(workspace, "project1.task1", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved.AgentName != "task-agent" || resolved.ResolvedProfile != "" || !strings.Contains(resolved.ConfigError, "fallback Agent") {
+		t.Fatalf("agent default fallback resolution = %#v", resolved)
+	}
+}
+
+func TestAgentResourceDefaultBypassesProfileResolution(t *testing.T) {
+	defaults := resourceAgentDefaults{
+		Workspace: resourceDefaultBinding{Kind: "agent", Name: "Kimi-K3"},
+		Project:   resourceDefaultBinding{Kind: "profile", Name: "missing"},
+	}
+	effective := effectiveResourceAgentDefaults(defaults, []agentProfileRoute{{Key: "default", AgentName: "global-agent"}})
+	if effective.Workspace != (resourceDefaultBinding{Kind: "agent", Name: "Kimi-K3"}) {
+		t.Fatalf("agent default was rewritten by profile resolution: %+v", effective.Workspace)
+	}
+	if effective.Project != (resourceDefaultBinding{Kind: "profile", Name: "default"}) {
+		t.Fatalf("missing profile default did not fall back globally: %+v", effective.Project)
+	}
+}
+
+func TestNormalizeResourceAgentDefaultBinding(t *testing.T) {
+	cases := []struct {
+		name     string
+		input    resourceDefaultBinding
+		expected resourceDefaultBinding
+	}{
+		{name: "empty", input: resourceDefaultBinding{}, expected: resourceDefaultBinding{Kind: "profile", Name: "default"}},
+		{name: "profile lowercased", input: resourceDefaultBinding{Kind: "Profile", Name: " FAST "}, expected: resourceDefaultBinding{Kind: "profile", Name: "fast"}},
+		{name: "agent case preserved", input: resourceDefaultBinding{Kind: "AGENT", Name: " Kimi-K3 "}, expected: resourceDefaultBinding{Kind: "agent", Name: "Kimi-K3"}},
+		{name: "nameless agent falls back", input: resourceDefaultBinding{Kind: "agent"}, expected: resourceDefaultBinding{Kind: "profile", Name: "default"}},
+		{name: "unknown kind", input: resourceDefaultBinding{Kind: "weird", Name: "Fast"}, expected: resourceDefaultBinding{Kind: "profile", Name: "fast"}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if got := normalizeResourceAgentDefaultBinding(testCase.input); got != testCase.expected {
+				t.Fatalf("normalizeResourceAgentDefaultBinding(%+v) = %+v, want %+v", testCase.input, got, testCase.expected)
+			}
+		})
 	}
 }

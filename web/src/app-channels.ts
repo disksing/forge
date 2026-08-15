@@ -40,7 +40,7 @@ export function createForgeAppChannels(): ForgeAppChannels {
     settings: createModelChannel<SettingsModel>({
       open: false, identity: "", dataVersion: 0, initialTab: "workspace", workspaces: [], activeWorkspaceId: "", workspaceIcons: [{ id: "", label: "Forge default", src: "/favicon.svg" }], workspaceIconSavingId: "", userName: "User",
       appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
-      agentHub: { configuredEndpoint: "", connected: false, compatible: false, error: "", apiVersion: "", version: "", capabilities: [], providers: [], agents: [], resourceDefaults: { workspace: "default", project: "default", task: "default" } }, profiles: [], agents: [],
+      agentHub: { configuredEndpoint: "", connected: false, compatible: false, error: "", apiVersion: "", version: "", capabilities: [], providers: [], agents: [], resourceDefaults: { workspace: { kind: "profile", name: "default" }, project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "default" } } }, profiles: [], agents: [],
       notifications: { browser: false, sound: false, permission: "default", permissionError: "", soundError: "" },
       onClose: noop, onAddWorkspace: noopAsync, onRemoveWorkspace: noopAsync, onWorkspaceIcon: noopAsync, onSaveUser: async (name) => name, onSaveAgentHub: noopAsync,
       onLayoutPreference: noop, onFontScale: noop, onResetFontScales: noop,

@@ -15,19 +15,27 @@ func defaultAgentBinding() AgentBinding {
 	return AgentBinding{Kind: "profile", Name: "default"}
 }
 
-func normalizeDefaultProfile(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" {
-		return "default"
+// normalizeDefaultBinding normalizes one configured resource default. An
+// empty or unknown kind falls back to the default Profile; Profile names are
+// case-insensitive while Agent names keep their canonical case.
+func normalizeDefaultBinding(value AgentBinding) AgentBinding {
+	kind := strings.ToLower(strings.TrimSpace(value.Kind))
+	name := strings.TrimSpace(value.Name)
+	if kind != "agent" {
+		kind = "profile"
+		name = strings.ToLower(name)
 	}
-	return value
+	if name == "" {
+		return defaultAgentBinding()
+	}
+	return AgentBinding{Kind: kind, Name: name}
 }
 
 func normalizeResourceDefaults(value ResourceAgentDefaults) ResourceAgentDefaults {
 	return ResourceAgentDefaults{
-		Workspace: normalizeDefaultProfile(value.Workspace),
-		Project:   normalizeDefaultProfile(value.Project),
-		Task:      normalizeDefaultProfile(value.Task),
+		Workspace: normalizeDefaultBinding(value.Workspace),
+		Project:   normalizeDefaultBinding(value.Project),
+		Task:      normalizeDefaultBinding(value.Task),
 	}
 }
 
@@ -90,7 +98,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 			changed = true
 		}
 		if strings.TrimSpace(cfg.AgentBinding.Name) == "" {
-			cfg.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(defaults.Workspace)}
+			cfg.AgentBinding = normalizeDefaultBinding(defaults.Workspace)
 			changed = true
 		}
 		binding, err := NormalizeAgentBinding(cfg.AgentBinding)
@@ -129,7 +137,7 @@ func ensureOpenResourceBindings(root string, defaults ResourceAgentDefaults) err
 	for _, entry := range projects {
 		project := entry.Project
 		if strings.TrimSpace(project.AgentBinding.Name) == "" {
-			project.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(defaults.Project)}
+			project.AgentBinding = normalizeDefaultBinding(defaults.Project)
 			project.UpdatedAt = time.Now().Format(time.RFC3339)
 			if err := writeResourceMetadata(entry.Path, &project); err != nil {
 				return err
@@ -144,7 +152,7 @@ func ensureOpenResourceBindings(root string, defaults ResourceAgentDefaults) err
 			if strings.TrimSpace(task.AgentBinding.Name) != "" {
 				continue
 			}
-			task.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(defaults.Task)}
+			task.AgentBinding = normalizeDefaultBinding(defaults.Task)
 			task.UpdatedAt = time.Now().Format(time.RFC3339)
 			if err := writeResourceMetadata(taskEntry.Path, &task); err != nil {
 				return err

@@ -1,0 +1,158 @@
+:where([data-component-owner="agent-binding-selector"]) {
+  position: relative;
+  display: inline-flex;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-button {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #5c6b7a;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  cursor: pointer;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-icon {
+  flex: 0 0 auto;
+  color: #8a97a5;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-button:hover:not(:disabled) {
+  background-color: #eef1f4;
+  color: var(--accent-deep);
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The menu scrolls within its own bounds instead of clipping off-screen. The
+   260px cap is a fallback; AgentBindingSelector measures the space on the
+   opening side of the button and raises the cap so long agent lists stay
+   visible. The menu hugs its content: AgentBindingSelector measures the
+   longest primary and secondary labels and pins both columns to those widths
+   so every row shares the same column boundary. A fixed 340px cap proved too
+   small for long name pairs (e.g. a long agent id next to a long profile
+   list), so the only width cap left is the viewport. */
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 100%;
+  max-width: calc(100vw - 24px);
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 5px;
+  border: 1px solid #d8dee5;
+  border-radius: 8px;
+  background: var(--bg, #fff);
+  box-shadow: 0 6px 20px rgba(44, 62, 80, 0.18);
+}
+
+:where([data-component-owner="agent-binding-selector"][data-placement="down"]) .agent-binding-menu {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-group-title {
+  margin: 1px 0 3px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #eef1f4;
+  color: #334150;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-divider {
+  height: 1px;
+  margin: 4px 2px;
+  background: #d8dee5;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #334150;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option-primary {
+  flex: 0 1 auto;
+  width: var(--binding-primary-width, auto);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option-secondary {
+  flex: 0 1 auto;
+  width: var(--binding-secondary-width, auto);
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  color: #758291;
+  text-align: right;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option:hover,
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option:focus-visible {
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  outline: none;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-option[aria-selected="true"] {
+  color: var(--accent-deep);
+  font-weight: 600;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-check {
+  flex: 0 0 auto;
+}
+
+/* Reserve the check column on unselected rows so the secondary labels keep a
+   uniform right edge across the whole menu. */
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-check-hidden {
+  visibility: hidden;
+}
+
+:where([data-component-owner="agent-binding-selector"]) .agent-binding-check svg {
+  width: 13px;
+  height: 13px;
+}

@@ -295,7 +295,11 @@ func TestMigrateIsolatesLegacySessionProjectionWithoutTouchingRuntime(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{Workspace: "default", Project: "default", Task: "default"}); err != nil {
+	if _, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+		Workspace: app.AgentBinding{Kind: "profile", Name: "default"},
+		Project:   app.AgentBinding{Kind: "profile", Name: "default"},
+		Task:      app.AgentBinding{Kind: "profile", Name: "default"},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := workspace.Migrate(""); err != nil {

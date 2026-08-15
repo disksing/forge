@@ -1,6 +1,8 @@
 <script lang="ts">
   import "./ProfilesSettingsPanel.css";
 
+  import type { ResourceAgentBindingModel } from "../models/detail";
+  import AgentBindingSelector from "./AgentBindingSelector.svelte";
   import Icon from "./Icon.svelte";
   import type { ProfileDraft, SettingsDraft, SettingsModel } from "./models";
   import { cloneSettingsDraft, settingsErrorMessage } from "./settings-draft";
@@ -50,16 +52,9 @@
     return selected && !options.some((item) => item.id === selected) ? [{ id: selected, label: `${selected} (Unavailable)` }, ...options] : options;
   }
 
-  function updateResourceDefault(kind: "workspace" | "project" | "task", value: string): void {
+  function updateResourceDefault(kind: "workspace" | "project" | "task", value: ResourceAgentBindingModel): void {
     draft.resourceDefaults[kind] = value;
     onDirty();
-  }
-
-  function resourceDefaultOptions(kind: "workspace" | "project" | "task"): ProfileDraft[] {
-    const selected = draft.resourceDefaults[kind];
-    return selected && !draft.profiles.some((profile) => profile.key === selected)
-      ? [{ key: selected, description: "Missing Profile", agentName: "" }, ...draft.profiles]
-      : draft.profiles;
   }
 
   async function saveAgentHub(): Promise<void> {
@@ -83,7 +78,7 @@
     <div class="settings-resource-defaults">
       {#each [["workspace", "Workspace"], ["project", "Project"], ["task", "Task"]] as item}
         {@const kind = item[0] as "workspace" | "project" | "task"}
-        <label><span>{item[1]}</span><select value={draft.resourceDefaults[kind]} aria-label={`${item[1]} default profile`} onchange={(event) => updateResourceDefault(kind, event.currentTarget.value)}>{#each resourceDefaultOptions(kind) as profile}<option value={profile.key}>{profile.key}{profile.agentName ? "" : " (Missing)"}</option>{/each}</select></label>
+        <label><span>{item[1]}</span><AgentBindingSelector value={draft.resourceDefaults[kind]} profiles={draft.profiles} {agents} openUp={false} ariaLabel={`${item[1]} default binding`} onSelect={(value) => updateResourceDefault(kind, value)} /></label>
       {/each}
     </div>
     <p class="settings-resource-default-note">Existing resources keep their explicit binding. Changing a profile route replaces its referenced resource generations at a safe turn boundary.</p>

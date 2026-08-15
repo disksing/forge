@@ -37,7 +37,7 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
       capabilities: ["sessions"],
       providers: [{ id: "codex" }],
       agents: [{ name: "Codex", providerId: "codex", available: true }],
-      resourceDefaults: { workspace: "default", project: "default", task: "default" },
+      resourceDefaults: { workspace: { kind: "profile", name: "default" }, project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "default" } },
     },
     profiles: [
       { key: "default", description: "Default", agentName: "codex" },
@@ -228,9 +228,11 @@ describe("settings domain panels", () => {
     expect(profileKeys[0].disabled).toBe(true);
     expect(target.textContent).toContain("System");
     expect(target.querySelectorAll<HTMLSelectElement>('[aria-label="AgentHub Agent"]')[1]?.textContent).toContain("missing (Unavailable)");
-		const taskDefault = target.querySelector<HTMLSelectElement>('[aria-label="Task default profile"]')!;
-		taskDefault.value = "custom";
-		taskDefault.dispatchEvent(new Event("change", { bubbles: true }));
+		const taskDefault = target.querySelector<HTMLButtonElement>('[aria-label="Task default binding"]')!;
+		taskDefault.click();
+		await tick();
+		target.querySelector<HTMLButtonElement>('[data-binding="profile:custom"]')!.click();
+		await tick();
 
     target.querySelector<HTMLButtonElement>('[title="Delete Profile"]')!.click();
     await tick();
@@ -254,7 +256,7 @@ describe("settings domain panels", () => {
     saveButton.click();
     await tick();
     expect(current.onSaveAgentHub).toHaveBeenCalledTimes(1);
-		expect(current.onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({ resourceDefaults: { workspace: "default", project: "default", task: "custom" } }));
+		expect(current.onSaveAgentHub).toHaveBeenCalledWith(expect.objectContaining({ resourceDefaults: { workspace: { kind: "profile", name: "default" }, project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "custom" } } }));
     expect(saveButton.disabled).toBe(true);
     save.resolve();
     await vi.waitFor(() => expect(target.querySelector(".settings-save-hint.visible")).toBeNull());
