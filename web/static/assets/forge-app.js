@@ -2384,7 +2384,7 @@ function Xn(n, i) {
 	Y(() => {
 		let e = i.selection, t = c(m), n = c(_);
 		if (n !== E) {
-			if (E = n, x(a, null), x(f, ""), x(p, !1), !e) {
+			if (E = n, x(a, null), x(f, ""), x(p, i.editable && e?.edit === !0, !0), !e) {
 				i.client.requests.abort(t);
 				return;
 			}
@@ -4407,67 +4407,36 @@ function $i(n, i) {
 p(["click"]);
 //#endregion
 //#region src/components/MarkdownDocument.svelte
-var ea = P("<button type=\"button\" class=\"secondary-button\"><!><span>Edit / Annotate</span></button>"), ta = P("<div class=\"markdown-document-actions\"><!><a class=\"secondary-button markdown-open-file\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a></div><div class=\"markdown-preview\"><div class=\"markdown-view markdown-rendered\"></div></div>", 1), na = P("<pre class=\"markdown-view\"> </pre>"), ra = P("<div class=\"content-section\" data-component-owner=\"markdown-document\"><!></div>");
+var ea = P("<button type=\"button\" class=\"secondary-button\"><!><span>Edit / Annotate</span></button>"), ta = P("<div class=\"markdown-preview\"><div class=\"markdown-document-actions\"><!></div><div class=\"markdown-view markdown-rendered\"></div></div>"), na = P("<pre class=\"markdown-view\"> </pre>"), ra = P("<div class=\"content-section\" data-component-owner=\"markdown-document\"><!></div>");
 function ia(e, n) {
 	C(n, !0);
-	let i = N(n, "editable", 3, !1), a = N(n, "onSave", 3, async (e) => ({ path: e })), d = N(n, "onToast", 3, () => void 0), f = N(n, "onIconsChanged", 3, () => void 0), p = u(() => Dn(n.file.name)), m = u(() => `/api/workspaces/${encodeURIComponent(n.workspaceId)}/files/raw?path=${encodeURIComponent(n.file.path || n.file.name)}`), _ = o(!1), v = o("");
-	Y(() => {
-		let e = `${n.workspaceId}:${n.file.path || n.file.name}`;
-		c(v) && c(v) !== e && x(_, !1), x(v, e);
-	});
-	var y = ra(), E = t(y), O = (e) => {
-		{
-			let t = u(() => ({
-				...n.file,
-				path: n.file.path || n.file.name
-			}));
-			Bn(e, {
-				get identity() {
-					return c(v);
-				},
-				get file() {
-					return c(t);
-				},
-				onSave: (e, t) => a()(n.file.path || n.file.name, e, t),
-				onDone: () => x(_, !1),
-				get onToast() {
-					return d();
-				},
-				get onIconsChanged() {
-					return f();
-				}
-			});
-		}
-	}, k = (e) => {
-		var r = ta(), a = b(r), o = t(a), l = (e) => {
-			var n = ea(), r = t(n);
-			W(r, { name: "pencil" }), S(), w(n), h("click", n, () => x(_, !0)), F(e, n);
+	let i = N(n, "editable", 3, !1), a = u(() => Dn(n.file.name));
+	var o = ra(), d = t(o), f = (e) => {
+		var r = ta(), a = t(r), o = t(a), c = (e) => {
+			var r = ea(), i = t(r);
+			W(i, { name: "pencil" }), S(), w(r), h("click", r, () => n.onEdit(n.file.path || n.file.name)), F(e, r);
 		};
 		q(o, (e) => {
-			i() && e(l);
-		});
-		var u = s(o), d = t(u);
-		W(d, { name: "external-link" }), S(), w(u), w(a);
-		var f = s(a), p = t(f);
-		D(p, () => gn(n.file.content || "", {
+			i() && n.onEdit && e(c);
+		}), w(a);
+		var l = s(a);
+		D(l, () => gn(n.file.content || "", {
 			workspaceId: n.workspaceId,
 			resolveResourceTitle: n.resolveResourceTitle
-		}), !0), w(p), T(p, (e, t) => yn?.(e, t), () => ({
+		}), !0), w(l), T(l, (e, t) => yn?.(e, t), () => ({
 			resolveResourceTitle: n.resolveResourceTitle,
 			onNavigate: n.onNavigate,
 			onOpenFile: n.onOpenFile
-		})), w(f), g(() => {
-			I(u, "href", c(m)), I(u, "aria-label", `Open ${n.file.name} in new window`);
-		}), F(e, r);
-	}, A = (e) => {
+		})), w(r), F(e, r);
+	}, p = (e) => {
 		var i = na(), a = t(i, !0);
 		w(i), g(() => r(a, n.file.content || "")), F(e, i);
 	};
-	q(E, (e) => {
-		c(p) && c(_) ? e(O) : c(p) ? e(k, 1) : e(A, -1);
-	}), w(y), g(() => {
-		I(y, "data-doc-file", n.file.name), I(y, "data-document-identity", `${n.workspaceId}:${n.file.path || n.file.name}:preview:${n.file.contentHash || "unversioned"}`);
-	}), F(e, y), l();
+	q(d, (e) => {
+		c(a) ? e(f) : e(p, -1);
+	}), w(o), g(() => {
+		I(o, "data-doc-file", n.file.name), I(o, "data-document-identity", `${n.workspaceId}:${n.file.path || n.file.name}:preview:${n.file.contentHash || "unversioned"}`);
+	}), F(e, o), l();
 }
 p(["click"]);
 //#endregion
@@ -4605,18 +4574,18 @@ function Pa(i, a) {
 		path: c(f).workspaceAgents.path || "AGENTS.md",
 		content: c(f).workspaceAgents.content || "",
 		contentHash: c(f).workspaceAgents.contentHash
-	} : null), N = u(z), P = u(() => c(v) ? `${c(v).section}:${c(v).path}` : "");
+	} : null), N = u(B), P = u(() => c(v) ? `${c(v).section}:${c(v).path}` : ""), L = u(() => c(f).resourceType === "workspace" ? !!(c(v) && (c(v).path === "AGENTS.md" || c(v).path === "")) : !c(f).detail?.archived && (c(f).resourceType === "project" || c(f).resourceType === "task"));
 	H(() => a.channel.subscribe((e) => {
-		let t = ie(), n = ++O;
+		let t = oe(), n = ++O;
 		if (x(f, e, !0), e.identity !== c(p)) {
 			c(p) && c(m) && E.set(c(p), c(m)), x(p, e.identity, !0), x(v, null), x(T, null), x(_, /* @__PURE__ */ new Set(), !0);
 			let t = E.get(c(p));
-			x(m, t && t !== "work" ? t : L(e), !0);
+			x(m, t && t !== "work" ? t : z(e), !0);
 			let n = document.getElementById("detailsContent");
 			n && (n.scrollTop = 0);
 		} else c(N).length && !c(N).some((e) => e.id === c(m)) && x(m, c(N)[0].id, !0);
 		d().then(() => {
-			n === O && ae(t), e.onIconsChanged();
+			n === O && se(t), e.onIconsChanged();
 		});
 	})), H(() => {
 		let e = (e) => {
@@ -4624,11 +4593,11 @@ function Pa(i, a) {
 		};
 		return document.addEventListener("keydown", e), () => document.removeEventListener("keydown", e);
 	}), R(() => D.dispose());
-	function L(e) {
+	function z(e) {
 		let t = (e.detail?.files || []).filter((e) => e.name !== "AGENTS.md");
 		return e.resourceType === "workspace" ? "agents" : e.resourceType === "scheduler" ? "schedules" : e.resourceType === "project" && t.some((e) => e.name === "project.md") ? "project" : t.some((e) => e.name === "task.md") ? "task" : e.resourceType === "project" ? "project" : e.resourceType === "task" ? "task" : "history";
 	}
-	function z() {
+	function B() {
 		if (c(f).resourceType === "workspace") return [{
 			id: "agents",
 			label: "AGENTS.md",
@@ -4675,69 +4644,73 @@ function Pa(i, a) {
 			icon: "folder-git-2"
 		}), e;
 	}
-	function B(e) {
+	function V(e) {
 		return e.name === "scheduler.md" ? "context" : e.name === "project.md" ? "project" : e.name === "task.md" ? "task" : c(N).find((e) => ["project", "task"].includes(e.id))?.id || "";
 	}
-	function V(e) {
+	function U(e) {
 		x(m, e, !0), E.set(c(p), e);
 	}
-	function U(e) {
+	function G(e) {
 		let t = e.includes(".") ? e.slice(e.lastIndexOf(".") + 1) : e, n = t.match(/^(?:project|task)(\d+)$/);
 		return `#${n ? n[1] : t}`;
 	}
-	function G(e) {
+	function K(e) {
 		let t = new Set(c(_));
 		t.has(e) ? t.delete(e) : t.add(e), x(_, t, !0), queueMicrotask(c(f).onIconsChanged);
 	}
-	function K(e, t, n = !1) {
+	function ee(e, t, n = !1) {
 		let r = n ? "&download=1" : "";
 		return `/api/workspaces/${encodeURIComponent(c(f).workspaceId)}/files/raw?path=${encodeURIComponent(t)}${r}`;
 	}
-	function ee(e, t) {
+	function Y(e, t, n = !1) {
 		x(v, {
 			section: e,
-			path: t
+			path: t,
+			edit: n
 		}, !0);
 	}
-	function Y(e) {
-		ee("Files", e);
-	}
 	function te(e) {
+		Y("Files", e);
+	}
+	function ne(e) {
+		Y("Files", e, !0);
+	}
+	function re(e) {
 		let t = e.split("/").pop() || e;
 		window.confirm(`Delete artifact "${t}"? This cannot be undone.`) && c(f).onDeleteArtifact(e).then(() => {
 			c(v) && c(v).section === "Artifacts" && c(v).path === e && x(v, null);
-		}).catch((e) => oe(e instanceof Error ? e.message : String(e)));
+		}).catch((e) => ce(e instanceof Error ? e.message : String(e)));
 	}
-	function ne(e, t, n) {
-		return c(f).onSaveWorkspaceAgents(t, n);
+	function ie(e, t, n) {
+		return c(f).resourceType === "workspace" && (e === "AGENTS.md" || e === "") ? c(f).onSaveWorkspaceAgents(t, n) : c(f).onSaveMarkdownFile(e, t, n);
 	}
-	function re(e) {
+	function ae(e) {
 		return `${e.section}:${e.path}`;
 	}
-	function ie() {
+	function oe() {
 		if (!c(v)) return null;
 		let e = document.querySelector("[data-preview-scroll]");
 		return e ? {
-			key: re(c(v)),
+			key: ae(c(v)),
 			scrollTop: e.scrollTop,
 			scrollLeft: e.scrollLeft
 		} : null;
 	}
-	function ae(e) {
-		if (!e || !c(v) || e.key !== re(c(v))) return;
+	function se(e) {
+		if (!e || !c(v) || e.key !== ae(c(v))) return;
 		let t = document.querySelector("[data-preview-scroll]");
 		t && (t.scrollTop = e.scrollTop, t.scrollLeft = e.scrollLeft);
 	}
-	function oe(e) {
+	function ce(e) {
 		e && c(f).onToast(e);
 	}
-	var se = Na(), ce = b(se), le = (e) => {
+	var le = Na(), ue = b(le), de = (e) => {
 		var n = ua(), r = t(n), i = t(r);
 		W(i, {
 			name: "folder-search",
 			className: "empty-state-icon"
 		}), S(2), w(r), w(n), F(e, n);
-	}, ue = (e) => {
+	}, fe = (e) => {
 		var n = ga(), i = b(n), a = t(i), o = t(a, !0);
 		w(a), w(i);
 		var l = s(i, 2);
@@ -4751,7 +4724,7 @@ function Pa(i, a) {
 			var l = s(o), u = t(l, !0);
 			w(l), w(i), g(() => {
 				a = j(i, 1, "details-tab", null, a, { active: c(m) === c(n).id }), I(i, "aria-selected", c(m) === c(n).id), r(u, c(n).label);
-			}), h("click", i, () => V(c(n).id)), F(e, i);
+			}), h("click", i, () => U(c(n).id)), F(e, i);
 		}), w(l);
 		var d = s(l, 2), p = t(d), v = t(p), y = (e) => {
 			ia(e, {
@@ -4768,14 +4741,8 @@ function Pa(i, a) {
 				get onNavigate() {
 					return c(f).onNavigate;
 				},
-				onOpenFile: Y,
-				onSave: ne,
-				get onToast() {
-					return c(f).onToast;
-				},
-				get onIconsChanged() {
-					return c(f).onIconsChanged;
-				}
+				onOpenFile: te,
+				onEdit: ne
 			});
 		}, x = (e) => {
 			var n = fa(), i = t(n), a = t(i);
@@ -4812,9 +4779,9 @@ function Pa(i, a) {
 					get activePath() {
 						return c(P);
 					},
-					onToggle: G,
-					onPreview: ee,
-					rawURL: K,
+					onToggle: K,
+					onPreview: Y,
+					rawURL: ee,
 					showHeading: !1
 				});
 			}
@@ -4824,7 +4791,7 @@ function Pa(i, a) {
 		}), w(T), w(d), g(() => {
 			r(o, c(f).workspaceName), I(p, "hidden", c(m) !== "agents"), I(T, "hidden", c(m) !== "wiki");
 		}), F(e, n);
-	}, de = (i) => {
+	}, pe = (i) => {
 		var a = Ma(), o = b(a), l = t(o), d = t(l), p = t(d, !0);
 		w(d);
 		var v = s(d, 2), y = (e) => {
@@ -4836,7 +4803,7 @@ function Pa(i, a) {
 		}), w(l);
 		var C = s(l, 2), E = t(C, !0), D = s(E), O = (e) => {
 			var n = va(), i = t(n, !0);
-			w(n), g((e) => r(i, e), [() => U(c(f).resourceId)]), F(e, n);
+			w(n), g((e) => r(i, e), [() => G(c(f).resourceId)]), F(e, n);
 		};
 		q(D, (e) => {
 			c(f).resourceType !== "scheduler" && e(O);
@@ -4866,7 +4833,7 @@ function Pa(i, a) {
 				name: "loader-circle",
 				className: "empty-state-icon"
 			}), S(), w(r), w(n), F(e, n);
-		}, H = (i) => {
+		}, B = (i) => {
 			var a = ja(), o = b(a);
 			J(o, 21, () => c(N), (e) => e.id, (e, n) => {
 				var i = da();
@@ -4878,13 +4845,13 @@ function Pa(i, a) {
 				var l = s(o), u = t(l, !0);
 				w(l), w(i), g(() => {
 					a = j(i, 1, "details-tab", null, a, { active: c(m) === c(n).id }), I(i, "aria-selected", c(m) === c(n).id), r(u, c(n).label);
-				}), h("click", i, () => V(c(n).id)), F(e, i);
+				}), h("click", i, () => U(c(n).id)), F(e, i);
 			}), w(o);
 			var l = s(o, 2), d = t(l);
 			J(d, 17, () => c(k), (e) => e.path || e.name, (e, n) => {
 				var r = Ca(), i = t(r);
 				{
-					let e = u(() => !c(f).detail.archived);
+					let e = u(() => !c(f).detail.archived && (c(f).resourceType === "project" || c(f).resourceType === "task"));
 					ia(i, {
 						get file() {
 							return c(n);
@@ -4901,19 +4868,11 @@ function Pa(i, a) {
 						get onNavigate() {
 							return c(f).onNavigate;
 						},
-						onOpenFile: Y,
-						get onSave() {
-							return c(f).onSaveMarkdownFile;
-						},
-						get onToast() {
-							return c(f).onToast;
-						},
-						get onIconsChanged() {
-							return c(f).onIconsChanged;
-						}
+						onOpenFile: te,
+						onEdit: ne
 					});
 				}
-				w(r), g((e) => I(r, "hidden", e), [() => c(m) !== B(c(n))]), F(e, r);
+				w(r), g((e) => I(r, "hidden", e), [() => c(m) !== V(c(n))]), F(e, r);
 			});
 			var p = s(d, 2), v = (e) => {
 				var n = wa(), r = t(n), i = t(r);
@@ -4968,7 +4927,7 @@ function Pa(i, a) {
 						var m = s(l);
 						W(m, { name: "chevron-right" }), w(i), g(() => {
 							a = j(i, 1, "template-row", null, a, { invalid: !c(n).valid }), r(d, c(n).title || c(n).name), r(p, `${c(n).name ?? ""} · v${(c(n).schemaVersion || "?") ?? ""} · ${c(n).valid ? `${(c(n).fields || []).length} fields` : `invalid${c(n).errors?.[0]?.message ? `: ${c(n).errors[0].message}` : ""}`}${c(n).legacy ? " · legacy" : ""}`);
-						}), h("click", i, () => c(n).path && ee("Templates", c(n).path)), F(e, i);
+						}), h("click", i, () => c(n).path && Y("Templates", c(n).path)), F(e, i);
 					}), F(n, i);
 				}, u = (e) => {
 					var n = Da(), r = t(n);
@@ -4981,7 +4940,7 @@ function Pa(i, a) {
 			q(R, (e) => {
 				c(f).resourceType === "project" && e(z);
 			}), w(L);
-			var H = s(L, 2), U = (t) => {
+			var B = s(L, 2), H = (t) => {
 				var r = e(), i = b(r);
 				n(i, () => c(f).identity, (e) => {
 					{
@@ -5002,7 +4961,7 @@ function Pa(i, a) {
 							get onNavigate() {
 								return c(f).onNavigate;
 							},
-							onOpenLegacy: (e) => ee("Artifacts", e),
+							onOpenLegacy: (e) => Y("Artifacts", e),
 							get onIconsChanged() {
 								return c(f).onIconsChanged;
 							}
@@ -5010,13 +4969,13 @@ function Pa(i, a) {
 					}
 				}), F(t, r);
 			};
-			q(H, (e) => {
-				c(m) === "history" && e(U);
+			q(B, (e) => {
+				c(m) === "history" && e(H);
 			});
-			var ne = s(H, 2), re = t(ne);
+			var G = s(B, 2), ie = t(G);
 			{
-				let e = u(() => c(f).detail.artifacts || []), t = u(() => c(f).detail.archived ? void 0 : te);
-				Ln(re, {
+				let e = u(() => c(f).detail.artifacts || []), t = u(() => c(f).detail.archived ? void 0 : re);
+				Ln(ie, {
 					title: "Artifacts",
 					get entries() {
 						return c(e);
@@ -5028,17 +4987,17 @@ function Pa(i, a) {
 					get activePath() {
 						return c(P);
 					},
-					onToggle: G,
-					onPreview: ee,
-					rawURL: K,
+					onToggle: K,
+					onPreview: Y,
+					rawURL: ee,
 					get onDelete() {
 						return c(t);
 					},
 					showHeading: !1
 				});
 			}
-			w(ne);
-			var ie = s(ne, 2), ae = t(ie), oe = t(ae), se = t(oe), ce = (n) => {
+			w(G);
+			var ae = s(G, 2), oe = t(ae), se = t(oe), ce = t(se), le = (n) => {
 				var i = e(), a = b(i);
 				J(a, 17, () => c(f).detail.repos, (e) => `${e.name}:${e.worktreePath}`, (e, n) => {
 					var i = ka(), a = t(i), o = t(a);
@@ -5057,62 +5016,56 @@ function Pa(i, a) {
 						r(d, c(n).branch || "HEAD"), r(p, `${(c(n).name || "repository") ?? ""}${c(n).targetBranch || c(n).baseBranch ? ` · base ${c(n).targetBranch || c(n).baseBranch}` : ""}`), r(_, c(n).worktreePath || "");
 					}), h("click", v, () => x(T, c(n), !0)), F(e, i);
 				}), F(n, i);
-			}, le = (e) => {
+			}, ue = (e) => {
 				var n = Aa(), r = t(n);
 				W(r, { name: "git-branch" }), S(), w(n), F(e, n);
 			};
-			q(se, (e) => {
-				c(f).detail.repos?.length ? e(ce) : e(le, -1);
-			}), w(oe), w(ae), w(ie), w(l), g(() => {
-				I(L, "hidden", c(m) !== "template"), I(ne, "hidden", c(m) !== "artifacts"), I(ie, "hidden", c(m) !== "worktrees");
+			q(ce, (e) => {
+				c(f).detail.repos?.length ? e(le) : e(ue, -1);
+			}), w(se), w(oe), w(ae), w(l), g(() => {
+				I(L, "hidden", c(m) !== "template"), I(G, "hidden", c(m) !== "artifacts"), I(ae, "hidden", c(m) !== "worktrees");
 			}), F(i, a);
 		};
 		q(R, (e) => {
-			c(f).loading || !c(f).detail ? e(z) : e(H, -1);
+			c(f).loading || !c(f).detail ? e(z) : e(B, -1);
 		}), g(() => {
 			r(p, c(f).workspaceName), r(E, c(f).resourceTitle);
 		}), h("click", d, () => c(f).onNavigate("workspace")), F(i, a);
 	};
-	q(ce, (e) => {
-		c(f).workspaceId ? c(f).resourceType === "workspace" ? e(ue, 1) : e(de, -1) : e(le);
+	q(ue, (e) => {
+		c(f).workspaceId ? c(f).resourceType === "workspace" ? e(fe, 1) : e(pe, -1) : e(de);
 	});
-	var fe = s(ce, 2);
-	{
-		let e = u(() => !c(f).detail?.archived && (c(f).resourceType === "project" || c(f).resourceType === "task"));
-		Xn(fe, {
-			get client() {
-				return D;
-			},
-			get workspaceId() {
-				return c(f).workspaceId;
-			},
-			get resourceId() {
-				return c(f).resourceId;
-			},
-			get selection() {
-				return c(v);
-			},
-			get editable() {
-				return c(e);
-			},
-			get resolveResourceTitle() {
-				return c(f).resolveResourceTitle;
-			},
-			get onNavigate() {
-				return c(f).onNavigate;
-			},
-			onOpenFile: Y,
-			get onSaveMarkdown() {
-				return c(f).onSaveMarkdownFile;
-			},
-			onClose: () => x(v, null),
-			onError: oe,
-			get onIconsChanged() {
-				return c(f).onIconsChanged;
-			}
-		});
-	}
-	sn(s(fe, 2), {
+	var me = s(ue, 2);
+	Xn(me, {
+		get client() {
+			return D;
+		},
+		get workspaceId() {
+			return c(f).workspaceId;
+		},
+		get resourceId() {
+			return c(f).resourceId;
+		},
+		get selection() {
+			return c(v);
+		},
+		get editable() {
+			return c(L);
+		},
+		get resolveResourceTitle() {
+			return c(f).resolveResourceTitle;
+		},
+		get onNavigate() {
+			return c(f).onNavigate;
+		},
+		onOpenFile: te,
+		onSaveMarkdown: ie,
+		onClose: () => x(v, null),
+		onError: ce,
+		get onIconsChanged() {
+			return c(f).onIconsChanged;
+		}
+	}), sn(s(me, 2), {
 		get client() {
 			return D;
 		},
@@ -5126,11 +5079,11 @@ function Pa(i, a) {
 			return c(T);
 		},
 		onClose: () => x(T, null),
-		onError: oe,
+		onError: ce,
 		get onIconsChanged() {
 			return c(f).onIconsChanged;
 		}
-	}), F(i, se), l();
+	}), F(i, le), l();
 }
 p(["click"]);
 //#endregion
