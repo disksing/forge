@@ -10,6 +10,7 @@ import { formatToolCallCount, normalizeToolCallCount } from "./tool-group";
 const HISTORY_LIMIT = 20;
 const EVENT_LIMIT = 250;
 const STREAM_BATCH_WINDOW_MS = 80;
+const STATUS_SYNC_INTERVAL_MS = 2000;
 const HIDDEN_EVENT_TYPES = new Set(["session.created", "session.provider", "session.launch-environment"]);
 
 type EventSourceFactory = (url: string) => EventSource;
@@ -46,6 +47,8 @@ interface ResourceChatContext {
   headRefreshing: boolean;
   terminalMaterializing: Set<string>;
   flushTimer: ReturnType<typeof setTimeout> | null;
+  statusSyncTimer: ReturnType<typeof setInterval> | null;
+  statusSyncInFlight: boolean;
 }
 
 export interface ChatSessionControllerOptions {
@@ -54,6 +57,7 @@ export interface ChatSessionControllerOptions {
   onEvent?: (workspaceId: string, resourceId: string, event: AgentEvent) => void;
   onNotice?: (workspaceId: string, resourceId: string, notice: AgentNotice) => void;
   streamBatchWindowMs?: number;
+  statusSyncIntervalMs?: number;
   realtime?: boolean;
 }
 
@@ -67,6 +71,7 @@ export class ChatSessionController {
   private readonly onEvent?: ChatSessionControllerOptions["onEvent"];
   private readonly onNotice?: ChatSessionControllerOptions["onNotice"];
   private readonly streamBatchWindowMs: number;
+  private readonly statusSyncIntervalMs: number;
   private readonly realtime: boolean;
   private activeKey = "";
   private disposed = false;
@@ -77,6 +82,7 @@ export class ChatSessionController {
     this.onEvent = options.onEvent;
     this.onNotice = options.onNotice;
     this.streamBatchWindowMs = Math.max(0, options.streamBatchWindowMs ?? STREAM_BATCH_WINDOW_MS);
+    this.statusSyncIntervalMs = Math.max(1, options.statusSyncIntervalMs ?? STATUS_SYNC_INTERVAL_MS);
     this.realtime = options.realtime !== false;
   }
 
@@ -97,8 +103,10 @@ export class ChatSessionController {
       return;
     }
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, resourceId);
-    this.api.requests.abort(requestScope(context, "status"));
     const nextGeneration = String(status?.generation?.generationId || "");
+    if (this.isStaleStatus(context, status, nextGeneration)) return;
+    this.startStatusSync(context);
+    this.api.requests.abort(requestScope(context, "status"));
     const generationChanged = Boolean(context.generationId && nextGeneration && context.generationId !== nextGeneration);
     context.status = status;
     context.generationId = nextGeneration;
@@ -228,7 +236,7 @@ export class ChatSessionController {
       requestGeneration: 1, streamGeneration: 0, segments: new Map(), details: new Map(), detailLoading: new Set(),
       detailErrors: new Map(), liveEvents: new Map(), orphanEvents: new Map(), notices: [], nextCursor: "", hasMoreBefore: false,
       loading: false, loadingOlder: false, loaded: false, error: "", stream: null, pendingEvents: [], headRefreshing: false,
-      terminalMaterializing: new Set(), flushTimer: null,
+      terminalMaterializing: new Set(), flushTimer: null, statusSyncTimer: null, statusSyncInFlight: false,
     };
     this.contexts.set(context.key, context);
     return context;
@@ -384,29 +392,51 @@ export class ChatSessionController {
       if (stream.readyState === 2) {
         context.stream = null;
         context.streamGeneration++;
-        void this.refreshAfterStreamFailure(context);
+        void this.refreshCurrentStatus(context);
       }
     };
   }
 
-  private async refreshAfterStreamFailure(context: ResourceChatContext): Promise<void> {
+  private startStatusSync(context: ResourceChatContext): void {
+    if (!this.realtime || context.statusSyncTimer) return;
+    context.statusSyncTimer = setInterval(() => void this.refreshCurrentStatus(context), this.statusSyncIntervalMs);
+  }
+
+  private isStaleStatus(context: ResourceChatContext, status: ResourceMessageStatus | null, generationId: string): boolean {
+    if (!context.generationId) return false;
+    if (!generationId) return true;
+    const currentGeneration = Number(context.status?.generation?.generation);
+    const nextGeneration = Number(status?.generation?.generation);
+    return Number.isFinite(currentGeneration) && Number.isFinite(nextGeneration) && nextGeneration < currentGeneration;
+  }
+
+  private async refreshCurrentStatus(context: ResourceChatContext): Promise<void> {
+    if (context.statusSyncInFlight || !this.isActive(context)) return;
+    context.statusSyncInFlight = true;
     const generation = context.requestGeneration;
     try {
       const status = await this.api.latest<ResourceMessageStatus>(`${resourceBase(context)}/status`, { scope: requestScope(context, "status") });
       if (!this.isCurrent(context, generation) || !status.generation?.generationId) return;
       const nextGeneration = String(status.generation.generationId);
-      if (nextGeneration !== context.generationId) {
+      if (nextGeneration !== context.generationId && (context.generationId || context.loaded)) {
         this.activate(context.workspaceId, context.resourceId, status);
         return;
       }
+      const previousGenerationId = context.generationId;
+      const previousSessionId = String(context.status?.session?.id || "");
       context.status = status;
-      this.emit();
-      this.connect(context);
+      context.generationId = nextGeneration;
+      if (context.stream && (!isStreamable(status) || (previousSessionId && previousSessionId !== String(status.session?.id || "")))) this.closeStream(context);
+      if (!context.loaded && !context.loading) void this.loadInitial(context);
+      else if (!context.stream) this.connect(context);
+      if (previousGenerationId !== nextGeneration) this.emit();
     } catch (error) {
       // A stream failure should not replace useful history with a transient
       // status error. The next stream failure or application status refresh
       // retries reconciliation.
       if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
+    } finally {
+      context.statusSyncInFlight = false;
     }
   }
 
@@ -595,6 +625,8 @@ export class ChatSessionController {
 
   private deactivate(context?: ResourceChatContext): void {
     if (!context) return;
+    if (context.statusSyncTimer) clearInterval(context.statusSyncTimer);
+    context.statusSyncTimer = null;
     if (context.flushTimer) clearTimeout(context.flushTimer);
     context.flushTimer = null;
     this.flushEvents(context, false);

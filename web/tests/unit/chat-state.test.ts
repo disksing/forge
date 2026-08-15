@@ -296,6 +296,42 @@ describe("resource conversation controller", () => {
     expect(FakeEventSource.instances[1].url).toContain("generationId=gen-2");
   });
 
+  it("syncs a replacement generation while the previous live stream stays open", async () => {
+    const oldTurn = turn(1, "old", 1, 2);
+    const newTurn = turn(2, "new", 3, 4);
+    let currentGeneration = 1;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.endsWith("/status")) return response(status(currentGeneration));
+      return response({
+        resourceId: "task-a",
+        segments: currentGeneration === 1
+          ? [{ generation: generation(1), turns: [oldTurn] }]
+          : [{ generation: generation(1), turns: [oldTurn] }, { generation: generation(2), turns: [newTurn] }],
+        page: { limit: 20, hasMore: false },
+      });
+    });
+    const value = controller(fetchImpl, { statusSyncIntervalMs: 10 });
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status(1));
+    await vi.waitFor(() => expect(FakeEventSource.instances).toHaveLength(1));
+    const oldStream = FakeEventSource.instances[0];
+
+    currentGeneration = 2;
+
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gen-2:new"]));
+    expect(oldStream.closed).toBe(true);
+    expect(FakeEventSource.instances).toHaveLength(2);
+    expect(FakeEventSource.instances[1].url).toContain("generationId=gen-2");
+
+    // A parent view-model refresh can still carry the previous Generation
+    // while its own status request catches up; it must not roll Chat back.
+    value.activate("workspace-a", "task-a", status(1));
+    expect(latest.generationId).toBe("gen-2");
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gen-2:new"]);
+  });
+
   it("discards stale history responses across rapid multi-generation switches", async () => {
     const pending = [deferredResponse(), deferredResponse(), deferredResponse()];
     let historyCalls = 0;
