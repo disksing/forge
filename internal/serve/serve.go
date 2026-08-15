@@ -713,10 +713,6 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := s.followResource(workspace.Path, result.ID); err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
 	writeJSON(w, result)
 }
 
@@ -785,10 +781,6 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 			status = http.StatusConflict
 		}
 		writeError(w, err, status)
-		return
-	}
-	if err := s.followResource(workspace.Path, result.ID); err != nil {
-		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, result)

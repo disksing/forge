@@ -1197,9 +1197,6 @@ func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspa
 	if archived {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived and no longer accepts messages", resourceID)}
 	}
-	if err := m.server.followResource(workspace.Path, resourceID); err != nil {
-		return resourceMailboxMessage{}, fmt.Errorf("follow resource before accepting message: %w", err)
-	}
 	message, err := acceptMailboxMessage(workspace.Path, resourceID, request)
 	if err != nil {
 		return resourceMailboxMessage{}, err
