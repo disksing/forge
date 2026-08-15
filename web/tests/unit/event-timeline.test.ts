@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import EventTimeline from "../../src/components/EventTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
-import type { AgentEvent, EventTimelineModel, TimelineItem } from "../../src/components/models";
+import type { AgentEvent, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -26,10 +26,18 @@ function project(events: AgentEvent[]): TimelineItem[] {
   return events.map((event) => ({ kind: "message", key: event.id, role: "assistant", text: String(event.data?.text || "") }));
 }
 
-function model(resourceId: string): EventTimelineModel {
+function status(resourceId: string, generationId = `gen-${resourceId}`, generation = 1, state: ResourceMessageStatus["state"] = "idle", generationStatus = "idle", sessionState = "idle"): ResourceMessageStatus {
+  return {
+    resourceId, state, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [],
+    generation: { generation, generationId, status: generationStatus },
+    session: { id: `session-${resourceId}`, state: sessionState, currentTurnId: sessionState === "running" ? "turn-1" : undefined },
+  };
+}
+
+function model(resourceId: string, nextStatus = status(resourceId)): EventTimelineModel {
   return {
     identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
-    status: { resourceId, state: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { generation: 1, generationId: `gen-${resourceId}`, status: "idle" }, session: { id: `session-${resourceId}`, state: "idle" } },
+    status: nextStatus,
     agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
   };
 }
@@ -90,6 +98,16 @@ function multiGenerationHistory(resourceId: string) {
 
 function conversationAuthors(target: HTMLElement): string[] {
   return [...target.querySelectorAll<HTMLElement>("section.conversation-turn .agent-message-meta strong")].map((node) => node.textContent || "");
+}
+
+function historyGeneration(resourceId: string, generation: number, generationId: string, generationStatus: string) {
+  const generationRecord = { generation, generationId, title: resourceId, status: generationStatus, createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+  const turn = { reference: `ref-${resourceId}-${generation}`, turnId: `turn-${generation}`, status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation: generationRecord };
+  return {
+    generation: generationRecord,
+    page: { resourceId, segments: [{ generation: generationRecord, turns: [turn] }], page: { limit: 20, hasMore: false } },
+    detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] },
+  };
 }
 
 describe("EventTimeline", () => {
@@ -156,6 +174,45 @@ describe("EventTimeline", () => {
     expect(target.textContent).not.toContain("Turn completed");
     expect(target.querySelector("[data-generation-id='gen-task-a']")).not.toBeNull();
     expect(FakeEventSource.instances[0].url).toContain("/resources/task-a/stream?");
+  });
+
+  it("keeps the current Generation badge aligned through lifecycle, refresh, and Generation changes", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let fixture = historyGeneration("task-a", 1, "gen-task-a", "running");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a", status("task-a", "gen-task-a", 1, "working", "starting", "starting")));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    const badge = () => target.querySelector<HTMLElement>(".conversation-generation small");
+    await vi.waitFor(() => expect(badge()?.textContent).toBe("starting"));
+
+    // A stale generation status must not leave the badge idle while the
+    // resource is working.
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "working", "idle", "running")));
+    await tick();
+    expect(badge()?.textContent).toBe("running");
+
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "idle", "idle", "idle")));
+    await tick();
+    expect(badge()?.textContent).toBe("idle");
+
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "idle", "stopped", "stopped")));
+    await tick();
+    expect(badge()?.textContent).toBe("stopped");
+
+    fixture = historyGeneration("task-a", 2, "gen-task-a-2", "running");
+    channel.publish(model("task-a", status("task-a", "gen-task-a-2", 2, "working", "running", "running")));
+    await vi.waitFor(() => expect(target.querySelector("[data-generation-id='gen-task-a-2'] small")?.textContent).toBe("running"));
+
+    // The history page can still contain the old running value after a
+    // refresh; the live status must win for the current Generation.
+    channel.publish(model("task-a", status("task-a", "gen-task-a-2", 2, "idle", "idle", "idle")));
+    await tick();
+    expect(target.querySelector("[data-generation-id='gen-task-a-2'] small")?.textContent).toBe("idle");
   });
 
   it("invalidates the old resource view and stream immediately on resource switch", async () => {

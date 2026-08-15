@@ -5,6 +5,7 @@
 
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
+  import { effectiveGenerationStatus } from "./generation-status";
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
@@ -205,7 +206,7 @@
     {#each snapshot.blocks as block, index (block.key)}
       {#if index === 0 || snapshot.blocks[index - 1].generation.generationId !== block.generation.generationId}
         <div class="conversation-generation" data-generation-id={block.generation.generationId}>
-          <span>Generation {block.generation.generation}</span><strong>{block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"}</strong><small>{block.generation.status}</small>
+          <span>Generation {block.generation.generation}</span><strong>{block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"}</strong><small data-generation-status={effectiveGenerationStatus(block, model.status)}>{effectiveGenerationStatus(block, model.status)}</small>
         </div>
       {/if}
       {#if block.kind === "gap"}
