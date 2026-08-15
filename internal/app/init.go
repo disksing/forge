@@ -168,7 +168,7 @@ History spans multiple agent conversations. Continue queries with the references
 
 ### Identify the conversation partner
 
-First understand who you are talking to, then adjust wording and tone:
+A single Session may contain messages from different roles. For each message, identify the current conversation partner from that message's provenance instead of carrying forward the previous message's role, then adjust wording and tone:
 
 - User message: communicate naturally and helpfully from the user's point of view. Explain outcomes, problems, and tradeoffs. Confirm major scope changes with the user.
 - Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Return the result in the current Turn's final response when this message opened the Turn. If a steer message delivered during the Turn needs a separate reply, send one explicitly through Forge.
