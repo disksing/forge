@@ -261,7 +261,7 @@ forge task history --project=<project> --task=<task> --limit=20
 - worktree/：Task 专用代码 worktree；
 - scheduler/：Scheduler 资源。
 
-project.json 和 task.json 保存 Forge 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
+project.json 和 task.json 保存 Forge 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。主动维护当前资源目录中的 project.md 或 task.md；需求变得明确，或关键背景、范围、约束、决定发生变化时，及时更新对应文件，不要等待用户另行提醒。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
 
 ## 4. 权限和 Forge CLI
 

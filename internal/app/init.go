@@ -231,7 +231,7 @@ In a message or Markdown file, write [[resource id]] to link a Forge resource, f
 - worktree/: Task-owned code worktrees.
 - scheduler/: the Scheduler resource.
 
-project.json and task.json contain structured information understood by Forge. Put background, scope, constraints, and durable decisions in project.md or task.md. Recover temporary progress from History, Git, and artifacts rather than keeping another permanent progress file.
+project.json and task.json contain structured information understood by Forge. Put background, scope, constraints, and durable decisions in project.md or task.md. Actively maintain project.md or task.md in the current resource directory. Update the appropriate file promptly when requirements become clear or key background, scope, constraints, or decisions change; do not wait for a separate user request. Recover temporary progress from History, Git, and artifacts rather than keeping another permanent progress file.
 
 ## 4. Permissions and Forge CLI
 
