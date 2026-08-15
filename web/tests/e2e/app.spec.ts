@@ -656,10 +656,16 @@ test("fits binding menu columns to the longest labels", async ({ page }) => {
   await expect(bindingMenu.getByRole("option")).toHaveCount(13);
 
   // Column widths are measured from the longest labels, so no label should be
-  // truncated on a wide viewport.
+  // truncated on a wide viewport. Compare the fractional text width (Range)
+  // against the integer clientWidth to catch sub-pixel truncation that a
+  // scrollWidth > clientWidth check would miss.
   const truncated = await bindingMenu.evaluate((menu) =>
     [...menu.querySelectorAll<HTMLElement>(".agent-binding-option-primary, .agent-binding-option-secondary")]
-      .filter((el) => el.scrollWidth > el.clientWidth)
+      .filter((el) => {
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        return range.getBoundingClientRect().width > el.clientWidth + 0.01;
+      })
       .map((el) => el.textContent)
   );
   expect(truncated).toEqual([]);

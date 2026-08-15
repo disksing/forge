@@ -85,15 +85,21 @@
   // Size the menu as a two-column table: every primary label shares the width
   // of the longest one and every secondary the width of the longest one, so
   // the gap between the columns is uniform instead of varying per row.
+  // scrollWidth rounds to whole pixels and can round down (124.328px -> 124),
+  // which visibly truncates the longest label, so measure with fractional
+  // getBoundingClientRect widths instead. Clear the pinned widths first so a
+  // re-measure sees natural, unclipped widths even while the menu stays open.
   function alignOptionColumns(): void {
     if (!menu) return;
+    menu.style.removeProperty("--binding-primary-width");
+    menu.style.removeProperty("--binding-secondary-width");
     let primary = 0;
     let secondary = 0;
     menu.querySelectorAll<HTMLElement>(".agent-binding-option-primary").forEach((el) => {
-      primary = Math.max(primary, el.scrollWidth);
+      primary = Math.max(primary, el.getBoundingClientRect().width);
     });
     menu.querySelectorAll<HTMLElement>(".agent-binding-option-secondary").forEach((el) => {
-      secondary = Math.max(secondary, el.scrollWidth);
+      secondary = Math.max(secondary, el.getBoundingClientRect().width);
     });
     if (primary > 0) menu.style.setProperty("--binding-primary-width", `${Math.ceil(primary)}px`);
     if (secondary > 0) menu.style.setProperty("--binding-secondary-width", `${Math.ceil(secondary)}px`);

@@ -842,11 +842,12 @@ function Ve(e, n) {
 	}
 	function D() {
 		if (!c(S)) return;
+		c(S).style.removeProperty("--binding-primary-width"), c(S).style.removeProperty("--binding-secondary-width");
 		let e = 0, t = 0;
 		c(S).querySelectorAll(".agent-binding-option-primary").forEach((t) => {
-			e = Math.max(e, t.scrollWidth);
+			e = Math.max(e, t.getBoundingClientRect().width);
 		}), c(S).querySelectorAll(".agent-binding-option-secondary").forEach((e) => {
-			t = Math.max(t, e.scrollWidth);
+			t = Math.max(t, e.getBoundingClientRect().width);
 		}), e > 0 && c(S).style.setProperty("--binding-primary-width", `${Math.ceil(e)}px`), t > 0 && c(S).style.setProperty("--binding-secondary-width", `${Math.ceil(t)}px`);
 	}
 	function O(e) {
