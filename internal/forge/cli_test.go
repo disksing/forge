@@ -280,55 +280,41 @@ func TestInitDefaultsToEnglishAndPersistsLanguage(t *testing.T) {
 		if config.Language != testDefaultLanguage {
 			t.Fatalf("expected default language %q, got %+v", testDefaultLanguage, config)
 		}
-		if !strings.Contains(readFile(t, filepath.Join(root, "AGENTS.md")), "This directory is an AgentWorkspace managed by forge.") {
-			t.Fatal("default workspace prompt should remain English")
+		rootAgents := readFile(t, filepath.Join(root, "AGENTS.md"))
+		if !strings.Contains(rootAgents, "# AgentWorkspace Agent Instructions") || strings.Contains(rootAgents, "## 1. 工作环境") {
+			t.Fatalf("default Workspace prompt should be English:\n%s", rootAgents)
 		}
 	})
 }
 
-func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
+func TestSimplifiedChineseInitAndLanguageMigration(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init", "--language", "zh-CN")
-
 		var config app.Config
 		if err := readJSON(filepath.Join(root, testConfigFile), &config); err != nil {
 			t.Fatal(err)
 		}
 		if config.Language != testChineseLanguage {
-			t.Fatalf("expected zh-CN workspace config, got %+v", config)
+			t.Fatalf("expected zh-CN Workspace config, got %+v", config)
 		}
 		if got := readFile(t, filepath.Join(root, testWikiDir, "index.md")); got != testDefaultWikiIndex {
 			t.Fatalf("unexpected Chinese Wiki index:\n%s", got)
 		}
 		rootAgentsPath := filepath.Join(root, "AGENTS.md")
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "此目录是由 Forge 管理的 AgentWorkspace") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") {
-			t.Fatalf("expected Chinese workspace prompt, got:\n%s", got)
+		for _, want := range []string{"# AgentWorkspace Agent 工作指引", "## 5. Forge 资源管理", "有合适模板时优先使用，并保留模板中的规则"} {
+			if got := readFile(t, rootAgentsPath); !strings.Contains(got, want) {
+				t.Fatalf("Chinese Workspace prompt is missing %q:\n%s", want, got)
+			}
 		}
 
 		run(t, "project", "create", "中文项目")
-		projectPath := filepath.Join(root, "project1")
-		projectMD := readFile(t, filepath.Join(projectPath, testProjectMDFile))
-		if !strings.Contains(projectMD, "## 背景") || !strings.Contains(projectMD, "## 范围") || !strings.Contains(projectMD, "## 验收标准") {
-			t.Fatalf("expected Chinese project template, got:\n%s", projectMD)
-		}
-		projectAgentsPath := filepath.Join(projectPath, "AGENTS.md")
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# 项目 Agent 指引") || !strings.Contains(got, "项目内容模板位于 templates/*.md") || !strings.Contains(got, "schema-version: 2") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用该模板") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
-			t.Fatalf("expected Chinese project prompt with workspace AGENTS.md path, got:\n%s", got)
-		}
 		run(t, "task", "create", "--project=project1", "中文任务")
-		taskPath := filepath.Join(projectPath, "task1")
-		taskMDPath := filepath.Join(taskPath, testTaskMDFile)
-		taskAgentsPath := filepath.Join(taskPath, "AGENTS.md")
-		if got := readFile(t, taskMDPath); !strings.Contains(got, "## 背景") || !strings.Contains(got, "长期有效的任务约定") {
-			t.Fatalf("expected Chinese task template, got:\n%s", got)
-		}
-		assertMissing(t, filepath.Join(taskPath, "work.md"))
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "此任务属于一个项目") || !strings.Contains(got, "父项目 AGENTS.md（../AGENTS.md）") || !strings.Contains(got, "workspace 根目录的 AGENTS.md（../../AGENTS.md）") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") || !strings.Contains(got, "只有用户明确要求覆盖某一项规则时才可针对该项覆盖") {
-			t.Fatalf("expected Chinese task prompt with project and workspace AGENTS.md paths, got:\n%s", got)
-		}
+		projectAgentsPath := filepath.Join(root, "project1", "AGENTS.md")
+		taskAgentsPath := filepath.Join(root, "project1", "task1", "AGENTS.md")
 		appendFile(t, projectAgentsPath, "\n# 团队说明\n\n保留这行。\n")
-		chineseTaskMD := readFile(t, taskMDPath)
-		if err := os.Chdir(taskPath); err != nil {
+		chineseTaskMD := readFile(t, filepath.Join(root, "project1", "task1", testTaskMDFile))
+
+		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
 			t.Fatal(err)
 		}
 		run(t, "migrate", "--language=en")
@@ -338,75 +324,65 @@ func TestSimplifiedChineseInitTemplatesAndLanguageMigration(t *testing.T) {
 		if config.Language != testDefaultLanguage {
 			t.Fatalf("expected migration to persist English, got %+v", config)
 		}
-		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "This directory is an AgentWorkspace managed by forge.") || strings.Contains(got, "此目录是由 Forge 管理") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") {
-			t.Fatalf("expected English workspace prompt after migration, got:\n%s", got)
+		if got := readFile(t, rootAgentsPath); !strings.Contains(got, "# AgentWorkspace Agent Instructions") || strings.Contains(got, "## 1. 工作环境") {
+			t.Fatalf("expected English Workspace prompt after migration, got:\n%s", got)
 		}
-		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# Project Agent Instructions") || !strings.Contains(got, "保留这行。") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") || !strings.Contains(got, "override a particular rule only when the user explicitly asks for that override") {
-			t.Fatalf("expected English project prompt with manual content preserved, got:\n%s", got)
+		if got := readFile(t, projectAgentsPath); !strings.Contains(got, "# Project Agent Instructions") || !strings.Contains(got, "Resource ID: project1") || !strings.Contains(got, "保留这行。") {
+			t.Fatalf("expected English Project card with manual content preserved, got:\n%s", got)
 		}
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# Task Agent Instructions") || !strings.Contains(got, "prefer an existing suitable template") || !strings.Contains(got, "preserve all existing template rules by default") {
-			t.Fatalf("expected English task prompt after migration, got:\n%s", got)
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# Task Agent Instructions") || !strings.Contains(got, "Resource ID: project1.task1") {
+			t.Fatalf("expected English Task card after migration, got:\n%s", got)
 		}
-		if got := readFile(t, taskMDPath); got != chineseTaskMD {
+		if got := readFile(t, filepath.Join(root, "project1", "task1", testTaskMDFile)); got != chineseTaskMD {
 			t.Fatalf("migration should not translate existing task.md\nbefore:\n%s\nafter:\n%s", chineseTaskMD, got)
 		}
 
-		run(t, "task", "create", "--project=project1", "English task")
-		if got := readFile(t, filepath.Join(projectPath, "task2", testTaskMDFile)); !strings.Contains(got, "## Background") {
-			t.Fatalf("expected new task to use migrated language, got:\n%s", got)
-		}
-
 		run(t, "migrate", "--language=zh-CN")
-		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "如果存在适用的现有模板，应优先使用") || !strings.Contains(got, "默认保留模板已有的全部规则") {
-			t.Fatalf("expected migration to switch prompts back to Chinese, got:\n%s", got)
+		if got := readFile(t, taskAgentsPath); !strings.Contains(got, "# 任务 Agent 指引") || !strings.Contains(got, "当前资源 ID：project1.task1") {
+			t.Fatalf("expected migration to switch Task card back to Chinese, got:\n%s", got)
 		}
 	})
 }
-
-func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecycle(t *testing.T) {
+func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 	cases := []struct {
-		name     string
-		language string
-		anchors  []string
-		wrong    string
+		name             string
+		language         string
+		rootAnchors      []string
+		projectAnchors   []string
+		taskAnchors      []string
+		wrongLanguage    string
+		localOnlyHeading string
 	}{
 		{
 			name:     "English",
 			language: "en",
-			anchors: []string{
-				"Within the Workspace, write only files owned by the resource where the agent was started and task worktrees owned by that resource.",
-				"Other Workspace resources are read-only, and files managed by another agent must not be modified.",
-				"Outside the Workspace, follow the user's requested scope and the host account's permissions.",
-				"relevant `artifacts/`",
-				"task.json` contains structured state",
-				"task.md` the durable contract",
-				"Use the resource History commands for conversation and execution history.",
-				"You may use `sed`, `rg`, or `less` on the resolved paths.",
-				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
-				"forge workspace resource --id=<project.task> --json",
+			rootAnchors: []string{
+				"# AgentWorkspace Agent Instructions", "## 1. Environment", "## 2. Starting work",
+				"## 3. Finding more information", "## 4. Permissions and Forge CLI",
+				"## 5. Managing Forge resources", "## 6. Agent collaboration", "## 7. Scheduler",
+				"adjust wording and tone", "[[project1.task2]]", "forge message send --to=<resource>",
 			},
-			wrong: "只读检查其他项目/任务资源",
+			projectAnchors:   []string{"# Project Agent Instructions", "AgentWorkspace Project directory", "Resource ID: project1", "../AGENTS.md"},
+			taskAnchors:      []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"},
+			wrongLanguage:    "## 1. 工作环境",
+			localOnlyHeading: "## 1. Environment",
 		},
 		{
 			name:     "Simplified Chinese",
 			language: "zh-CN",
-			anchors: []string{
-				"在 Workspace 内，只能写入 agent 启动资源拥有的文件及该资源拥有的任务 worktree。",
-				"其他 Workspace 资源只读，不得修改由其他 agent 管理的文件。",
-				"Workspace 外的文件遵循用户要求的范围和主机账户权限。",
-				"相关 `artifacts/`",
-				"`task.json` 是结构化状态",
-				"`task.md` 是长期约定",
-				"对话和执行历史使用资源 History 命令",
-				"对已解析的文件路径使用 `sed`、`rg` 或 `less`",
-				"forge task show --project=<project> --task=<task>",
-				"forge task history --project=<project> --task=<task> [--json]",
-				"forge workspace resource --id=<project.task> --json",
+			rootAnchors: []string{
+				"# AgentWorkspace Agent 工作指引", "## 1. 工作环境", "## 2. 开始工作",
+				"## 3. 查询更多信息", "## 4. 权限和 Forge CLI",
+				"## 5. Forge 资源管理", "## 6. Agent 协作", "## 7. Scheduler",
+				"调整表达方式和语气", "[[project1.task2]]", "forge message send --to=<resource>",
 			},
-			wrong: "Read-only inspection of other project/task resources",
+			projectAnchors:   []string{"# 项目 Agent 指引", "Project 目录", "当前资源 ID：project1", "../AGENTS.md"},
+			taskAnchors:      []string{"# 任务 Agent 指引", "Task 目录", "当前资源 ID：project1.task1", "../AGENTS.md", "../../AGENTS.md"},
+			wrongLanguage:    "## 1. Environment",
+			localOnlyHeading: "## 1. 工作环境",
 		},
 	}
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			withTempCwd(t, func(root string) {
@@ -414,184 +390,34 @@ func TestGeneratedAgentCardsIncludeReadOnlyCrossResourceGuidanceAcrossCLILifecyc
 				run(t, "project", "create", "Guidance project")
 				run(t, "task", "create", "--project=project1", "Guidance task")
 
-				paths := []string{
-					filepath.Join(root, "AGENTS.md"),
-					filepath.Join(root, "project1", "AGENTS.md"),
-					filepath.Join(root, "project1", "task1", "AGENTS.md"),
-				}
-				assertGuidance := func(stage string) {
-					t.Helper()
-					for _, path := range paths {
-						content := readFile(t, path)
-						for _, want := range tc.anchors {
-							if !strings.Contains(content, want) {
-								t.Fatalf("generated %s card after %s is missing %q:\n%s", path, stage, want, content)
-							}
-						}
-						recoveryAnchor := "--limit=20"
-						if path == paths[1] {
-							recoveryAnchor = "forge project history --project=<project> --limit=20"
-						} else if path == paths[2] {
-							recoveryAnchor = "forge task history --project=<project> --task=<task> --limit=20"
-						}
-						if !strings.Contains(content, recoveryAnchor) {
-							t.Fatalf("generated %s card after %s is missing recovery guidance %q:\n%s", path, stage, recoveryAnchor, content)
-						}
-						if strings.Contains(content, tc.wrong) || strings.Contains(content, "forge task work show") {
-							t.Fatalf("generated %s card after %s contains wrong-language or nonexistent guidance:\n%s", path, stage, content)
-						}
-					}
-				}
-
-				assertGuidance("create")
-				if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
-					t.Fatal(err)
-				}
-				run(t, "migrate", "--language", tc.language)
-				assertGuidance("migrate")
-			})
-		})
-	}
-}
-
-func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
-	cases := []struct {
-		name             string
-		language         string
-		anchors          []string
-		wrongHeading     string
-		wrongInterrupt   string
-		inheritProject   string
-		inheritTask      string
-		inheritScheduler string
-	}{
-		{
-			name:     "English",
-			language: "en",
-			anchors: []string{
-				"## Resource communication, notifications, generations, and history",
-				"Stable daily addresses are the Workspace, Project, Task, and Scheduler.",
-				"forge workspace|project|task status ...",
-				"Never use an AgentHub Session ID, generation ID, or internal run ID",
-				"forge message send",
-				"forge message show",
-				"steer` is the default",
-				"interrupt` first persists the message and locks it to the exact active Turn, interrupts only that Turn, waits for it to reach terminal state, and then opens a new Turn for the message; with no active Turn, it is handled as `enqueue`",
-				"Accepted messages are durable",
-				"at-least-once delivery boundary",
-				"Waiting messages are separate from resource state",
-				"AgentHub accepting a message does not mean that its target Turn has completed",
-				"subscribeResult",
-				"turn_result",
-				"undeliverable",
-				"delivery_unknown",
-				"delivery_terminal_notice",
-				"System-generated notifications do not recursively generate notifications",
-				"Each unarchived resource has one long-lived conversation and at most one current generation",
-				"binding switch, crash, or lifecycle convergence",
-				"old generations are read-only",
-				"must not Resume, Stop, or otherwise manage AgentHub Sessions directly",
-				"forge workspace history",
-				"forge project history",
-				"forge task history",
-				"forge history turn show --ref=...",
-				"forge history event show --ref=...",
-				"Lists default to formatted text",
-				"--json",
-				"--cursor`/`--limit",
-				"stable opaque references bound to the resource and generation",
-				"A `gap` marks a segment that cannot be read",
-				"History remains readable after a resource is archived",
-				"Resource creation is local and creates neither an initial message nor a generation",
-				"forge workspace status [--server=<url>]",
-				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
-			},
-			wrongHeading:     "## 资源通信、通知、generation 与 history",
-			wrongInterrupt:   "interrupt` requests a change to the active Turn",
-			inheritProject:   "workspace root AGENTS.md (../AGENTS.md)",
-			inheritTask:      "workspace root AGENTS.md (../../AGENTS.md)",
-			inheritScheduler: "Always read the workspace root AGENTS.md (../AGENTS.md)",
-		},
-		{
-			name:     "Simplified Chinese",
-			language: "zh-CN",
-			anchors: []string{
-				"## 资源通信、通知、generation 与 history",
-				"Workspace、Project、Task 和 Scheduler 是稳定的日常资源地址。",
-				"forge workspace|project|task status ...",
-				"不得把 AgentHub Session ID、generation ID 或内部 run ID",
-				"使用 `forge message send` 和 `forge message show`",
-				"`steer` 是默认模式",
-				"`interrupt` 先持久化消息并锁定当前活动 Turn，只中断该 Turn，等待其进入 terminal 后再为这条消息开启新 Turn；没有活动 Turn 时按 `enqueue` 处理",
-				"已接受的消息会持久化",
-				"至少一次投递边界",
-				"waiting 消息与资源状态分开",
-				"AgentHub 接受消息不等于目标 Turn 已完成",
-				"subscribeResult",
-				"turn_result",
-				"undeliverable",
-				"delivery_unknown",
-				"delivery_terminal_notice",
-				"system-generated 通知不会递归生成通知",
-				"每个未归档资源有一条长期对话和至多一个 current generation",
-				"绑定切换、崩溃或生命周期收敛",
-				"旧 generation 只读保留",
-				"不需也不应 Resume、Stop 或直接管理 AgentHub Session",
-				"forge workspace history",
-				"forge project history",
-				"forge task history",
-				"forge history turn show --ref=...",
-				"forge history event show --ref=...",
-				"列表默认输出格式化文本",
-				"--json",
-				"--cursor`/`--limit",
-				"稳定 opaque 引用",
-				"`gap` 明确表示某段无法读取",
-				"资源归档后其 history 仍可读取",
-				"资源创建仅在本地完成，不附带初始消息，也不创建 generation",
-				"forge workspace status [--server=<url>]",
-				"forge task history [--project=<project>] [--task=<task>]",
-				"forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false]",
-			},
-			wrongHeading:     "## Resource communication, notifications, generations, and history",
-			wrongInterrupt:   "interrupt` 请求改变活动 Turn",
-			inheritProject:   "workspace 根目录的 AGENTS.md（../AGENTS.md）",
-			inheritTask:      "workspace 根目录的 AGENTS.md（../../AGENTS.md）",
-			inheritScheduler: "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md）",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			withTempCwd(t, func(root string) {
-				run(t, "init", "--language", tc.language)
-				run(t, "project", "create", "Communication guidance project")
-				run(t, "task", "create", "--project=project1", "Communication guidance task")
-
 				assertPrompts := func(stage string) {
 					t.Helper()
 					rootAgents := readFile(t, filepath.Join(root, "AGENTS.md"))
-					for _, want := range tc.anchors {
+					for _, want := range tc.rootAnchors {
 						if !strings.Contains(rootAgents, want) {
-							t.Fatalf("workspace prompt after %s is missing %q:\n%s", stage, want, rootAgents)
+							t.Fatalf("Workspace prompt after %s is missing %q:\n%s", stage, want, rootAgents)
 						}
 					}
-					if strings.Contains(rootAgents, tc.wrongHeading) || strings.Contains(rootAgents, tc.wrongInterrupt) {
-						t.Fatalf("workspace prompt after %s contains wrong-language or stale interrupt guidance:\n%s", stage, rootAgents)
+					if strings.Contains(rootAgents, tc.wrongLanguage) {
+						t.Fatalf("Workspace prompt after %s contains the wrong language:\n%s", stage, rootAgents)
 					}
 
 					projectAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
-					if !strings.Contains(projectAgents, tc.inheritProject) || strings.Contains(projectAgents, tc.anchors[0]) {
-						t.Fatalf("project prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, projectAgents)
+					for _, want := range tc.projectAnchors {
+						if !strings.Contains(projectAgents, want) {
+							t.Fatalf("Project card after %s is missing %q:\n%s", stage, want, projectAgents)
+						}
 					}
 					taskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
-					if !strings.Contains(taskAgents, tc.inheritTask) || strings.Contains(taskAgents, tc.anchors[0]) {
-						t.Fatalf("task prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, taskAgents)
+					for _, want := range tc.taskAnchors {
+						if !strings.Contains(taskAgents, want) {
+							t.Fatalf("Task card after %s is missing %q:\n%s", stage, want, taskAgents)
+						}
 					}
-					schedulerAgents := readFile(t, filepath.Join(root, "scheduler", "AGENTS.md"))
-					if !strings.Contains(schedulerAgents, tc.inheritScheduler) || strings.Contains(schedulerAgents, tc.anchors[0]) {
-						t.Fatalf("Scheduler prompt after %s should inherit from the workspace root without copying its section:\n%s", stage, schedulerAgents)
+					for label, content := range map[string]string{"Project": projectAgents, "Task": taskAgents} {
+						if strings.Contains(content, tc.localOnlyHeading) || strings.Contains(content, "forge message send") || strings.Contains(content, "templates/") {
+							t.Fatalf("%s card after %s copied Workspace guidance:\n%s", label, stage, content)
+						}
 					}
 				}
 
@@ -605,7 +431,6 @@ func TestResourceCommunicationGuidanceSurvivesBilingualInitAndMigrate(t *testing
 		})
 	}
 }
-
 func TestLanguageValidationAndLegacyWorkspaceMigration(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		if _, err := runErr(t, "init", "--language=fr"); err == nil || !strings.Contains(err.Error(), "unsupported language") {
@@ -674,17 +499,18 @@ func TestTaskLifecycle(t *testing.T) {
 		assertDir(t, filepath.Join(root, "project1", "templates"))
 		assertMissing(t, filepath.Join(root, "project1", "worktree"))
 		projectAgents := readFile(t, filepath.Join(root, "project1", "AGENTS.md"))
-		if !strings.Contains(projectAgents, "workspace root AGENTS.md") {
-			t.Fatalf("expected project AGENTS.md to reference workspace AGENTS.md, got:\n%s", projectAgents)
+		for _, want := range []string{"# Project Agent Instructions", "AgentWorkspace Project directory", "Resource ID: project1", "../AGENTS.md"} {
+			if !strings.Contains(projectAgents, want) {
+				t.Fatalf("Project AGENTS.md is missing %q:\n%s", want, projectAgents)
+			}
 		}
 		if strings.Count(projectAgents, forgePromptStart) != 1 || strings.Count(projectAgents, forgePromptEnd) != 1 {
-			t.Fatalf("expected project AGENTS.md to contain one managed block, got:\n%s", projectAgents)
+			t.Fatalf("expected Project AGENTS.md to contain one managed block, got:\n%s", projectAgents)
 		}
-		if !strings.Contains(projectAgents, "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md") {
-			t.Fatalf("expected project AGENTS.md to include project pending-item guidance, got:\n%s", projectAgents)
-		}
-		if !strings.Contains(projectAgents, "Within the Workspace, write only files owned by the resource where the agent was started") || !strings.Contains(projectAgents, "files managed by another agent must not be modified") {
-			t.Fatalf("expected project AGENTS.md to include Workspace file-boundary guidance, got:\n%s", projectAgents)
+		for _, copied := range []string{"## 1. Environment", "forge message send", "templates/", "project.md"} {
+			if strings.Contains(projectAgents, copied) {
+				t.Fatalf("Project AGENTS.md copied Workspace guidance %q:\n%s", copied, projectAgents)
+			}
 		}
 		projectMDPath := filepath.Join(root, "project1", "project.md")
 		projectMD := readFile(t, projectMDPath)
@@ -698,18 +524,6 @@ func TestTaskLifecycle(t *testing.T) {
 			t.Fatalf("expected project.md to contain durable brief context only, got:\n%s", projectMD)
 		}
 		assertNoHan(t, projectMDPath)
-		if strings.Contains(projectAgents, "work.md") || !strings.Contains(projectAgents, "forge project history --project=<project> --limit=20") {
-			t.Fatalf("expected project AGENTS.md to use bounded project recovery, got:\n%s", projectAgents)
-		}
-		if strings.Contains(projectAgents, "This is a subtask") {
-			t.Fatalf("project AGENTS.md should not contain subtask-only guidance, got:\n%s", projectAgents)
-		}
-		if !strings.Contains(projectAgents, "Project content templates live in templates/*.md") || !strings.Contains(projectAgents, "schema-version: 2") || !strings.Contains(projectAgents, "Templates organize task content only") || !strings.Contains(projectAgents, "prefer an existing suitable template") || !strings.Contains(projectAgents, "preserve all existing template rules by default") || !strings.Contains(projectAgents, "override a particular rule only when the user explicitly asks for that override") {
-			t.Fatalf("project AGENTS.md should document the task template format, got:\n%s", projectAgents)
-		}
-		if !strings.Contains(projectAgents, "workspace root AGENTS.md (../AGENTS.md)") {
-			t.Fatalf("project AGENTS.md should reference workspace AGENTS.md by relative path, got:\n%s", projectAgents)
-		}
 		templateContent := "---\nschema-version: 2\ntitle: Daily inspection\nfields: []\n---\n# Daily inspection\n\nCheck current state.\n"
 		if err := os.WriteFile(filepath.Join(root, "project1", "templates", "daily.md"), []byte(templateContent), 0o644); err != nil {
 			t.Fatal(err)
@@ -751,38 +565,18 @@ func TestTaskLifecycle(t *testing.T) {
 		}
 		assertDir(t, filepath.Join(root, "project1", "task1", "worktree"))
 		subtaskAgents := readFile(t, filepath.Join(root, "project1", "task1", "AGENTS.md"))
-		if !strings.Contains(subtaskAgents, "parent project AGENTS.md (../AGENTS.md)") || !strings.Contains(subtaskAgents, "workspace root AGENTS.md (../../AGENTS.md)") {
-			t.Fatalf("expected subtask AGENTS.md to reference project and workspace AGENTS.md by relative paths, got:\n%s", subtaskAgents)
+		for _, want := range []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"} {
+			if !strings.Contains(subtaskAgents, want) {
+				t.Fatalf("Task AGENTS.md is missing %q:\n%s", want, subtaskAgents)
+			}
 		}
 		if strings.Count(subtaskAgents, forgePromptStart) != 1 || strings.Count(subtaskAgents, forgePromptEnd) != 1 {
-			t.Fatalf("expected subtask AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
+			t.Fatalf("expected Task AGENTS.md to contain one managed block, got:\n%s", subtaskAgents)
 		}
-		if !strings.Contains(subtaskAgents, "Read the parent project directory's project.json and project.md") {
-			t.Fatalf("expected subtask AGENTS.md to reference parent context files, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "prefer an existing suitable template") || !strings.Contains(subtaskAgents, "preserve all existing template rules by default") || !strings.Contains(subtaskAgents, "override a particular rule only when the user explicitly asks for that override") {
-			t.Fatalf("expected subtask AGENTS.md to preserve applicable template guidance, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "Read conversation and execution events through the resource History commands") {
-			t.Fatalf("expected subtask AGENTS.md to mention resource History, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md") {
-			t.Fatalf("expected subtask AGENTS.md to include generic pending-item guidance, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "Use task.md as the durable contract") || !strings.Contains(subtaskAgents, "forge task history --project=<project> --task=<task> --limit=20") || strings.Contains(subtaskAgents, "work.md") {
-			t.Fatalf("expected subtask AGENTS.md to use bounded recovery without a work.md contract, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "Within the Workspace, write only files owned by the resource where the agent was started") || !strings.Contains(subtaskAgents, "Other Workspace resources are read-only") {
-			t.Fatalf("expected subtask AGENTS.md to include non-recursive Workspace write guidance, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "git worktree add") || !strings.Contains(subtaskAgents, "absolute destination path inside this task's worktree/") || !strings.Contains(subtaskAgents, "git -C") {
-			t.Fatalf("expected subtask AGENTS.md to prevent relative worktree destination mistakes, got:\n%s", subtaskAgents)
-		}
-		if !strings.Contains(subtaskAgents, "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions") || !strings.Contains(subtaskAgents, "Explicit user instructions may authorize host-file work outside this task directory") {
-			t.Fatalf("expected subtask AGENTS.md to make task boundaries subordinate to explicit user instructions, got:\n%s", subtaskAgents)
-		}
-		if strings.Contains(projectAgents, "Explicit user instructions may authorize work outside this task directory") {
-			t.Fatalf("project AGENTS.md should not contain task-only scope guidance, got:\n%s", projectAgents)
+		for _, copied := range []string{"## 1. Environment", "forge message send", "templates/", "task.md", "git worktree add"} {
+			if strings.Contains(subtaskAgents, copied) {
+				t.Fatalf("Task AGENTS.md copied Workspace guidance %q:\n%s", copied, subtaskAgents)
+			}
 		}
 
 		children := run(t, "task", "list", "--project=project1")
@@ -1761,37 +1555,28 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		if !strings.Contains(first, original) {
 			t.Fatalf("expected human content to be preserved, got:\n%s", first)
 		}
-		if !strings.Contains(first, "Treat task `task.md` as the durable contract.") {
-			t.Fatalf("expected workspace AGENTS.md to describe task.md as the durable contract, got:\n%s", first)
-		}
-		if !strings.Contains(first, "Treat `project.md` and `task.md` as durable contracts.") {
-			t.Fatalf("expected workspace AGENTS.md to describe markdown contracts, got:\n%s", first)
-		}
-		if !strings.Contains(first, "When starting a new generation") || !strings.Contains(first, "--limit=20") || !strings.Contains(first, "do not create a second permanent progress file") {
-			t.Fatalf("expected workspace AGENTS.md to describe bounded generation recovery, got:\n%s", first)
-		}
-		if !strings.Contains(first, "Tasks own `task.json`, `task.md`, `AGENTS.md`, `artifacts/`, and `worktree/`; their conversation is available through resource History.") {
-			t.Fatalf("expected workspace AGENTS.md to describe task-owned files and resource History, got:\n%s", first)
-		}
-		if !strings.Contains(first, "Read chronological conversation and execution events through resource History.") {
-			t.Fatalf("expected workspace AGENTS.md to direct chronological context to History, got:\n%s", first)
-		}
-		for _, want := range []string{"read `wiki/index.md`", "read only the Wiki pages relevant to the current task", "maintain the relevant pages, cross-links, and `wiki/index.md` summaries"} {
+		for _, want := range []string{
+			"# AgentWorkspace Agent Instructions",
+			"read a small recent page of resource History",
+			"project.json and task.json contain structured information understood by Forge",
+			"Read wiki/index.md first",
+			"rather than keeping another permanent progress file",
+		} {
 			if !strings.Contains(first, want) {
-				t.Fatalf("expected workspace AGENTS.md to include Wiki guidance %q, got:\n%s", want, first)
+				t.Fatalf("Workspace AGENTS.md is missing %q:\n%s", want, first)
 			}
 		}
 		if strings.Count(first, forgePromptStart) != 1 || strings.Count(first, forgePromptEnd) != 1 {
-			t.Fatalf("expected one forge managed block, got:\n%s", first)
+			t.Fatalf("expected one Forge managed block, got:\n%s", first)
 		}
 
-		replaced := strings.Replace(first, "This directory is an AgentWorkspace managed by forge.", "old prompt text", 1)
+		replaced := strings.Replace(first, "# AgentWorkspace Agent Instructions", "old prompt text", 1)
 		if err := os.WriteFile(agentsPath, []byte(replaced), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		run(t, "migrate")
 		second := readFile(t, agentsPath)
-		if strings.Contains(second, "old prompt text") {
+		if strings.Contains(second, "old prompt text") || !strings.Contains(second, "# AgentWorkspace Agent Instructions") {
 			t.Fatalf("expected managed block to be replaced, got:\n%s", second)
 		}
 		if !strings.Contains(second, "Keep this line.") {
@@ -1802,7 +1587,6 @@ func TestMigrateUpdatesOnlyManagedAgentsBlock(t *testing.T) {
 		}
 	})
 }
-
 func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
@@ -1922,11 +1706,11 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		subtaskAgents := filepath.Join(root, "project1", "task1", "AGENTS.md")
 		archivedAgents := filepath.Join(root, "project1", testArchiveDir, "task2", "AGENTS.md")
 
-		writeStaleManagedBlock(t, rootAgents, "This directory is an AgentWorkspace managed by forge.", "old workspace prompt")
+		writeStaleManagedBlock(t, rootAgents, "# AgentWorkspace Agent Instructions", "old workspace prompt")
 		appendFile(t, taskAgents, "\n# Task Notes\n\nKeep task note.\n")
-		writeStaleManagedBlock(t, taskAgents, "You are working inside a single AgentWorkspace project directory.", "old project prompt")
+		writeStaleManagedBlock(t, taskAgents, "You are working in an AgentWorkspace Project directory.", "old project prompt")
 		appendFile(t, subtaskAgents, "\n# Child Notes\n\nKeep child note.\n")
-		writeStaleManagedBlock(t, subtaskAgents, "Read the parent project directory's project.json and project.md", "old child prompt")
+		writeStaleManagedBlock(t, subtaskAgents, "You are working in an AgentWorkspace Task directory.", "old child prompt")
 		archivedBefore := readFile(t, archivedAgents)
 
 		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
@@ -1954,7 +1738,7 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 
 		rootAfter := readFile(t, rootAgents)
-		if strings.Contains(rootAfter, "old workspace prompt") || !strings.Contains(rootAfter, "This directory is an AgentWorkspace managed by forge.") {
+		if strings.Contains(rootAfter, "old workspace prompt") || !strings.Contains(rootAfter, "# AgentWorkspace Agent Instructions") {
 			t.Fatalf("expected workspace managed block to refresh, got:\n%s", rootAfter)
 		}
 
@@ -1964,6 +1748,9 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		}
 		if !strings.Contains(taskAfter, "Keep task note.") {
 			t.Fatalf("expected task manual content to survive refresh, got:\n%s", taskAfter)
+		}
+		if !strings.Contains(taskAfter, "Resource ID: project1") || !strings.Contains(taskAfter, "../AGENTS.md") {
+			t.Fatalf("expected Project launch card to be restored, got:\n%s", taskAfter)
 		}
 		if strings.Count(taskAfter, forgePromptStart) != 1 || strings.Count(taskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected task refresh to keep one managed block, got:\n%s", taskAfter)
@@ -1976,11 +1763,8 @@ func TestMigrateRefreshesOpenTaskAgentsAndPreservesManualContent(t *testing.T) {
 		if !strings.Contains(subtaskAfter, "Keep child note.") {
 			t.Fatalf("expected subtask manual content to survive refresh, got:\n%s", subtaskAfter)
 		}
-		if !strings.Contains(subtaskAfter, "Read the parent project directory's project.json and project.md") {
-			t.Fatalf("expected subtask guidance to be restored, got:\n%s", subtaskAfter)
-		}
-		if !strings.Contains(subtaskAfter, "absolute destination path inside this task's worktree/") {
-			t.Fatalf("expected migrated subtask guidance to prevent relative worktree destination mistakes, got:\n%s", subtaskAfter)
+		if !strings.Contains(subtaskAfter, "Resource ID: project1.task1") || !strings.Contains(subtaskAfter, "../AGENTS.md") || !strings.Contains(subtaskAfter, "../../AGENTS.md") {
+			t.Fatalf("expected Task launch card to be restored, got:\n%s", subtaskAfter)
 		}
 		if strings.Count(subtaskAfter, forgePromptStart) != 1 || strings.Count(subtaskAfter, forgePromptEnd) != 1 {
 			t.Fatalf("expected subtask refresh to keep one managed block, got:\n%s", subtaskAfter)

@@ -114,103 +114,210 @@ const defaultWikiIndex = `# Workspace Wiki
 This index is the entry point for long-lived workspace knowledge. Add links to topic pages with short summaries as the Wiki grows.
 `
 
-const workspaceAgentsPrompt = `# AgentWorkspace
+const workspaceAgentsPrompt = `# AgentWorkspace Agent Instructions
 
-This directory is an AgentWorkspace managed by forge.
+## 1. Environment
 
-- All workspace data lives on the filesystem as project/task directories, JSON/Markdown files, resource History, artifacts, and task worktrees.
-- Long-lived knowledge about the workspace's code, projects, and work history lives in ` + "`wiki/`" + `.
-- Before starting work in this workspace, read ` + "`wiki/index.md`" + `.
-- Follow the index and read only the Wiki pages relevant to the current task; do not load the entire Wiki indiscriminately.
-- When the user asks to analyze code, projects, or work records and update the Wiki, maintain the relevant pages, cross-links, and ` + "`wiki/index.md`" + ` summaries.
-` + crossResourceReadGuidanceEnglish + resourceCommunicationGuidanceEnglish + `- Workspace file boundaries are coordinated through these instructions; they are not a host filesystem sandbox.
-- Open projects live directly under this workspace as ` + "`projectN/`" + ` or ` + "`projectN-slug/`" + ` directories.
-- Project tasks live directly under their project directories as short ` + "`taskM/`" + ` or ` + "`taskM-slug/`" + ` directories; resource ids remain full ids like ` + "`projectN.taskM`" + `.
-- Archived projects live under ` + "`archive/`" + `. Archived project tasks live under their project directory's ` + "`archive/`" + ` directory.
-- Project content templates live under each project's ` + "`templates/`" + ` directory.
-- When creating a task in a project, check that project's ` + "`templates/`" + ` directory and prefer an existing suitable template whenever one is available.
-- When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
-- Git repositories live under ` + "`repos/`" + ` as normal checkouts by default.
-- Treat repositories under ` + "`repos/`" + ` as shared source caches; make code changes in task worktrees.
-- Projects own ` + "`project.json`" + `, ` + "`project.md`" + `, ` + "`AGENTS.md`" + `, and ` + "`artifacts/`" + `; their conversation is available through resource History.
-- Tasks own ` + "`task.json`" + `, ` + "`task.md`" + `, ` + "`AGENTS.md`" + `, ` + "`artifacts/`" + `, and ` + "`worktree/`" + `; their conversation is available through resource History.
-- Projects do not store repository metadata and do not manage worktrees. For code changes, create Git worktrees under the current task's ` + "`worktree/`" + ` directory.
-- Read-only inspection of other task directories is allowed without an extra lock; use the state files and Forge commands described above.
-- Agents should only update files inside the project/task they are currently handling and its task-owned worktrees.
-- ` + "`project.json`" + ` and ` + "`task.json`" + ` record structured facts only, not progress notes.
-- Treat ` + "`project.md`" + ` and ` + "`task.md`" + ` as durable contracts. Keep why the work exists, scope and non-scope, acceptance criteria, stable constraints, durable decisions, and contract-changing open questions there.
-- Treat task ` + "`task.md`" + ` as the durable contract. For a new generation, recover transient context from bounded resource history, the task worktree's Git state, and related artifacts; do not create a second permanent progress file.
-- Read chronological conversation and execution events through resource History.
-- Keep questions that may change scope, acceptance criteria, or stable constraints in the relevant brief; promote durable answers there after confirmation.
-- Prefer forge commands for creating, listing, and archiving tasks.
-- Project and task ` + "`AGENTS.md`" + ` files are short launch cards. Keep global operating rules here, background context in ` + "`project.md`" + `/` + "`task.md`" + `, transient recovery inputs in bounded History plus Git and artifacts, and conversation history in resource History.
+You run on the user's machine and are hosted by AgentHub. AgentHub starts agents, keeps conversations, and records execution events.
 
-## forge CLI
+The current directory belongs to an AgentWorkspace managed by Forge. Forge stores Projects, Tasks, documents, artifacts, and code worktrees in local directories. Forge Server manages resource state, messages, history, and agent conversations.
 
-Use forge for deterministic workspace operations:
+Workspace, Project, Task, and Scheduler are stable resources. Each resource is followed by its own agent. The underlying session may change, but the resource id and history remain stable. Use Forge resources for normal work; there is usually no need to operate AgentHub Sessions directly.
 
-` + "```bash" + `
-forge --version
-forge init [--language=<language>]
-forge migrate [--language=<language>]
+## 2. Starting work
 
-forge repo add [--bare] <name> <url>
-forge repo list
+### Understand the current resource
 
-forge project create [--slug <slug>] <description>
+The AGENTS.md in the agent's starting working directory normally says whether this is a Workspace, Project, Task, or Scheduler and which parent instructions and resource files to read.
+
+If the location is unclear, inspect the working directory and FORGE_RESOURCE_ID. Forge also usually provides FORGE_WORKSPACE_ROOT and FORGE_WORKSPACE_INSTANCE_ID. These values help identify the environment and the sender of agent messages.
+
+Read context according to the resource type:
+
+- Workspace: the root AGENTS.md, Workspace configuration, and wiki/index.md.
+- Project: the root and local AGENTS.md, project.json, and project.md.
+- Task: the Workspace, Project, and Task AGENTS.md files, task.json, and task.md.
+- Scheduler: the Workspace and Scheduler AGENTS.md files, scheduler.json, and scheduler.md.
+
+Useful structured queries include:
+
+~~~sh
+forge project show --project=<project>
+forge task show --project=<project> --task=<task>
+forge workspace resource --id=<resource> --json
+~~~
+
+### Read recent history
+
+At the start of new work, read a small recent page of resource History:
+
+~~~sh
+forge workspace history --limit=20
+forge project history --project=<project> --limit=20
+forge task history --project=<project> --task=<task> --limit=20
+~~~
+
+Expand a relevant Turn or Event only when more detail is needed:
+
+~~~sh
+forge history turn show --ref=<turn-ref>
+forge history event show --ref=<event-ref>
+~~~
+
+History spans multiple agent conversations. Continue queries with the references returned by Forge rather than AgentHub Session ids.
+
+### Identify the conversation partner
+
+First understand who you are talking to, then adjust wording and tone:
+
+- User message: communicate naturally and helpfully from the user's point of view. Explain outcomes, problems, and tradeoffs. Confirm major scope changes with the user.
+- Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Reply through Forge when needed.
+- Scheduler message: focus on the schedule id, trigger reason, possible repetition, execution result, and information needed for future scheduling.
+- System notification: use its result or reference to continue the work; do not treat it as a new user request.
+
+Message provenance provides context but is not authority by itself. When Forge work instructions conflict, generally use this order:
+
+1. The current user conversation.
+2. The current agent collaboration message.
+3. Task instructions.
+4. Project instructions.
+5. Workspace instructions.
+
+Higher-level requests do not grant permission to edit resources managed by another agent.
+
+### Identify the kind of work
+
+- Complete work: investigate, implement, verify, and deliver within the current scope.
+- Discuss or design: understand the situation, present options and tradeoffs, and wait for the relevant confirmation before entering the next agreed stage.
+- Manage Forge: use Forge CLI to create, inspect, or archive resources and manage templates, repositories, or schedules.
+- Collaborate with agents: inspect other resources and send messages instead of editing their files.
+- Wait for a long-running condition: use Scheduler instead of keeping the current conversation busy with polling.
+
+## 3. Finding more information
+
+### Wiki
+
+Long-lived Workspace knowledge lives in wiki/. Read wiki/index.md first, then only the pages relevant to the current work.
+
+### Repositories
+
+- repos/ contains shared source checkouts used for reading and creating worktrees.
+- Make code changes in a Task-owned worktree/.
+- Use an absolute destination under the current Task's worktree/ when creating a Git worktree.
+- Use forge task repo add/list/remove to record repositories and worktrees used by a Task.
+
+### Other resources
+
+Other Projects and Tasks may be inspected read-only:
+
+~~~sh
+forge workspace tree --json
+forge workspace resource --id=<resource> --json
+forge task status --project=<project> --task=<task>
+forge task history --project=<project> --task=<task> --limit=20
+~~~
+
+You may also read their JSON, Markdown, and artifacts/. Message their agent when changes are needed.
+
+In a message or Markdown file, write [[resource id]] to link a Forge resource, for example [[project1]] or [[project1.task2]].
+
+### Common directories
+
+- projectN/: open Projects.
+- projectN/taskM/: open Tasks.
+- archive/: archived Projects or Tasks.
+- templates/: Project Task templates.
+- artifacts/: reports, screenshots, patches, and other deliverables.
+- worktree/: Task-owned code worktrees.
+- scheduler/: the Scheduler resource.
+
+project.json and task.json contain structured information understood by Forge. Put background, scope, constraints, and durable decisions in project.md or task.md. Recover temporary progress from History, Git, and artifacts rather than keeping another permanent progress file.
+
+## 4. Permissions and Forge CLI
+
+You may read and write files owned by the current resource. A Task agent may also modify that Task's worktrees. Other Workspace resources are read-only; message their agent when changes are needed.
+
+Files outside the Workspace are not additionally restricted by Forge, but work must still follow the request, task scope, and host permissions. Confirm the target before destructive or externally visible actions.
+
+Normally run Forge CLI from the resource directory you own. When --project or --task is omitted, Forge selects from the working directory. Prefer explicit resource arguments for cross-resource operations.
+
+The status, history, and message commands automatically find the Forge Server that owns the current Workspace. There is normally no need to pass --server or edit .forge/serve.lock.
+
+## 5. Managing Forge resources
+
+Use Forge CLI rather than manually creating resource directories or editing structured JSON.
+
+~~~sh
 forge project list [--all]
-forge project show [--project=<project>]
-forge project archive [--project=<project>]
-forge template list|show|validate|render|create|migrate ...
+forge project show --project=<project>
+forge project create [--slug <slug>] <description>
+forge project archive --project=<project>
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
-forge task list [--project=<project>] [--all]
-forge task show [--project=<project>] [--task=<task>]
-forge task archive [--project=<project>] [--task=<task>]
-forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-forge task repo list [--project=<project>] [--task=<task>]
-forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge workspace status [--server=<url>]
-forge project status [--project=<project>] [--server=<url>]
-forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge history turn show --ref=<reference> [--server=<url>] [--json]
-forge history event show --ref=<reference> [--server=<url>] [--json]
-forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-forge message show --id=<message-id> [--server=<url>]
-forge resource archive --id=<resource>
+forge task list --project=<project> [--all]
+forge task show --project=<project> --task=<task>
+forge task create --project=<project> ...
+forge task archive --project=<project> --task=<task>
+~~~
 
+Query before creating to avoid duplicates. Creating a Project or Task does not start its agent. Send the first message separately:
+
+~~~sh
+forge message send --to=<resource> '<message>'
+~~~
+
+Before creating a Task, check the Project's templates/. Prefer a suitable template and preserve its rules:
+
+~~~sh
+forge template list --project=<project>
+forge template show --project=<project> <name>
+forge task create --project=<project> --template=<name> --field <name>=<value>
+~~~
+
+For code changes, create a Task-owned worktree and record it with forge task repo add. Projects do not own code worktrees.
+
+Archiving is not deletion, but it ends the resource's open work state. Check that work and deliverables have been saved before archiving.
+
+## 6. Agent collaboration
+
+Use stable Project or Task resource ids for collaboration, not Session ids. Refer to other agents with ordinary third-person pronouns such as "they".
+
+~~~sh
+forge task status --project=<project> --task=<task>
+forge message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
+forge message show --id=<message-id>
+~~~
+
+Include the goal, necessary context, scope, and expected result in the message.
+
+- steer: the default. Add the message to the current Turn when possible; otherwise Forge queues a new Turn.
+- enqueue: explicitly request a new Turn.
+- interrupt: stop the current Turn and open a new Turn with this message. Use it only when the direction must change immediately.
+
+Message acceptance does not mean the work is complete. Check the message id, resource status, and History when needed.
+
+Agent messages return the corresponding Turn result to the sender by default. Use --subscribe-result=false when no result is needed. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
+
+## 7. Scheduler
+
+Scheduler is useful for timed triggers, conditional triggers, and work that needs to wait a long time for an external event.
+
+Schedules use natural-language conditions rather than cron expressions:
+
+~~~sh
 forge scheduler list [--json]
 forge scheduler show --id=<schedule>
 forge scheduler add --description=<text> --condition=<text> --target=<resource>
 forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
 forge scheduler remove --id=<schedule>
-forge workspace tree --json
-forge workspace resource --id=<resource> --json
+~~~
 
-forge serve [--addr=<address>] [--workspace=<path>] [--version]
-` + "```" + `
+You may also message the Scheduler agent directly:
 
-Notes:
+~~~sh
+forge message send --to=scheduler '<request>'
+~~~
 
-- ` + "`forge init`" + ` creates a new workspace in the current directory and fails when run inside an existing workspace. Use ` + "`--language`" + ` to select ` + "`en`" + ` or ` + "`zh-CN`" + `.
-- ` + "`forge migrate`" + ` refreshes forge-managed ` + "`AGENTS.md`" + ` prompt blocks and migrates legacy task history before removing obsolete files. Use ` + "`--language`" + ` to switch the workspace language.
-- ` + "`forge repo add`" + ` creates a normal checkout by default; pass ` + "`--bare`" + ` for a bare repository layout.
-- ` + "`forge message send`" + ` accepts ` + "`--subscribe-result=false`" + ` to disable this input's Turn result subscription; omission defaults to true. Only a stable Forge resource sender receives a result mailbox message.
-- Resource creation is local and creates neither an initial message nor a generation. After creation, send the first message separately with ` + "`forge message send --to=<resource> ...`" + `; that accepted message creates a generation lazily. If create output is ambiguous, query the resource before attempting another create.
-- ` + "`forge project create`" + ` creates a new open project directory in the workspace. Use ` + "`--slug <slug>`" + ` to append a readable suffix to the directory name without changing the project id.
-- ` + "`forge project list`" + ` lists open projects, or open and archived projects with ` + "`--all`" + `. It never includes tasks; use ` + "`forge task list [--project=<project>]`" + ` for project tasks.
-- ` + "`forge project show`" + ` and ` + "`forge project archive`" + ` accept ` + "`--project=<project>`" + ` where project is a full id like ` + "`project22`" + ` or just a number like ` + "`22`" + `. When omitted, Forge uses the current directory's project.
-- ` + "`forge template list/show/validate/render/create/migrate`" + ` manages schema V2 project content templates. ` + "`forge template show <name>`" + ` defaults to human-readable metadata, field requirements, diagnostics, and the complete Markdown body; use ` + "`--raw`" + ` for the original file, ` + "`--json`" + ` for structured data, or ` + "`--schema`" + ` for schema metadata and diagnostics. Templates describe task content only.
-- ` + "`forge task create`" + ` creates a new open task directory under a project. Use ` + "`--template`" + ` with typed fields to render content, and ` + "`--dry-run`" + ` to preview without side effects. Existing ` + "`--detail`" + ` and ` + "`--task-markdown`" + ` forms remain supported.
-- ` + "`forge task list`" + ` lists open tasks under a project, or open and archived tasks with ` + "`--all`" + `. Use ` + "`--project=<project>`" + ` to select a project, or omit it to use the current directory's project.
-- ` + "`forge task show`" + ` and ` + "`forge task archive`" + ` accept ` + "`--project=<project>`" + ` plus ` + "`--task=<task>`" + `. Task can be a short id like ` + "`task4`" + ` or just a number like ` + "`4`" + `. When omitted, Forge uses the current directory's task.
-- ` + "`forge task archive`" + ` moves an open task into its project archive; ` + "`forge project archive`" + ` moves an open project into workspace ` + "`archive/`" + `.
-- ` + "`forge task history`" + ` and ` + "`forge project history`" + ` read bounded resource History; use ` + "`forge history turn show --ref=...`" + ` for a selected Turn.
-- ` + "`forge task repo add/list/remove`" + ` records, lists, or removes involved repositories in a task's ` + "`task.json`" + `. Task selection follows ` + "`forge task show`" + `. Projects do not store repository metadata.
-- ` + "`forge workspace tree --json`" + ` prints a lightweight JSON tree of open projects, open tasks, and their resource runtime state for GUI and tool integrations.
-- ` + "`forge workspace resource --id=<resource> --json`" + ` prints detail JSON for one project or task.
-- Turn results and terminal delivery notices arrive as durable structured system messages in the resource mailbox. Use ` + "`forge message show`" + ` and ` + "`forge history turn show`" + ` with their stable references for diagnosis.
+The description says what should happen. The condition says when to trigger, including timezone, repetition, and stopping behavior when relevant. The target is a stable Forge resource id.
+
+When a condition is met, Scheduler sends the target a normal message with the schedule id and trigger reason. Scheduled messages may repeat, so the target agent should avoid duplicate work.
 `

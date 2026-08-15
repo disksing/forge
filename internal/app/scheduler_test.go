@@ -63,7 +63,7 @@ func TestInitializeCreatesSchedulerResource(t *testing.T) {
 	}
 }
 
-func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
+func TestResourceGuidanceIsLocalizedAndInherited(t *testing.T) {
 	root := t.TempDir()
 	workspace, err := app.Initialize(root, "en")
 	if err != nil {
@@ -92,15 +92,15 @@ func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
 		filepath.Join(root, taskDetail.Path, "AGENTS.md"),
 	}
 	rootAgents, err := os.ReadFile(paths[0])
-	if err != nil || !strings.Contains(string(rootAgents), "30 minutes of continuous idle") {
-		t.Fatalf("English generation guidance missing from Workspace root: %v\n%s", err, rootAgents)
+	if err != nil || !strings.Contains(string(rootAgents), "## 6. Agent collaboration") || !strings.Contains(string(rootAgents), "[[project1.task2]]") {
+		t.Fatalf("English Workspace guidance is incomplete: %v\n%s", err, rootAgents)
 	}
 	if err := workspace.Migrate("zh-CN"); err != nil {
 		t.Fatal(err)
 	}
 	rootAgents, err = os.ReadFile(paths[0])
-	if err != nil || !strings.Contains(string(rootAgents), "连续空闲 30 分钟") {
-		t.Fatalf("Chinese generation guidance missing from Workspace root: %v\n%s", err, rootAgents)
+	if err != nil || !strings.Contains(string(rootAgents), "## 6. Agent 协作") || !strings.Contains(string(rootAgents), "[[project1.task2]]") {
+		t.Fatalf("Chinese Workspace guidance is incomplete: %v\n%s", err, rootAgents)
 	}
 	projectAgents, err := os.ReadFile(paths[2])
 	if err != nil {
@@ -114,7 +114,9 @@ func TestResourceGenerationGuidanceIsLocalizedAndInherited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(projectAgents), "../AGENTS.md") || !strings.Contains(string(taskAgents), "../../AGENTS.md") || !strings.Contains(string(schedulerAgents), "../AGENTS.md") {
+	if !strings.Contains(string(projectAgents), project.ID) || !strings.Contains(string(projectAgents), "../AGENTS.md") ||
+		!strings.Contains(string(taskAgents), task.ID) || !strings.Contains(string(taskAgents), "../../AGENTS.md") ||
+		!strings.Contains(string(schedulerAgents), "../AGENTS.md") {
 		t.Fatal("resource prompts no longer inherit the Workspace root guidance")
 	}
 }

@@ -547,94 +547,25 @@ func taskMarkdown(title string, detail string, language string) string {
 `, title, detail)
 }
 
-func markdownGuidance(resourceName string) string {
-	return fmt.Sprintf("Use %s as the durable contract: record why the work exists, what is in or out of scope, what constraints and decisions remain valid, and how completion will be judged.", resourceName)
-}
-
-func jsonGuidance(resourceName string) string {
-	return fmt.Sprintf("Keep %s focused on structured facts Forge already understands; use Markdown for arbitrary notes, links, IDs, and progress.", resourceName)
-}
-
 func taskAgentsPrompt(resource Resource, language string) string {
 	if language == languageSimplifiedChinese {
 		return taskAgentsPromptZH(resource)
 	}
-	extra := ""
-	agentsLine := "Always read the parent project AGENTS.md (../AGENTS.md) and workspace root AGENTS.md (../../AGENTS.md) for project conventions and global Workspace file-role rules."
-	title := "Task Agent Instructions"
-	scope := "single AgentWorkspace task directory"
-	boundary := "Treat this directory as the current task boundary."
-	writeScope := "Task boundaries are default safeguards against multi-agent conflicts, not absolute restrictions. Explicit user instructions may authorize host-file work outside this task directory, but do not modify another agent's Workspace resource."
-	repoGuidance := "For code changes, create Git worktrees under worktree/. When running `git worktree add`, pass an absolute destination path inside this task's worktree/ directory; a relative destination can be resolved from the shared repository when the command uses `git -C`, placing the worktree outside this task."
+	meta := resource.resourceMeta()
 	if isProject(resource) {
-		title = "Project Agent Instructions"
-		scope = "single AgentWorkspace project directory"
-		boundary = "Treat this directory as the current project boundary."
-		writeScope = "Only update files inside this project directory unless a task directory has been explicitly selected."
-		repoGuidance = "Projects do not manage repositories or worktrees. For code changes, create tasks and put task-specific Git worktrees under each task's worktree/ directory."
-		agentsLine = "Always read the workspace root AGENTS.md (../AGENTS.md) for global Workspace file-role rules."
-	} else if _, ok := resource.(*Task); ok {
-		extra = `
-- This task belongs to a project. Read the parent project directory's project.json and project.md when you need broader context; use project History for conversation context.
-- Parent project files are reference context; keep your edits scoped to this task directory and its worktrees unless the user explicitly asks otherwise.
-- When creating a task, prefer an existing suitable template from the current project's templates/ directory whenever one is available.
-- When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
-`
+		return fmt.Sprintf(`# Project Agent Instructions
+
+You are working in an AgentWorkspace Project directory.
+
+- Resource ID: %s
+- Always read the Workspace instructions in ../AGENTS.md.
+`, meta.ID)
 	}
-	readLine := "Read task.json and task.md before acting; use resource History when conversation context is needed."
-	updateLine := "If the task involves a new repository, update this task's task.json."
-	structuredLine := jsonGuidance("task.json")
-	backgroundLine := markdownGuidance("task.md")
-	recoveryLine := "Recover transient execution context by querying `forge task history --project=<project> --task=<task> --limit=20`, skipping the input currently executing and expanding only relevant, failed, or non-converged Turns with `forge history turn show --ref=...`; then inspect task-owned worktree Git state and related artifacts. Report any history gap and do not create a second permanent progress file."
-	pendingLine := "Keep questions that can change scope, acceptance criteria, or stable constraints in task.md; ask the user to resolve them before implementation when necessary. Record durable decisions in task.md."
-	if isProject(resource) {
-		readLine = "Read project.json and project.md before acting; use project History when conversation context is needed."
-		updateLine = "Create or update tasks when repository or worktree state is needed; do not store repository metadata on the project."
-		structuredLine = jsonGuidance("project.json")
-		backgroundLine = markdownGuidance("project.md")
-		recoveryLine = "Recover transient project execution context by querying `forge project history --project=<project> --limit=20`, skipping the input currently executing and expanding only relevant, failed, or non-converged Turns with `forge history turn show --ref=...`; then inspect selected tasks' Git state and artifacts. Report any history gap and keep durable decisions in project.md."
-		pendingLine = "Keep questions that can change project scope, acceptance criteria, or stable constraints in project.md; ask the user to resolve them when necessary, then record the durable answer there."
-		extra = `
-- Project content templates live in templates/*.md. Use schema-version: 2 with title, optional description/task-title, fields, and a Markdown body. Supported field types are text, textarea, select, and boolean.
-- Templates organize task content only; runtime Agent and Session settings remain outside templates.
-- When creating a task, prefer an existing suitable template whenever one is available.
-- When creating a task from a template, preserve all existing template rules by default. Do not delete, weaken, bypass, or accidentally override them; override a particular rule only when the user explicitly asks for that override.
-- Template format:
+	return fmt.Sprintf(`# Task Agent Instructions
 
-  ` + "```markdown" + `
-  ---
-  schema-version: 2
-  title: Daily inspection
-  task-title: "{{ summary }}"
-  fields:
-    - name: summary
-      type: text
-      label: Summary
-      required: true
-  ---
-  # {{ summary }}
-  ` + "```" + `
+You are working in an AgentWorkspace Task directory.
 
-- Use forge template list/show/validate/render/create/migrate for deterministic inspection and migration. You may also edit or remove files directly. Created tasks are independent copies and retain only source name, schema version, and digest.
-`
-	}
-	return fmt.Sprintf(`# %s
-
-You are working inside a %s.
-
-- %s
-- %s
-- %s
-`+crossResourceReadGuidanceEnglish+`- %s
-- Treat workspace repos/ checkouts as shared source caches; make code changes in task worktrees.
-- %s
-- %s
-- %s
-- %s
-- %s
-- %s
-- Read conversation and execution events through the resource History commands.
-- Put generated reports, screenshots, patches, and other outputs under artifacts/.
-%s
-`, title, scope, agentsLine, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
+- Resource ID: %s
+- Always read the parent Project instructions in ../AGENTS.md and the Workspace instructions in ../../AGENTS.md.
+`, meta.ID)
 }

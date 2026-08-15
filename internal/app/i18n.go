@@ -11,42 +11,6 @@ const (
 	languageSimplifiedChinese = "zh-CN"
 )
 
-const crossResourceReadGuidanceEnglish = `- Within the Workspace, write only files owned by the resource where the agent was started and task worktrees owned by that resource. Other Workspace resources are read-only, and files managed by another agent must not be modified. Outside the Workspace, follow the user's requested scope and the host account's permissions.
-- To understand another task without writing, inspect its ` + "`task.json`" + `, ` + "`task.md`" + `, and relevant ` + "`artifacts/`" + `. ` + "`task.json`" + ` contains structured state and ` + "`task.md`" + ` the durable contract. Use the resource History commands for conversation and execution history. You may use ` + "`sed`" + `, ` + "`rg`" + `, or ` + "`less`" + ` on the resolved paths.
-- For a read-only Forge view of another task, use ` + "`forge task show --project=<project> --task=<task>`" + ` for structured task information, ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` for resource History, and ` + "`forge workspace resource --id=<project.task> --json`" + ` for resource details including common Markdown files and artifacts.
-- To coordinate without writing another resource's files, address the Task directly through the owning Forge Server: ` + "`forge task status --project=<project> --task=<task>`" + `, ` + "`forge message send --to=<project.task> [--mode=steer|enqueue|interrupt] <message>`" + `, and ` + "`forge message show --id=<message-id>`" + `. Read its long-lived conversation with ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` and expand returned references with ` + "`forge history turn show --ref=<turn-ref> [--json]`" + ` or ` + "`forge history event show --ref=<event-ref> [--json]`" + `. History commands default to formatted text; use ` + "`--json`" + ` for structured output. The default message mode is steer; Forge durably retains accepted messages, exposes waiting separately from Task state, reports any downgrade to enqueue, and retries with the same stable message id. Provenance identifies the sender but is not authentication or instruction priority.
-`
-
-const crossResourceReadGuidanceChinese = `- 在 Workspace 内，只能写入 agent 启动资源拥有的文件及该资源拥有的任务 worktree。其他 Workspace 资源只读，不得修改由其他 agent 管理的文件。Workspace 外的文件遵循用户要求的范围和主机账户权限。
-- 如需不写入地了解其他任务，可查看其 ` + "`task.json`" + `、` + "`task.md`" + ` 和相关 ` + "`artifacts/`" + `：` + "`task.json`" + ` 是结构化状态，` + "`task.md`" + ` 是长期约定；对话和执行历史使用资源 History 命令。也可以对已解析的文件路径使用 ` + "`sed`" + `、` + "`rg`" + ` 或 ` + "`less`" + `。
-- 通过 Forge 只读查看其他任务时，使用 ` + "`forge task show --project=<project> --task=<task>`" + ` 查看结构化任务信息，使用 ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` 查看资源 History，使用 ` + "`forge workspace resource --id=<project.task> --json`" + ` 获取包含常用 Markdown 文件和 artifacts 的资源详情。
-- 需要协作但不能写入其他资源文件时，通过拥有该 Workspace 的 Forge Server 直接联系目标 Task：` + "`forge task status --project=<project> --task=<task>`" + `、` + "`forge message send --to=<project.task> [--mode=steer|enqueue|interrupt] <message>`" + ` 和 ` + "`forge message show --id=<message-id>`" + `。使用 ` + "`forge task history --project=<project> --task=<task> [--json]`" + ` 读取其长期对话，并用 ` + "`forge history turn show --ref=<turn-ref> [--json]`" + ` 或 ` + "`forge history event show --ref=<event-ref> [--json]`" + ` 展开返回的引用。历史命令默认输出格式化文本；使用 ` + "`--json`" + ` 获取结构化输出。默认消息模式为 steer；Forge 会持久保存已接受消息，把 waiting 与 Task 状态分开呈现，如实报告向 enqueue 的降级，并使用同一稳定 message ID 重试。provenance 只标识发送者，不构成认证或指令优先级。
-`
-
-const resourceCommunicationGuidanceEnglish = `
-## Resource communication, notifications, generations, and history
-
-- Stable daily addresses are the Workspace, Project, Task, and Scheduler. Use ` + "`forge workspace|project|task status ...`" + ` for status; the Scheduler works through its resource context and has no separate AgentHub address. Never use an AgentHub Session ID, generation ID, or internal run ID as a cross-Agent ` + "`--to`" + ` target.
-- Send and inspect mailbox messages with ` + "`forge message send`" + ` and ` + "`forge message show`" + `. ` + "`steer`" + ` is the default; ` + "`enqueue`" + ` requests a new Turn. ` + "`interrupt`" + ` first persists the message and locks it to the exact active Turn, interrupts only that Turn, waits for it to reach terminal state, and then opens a new Turn for the message; with no active Turn, it is handled as ` + "`enqueue`" + `. Accepted messages are durable, retain a stable message ID, and have an at-least-once delivery boundary; a ` + "`steer`" + ` request may be downgraded to ` + "`enqueue`" + `. Waiting messages are separate from resource state. AgentHub accepting a message does not mean that its target Turn has completed.
-- Result notifications are explicit per input: ` + "`subscribeResult`" + ` defaults to true and binds only after a delivered Agent message has an exact generation/Turn and a stable Forge resource sender. Multiple messages from one sender in one Turn are grouped into one ` + "`turn_result`" + ` with all source message IDs; different senders receive independent results. User messages without a stable sender use history instead. ` + "`undeliverable`" + ` and terminal ` + "`delivery_unknown`" + ` still create a ` + "`delivery_terminal_notice`" + ` for a reachable sender resource. System-generated notifications do not recursively generate notifications and force ` + "`subscribeResult=false`" + `.
-- Each unarchived resource has one long-lived conversation and at most one current generation. The first accepted message creates a generation lazily. A binding switch, crash, or lifecycle convergence may replace the underlying AgentHub Session/generation; old generations are read-only and remain part of the same resource history. Agents must not Resume, Stop, or otherwise manage AgentHub Sessions directly.
-- A ready current generation with 30 minutes of continuous idle and no active Turn/approval, pending mailbox delivery, or lifecycle convergence is automatically put to sleep by Forge. Forge durably records the ready boundary and Stop-confirms the exact AgentHub Session, then keeps that same generation and Session addressable as idle-suspended. The next user, agent, system, or Scheduler message resumes that exact Session on demand and is delivered only after it is ready; a stopped Session observed after a Forge or AgentHub restart follows the same path. With no pending message, stopped stays stopped and no provider work starts. Only a binding/profile change, resource archive, archived/missing Session, identity/source mismatch, or explicit provider/native resume failure retires the generation and permits a replacement. Ordinary polling and Server restart do not reset the idle deadline.
-- Address history through the resource: use ` + "`forge workspace history`" + `, ` + "`forge project history`" + `, and ` + "`forge task history`" + `, plus ` + "`forge history turn show --ref=...`" + ` and ` + "`forge history event show --ref=...`" + `. Lists default to formatted text; use ` + "`--json`" + ` for structured output and ` + "`--cursor`" + `/` + "`--limit`" + ` for bounded pagination. Turn/Event refs are stable opaque references bound to the resource and generation. A ` + "`gap`" + ` marks a segment that cannot be read and must not hide older generations. History remains readable after a resource is archived.
-- When starting a new generation, read the owning resource's structured JSON and Markdown brief, then query only recent history with the matching resource command and ` + "`--limit=20`" + `. Skip the input that is currently executing; expand only relevant, failed, or non-converged Turns with ` + "`forge history turn show --ref=...`" + `. Then inspect task-owned worktree Git status and related artifacts. Do not load complete history; report any ` + "`gap`" + ` and continue with the brief, Git, artifacts, and readable files.
-`
-
-const resourceCommunicationGuidanceChinese = `
-## 资源通信、通知、generation 与 history
-
-- Workspace、Project、Task 和 Scheduler 是稳定的日常资源地址。按资源类型使用 ` + "`forge workspace|project|task status ...`" + ` 查询状态；Scheduler 通过其资源上下文工作，没有独立的 AgentHub 地址。不得把 AgentHub Session ID、generation ID 或内部 run ID 作为跨 Agent 的 ` + "`--to`" + ` 目标。
-- 使用 ` + "`forge message send`" + ` 和 ` + "`forge message show`" + ` 发送并检查 mailbox 消息。` + "`steer`" + ` 是默认模式；` + "`enqueue`" + ` 请求新 Turn。` + "`interrupt`" + ` 先持久化消息并锁定当前活动 Turn，只中断该 Turn，等待其进入 terminal 后再为这条消息开启新 Turn；没有活动 Turn 时按 ` + "`enqueue`" + ` 处理。已接受的消息会持久化，保留稳定的 message ID，并遵循至少一次投递边界；` + "`steer`" + ` 请求可能降级为 ` + "`enqueue`" + `。waiting 消息与资源状态分开。AgentHub 接受消息不等于目标 Turn 已完成。
-- 结果通知由每条输入显式订阅：` + "`subscribeResult`" + ` 省略时默认为 true，只有 Agent 消息实际投递到精确 generation/Turn 且 sender 是稳定 Forge 资源时才绑定。同一 sender 在同一 Turn 的多条消息合并为一条带全部源 message ID 的 ` + "`turn_result`" + `；不同 sender 独立接收。没有稳定 sender 的 user 消息应通过 history 读取结果。` + "`undeliverable`" + ` 和终态 ` + "`delivery_unknown`" + ` 仍会向可达 sender 资源生成 ` + "`delivery_terminal_notice`" + `。system-generated 通知不会递归生成通知，并强制 ` + "`subscribeResult=false`" + `。
-- 每个未归档资源有一条长期对话和至多一个 current generation。首条已接受消息到达时按需创建 generation。绑定切换、崩溃或生命周期收敛时，Forge 可以替换底层 AgentHub Session/generation；旧 generation 只读保留，并组成同一资源 history。Agent 不需也不应 Resume、Stop 或直接管理 AgentHub Session。
-- ready 的 current generation 在没有活动 Turn/approval、待处理 mailbox 投递或生命周期收敛时连续空闲 30 分钟，Forge 会自动休眠。Forge 持久化 ready 边界并对绑定的精确 AgentHub Session 执行 Stop；确认 stopped 后仍保留同一 generation/Session，资源状态标记为 ` + "`idle-suspended`" + `。下一条 user、agent、system 或 Scheduler 消息按需 Resume 同一 Session，确认 ready 后再投递；Forge 或 AgentHub 重启后观察到的 stopped Session 也走同一路径。没有消息时保持 stopped，不启动 provider。只有 binding/profile 变化、资源归档、Session archived/missing、身份/source 不匹配或 AgentHub 明确报告 provider/native resume 不可恢复，才 retire 并允许创建新 generation；临时 Resume 失败保留 mailbox 与 receipt 等待重试。普通轮询和 Forge Server 重启都不会重置 idle deadline。
-- history 以资源为地址：使用 ` + "`forge workspace history`" + `、` + "`forge project history`" + ` 和 ` + "`forge task history`" + `，以及 ` + "`forge history turn show --ref=...`" + ` 和 ` + "`forge history event show --ref=...`" + `。列表默认输出格式化文本；使用 ` + "`--json`" + ` 获取结构化内容，使用 ` + "`--cursor`" + `/` + "`--limit`" + ` 做有界分页。Turn/Event ref 是绑定资源和 generation 的稳定 opaque 引用。` + "`gap`" + ` 明确表示某段无法读取，不能因此隐藏更旧的 generation。资源归档后其 history 仍可读取。
-- 开始新的 generation 时，先读取所属资源的结构化 JSON 和 Markdown 约定，再使用对应 resource history 命令的 ` + "`--limit=20`" + ` 只查询最近记录。跳过当前正在执行的输入，仅按需用 ` + "`forge history turn show --ref=...`" + ` 展开相关、失败或未正常收敛的 Turn；随后检查任务 worktree 的 Git 状态和相关 artifacts。不要加载完整历史；遇到 ` + "`gap`" + ` 时明确报告，并继续依据 brief、Git、artifacts 和可读文件恢复。
-`
-
 func normalizeLanguage(language string) (string, error) {
 	switch strings.ToLower(strings.ReplaceAll(strings.TrimSpace(language), "_", "-")) {
 	case "", "en", "en-us":
@@ -156,80 +120,23 @@ func projectMarkdownZH(title, detail string) string {
 }
 
 func taskAgentsPromptZH(resource Resource) string {
-	title := "任务 Agent 指引"
-	scope := "AgentWorkspace 任务目录"
-	readLine := "执行前读取 task.json 和 task.md；需要对话上下文时使用资源 History。"
-	boundary := "将此目录视为当前任务边界。"
-	writeScope := "任务边界是避免多 agent 冲突的默认保护措施，并非绝对限制。用户的明确指令可以授权操作此任务目录之外的主机文件；但不得修改其他 agent 管理的 Workspace 资源。"
-	repoGuidance := "如需修改代码，请在 worktree/ 下创建 Git worktree。执行 `git worktree add` 时，目标必须使用此任务 worktree/ 目录内的绝对路径；当命令使用 `git -C` 时，相对目标会从共享仓库解析，可能把 worktree 错放到任务目录之外。"
-	updateLine := "如果任务涉及新仓库，请更新此任务的 task.json。"
-	structuredLine := "task.json 只记录 Forge 已理解的结构化事实；任意说明、链接、ID 和进度应使用 Markdown。"
-	backgroundLine := "将 task.md 作为长期有效的任务约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
-	recoveryLine := "临时执行上下文应先运行 `forge task history --project=<project> --task=<task> --limit=20` 查询有界近期记录，跳过当前正在执行的输入，仅用 `forge history turn show --ref=...` 展开相关、失败或未正常收敛的 Turn；随后检查任务 worktree 的 Git 状态和相关 artifacts，明确报告 history gap，不要再创建第二份常驻进度文件。"
-	pendingLine := "可能改变范围、验收标准或稳定约束的问题应保存在 task.md 中，并在实现前请用户确认。调查形成长期决策后，将其提升到 task.md。"
-	agentsLine := "总是读取父项目 AGENTS.md（../AGENTS.md）和 workspace 根目录的 AGENTS.md（../../AGENTS.md），了解项目约定和全局 Workspace 文件职责规则。"
-	extra := `
-- 此任务属于一个项目。需要更广泛的上下文时，读取父项目目录中的 project.json 和 project.md；需要项目对话上下文时使用项目 History。
-- 父项目文件仅作参考；除非用户明确要求，否则修改应限定在此任务目录及其 worktree 中。
-- 创建任务时，如果存在适用的现有模板，应优先使用该模板。
-- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
-`
+	meta := resource.resourceMeta()
 	if isProject(resource) {
-		title = "项目 Agent 指引"
-		scope = "AgentWorkspace 项目目录"
-		readLine = "执行前读取 project.json 和 project.md；需要对话上下文时使用项目 History。"
-		boundary = "将此目录视为当前项目边界。"
-		writeScope = "除非已明确选择某个任务目录，否则只更新此项目目录内的文件。"
-		repoGuidance = "项目不管理仓库或 worktree。如需修改代码，请创建任务，并把任务专用的 Git worktree 放在该任务的 worktree/ 目录下。"
-		updateLine = "需要仓库或 worktree 状态时，创建或更新任务；不要在项目上保存仓库元数据。"
-		structuredLine = "project.json 只记录 Forge 已理解的结构化事实；任意说明、链接、ID 和进度应使用 Markdown。"
-		backgroundLine = "将 project.md 作为长期有效的项目约定：记录工作原因、范围和非范围、持续有效的约束与决策，以及完成判定方式。"
-		recoveryLine = "项目临时执行上下文应先运行 `forge project history --project=<project> --limit=20` 查询有界近期记录，跳过当前正在执行的输入，仅用 `forge history turn show --ref=...` 展开相关、失败或未正常收敛的 Turn；随后检查所选任务的 Git 状态和 artifacts，明确报告 history gap，长期决策写入 project.md。"
-		pendingLine = "可能改变项目范围、验收标准或稳定约束的问题应保存在 project.md 中；需要时请用户确认，并把长期有效的答案记录在那里。"
-		agentsLine = "总是读取 workspace 根目录的 AGENTS.md（../AGENTS.md），了解全局 Workspace 文件职责规则。"
-		extra = `
-- 项目内容模板位于 templates/*.md。使用 schema-version: 2，并声明 title、可选 description/task-title、fields 和 Markdown 正文；字段类型支持 text、textarea、select、boolean。
-- 模板只组织任务内容，不包含运行时 Agent 或 Session 设置。
-- 创建任务时，如果存在适用的现有模板，应优先使用该模板。
-- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
-- 模板格式：
+		return fmt.Sprintf(`# 项目 Agent 指引
 
-  ` + "```markdown" + `
-  ---
-  schema-version: 2
-  title: 每日检查
-  task-title: "{{ summary }}"
-  fields:
-    - name: summary
-      type: text
-      label: 检查概述
-      required: true
-  ---
-  # {{ summary }}
-  ` + "```" + `
+你正在 AgentWorkspace 的 Project 目录中工作。
 
-- 使用 forge template list/show/validate/render/create/migrate 确定性地检查和迁移模板，也可直接编辑或删除文件。创建后的任务是独立副本，只保留来源 name、schema version 和 digest。
-`
+- 当前资源 ID：%s
+- 总是读取 Workspace 根目录的 AGENTS.md（../AGENTS.md）。
+`, meta.ID)
 	}
-	return fmt.Sprintf(`# %s
+	return fmt.Sprintf(`# 任务 Agent 指引
 
-你正在一个 %s中工作。
+你正在 AgentWorkspace 的 Task 目录中工作。
 
-- %s
-- %s
-- %s
-`+crossResourceReadGuidanceChinese+`- %s
-- 将 workspace 的 repos/ checkout 视为共享源码缓存；代码修改应在任务 worktree 中进行。
-- %s
-- %s
-- %s
-- %s
-- %s
-- %s
-- 通过对应的资源 History 命令读取对话和执行事件。
-- 生成的报告、截图、补丁和其他输出应放在 artifacts/ 下。
-%s
-`, title, scope, agentsLine, readLine, boundary, writeScope, repoGuidance, updateLine, structuredLine, backgroundLine, recoveryLine, pendingLine, extra)
+- 当前资源 ID：%s
+- 总是读取父 Project 的 AGENTS.md（../AGENTS.md）和 Workspace 根目录的 AGENTS.md（../../AGENTS.md）。
+`, meta.ID)
 }
 
 const defaultWikiIndexZH = `# Workspace Wiki
@@ -237,104 +144,210 @@ const defaultWikiIndexZH = `# Workspace Wiki
 此索引是 workspace 长期知识的入口。随着 Wiki 内容增长，请在这里添加主题页面链接及简短摘要。
 `
 
-const workspaceAgentsPromptZH = `# AgentWorkspace
+const workspaceAgentsPromptZH = `# AgentWorkspace Agent 工作指引
 
-此目录是由 Forge 管理的 AgentWorkspace。
+## 1. 工作环境
 
-- 所有 workspace 数据都以文件系统形式保存，包括项目/任务目录、JSON/Markdown 文件、日志、产物和任务 worktree。
-- 与 workspace 代码、项目和工作历史有关的长期知识保存在 ` + "`wiki/`" + ` 中。
-- 开始此 workspace 中的工作前，请读取 ` + "`wiki/index.md`" + `。
-- 根据索引只读取与当前任务相关的 Wiki 页面，不要无差别加载整个 Wiki。
-- 当用户要求分析代码、项目或工作记录并更新 Wiki 时，请维护相关页面、交叉链接和 ` + "`wiki/index.md`" + ` 摘要。
-` + crossResourceReadGuidanceChinese + resourceCommunicationGuidanceChinese + `- Workspace 文件边界依靠提示词协调，不是主机文件系统沙箱。
-- 开放项目直接位于 workspace 下的 ` + "`projectN/`" + ` 或 ` + "`projectN-slug/`" + ` 目录。
-- 项目任务直接位于项目目录下简短的 ` + "`taskM/`" + ` 或 ` + "`taskM-slug/`" + ` 目录；资源 ID 仍是 ` + "`projectN.taskM`" + ` 形式的完整 ID。
-- 已归档项目位于 ` + "`archive/`" + `。已归档项目任务位于其项目目录下的 ` + "`archive/`" + `。
-- 项目内容模板位于各项目的 ` + "`templates/`" + ` 目录。
-- 在项目中创建任务时，应检查该项目的 ` + "`templates/`" + ` 目录；如果存在适用的现有模板，应优先使用该模板。
-- 通过模板创建任务时，默认保留模板已有的全部规则；不得删除、弱化、绕过或无意覆盖，只有用户明确要求覆盖某一项规则时才可针对该项覆盖。
-- Git 仓库默认以普通 checkout 形式位于 ` + "`repos/`" + `。
-- 将 ` + "`repos/`" + ` 下的仓库视为共享源码缓存；代码修改应在任务 worktree 中进行。
-- 项目拥有 ` + "`project.json`" + `、` + "`project.md`" + `、` + "`AGENTS.md`" + ` 和 ` + "`artifacts/`" + `；对话通过资源 History 获取。
-- 任务拥有 ` + "`task.json`" + `、` + "`task.md`" + `、` + "`AGENTS.md`" + `、` + "`artifacts/`" + ` 和 ` + "`worktree/`" + `；对话通过资源 History 获取。
-- 项目不保存仓库元数据，也不管理 worktree。代码修改应先创建任务，再把任务专用的 Git worktree 放入当前任务的 ` + "`worktree/`" + ` 目录。
-- 只读检查其他任务目录不需要额外加锁；按上述状态文件和 Forge 命令指引查看。
-- 只更新当前处理的项目/任务目录及其拥有的任务 worktree。
-- ` + "`project.json`" + ` 和 ` + "`task.json`" + ` 只记录结构化事实，不记录进度说明。
-- 将 ` + "`project.md`" + ` 和 ` + "`task.md`" + ` 视为长期有效的约定。把工作原因、范围和非范围、验收标准、稳定约束、长期决策和会改变约定的待确认问题记录在那里。
-- 将任务的 ` + "`task.md`" + ` 视为长期有效的约定。新的 generation 应从有界 resource history、任务 worktree 的 Git 状态和相关 artifacts 恢复临时上下文；不要再创建第二份常驻进度文件。
-- 按时间排列的对话和执行事件通过资源 History 获取。
-- 可能改变范围、验收标准或稳定约束的问题应保存在相应 brief 中；确认后将长期答案提升到 brief。
-- 创建、列出和归档任务时优先使用 Forge 命令。
-- 项目和任务的 ` + "`AGENTS.md`" + ` 是简短的启动卡片。全局操作规则放在这里，背景放在 ` + "`project.md`" + `/` + "`task.md`" + `，临时恢复依据来自有界 History、Git 和 artifacts，对话历史通过资源 History 获取。
+你运行在用户的本机上，由 AgentHub 托管。AgentHub 负责启动 Agent、保持会话并记录执行事件。
 
-## forge CLI
+当前目录属于一个由 Forge 管理的 AgentWorkspace。Forge 用本地目录保存 Project、Task、文档、产物和代码 worktree，并通过 Forge Server 管理资源状态、消息、历史记录和 Agent 会话。
 
-使用 Forge 执行确定性的 workspace 操作：
+Workspace、Project、Task 和 Scheduler 都是长期存在的资源。每个资源由自己的 Agent 持续跟踪；底层会话可能变化，但资源 ID 和历史记录保持不变。日常工作使用 Forge 资源，不需要直接操作 AgentHub Session。
 
-` + "```bash" + `
-forge --version
-forge init [--language=<language>]
-forge migrate [--language=<language>]
+## 2. 开始工作
 
-forge repo add [--bare] <name> <url>
-forge repo list
+### 了解当前资源
 
-forge project create [--slug <slug>] <description>
+正常情况下，Agent 启动工作目录内的 AGENTS.md 会说明你处于 Workspace、Project、Task 还是 Scheduler，以及还需要读取哪些上级指引和资源文件。
+
+如果不清楚自己在哪里，可以检查当前工作目录，并参考 FORGE_RESOURCE_ID。Forge 通常还会注入 FORGE_WORKSPACE_ROOT 和 FORGE_WORKSPACE_INSTANCE_ID。这些变量用于辅助识别当前环境，也用于发送 Agent 消息时标识当前资源。
+
+根据资源类型读取上下文：
+
+- Workspace：根目录 AGENTS.md、Workspace 配置和 wiki/index.md；
+- Project：根目录与当前目录的 AGENTS.md、project.json、project.md；
+- Task：Workspace、Project、Task 三级 AGENTS.md、task.json、task.md；
+- Scheduler：Workspace 和 Scheduler 的 AGENTS.md、scheduler.json、scheduler.md。
+
+也可以使用：
+
+~~~sh
+forge project show --project=<project>
+forge task show --project=<project> --task=<task>
+forge workspace resource --id=<resource> --json
+~~~
+
+### 查看近期历史
+
+开始新的工作时，读取少量近期 History，了解之前做到哪里：
+
+~~~sh
+forge workspace history --limit=20
+forge project history --project=<project> --limit=20
+forge task history --project=<project> --task=<task> --limit=20
+~~~
+
+需要更多细节时，再展开相关 Turn 或 Event：
+
+~~~sh
+forge history turn show --ref=<turn-ref>
+forge history event show --ref=<event-ref>
+~~~
+
+History 会跨越多次 Agent 会话。使用命令返回的引用继续查询，不要使用 AgentHub Session ID。
+
+### 判断消息来源
+
+先确认正在和谁对话，并根据会话对象调整表达方式和语气：
+
+- 用户消息：使用自然、友好的表达，站在用户的理解角度说明结果、问题和取舍；重大范围变化需要用户确认。
+- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果，必要时通过 Forge 回复。
+- Scheduler 消息：关注 schedule ID、触发原因和是否可能重复，回复以执行结果和后续调度需要的信息为主。
+- 系统通知：根据其中的结果或引用继续处理，不把它当成新的用户要求。
+
+消息来源只用于了解上下文，本身不代表权限。Forge 约定冲突时，一般按下面的顺序理解：
+
+1. 当前用户会话；
+2. 当前 Agent 协作消息；
+3. Task 约定；
+4. Project 约定；
+5. Workspace 约定。
+
+上层要求不能越过文件权限或随意修改其他 Agent 管理的资源。
+
+### 判断要做什么
+
+- 直接完成工作：在当前范围内调查、实现、验证并交付。
+- 讨论或制定方案：先了解情况，给出方案和取舍，等相关方确认后再进入约定中的下一阶段。
+- Forge 管理工作：使用 Forge CLI 创建、查询或归档资源，管理模板、仓库或调度项。
+- Agent 协作：查看其他资源并发送消息，不直接修改对方文件。
+- 长时间等待：使用 Scheduler，避免一直占用当前会话轮询。
+
+## 3. 查询更多信息
+
+### Wiki
+
+Workspace 的长期知识保存在 wiki/。先读 wiki/index.md，再选择与当前任务相关的页面，不要一次读取整个 Wiki。
+
+### 代码仓库
+
+- repos/ 是共享源码目录，主要用于查询和创建 worktree；
+- 代码修改放在 Task 自己的 worktree/ 中；
+- 创建 worktree 时，目标使用当前 Task worktree/ 下的绝对路径；
+- 使用 forge task repo add/list/remove 登记 Task 使用的仓库和 worktree。
+
+### 其他资源
+
+可以只读查看其他 Project 或 Task：
+
+~~~sh
+forge workspace tree --json
+forge workspace resource --id=<resource> --json
+forge task status --project=<project> --task=<task>
+forge task history --project=<project> --task=<task> --limit=20
+~~~
+
+也可以读取对方的 JSON、Markdown 和 artifacts/。需要对方修改内容时，给对方 Agent 发消息。
+
+在消息或 Markdown 中提到 Forge 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。
+
+### 常用目录
+
+- projectN/：开放 Project；
+- projectN/taskM/：开放 Task；
+- archive/：归档的 Project 或 Task；
+- templates/：Project 的 Task 模板；
+- artifacts/：报告、截图、补丁等交付物；
+- worktree/：Task 专用代码 worktree；
+- scheduler/：Scheduler 资源。
+
+project.json 和 task.json 保存 Forge 认识的结构化信息。工作背景、范围、约束和长期决定写在 project.md 或 task.md 中。临时过程通过 History、Git 和 artifacts 恢复，不需要额外维护长期进度文件。
+
+## 4. 权限和 Forge CLI
+
+你可以读写当前资源拥有的文件；Task Agent 也可以修改当前 Task 的 worktree。Workspace 中其他资源默认只读，不要修改其他 Agent 管理的文件。需要对方操作时发送消息。
+
+Workspace 外的文件不受 Forge 额外限制，但仍要符合请求、任务范围和主机权限。删除、覆盖、发布等有明显影响的操作要先确认目标。
+
+通常在自己负责的资源目录运行 Forge CLI。省略 --project 或 --task 时，Forge 会根据当前目录选择对象；跨资源操作时建议显式指定资源。
+
+status、history 和 message 命令会自动找到管理当前 Workspace 的 Forge Server。一般不需要填写 --server，也不要手工修改 .forge/serve.lock。
+
+## 5. Forge 资源管理
+
+使用 Forge CLI 创建和管理资源，不要手工创建目录或修改结构化 JSON。
+
+~~~sh
 forge project list [--all]
-forge project show [--project=<project>]
-forge project archive [--project=<project>]
+forge project show --project=<project>
+forge project create [--slug <slug>] <description>
+forge project archive --project=<project>
 
-forge template list|show|validate|render|create|migrate ...
+forge task list --project=<project> [--all]
+forge task show --project=<project> --task=<task>
+forge task create --project=<project> ...
+forge task archive --project=<project> --task=<task>
+~~~
 
-forge task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--dry-run]
-forge task list [--project=<project>] [--all]
-forge task show [--project=<project>] [--task=<task>]
-forge task archive [--project=<project>] [--task=<task>]
-forge task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-forge task repo list [--project=<project>] [--task=<task>]
-forge task repo remove [--project=<project>] [--task=<task>] <repo-name>
-forge workspace status [--server=<url>]
-forge project status [--project=<project>] [--server=<url>]
-forge task status [--project=<project>] [--task=<task>] [--server=<url>]
-forge workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge project history [--project=<project>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-forge history turn show --ref=<reference> [--server=<url>] [--json]
-forge history event show --ref=<reference> [--server=<url>] [--json]
-forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
-forge message show --id=<message-id> [--server=<url>]
-forge resource archive --id=<resource>
+创建前先查询，避免重复。创建 Project 或 Task 后，还需要单独发送第一条消息，Forge 才会按需启动该资源的 Agent：
 
+~~~sh
+forge message send --to=<resource> '<message>'
+~~~
+
+创建 Task 前先查看 Project 的 templates/。有合适模板时优先使用，并保留模板中的规则：
+
+~~~sh
+forge template list --project=<project>
+forge template show --project=<project> <name>
+forge task create --project=<project> --template=<name> --field <name>=<value>
+~~~
+
+需要修改代码时，为 Task 创建专用 worktree，并用 forge task repo add 登记。Project 本身不管理代码 worktree。
+
+归档不是删除，但会结束资源的开放工作状态。归档前确认工作已经完成，必要的改动和产物已经保存。
+
+## 6. Agent 协作
+
+跨资源协作使用 Project 或 Task 的稳定资源 ID，不使用 Session ID。提到其他 Agent 时，一般使用“他”或“他们”。
+
+~~~sh
+forge task status --project=<project> --task=<task>
+forge message send --to=<resource> [--mode=steer|enqueue|interrupt] '<message>'
+forge message show --id=<message-id>
+~~~
+
+消息中写清目标、必要背景、范围和希望对方返回的结果。
+
+- steer：默认选择。对方正在工作时尽量把消息加入当前 Turn，否则 Forge 会改为排队开启新 Turn；
+- enqueue：明确要求开启一个新 Turn；
+- interrupt：中断对方当前 Turn，再用这条消息开启新 Turn，仅在确实需要立即改变方向时使用。
+
+消息被 Forge 接受，不代表对方已经完成。可以用 message ID、资源状态和 History 查看进展。
+
+Agent 消息默认会把对应 Turn 的最终结果发回发送方；不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
+
+## 7. Scheduler
+
+Scheduler 适合定时触发、条件触发，以及需要长时间等待外部事件的工作。
+
+Schedule 使用自然语言描述条件，不使用 cron 表达式：
+
+~~~sh
 forge scheduler list [--json]
 forge scheduler show --id=<schedule>
 forge scheduler add --description=<text> --condition=<text> --target=<resource>
 forge scheduler update --id=<schedule> [--description=<text>] [--condition=<text>] [--target=<resource>]
 forge scheduler remove --id=<schedule>
-forge workspace tree --json
-forge workspace resource --id=<resource> --json
+~~~
 
-forge serve [--addr=<address>] [--workspace=<path>] [--version]
-` + "```" + `
+也可以直接给 Scheduler Agent 发消息：
 
-说明：
+~~~sh
+forge message send --to=scheduler '<request>'
+~~~
 
-- ` + "`forge init`" + ` 在当前目录创建新 workspace；在已有 workspace 内执行会失败。使用 ` + "`--language`" + ` 选择 ` + "`en`" + ` 或 ` + "`zh-CN`" + `。
-- ` + "`forge migrate`" + ` 刷新 workspace 中由 Forge 管理的 ` + "`AGENTS.md`" + ` 提示词，并在删除旧文件前迁移旧任务历史；使用 ` + "`--language`" + ` 可切换 workspace 语言。
-- ` + "`forge repo add`" + ` 默认创建普通 checkout；需要使用 bare repository layout 时传入 ` + "`--bare`" + `。
-- ` + "`forge message send`" + ` 可用 ` + "`--subscribe-result=false`" + ` 关闭本条输入的 Turn 结果订阅；省略时默认为 true。只有稳定 Forge 资源 sender 才会收到结果 mailbox 消息。
-- 资源创建仅在本地完成，不附带初始消息，也不创建 generation。创建成功后应单独使用 ` + "`forge message send --to=<resource> ...`" + ` 发送第一条消息；消息被接受后才按需创建 generation。若创建命令输出结果不明，应先查询资源，再决定是否再次创建。
-- ` + "`forge project create`" + ` 创建新的开放项目目录。使用 ` + "`--slug <slug>`" + ` 可在不改变项目 ID 的情况下追加可读目录后缀。
-- ` + "`forge project list`" + ` 列出开放项目，传入 ` + "`--all`" + ` 时同时列出归档项目。它不会包含任务；项目任务使用 ` + "`forge task list [--project=<project>]`" + `。
-- ` + "`forge project show`" + ` 和 ` + "`forge project archive`" + ` 接受 ` + "`--project=<project>`" + `；project 可为 ` + "`project22`" + ` 形式的完整 ID 或 ` + "`22`" + ` 形式的数字。省略时使用当前目录所属项目。
-- ` + "`forge template list/show/validate/render/create/migrate`" + ` 管理 schema V2 项目内容模板；模板只描述任务内容。
-- ` + "`forge task create`" + ` 在项目下创建开放任务目录。使用 ` + "`--template`" + ` 和结构化字段渲染内容，` + "`--dry-run`" + ` 可无副作用预览；原有 ` + "`--detail`" + ` 与 ` + "`--task-markdown`" + ` 形式保持兼容。
-- ` + "`forge task list`" + ` 列出项目下的开放任务，传入 ` + "`--all`" + ` 时同时列出归档任务。使用 ` + "`--project`" + ` 选择项目，省略时使用当前目录所属项目。
-- ` + "`forge task show`" + ` 和 ` + "`forge task archive`" + ` 接受 ` + "`--project`" + ` 及 ` + "`--task`" + `。task 可为 ` + "`task4`" + ` 或 ` + "`4`" + `。省略时使用当前目录所属任务。
-- ` + "`forge task archive`" + ` 将开放任务移入项目的 archive；` + "`forge project archive`" + ` 将开放项目移入 workspace 的 ` + "`archive/`" + `。
-- ` + "`forge task history`" + ` 和 ` + "`forge project history`" + ` 读取有界资源 History；使用 ` + "`forge history turn show --ref=...`" + ` 查看选中的 Turn。
-- ` + "`forge task repo add/list/remove`" + ` 在任务的 ` + "`task.json`" + ` 中记录、列出或删除相关仓库。任务选择规则与 ` + "`forge task show`" + ` 相同。项目不保存仓库元数据。
-- ` + "`forge workspace tree --json`" + ` 输出包含开放项目、开放任务及其 resource runtime 状态的轻量 JSON 树，供 GUI 和工具集成使用。
-- ` + "`forge workspace resource --id=<resource> --json`" + ` 输出单个项目或任务的详情 JSON。
-- Turn 结果和消息投递终态通知会作为持久、结构化的 system 消息进入资源 mailbox。诊断时使用 ` + "`forge message show`" + `，并用稳定引用调用 ` + "`forge history turn show`" + `。
+description 说明要做什么，condition 写清触发时间或条件、时区、是否重复以及何时停止，target 使用稳定资源 ID。
+
+条件满足后，Scheduler 会给目标资源发送普通消息，说明 schedule ID 和触发原因。调度消息可能重复，目标 Agent 应避免重复执行。
 `
