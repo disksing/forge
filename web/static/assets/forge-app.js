@@ -3030,7 +3030,10 @@ var Pr = 20, Fr = 250, Ir = 80, Lr = 2e3, Rr = /* @__PURE__ */ new Set([
 			return;
 		}
 		let a = this.contexts.get(r) ?? this.createContext(e, t), o = String(n?.generation?.generationId || "");
-		if (this.isStaleStatus(a, n, o)) return;
+		if (this.isStaleStatus(a, n, o)) {
+			this.startStatusSync(a), i && this.emit();
+			return;
+		}
 		this.startStatusSync(a);
 		let s = !!(a.generationId && o && a.generationId !== o);
 		a.status = n, a.generationId = o, s ? (this.resetForGeneration(a), this.loadInitial(a)) : !a.loaded && !a.loading ? this.loadInitial(a) : this.realtime && this.connect(a), (i || s) && this.emit();

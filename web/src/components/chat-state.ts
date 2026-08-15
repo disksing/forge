@@ -104,7 +104,15 @@ export class ChatSessionController {
     }
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, resourceId);
     const nextGeneration = String(status?.generation?.generationId || "");
-    if (this.isStaleStatus(context, status, nextGeneration)) return;
+    if (this.isStaleStatus(context, status, nextGeneration)) {
+      // A context switch must still publish the newly active context,
+      // otherwise the view keeps showing the previously active resource until
+      // some unrelated event happens to emit. Keep the status poll alive so
+      // the pending fresh status reconciles the generation.
+      this.startStatusSync(context);
+      if (contextChanged) this.emit();
+      return;
+    }
     // Parent view-model refreshes may carry the previous status while this
     // controller is waiting for the AgentHub-backed status request. Keep the
     // poll alive; generation ordering below rejects an older response.
