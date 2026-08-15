@@ -291,6 +291,14 @@ func bindMailboxResultSubscription(message *resourceMailboxMessage, turnID strin
 		message.ResultOperationID = ""
 		return
 	}
+	// A steer joins an already-running Turn; it does not own that Turn's final
+	// result. Callers that need a direct reply to a steer must receive a new
+	// explicit resource message from the target agent.
+	if message.ActualMode == resourceMessageModeSteer {
+		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
+		message.ResultOperationID = ""
+		return
+	}
 	if message.Role != "agent" || message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
 		strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(turnID) == "" {
 		message.ResultSubscriptionStatus = resourceResultSubscriptionNone

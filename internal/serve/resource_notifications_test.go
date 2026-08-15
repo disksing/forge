@@ -46,7 +46,7 @@ func appendNotificationTestMessage(t *testing.T, workspacePath string, message r
 	}
 }
 
-func TestTurnResultSubscriptionsGroupBySenderAndTurn(t *testing.T) {
+func TestTurnResultSubscriptionsOnlyNotifyTurnOpeners(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
@@ -82,58 +82,43 @@ func TestTurnResultSubscriptionsGroupBySenderAndTurn(t *testing.T) {
 	fake.turns[run.AgentHubSessionID] = map[string]agentHubTurn{"turn-target": {TurnID: "turn-target", Status: "completed", Closed: true, Items: []agentHubTurnItem{{Type: "message", Role: "assistant", Text: "The shared result."}}}}
 	fake.mu.Unlock()
 	now := time.Now().Format(time.RFC3339Nano)
-	appendMessage := func(id, sender string) {
+	appendMessage := func(id, sender, actualMode string) {
 		appendNotificationTestMessage(t, root, resourceMailboxMessage{
 			ID: id, ResourceID: "project1.task1", Text: id, Role: "agent", Sender: &agentHubMessageSender{ID: sender, Name: sender}, SenderWorkspaceInstanceID: runtimeConfig.InstanceID,
-			SubscribeResult: true, ResultSubscriptionStatus: resourceResultSubscriptionPending, RequestedMode: resourceMessageModeEnqueue, ActualMode: resourceMessageModeEnqueue,
+			SubscribeResult: true, ResultSubscriptionStatus: resourceResultSubscriptionPending, RequestedMode: actualMode, ActualMode: actualMode,
 			Status: resourceMessageDelivered, AcceptedAt: now, UpdatedAt: now, DeliveredAt: now, TerminalAt: now, GenerationID: run.GenerationID, AgentHubSessionID: run.AgentHubSessionID, TurnID: "turn-target",
 		})
 	}
-	appendMessage("msg-one-a", "project1.task2")
-	appendMessage("msg-one-b", "project1.task2")
-	appendMessage("msg-two", "project1.task3")
+	appendMessage("msg-opener", "project1.task2", resourceMessageModeEnqueue)
+	appendMessage("msg-opener-steer", "project1.task2", resourceMessageModeSteer)
+	appendMessage("msg-other-steer", "project1.task3", resourceMessageModeSteer)
 	if err := manager.reconcileWorkspaceNotifications(context.Background(), workspace, client); err != nil {
 		t.Fatal(err)
 	}
-	for _, check := range []struct {
-		resource string
-		wantIDs  []string
-	}{
-		{resource: "project1.task2", wantIDs: []string{"msg-one-a", "msg-one-b"}},
-		{resource: "project1.task3", wantIDs: []string{"msg-two"}},
-	} {
-		mailbox, err := loadResourceMailboxForResource(root, check.resource)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(mailbox.Messages) != 1 || mailbox.Messages[0].Type != resourceMessageTypeTurnResult || mailbox.Messages[0].Role != "system" || mailbox.Messages[0].SubscribeResult || mailbox.Messages[0].RequestedMode != resourceMessageModeSteer {
-			t.Fatalf("result mailbox for %s = %#v", check.resource, mailbox.Messages)
-		}
-		result := mailbox.Messages[0]
-		if result.Causation == nil || len(result.Causation.SourceMessageIDs) != len(check.wantIDs) {
-			t.Fatalf("result causation for %s = %#v body=%q", check.resource, result.Causation, result.Text)
-		}
-		for _, id := range check.wantIDs {
-			found := false
-			for _, sourceID := range result.Causation.SourceMessageIDs {
-				if sourceID == id {
-					found = true
-					break
-				}
-			}
-			if !found {
-				t.Fatalf("result for %s omitted source %s: %#v", check.resource, id, result.Causation.SourceMessageIDs)
-			}
-		}
+	openerMailbox, err := loadResourceMailboxForResource(root, "project1.task2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(openerMailbox.Messages) != 1 || openerMailbox.Messages[0].Type != resourceMessageTypeTurnResult || openerMailbox.Messages[0].Role != "system" || openerMailbox.Messages[0].SubscribeResult || openerMailbox.Messages[0].RequestedMode != resourceMessageModeSteer {
+		t.Fatalf("opener result mailbox = %#v", openerMailbox.Messages)
+	}
+	result := openerMailbox.Messages[0]
+	if result.Causation == nil || len(result.Causation.SourceMessageIDs) != 1 || result.Causation.SourceMessageIDs[0] != "msg-opener" {
+		t.Fatalf("opener result causation = %#v body=%q", result.Causation, result.Text)
+	}
+	steererMailbox, err := loadResourceMailboxForResource(root, "project1.task3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(steererMailbox.Messages) != 0 {
+		t.Fatalf("steer sender received a Turn result: %#v", steererMailbox.Messages)
 	}
 	if err := manager.reconcileWorkspaceNotifications(context.Background(), workspace, client); err != nil {
 		t.Fatal(err)
 	}
-	for _, resource := range []string{"project1.task2", "project1.task3"} {
-		mailbox, err := loadResourceMailboxForResource(root, resource)
-		if err != nil || len(mailbox.Messages) != 1 {
-			t.Fatalf("result duplicated for %s: %#v err=%v", resource, mailbox.Messages, err)
-		}
+	openerMailbox, err = loadResourceMailboxForResource(root, "project1.task2")
+	if err != nil || len(openerMailbox.Messages) != 1 {
+		t.Fatalf("opener result duplicated: %#v err=%v", openerMailbox.Messages, err)
 	}
 }
 

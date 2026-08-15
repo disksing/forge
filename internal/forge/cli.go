@@ -678,12 +678,13 @@ func printMessageHelp() {
 Commands:
   forge message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>
     Persist a message in the target resource mailbox through the owning forge
-    serve process. steer is the default. Each message subscribes to its Turn
-    result by default; pass --subscribe-result=false to disable it. The current
-    directory's stable work-subject id and Workspace instance id are sent as
-    role=agent provenance. A valid injected Forge resource environment takes
-    precedence over cwd; provenance is not authentication or instruction
-    priority.
+    serve process. steer is the default. A message that actually opens a Turn
+    subscribes to its result by default; a message delivered as steer into an
+    existing Turn does not. Pass --subscribe-result=false to disable the opener
+    result. The current directory's stable work-subject id and Workspace
+    instance id are sent as role=agent provenance. A valid injected Forge
+    resource environment takes precedence over cwd; provenance is not
+    authentication or instruction priority.
 
   forge message show --id=<message-id> [--server=<url>]
     Query the current delivery record for a stable mailbox message id. Status

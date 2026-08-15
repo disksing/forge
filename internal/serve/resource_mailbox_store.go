@@ -664,10 +664,9 @@ func mailboxMessageNeedsHot(message resourceMailboxMessage) bool {
 	return false
 }
 
-// normalizeStoredMailboxMessage prevents a pre-subscribeResult delivered
-// Agent input from becoming a new result subscription during recovery. Raw
-// JSON decoding still follows the public omitted=>true default; this legacy
-// exception is applied only when reading durable old mailbox state.
+// normalizeStoredMailboxMessage applies compatibility rules that must not
+// change public JSON decoding. It prevents legacy durable inputs from gaining
+// subscriptions that the current runtime would not create.
 func normalizeStoredMailboxMessage(message *resourceMailboxMessage) {
 	if message == nil {
 		return
@@ -675,6 +674,16 @@ func normalizeStoredMailboxMessage(message *resourceMailboxMessage) {
 	if !message.subscribeResultPresent && message.Status == resourceMessageDelivered && message.Notification == nil && message.Type == "" {
 		message.SubscribeResult = false
 		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
+	}
+	// Older versions subscribed every agent input bound to a Turn, including
+	// steer inputs. Suppress only subscriptions that have not created a durable
+	// callback operation yet; an operation already in flight must finish its
+	// crash-safe delivery protocol.
+	if message.Status == resourceMessageDelivered && message.Notification == nil && message.Type == "" &&
+		message.ActualMode == resourceMessageModeSteer &&
+		(message.ResultSubscriptionStatus == "" || message.ResultSubscriptionStatus == resourceResultSubscriptionPending) {
+		message.ResultSubscriptionStatus = resourceResultSubscriptionNone
+		message.ResultOperationID = ""
 	}
 }
 
@@ -685,6 +694,12 @@ func normalizeStoredMailboxReceipt(receipt *resourceMailboxReceipt) {
 	if !receipt.subscribeResultPresent && receipt.Status == resourceMessageDelivered && receipt.Notification == nil && receipt.Type == "" {
 		receipt.SubscribeResult = false
 		receipt.ResultSubscriptionStatus = resourceResultSubscriptionNone
+	}
+	if receipt.Status == resourceMessageDelivered && receipt.Notification == nil && receipt.Type == "" &&
+		receipt.ActualMode == resourceMessageModeSteer &&
+		(receipt.ResultSubscriptionStatus == "" || receipt.ResultSubscriptionStatus == resourceResultSubscriptionPending) {
+		receipt.ResultSubscriptionStatus = resourceResultSubscriptionNone
+		receipt.ResultOperationID = ""
 	}
 }
 

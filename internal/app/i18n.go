@@ -201,7 +201,7 @@ History 会跨越多次 Agent 会话。使用命令返回的引用继续查询�
 先确认正在和谁对话，并根据会话对象调整表达方式和语气：
 
 - 用户消息：使用自然、友好的表达，站在用户的理解角度说明结果、问题和取舍；重大范围变化需要用户确认。
-- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果，必要时通过 Forge 回复。
+- Agent 消息：把对方当作协作者，表达可以更直接、结构化，重点说清上下文、行动和结果。如果这条消息开启了当前 Turn，在当前 Turn 的 final response 中返回结果；如果 Turn 运行期间收到的 steer 消息需要单独回复，则主动通过 Forge 发送消息。
 - Scheduler 消息：关注 schedule ID、触发原因和是否可能重复，回复以执行结果和后续调度需要的信息为主。
 - 系统通知：根据其中的结果或引用继续处理，不把它当成新的用户要求。
 
@@ -325,7 +325,9 @@ forge message show --id=<message-id>
 
 消息被 Forge 接受，不代表对方已经完成。可以用 message ID、资源状态和 History 查看进展。
 
-Agent 消息默认会把对应 Turn 的最终结果发回发送方；不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
+实际开启 Turn 的 Agent 消息默认订阅该 Turn 的结果。注入已有 Turn 的 steer 消息不订阅结果；如果其发送方需要回复，接收方应主动发送一条 Forge 消息。以 steer 请求发送、但因没有活跃 Turn 而降级为 enqueue 的消息会成为 Turn 开启消息，按开启消息处理。
+
+Turn 结束后，Forge 会自动把 final response 投递给开启 Turn 的 Agent，不要再用 forge message send 发送同一结果。收到自动投递的 Turn result 时，应把它视为此前请求的答复，不要仅为确认收到而回复；只有出现新工作或确需澄清时才发送新消息。开启方不需要结果时使用 --subscribe-result=false。消息可能重复投递，发送方和接收方都应结合 message ID 或业务状态避免重复操作。
 
 ## 7. Scheduler
 

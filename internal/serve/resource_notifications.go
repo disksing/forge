@@ -432,7 +432,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 	groups := make(map[string]*turnResultSubscriptionGroup)
 	for _, mailbox := range hotMailboxes {
 		for _, message := range mailbox.Messages {
-			if message.Type != "" || message.Status != resourceMessageDelivered || !message.SubscribeResult ||
+			if message.Type != "" || message.Status != resourceMessageDelivered || message.ActualMode == resourceMessageModeSteer || !message.SubscribeResult ||
 				(message.ResultSubscriptionStatus != resourceResultSubscriptionPending && message.ResultSubscriptionStatus != "") ||
 				message.Sender == nil || !isStableForgeResourceID(message.Sender.ID) ||
 				strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" || strings.TrimSpace(message.GenerationID) == "" {

@@ -171,7 +171,7 @@ History spans multiple agent conversations. Continue queries with the references
 First understand who you are talking to, then adjust wording and tone:
 
 - User message: communicate naturally and helpfully from the user's point of view. Explain outcomes, problems, and tradeoffs. Confirm major scope changes with the user.
-- Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Reply through Forge when needed.
+- Agent message: treat the sender as a collaborator. Be direct and structured, focusing on context, actions, and results. Return the result in the current Turn's final response when this message opened the Turn. If a steer message delivered during the Turn needs a separate reply, send one explicitly through Forge.
 - Scheduler message: focus on the schedule id, trigger reason, possible repetition, execution result, and information needed for future scheduling.
 - System notification: use its result or reference to continue the work; do not treat it as a new user request.
 
@@ -295,7 +295,9 @@ Include the goal, necessary context, scope, and expected result in the message.
 
 Message acceptance does not mean the work is complete. Check the message id, resource status, and History when needed.
 
-Agent messages return the corresponding Turn result to the sender by default. Use --subscribe-result=false when no result is needed. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
+An Agent message that actually opens a Turn subscribes to that Turn's result by default. A message delivered as steer into an already-running Turn does not subscribe; if its sender needs a reply, send an explicit forge message. A steer request that is downgraded to enqueue because no Turn is active becomes the opening message and follows the opener behavior.
+
+When the Turn ends, Forge automatically delivers its final response to the opening Agent. Do not also send the same result with forge message send. Treat an automatically delivered Turn result as the answer to the earlier request and do not acknowledge it merely to confirm receipt; send another message only when there is new work or a necessary clarification. Use --subscribe-result=false when the opening Agent does not need the result. Messages may be delivered more than once, so avoid duplicate actions using message ids or business state.
 
 ## 7. Scheduler
 

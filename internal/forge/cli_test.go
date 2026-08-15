@@ -361,6 +361,8 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 				"## 3. Finding more information", "## 4. Permissions and Forge CLI",
 				"## 5. Managing Forge resources", "## 6. Agent collaboration", "## 7. Scheduler",
 				"adjust wording and tone", "[[project1.task2]]", "forge message send --to=<resource>",
+				"A message delivered as steer into an already-running Turn does not subscribe",
+				"Do not also send the same result with forge message send",
 			},
 			projectAnchors:   []string{"# Project Agent Instructions", "AgentWorkspace Project directory", "Resource ID: project1", "../AGENTS.md"},
 			taskAnchors:      []string{"# Task Agent Instructions", "AgentWorkspace Task directory", "Resource ID: project1.task1", "../AGENTS.md", "../../AGENTS.md"},
@@ -375,6 +377,8 @@ func TestGeneratedAgentGuidanceSurvivesBilingualInitAndMigrate(t *testing.T) {
 				"## 3. 查询更多信息", "## 4. 权限和 Forge CLI",
 				"## 5. Forge 资源管理", "## 6. Agent 协作", "## 7. Scheduler",
 				"调整表达方式和语气", "[[project1.task2]]", "forge message send --to=<resource>",
+				"注入已有 Turn 的 steer 消息不订阅结果",
+				"不要再用 forge message send 发送同一结果",
 			},
 			projectAnchors:   []string{"# 项目 Agent 指引", "Project 目录", "当前资源 ID：project1", "../AGENTS.md"},
 			taskAnchors:      []string{"# 任务 Agent 指引", "Task 目录", "当前资源 ID：project1.task1", "../AGENTS.md", "../../AGENTS.md"},
@@ -755,6 +759,16 @@ func TestHelpGroupsCommandSections(t *testing.T) {
 	}
 	if strings.Contains(help, "forge session") {
 		t.Fatalf("removed forge session command remains in help:\n%s", help)
+	}
+	messageHelp := run(t, "help", "message")
+	for _, marker := range []string{
+		"A message that actually opens a Turn",
+		"a message delivered as steer into an\n    existing Turn does not",
+		"--subscribe-result=false",
+	} {
+		if !strings.Contains(messageHelp, marker) {
+			t.Fatalf("message help is missing %q:\n%s", marker, messageHelp)
+		}
 	}
 }
 

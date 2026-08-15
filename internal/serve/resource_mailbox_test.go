@@ -144,7 +144,7 @@ func TestResultSubscriptionDefaultsAndSystemMessages(t *testing.T) {
 	sender := &agentHubMessageSender{ID: "project1.task2", Name: "Sender"}
 
 	defaulted, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{
-		Text: "default subscription", Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1",
+		Text: "default subscription", Mode: resourceMessageModeEnqueue, Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -155,6 +155,31 @@ func TestResultSubscriptionDefaultsAndSystemMessages(t *testing.T) {
 	bindMailboxResultSubscription(&defaulted, "turn-1")
 	if defaulted.ResultSubscriptionStatus != resourceResultSubscriptionPending {
 		t.Fatalf("delivered default subscription = %#v", defaulted)
+	}
+
+	steered, err := acceptMailboxMessage(root, "workspace", resourceMessageRequest{
+		Text: "steer without result subscription", Role: "agent", Sender: sender, SenderWorkspaceInstanceID: "instance-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bindMailboxResultSubscription(&steered, "turn-1")
+	if !steered.SubscribeResult || steered.ResultSubscriptionStatus != resourceResultSubscriptionNone {
+		t.Fatalf("delivered steer subscription = %#v", steered)
+	}
+
+	downgraded := steered
+	downgraded.ActualMode = resourceMessageModeEnqueue
+	bindMailboxResultSubscription(&downgraded, "turn-2")
+	if downgraded.ResultSubscriptionStatus != resourceResultSubscriptionPending {
+		t.Fatalf("steer downgraded to enqueue subscription = %#v", downgraded)
+	}
+
+	interrupted := steered
+	interrupted.ActualMode = resourceMessageModeInterrupt
+	bindMailboxResultSubscription(&interrupted, "turn-3")
+	if interrupted.ResultSubscriptionStatus != resourceResultSubscriptionPending {
+		t.Fatalf("interrupt opener subscription = %#v", interrupted)
 	}
 
 	disabled := false
@@ -200,6 +225,15 @@ func TestResultSubscriptionDefaultsAndSystemMessages(t *testing.T) {
 	}
 	if explicitFalse.SubscribeResult || !explicitFalse.subscribeResultPresent {
 		t.Fatalf("explicit false JSON subscription = %#v", explicitFalse)
+	}
+
+	legacySteer := resourceMailboxMessage{
+		Status: resourceMessageDelivered, ActualMode: resourceMessageModeSteer, SubscribeResult: true,
+		ResultSubscriptionStatus: resourceResultSubscriptionPending, subscribeResultPresent: true,
+	}
+	normalizeStoredMailboxMessage(&legacySteer)
+	if !legacySteer.SubscribeResult || legacySteer.ResultSubscriptionStatus != resourceResultSubscriptionNone || legacySteer.ResultOperationID != "" {
+		t.Fatalf("stored steer subscription = %#v", legacySteer)
 	}
 }
 
