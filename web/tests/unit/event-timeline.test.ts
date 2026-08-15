@@ -116,6 +116,21 @@ function conversationAuthors(target: HTMLElement): string[] {
   return [...target.querySelectorAll<HTMLElement>("section.conversation-turn .agent-message-meta strong")].map((node) => node.textContent || "");
 }
 
+// mockScrollMetrics gives a jsdom element browser-like scroll geometry:
+// scrollTop assignments clamp into the valid range, and tests may change
+// scrollHeight/clientHeight to simulate content growth or layout shifts.
+function mockScrollMetrics(element: HTMLElement, initial: { scrollHeight: number; clientHeight: number }) {
+  const metrics = { scrollHeight: initial.scrollHeight, clientHeight: initial.clientHeight, scrollTop: 0 };
+  Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => metrics.scrollHeight });
+  Object.defineProperty(element, "clientHeight", { configurable: true, get: () => metrics.clientHeight });
+  Object.defineProperty(element, "scrollTop", {
+    configurable: true,
+    get: () => metrics.scrollTop,
+    set: (value: number) => { metrics.scrollTop = Math.max(0, Math.min(value, metrics.scrollHeight - metrics.clientHeight)); },
+  });
+  return metrics;
+}
+
 function historyGeneration(resourceId: string, generation: number, generationId: string, generationStatus: string) {
   const generationRecord = { generation, generationId, title: resourceId, status: generationStatus, createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
   const turn = { reference: `ref-${resourceId}-${generation}`, turnId: `turn-${generation}`, status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation: generationRecord };
@@ -385,6 +400,65 @@ describe("EventTimeline", () => {
     const reloaded = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(reloaded));
     await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+  });
+
+  it("keeps following stream updates when layout shifts shrink the scroller without a scroll event", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const metrics = mockScrollMetrics(target, { scrollHeight: 1000, clientHeight: 500 });
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.textContent).toContain("message task-a"));
+    await vi.waitFor(() => expect(metrics.scrollTop).toBe(500));
+
+    // The composer send feedback (or a growing textarea) steals height from
+    // the scroller without firing a scroll event. The pinned follow state
+    // must survive that shift so streamed updates still scroll to the bottom.
+    metrics.clientHeight = 440;
+    metrics.scrollHeight = 1100;
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } }) } as MessageEvent);
+
+    await vi.waitFor(() => expect(target.textContent).toContain("live reply"));
+    await vi.waitFor(() => expect(metrics.scrollTop).toBe(1100 - 440));
+
+    metrics.scrollHeight = 1250;
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } }) } as MessageEvent);
+    await vi.waitFor(() => expect(metrics.scrollTop).toBe(1250 - 440));
+  });
+
+  it("stops following after the user scrolls up and resumes at the bottom", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const metrics = mockScrollMetrics(target, { scrollHeight: 1000, clientHeight: 500 });
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(metrics.scrollTop).toBe(500));
+
+    target.scrollTop = 100;
+    target.dispatchEvent(new Event("scroll"));
+    metrics.scrollHeight = 1100;
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 100, time: "2026-08-12T00:00:01Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "live reply" } }) } as MessageEvent);
+    await vi.waitFor(() => expect(target.textContent).toContain("live reply"));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(metrics.scrollTop).toBe(100);
+
+    target.scrollTop = 1100 - 500;
+    target.dispatchEvent(new Event("scroll"));
+    metrics.scrollHeight = 1200;
+    FakeEventSource.instances[0].onmessage?.({ data: JSON.stringify({ id: 101, time: "2026-08-12T00:00:02Z", type: "message.assistant.delta", sessionId: "session-task-a", turnId: "turn-1", data: { text: "second reply" } }) } as MessageEvent);
+    await vi.waitFor(() => expect(metrics.scrollTop).toBe(1200 - 500));
   });
 
   it("keeps compact tool counts and expands to the same group in Chat and History", async () => {
