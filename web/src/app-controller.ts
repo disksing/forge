@@ -909,6 +909,7 @@ function detailPanelModel(): DetailPanelModel {
 		onCreateTask: (projectId: string) => showTaskForm(projectId),
 		onArchive: (resourceId: string) => archiveResource(resourceId).catch((err) => toast(errorMessage(err))),
 		onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => saveWorkspaceAgentsFromDetail(content, expectedContentHash),
+		onSaveMarkdownFile: (path: string, content: string, expectedContentHash: string) => saveMarkdownFileFromDetail(path, content, expectedContentHash),
 		onSaveAgentBinding: async (binding) => {
 			const resourceId = controllerState.selectedId || "workspace";
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
@@ -1037,6 +1038,28 @@ async function saveWorkspaceAgentsFromDetail(content: string, expectedContentHas
 	controllerState.workspaceAgents = saved;
 	controllerState.workspaceAgentsDraft = workspaceAgentsUserContent(saved.content || "");
 	controllerState.workspaceAgentsDirty = false;
+	publishViewModels();
+	return saved;
+}
+async function saveMarkdownFileFromDetail(path: string, content: string, expectedContentHash: string): Promise<WorkspaceFileRecord> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = controllerState.selectedId;
+	if (!workspaceId || !resourceId || resourceId === "workspace" || resourceId === "scheduler") throw new Error("No editable resource is selected.");
+	const navigationVersion = controllerState.navigationVersion;
+	if (path.includes("/templates/")) {
+		const name = path.split("/").pop()?.replace(/\.(md|markdown|mdown|mkdn)$/i, "") || "template";
+		const validation = await api<TaskTemplate>(`/api/workspaces/${encodeURIComponent(workspaceId)}/templates/validate`, {
+			method: "POST",
+			body: JSON.stringify({ name, content })
+		});
+		if (!validation.valid) throw new Error(validation.errors?.[0]?.message || "The task template is invalid.");
+	}
+	const saved = await api<WorkspaceFileRecord>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/documents?path=${encodeURIComponent(path)}`, {
+		method: "PUT",
+		body: JSON.stringify({ content, expectedContentHash })
+	});
+	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || controllerState.selectedId !== resourceId) throw new Error("The resource changed before the Markdown file finished saving.");
+	await loadDetail(resourceId, { force: true });
 	publishViewModels();
 	return saved;
 }

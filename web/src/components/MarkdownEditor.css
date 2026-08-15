@@ -1,0 +1,193 @@
+/* MarkdownEditor styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="markdown-editor"]).markdown-editor-shell {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-toolbar,
+:where([data-component-owner="markdown-editor"]) .markdown-editor-primary-actions,
+:where([data-component-owner="markdown-editor"]) .markdown-editor-save-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-toolbar {
+  justify-content: space-between;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-layout.with-annotations {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 32%);
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host,
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-editor {
+  min-width: 0;
+  min-height: 420px;
+  height: 100%;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-editor.cm-focused {
+  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: -2px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-scroller {
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: calc(13px * var(--details-font-scale, 1));
+  line-height: 1.7;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-content {
+  padding: 18px 12px 80px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-gutters {
+  border-right: 1px solid #e4e7eb;
+  background: #f7f8fa;
+  color: #8a94a0;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-review-annotation {
+  border-bottom: 2px solid #d99d16;
+  background: #fff1b8;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel {
+  min-width: 0;
+  overflow: auto;
+  border-left: 1px solid var(--line);
+  background: #f7f8fa;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel > header,
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f7f8fa;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel > header span {
+  display: grid;
+  min-width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 12px;
+  background: #e4e8ed;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel article {
+  display: grid;
+  gap: 8px;
+  margin: 10px;
+  padding: 10px;
+  border: 1px solid #d6dae0;
+  border-radius: 5px;
+  background: #fff;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel article.stale {
+  border-color: #d7a7a0;
+  background: #fff8f7;
+}
+
+:where([data-component-owner="markdown-editor"]) .annotation-location {
+  padding: 0;
+  border: 0;
+  color: var(--accent);
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel blockquote {
+  max-height: 100px;
+  margin: 0;
+  padding: 7px 9px;
+  overflow: auto;
+  border-left: 3px solid #d99d16;
+  color: #566372;
+  background: #fffaf0;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-annotation-panel textarea,
+:where([data-component-owner="markdown-editor"]) .markdown-copy-fallback textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-editor-alert {
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid #d8a234;
+  border-radius: 5px;
+  color: #704d08;
+  background: #fff8df;
+  font-size: 12px;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-copy-fallback {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border: 1px solid #d8a234;
+  border-radius: 5px;
+  background: #fff8df;
+}
+
+:where([data-component-owner="markdown-editor"]) .markdown-copy-fallback span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 980px) {
+  :where([data-component-owner="markdown-editor"]) .markdown-editor-layout.with-annotations {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  :where([data-component-owner="markdown-editor"]) .markdown-annotation-panel {
+    max-height: 320px;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  :where([data-component-owner="markdown-editor"]) .markdown-editor-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  :where([data-component-owner="markdown-editor"]) .markdown-editor-primary-actions,
+  :where([data-component-owner="markdown-editor"]) .markdown-editor-save-actions {
+    justify-content: space-between;
+  }
+}

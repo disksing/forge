@@ -24,6 +24,12 @@
   position: relative;
 }
 
+:where([data-component-owner="markdown-document"]) .markdown-document-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
 :where([data-component-owner="markdown-document"]) .markdown-preview .markdown-view {
   max-height: none;
 }

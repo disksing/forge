@@ -16,6 +16,7 @@ interface Harness {
   schedulerBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
   bindingBodies: Array<Record<string, unknown>>;
   attentionBodies: Array<{ method: string; path: string; body?: Record<string, unknown> }>;
+  markdownBodies: Array<{ path: string; content: string; expectedContentHash: string }>;
 }
 
 const templates = [
@@ -157,7 +158,7 @@ async function json(route: Route, body: unknown, status = 200) {
 }
 
 async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0, conversationFixture: ConversationFixture = "default"): Promise<Harness> {
-  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
+  const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [], markdownBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
   let runtimeExists = !startWithoutRuntime;
@@ -166,6 +167,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
   let createdProject: MockProject | null = null;
   let createdTask: MockTask | null = null;
   let scheduleSequence = 0;
+  let savedTaskBrief: { content: string; contentHash: string } | null = null;
   let schedulerConfig = {
     schemaVersion: 1,
     agentBinding: { kind: "profile" as const, name: "fast" },
@@ -395,6 +397,16 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
       harness.bindingBodies.push(request.postDataJSON());
       return json(route, { agentBinding: request.postDataJSON() });
     }
+    const markdownSaveMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/documents$/);
+    if (markdownSaveMatch && method === "PUT") {
+      const resourceId = decodeURIComponent(markdownSaveMatch[1]);
+      const body = request.postDataJSON() as { content: string; expectedContentHash: string };
+      const filePath = url.searchParams.get("path") || "";
+      harness.markdownBodies.push({ path: filePath, content: body.content, expectedContentHash: body.expectedContentHash });
+      if (resourceId !== "project1.task1" || body.expectedContentHash !== (savedTaskBrief?.contentHash || "project1.task1-brief-v1")) return json(route, { error: "Markdown file changed on disk" }, 409);
+      savedTaskBrief = { content: body.content, contentHash: `task-brief-saved-${harness.markdownBodies.length}` };
+      return json(route, { path: filePath, name: "task.md", content: savedTaskBrief.content, contentHash: savedTaskBrief.contentHash, size: savedTaskBrief.content.length });
+    }
     const resourceMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)$/);
     if (resourceMatch) {
       if (decodeURIComponent(resourceMatch[1]) === "scheduler") {
@@ -415,6 +427,9 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         : createdTask?.id === resourceId
           ? resourceDetail(createdTask)
           : detail(resourceId);
+      if (resourceId === "project1.task1" && savedTaskBrief) {
+        value.files[0] = { ...value.files[0], content: savedTaskBrief.content, contentHash: savedTaskBrief.contentHash };
+      }
       return json(route, value);
     }
     if (path === "/api/workspaces/ws-test/files") {
@@ -576,6 +591,42 @@ test("navigates resources and creates a task through the canonical application f
   await expect(page).toHaveURL(/project1\.task3/);
   await expect(page.getByRole("heading", { name: "Created from baseline", exact: true }).first()).toBeVisible();
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("edits Markdown source, annotates a selection, copies the review, and saves with a content hash", async ({ page }) => {
+  const harness = await installMockApi(page, "project1.task1");
+  await page.goto("/w/ws-test/r/project1.task1");
+  const panel = page.locator("#detailsPanel");
+  await panel.getByRole("button", { name: "Edit / Annotate" }).click();
+  const editor = panel.locator('[data-component-owner="markdown-editor"]');
+  await expect(editor.locator(".cm-editor")).toBeVisible();
+
+  await editor.locator(".cm-line", { hasText: "stable selection target" }).click({ clickCount: 3 });
+  const addAnnotation = editor.getByRole("button", { name: "Add annotation" });
+  await expect(addAnnotation).toBeEnabled();
+  await addAnnotation.click();
+  await editor.getByPlaceholder("Add a comment…").fill("Clarify the expected outcome.");
+
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  await editor.getByRole("button", { name: "Copy annotations" }).click();
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  expect(copied).toContain("文件：project1-migration/task1-infrastructure/task.md");
+  expect(copied).toContain("批注：Clarify the expected outcome.");
+  expect(copied).not.toContain("请处理");
+  expect(copied).not.toContain("以下批注");
+
+  await editor.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\nSaved from Playwright.\n");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect.poll(() => harness.markdownBodies.length).toBe(1);
+  expect(harness.markdownBodies[0]).toMatchObject({
+    path: "project1-migration/task1-infrastructure/task.md",
+    expectedContentHash: "project1.task1-brief-v1",
+  });
+  expect(harness.markdownBodies[0].content).toContain("Saved from Playwright.");
+  await editor.getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator('[data-doc-file="task.md"] .markdown-view')).toContainText("Saved from Playwright.");
 });
 
 test("grows the agent binding menu to fit long agent lists", async ({ page }) => {

@@ -55,6 +55,17 @@
   background: #fff;
 }
 
+:where([data-component-owner="file-preview-modal"]) .modal-markdown-editor {
+  flex: 1;
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+:where([data-component-owner="file-preview-modal"]) .modal-markdown-editor > .markdown-editor-shell {
+  min-height: 100%;
+}
+
 :where([data-component-owner="file-preview-modal"]) .image-preview {
   flex: 1;
   min-height: 0;

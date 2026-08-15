@@ -1,5 +1,6 @@
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EditorView } from "@codemirror/view";
 
 import DetailPanel from "../../src/components/DetailPanel.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
@@ -31,6 +32,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     resolveResourceTitle: () => null,
     onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(),
     onSaveWorkspaceAgents: vi.fn(async () => ({ path: "AGENTS.md", content: "", contentHash: "saved" })),
+    onSaveMarkdownFile: vi.fn(async (path, content) => ({ path, content, contentHash: "saved" })),
     onSaveAgentBinding: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
     ...overrides,
@@ -56,6 +58,22 @@ afterEach(async () => {
 });
 
 describe("DetailPanel", () => {
+  it("opens the lazy Markdown source editor and saves through the resource callback", async () => {
+    const save = vi.fn(async (path: string, content: string) => ({ path, name: "task.md", content, contentHash: "saved-hash" }));
+    const { target } = mountModel(resourceModel({ onSaveMarkdownFile: save }));
+    await tick();
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    edit.click();
+    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
+    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "\nAdded in browser.\n" } });
+    await tick();
+    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    saveButton.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save).toHaveBeenCalledWith("project1/task1/task.md", "# Stable detail\n\nSelected text.\nAdded in browser.\n", "doc-a");
+  });
+
   it("renders the compact resource number inside an independently scrollable body", async () => {
     const { target } = mountModel(resourceModel());
     await tick();

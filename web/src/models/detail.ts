@@ -100,6 +100,7 @@ export interface DetailPanelModel {
   onCreateTask: (projectId: string) => void;
   onArchive: (resourceId: string) => void;
   onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => Promise<WorkspaceAgentsModel>;
+  onSaveMarkdownFile: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;
