@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import EventTimeline from "../../src/components/EventTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
-import type { AgentEvent, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
+import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
+import type { AgentEvent, AgentTurnItem, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
+import { projectConversationEvents } from "../../src/components/timeline-events";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -34,18 +36,18 @@ function status(resourceId: string, generationId = `gen-${resourceId}`, generati
   };
 }
 
-function model(resourceId: string, nextStatus = status(resourceId)): EventTimelineModel {
+function model(resourceId: string, nextStatus = status(resourceId), projector: (events: AgentEvent[]) => TimelineItem[] = project): EventTimelineModel {
   return {
     identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
     status: nextStatus,
-    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project: projector, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
   };
 }
 
-function history(resourceId: string) {
+function history(resourceId: string, items: AgentTurnItem[] = [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" }]) {
   const generation = { generation: 1, generationId: `gen-${resourceId}`, title: resourceId, status: "idle", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
   const turn = { reference: `ref-${resourceId}`, turnId: "turn-1", status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation };
-  return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] } };
+  return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items } };
 }
 
 function generationModel(resourceId: string, generation: number, generationId: string, agentName: string): EventTimelineModel {
@@ -269,5 +271,65 @@ describe("EventTimeline", () => {
     const reloaded = mount(EventTimeline, { target, props: { channel } });
     cleanups.push(() => unmount(reloaded));
     await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+  });
+
+  it("keeps compact tool counts and expands to the same group in Chat and History", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const startedAt = "2026-08-12T00:00:00Z";
+    const fixture = history("task-a", [
+      { type: "message", role: "user", text: "run tools", startEventId: 1, endEventId: 1, startedAt, endedAt: startedAt },
+      { type: "tool", startEventId: 2, endEventId: 5, count: 2, startedAt, endedAt: startedAt },
+      { type: "message", role: "assistant", text: "done", startEventId: 6, endEventId: 6, startedAt, endedAt: startedAt },
+    ]);
+    Object.assign(fixture.turn, { eventCount: 6, toolEventCount: 4, lastEventId: 6, endEventId: 6 });
+    fixture.detail.turn = fixture.turn;
+    const events: AgentEvent[] = [
+      { id: 1, type: "message.input", turnId: "turn-1", sessionId: "session-task-a", data: { role: "user", text: "run tools" } },
+      { id: 2, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"] } } } },
+      { id: 3, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"], status: "completed" } } } },
+      { id: 4, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup" } } } },
+      { id: 5, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup", status: "completed", result: "ok" } } } },
+      { id: 6, type: "message.assistant.delta", turnId: "turn-1", sessionId: "session-task-a", data: { text: "done" } },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      const body = path.includes("/events?") ? { events, page: { hasMore: false, nextAfter: 6 } } : path.includes("/history/turns/ref-") ? fixture.detail : fixture.page;
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const chatTarget = document.body.appendChild(document.createElement("div"));
+    chatTarget.className = "tty-log";
+    const chat = mount(EventTimeline, { target: chatTarget, props: { channel: createModelChannel(model("task-a", status("task-a"), projectConversationEvents)) } });
+    cleanups.push(() => unmount(chat));
+    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-tool-group")).not.toBeNull());
+    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(1);
+
+    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    chatGroup.open = true;
+    chatGroup.dispatchEvent(new Event("toggle"));
+    await vi.waitFor(() => expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.textContent).toContain("Command");
+    expect(chatTarget.textContent).toContain("MCP");
+
+    const historyTarget = document.body.appendChild(document.createElement("div"));
+    const historyComponent = mount(HistoryTimeline, { target: historyTarget, props: {
+      workspaceId: "workspace-a", resourceId: "task-a", artifacts: [], resolveResourceTitle: () => null,
+      onNavigate: () => undefined, onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+    } });
+    cleanups.push(() => unmount(historyComponent));
+    await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());
+    historyTarget.querySelector<HTMLButtonElement>(".history-turn-header")!.click();
+    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-tool-group")).not.toBeNull());
+    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(historyTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    historyGroup.open = true;
+    historyGroup.dispatchEvent(new Event("toggle"));
+    await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
   });
 });
