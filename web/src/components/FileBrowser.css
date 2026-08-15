@@ -18,6 +18,11 @@
   min-width: 0;
 }
 
+/* Keep the empty-state row flush with the white tree background. */
+:where([data-component-owner="file-browser"]) .artifact-tree .empty-list-row {
+  background: #fff;
+}
+
 :where([data-component-owner="file-browser"]) .artifact-row {
   width: 100%;
   min-height: 30px;
