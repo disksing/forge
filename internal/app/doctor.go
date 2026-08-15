@@ -81,8 +81,7 @@ type doctorResourceBinding struct {
 }
 
 type doctorTemplate struct {
-	digest string
-	valid  bool
+	valid bool
 }
 
 // CheckWorkspace performs a read-only inspection of one explicit Workspace.
@@ -359,9 +358,6 @@ func (s *doctorScanner) scanTask(path, name string, project Project, templates m
 		case !template.valid:
 			s.issue(DoctorSeverityWarning, "task_template_invalid", filepath.Join(rel, taskJSONFile), resourceID,
 				fmt.Sprintf("recorded template %q is invalid", task.Template.Name), "Repair the Project template.")
-		case template.digest != task.Template.Digest:
-			s.issue(DoctorSeverityWarning, "task_template_changed", filepath.Join(rel, taskJSONFile), resourceID,
-				fmt.Sprintf("recorded template %q has changed since this Task was created", task.Template.Name), "No action is required unless the original template must be reproduced.")
 		}
 	}
 }
@@ -402,7 +398,7 @@ func (s *doctorScanner) scanTemplates(projectPath string, project Project) map[s
 		}
 		template := parseTaskTemplate(name, rel, string(data))
 		valid := len(template.Errors) == 0
-		result[name] = doctorTemplate{digest: template.Digest, valid: valid}
+		result[name] = doctorTemplate{valid: valid}
 		for _, issue := range append(template.Errors, template.Warnings...) {
 			severity := DoctorSeverityWarning
 			if issue.Severity == "error" {
