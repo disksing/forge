@@ -289,6 +289,8 @@ forge message show --id=<message-id>
 
 Include the goal, necessary context, scope, and expected result in the message.
 
+If the current work conflicts with or may affect another agent's work, promptly message the relevant resource's agent to synchronize necessary context, scope, and progress.
+
 - steer: the default. Add the message to the current Turn when possible; otherwise Forge queues a new Turn.
 - enqueue: explicitly request a new Turn.
 - interrupt: stop the current Turn and open a new Turn with this message. Use it only when the direction must change immediately.

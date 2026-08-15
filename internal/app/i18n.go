@@ -319,6 +319,8 @@ forge message show --id=<message-id>
 
 消息中写清目标、必要背景、范围和希望对方返回的结果。
 
+发现当前工作与其他 Agent 的工作冲突或可能相互影响时，及时给相关资源的 Agent 发消息，同步必要背景、范围和进展。
+
 - steer：默认选择。对方正在工作时尽量把消息加入当前 Turn，否则 Forge 会改为排队开启新 Turn；
 - enqueue：明确要求开启一个新 Turn；
 - interrupt：中断对方当前 Turn，再用这条消息开启新 Turn，仅在确实需要立即改变方向时使用。
