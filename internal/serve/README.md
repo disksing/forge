@@ -15,6 +15,10 @@ FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file path
 ```
 
+未设置 `FORGE_GUI_CONFIG` 时，GUI 配置默认保存于 `~/.forge/gui.json`。
+已有安装需要先停止正在运行的 Forge，再将旧文件
+`~/Library/Application Support/forge/gui.json` 移动到 `~/.forge/gui.json`；服务不会自动读取旧位置。
+
 每个被管理的 Workspace 同时只能由一个 `forge serve` 进程持有。服务启动时为配置中的每个 Workspace 获取 `<workspace>/.forge/serve.lock` 的 OS advisory 独占锁，并在整个生命周期内保持文件描述符打开。锁冲突会让启动整体失败并释放本轮已取得的锁。
 
 ## Workspace 与模板 API
