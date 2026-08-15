@@ -184,7 +184,7 @@ Workspace ownership:
 
 Environment overrides:
   FORGE_AGENTHUB_URL  AgentHub endpoint override
-  FORGE_GUI_CONFIG    GUI configuration file path
+  FORGE_GUI_CONFIG    GUI configuration file path (default ~/.forge/gui.json)
 `
 
 // PrintHelp writes the forge serve usage text to stdout.
@@ -1686,11 +1686,11 @@ func defaultConfigPath() (string, error) {
 	if path := strings.TrimSpace(os.Getenv("FORGE_GUI_CONFIG")); path != "" {
 		return path, nil
 	}
-	dir, err := os.UserConfigDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "forge", "gui.json"), nil
+	return filepath.Join(home, ".forge", "gui.json"), nil
 }
 
 func workspaceID(path string) string {

@@ -152,6 +152,13 @@ FORGE_AGENTHUB_URL  AgentHub endpoint override
 FORGE_GUI_CONFIG    GUI configuration file
 ```
 
+When `FORGE_GUI_CONFIG` is unset, Forge stores the GUI configuration at
+`~/.forge/gui.json`.
+
+For an existing installation, stop the running Forge GUI before migrating the
+old file from `~/Library/Application Support/forge/gui.json` to
+`~/.forge/gui.json`. The old location is not read automatically.
+
 `forge serve` no longer reads the former `FORGE_CLI` override. Remove that setting when upgrading; Workspace operations use the in-process typed API and the configured Workspace path.
 
 Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before runtime recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
