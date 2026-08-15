@@ -249,7 +249,7 @@ forge task history --project=<project> --task=<task> --limit=20
 
 也可以读取对方的 JSON、Markdown 和 artifacts/。需要对方修改内容时，给对方 Agent 发消息。
 
-在消息或 Markdown 中提到 Forge 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。
+在消息或 Markdown 中提到 Forge 资源时，可以使用 [[资源 ID]] 创建资源链接，例如 [[project1]] 或 [[project1.task2]]。引用 Workspace 内的文件时，使用以 workspace 为根目录的链接，例如 [附件](/project1/task2/artifacts/foobar.md)。
 
 ### 常用目录
 

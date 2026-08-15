@@ -219,7 +219,7 @@ forge task history --project=<project> --task=<task> --limit=20
 
 You may also read their JSON, Markdown, and artifacts/. Message their agent when changes are needed.
 
-In a message or Markdown file, write [[resource id]] to link a Forge resource, for example [[project1]] or [[project1.task2]].
+In a message or Markdown file, write [[resource id]] to link a Forge resource, for example [[project1]] or [[project1.task2]]. Link to a file inside the Workspace with a Workspace-root path, for example [attachment](/project1/task2/artifacts/foobar.md).
 
 ### Common directories
 

@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	urlpath "path"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -158,9 +159,8 @@ type server struct {
 }
 
 const (
-	previewMaxBytes  = 512 * 1024
-	diffMaxBytes     = 4 * 1024 * 1024
-	workspaceWikiDir = "wiki"
+	previewMaxBytes = 512 * 1024
+	diffMaxBytes    = 4 * 1024 * 1024
 )
 
 const serveUsage = `usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]
@@ -463,24 +463,6 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
-	case "wiki":
-		if len(parts) == 4 && parts[2] == "files" && parts[3] == "raw" {
-			if r.Method != http.MethodGet {
-				w.WriteHeader(http.StatusMethodNotAllowed)
-				return
-			}
-			s.serveRawWikiFile(w, r, id)
-			return
-		}
-		if len(parts) != 3 || parts[2] != "files" {
-			http.NotFound(w, r)
-			return
-		}
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		s.previewWikiFile(w, r, id)
 	case "diff":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -986,31 +968,12 @@ func (s *server) previewFile(w http.ResponseWriter, r *http.Request, id string) 
 		writeError(w, errors.New("path is required"), http.StatusBadRequest)
 		return
 	}
-	abs, err := safeWorkspacePath(workspace.Path, relPath)
+	abs, resolvedRel, err := resolveWorkspaceFileLink(workspace.Path, relPath)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	previewPath(w, relPath, abs)
-}
-
-func (s *server) previewWikiFile(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := s.workspace(id)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	relPath := strings.TrimSpace(r.URL.Query().Get("path"))
-	if relPath == "" {
-		writeError(w, errors.New("path is required"), http.StatusBadRequest)
-		return
-	}
-	abs, err := safeWikiPath(workspace.Path, relPath)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	previewPath(w, relPath, abs)
+	previewPath(w, resolvedRel, abs)
 }
 
 func previewPath(w http.ResponseWriter, relPath, abs string) {
@@ -1148,31 +1111,12 @@ func (s *server) serveRawFile(w http.ResponseWriter, r *http.Request, id string)
 		writeError(w, errors.New("path is required"), http.StatusBadRequest)
 		return
 	}
-	abs, err := safeWorkspacePath(workspace.Path, relPath)
+	abs, resolvedRel, err := resolveWorkspaceFileLink(workspace.Path, relPath)
 	if err != nil {
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	serveRawPath(w, r, relPath, abs)
-}
-
-func (s *server) serveRawWikiFile(w http.ResponseWriter, r *http.Request, id string) {
-	workspace, err := s.workspace(id)
-	if err != nil {
-		writeError(w, err, http.StatusNotFound)
-		return
-	}
-	relPath := strings.TrimSpace(r.URL.Query().Get("path"))
-	if relPath == "" {
-		writeError(w, errors.New("path is required"), http.StatusBadRequest)
-		return
-	}
-	abs, err := safeWikiPath(workspace.Path, relPath)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	serveRawPath(w, r, relPath, abs)
+	serveRawPath(w, r, resolvedRel, abs)
 }
 
 func serveRawPath(w http.ResponseWriter, r *http.Request, relPath, abs string) {
@@ -1805,19 +1749,57 @@ func safeWorkspacePath(root string, relPath string) (string, error) {
 	return targetAbs, nil
 }
 
-func safeWikiPath(workspaceRoot, relPath string) (string, error) {
-	if strings.TrimSpace(relPath) == "" {
-		return "", errors.New("path is required")
+var (
+	linkProjectSegment = regexp.MustCompile(`^project([0-9]+)$`)
+	linkTaskSegment    = regexp.MustCompile(`^task([0-9]+)$`)
+)
+
+// resolveWorkspaceFileLink resolves a Workspace-root-relative file link path to
+// its absolute path and its slug-resolved Workspace-relative path. Leading
+// projectN/taskN segments may name resources without a slug even when the
+// on-disk directory carries a slug suffix: for example
+// project1/task2/artifacts/foo.md resolves to the slugged project1-*/task2-*/
+// directories when they exist.
+func resolveWorkspaceFileLink(root, relPath string) (string, string, error) {
+	clean := filepath.ToSlash(filepath.Clean(strings.TrimSpace(relPath)))
+	if clean == "" || clean == "." || clean == ".." || strings.HasPrefix(clean, "../") {
+		return "", "", errors.New("path must be relative to the workspace")
 	}
-	wikiRoot, err := safeWorkspacePath(workspaceRoot, workspaceWikiDir)
+	parts := strings.Split(clean, "/")
+	if len(parts) > 0 && linkProjectSegment.MatchString(parts[0]) {
+		parts[0] = resolveSluggedDir(root, parts[0])
+	}
+	if len(parts) > 1 && linkTaskSegment.MatchString(parts[1]) {
+		projectDir := filepath.Join(root, filepath.FromSlash(parts[0]))
+		parts[1] = resolveSluggedDir(projectDir, parts[1])
+	}
+	resolvedRel := filepath.FromSlash(strings.Join(parts, "/"))
+	abs, err := safeWorkspacePath(root, resolvedRel)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	target, err := safeWorkspacePath(wikiRoot, relPath)
-	if err != nil && strings.Contains(err.Error(), "path escapes the workspace") {
-		return "", errors.New("path escapes the Workspace Wiki")
+	return abs, filepath.ToSlash(resolvedRel), nil
+}
+
+func resolveSluggedDir(parent, segment string) string {
+	if info, err := os.Stat(filepath.Join(parent, segment)); err == nil && info.IsDir() {
+		return segment
 	}
-	return target, err
+	prefix := segment + "-"
+	entries, err := os.ReadDir(parent)
+	if err != nil {
+		return segment
+	}
+	var matches []string
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+			matches = append(matches, entry.Name())
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0]
+	}
+	return segment
 }
 
 func ensurePathInside(root string, target string) error {

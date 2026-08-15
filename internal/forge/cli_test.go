@@ -1636,11 +1636,11 @@ func TestWorkspaceWikiInitMigrateAndSnapshot(t *testing.T) {
 		if !tree.Wiki.Exists || tree.Wiki.Error != "" || len(tree.Wiki.Entries) != 2 {
 			t.Fatalf("unexpected Wiki snapshot: %+v", tree.Wiki)
 		}
-		if tree.Wiki.Entries[0].Name != "guides" || tree.Wiki.Entries[0].Path != "guides" || tree.Wiki.Entries[0].Type != "directory" {
+		if tree.Wiki.Entries[0].Name != "guides" || tree.Wiki.Entries[0].Path != "wiki/guides" || tree.Wiki.Entries[0].Type != "directory" {
 			t.Fatalf("unexpected nested Wiki root entry: %+v", tree.Wiki.Entries[0])
 		}
 		operations := tree.Wiki.Entries[0].Children[0]
-		if operations.Path != "guides/operations" || len(operations.Children) != 1 || operations.Children[0].Path != "guides/operations/deploy.txt" || operations.Children[0].Modified == "" {
+		if operations.Path != "wiki/guides/operations" || len(operations.Children) != 1 || operations.Children[0].Path != "wiki/guides/operations/deploy.txt" || operations.Children[0].Modified == "" {
 			t.Fatalf("unexpected nested Wiki tree: %+v", tree.Wiki.Entries[0])
 		}
 		originalSize := operations.Children[0].Size

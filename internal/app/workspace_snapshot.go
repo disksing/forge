@@ -139,7 +139,7 @@ func readWorkspaceWiki(root string) WorkspaceWikiView {
 		return WorkspaceWikiView{Exists: true, Entries: []FileTreeEntry{}, Error: "workspace wiki path is not a directory"}
 	}
 	count := 0
-	entries, err := readFileTreeLimited(dir, dir, 0, &count)
+	entries, err := readFileTreeLimited(root, dir, 0, &count)
 	if err != nil {
 		return WorkspaceWikiView{Exists: true, Entries: []FileTreeEntry{}, Error: err.Error()}
 	}

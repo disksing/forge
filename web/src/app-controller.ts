@@ -55,7 +55,6 @@ interface ControllerState {
 	taskOrder: Record<string, string[]>;
 	listDrag: ShellDragTarget | null;
 	expandedPaths: Set<string>;
-	preview: (WorkspaceFileRecord & { section?: string }) | null;
 	diff: DiffRecord | null;
 	modalEnter: string;
 	taskOperationalStateKey: string;
@@ -67,7 +66,6 @@ interface ControllerState {
 	navigationVersion: number;
 	detailRequestVersion: number;
 	workspaceAgentsRequestVersion: number;
-	previewRequestVersion: number;
 	diffRequestVersion: number;
 	messageStatus: ResourceMessageStatus | null;
 	messageStatusKey: string;
@@ -115,7 +113,6 @@ const controllerState: ControllerState = {
 	taskOrder: {} as Record<string, string[]>,
 	listDrag: null as ShellDragTarget | null,
 	expandedPaths: /* @__PURE__ */ new Set<string>(),
-	preview: null,
 	diff: null,
 	modalEnter: "",
 	taskOperationalStateKey: "",
@@ -133,7 +130,6 @@ const controllerState: ControllerState = {
 	navigationVersion: 0,
 	detailRequestVersion: 0,
 	workspaceAgentsRequestVersion: 0,
-	previewRequestVersion: 0,
 	diffRequestVersion: 0,
 	messageStatus: null,
 	messageStatusKey: "",
@@ -222,7 +218,6 @@ interface LoadDetailOptions { force?: boolean }
 interface FetchDetailOptions {}
 interface WorkspaceAgentsOptions { force?: boolean }
 interface SelectResourceOptions { clearUnread?: boolean; forceDetail?: boolean }
-interface FilePreviewOptions { workspaceId?: string; requestVersion?: number; rethrow?: boolean }
 interface RenderOptions { skipDraftSync?: boolean }
 interface UploadContext { workspaceId?: string; resourceId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
@@ -461,7 +456,6 @@ async function load() {
 		controllerState.tree = null;
 		clearResourceDetailState();
 		controllerState.workspaceAgents = null;
-		controllerState.preview = null;
 		controllerState.diff = null;
 		resetAgentState();
 		publishViewModels();
@@ -477,7 +471,6 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	renderAppShell();
 	controllerState.detailRequestVersion++;
 	controllerState.workspaceAgentsRequestVersion++;
-	controllerState.previewRequestVersion++;
 	controllerState.diffRequestVersion++;
 	let tree: WorkspaceTree;
 	try {
@@ -495,7 +488,6 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	clearResourceDetailState();
 	controllerState.workspaceAgents = null;
 	controllerState.workspaceAgentsSaving = false;
-	controllerState.preview = null;
 	controllerState.diff = null;
 	ensureValidSelection();
 	ensureSelectedProjectExpanded(false);
@@ -588,10 +580,6 @@ async function autoRefresh() {
 		let changed = !sameJSON(controllerState.tree, tree);
 		if (changed) controllerState.tree = tree;
 		observeCompletionProjections(resourceNotificationProjections(tree));
-		if (changed && controllerState.preview?.section === "Wiki" && !controllerState.preview.loading) {
-			await refreshFilePreview("Wiki", controllerState.preview.path);
-			if (!isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
-		}
 		if (ensureValidSelection()) {
 			syncURL({ replace: true });
 			changed = true;
@@ -784,7 +772,6 @@ async function switchWorkspace(id: string): Promise<void> {
 	controllerState.treeRequestVersion++;
 	controllerState.detailRequestVersion++;
 	controllerState.workspaceAgentsRequestVersion++;
-	controllerState.previewRequestVersion++;
 	controllerState.diffRequestVersion++;
 	const navigationVersion = controllerState.navigationVersion;
 	await saveUIState().catch((err) => console.warn("failed to save UI state", err));
@@ -841,7 +828,6 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		controllerState.treeRequestVersion++;
 		controllerState.detailRequestVersion++;
 		controllerState.workspaceAgentsRequestVersion++;
-		controllerState.previewRequestVersion++;
 		controllerState.diffRequestVersion++;
 		if (id !== "workspace") {
 			resourceDetailController.reset(id);
@@ -851,7 +837,6 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		controllerState.workspaceAgentsSaving = false;
 			flushAgentDraft();
 			discardAgentUploadDialog();
-			controllerState.preview = null;
 			controllerState.diff = null;
 			clearAgentDraftMemory();
 		controllerState.messageStatus = null;
@@ -1001,28 +986,6 @@ function resetWorkspaceAgentsDraft(): void {
 	controllerState.workspaceAgentsDraft = "";
 	controllerState.workspaceAgentsDirty = false;
 }
-async function refreshFilePreview(section: string, path: string, options: FilePreviewOptions = {}): Promise<WorkspaceFileRecord | null> {
-	const workspaceId = options.workspaceId || controllerState.activeWorkspaceId;
-	const requestVersion = options.requestVersion || ++controllerState.previewRequestVersion;
-	try {
-		const preview = await api<WorkspaceFileRecord>(filePreviewURL(section, path, workspaceId));
-		if (workspaceId !== controllerState.activeWorkspaceId || requestVersion !== controllerState.previewRequestVersion || controllerState.preview?.section !== section || controllerState.preview?.path !== path) return null;
-		controllerState.preview = {
-			section,
-			...preview
-		};
-		return controllerState.preview;
-	} catch (err) {
-		const current = workspaceId === controllerState.activeWorkspaceId && requestVersion === controllerState.previewRequestVersion && controllerState.preview?.section === section && controllerState.preview?.path === path;
-		if (current) controllerState.preview = {
-			section,
-			path,
-			error: errorMessage(err)
-		};
-		if (options.rethrow && current) throw err;
-		return null;
-	}
-}
 async function saveWorkspaceAgentsFromDetail(content: string, expectedContentHash: string): Promise<WorkspaceFileRecord> {
 	if (!controllerState.activeWorkspaceId) throw new Error("No workspace is selected.");
 	const workspaceId = controllerState.activeWorkspaceId;
@@ -1063,18 +1026,10 @@ async function saveMarkdownFileFromDetail(path: string, content: string, expecte
 	publishViewModels();
 	return saved;
 }
-function closePreview(): void {
-	controllerState.previewRequestVersion++;
-	controllerState.preview = null;
-	publishViewModels();
-}
 function closeDiff(): void {
 	controllerState.diffRequestVersion++;
 	controllerState.diff = null;
 	publishViewModels();
-}
-function filePreviewURL(section: string, path: string, workspaceId = controllerState.activeWorkspaceId): string {
-	return `/api/workspaces/${workspaceId}/${section === "Wiki" ? "wiki/files" : "files"}?path=${encodeURIComponent(path)}`;
 }
 async function fetchCurrentTree(workspaceId = controllerState.activeWorkspaceId): Promise<WorkspaceTree | null> {
 	const requestVersion = ++controllerState.treeRequestVersion;
@@ -1620,7 +1575,6 @@ function installControllerListeners(): void {
 	});
 	lifecycle?.listen(document, "keydown", (event) => {
 	if (event.key === "Escape" && controllerState.diff) closeDiff();
-	else if (event.key === "Escape" && controllerState.preview) closePreview();
 	else if (event.key === "Escape" && (controllerState.agent.optionsOpen || controllerState.agent.historyOpen)) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
@@ -1717,7 +1671,6 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 	controllerState.treeRequestVersion++;
 	controllerState.detailRequestVersion++;
 	controllerState.workspaceAgentsRequestVersion++;
-	controllerState.previewRequestVersion++;
 	controllerState.diffRequestVersion++;
 	controllerState.workspaceAgentsSaving = false;
 	const navigationVersion = controllerState.navigationVersion;
@@ -1727,7 +1680,6 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 		resourceDetailController.reset(controllerState.selectedId);
 		delete controllerState.details[controllerState.selectedId];
 	}
-	controllerState.preview = null;
 	controllerState.diff = null;
 	if (workspaceChanged) {
 		controllerState.tree = null;

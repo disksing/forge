@@ -192,7 +192,7 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(wikiDir, "guides", "notes.md"), []byte("# Notes\n\nSafe content.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	outside := filepath.Join(workspace, "outside.txt")
+	outside := filepath.Join(t.TempDir(), "outside.txt")
 	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +202,7 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path=guides%2Fnotes.md", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path=wiki%2Fguides%2Fnotes.md", nil)
 	rec := httptest.NewRecorder()
 	s.handleWorkspace(rec, req)
 	if rec.Code != http.StatusOK {
@@ -213,12 +213,12 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	expectedDigest := sha256.Sum256([]byte("# Notes\n\nSafe content.\n"))
-	if preview.Path != "guides/notes.md" || preview.Binary || !strings.Contains(preview.Content, "Safe content") || preview.ContentHash != hex.EncodeToString(expectedDigest[:]) {
+	if preview.Path != "wiki/guides/notes.md" || preview.Binary || !strings.Contains(preview.Content, "Safe content") || preview.ContentHash != hex.EncodeToString(expectedDigest[:]) {
 		t.Fatalf("unexpected Wiki preview: %+v", preview)
 	}
 
-	for _, path := range []string{"../outside.txt", "guides/../../outside.txt", "/etc/passwd"} {
-		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path="+path, nil)
+	for _, path := range []string{"../outside.txt", "wiki/guides/../../../outside.txt", "/etc/passwd"} {
+		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path="+path, nil)
 		rec := httptest.NewRecorder()
 		s.handleWorkspace(rec, req)
 		if rec.Code != http.StatusBadRequest {
@@ -229,7 +229,7 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(wikiDir, "outside-link.txt")); err != nil {
 		t.Fatal(err)
 	}
-	for _, suffix := range []string{"wiki/files?path=outside-link.txt", "wiki/files/raw?path=outside-link.txt"} {
+	for _, suffix := range []string{"files?path=wiki/outside-link.txt", "files/raw?path=wiki/outside-link.txt"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/"+suffix, nil)
 		rec := httptest.NewRecorder()
 		s.handleWorkspace(rec, req)
@@ -238,11 +238,64 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 		}
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/wiki/files?path=missing.md", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path=wiki/missing.md", nil)
 	rec = httptest.NewRecorder()
 	s.handleWorkspace(rec, req)
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "no such file") {
 		t.Fatalf("expected a clear missing Wiki file response, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
+	workspace := t.TempDir()
+	forgeWorkspace, err := app.Initialize(workspace, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.CreateProject("API project", "forge"); err != nil {
+		t.Fatal(err)
+	}
+	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: "project1", Title: "First task", Slug: "fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := forgeWorkspace.Resource(task.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactDir := filepath.Join(workspace, filepath.FromSlash(detail.Path), "artifacts")
+	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := []byte("# Attachment\n\nHello link.\n")
+	if err := os.WriteFile(filepath.Join(artifactDir, "foobar.md"), content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path=project1%2Ftask1%2Fartifacts%2Ffoobar.md", nil)
+	rec := httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected slug-resolved preview, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var preview filePreview
+	if err := json.Unmarshal(rec.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+	if preview.Path != "project1-forge/task1-fix/artifacts/foobar.md" || preview.Binary || !strings.Contains(preview.Content, "Hello link") {
+		t.Fatalf("unexpected preview: %+v", preview)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files/raw?path=project1/task1/artifacts/foobar.md", nil)
+	rec = httptest.NewRecorder()
+	s.handleWorkspace(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Hello link") {
+		t.Fatalf("expected slug-resolved raw preview, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -644,7 +697,7 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, suffix := range []string{"files/raw?path=notes.md", "wiki/files/raw?path=notes.md"} {
+	for _, suffix := range []string{"files/raw?path=notes.md", "files/raw?path=wiki/notes.md"} {
 		req := httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/"+suffix, nil)
 		rec := httptest.NewRecorder()
 		s.handleWorkspace(rec, req)

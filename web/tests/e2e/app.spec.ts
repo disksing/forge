@@ -257,7 +257,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         scheduler: { ...schedulerResource, scheduler: schedulerConfig },
         projects: [projectSnapshot, ...(createdProject ? [{ ...createdProject, attention: attentionStates[createdProject.id] }] : [])],
         attentionList,
-        wiki: { exists: true, entries: [{ name: "index.md", path: "index.md", type: "file", size: 28 }] },
+        wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 28 }] },
       });
     }
     const attentionDismissMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/(.+)\/attention\/dismiss$/);
@@ -440,11 +440,8 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: String(body.content || ""), contentHash: "agents-saved" });
       }
       if (filePath === "AGENTS.md") return json(route, { path: "AGENTS.md", name: "AGENTS.md", content: "Workspace guidance", contentHash: "agents-v1" });
+      if (filePath.startsWith("wiki/")) return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
       return json(route, { path: filePath, name: filePath.split("/").pop(), content: `# Preview\n\nContent for ${filePath}\n\n${longDetailBody}`, contentHash: `hash-${filePath}` });
-    }
-    if (path === "/api/workspaces/ws-test/wiki/files") {
-      const filePath = url.searchParams.get("path") || "";
-      return json(route, { path: filePath, name: filePath.split("/").pop(), content: "# Workspace Wiki\n\nStable wiki content.", contentHash: "wiki-v1" });
     }
     if (path === "/api/workspaces/ws-test/diff") return json(route, { path: url.searchParams.get("path"), branch: "topic", base: "master", diff: "diff --git a/a.txt b/a.txt\nnew file mode 100644\n--- /dev/null\n+++ b/a.txt\n@@ -0,0 +1 @@\n+detail diff\n", hasChanges: true });
     if (path === "/api/workspaces/ws-test/projects" && method === "POST") {

@@ -60,18 +60,45 @@ export function markdownHTML(content: string, context?: MarkdownRenderContext): 
 interface MarkdownNavigationContext {
   resolveResourceTitle: ResourceTitleResolver;
   onNavigate: (resourceId: string) => void;
+  onOpenFile?: (path: string) => void;
 }
 
 export function handleMarkdownResourceClick(event: MouseEvent, context: MarkdownNavigationContext): void {
   if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
   if (!(event.target instanceof Element)) return;
-  const anchor = event.target.closest<HTMLAnchorElement>("a[data-forge-resource-id]");
   const root = event.currentTarget;
-  if (!anchor || !(root instanceof Node) || !root.contains(anchor) || (anchor.target && anchor.target !== "_self")) return;
-  const resourceId = anchor.dataset.forgeResourceId || "";
-  if (!isSafeResourceId(resourceId) || !context.resolveResourceTitle(resourceId)) return;
+  if (!(root instanceof Node)) return;
+
+  const resourceAnchor = event.target.closest<HTMLAnchorElement>("a[data-forge-resource-id]");
+  if (resourceAnchor && root.contains(resourceAnchor) && (!resourceAnchor.target || resourceAnchor.target === "_self")) {
+    const resourceId = resourceAnchor.dataset.forgeResourceId || "";
+    if (isSafeResourceId(resourceId) && context.resolveResourceTitle(resourceId)) {
+      event.preventDefault();
+      context.onNavigate(resourceId);
+      return;
+    }
+  }
+
+  if (!context.onOpenFile) return;
+  const fileAnchor = event.target.closest<HTMLAnchorElement>("a[href^='/']");
+  if (!fileAnchor || !root.contains(fileAnchor) || (fileAnchor.target && fileAnchor.target !== "_self")) return;
+  const href = fileAnchor.getAttribute("href") || "";
+  const path = workspaceFileLinkPath(href);
+  if (path == null) return;
   event.preventDefault();
-  context.onNavigate(resourceId);
+  context.onOpenFile(path);
+}
+
+function workspaceFileLinkPath(href: string): string | null {
+  if (!href.startsWith("/") || href.startsWith("//")) return null;
+  if (href.startsWith("/w/") || href.startsWith("/api/")) return null;
+  const path = href.slice(1);
+  if (!path || path === "." || path === "..") return null;
+  try {
+    return decodeURIComponent(path);
+  } catch (_) {
+    return path;
+  }
 }
 
 export function markdownResourceNavigation(node: HTMLElement, initialContext: MarkdownNavigationContext) {

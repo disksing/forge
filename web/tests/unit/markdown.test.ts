@@ -111,3 +111,79 @@ describe("Forge Markdown resource references", () => {
     action.destroy();
   });
 });
+
+describe("Forge Markdown workspace file links", () => {
+  it("opens workspace-root file links through onOpenFile without navigating", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    container.innerHTML = markdownHTML("[attachment](/project1/task2/artifacts/foobar.md)", context());
+    const onNavigate = vi.fn();
+    const onOpenFile = vi.fn();
+    const navigation = { resolveResourceTitle: context().resolveResourceTitle, onNavigate, onOpenFile };
+    const action = markdownResourceNavigation(container, navigation);
+    const link = container.querySelector("a")!;
+
+    const plainClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    expect(link.dispatchEvent(plainClick)).toBe(false);
+    expect(onOpenFile).toHaveBeenCalledWith("project1/task2/artifacts/foobar.md");
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    action.destroy();
+  });
+
+  it("leaves routes, API paths, external links, and modified clicks alone", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    container.innerHTML = markdownHTML([
+      "[route](/w/workspace-a/r/project1.task2)",
+      "[api](/api/workspaces/workspace-a/files?path=foo.md)",
+      "[external](https://example.com/file.md)",
+      "[protocol](//example.com/file.md)",
+      "[file](/wiki/notes.md)",
+    ].join("\n\n"), context());
+    const onNavigate = vi.fn();
+    const onOpenFile = vi.fn();
+    const navigation = { resolveResourceTitle: context().resolveResourceTitle, onNavigate, onOpenFile };
+    const action = markdownResourceNavigation(container, navigation);
+
+    const route = container.querySelector<HTMLAnchorElement>("a[href^='/w/']")!;
+    const api = container.querySelector<HTMLAnchorElement>("a[href^='/api/']")!;
+    const external = container.querySelector<HTMLAnchorElement>("a[href^='https']")!;
+    const protocol = container.querySelector<HTMLAnchorElement>("a[href^='//']")!;
+    const file = container.querySelector<HTMLAnchorElement>("a[href='/wiki/notes.md']")!;
+
+    const modifiedClick = new MouseEvent("click", { bubbles: true, cancelable: true, metaKey: true });
+    Object.defineProperties(modifiedClick, { target: { value: file }, currentTarget: { value: container } });
+    handleMarkdownResourceClick(modifiedClick, navigation);
+    expect(modifiedClick.defaultPrevented).toBe(false);
+    expect(onOpenFile).not.toHaveBeenCalled();
+
+    const plainClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+    Object.defineProperties(plainClick, { target: { value: file }, currentTarget: { value: container } });
+    handleMarkdownResourceClick(plainClick, navigation);
+    expect(onOpenFile).toHaveBeenCalledWith("wiki/notes.md");
+
+    for (const anchor of [route, api, external, protocol]) {
+      const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+      Object.defineProperties(click, { target: { value: anchor }, currentTarget: { value: container } });
+      handleMarkdownResourceClick(click, navigation);
+      expect(click.defaultPrevented).toBe(false);
+    }
+    expect(onOpenFile).toHaveBeenCalledTimes(1);
+    expect(onNavigate).not.toHaveBeenCalled();
+
+    action.destroy();
+  });
+
+  it("decodes percent-encoded workspace file paths", () => {
+    const container = document.body.appendChild(document.createElement("div"));
+    container.innerHTML = markdownHTML("[file](/project1/task2/artifacts/foo%20bar.md)", context());
+    const onOpenFile = vi.fn();
+    const navigation = { resolveResourceTitle: context().resolveResourceTitle, onNavigate: vi.fn(), onOpenFile };
+    const action = markdownResourceNavigation(container, navigation);
+    const link = container.querySelector("a")!;
+    const click = new MouseEvent("click", { bubbles: true, cancelable: true });
+    Object.defineProperties(click, { target: { value: link }, currentTarget: { value: container } });
+    handleMarkdownResourceClick(click, navigation);
+    expect(onOpenFile).toHaveBeenCalledWith("project1/task2/artifacts/foo bar.md");
+    action.destroy();
+  });
+});
