@@ -142,6 +142,38 @@ describe("DetailPanel", () => {
     expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("Task");
   });
 
+  it("keeps the Task tab visible with a missing-file notice when task.md is deleted", async () => {
+    const initial = resourceModel();
+    const { target } = mountModel(resourceModel({ detail: { ...initial.detail!, files: [] } }));
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    const taskTab = tabs.find((tab) => tab.textContent?.includes("Task"));
+    expect(taskTab).toBeDefined();
+    expect(taskTab!.getAttribute("aria-selected")).toBe("true");
+    expect(target.textContent).toContain("Task brief is missing");
+    expect(target.querySelector('[data-doc-file="task.md"]')).toBeNull();
+  });
+
+  it("keeps the Project tab visible with a missing-file notice when project.md is deleted", async () => {
+    const initial = resourceModel();
+    const projectDetail = { ...initial.detail!, id: "project12", type: "project" as const, files: [] };
+    const { target } = mountModel(resourceModel({
+      identity: "ws:project12:project",
+      resourceId: "project12",
+      resourceType: "project",
+      parent: null,
+      detail: projectDetail,
+    }));
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    const projectTab = tabs.find((tab) => tab.textContent?.includes("Project"));
+    expect(projectTab).toBeDefined();
+    expect(projectTab!.getAttribute("aria-selected")).toBe("true");
+    expect(target.textContent).toContain("Project brief is missing");
+  });
+
   it("keeps document and artifact DOM identity across unrelated refreshes", async () => {
     const initial = resourceModel();
     const { channel, target } = mountModel(initial);
