@@ -646,6 +646,25 @@ test("grows the agent binding menu to fit long agent lists", async ({ page }) =>
   expect((await bindingMenu.boundingBox())!.height).toBeGreaterThan(260);
 });
 
+test("fits binding menu columns to the longest labels", async ({ page }) => {
+  const extraAgents = ["gpt-5.3-codex-spark", "gpt-5.6-sol", "kimi-k3", "grok-4.5", "gemini-3.1-pro", "gpt-5.6-luna", "pi-kimi", "deepseek-v4-pro"];
+  await installMockApi(page, "project1.task1", false, false, false, extraAgents);
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  await page.getByRole("button", { name: "Binding target" }).click();
+  const bindingMenu = page.getByRole("listbox", { name: "Binding target" });
+  await expect(bindingMenu.getByRole("option")).toHaveCount(13);
+
+  // Column widths are measured from the longest labels, so no label should be
+  // truncated on a wide viewport.
+  const truncated = await bindingMenu.evaluate((menu) =>
+    [...menu.querySelectorAll<HTMLElement>(".agent-binding-option-primary, .agent-binding-option-secondary")]
+      .filter((el) => el.scrollWidth > el.clientWidth)
+      .map((el) => el.textContent)
+  );
+  expect(truncated).toEqual([]);
+});
+
 test("navigates to a newly created project", async ({ page }) => {
   const harness = await installMockApi(page, "project1");
   await page.goto("/w/ws-test/r/project1");

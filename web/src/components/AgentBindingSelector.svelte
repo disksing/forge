@@ -44,6 +44,11 @@
 
   $effect(() => {
     if (!open || !menu) return;
+    // Subscribe to the option lists so column widths are re-measured when the
+    // profile or agent data changes while the menu is open (e.g. a settings
+    // refresh adds a longer name); stale fixed columns would truncate it.
+    void profileOptions;
+    void agentOptions;
     fitMenuToViewport();
     alignOptionColumns();
     const target = menu.querySelector<HTMLElement>('[aria-selected="true"]') ?? menu.querySelector<HTMLElement>(".agent-binding-option");

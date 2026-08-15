@@ -822,7 +822,7 @@ function Ve(e, n) {
 	let i = N(n, "disabled", 3, !1), a = N(n, "ariaLabel", 3, "Agent binding"), f = u(A), p = u(j), m = u(() => M(n.value)), _ = u(() => [...c(f), ...c(p)].find((e) => M(e.value) === c(m))?.label || n.value.name || "Unavailable"), v = o(!1), y = o(void 0), S = o(void 0);
 	Y(() => {
 		if (!c(v) || !c(S)) return;
-		T(), D();
+		c(f), c(p), T(), D();
 		let e = c(S).querySelector("[aria-selected=\"true\"]") ?? c(S).querySelector(".agent-binding-option");
 		d().then(() => e?.focus());
 	}), H(() => {
