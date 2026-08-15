@@ -924,8 +924,8 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   await page.getByRole("button", { name: "Update schedule" }).click();
   await expect(page.locator(".schedule-list article")).toContainText("Notify after release verification");
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator(".schedule-list article").getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("alertdialog", { name: "Remove schedule" }).getByRole("button", { name: "Remove" }).click();
   await expect(page.locator(".schedule-list article")).toHaveCount(0);
   expect(harness.schedulerBodies.map(({ method }) => method)).toEqual(["POST", "PUT", "PUT", "DELETE"]);
   expect(harness.schedulerBodies[0].body).toEqual({
@@ -1192,8 +1192,8 @@ test("keeps the Svelte template editor stable and ignores an older preview respo
   await dialog.getByRole("option", { name: /Feature A/ }).click();
   await dialog.getByLabel("Summary *").fill("older");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-a" && (body.templateFields as Record<string, unknown>)?.summary === "older").length).toBe(1);
-  page.once("dialog", (confirmation) => confirmation.accept());
   await dialog.getByRole("option", { name: /Feature B/ }).click();
+  await page.getByRole("alertdialog", { name: "Switch template" }).getByRole("button", { name: "Discard" }).click();
   await dialog.getByLabel("Summary *").fill("newer");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-b" && (body.templateFields as Record<string, unknown>)?.summary === "newer").length).toBe(1);
 
