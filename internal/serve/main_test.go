@@ -483,6 +483,43 @@ func TestWorkspaceAgentsSaveRejectsChangedContentHash(t *testing.T) {
 	}
 }
 
+func TestWorkspaceAgentsSaveWritesFullContent(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "gui.json")
+	s := &server{config: configPath}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	get := httptest.NewRecorder()
+	s.handleWorkspace(get, httptest.NewRequest(http.MethodGet, "/api/workspaces/workspace-one/files?path=AGENTS.md", nil))
+	if get.Code != http.StatusOK {
+		t.Fatalf("initial AGENTS.md preview returned %d: %s", get.Code, get.Body.String())
+	}
+	var preview filePreview
+	if err := json.Unmarshal(get.Body.Bytes(), &preview); err != nil {
+		t.Fatal(err)
+	}
+
+	fullContent := "# User notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n"
+	body, _ := json.Marshal(map[string]string{"content": fullContent, "expectedContentHash": preview.ContentHash})
+	put := httptest.NewRecorder()
+	s.handleWorkspace(put, httptest.NewRequest(http.MethodPut, "/api/workspaces/workspace-one/files?path=AGENTS.md", bytes.NewReader(body)))
+	if put.Code != http.StatusOK {
+		t.Fatalf("AGENTS.md full save returned %d: %s", put.Code, put.Body.String())
+	}
+	got, err := os.ReadFile(filepath.Join(workspace.Root(), "AGENTS.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != fullContent {
+		t.Fatalf("AGENTS.md full save wrote unexpected content\nwant:\n%s\ngot:\n%s", fullContent, got)
+	}
+}
+
 func TestRawFileDownloadServesAttachment(t *testing.T) {
 	workspace := t.TempDir()
 	textContent := []byte("hello artifact\n")

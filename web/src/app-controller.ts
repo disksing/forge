@@ -41,9 +41,6 @@ interface ControllerState {
 	tree: WorkspaceTree | null;
 	details: Record<string, ResourceRecord>;
 	workspaceAgents: WorkspaceFileRecord | null;
-	workspaceAgentsDraft: string;
-	workspaceAgentsDirty: boolean;
-	workspaceAgentsSaving: boolean;
 	activeWorkspaceId: string;
 	navigationLoading: boolean;
 	navigationError: string;
@@ -99,9 +96,6 @@ const controllerState: ControllerState = {
 	tree: null,
 	details: {},
 	workspaceAgents: null,
-	workspaceAgentsDraft: "",
-	workspaceAgentsDirty: false,
-	workspaceAgentsSaving: false,
 	activeWorkspaceId: "",
 	navigationLoading: true,
 	navigationError: "",
@@ -487,7 +481,6 @@ async function loadTree(options: LoadTreeOptions = {}) {
 	controllerState.tree = tree;
 	clearResourceDetailState();
 	controllerState.workspaceAgents = null;
-	controllerState.workspaceAgentsSaving = false;
 	controllerState.diff = null;
 	ensureValidSelection();
 	ensureSelectedProjectExpanded(false);
@@ -782,8 +775,6 @@ async function switchWorkspace(id: string): Promise<void> {
 	controllerState.navigationError = "";
 	clearResourceDetailState();
 	initializeNotificationState(id);
-	resetWorkspaceAgentsDraft();
-	controllerState.workspaceAgentsSaving = false;
 	closeCreateDialog();
 	resetAgentState();
 	renderWorkspaceSelect();
@@ -834,11 +825,10 @@ async function selectResource(id: string, options: SelectResourceOptions = {}): 
 		}
 	}
 	if (selectionChanged) {
-		controllerState.workspaceAgentsSaving = false;
-			flushAgentDraft();
-			discardAgentUploadDialog();
-			controllerState.diff = null;
-			clearAgentDraftMemory();
+		flushAgentDraft();
+		discardAgentUploadDialog();
+		controllerState.diff = null;
+		clearAgentDraftMemory();
 		controllerState.messageStatus = null;
 		controllerState.messageStatusKey = "";
 		controllerState.messageStatusRequestVersion++;
@@ -958,34 +948,6 @@ function renderDetails(): void {
 async function openBreadcrumbResource(id: string): Promise<void> {
 	await selectResource(id, { forceDetail: id === controllerState.selectedId && id !== "workspace" });
 }
-function stripForgeManagedBlocks(content: string): string {
-	const startMarker = "<!-- managed by forge cli -->";
-	const endMarker = "<!-- end of forge cli prompt -->";
-	let result = "";
-	let cursor = 0;
-	while (cursor < content.length) {
-		const start = content.indexOf(startMarker, cursor);
-		if (start < 0) {
-			result += content.slice(cursor);
-			break;
-		}
-		const end = content.indexOf(endMarker, start + 29);
-		if (end < 0) {
-			result += content.slice(cursor);
-			break;
-		}
-		result += content.slice(cursor, start);
-		cursor = end + 32;
-	}
-	return result;
-}
-function workspaceAgentsUserContent(content: string): string {
-	return stripForgeManagedBlocks(content || "").trim();
-}
-function resetWorkspaceAgentsDraft(): void {
-	controllerState.workspaceAgentsDraft = "";
-	controllerState.workspaceAgentsDirty = false;
-}
 async function saveWorkspaceAgentsFromDetail(content: string, expectedContentHash: string): Promise<WorkspaceFileRecord> {
 	if (!controllerState.activeWorkspaceId) throw new Error("No workspace is selected.");
 	const workspaceId = controllerState.activeWorkspaceId;
@@ -999,8 +961,6 @@ async function saveWorkspaceAgentsFromDetail(content: string, expectedContentHas
 	});
 	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || controllerState.selectedId !== "workspace") throw new Error("The workspace changed before AGENTS.md finished saving.");
 	controllerState.workspaceAgents = saved;
-	controllerState.workspaceAgentsDraft = workspaceAgentsUserContent(saved.content || "");
-	controllerState.workspaceAgentsDirty = false;
 	publishViewModels();
 	return saved;
 }
@@ -1672,7 +1632,6 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 	controllerState.detailRequestVersion++;
 	controllerState.workspaceAgentsRequestVersion++;
 	controllerState.diffRequestVersion++;
-	controllerState.workspaceAgentsSaving = false;
 	const navigationVersion = controllerState.navigationVersion;
 	controllerState.activeWorkspaceId = route.workspaceId || "";
 	controllerState.selectedId = route.resourceId || "workspace";
@@ -1685,8 +1644,6 @@ async function handleHistoryNavigation(pathname: string): Promise<void> {
 		controllerState.tree = null;
 		controllerState.navigationLoading = true;
 		controllerState.navigationError = "";
-		resetWorkspaceAgentsDraft();
-		controllerState.workspaceAgentsSaving = false;
 		closeCreateDialog();
 		initializeNotificationState(controllerState.activeWorkspaceId);
 	}
