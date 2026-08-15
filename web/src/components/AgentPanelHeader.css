@@ -33,6 +33,11 @@ the details header via --pane-header-height (option A). */
   animation: agent-header-pulse 1.6s ease-in-out infinite;
 }
 
+:where([data-component-owner="agent-panel-header"])[data-state="submitting"] .agent-status-dot {
+  background: var(--blue);
+  animation: agent-header-pulse 1.1s ease-in-out infinite;
+}
+
 :where([data-component-owner="agent-panel-header"])[data-state="attention_required"] .agent-status-dot {
   background: var(--amber);
 }
@@ -86,6 +91,10 @@ the details header via --pane-header-height (option A). */
 
 @media (prefers-reduced-motion: reduce) {
   :where([data-component-owner="agent-panel-header"])[data-state="working"] .agent-status-dot {
+    animation: none;
+  }
+
+  :where([data-component-owner="agent-panel-header"])[data-state="submitting"] .agent-status-dot {
     animation: none;
   }
 }

@@ -27,6 +27,7 @@ const (
 	resourceMessageDelivering      = "delivering"
 	resourceMessageInterrupting    = "interrupting"
 	resourceMessageDelivered       = "delivered"
+	resourceMessageCancelled       = "cancelled"
 	resourceMessageUndeliverable   = "undeliverable"
 	resourceMessageDeliveryUnknown = "delivery_unknown"
 )
@@ -53,6 +54,7 @@ const (
 	resourceMessageReasonGenerationReplacing = "generation_replacing"
 	resourceMessageReasonResourceArchived    = "resource_archived"
 	resourceMessageReasonRecoveredCanonical  = "recovered_canonical_mode"
+	resourceMessageReasonTurnStopped         = "cancelled_by_turn_stop"
 )
 
 type resourceMailbox struct {
@@ -166,6 +168,7 @@ type resourceMailboxCounts struct {
 	Delivering      int `json:"delivering"`
 	Interrupting    int `json:"interrupting"`
 	Delivered       int `json:"delivered"`
+	Cancelled       int `json:"cancelled"`
 	Undeliverable   int `json:"undeliverable"`
 	DeliveryUnknown int `json:"deliveryUnknown"`
 }
@@ -568,6 +571,8 @@ func mailboxCounts(mailbox resourceMailbox, resourceID string) (resourceMailboxC
 			counts.Interrupting++
 		case resourceMessageDelivered:
 			counts.Delivered++
+		case resourceMessageCancelled:
+			counts.Cancelled++
 		case resourceMessageUndeliverable:
 			counts.Undeliverable++
 		case resourceMessageDeliveryUnknown:
@@ -579,6 +584,37 @@ func mailboxCounts(mailbox resourceMailbox, resourceID string) (resourceMailboxC
 		}
 	}
 	return counts, lastError, lastErrorCode
+}
+
+type cancelledResourceMessages struct {
+	Count int
+	IDs   []string
+}
+
+// cancelPendingSteerMessages records the stop policy at the mailbox boundary.
+// Only queued steer requests are cancelled: a delivering or delivered message
+// may already have crossed the AgentHub acceptance boundary and must not be
+// described as cancelled without a canonical receipt proving that fact.
+func cancelPendingSteerMessages(workspacePath, resourceID string) (cancelledResourceMessages, error) {
+	resourceID = normalizedResourceID(resourceID)
+	now := time.Now().Format(time.RFC3339Nano)
+	result := cancelledResourceMessages{IDs: []string{}}
+	_, err := mutateResourceMailboxForResource(workspacePath, resourceID, func(mailbox *resourceMailbox) error {
+		for index := range mailbox.Messages {
+			message := &mailbox.Messages[index]
+			if normalizedResourceID(message.ResourceID) != resourceID || message.Status != resourceMessageQueued || message.RequestedMode != resourceMessageModeSteer {
+				continue
+			}
+			message.Status = resourceMessageCancelled
+			message.TerminalAt = now
+			message.LastErrorCode = resourceMessageReasonTurnStopped
+			message.LastError = "This steer was cancelled because the current turn was stopped before it was consumed."
+			result.Count++
+			result.IDs = append(result.IDs, message.ID)
+		}
+		return nil
+	})
+	return result, err
 }
 
 func mailboxPendingForResource(workspacePath, resourceID string) (bool, error) {

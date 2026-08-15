@@ -10,6 +10,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
+  import { toolGroupKey } from "./tool-group";
   import { projectConversationEvents } from "./timeline-events";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
@@ -87,11 +88,14 @@
   // Expanded Turns render through the same item components as the live Chat
   // timeline so History stays readable instead of dumping raw text rows.
   function blockItems(block: ConversationBlock): TimelineItem[] {
-    return block.events ? projectConversationEvents(block.events) : block.items || [];
+    return block.events
+      ? projectConversationEvents(block.events).map((item) => ({ ...item, generationId: block.generation.generationId }))
+      : block.items || [];
   }
 
   function timelineKey(item: TimelineItem): string {
-    return `${item.generationId || snapshot.generationId}:${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
+    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
   }
 
   function toolOpen(item: TimelineItem): boolean {

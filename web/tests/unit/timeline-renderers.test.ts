@@ -107,6 +107,31 @@ describe("timeline rendering components", () => {
     expect(item.querySelector('.tool-status-icon-failed i[data-lucide="x-circle"]')).not.toBeNull();
   });
 
+  it("uses the compact tool count for single and multiple calls and keeps expansion state", async () => {
+    const single = mounted(ToolGroup, { item: {
+      kind: "tools", key: "compact-single", compact: true, toolCallCount: 1,
+      rangeStartEventId: 4, calls: [{ callId: "compact-single", name: "Tool activity", summary: "1 tool call · details omitted", status: "completed" }],
+    }, generationId: "gen-a", open: false, onToggle: vi.fn() });
+    expect(single.querySelector(".agent-tool-group-title")?.textContent).toBe("1 tool call");
+    expect(single.querySelector(".agent-tool-group-preview")?.textContent).toContain("1 tool call");
+
+    const onToggle = vi.fn();
+    const multiple = mounted(ToolGroup, { item: {
+      kind: "tools", key: "compact-multiple", compact: true, toolCallCount: 2,
+      rangeStartEventId: 8, calls: [{ callId: "compact-multiple", name: "Tool activity", summary: "2 tool calls · details omitted", status: "completed" }],
+    }, generationId: "gen-a", open: false, onToggle });
+    const details = multiple.querySelector<HTMLDetailsElement>(".agent-tool-group");
+    expect(details?.open).toBe(false);
+    expect(multiple.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(multiple.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    expect(multiple.querySelectorAll(".agent-tool-item")).toHaveLength(1);
+
+    details!.open = true;
+    details!.dispatchEvent(new Event("toggle"));
+    await tick();
+    expect(onToggle).toHaveBeenCalledWith(true);
+  });
+
   it("keeps approval drafts local, gates duplicate actions, and reports callback failures", async () => {
     let resolve!: () => void;
     const pending = new Promise<void>((done) => { resolve = done; });

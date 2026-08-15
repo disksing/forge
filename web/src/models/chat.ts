@@ -21,6 +21,7 @@ export interface ComposerModel {
   sending: boolean;
   canEndTurn: boolean;
   endingTurn: boolean;
+  stopNotice: string;
   waitingMessages: WaitingMessage[];
   canSteerWaiting: boolean;
   steeringMessageId: string;
@@ -32,6 +33,7 @@ export interface ComposerModel {
   onSend: (text: string, context: ComposerContext) => Promise<{ accepted: boolean; clear: boolean }>;
   onOpenUpload: () => void;
   onEndTurn: () => void;
+  onDismissStopNotice: () => void;
   onSteerWaiting: (messageId: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onIconsChanged: () => void;
@@ -60,7 +62,7 @@ export interface ResourceMessageStatus {
   generation?: ResourceGenerationStatus;
   session?: ResourceSessionStatus;
   waitingMessages: WaitingMessage[];
-  messages?: { waiting?: number; delivering?: number; interrupting?: number; delivered?: number; undeliverable?: number; deliveryUnknown?: number };
+  messages?: { waiting?: number; delivering?: number; interrupting?: number; delivered?: number; cancelled?: number; undeliverable?: number; deliveryUnknown?: number };
 }
 
 export interface ComposerContext {
@@ -213,6 +215,7 @@ export interface TimelineItem {
   type?: string;
   preview?: string;
   calls?: Array<Record<string, unknown> & { key?: string | number; callId?: string; name?: string; summary?: string; status?: string; output?: string; error?: string; method?: string; rawPreview?: string }>;
+  toolCallCount?: number;
   approvalId?: string;
   title?: string;
   detail?: string;
@@ -245,6 +248,7 @@ export interface AgentPanelHeaderModel {
   workspaceId: string;
   resourceId: string;
   status: ResourceMessageStatus | null;
+  submitting: boolean;
   agentName: string;
   /** "Provider · model" summary of the resolved agent, may be empty. */
   modelSummary: string;

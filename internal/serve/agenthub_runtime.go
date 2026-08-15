@@ -283,22 +283,68 @@ func (rt *agentRuntime) addForgeNotice(m *agentManager, level, method, text stri
 	m.publishNotice(runID, notice)
 }
 
-func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
-	if err != nil || rt == nil {
-		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
-		return
-	}
-	run := rt.snapshotRun()
-	if err := m.withResourceController(r.Context(), rt.workspace, run.ResourceID, func() error {
-		m.interruptRunLocked(w, r, workspaceID, rt)
-		return nil
-	}); err != nil {
-		writeError(w, err, http.StatusBadGateway)
-	}
+type interruptRunResponse struct {
+	Status                        string   `json:"status"`
+	PendingSteerPolicy            string   `json:"pendingSteerPolicy"`
+	CancelledPendingSteerCount    int      `json:"cancelledPendingSteerCount,omitempty"`
+	CancelledPendingSteerIDs      []string `json:"cancelledPendingSteerIds,omitempty"`
+	PendingSteerCancellationError string   `json:"pendingSteerCancellationError,omitempty"`
 }
 
-func (m *agentManager) interruptRunLocked(w http.ResponseWriter, r *http.Request, workspaceID string, rt *agentRuntime) {
+type interruptRunPostAction func(guiWorkspace, string) (cancelledResourceMessages, error)
+
+func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
+	response, err := m.interruptRunWithPostAction(r.Context(), workspaceID, runID, nil)
+	if err != nil {
+		writeInterruptRunError(w, err)
+		return
+	}
+	writeJSON(w, response)
+}
+
+func (m *agentManager) interruptRunWithPostAction(ctx context.Context, workspaceID, runID string, postAction interruptRunPostAction) (interruptRunResponse, error) {
+	_, rt, err := m.workspaceRuntime(workspaceID, runID)
+	if err != nil || rt == nil {
+		return interruptRunResponse{}, errors.New("run is not active")
+	}
+	run := rt.snapshotRun()
+	var response interruptRunResponse
+	err = m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
+		var err error
+		response, err = m.interruptRunLocked(ctx, workspaceID, rt)
+		if err != nil {
+			return err
+		}
+		response.PendingSteerPolicy = "cancel"
+		if postAction != nil {
+			cancelled, actionErr := postAction(rt.workspace, run.ResourceID)
+			response.CancelledPendingSteerCount = cancelled.Count
+			response.CancelledPendingSteerIDs = cancelled.IDs
+			if actionErr != nil {
+				// The interrupt itself succeeded. Keep that durable result visible,
+				// but surface a mailbox failure instead of silently allowing a
+				// pending steer to affect a later Turn.
+				response.PendingSteerCancellationError = actionErr.Error()
+			}
+		}
+		return nil
+	})
+	return response, err
+}
+
+func writeInterruptRunError(w http.ResponseWriter, err error) {
+	status := http.StatusBadGateway
+	if strings.Contains(err.Error(), "run is not active") || strings.Contains(err.Error(), "run is not attached to AgentHub") {
+		status = http.StatusBadRequest
+	}
+	var conflictErr *agentHubTurnConflictError
+	if errors.As(err, &conflictErr) {
+		status = http.StatusConflict
+	}
+	writeError(w, err, status)
+}
+
+func (m *agentManager) interruptRunLocked(ctx context.Context, workspaceID string, rt *agentRuntime) (interruptRunResponse, error) {
 	// Serialize End Turn with dispatch and Close Session on this Session only;
 	// Task desired-state persistence must remain independent.
 	rt.turnActionMu.Lock()
@@ -307,39 +353,31 @@ func (m *agentManager) interruptRunLocked(w http.ResponseWriter, r *http.Request
 	run, client := rt.run, rt.agentHub
 	rt.mu.Unlock()
 	if run.WorkspaceID != workspaceID {
-		writeError(w, errors.New("run belongs to another workspace"), http.StatusNotFound)
-		return
+		return interruptRunResponse{}, errors.New("run belongs to another workspace")
 	}
 	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
-		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
-		return
+		return interruptRunResponse{}, errors.New("run is not attached to AgentHub")
 	}
-	currentSession, err := m.interruptibleAgentHubSession(r.Context(), run, client)
+	currentSession, err := m.interruptibleAgentHubSession(ctx, run, client)
 	if err != nil {
-		var conflictErr *agentHubTurnConflictError
-		if errors.As(err, &conflictErr) {
-			writeError(w, err, http.StatusConflict)
-			return
-		}
 		// A failed read leaves the current turn unknown. Retain the Forge and
 		// AgentHub sessions and let reconciliation establish the next state;
 		// do not guess and send a non-idempotent interrupt.
 		recoveryErr := fmt.Errorf("AgentHub turn state could not be confirmed; interrupt was not sent: %w", err)
 		rt.setRecoveryError(m, recoveryErr)
-		writeError(w, recoveryErr, http.StatusBadGateway)
-		return
+		return interruptRunResponse{}, recoveryErr
 	}
-	session, err := client.Interrupt(r.Context(), currentSession.ID)
+	session, err := client.Interrupt(ctx, currentSession.ID)
 	if err != nil {
 		// The non-idempotent interrupt result is ambiguous. Keep the Session and let
 		// the poller reconcile its state;
 		// never retry the interrupt from this path.
-		rt.setRecoveryError(m, fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err))
-		writeError(w, fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
-		return
+		recoveryErr := fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err)
+		rt.setRecoveryError(m, recoveryErr)
+		return interruptRunResponse{}, recoveryErr
 	}
 	rt.applyAgentHubSessionState(m, session)
-	writeJSON(w, map[string]string{"status": "interrupted"})
+	return interruptRunResponse{Status: "interrupted"}, nil
 }
 
 func isAgentHubTurnInterruptible(state string) bool {
