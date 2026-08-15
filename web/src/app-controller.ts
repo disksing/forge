@@ -9,6 +9,7 @@ import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
+import { doctorSnapshotForWorkspace } from "./controllers/doctor-projection";
 import { createNotificationController, type NotificationSource } from "./controllers/notification-controller";
 import { createPaneLayoutController } from "./controllers/pane-layout-controller";
 import { createResourceDetailController } from "./controllers/resource-detail-controller";
@@ -763,7 +764,7 @@ function renderAppShell() {
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
 		attentionList,
-		doctor: controllerState.doctor,
+		doctor: doctorSnapshotForWorkspace(controllerState.doctor, controllerState.activeWorkspaceId),
 		...paneLayoutController.snapshot(),
 		route: routeController.projection(),
 		onSwitchWorkspace: (id) => switchWorkspace(id),

@@ -610,7 +610,7 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
       checkedAt: now,
       checking: false,
       complete: true,
-      summary: { errors: 1, warnings: 0 },
+      summary: { errors: 5, warnings: 0 },
       workspaces: [{
         id: "ws-test",
         name: "Isolated E2E",
@@ -626,15 +626,26 @@ test("opens the cached Doctor report from the brand reminder", async ({ page }) 
             suggestion: "Run forge migrate after reviewing local instructions.",
           }],
         },
+      }, {
+        id: "ws-other",
+        name: "Other Workspace",
+        path: "/tmp/forge-other",
+        report: {
+          complete: true,
+          summary: { errors: 4, warnings: 0 },
+          issues: [{ severity: "error", code: "other_workspace_problem", message: "Other Workspace must stay hidden" }],
+        },
       }],
     });
   });
 
   await page.goto("/w/ws-test/r/project1.task1");
+  await expect(page.locator("#doctorButton")).toHaveAttribute("aria-label", "1 errors and 0 warnings");
   await page.locator("#doctorButton").click();
   const dialog = page.getByRole("dialog", { name: "Workspace problems" });
   await expect(dialog).toContainText("Forge managed AGENTS.md section has been modified");
   await expect(dialog).toContainText("agents_managed_section_modified");
+  await expect(dialog).not.toContainText("Other Workspace must stay hidden");
   await dialog.getByRole("button", { name: "Refresh workspace checks" }).click();
   await expect.poll(() => refreshRequests).toBe(1);
 });
