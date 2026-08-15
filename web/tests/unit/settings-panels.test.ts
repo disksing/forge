@@ -153,6 +153,12 @@ describe("settings domain panels", () => {
     expect(options[0].classList.contains("active")).toBe(true);
     expect(target.querySelectorAll(".layout-diagram svg")).toHaveLength(4);
 
+    // The split diagram keeps the collapsed sidebar drawer on the left edge.
+    const splitDiagram = options[3].querySelectorAll(".layout-diagram rect");
+    const splitDrawer = splitDiagram[splitDiagram.length - 1];
+    expect(splitDrawer.classList.contains("d-fill-strong")).toBe(true);
+    expect(Number(splitDrawer.getAttribute("x"))).toBe(6);
+
     options[2].click();
     expect(current.onLayoutPreference).toHaveBeenCalledWith("two");
 

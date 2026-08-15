@@ -48,7 +48,7 @@
             {:else if option.id === "two"}
               <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-strong" x="6" y="8" width="22" height="56" rx="3" /><rect class="d-fill-light" x="34" y="8" width="80" height="56" rx="3" /><rect class="d-fill-strong" x="40" y="13" width="30" height="8" rx="2" /><rect class="d-outline" x="74" y="13" width="30" height="8" rx="2" /></svg>
             {:else}
-              <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-light" x="6" y="8" width="70" height="56" rx="3" /><rect class="d-fill-mid" x="82" y="8" width="32" height="56" rx="3" /></svg>
+              <svg viewBox="0 0 120 72" aria-hidden="true"><rect class="d-fill-light" x="6" y="8" width="70" height="56" rx="3" /><rect class="d-fill-mid" x="82" y="8" width="32" height="56" rx="3" /><rect class="d-fill-strong" x="6" y="8" width="18" height="56" rx="3" /></svg>
             {/if}
           </span>
           <span class="layout-option-text"><strong>{option.label}</strong><small>{option.description}</small></span>
