@@ -88,7 +88,7 @@
     const result: Array<{ id: string; label: string; icon: string }> = [];
     if (model.resourceType === "project") result.push({ id: "project", label: "Project", icon: "file-text" });
     if (model.resourceType === "task") result.push({ id: "task", label: "Task", icon: "file-text" });
-    if (model.resourceType === "project" || model.detail.template) result.push({ id: "template", label: "Template", icon: "layout-template" });
+    if (model.resourceType === "project") result.push({ id: "template", label: "Template", icon: "layout-template" });
     result.push({ id: "history", label: "History", icon: "history" }, { id: "artifacts", label: "Artifacts", icon: "paperclip" });
     if (model.resourceType === "task") result.push({ id: "worktrees", label: "Worktrees", icon: "folder-git-2" });
     return result;
@@ -190,7 +190,7 @@
       {#if model.resourceType === "scheduler" && model.detail.scheduler}<div hidden={activeTab !== "schedules"}><SchedulerPanel workspaceId={model.workspaceId} config={model.detail.scheduler} onChanged={model.onRefreshScheduler || (async () => undefined)} onToast={model.onToast} /></div>{/if}
       <div hidden={activeTab !== "template"}>
         {#if model.resourceType === "project"}<div class="content-section"><div class="template-list">{#if model.detail.templates?.length}{#each model.detail.templates as template (template.name)}<button type="button" class:invalid={!template.valid} class="template-row" onclick={() => template.path && openPreview("Templates", template.path)}><Icon name="file-text" /><span><strong>{template.title || template.name}</strong><small>{template.name} · v{template.schemaVersion || "?"} · {template.valid ? `${(template.fields || []).length} fields` : `invalid${template.errors?.[0]?.message ? `: ${template.errors[0].message}` : ""}`}{template.legacy ? " · legacy" : ""}</small></span><Icon name="chevron-right" /></button>{/each}{:else}<div class="empty-list-row"><Icon name="layout-template" /><span>No task templates in templates/*.md.</span></div>{/if}</div></div>
-        {:else if model.detail.template}<div class="content-section"><div class="template-list"><div class="template-row"><Icon name="file-text" /><span><strong>{model.detail.template.name}</strong><small>Created from template · v{model.detail.template.schemaVersion || "?"} · {model.detail.template.digest || ""}</small></span></div></div></div>{/if}
+        {/if}
       </div>
       {#if activeTab === "history"}{#key model.identity}<HistoryTimeline workspaceId={model.workspaceId} resourceId={model.resourceId} artifacts={model.detail.artifacts || []} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenLegacy={(path) => openPreview("Artifacts", path)} onIconsChanged={model.onIconsChanged} />{/key}{/if}
       <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} showHeading={false} /></div>
