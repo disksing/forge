@@ -43,7 +43,7 @@ describe("performance and bounded-DOM gates", () => {
     const started = performance.now();
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "performance-workspace", resourceId: "project-performance", artifacts: [],
-      resolveResourceTitle: () => null, onNavigate: () => undefined,
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
       onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
     } });
     cleanups.push(() => unmount(component));

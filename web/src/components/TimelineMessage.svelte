@@ -4,7 +4,7 @@
   import type { TimelineItem } from "./models";
   import { markdownHTML, markdownResourceNavigation, type ResourceTitleResolver } from "./markdown";
 
-  let { item, agentName, workspaceId = "", resolveResourceTitle = () => null, onNavigate = () => {} }: { item: TimelineItem; agentName: string; workspaceId?: string; resolveResourceTitle?: ResourceTitleResolver; onNavigate?: (resourceId: string) => void } = $props();
+  let { item, agentName, workspaceId = "", resolveResourceTitle = () => null, onNavigate = () => {}, onOpenFile }: { item: TimelineItem; agentName: string; workspaceId?: string; resolveResourceTitle?: ResourceTitleResolver; onNavigate?: (resourceId: string) => void; onOpenFile?: (path: string) => void } = $props();
   let role = $derived(["assistant", "system", "agent"].includes(String(item.role)) ? String(item.role) : "user");
   // The `final` class marks the turn's last assistant message and keeps the
   // ink rail; mid-turn progress updates (turnFinal === false) fall back to
@@ -44,7 +44,7 @@
       <span>{clock()}</span>
     </div>
     <div class="agent-message-bubble">
-      {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered" use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate }}>{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
+      {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered" use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate, onOpenFile }}>{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
     </div>
   </div>
 </div>

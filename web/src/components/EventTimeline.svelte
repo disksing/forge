@@ -1,15 +1,17 @@
 <script lang="ts">
   import "./EventTimeline.css";
 
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
 
+  import { ApiClient } from "../api/client";
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
   import { effectiveGenerationStatus } from "./generation-status";
+  import FilePreviewModal from "./FilePreviewModal.svelte";
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
-  import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, TimelineItem } from "./models";
+  import type { ChatContextSnapshot, ConversationBlock, EventTimelineModel, FilePreviewModel, TimelineItem } from "./models";
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
@@ -29,6 +31,8 @@
   let deferredSnapshot: ChatContextSnapshot | null = null;
   let followAfterUpdate = false;
   let contextChanged = false;
+  let preview = $state<{ section: string; path: string } | null>(null);
+  const client = new ApiClient();
   const openCache = new Map<string, Map<string, boolean>>();
   let openTools = $state(new Map<string, boolean>());
 
@@ -48,6 +52,7 @@
       if (next.identity !== previousIdentity) {
         contextChanged = true;
         deferredSnapshot = null;
+        preview = null;
         openTools = new Map(openCache.get(next.identity) ?? []);
       }
       controller?.activate(next.workspaceId, next.resourceId, next.status);
@@ -62,16 +67,25 @@
       deferredSnapshot = null;
       applySnapshot(next);
     };
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !preview) return;
+      event.preventDefault();
+      preview = null;
+    };
     document.addEventListener("selectionchange", selectionChanged);
+    document.addEventListener("keydown", keydown);
     return () => {
       unsubscribeSnapshot();
       unsubscribeModel();
       document.removeEventListener("selectionchange", selectionChanged);
+      document.removeEventListener("keydown", keydown);
       controller?.dispose();
       controller = undefined;
       if (scroll) scroll.removeAttribute("data-agent-resource-id");
     };
   });
+
+  onDestroy(() => client.dispose());
 
   function receive(next: ChatContextSnapshot): void {
     if (snapshot.identity && next.identity === snapshot.identity && hasActiveSelection()) {
@@ -164,6 +178,14 @@
     return openTools.get(timelineKey(item)) ?? false;
   }
 
+  function openLinkedFile(path: string): void {
+    preview = { section: "Files", path };
+  }
+
+  function rejectReadOnlySave(): Promise<FilePreviewModel> {
+    return Promise.reject(new Error("Chat file previews are read-only."));
+  }
+
   function scroller(): HTMLElement | null { return root?.parentElement ?? null; }
 
   function hasActiveSelection(): boolean {
@@ -221,7 +243,7 @@
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
               {#if item.kind === "message"}
-                <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
+                <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} />
               {:else if item.kind === "thinking"}
                 <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "tools"}
@@ -257,3 +279,5 @@
     <div class="tty-empty"><Icon name="bot" /><strong>No resource selected</strong></div>
   {/if}
 </div>
+
+<FilePreviewModal {client} workspaceId={model.workspaceId} resourceId={model.resourceId} selection={preview} editable={false} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSaveMarkdown={rejectReadOnlySave} onClose={() => preview = null} onError={model.onToast} onIconsChanged={model.onIconsChanged} />

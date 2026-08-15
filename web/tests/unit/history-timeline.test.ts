@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -6,11 +8,64 @@ import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()?.();
+  delete window.marked;
+  delete window.DOMPurify;
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
 
+function loadVendor<T>(relativePath: string, globalName: string): T {
+  const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+  return new Function("window", "globalThis", `const module=undefined,exports=undefined,define=undefined;${source}\nreturn globalThis[${JSON.stringify(globalName)}];`)(window, window) as T;
+}
+
+function installMarkdownVendors(): void {
+  window.marked = loadVendor<NonNullable<Window["marked"]>>("../../static/vendor/marked/marked.min.js", "marked");
+  window.DOMPurify = loadVendor<NonNullable<Window["DOMPurify"]>>("../../static/vendor/dompurify/purify.min.js", "DOMPurify");
+}
+
 describe("HistoryTimeline", () => {
+  it("forwards workspace file links from expanded assistant messages", async () => {
+    installMarkdownVendors();
+    const generation = {
+      generation: 1, generationId: "gen-file-link", title: "File link", status: "completed",
+      createdAt: "2026-08-15T01:00:00Z", updatedAt: "2026-08-15T01:00:03Z", agentName: "fake-agent",
+      provider: "Fake", model: "fake-model",
+    };
+    const turn = {
+      reference: "turn-file-link", turnId: "turn-file-link", status: "completed", closed: true,
+      startedAt: "2026-08-15T01:00:00Z", durationMs: 3000, triggerPreview: "find the report",
+      finalReplyPreview: "report ready", eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2,
+      generation,
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: unknown) => new Response(JSON.stringify(String(url).includes("/history/turns/") ? {
+      turn, latestEventId: 2, items: [{
+        type: "message", role: "assistant", text: "[report](/project1/task388/artifacts/report.md)",
+        startEventId: 2, endEventId: 2, startedAt: "2026-08-15T01:00:02Z", endedAt: "2026-08-15T01:00:02Z",
+      }],
+    } : {
+      resourceId: "project-file-link", segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false },
+    }), { headers: { "content-type": "application/json" } })));
+    const onOpenFile = vi.fn();
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(HistoryTimeline, { target, props: {
+      workspaceId: "workspace-file-link", resourceId: "project-file-link", artifacts: [],
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile,
+      onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+    } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.querySelector(".history-turn-header")).not.toBeNull());
+    target.querySelector<HTMLButtonElement>(".history-turn-header")!.click();
+    const link = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLAnchorElement>("a[href='/project1/task388/artifacts/report.md']");
+      expect(value).not.toBeNull();
+      return value!;
+    });
+    link.click();
+    expect(onOpenFile).toHaveBeenCalledWith("project1/task388/artifacts/report.md");
+  });
+
   it("labels a cancelled Turn without a final reply instead of showing the trigger as its reply", async () => {
     const generation = {
       generation: 1, generationId: "gen-cancelled", title: "Cancelled", status: "idle",
@@ -31,7 +86,7 @@ describe("HistoryTimeline", () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-cancelled", resourceId: "project-cancelled", artifacts: [],
-      resolveResourceTitle: () => null, onNavigate: () => undefined,
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
       onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
     } });
     cleanups.push(() => unmount(component));
@@ -62,7 +117,7 @@ describe("HistoryTimeline", () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-trigger", resourceId: "project-trigger", artifacts: [],
-      resolveResourceTitle: () => null, onNavigate: () => undefined,
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
       onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
     } });
     cleanups.push(() => unmount(component));
@@ -106,7 +161,7 @@ describe("HistoryTimeline", () => {
     const target = document.body.appendChild(document.createElement("div"));
     const component = mount(HistoryTimeline, { target, props: {
       workspaceId: "workspace-toggle", resourceId: "project-toggle", artifacts: [],
-      resolveResourceTitle: () => null, onNavigate: () => undefined,
+      resolveResourceTitle: () => null, onNavigate: () => undefined, onOpenFile: () => undefined,
       onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
     } });
     cleanups.push(() => unmount(component));

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -10,9 +12,21 @@ import { projectConversationEvents } from "../../src/components/timeline-events"
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
   while (cleanups.length) await cleanups.pop()?.();
+  delete window.marked;
+  delete window.DOMPurify;
   document.body.replaceChildren();
   vi.unstubAllGlobals();
 });
+
+function loadVendor<T>(relativePath: string, globalName: string): T {
+  const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+  return new Function("window", "globalThis", `const module=undefined,exports=undefined,define=undefined;${source}\nreturn globalThis[${JSON.stringify(globalName)}];`)(window, window) as T;
+}
+
+function installMarkdownVendors(): void {
+  window.marked = loadVendor<NonNullable<Window["marked"]>>("../../static/vendor/marked/marked.min.js", "marked");
+  window.DOMPurify = loadVendor<NonNullable<Window["DOMPurify"]>>("../../static/vendor/dompurify/purify.min.js", "DOMPurify");
+}
 
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
@@ -113,6 +127,44 @@ function historyGeneration(resourceId: string, generation: number, generationId:
 }
 
 describe("EventTimeline", () => {
+  it("opens a workspace file link from an assistant message in a read-only preview", async () => {
+    installMarkdownVendors();
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = history("task-a", [{
+      type: "message", role: "assistant", text: "[report](/project1/task388/artifacts/report.md)",
+      startEventId: 1, endEventId: 1, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z",
+    }]);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.includes("/files?path=")) return new Response(JSON.stringify({
+        path: "project1-forge/task388/artifacts/report.md", name: "report.md", size: 18,
+        binary: false, image: false, truncated: false, mimeType: "text/markdown", contentHash: "hash", content: "# Previewed report",
+      }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify(path.includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const viewModel = model("task-a");
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel: createModelChannel(viewModel) } });
+    cleanups.push(() => unmount(component));
+
+    const link = await vi.waitFor(() => {
+      const value = target.querySelector<HTMLAnchorElement>("a[href='/project1/task388/artifacts/report.md']");
+      expect(value).not.toBeNull();
+      return value!;
+    });
+    const routeBefore = window.location.pathname;
+    link.click();
+
+    await vi.waitFor(() => expect(target.querySelector("[role='dialog'][aria-label='File preview']")?.textContent).toContain("Previewed report"));
+    expect(window.location.pathname).toBe(routeBefore);
+    expect(viewModel.onNavigate).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.map(([input]) => String(input))).toContain("/api/workspaces/workspace-a/files?path=project1%2Ftask388%2Fartifacts%2Freport.md");
+    expect(target.querySelector("[role='dialog'] .markdown-editor-shell")).toBeNull();
+  });
+
   it("shows working only while a Turn is actively running", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -380,7 +432,7 @@ describe("EventTimeline", () => {
     const historyTarget = document.body.appendChild(document.createElement("div"));
     const historyComponent = mount(HistoryTimeline, { target: historyTarget, props: {
       workspaceId: "workspace-a", resourceId: "task-a", artifacts: [], resolveResourceTitle: () => null,
-      onNavigate: () => undefined, onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+      onNavigate: () => undefined, onOpenFile: () => undefined, onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
     } });
     cleanups.push(() => unmount(historyComponent));
     await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());
