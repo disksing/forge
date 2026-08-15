@@ -243,6 +243,7 @@ export interface AgentPanelHeaderModel {
   workspaceId: string;
   resourceId: string;
   status: ResourceMessageStatus | null;
+  submitting: boolean;
   agentName: string;
   /** "Provider · model" summary of the resolved agent, may be empty. */
   modelSummary: string;
