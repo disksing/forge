@@ -3,6 +3,35 @@
 /* Codex-style composer card: a rounded, bordered card with margins on all
    sides, the multiline input on top, and an options bar along the bottom. */
 
+:where([data-component-owner="chat-composer"]) .tty-turn-stop-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 16px;
+  border-top: 1px solid #ead7a3;
+  border-bottom: 1px solid #ead7a3;
+  background: #fff9e8;
+  color: #6b5317;
+  font-size: calc(12px * var(--chat-font-scale, 1));
+  line-height: 18px;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-turn-stop-notice > span {
+  min-width: 0;
+  flex: 1;
+}
+
+:where([data-component-owner="chat-composer"]) .tty-turn-stop-dismiss {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #725a1b;
+  font-size: calc(11px * var(--chat-font-scale, 1));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 :where([data-component-owner="chat-composer"]) .tty-message-queue {
   padding: 10px 16px 8px;
   border-top: 1px solid #e3e7ec;

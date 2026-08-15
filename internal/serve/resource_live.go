@@ -118,7 +118,14 @@ func (m *agentManager) handleResourceEndTurn(w http.ResponseWriter, r *http.Requ
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	m.interruptRun(w, r, workspaceID, run.ID)
+	response, interruptErr := m.interruptRunWithPostAction(r.Context(), workspaceID, run.ID, func(workspace guiWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
+		return cancelPendingSteerMessages(workspace.Path, targetResourceID)
+	})
+	if interruptErr != nil {
+		writeInterruptRunError(w, interruptErr)
+		return
+	}
+	writeJSON(w, response)
 }
 
 func resourceUploadCwd(workspace guiWorkspace, resourceID string) (string, error) {

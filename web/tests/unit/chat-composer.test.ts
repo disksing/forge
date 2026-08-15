@@ -22,9 +22,9 @@ function model(overrides: Partial<ComposerModel> = {}): ComposerModel {
   return {
     identity: "workspace-a:task-a:draft-a", workspaceId: "workspace-a", resourceId: "task-a",
     draft: "", draftKey: "draft-a", draftResetVersion: 0,
-    unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false,
+    unavailableReason: "", sending: false, canEndTurn: false, endingTurn: false, stopNotice: "",
     waitingMessages: [], canSteerWaiting: false, steeringMessageId: "", onDraft: vi.fn(),
-    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(),
+    onSend: vi.fn(async () => ({ accepted: true, clear: true })), onOpenUpload: vi.fn(), onEndTurn: vi.fn(), onDismissStopNotice: vi.fn(),
     onSteerWaiting: vi.fn(async () => undefined), onIconsChanged: vi.fn(),
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
@@ -138,6 +138,22 @@ describe("ChatComposer", () => {
     await tick();
 
     expect(target.querySelector<HTMLButtonElement>(".tty-message-steer")?.disabled).toBe(true);
+  });
+
+  it("shows the stop policy notice and lets the user dismiss it", async () => {
+    const onDismissStopNotice = vi.fn();
+    const channel = createModelChannel(model({
+      stopNotice: "Turn stopped. 1 pending steer was cancelled and will not affect the next turn.",
+      onDismissStopNotice,
+    }));
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ChatComposer, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    expect(target.querySelector<HTMLElement>('[role="status"]')?.textContent).toContain("will not affect the next turn");
+    target.querySelector<HTMLButtonElement>('[aria-label="Dismiss turn stop notice"]')!.click();
+    expect(onDismissStopNotice).toHaveBeenCalledTimes(1);
   });
 
   it("renders the current agent binding in the composer options bar", async () => {

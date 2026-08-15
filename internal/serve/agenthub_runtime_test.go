@@ -641,6 +641,79 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	return recorder, agentRun{}
 }
 
+func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
+	fake := newRuntimeFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+
+	started, run := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"long running turn","userName":"Ada"}`)
+	if started.Code != http.StatusOK || run.GenerationID == "" {
+		t.Fatalf("failed to start resource turn: code=%d body=%s run=%#v", started.Code, started.Body.String(), run)
+	}
+
+	fake.mu.Lock()
+	session := fake.sessions[run.AgentHubSessionID]
+	session.State = "running"
+	session.CurrentTurnID = "turn-active"
+	session.InputCapabilities.Steer = true
+	fake.sessions[session.ID] = session
+	fake.mu.Unlock()
+
+	pending, err := acceptMailboxMessage(workspace.Path, "project1.task1", resourceMessageRequest{
+		Text: "stale steer", Mode: resourceMessageModeSteer, Role: "user",
+	})
+	if err != nil || pending.Status != resourceMessageQueued {
+		t.Fatalf("failed to stage pending steer: err=%v message=%#v", err, pending)
+	}
+
+	endRecorder := httptest.NewRecorder()
+	endRequest := httptest.NewRequest(http.MethodPost, "/resources/project1.task1/turn/end?generationId="+run.GenerationID, nil)
+	manager.handleResourceEndTurn(endRecorder, endRequest, workspace.ID, "project1.task1")
+	if endRecorder.Code != http.StatusOK {
+		t.Fatalf("end turn failed: %d %s", endRecorder.Code, endRecorder.Body.String())
+	}
+	var endResponse interruptRunResponse
+	if err := json.Unmarshal(endRecorder.Body.Bytes(), &endResponse); err != nil {
+		t.Fatal(err)
+	}
+	if endResponse.Status != "interrupted" || endResponse.PendingSteerPolicy != "cancel" || endResponse.CancelledPendingSteerCount != 1 {
+		t.Fatalf("stop policy response mismatch: %#v", endResponse)
+	}
+
+	cancelled, found, err := mailboxMessageByID(workspace.Path, pending.ID)
+	if err != nil || !found || cancelled.Status != resourceMessageCancelled || cancelled.LastErrorCode != resourceMessageReasonTurnStopped {
+		t.Fatalf("pending steer was not durably cancelled: found=%v err=%v message=%#v", found, err, cancelled)
+	}
+	statusRecorder := httptest.NewRecorder()
+	statusRequest := httptest.NewRequest(http.MethodGet, "/resources/project1.task1/status", nil)
+	manager.handleResourceStatus(statusRecorder, statusRequest, workspace.ID, "project1.task1")
+	if statusRecorder.Code != http.StatusOK {
+		t.Fatalf("resource status failed after stop: %d %s", statusRecorder.Code, statusRecorder.Body.String())
+	}
+	var status resourceStatusResponse
+	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Messages.Waiting != 0 || len(status.WaitingMessages) != 0 || status.Messages.Cancelled != 1 {
+		t.Fatalf("cancelled steer remained visible as pending: %#v", status)
+	}
+
+	fresh, err := manager.acceptResourceMessage(context.Background(), workspace, "project1.task1", resourceMessageRequest{
+		Text: "fresh turn only", Mode: resourceMessageModeSteer, Role: "user",
+	})
+	if err != nil || fresh.Status != resourceMessageDelivered {
+		t.Fatalf("fresh message was not delivered after stop: err=%v message=%#v", err, fresh)
+	}
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	for _, input := range fake.messageInputs {
+		if input.MessageID == pending.ID || input.Text == pending.Text {
+			t.Fatalf("cancelled steer crossed the AgentHub input boundary: %#v", input)
+		}
+	}
+}
+
 func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)

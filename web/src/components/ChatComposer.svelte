@@ -119,6 +119,12 @@
   }
 </script>
 
+{#if model.stopNotice}
+  <div class="tty-turn-stop-notice" role="status">
+    <span>{model.stopNotice}</span>
+    <button type="button" class="tty-turn-stop-dismiss" aria-label="Dismiss turn stop notice" onclick={model.onDismissStopNotice}>Dismiss</button>
+  </div>
+{/if}
 {#if model.waitingMessages.length}
   <section class="tty-message-queue" aria-label="Waiting messages">
     <div class="tty-message-queue-header"><span>Waiting messages</span><span class="tty-message-count">{model.waitingMessages.length}</span></div>

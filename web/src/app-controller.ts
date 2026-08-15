@@ -73,6 +73,7 @@ interface ControllerState {
 	messageStatusKey: string;
 	messageStatusRequestVersion: number;
 	steeringMessageId: string;
+	stopNotice: { key: string; text: string } | null;
 	iconRefreshScheduled: boolean;
 	agent: {
 		renderTimer: number | null;
@@ -138,6 +139,7 @@ const controllerState: ControllerState = {
 	messageStatusKey: "",
 	messageStatusRequestVersion: 0,
 	steeringMessageId: "",
+	stopNotice: null,
 	iconRefreshScheduled: false,
 	agent: {
 		renderTimer: null as number | null,
@@ -1091,6 +1093,11 @@ async function refreshResourceMessageStatus(workspaceId = controllerState.active
 	return changed;
 }
 
+function dismissStopNotice(): void {
+	controllerState.stopNotice = null;
+	renderTTYComposer();
+}
+
 async function steerWaitingMessage(messageId: string): Promise<void> {
 	if (!messageId || controllerState.steeringMessageId) return;
 	const workspaceId = controllerState.activeWorkspaceId;
@@ -1121,6 +1128,7 @@ async function reloadResourceForSelection(): Promise<void> {
 	controllerState.messageStatus = null;
 	controllerState.messageStatusKey = "";
 	controllerState.messageStatusRequestVersion++;
+	controllerState.stopNotice = null;
 	await refreshResourceMessageStatus();
 }
 function resetAgentState(): void {
@@ -1134,6 +1142,7 @@ function resetAgentState(): void {
 	controllerState.messageStatusKey = "";
 	controllerState.messageStatusRequestVersion++;
 	controllerState.steeringMessageId = "";
+	controllerState.stopNotice = null;
 	controllerState.agent.toolGroupOpen.clear();
 	controllerState.agent.approvalDrafts.clear();
 	controllerState.agent.renderDeferredForSelection = false;
@@ -1224,6 +1233,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 	const stopTurnPending = agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === resourceId;
 	const messageStatus = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	const workspaceId = controllerState.activeWorkspaceId;
+	const stopNoticeKey = `${workspaceId}:${resourceId}`;
 	publisher.renderComposer({
 		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.ttyDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
@@ -1235,6 +1245,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		sending: agentOperations.isSending(resourceMutationKey(controllerState.activeWorkspaceId, resourceId)),
 		canEndTurn: Boolean(stopTurnPending || ["running", "waiting_approval"].includes(String(messageStatus?.session?.state || ""))),
 		endingTurn: stopTurnPending,
+		stopNotice: controllerState.stopNotice?.key === stopNoticeKey ? controllerState.stopNotice.text : "",
 		waitingMessages: messageStatus?.waitingMessages || [],
 		canSteerWaiting: Boolean(messageStatus?.canSteerWaiting),
 		steeringMessageId: controllerState.steeringMessageId,
@@ -1248,6 +1259,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		onSend: submitTTYInput,
 		onOpenUpload: openAgentUploadDialog,
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
+		onDismissStopNotice: dismissStopNotice,
 		onSteerWaiting: steerWaitingMessage,
 		onSaveAgentBinding: async (binding) => {
 			if (resourceId !== selectedAgentResourceId()) return;
@@ -1350,7 +1362,20 @@ async function stopAgentTurn(): Promise<void> {
 	if (!operation) return;
 	try {
 		const query = generationId ? `?generationId=${encodeURIComponent(generationId)}` : "";
-		await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/turn/end${query}`, { method: "POST" });
+		const response = await api<{
+			status?: string;
+			pendingSteerPolicy?: string;
+			cancelledPendingSteerCount?: number;
+			pendingSteerCancellationError?: string;
+		}>(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/turn/end${query}`, { method: "POST" });
+		const cancelledCount = Math.max(0, Number(response.cancelledPendingSteerCount || 0));
+		let notice = cancelledCount === 1
+			? "Turn stopped. 1 pending steer was cancelled and will not affect the next turn."
+			: cancelledCount > 1
+				? `Turn stopped. ${cancelledCount} pending steers were cancelled and will not affect the next turn.`
+				: "Turn stopped. No pending steer remained; any steer already delivered to this turn was not changed.";
+		if (response.pendingSteerCancellationError) notice += ` Pending steer cancellation needs attention: ${response.pendingSteerCancellationError}`;
+		controllerState.stopNotice = { key: `${workspaceId}:${resourceId}`, text: notice };
 		await refreshResourceMessageStatus(workspaceId, resourceId);
 		publishViewModels();
 	} finally {
@@ -1378,6 +1403,7 @@ async function submitTTYInput(rawText: string, context: ComposerContext): Promis
 		const accepted = true;
 		const clear = clearResourceDraftAfterAccepted({ workspaceId: context.workspaceId, resourceId: context.resourceId, key: context.draftKey, text: rawText, version });
 		if (clear) controllerState.agent.ttyDraftResetVersion++;
+		if (clear && controllerState.stopNotice?.key === `${context.workspaceId}:${context.resourceId}`) controllerState.stopNotice = null;
 		await Promise.all([refreshResourceMessageStatus(context.workspaceId, context.resourceId), refreshTreeAfterResourceMutation()]);
 		publishViewModels();
 		return { accepted, clear };
