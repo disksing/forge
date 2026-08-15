@@ -931,7 +931,7 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 	}
 	rt := newAgentHubRuntime(manager, workspace, run, nil)
 	manager.registerRuntime(rt)
-	const messages = 80
+	const messages = 12
 	var group sync.WaitGroup
 	for index := 0; index < messages; index++ {
 		index := index

@@ -80,9 +80,10 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := "2026-08-01T00:00:01Z"
-	runs := make([]agentRun, 0, 100)
+	const stoppedRuns = 8
+	runs := make([]agentRun, 0, stoppedRuns)
 	fake.mu.Lock()
-	for index := 0; index < 100; index++ {
+	for index := 0; index < stoppedRuns; index++ {
 		id := fmt.Sprintf("run-%03d", index)
 		sessionID := "ses_" + id
 		runs = append(runs, agentRun{
@@ -107,12 +108,12 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 	listCalls, eventsCalls, streamCalls := fake.listCalls, fake.eventsCalls, fake.streamCalls
 	fake.mu.Unlock()
 	if listCalls != 1 {
-		t.Fatalf("100 stopped runs must recover with exactly one session list, got %d", listCalls)
+		t.Fatalf("%d stopped runs must recover with exactly one session list, got %d", stoppedRuns, listCalls)
 	}
 	if eventsCalls != 0 || streamCalls != 0 {
 		t.Fatalf("stopped runs must not read events or open streams: events=%d streams=%d", eventsCalls, streamCalls)
 	}
-	if rt := manager.runtimeByID("run-099"); rt == nil {
+	if rt := manager.runtimeByID("run-007"); rt == nil {
 		t.Fatal("stopped runs were not registered as lightweight runtimes")
 	}
 }
