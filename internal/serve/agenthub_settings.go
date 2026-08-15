@@ -171,6 +171,9 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 			return agentHubSettingsResponse{}, err
 		}
 	}
+	if s.doctor != nil {
+		s.doctor.requestScan()
+	}
 	return agentHubSettingsResponse{
 		Config:             cfg,
 		ConfiguredEndpoint: configured,

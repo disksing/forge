@@ -195,6 +195,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         agentProfiles: [{ key: "default", agentName: "test-agent" }, { key: "fast", agentName: "test-agent" }, { key: "review", agentName: "other-agent" }],
       });
     }
+    if (path === "/api/doctor") {
+      if (method === "POST") return route.fulfill({ status: 202 });
+      return json(route, { checkedAt: now, checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] });
+    }
     if (path === "/api/settings/agenthub") {
       if (method === "PUT") {
         harness.settingsBodies.push(request.postDataJSON());
@@ -509,6 +513,10 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     if (path === "/api/workspaces") {
       return json(route, { version: 3, activeId: "ws-a", workspaces: [{ id: "ws-a", name: "Workspace A", path: "/tmp/ws-a" }, { id: "ws-b", name: "Workspace B", path: "/tmp/ws-b" }], agentProfiles: [] });
     }
+    if (path === "/api/doctor") {
+      if (method === "POST") return route.fulfill({ status: 202 });
+      return json(route, { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] });
+    }
     if (path === "/api/settings/agenthub") {
       return json(route, { config: { agentProfiles: [] }, connected: false, compatible: false, catalog: { providers: [], agents: [], probes: [] } });
     }
@@ -588,6 +596,47 @@ test("navigates resources and creates a task through the canonical application f
   await expect(page).toHaveURL(/project1\.task3/);
   await expect(page.getByRole("heading", { name: "Created from baseline", exact: true }).first()).toBeVisible();
   await expect(page.locator("#toast")).toContainText("Task created");
+});
+
+test("opens the cached Doctor report from the brand reminder", async ({ page }) => {
+  await installMockApi(page, "project1.task1");
+  let refreshRequests = 0;
+  await page.route("**/api/doctor", async (route) => {
+    if (route.request().method() === "POST") {
+      refreshRequests += 1;
+      return route.fulfill({ status: 202 });
+    }
+    return json(route, {
+      checkedAt: now,
+      checking: false,
+      complete: true,
+      summary: { errors: 1, warnings: 0 },
+      workspaces: [{
+        id: "ws-test",
+        name: "Isolated E2E",
+        path: "/tmp/forge-e2e",
+        report: {
+          complete: true,
+          summary: { errors: 1, warnings: 0 },
+          issues: [{
+            severity: "error",
+            code: "agents_managed_section_modified",
+            message: "Forge managed AGENTS.md section has been modified",
+            path: "AGENTS.md",
+            suggestion: "Run forge migrate after reviewing local instructions.",
+          }],
+        },
+      }],
+    });
+  });
+
+  await page.goto("/w/ws-test/r/project1.task1");
+  await page.locator("#doctorButton").click();
+  const dialog = page.getByRole("dialog", { name: "Workspace problems" });
+  await expect(dialog).toContainText("Forge managed AGENTS.md section has been modified");
+  await expect(dialog).toContainText("agents_managed_section_modified");
+  await dialog.getByRole("button", { name: "Refresh workspace checks" }).click();
+  await expect.poll(() => refreshRequests).toBe(1);
 });
 
 test("edits Markdown source, annotates a selection, copies the review, and saves with a content hash", async ({ page }) => {

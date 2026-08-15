@@ -1,0 +1,257 @@
+/* DoctorDialog styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="doctor-dialog"]).doctor-backdrop {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.48);
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-dialog {
+  width: min(760px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+:where([data-component-owner="doctor-dialog"]) header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--line);
+}
+
+:where([data-component-owner="doctor-dialog"]) h2,
+:where([data-component-owner="doctor-dialog"]) h3,
+:where([data-component-owner="doctor-dialog"]) p {
+  margin: 0;
+}
+
+:where([data-component-owner="doctor-dialog"]) header h2 {
+  font-size: 18px;
+}
+
+:where([data-component-owner="doctor-dialog"]) header p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-header-actions,
+:where([data-component-owner="doctor-dialog"]) .doctor-refresh {
+  display: flex;
+  align-items: center;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-header-actions {
+  gap: 8px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-refresh {
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-refresh svg,
+:where([data-component-owner="doctor-dialog"]) .doctor-close svg {
+  width: 16px;
+  height: 16px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-close {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--muted);
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-close:hover,
+:where([data-component-owner="doctor-dialog"]) .doctor-refresh:hover:not(:disabled) {
+  background: var(--line);
+  color: var(--text);
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-content {
+  min-height: 160px;
+  overflow-y: auto;
+  padding: 16px 20px 22px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-global-error,
+:where([data-component-owner="doctor-dialog"]) .doctor-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-global-error {
+  align-items: flex-start;
+  flex-direction: column;
+  margin-bottom: 12px;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-empty svg {
+  width: 18px;
+  height: 18px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-workspace + .doctor-workspace {
+  margin-top: 22px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-workspace-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 9px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-workspace-heading h3 {
+  font-size: 14px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-workspace-heading code,
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-copy code {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-workspace-heading > span {
+  min-width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issues {
+  display: grid;
+  gap: 8px;
+}
+
+:where([data-component-owner="doctor-dialog"]) article {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 7px;
+}
+
+:where([data-component-owner="doctor-dialog"]) article.error {
+  border-left-color: #dc2626;
+}
+
+:where([data-component-owner="doctor-dialog"]) article.warning {
+  border-left-color: #d97706;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-icon {
+  padding-top: 1px;
+}
+
+:where([data-component-owner="doctor-dialog"]) article.error .doctor-issue-icon {
+  color: #dc2626;
+}
+
+:where([data-component-owner="doctor-dialog"]) article.warning .doctor-issue-icon {
+  color: #d97706;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-title strong {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-title span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+}
+
+:where([data-component-owner="doctor-dialog"]) .doctor-issue-copy p {
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+@media (max-width: 640px) {
+  :where([data-component-owner="doctor-dialog"]).doctor-backdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  :where([data-component-owner="doctor-dialog"]) .doctor-dialog {
+    max-height: 88dvh;
+    border-radius: 12px 12px 0 0;
+  }
+
+  :where([data-component-owner="doctor-dialog"]) header,
+  :where([data-component-owner="doctor-dialog"]) .doctor-content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  :where([data-component-owner="doctor-dialog"]) .doctor-refresh {
+    width: 34px;
+    padding: 0;
+    justify-content: center;
+    font-size: 0;
+  }
+
+  :where([data-component-owner="doctor-dialog"]) .doctor-issue-title {
+    display: block;
+  }
+
+  :where([data-component-owner="doctor-dialog"]) .doctor-issue-title span {
+    display: block;
+    margin-top: 4px;
+  }
+}

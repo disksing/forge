@@ -29,9 +29,9 @@ export function largeTreeModel(): AppShellModel {
   return {
     identity: "performance-workspace", loading: false, error: "", version: "test", activeWorkspaceId: "performance-workspace",
     workspaces: [{ id: "performance-workspace", name: "Performance Workspace", path: "/tmp/performance", iconSrc: "/favicon.svg" }],
-    projects, attentionList: [], paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
+    projects, attentionList: [], doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] }, paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false }, layout: { preference: "auto", effective: "three" }, route: { path: "", revision: 0, replace: true },
-    onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop,
+    onSwitchWorkspace: noopAsync, onAddWorkspace: noop, onCreateProject: noop, onOpenSettings: noop, onRefreshDoctor: noopAsync,
     onToggleProject: noopAsync, onSelectResource: noopAsync, onReorder: noopAsync, onDragState: noop, onToggleAttention: noopAsync, onDismissAttention: noopAsync,
     onPanePreview: noop, onPaneCommit: noop, onPaneViewport: noop, onMobileSidebar: noop, onMobileView: noop,
     onMobileImmersive: noop, onHistoryNavigation: noopAsync, onToast: noop, onIconsChanged: noop,

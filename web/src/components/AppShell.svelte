@@ -4,6 +4,7 @@
   import { onMount, type Snippet } from "svelte";
 
   import Icon from "./Icon.svelte";
+  import DoctorDialog from "./DoctorDialog.svelte";
   import AttentionList from "./AttentionList.svelte";
   import MobileToolbar from "./MobileToolbar.svelte";
   import type { ModelChannel } from "./model-channel";
@@ -23,6 +24,7 @@
   // svelte-ignore state_referenced_locally
   let model = $state(channel.current());
   let appliedRouteRevision = $state(0);
+  let doctorOpen = $state(false);
 
   onMount(() => {
     const unsubscribe = channel.subscribe((next) => {
@@ -120,7 +122,7 @@
 <div data-component-owner="app-shell" class="app-shell">
 <MobileToolbar sidebarOpen={model.mobile.sidebarOpen} view={model.mobile.view} immersive={model.mobile.immersive} onSidebar={model.onMobileSidebar} onView={model.onMobileView} onImmersive={model.onMobileImmersive} />
 <aside id="mobileSidebar" class="sidebar">
-  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div><button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
+  <div class="brand-band"><div class="brand-mark">F</div><div class="brand-copy"><strong>Forge</strong><span>{model.version}</span></div>{#if model.doctor.summary.errors + model.doctor.summary.warnings > 0 || model.doctor.error}<button id="doctorButton" class:has-errors={model.doctor.summary.errors > 0} class="brand-doctor" type="button" title="Workspace problems" aria-label={`${model.doctor.summary.errors} errors and ${model.doctor.summary.warnings} warnings`} onclick={() => { model.onMobileSidebar(false); doctorOpen = true; }}><Icon name={model.doctor.summary.errors > 0 ? "circle-alert" : "triangle-alert"} /><span>{model.doctor.summary.errors + model.doctor.summary.warnings}</span></button>{/if}<button id="systemSettingsButton" class="brand-settings" type="button" title="Settings" aria-label="Settings" onclick={() => { model.onMobileSidebar(false); model.onOpenSettings(); }}><Icon name="settings" /></button></div>
   <WorkspaceSwitcher identity={model.identity} mobileSidebarOpen={model.mobile.sidebarOpen} activeWorkspaceId={model.activeWorkspaceId} workspaces={model.workspaces} onSwitch={model.onSwitchWorkspace} onAdd={model.onAddWorkspace} onToast={model.onToast} />
   <SchedulerNav item={model.scheduler || null} onSelect={model.onSelectResource} onToast={model.onToast} />
   <ProjectTree identity={model.identity} loading={model.loading} error={model.error} projects={model.projects} onCreate={model.onCreateProject} onToggle={model.onToggleProject} onSelect={model.onSelectResource} onReorder={model.onReorder} onDragState={model.onDragState} onToggleAttention={model.onToggleAttention} onToast={model.onToast} />
@@ -143,3 +145,4 @@
   <aside id="agentPanel" class="agent-panel"><div class="tty-panel">{#if agentHeader}{@render agentHeader()}{/if}<div id="ttyLog" class="tty-log" data-component-owner="event-timeline">{#if timeline}{@render timeline()}{/if}</div><div id="ttyComposer" class="tty-composer" data-component-owner="chat-composer">{#if composer}{@render composer()}{/if}</div></div></aside>
 </main>
 </div>
+{#if doctorOpen}<DoctorDialog snapshot={model.doctor} onClose={() => { doctorOpen = false; }} onRefresh={model.onRefreshDoctor} onIconsChanged={model.onIconsChanged} />{/if}

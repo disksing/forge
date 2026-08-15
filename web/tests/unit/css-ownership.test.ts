@@ -20,6 +20,7 @@ const components = [
   "TemplatePicker",
   "DetailPanel",
   "DiffModal",
+  "DoctorDialog",
   "EventTimeline",
   "FileBrowser",
   "FilePreviewModal",
@@ -64,6 +65,7 @@ const owners: Record<(typeof components)[number], string> = {
   TemplatePicker: "template-picker",
   DetailPanel: "detail-panel",
   DiffModal: "diff-modal",
+  DoctorDialog: "doctor-dialog",
   EventTimeline: "event-timeline",
   FileBrowser: "file-browser",
   FilePreviewModal: "file-preview-modal",
@@ -159,7 +161,7 @@ describe("CSS ownership", () => {
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
-    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
+    for (const component of ["AgentPanelHeader", "AppearanceSettingsPanel", "AttentionList", "AgentHubSettingsPanel", "ApprovalCard", "DiffModal", "DoctorDialog", "FileBrowser", "FilePreviewModal", "HistoryTimeline", "LifecycleNotice", "MarkdownDocument", "MobileToolbar", "NotificationSettingsPanel", "PaneResizeHandle", "ProfilesSettingsPanel", "ProjectCreateForm", "ProjectTree", "SettingsNavigation", "StatusPresentation", "TaskCreateForm", "TaskPreview", "TemplateFieldGroup", "TemplatePicker", "ThinkingBlock", "TimelineMessage", "TimelineNotice", "ToolGroup", "ToolItem", "UnknownEvent", "UserSettingsPanel", "WorkspaceSettingsPanel", "WorkspaceSwitcher"] as const) {
       expect(read(`src/components/${component}.svelte`)).toContain(`data-component-owner="${owners[component]}"`);
     }
   });

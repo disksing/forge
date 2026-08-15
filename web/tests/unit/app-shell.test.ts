@@ -39,11 +39,12 @@ function model(overrides: Partial<AppShellModel> = {}): AppShellModel {
       { id: "workspace-b", name: "Workspace B", path: "/tmp/b", iconSrc: "/favicon.svg" },
     ],
     projects: [resource("project-a", "Project A"), resource("project-b", "Project B")], attentionList: [],
+    doctor: { checking: false, complete: true, summary: { errors: 0, warnings: 0 }, workspaces: [] },
     paneSizes: { sidebarWidth: 280, chatWidth: 420, sidebarAttentionHeight: 210 },
     mobile: { sidebarOpen: false, view: "details", immersive: false },
     layout: { preference: "auto", effective: "three" },
     route: { path: "", revision: 0, replace: true },
-    onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(),
+    onSwitchWorkspace: vi.fn(async () => undefined), onAddWorkspace: vi.fn(), onCreateProject: vi.fn(), onOpenSettings: vi.fn(), onRefreshDoctor: vi.fn(async () => undefined),
     onToggleProject: vi.fn(async () => undefined), onSelectResource: vi.fn(async () => undefined), onReorder: vi.fn(async () => undefined),
     onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onDismissAttention: vi.fn(async () => undefined), onPanePreview: vi.fn(), onPaneCommit: vi.fn(), onPaneViewport: vi.fn(), onMobileSidebar: vi.fn(),
     onMobileView: vi.fn(), onMobileImmersive: vi.fn(), onToast: vi.fn(), onIconsChanged: vi.fn(),
@@ -60,6 +61,42 @@ function dragEvent(type: string, clientY = 0): Event {
 }
 
 describe("AppShell", () => {
+  it("shows Doctor issues from the brand reminder and refreshes the report", async () => {
+    const onRefreshDoctor = vi.fn(async () => undefined);
+    const initial = model({
+      onRefreshDoctor,
+      doctor: {
+        checking: false,
+        complete: true,
+        summary: { errors: 1, warnings: 0 },
+        workspaces: [{
+          id: "workspace-a",
+          name: "Workspace A",
+          path: "/tmp/a",
+          report: {
+            complete: true,
+            summary: { errors: 1, warnings: 0 },
+            issues: [{ severity: "error", code: "managed_section_modified", message: "Forge-managed instructions were modified", path: "AGENTS.md", suggestion: "Restore the managed section." }],
+          },
+        }],
+      },
+    });
+    const channel = createModelChannel(initial);
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(AppShell, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    target.querySelector<HTMLButtonElement>("#doctorButton")!.click();
+    await tick();
+    expect(target.querySelector('[role="dialog"]')).not.toBeNull();
+    expect(target.textContent).toContain("Forge-managed instructions were modified");
+    expect(target.textContent).toContain("managed_section_modified");
+
+    target.querySelector<HTMLButtonElement>('[aria-label="Refresh workspace checks"]')!.click();
+    await vi.waitFor(() => expect(onRefreshDoctor).toHaveBeenCalledTimes(1));
+  });
+
   it("keeps keyed navigation nodes stable while canonical selection and status projections update", async () => {
     const onSelectResource = vi.fn(async () => undefined);
     const initial = model({ onSelectResource });

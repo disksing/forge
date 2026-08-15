@@ -3,7 +3,7 @@ import type { ToastModel } from "./models/common";
 import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
-import type { AppShellModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
+import type { AppShellModel, DoctorSnapshotModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
 import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree } from "./models/workspace";
 import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
@@ -38,6 +38,7 @@ let lifecycle: ResourceScope | null = null;
 
 interface ControllerState {
 	config: WorkspaceConfig | null;
+	doctor: DoctorSnapshotModel;
 	tree: WorkspaceTree | null;
 	details: Record<string, ResourceRecord>;
 	workspaceAgents: WorkspaceFileRecord | null;
@@ -93,6 +94,7 @@ interface ControllerState {
 
 const controllerState: ControllerState = {
 	config: null,
+	doctor: { checking: true, complete: false, summary: { errors: 0, warnings: 0 }, workspaces: [] },
 	tree: null,
 	details: {},
 	workspaceAgents: null,
@@ -432,10 +434,41 @@ async function api<Response>(path: string, options: RequestInit = {}): Promise<R
 	if (response.status === 204) return null as Response;
 	return response.json() as Promise<Response>;
 }
+
+async function fetchDoctorSnapshot(): Promise<DoctorSnapshotModel> {
+	try {
+		return await api<DoctorSnapshotModel>("/api/doctor");
+	} catch (err) {
+		return {
+			checking: false,
+			complete: false,
+			summary: { errors: 0, warnings: 0 },
+			error: errorMessage(err),
+			workspaces: [],
+		};
+	}
+}
+
+async function requestDoctorRefresh(): Promise<void> {
+	if (controllerState.doctor.checking) return;
+	controllerState.doctor = { ...controllerState.doctor, checking: true };
+	renderAppShell();
+	const response = await fetch("/api/doctor", { method: "POST" });
+	if (!response.ok) {
+		controllerState.doctor = { ...controllerState.doctor, checking: false, error: `${response.status} ${response.statusText}` };
+		renderAppShell();
+	}
+}
+
 async function load() {
 	const route = parseRoute();
-	const [base, agentHub] = await Promise.all([api<WorkspaceConfig>("/api/workspaces"), api<AgentHubData>("/api/settings/agenthub")]);
+	const [base, agentHub, doctor] = await Promise.all([
+		api<WorkspaceConfig>("/api/workspaces"),
+		api<AgentHubData>("/api/settings/agenthub"),
+		fetchDoctorSnapshot(),
+	]);
 	controllerState.config = configWithAgentHubCatalog(base, agentHub);
+	controllerState.doctor = doctor;
 	applyAgentConfig();
 	controllerState.activeWorkspaceId = workspaceExists(route.workspaceId) ? route.workspaceId || "" : controllerState.config?.activeId || controllerState.config?.workspaces[0]?.id || "";
 	controllerState.selectedId = route.resourceId || "workspace";
@@ -568,10 +601,14 @@ async function autoRefresh() {
 	let selectedId = controllerState.selectedId;
 	controllerState.autoRefreshInFlight = true;
 	try {
-		const tree = await fetchCurrentTree(workspaceId);
+		const [tree, doctor] = await Promise.all([fetchCurrentTree(workspaceId), fetchDoctorSnapshot()]);
 		if (!tree || !isCurrentAutoRefresh(workspaceId, navigationVersion, refreshVersion)) return;
 		let changed = !sameJSON(controllerState.tree, tree);
 		if (changed) controllerState.tree = tree;
+		if (!sameJSON(controllerState.doctor, doctor)) {
+			controllerState.doctor = doctor;
+			changed = true;
+		}
 		observeCompletionProjections(resourceNotificationProjections(tree));
 		if (ensureValidSelection()) {
 			syncURL({ replace: true });
@@ -726,12 +763,14 @@ function renderAppShell() {
 		scheduler: appShellSchedulerModel(controllerState.tree?.scheduler),
 		projects,
 		attentionList,
+		doctor: controllerState.doctor,
 		...paneLayoutController.snapshot(),
 		route: routeController.projection(),
 		onSwitchWorkspace: (id) => switchWorkspace(id),
 		onAddWorkspace: () => openSettings("workspace").catch((err) => toast(err.message)),
 		onCreateProject: () => showProjectForm(),
 		onOpenSettings: () => openSettings().catch((err) => toast(err.message)),
+		onRefreshDoctor: requestDoctorRefresh,
 		onToggleProject: (id) => toggleProject(id),
 		onSelectResource: (id) => selectResource(id),
 		onReorder: (drag, target, after) => commitListDrag(drag, target, after),

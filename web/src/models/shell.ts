@@ -55,6 +55,35 @@ export interface ShellWorkspaceItem extends WorkspaceOption {
   iconSrc: string;
 }
 
+export interface DoctorIssueModel {
+  severity: "error" | "warning" | string;
+  code: string;
+  message: string;
+  path?: string;
+  resourceId?: string;
+  suggestion?: string;
+}
+
+export interface DoctorWorkspaceModel {
+  id: string;
+  name: string;
+  path: string;
+  report: {
+    complete: boolean;
+    summary: { errors: number; warnings: number };
+    issues: DoctorIssueModel[];
+  };
+}
+
+export interface DoctorSnapshotModel {
+  checkedAt?: string;
+  checking: boolean;
+  complete: boolean;
+  summary: { errors: number; warnings: number };
+  error?: string;
+  workspaces: DoctorWorkspaceModel[];
+}
+
 export interface ShellDragTarget {
   kind: "project" | "task";
   id: string;
@@ -71,6 +100,7 @@ export interface AppShellModel {
   scheduler?: ShellResourceItem | null;
   projects: ShellResourceItem[];
   attentionList: ShellAttentionItem[];
+  doctor: DoctorSnapshotModel;
   paneSizes: { sidebarWidth: number; chatWidth: number; sidebarAttentionHeight: number };
   mobile: { sidebarOpen: boolean; view: "details" | "chat"; immersive: boolean };
   layout: { preference: "auto" | "three" | "two" | "split"; effective: "three" | "two" | "split" | "single" };
@@ -79,6 +109,7 @@ export interface AppShellModel {
   onAddWorkspace: () => void;
   onCreateProject: () => void;
   onOpenSettings: () => void;
+  onRefreshDoctor: () => Promise<void>;
   onToggleProject: (id: string) => Promise<void>;
   onSelectResource: (id: string) => Promise<void>;
   onReorder: (drag: ShellDragTarget, target: ShellDragTarget, after: boolean) => Promise<void>;

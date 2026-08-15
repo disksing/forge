@@ -180,6 +180,7 @@ type server struct {
 	addr      string
 	config    string
 	agents    *agentManager
+	doctor    *doctorMonitor
 	locks     *workspaceLockManager
 	uiStateMu sync.Mutex
 }
@@ -283,6 +284,8 @@ func Main(args []string) error {
 		return err
 	}
 	s.agents.startAgentRecovery(context.Background())
+	s.doctor = newDoctorMonitor(s)
+	s.doctor.start(context.Background())
 
 	staticRoot, err := fs.Sub(staticFiles, "static")
 	if err != nil {
@@ -296,6 +299,7 @@ func Main(args []string) error {
 	mux.HandleFunc("/api/workspaces/", s.handleWorkspace)
 	mux.HandleFunc("/api/settings", s.handleSettings)
 	mux.HandleFunc("/api/settings/", s.handleSettings)
+	mux.HandleFunc("/api/doctor", s.handleDoctor)
 
 	log.Printf("forge serve listening on http://%s", addr)
 	return http.ListenAndServe(addr, mux)
@@ -1273,6 +1277,9 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	if err := s.saveConfig(cfg); err != nil {
 		return guiWorkspace{}, err
 	}
+	if s.doctor != nil {
+		s.doctor.requestScan()
+	}
 	return workspace, nil
 }
 
@@ -1360,6 +1367,9 @@ func (s *server) removeWorkspace(id string) error {
 	// release the serve lock so another instance can take ownership.
 	if s.locks != nil {
 		s.locks.release(removedPath)
+	}
+	if s.doctor != nil {
+		s.doctor.requestScan()
 	}
 	return nil
 }

@@ -86,6 +86,39 @@
   color: var(--faint-on-dark);
 }
 
+:where([data-component-owner="app-shell"]) .brand-doctor {
+  min-width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
+
+:where([data-component-owner="app-shell"]) .brand-doctor.has-errors {
+  background: rgba(239, 68, 68, 0.17);
+  color: #f87171;
+}
+
+:where([data-component-owner="app-shell"]) .brand-doctor:hover {
+  background: rgba(255, 255, 255, 0.11);
+  color: #fff;
+}
+
+:where([data-component-owner="app-shell"]) .brand-doctor svg {
+  width: 16px;
+  height: 16px;
+}
+
+:where([data-component-owner="app-shell"]) .brand-doctor span {
+  font-size: 10px;
+  font-weight: 800;
+}
+
 :where([data-component-owner="app-shell"]) .brand-settings:hover {
   background: var(--ink-row);
   color: #fff;

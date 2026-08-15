@@ -65,6 +65,8 @@ func Run(args []string) error {
 		return runWorkspace(args[1:])
 	case "migrate":
 		return runMigrate(args[1:])
+	case "doctor":
+		return runDoctor(args[1:])
 	case "serve":
 		return serve.Main(args[1:])
 	case "help", "-h", "--help":
@@ -309,6 +311,7 @@ Usage:
   forge --version
   forge init [--language=<language>]
   forge migrate [--language=<language>]
+  forge doctor [--json] [--server=<url>]
   forge repo <command>
   forge project <command>
   forge task <command>
@@ -334,6 +337,9 @@ Commands:
     Refresh forge-managed AGENTS.md blocks and migrate legacy task/resource
     history before removing obsolete files. Pass --language to switch between
     en and zh-CN.
+
+  forge doctor [--json] [--server=<url>]
+    Inspect open Workspace data and Agent bindings without changing them.
 
   forge repo <command>
     Manage repositories known to the workspace. Subcommands: add, list.
