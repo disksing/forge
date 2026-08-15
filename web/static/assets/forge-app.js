@@ -1,4 +1,4 @@
-import { A as e, B as t, C as n, D as r, E as i, F as a, G as o, H as s, I as c, J as l, K as u, L as d, M as f, N as p, O as m, P as h, R as g, S as _, T as v, U as y, V as b, W as x, X as S, Y as C, Z as w, _ as T, a as E, b as D, c as O, d as k, f as A, g as j, h as M, i as N, j as P, k as F, l as I, m as L, n as R, o as z, p as B, q as ee, r as V, s as H, t as U, u as W, v as G, w as K, x as q, y as te, z as J } from "./Icon-qM-gEmE6.js";
+import { A as e, B as t, C as n, D as r, E as i, F as a, G as o, H as s, I as c, J as l, K as u, L as d, M as f, N as p, O as m, P as h, R as g, S as _, T as v, U as y, V as b, W as x, X as S, Y as C, Z as w, _ as T, a as E, b as D, c as O, d as k, f as A, g as j, h as M, i as N, j as P, k as F, l as I, m as L, n as R, o as z, p as B, q as ee, r as V, s as H, t as U, u as W, v as G, w as K, x as q, y as te, z as J } from "./Icon-DhNPRoAS.js";
 //#region src/components/DoctorDialog.svelte
 var ne = P("<div class=\"doctor-global-error\"><strong>Doctor could not run</strong><span> </span></div>"), re = P("<div class=\"doctor-empty\"><!><span>Checking configured Workspaces…</span></div>"), ie = P("<div class=\"doctor-empty\"><!><span>No configured Workspace problems.</span></div>"), ae = P("<code> </code>"), oe = P("<p> </p>"), se = P("<article><div class=\"doctor-issue-icon\"><!></div> <div class=\"doctor-issue-copy\"><div class=\"doctor-issue-title\"><strong> </strong><span> </span></div> <!> <!></div></article>"), Y = P("<section class=\"doctor-workspace\"><div class=\"doctor-workspace-heading\"><div><h3> </h3><code> </code></div> <span> </span></div> <div class=\"doctor-issues\"></div></section>"), ce = P("<div data-component-owner=\"doctor-dialog\" class=\"doctor-backdrop\" role=\"presentation\"><div class=\"doctor-dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"doctorTitle\"><header><div><h2 id=\"doctorTitle\">Workspace problems</h2> <p> </p></div> <div class=\"doctor-header-actions\"><button type=\"button\" class=\"doctor-refresh\" aria-label=\"Refresh workspace checks\"><!> Refresh</button> <button type=\"button\" class=\"doctor-close\" aria-label=\"Close workspace problems\"><!></button></div></header> <div class=\"doctor-content\"><!> <!></div></div></div>");
 function le(n, i) {
@@ -2461,7 +2461,7 @@ p(["click", "keydown"]);
 //#region src/components/LazyMarkdownEditor.svelte
 var qn = P("<div class=\"file-modal-empty error-preview\"><strong>Markdown editor unavailable</strong><span> </span></div>"), Jn = P("<div class=\"file-modal-empty\"><strong>Loading Markdown editor…</strong></div>");
 function Yn(n, i) {
-	let a = import("./MarkdownEditor-CbEgAyLW.js");
+	let a = import("./MarkdownEditor-DP6grlTn.js");
 	var o = e(), l = b(o);
 	v(l, () => a, (e) => {
 		var t = Jn();
@@ -2476,11 +2476,11 @@ function Yn(n, i) {
 				get file() {
 					return i.file;
 				},
+				get mode() {
+					return i.mode;
+				},
 				get onSave() {
 					return i.onSave;
-				},
-				get onDone() {
-					return i.onDone;
 				},
 				get onToast() {
 					return i.onToast;
@@ -2497,14 +2497,14 @@ function Yn(n, i) {
 }
 //#endregion
 //#region src/components/FilePreviewModal.svelte
-var Xn = P("<button class=\"secondary-button\" type=\"button\"><!><span> </span></button>"), Zn = P("<div class=\"file-modal-empty\"><!><strong>Loading preview</strong><span> </span></div>"), Qn = P("<div class=\"file-modal-empty error-preview\"><!><strong>Preview unavailable</strong><span> </span></div>"), $n = P("<div class=\"modal-markdown-editor\"><!></div>"), er = P("<div class=\"image-preview\" data-preview-scroll=\"\"><img/></div>"), tr = P("<div class=\"file-modal-empty\"><!><strong>Preview unavailable</strong><span> </span><a class=\"secondary-button file-modal-download\" title=\"Download file\"><!><span>Download</span></a></div>"), nr = P("<div class=\"modal-markdown markdown-rendered\" data-preview-scroll=\"\"></div>"), rr = P("<pre class=\"modal-preview-content\" data-preview-scroll=\"\"> </pre>"), ir = P("<div class=\"file-modal-layer\" data-component-owner=\"file-preview-modal\" role=\"presentation\"><button class=\"file-modal-backdrop modal-enter\" type=\"button\" aria-label=\"Close file preview\"></button> <div class=\"file-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"File preview\"><header class=\"file-modal-header\"><div><strong> </strong><span> </span></div><div class=\"file-modal-actions\"><!><a class=\"secondary-button file-modal-download\" title=\"Download file\"><!><span>Download</span></a><a class=\"secondary-button file-modal-open\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a><button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></div></header> <!></div></div>");
-function ar(n, i) {
+var Xn = P("<button class=\"secondary-button\" type=\"button\"><!><span>Edit</span></button><button class=\"secondary-button\" type=\"button\"><!><span>Annotate</span></button>", 1), Zn = P("<button class=\"secondary-button\" type=\"button\"><!><span>Preview</span></button><button class=\"secondary-button\" type=\"button\"><!><span>Annotate</span></button>", 1), Qn = P("<button class=\"secondary-button\" type=\"button\"><!><span>Preview</span></button><button class=\"secondary-button\" type=\"button\"><!><span>Edit</span></button>", 1), $n = P("<div class=\"file-modal-empty\"><!><strong>Loading preview</strong><span> </span></div>"), er = P("<div class=\"file-modal-empty error-preview\"><!><strong>Preview unavailable</strong><span> </span></div>"), tr = P("<div class=\"modal-markdown-editor\"><!></div>"), nr = P("<div class=\"image-preview\" data-preview-scroll=\"\"><img/></div>"), rr = P("<div class=\"file-modal-empty\"><!><strong>Preview unavailable</strong><span> </span><a class=\"secondary-button file-modal-download\" title=\"Download file\"><!><span>Download</span></a></div>"), ir = P("<div class=\"modal-markdown markdown-rendered\" data-preview-scroll=\"\"></div>"), ar = P("<pre class=\"modal-preview-content\" data-preview-scroll=\"\"> </pre>"), or = P("<div class=\"file-modal-layer\" data-component-owner=\"file-preview-modal\" role=\"presentation\"><button class=\"file-modal-backdrop modal-enter\" type=\"button\" aria-label=\"Close file preview\"></button> <div class=\"file-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"File preview\"><header class=\"file-modal-header\"><div><strong> </strong><span> </span></div><div class=\"file-modal-actions\"><!><a class=\"secondary-button file-modal-download\" title=\"Download file\"><!><span>Download</span></a><a class=\"secondary-button file-modal-open\" target=\"_blank\" rel=\"noopener\" title=\"Open file in new window\"><!><span>Open</span></a><button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></div></header> <!></div></div>");
+function sr(n, i) {
 	C(i, !0);
-	let a = o(null), d = o(!1), f = o(""), p = o(!1), m = u(() => `detail-preview:${i.workspaceId}:${i.resourceId}`), _ = u(() => i.selection ? `${i.workspaceId}:${i.resourceId}:${i.selection.section}:${i.selection.path}` : ""), v = u(() => i.selection ? `/api/workspaces/${encodeURIComponent(i.workspaceId)}/files/raw?path=${encodeURIComponent(i.selection.path)}` : ""), y = u(() => i.selection ? `/api/workspaces/${encodeURIComponent(i.workspaceId)}/files/raw?path=${encodeURIComponent(i.selection.path)}&download=1` : ""), E = "";
+	let a = o(null), d = o(!1), f = o(""), p = o("preview"), m = u(() => `detail-preview:${i.workspaceId}:${i.resourceId}`), _ = u(() => i.selection ? `${i.workspaceId}:${i.resourceId}:${i.selection.section}:${i.selection.path}` : ""), v = u(() => i.selection ? `/api/workspaces/${encodeURIComponent(i.workspaceId)}/files/raw?path=${encodeURIComponent(i.selection.path)}` : ""), y = u(() => i.selection ? `/api/workspaces/${encodeURIComponent(i.workspaceId)}/files/raw?path=${encodeURIComponent(i.selection.path)}&download=1` : ""), E = "";
 	J(() => {
 		let e = i.selection, t = c(m), n = c(_);
 		if (n !== E) {
-			if (E = n, x(a, null), x(f, ""), x(p, i.editable && e?.edit === !0, !0), !e) {
+			if (E = n, x(a, null), x(f, ""), x(p, i.editable && e?.mode === "annotate" ? "annotate" : i.editable && e?.mode === "edit" ? "edit" : "preview", !0), !e) {
 				i.client.requests.abort(t);
 				return;
 			}
@@ -2522,45 +2522,55 @@ function ar(n, i) {
 		let n = await i.onSaveMarkdown(c(a)?.path || i.selection.path, e, t);
 		return x(a, n, !0), n;
 	}
-	var k = e(), A = b(k), j = (e) => {
-		var n = ir(), o = t(n), l = s(o, 2), m = t(l), _ = t(m), b = t(_), C = t(b, !0);
-		w(b);
-		var E = s(b), k = t(E);
-		w(E), w(_);
-		var A = s(_), j = t(A), M = (e) => {
-			var n = Xn(), i = t(n);
-			{
-				let e = u(() => c(p) ? "eye" : "pencil");
-				U(i, { get name() {
-					return c(e);
-				} });
-			}
-			var a = s(i), o = t(a, !0);
-			w(a), w(n), g(() => r(o, c(p) ? "Preview" : "Edit / Annotate")), h("click", n, () => x(p, !c(p))), F(e, n);
-		}, N = u(() => i.editable && c(a) && !c(a).truncated && !c(a).binary && In(c(a).path || i.selection.path));
-		K(j, (e) => {
-			c(N) && e(M);
+	var k = e(), A = b(k), j = (n) => {
+		var o = or(), l = t(o), m = s(l, 2), _ = t(m), C = t(_), E = t(C), k = t(E, !0);
+		w(E);
+		var A = s(E), j = t(A);
+		w(A), w(C);
+		var M = s(C), N = t(M), P = (n) => {
+			var r = e(), i = b(r), a = (e) => {
+				var n = Xn(), r = b(n), i = t(r);
+				U(i, { name: "pencil" }), S(), w(r);
+				var a = s(r), o = t(a);
+				U(o, { name: "message-square-plus" }), S(), w(a), h("click", r, () => x(p, "edit")), h("click", a, () => x(p, "annotate")), F(e, n);
+			}, o = (e) => {
+				var n = Zn(), r = b(n), i = t(r);
+				U(i, { name: "eye" }), S(), w(r);
+				var a = s(r), o = t(a);
+				U(o, { name: "message-square-plus" }), S(), w(a), h("click", r, () => x(p, "preview")), h("click", a, () => x(p, "annotate")), F(e, n);
+			}, l = (e) => {
+				var n = Qn(), r = b(n), i = t(r);
+				U(i, { name: "eye" }), S(), w(r);
+				var a = s(r), o = t(a);
+				U(o, { name: "pencil" }), S(), w(a), h("click", r, () => x(p, "preview")), h("click", a, () => x(p, "edit")), F(e, n);
+			};
+			K(i, (e) => {
+				c(p) === "preview" ? e(a) : c(p) === "edit" ? e(o, 1) : e(l, -1);
+			}), F(n, r);
+		}, L = u(() => i.editable && c(a) && !c(a).truncated && !c(a).binary && In(c(a).path || i.selection.path));
+		K(N, (e) => {
+			c(L) && e(P);
 		});
-		var P = s(j), L = t(P);
-		U(L, { name: "download" }), S(), w(P);
-		var R = s(P), z = t(R);
-		U(z, { name: "external-link" }), S(), w(R);
+		var R = s(N), z = t(R);
+		U(z, { name: "download" }), S(), w(R);
 		var B = s(R), ee = t(B);
-		U(ee, { name: "x" }), w(B), w(A), w(m);
-		var V = s(m, 2), H = (e) => {
-			var n = Zn(), a = t(n);
+		U(ee, { name: "external-link" }), S(), w(B);
+		var V = s(B), H = t(V);
+		U(H, { name: "x" }), w(V), w(M), w(_);
+		var W = s(_, 2), G = (e) => {
+			var n = $n(), a = t(n);
 			U(a, { name: "loader-circle" });
 			var o = s(a, 2), c = t(o, !0);
 			w(o), w(n), g(() => r(c, i.selection.path)), F(e, n);
-		}, W = (e) => {
-			var n = Qn(), i = t(n);
+		}, q = (e) => {
+			var n = er(), i = t(n);
 			U(i, { name: "triangle-alert" });
 			var a = s(i, 2), o = t(a, !0);
 			w(a), w(n), g(() => r(o, c(f))), F(e, n);
-		}, G = (e) => {
-			var n = $n(), r = t(n);
+		}, te = (e) => {
+			var n = tr(), r = t(n);
 			{
-				let e = u(() => `${i.workspaceId}:${i.resourceId}:${i.selection.path}`);
+				let e = u(() => `${i.workspaceId}:${i.resourceId}:${i.selection.path}:edit`);
 				Yn(r, {
 					get identity() {
 						return c(e);
@@ -2568,10 +2578,8 @@ function ar(n, i) {
 					get file() {
 						return c(a);
 					},
+					mode: "edit",
 					onSave: O,
-					onDone: () => {
-						i.selection.edit ? i.onClose() : x(p, !1);
-					},
 					get onToast() {
 						return i.onError;
 					},
@@ -2581,13 +2589,35 @@ function ar(n, i) {
 				});
 			}
 			w(n), F(e, n);
-		}, q = (e) => {
-			var n = er(), r = t(n);
+		}, J = (e) => {
+			var n = tr(), r = t(n);
+			{
+				let e = u(() => `${i.workspaceId}:${i.resourceId}:${i.selection.path}:annotate`);
+				Yn(r, {
+					get identity() {
+						return c(e);
+					},
+					get file() {
+						return c(a);
+					},
+					mode: "annotate",
+					onSave: O,
+					get onToast() {
+						return i.onError;
+					},
+					get onIconsChanged() {
+						return i.onIconsChanged;
+					}
+				});
+			}
+			w(n), F(e, n);
+		}, ne = (e) => {
+			var n = nr(), r = t(n);
 			w(n), g(() => {
 				I(r, "src", c(v)), I(r, "alt", c(a).name || i.selection.path);
 			}), F(e, n);
-		}, te = (e) => {
-			var n = tr(), o = t(n);
+		}, re = (e) => {
+			var n = rr(), o = t(n);
 			U(o, { name: "file-warning" });
 			var l = s(o, 2), u = t(l);
 			w(l);
@@ -2595,8 +2625,8 @@ function ar(n, i) {
 			U(f, { name: "download" }), S(), w(d), w(n), g((e) => {
 				r(u, `${(c(a).name || i.selection.path) ?? ""} · Binary file, ${e ?? ""}.`), I(d, "href", c(y));
 			}, [() => Ln(c(a).size || 0)]), F(e, n);
-		}, J = (e) => {
-			var t = nr();
+		}, ie = (e) => {
+			var t = ir();
 			D(t, () => Tn(c(a)?.content || "", {
 				workspaceId: i.workspaceId,
 				resolveResourceTitle: i.resolveResourceTitle
@@ -2605,19 +2635,19 @@ function ar(n, i) {
 				onNavigate: i.onNavigate,
 				onOpenFile: i.onOpenFile
 			})), F(e, t);
-		}, ne = u(() => In(c(a)?.path || i.selection.path)), re = (e) => {
-			var n = rr(), i = t(n, !0);
+		}, ae = u(() => In(c(a)?.path || i.selection.path)), oe = (e) => {
+			var n = ar(), i = t(n, !0);
 			w(n), g(() => r(i, c(a)?.content || "")), F(e, n);
 		};
-		K(V, (e) => {
-			c(d) ? e(H) : c(f) ? e(W, 1) : c(a) && c(p) ? e(G, 2) : c(a)?.image ? e(q, 3) : c(a)?.binary ? e(te, 4) : c(ne) ? e(J, 5) : e(re, -1);
-		}), w(l), w(n), g((e, t) => {
-			I(l, "data-preview-identity", `${i.workspaceId}:${i.resourceId}:${i.selection.section}:${i.selection.path}:${c(a)?.contentHash || "pending"}`), r(C, e), r(k, `${i.selection.path ?? ""}${t ?? ""}${c(a)?.truncated ? " · truncated" : ""}`), I(P, "href", c(y)), I(R, "href", c(v));
-		}, [() => c(a)?.name || i.selection.path.split("/").pop() || "File preview", () => c(a)?.size == null ? "" : ` · ${Ln(c(a).size)}`]), h("click", o, function(...e) {
+		K(W, (e) => {
+			c(d) ? e(G) : c(f) ? e(q, 1) : c(a) && c(p) === "edit" ? e(te, 2) : c(a) && c(p) === "annotate" ? e(J, 3) : c(a)?.image ? e(ne, 4) : c(a)?.binary ? e(re, 5) : c(ae) ? e(ie, 6) : e(oe, -1);
+		}), w(m), w(o), g((e, t) => {
+			I(m, "data-preview-identity", `${i.workspaceId}:${i.resourceId}:${i.selection.section}:${i.selection.path}:${c(a)?.contentHash || "pending"}`), r(k, e), r(j, `${i.selection.path ?? ""}${t ?? ""}${c(a)?.truncated ? " · truncated" : ""}`), I(R, "href", c(y)), I(B, "href", c(v));
+		}, [() => c(a)?.name || i.selection.path.split("/").pop() || "File preview", () => c(a)?.size == null ? "" : ` · ${Ln(c(a).size)}`]), h("click", l, function(...e) {
 			i.onClose?.apply(this, e);
-		}), h("click", B, function(...e) {
+		}), h("click", V, function(...e) {
 			i.onClose?.apply(this, e);
-		}), F(e, n);
+		}), F(n, o);
 	};
 	K(A, (e) => {
 		i.selection && e(j);
@@ -2626,8 +2656,8 @@ function ar(n, i) {
 p(["click"]);
 //#endregion
 //#region src/components/ApprovalCard.svelte
-var or = P("<p class=\"approval-question\"> </p>"), sr = P("<p> </p>"), cr = P("<button> </button>"), lr = P("<div class=\"approval-options\"></div>"), ur = P("<div class=\"approval-actions\"><button><!><span>Allow once</span></button><button class=\"secondary-button\"><!><span>Decline</span></button></div>"), dr = P("<form class=\"approval-reply\"><input placeholder=\"Reply with a custom answer…\" aria-label=\"Custom reply\"/><button type=\"submit\">Send</button></form>"), fr = P("<!> <!>", 1), pr = P("<div data-component-owner=\"event-timeline\" class=\"agent-event approval\"><div><!><strong> </strong></div> <!> <!> <!></div>");
-function mr(e, n) {
+var cr = P("<p class=\"approval-question\"> </p>"), lr = P("<p> </p>"), ur = P("<button> </button>"), dr = P("<div class=\"approval-options\"></div>"), fr = P("<div class=\"approval-actions\"><button><!><span>Allow once</span></button><button class=\"secondary-button\"><!><span>Decline</span></button></div>"), pr = P("<form class=\"approval-reply\"><input placeholder=\"Reply with a custom answer…\" aria-label=\"Custom reply\"/><button type=\"submit\">Send</button></form>"), mr = P("<!> <!>", 1), hr = P("<div data-component-owner=\"event-timeline\" class=\"agent-event approval\"><div><!><strong> </strong></div> <!> <!> <!></div>");
+function gr(e, n) {
 	C(n, !0);
 	let i = o(""), u = o(!1), d = o(y(f()));
 	J(() => {
@@ -2653,29 +2683,29 @@ function mr(e, n) {
 	function m(e) {
 		return e.name || String(e.kind || "").replace(/[_-]+/g, " ").trim() || e.optionId;
 	}
-	var _ = pr(), v = t(_), T = t(v);
+	var _ = hr(), v = t(_), T = t(v);
 	U(T, { name: "shield-question" });
 	var E = s(T), D = t(E, !0);
 	w(E), w(v);
 	var k = s(v, 2), A = (e) => {
-		var i = or(), a = t(i, !0);
+		var i = cr(), a = t(i, !0);
 		w(i), g(() => r(a, n.item.question)), F(e, i);
 	};
 	K(k, (e) => {
 		n.item.question && e(A);
 	});
 	var M = s(k, 2), N = (e) => {
-		var i = sr(), a = t(i, !0);
+		var i = lr(), a = t(i, !0);
 		w(i), g(() => r(a, n.item.detail)), F(e, i);
 	};
 	K(M, (e) => {
 		n.item.detail && e(N);
 	});
 	var P = s(M, 2), I = (e) => {
-		var o = fr(), l = b(o), d = (e) => {
-			var i = lr();
+		var o = mr(), l = b(o), d = (e) => {
+			var i = dr();
 			q(i, 21, () => n.item.options, (e) => e.optionId, (e, n) => {
-				var i = cr();
+				var i = ur();
 				let a;
 				var o = t(i, !0);
 				w(i), g((e, t) => {
@@ -2683,7 +2713,7 @@ function mr(e, n) {
 				}, [() => ({ "secondary-button": String(c(n).kind || "").startsWith("reject") }), () => m(c(n))]), h("click", i, () => p({ optionId: c(n).optionId })), F(e, i);
 			}), w(i), F(e, i);
 		}, f = (e) => {
-			var n = ur(), r = t(n), i = t(r);
+			var n = fr(), r = t(n), i = t(r);
 			U(i, { name: "check" }), S(), w(r);
 			var a = s(r), o = t(a);
 			U(o, { name: "x" }), S(), w(a), w(n), g(() => {
@@ -2694,7 +2724,7 @@ function mr(e, n) {
 			n.item.options?.length ? e(d) : e(f, -1);
 		});
 		var _ = s(l, 2), v = (e) => {
-			var n = dr(), r = t(n);
+			var n = pr(), r = t(n);
 			O(r);
 			var o = s(r);
 			w(n), g((e) => o.disabled = e, [() => !c(i).trim() || c(u)]), a("submit", n, (e) => {
@@ -2705,7 +2735,7 @@ function mr(e, n) {
 			n.item.question && e(v);
 		}), F(e, o);
 	}, L = (e) => {
-		var i = sr(), a = t(i);
+		var i = lr(), a = t(i);
 		w(i), g(() => r(a, `${(n.item.decision || (n.item.status === "accepted" ? "Allowed" : "Declined")) ?? ""}${n.item.reply ? `: ${n.item.reply}` : ""}`)), F(e, i);
 	};
 	K(P, (e) => {
@@ -2715,37 +2745,37 @@ function mr(e, n) {
 p(["click"]);
 //#endregion
 //#region vendor/agenthub-event-timeline/index.mjs
-var hr = 400, gr = 12e3;
-function _r(e, t = hr) {
+var _r = 400, vr = 12e3;
+function yr(e, t = _r) {
 	let n = String(e ?? "");
 	return n.length > t ? `${n.slice(0, t - 1)}…` : n;
 }
-function vr(e) {
+function br(e) {
 	if (e == null) return "";
 	try {
-		return _r(JSON.stringify(e));
+		return yr(JSON.stringify(e));
 	} catch {
 		return "";
 	}
 }
-function yr(e) {
+function xr(e) {
 	let t = String(e || "").replace(/[_-]+/g, " ").replace(/([a-z0-9])([A-Z])/g, "$1 $2").trim();
 	return t ? t.charAt(0).toUpperCase() + t.slice(1) : "";
 }
-function br(e) {
+function Sr(e) {
 	return Array.isArray(e) ? e.filter((e) => typeof e == "string").join(" ") : typeof e == "string" ? e : "";
 }
 function X(...e) {
 	for (let t of e) if (typeof t == "string" && t.trim()) return t.trim();
 	return "";
 }
-var xr = /* @__PURE__ */ new Set([
+var Cr = /* @__PURE__ */ new Set([
 	"user",
 	"system",
 	"agent",
 	"assistant"
 ]);
-function Sr(e) {
+function wr(e) {
 	if (!e || typeof e != "object" || Array.isArray(e)) return;
 	let t = {};
 	for (let n of [
@@ -2755,11 +2785,11 @@ function Sr(e) {
 	]) typeof e[n] == "string" && e[n].trim() && (t[n] = e[n].trim());
 	return Object.keys(t).length ? t : void 0;
 }
-function Cr(e) {
+function Tr(e) {
 	let t = typeof e == "string" ? e.trim().toLowerCase() : "";
-	return xr.has(t) ? t : "user";
+	return Cr.has(t) ? t : "user";
 }
-function wr(e) {
+function Er(e) {
 	let t = String(e || "").toLowerCase();
 	return [
 		"completed",
@@ -2777,13 +2807,13 @@ function wr(e) {
 		"canceled"
 	].includes(t) ? "failed" : "running";
 }
-function Tr(e) {
+function Dr(e) {
 	if (!Array.isArray(e)) return "";
 	let t = [];
 	for (let n of e) typeof n?.text == "string" ? t.push(n.text) : typeof n?.content?.text == "string" ? t.push(n.content.text) : n?.type === "diff" && typeof n?.path == "string" && t.push(`Edit ${n.path}`);
 	return t.filter(Boolean).join("\n");
 }
-function Er(e) {
+function Or(e) {
 	let t = e?.data ?? {}, n = typeof t.method == "string" ? t.method : "", r = t.raw && typeof t.raw == "object" ? t.raw : {}, i = e?.time || "";
 	if (n.startsWith("item/") || n.startsWith("command/")) {
 		if (n === "item/commandExecution/outputDelta" || n === "command/exec/outputDelta") {
@@ -2802,9 +2832,9 @@ function Er(e) {
 			"agentMessage",
 			"reasoning"
 		].includes(t)) return null;
-		let a = X(e.id, r.itemId), o = yr(t) || "Tool", s = "", c = "", l = "";
-		t === "commandExecution" ? (o = "Command", s = br(e.command) || X(e.cmd), c = X(e.aggregatedOutput, e.output), typeof e.exitCode == "number" && e.exitCode !== 0 && (l = `Exit code ${e.exitCode}`)) : t === "fileChange" ? (o = "File change", s = (Array.isArray(e.changes) ? e.changes.map((e) => e?.path).filter(Boolean) : []).join(", ")) : t === "mcpToolCall" ? (o = "MCP", s = [e.server, e.tool].filter((e) => typeof e == "string" && e).join(" / "), c = typeof e.result == "string" ? e.result : vr(e.result), l = X(e.error?.message, typeof e.error == "string" ? e.error : "")) : t === "webSearch" ? (o = "Web search", s = X(e.query)) : (s = X(e.title, e.name, br(e.command), e.path), c = X(e.output, e.aggregatedOutput));
-		let u = wr(e.status);
+		let a = X(e.id, r.itemId), o = xr(t) || "Tool", s = "", c = "", l = "";
+		t === "commandExecution" ? (o = "Command", s = Sr(e.command) || X(e.cmd), c = X(e.aggregatedOutput, e.output), typeof e.exitCode == "number" && e.exitCode !== 0 && (l = `Exit code ${e.exitCode}`)) : t === "fileChange" ? (o = "File change", s = (Array.isArray(e.changes) ? e.changes.map((e) => e?.path).filter(Boolean) : []).join(", ")) : t === "mcpToolCall" ? (o = "MCP", s = [e.server, e.tool].filter((e) => typeof e == "string" && e).join(" / "), c = typeof e.result == "string" ? e.result : br(e.result), l = X(e.error?.message, typeof e.error == "string" ? e.error : "")) : t === "webSearch" ? (o = "Web search", s = X(e.query)) : (s = X(e.title, e.name, Sr(e.command), e.path), c = X(e.output, e.aggregatedOutput));
+		let u = Er(e.status);
 		return n === "item/started" && (u = "running"), n === "item/completed" && u === "running" && (u = "completed"), l && u === "completed" && (u = "failed"), {
 			callId: a,
 			method: n,
@@ -2812,34 +2842,34 @@ function Er(e) {
 			name: o,
 			status: u,
 			error: l,
-			summary: _r(s.replace(/\s+/g, " ").trim(), 120),
-			output: _r(c, gr)
+			summary: yr(s.replace(/\s+/g, " ").trim(), 120),
+			output: yr(c, vr)
 		};
 	}
 	let a = r.update && typeof r.update == "object" ? r.update : r, o = X(a.sessionUpdate);
 	if (o === "tool_call" || o === "tool_call_update") {
-		let e = X(a.toolCallId, a.id), t = a.rawInput && typeof a.rawInput == "object" ? a.rawInput : {}, r = X(a.title, br(t.command), t.path, t.filePath, yr(a.kind));
+		let e = X(a.toolCallId, a.id), t = a.rawInput && typeof a.rawInput == "object" ? a.rawInput : {}, r = X(a.title, Sr(t.command), t.path, t.filePath, xr(a.kind));
 		return {
 			callId: e,
 			method: n,
 			time: i,
-			name: yr(a.kind) || "Tool",
-			status: wr(a.status || (o === "tool_call" ? "in_progress" : "")),
-			summary: _r(r.replace(/\s+/g, " ").trim(), 120),
-			output: _r(Tr(a.content), gr),
+			name: xr(a.kind) || "Tool",
+			status: Er(a.status || (o === "tool_call" ? "in_progress" : "")),
+			summary: yr(r.replace(/\s+/g, " ").trim(), 120),
+			output: yr(Dr(a.content), vr),
 			error: ""
 		};
 	}
 	if (n === "tool_execution_start" || n === "tool_execution_end") {
-		let e = X(r.toolName, r.name, r.tool), t = r.args && typeof r.args == "object" ? r.args : {}, a = X(br(t.command), t.path, t.filePath, ""), o = r.isError === !0 || !!X(r.error);
+		let e = X(r.toolName, r.name, r.tool), t = r.args && typeof r.args == "object" ? r.args : {}, a = X(Sr(t.command), t.path, t.filePath, ""), o = r.isError === !0 || !!X(r.error);
 		return {
 			callId: X(r.toolCallId, r.callId, e),
 			method: n,
 			time: i,
-			name: yr(e) || "Tool",
+			name: xr(e) || "Tool",
 			status: n === "tool_execution_start" ? "running" : o ? "failed" : "completed",
-			summary: _r(a.replace(/\s+/g, " ").trim(), 120),
-			output: _r(X(typeof r.result == "string" ? r.result : "", Tr(r.result?.content)), gr),
+			summary: yr(a.replace(/\s+/g, " ").trim(), 120),
+			output: yr(X(typeof r.result == "string" ? r.result : "", Dr(r.result?.content)), vr),
 			error: X(r.error)
 		};
 	}
@@ -2854,21 +2884,21 @@ function Er(e) {
 		error: ""
 	};
 }
-function Dr(e) {
+function kr(e) {
 	let t = e?.data ?? {}, n = X(t.method), r = t.params && typeof t.params == "object" ? t.params : {}, i = Array.isArray(r.options) ? r.options.map((e) => ({
 		optionId: X(e?.optionId),
 		name: X(e?.name),
 		kind: X(e?.kind)
-	})).filter((e) => e.optionId) : [], a = br(r.command) || br(r?.rawInput?.command);
+	})).filter((e) => e.optionId) : [], a = Sr(r.command) || Sr(r?.rawInput?.command);
 	if (a) return {
 		title: "Run command",
-		detail: _r(a, 160),
+		detail: yr(a, 160),
 		question: "",
 		options: i
 	};
 	let o = Array.isArray(r.changes) ? r.changes.map((e) => e?.path).filter(Boolean) : [];
 	if (r.toolCall && typeof r.toolCall == "object") {
-		let e = X(r.toolCall.title, r.toolCall.kind && yr(r.toolCall.kind)), t = Tr(r.toolCall.content);
+		let e = X(r.toolCall.title, r.toolCall.kind && xr(r.toolCall.kind)), t = Dr(r.toolCall.content);
 		return {
 			title: e || "Permission requested",
 			detail: "",
@@ -2878,7 +2908,7 @@ function Dr(e) {
 	}
 	return o.length ? {
 		title: "Apply file changes",
-		detail: _r(o.join(", "), 160),
+		detail: yr(o.join(", "), 160),
 		question: "",
 		options: i
 	} : n.includes("permissions") ? {
@@ -2898,31 +2928,31 @@ function Dr(e) {
 		options: i
 	};
 }
-var Or = {
+var Ar = {
 	accept: "Allowed",
 	acceptForSession: "Allowed for this session",
 	decline: "Declined",
 	cancel: "Cancelled"
-}, kr = {
+}, jr = {
 	failed: "Session failed",
 	stopping: "Stopping provider",
 	stopped: "Session stopped",
 	archived: "Session archived"
-}, Ar = {
+}, Mr = {
 	requested: "requested",
 	completed: "provider completed",
 	provider_error: "provider error",
 	startup_error: "startup error",
 	daemon_recovery: "daemon recovery"
 };
-function jr(e) {
+function Nr(e) {
 	return e === "message.delivery" || e === "provider.event" || e === "provider.metadata" || e === "plan.event" || e === "provider.stderr" || e === "provider.turn.started" || e === "provider.turn.completed" || e.startsWith("provider.process.");
 }
-function Mr(e, t) {
+function Pr(e, t) {
 	let n = { ...e };
-	return t.name && (n.name = t.name), t.summary && (n.summary = t.summary), t.status && (n.status = t.status), t.error && (n.error = t.error), t.deltaOnly ? n.output = _r((n.output || "") + (t.output || ""), gr) : t.output && (n.output = t.output), n.time = t.time || e.time, n.key = e.key, n;
+	return t.name && (n.name = t.name), t.summary && (n.summary = t.summary), t.status && (n.status = t.status), t.error && (n.error = t.error), t.deltaOnly ? n.output = yr((n.output || "") + (t.output || ""), vr) : t.output && (n.output = t.output), n.time = t.time || e.time, n.key = e.key, n;
 }
-function Nr(e, t) {
+function Fr(e, t) {
 	return {
 		key: t.id,
 		callId: e.callId || "",
@@ -2933,10 +2963,10 @@ function Nr(e, t) {
 		error: e.error || "",
 		method: e.method || "",
 		time: e.time || t.time || "",
-		rawPreview: vr(t?.data?.raw)
+		rawPreview: br(t?.data?.raw)
 	};
 }
-function Pr(e) {
+function Ir(e) {
 	let t = [], n = /* @__PURE__ */ new Map(), r = /* @__PURE__ */ new Map(), i = (e, t) => {
 		for (let { call: n, group: i } of r.values()) n.status = e, n.time = t || n.time, i.time = t || i.time;
 		r.clear();
@@ -2947,14 +2977,14 @@ function Pr(e) {
 			case "message.input": {
 				let e = {
 					kind: "message",
-					role: Cr(o.role),
+					role: Tr(o.role),
 					key: a.id,
 					time: s,
 					steer: o.steer === !0,
 					text: typeof o.text == "string" ? o.text : ""
 				};
 				a.turnId && (e.turnId = a.turnId);
-				let n = Sr(o.sender);
+				let n = wr(o.sender);
 				n && (e.sender = n), t.push(e);
 				break;
 			}
@@ -2995,10 +3025,10 @@ function Pr(e) {
 				break;
 			}
 			case "tool.event": {
-				let e = Er(a);
+				let e = Or(a);
 				if (!e) break;
 				let n = t.at(-1), i = n?.kind === "tools" ? n : null, o = e.callId ? r.get(e.callId) : null;
-				if (o) Object.assign(o.call, Mr(o.call, e)), o.group.time = s, o.call.status !== "running" && r.delete(e.callId);
+				if (o) Object.assign(o.call, Pr(o.call, e)), o.group.time = s, o.call.status !== "running" && r.delete(e.callId);
 				else {
 					if (e.deltaOnly) break;
 					let n = i || {
@@ -3006,7 +3036,7 @@ function Pr(e) {
 						key: a.id,
 						calls: [],
 						time: s
-					}, o = Nr(e, a);
+					}, o = Fr(e, a);
 					n.calls.push(o), n.time = s, i || t.push(n), o.callId && o.status === "running" && r.set(o.callId, {
 						call: o,
 						group: n
@@ -3015,7 +3045,7 @@ function Pr(e) {
 				break;
 			}
 			case "approval.requested": {
-				let { title: e, detail: r, question: i, options: c } = Dr(a), l = {
+				let { title: e, detail: r, question: i, options: c } = kr(a), l = {
 					kind: "approval",
 					key: a.id,
 					time: s,
@@ -3032,7 +3062,7 @@ function Pr(e) {
 				break;
 			}
 			case "approval.resolved": {
-				let e = X(o.approvalId), r = X(o.decision) || "decline", i = X(o.optionId), c = X(o.text), l = e ? n.get(e) : null, u = (e) => r === "text" ? "Replied" : i ? `Answered: ${e?.options?.find((e) => e.optionId === i)?.name || i}` : Or[r] || yr(r), d = r === "accept" || r === "acceptForSession" || r === "text";
+				let e = X(o.approvalId), r = X(o.decision) || "decline", i = X(o.optionId), c = X(o.text), l = e ? n.get(e) : null, u = (e) => r === "text" ? "Replied" : i ? `Answered: ${e?.options?.find((e) => e.optionId === i)?.name || i}` : Ar[r] || xr(r), d = r === "accept" || r === "acceptForSession" || r === "text";
 				l ? (l.status = d ? "accepted" : "declined", l.decision = u(l), l.reply = r === "text" ? c : "", l.time = s) : t.push({
 					kind: "approval",
 					key: a.id,
@@ -3122,8 +3152,8 @@ function Pr(e) {
 				break;
 			}
 			case "session.state": {
-				let e = kr[o.state];
-				o.state === "failed" ? i("failed", s) : o.state === "stopped" && i(o.reason === "completed" ? "completed" : "failed", s), o.state === "stopped" && Ar[o.reason] && (e += ` · ${Ar[o.reason]}`);
+				let e = jr[o.state];
+				o.state === "failed" ? i("failed", s) : o.state === "stopped" && i(o.reason === "completed" ? "completed" : "failed", s), o.state === "stopped" && Mr[o.reason] && (e += ` · ${Mr[o.reason]}`);
 				let n = o.state === "failed" || o.reason === "provider_error" || o.reason === "startup_error";
 				e && t.push({
 					kind: "lifecycle",
@@ -3144,13 +3174,13 @@ function Pr(e) {
 				});
 				break;
 			default:
-				if (jr(e)) break;
+				if (Nr(e)) break;
 				t.push({
 					kind: "unknown",
 					key: a.id,
 					time: s,
 					type: e || "unknown",
-					preview: vr(o)
+					preview: br(o)
 				});
 		}
 	}
@@ -3159,35 +3189,35 @@ function Pr(e) {
 }
 //#endregion
 //#region src/components/timeline-events.ts
-var Fr = /* @__PURE__ */ new Set([
+var Lr = /* @__PURE__ */ new Set([
 	"session.created",
 	"session.provider",
 	"session.launch-environment",
 	"turn.started",
 	"turn.completed"
-]), Ir = /* @__PURE__ */ new Set([
-	...Fr,
+]), Rr = /* @__PURE__ */ new Set([
+	...Lr,
 	"Session created",
 	"Turn started",
 	"Turn completed"
 ]);
-function Lr(e, t) {
-	let n = new Set(e.filter((e) => Fr.has(e.type)).map((e) => String(e.id)));
+function zr(e, t) {
+	let n = new Set(e.filter((e) => Lr.has(e.type)).map((e) => String(e.id)));
 	return t.filter((e) => e.key === void 0 || !n.has(String(e.key)));
 }
-function Rr(e) {
-	let t = e || [], n = Lr(t, Pr(t)), r = new Map(t.map((e) => [Number(e.id), e]));
+function Br(e) {
+	let t = e || [], n = zr(t, Ir(t)), r = new Map(t.map((e) => [Number(e.id), e]));
 	for (let e of n) {
 		let t = r.get(Number(e.key)), n = t?.data?.compactRange;
 		n && (e.compact = !0, e.rangeStartEventId = Number(n.start) || Number(t?.id) || 0, e.rangeEndEventId = Number(n.end) || e.rangeStartEventId);
 	}
 	return n;
 }
-function zr(e) {
+function Vr(e) {
 	let t = String(e || "");
-	return Ir.has(t) || t === "Agent connected" || t.startsWith("Agent connected ·");
+	return Rr.has(t) || t === "Agent connected" || t.startsWith("Agent connected ·");
 }
-function Br(e) {
+function Hr(e) {
 	let t = -1;
 	for (let n = e.length - 1; n >= 0; n--) if (e[n]?.kind === "message" && e[n]?.role === "assistant") {
 		t = n;
@@ -3202,23 +3232,23 @@ function Br(e) {
 		};
 	});
 }
-function Vr(e) {
+function Ur(e) {
 	let t = /* @__PURE__ */ new Map();
 	for (let n of e) {
 		let e = Number(n?.id) || 0;
 		if (!e) continue;
 		let r = t.get(e);
-		t.set(e, r ? Yr(r, n) : Xr(n));
+		t.set(e, r ? Zr(r, n) : Qr(n));
 	}
 	return [...t.values()].sort((e, t) => Number(e.id) - Number(t.id));
 }
-function Hr(e, t) {
+function Wr(e, t) {
 	if (!t.length) return e;
 	let n = [...e];
-	for (let e of t) Ur(n, e);
+	for (let e of t) Gr(n, e);
 	return n;
 }
-function Ur(e, t) {
+function Gr(e, t) {
 	let n = Number(t?.id) || 0;
 	if (!n) return;
 	let r = 0, i = e.length;
@@ -3228,33 +3258,33 @@ function Ur(e, t) {
 	}
 	let a = r < e.length && Number(e[r].id) === n ? r : -1;
 	if (a < 0) {
-		e.splice(r, 0, Xr(t));
+		e.splice(r, 0, Qr(t));
 		return;
 	}
-	e[a] = Yr(e[a], t);
+	e[a] = Zr(e[a], t);
 }
-function Wr(e) {
+function Kr(e) {
 	let t = [], n = /* @__PURE__ */ new Map(), r = () => {
 		n.size && (t.push(...[...n.values()].sort((e, t) => Number(e.id) - Number(t.id))), n = /* @__PURE__ */ new Map());
 	};
 	for (let i of e) {
-		let e = Gr(i);
+		let e = qr(i);
 		if (e) {
 			let t = n.get(e);
-			n.set(e, t ? Kr(t, i) : i);
+			n.set(e, t ? Jr(t, i) : i);
 			continue;
 		}
 		r(), t.push(i);
 	}
 	return r(), t;
 }
-function Gr(e) {
+function qr(e) {
 	if (e.type !== "tool.event") return "";
-	let t = qr(e.data?.raw), n = t.update && typeof t.update == "object" && !Array.isArray(t.update) ? qr(t.update) : t;
-	return n.sessionUpdate === "tool_call_update" ? Jr(n.toolCallId) || Jr(n.id) : "";
+	let t = Yr(e.data?.raw), n = t.update && typeof t.update == "object" && !Array.isArray(t.update) ? Yr(t.update) : t;
+	return n.sessionUpdate === "tool_call_update" ? Xr(n.toolCallId) || Xr(n.id) : "";
 }
-function Kr(e, t) {
-	let n = e.data || {}, r = t.data || {}, i = qr(n.raw), a = qr(r.raw), o = i.update && typeof i.update == "object" && !Array.isArray(i.update) ? qr(i.update) : i, s = a.update && typeof a.update == "object" && !Array.isArray(a.update) ? qr(a.update) : a;
+function Jr(e, t) {
+	let n = e.data || {}, r = t.data || {}, i = Yr(n.raw), a = Yr(r.raw), o = i.update && typeof i.update == "object" && !Array.isArray(i.update) ? Yr(i.update) : i, s = a.update && typeof a.update == "object" && !Array.isArray(a.update) ? Yr(a.update) : a;
 	return {
 		...e,
 		...t,
@@ -3272,13 +3302,13 @@ function Kr(e, t) {
 		}
 	};
 }
-function qr(e) {
+function Yr(e) {
 	return e && typeof e == "object" && !Array.isArray(e) ? e : {};
 }
-function Jr(e) {
+function Xr(e) {
 	return typeof e == "string" ? e.trim() : "";
 }
-function Yr(e, t) {
+function Zr(e, t) {
 	if (t.data?.append !== !0) return {
 		...t,
 		startTime: t.startTime || e.startTime
@@ -3296,7 +3326,7 @@ function Yr(e, t) {
 		}
 	};
 }
-function Xr(e) {
+function Qr(e) {
 	return e.data?.append === !0 ? {
 		...e,
 		data: {
@@ -3307,27 +3337,27 @@ function Xr(e) {
 }
 //#endregion
 //#region src/components/tool-group.ts
-function Zr(e, t) {
+function $r(e, t) {
 	let n = Number(e);
 	return Number.isFinite(n) && n > 0 ? Math.floor(n) : Math.max(0, Math.floor(Number(t) || 0));
 }
-function Qr(e) {
-	return e.compact ? Zr(e.toolCallCount, e.calls?.length || 0) : e.calls?.length || 0;
+function ei(e) {
+	return e.compact ? $r(e.toolCallCount, e.calls?.length || 0) : e.calls?.length || 0;
 }
-function $r(e) {
-	let t = Zr(e, 0);
+function ti(e) {
+	let t = $r(e, 0);
 	return `${t} tool ${t === 1 ? "call" : "calls"}`;
 }
-function ei(e) {
+function ni(e) {
 	return e.rangeStartEventId && e.rangeStartEventId > 0 ? String(e.rangeStartEventId) : String(e.key ?? e.time ?? "tools");
 }
 //#endregion
 //#region src/components/chat-state.ts
-var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
+var ri = 20, ii = 250, ai = 80, oi = 2e3, si = /* @__PURE__ */ new Set([
 	"session.created",
 	"session.provider",
 	"session.launch-environment"
-]), oi = class {
+]), ci = class {
 	api;
 	eventSourceFactory;
 	contexts = /* @__PURE__ */ new Map();
@@ -3340,14 +3370,14 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 	activeKey = "";
 	disposed = !1;
 	constructor(e = {}) {
-		this.api = e.api ?? new tn(), this.eventSourceFactory = e.eventSourceFactory ?? ((e) => new EventSource(e)), this.onEvent = e.onEvent, this.onNotice = e.onNotice, this.streamBatchWindowMs = Math.max(0, e.streamBatchWindowMs ?? ri), this.statusSyncIntervalMs = Math.max(1, e.statusSyncIntervalMs ?? ii), this.realtime = e.realtime !== !1;
+		this.api = e.api ?? new tn(), this.eventSourceFactory = e.eventSourceFactory ?? ((e) => new EventSource(e)), this.onEvent = e.onEvent, this.onNotice = e.onNotice, this.streamBatchWindowMs = Math.max(0, e.streamBatchWindowMs ?? ai), this.statusSyncIntervalMs = Math.max(1, e.statusSyncIntervalMs ?? oi), this.realtime = e.realtime !== !1;
 	}
 	subscribe(e) {
 		return this.listeners.add(e), e(this.snapshot()), () => this.listeners.delete(e);
 	}
 	activate(e, t, n) {
 		if (this.disposed) return;
-		let r = li(e, t), i = this.activeKey !== r;
+		let r = di(e, t), i = this.activeKey !== r;
 		if (this.activeKey && i && this.deactivate(this.contexts.get(this.activeKey)), this.activeKey = r, !r) {
 			this.emit();
 			return;
@@ -3367,10 +3397,10 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		let t = e.requestGeneration, n = e.nextCursor;
 		e.loadingOlder = !0, e.error = "", this.emit();
 		try {
-			let r = await this.api.latest(mi(e, n), { scope: fi(e, "older") });
+			let r = await this.api.latest(gi(e, n), { scope: mi(e, "older") });
 			return this.isCurrent(e, t) ? (this.mergePage(e, r), r.segments.some((e) => e.turns?.length || e.gap)) : !1;
 		} catch (n) {
-			return n instanceof $t || !this.isCurrent(e, t) || (e.error = wi(n)), !1;
+			return n instanceof $t || !this.isCurrent(e, t) || (e.error = Ei(n)), !1;
 		} finally {
 			this.isCurrent(e, t) && (e.loadingOlder = !1, this.emit());
 		}
@@ -3385,7 +3415,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		let n = t.requestGeneration;
 		t.detailLoading.add(e), t.detailErrors.delete(e), this.emit();
 		try {
-			let r = await this.api.latest(hi(t, e), { scope: fi(t, `turn:${e}`) });
+			let r = await this.api.latest(_i(t, e), { scope: mi(t, `turn:${e}`) });
 			if (!this.isCurrent(t, n)) return;
 			if (t.details.set(e, r), !r.turn.closed && r.turn.generation.generationId === t.generationId) {
 				let i = await this.loadTurnRange(t, r, n);
@@ -3395,7 +3425,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 			this.realtime && this.connect(t);
 		} catch (r) {
 			if (r instanceof $t || !this.isCurrent(t, n)) return;
-			t.detailErrors.set(e, wi(r));
+			t.detailErrors.set(e, Ei(r));
 		} finally {
 			this.isCurrent(t, n) && (t.detailLoading.delete(e), this.emit());
 		}
@@ -3406,7 +3436,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		let i = this.turnReferenceForEvent(r, e, t), a = i ? this.findTurn(r, i) : void 0;
 		if (!i || !a || n > a.lastEventId) return;
 		let o = r.requestGeneration, s = await this.fetchEventRange(r, e, a.startEventId, a.lastEventId, o, `range:${t}:${n}`);
-		this.isCurrent(r, o) && (r.liveEvents.set(i, Wr(Vr([...r.liveEvents.get(i) || [], ...s]))), this.emit());
+		this.isCurrent(r, o) && (r.liveEvents.set(i, Kr(Ur([...r.liveEvents.get(i) || [], ...s]))), this.emit());
 	}
 	snapshot() {
 		let e = this.activeContext();
@@ -3422,7 +3452,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 			loadingOlder: e.loadingOlder,
 			loaded: e.loaded,
 			error: e.error
-		} : Ti();
+		} : Di();
 	}
 	dispose() {
 		if (!this.disposed) {
@@ -3433,7 +3463,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 	}
 	createContext(e, t) {
 		let n = {
-			key: li(e, t),
+			key: di(e, t),
 			workspaceId: e,
 			resourceId: t,
 			status: null,
@@ -3468,12 +3498,12 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		let t = e.requestGeneration;
 		e.loading = !0, e.error = "", this.emit();
 		try {
-			let n = await this.api.latest(mi(e), { scope: fi(e, "initial") });
+			let n = await this.api.latest(gi(e), { scope: mi(e, "initial") });
 			if (!this.isCurrent(e, t)) return;
 			e.segments.clear(), e.details.clear(), e.detailErrors.clear(), e.liveEvents.clear(), e.orphanEvents.clear(), this.mergePage(e, n), e.loaded = !0, this.connect(e);
 		} catch (n) {
 			if (n instanceof $t || !this.isCurrent(e, t)) return;
-			e.error = wi(n);
+			e.error = Ei(n);
 		} finally {
 			this.isCurrent(e, t) && (e.loading = !1, this.emit());
 		}
@@ -3494,12 +3524,12 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		}
 		for (let n of t.segments || []) for (let t of n.turns || []) {
 			let n = e.orphanEvents.get(t.turnId);
-			n && (e.liveEvents.set(t.reference, Wr(Vr([...e.liveEvents.get(t.reference) || [], ...n]))), e.orphanEvents.delete(t.turnId));
+			n && (e.liveEvents.set(t.reference, Kr(Ur([...e.liveEvents.get(t.reference) || [], ...n]))), e.orphanEvents.delete(t.turnId));
 		}
 		e.nextCursor = String(t.page?.nextCursor || ""), e.hasMoreBefore = !!(t.page?.hasMore && e.nextCursor);
 	}
 	blocks(e) {
-		let t = [], n = [...e.segments.values()].sort((e, t) => e.generation.generation - t.generation.generation), r = n.find((t) => t.generation.generationId === e.generationId)?.generation || _i(e), i = r ? this.orphanEventBlocks(e, r) : [];
+		let t = [], n = [...e.segments.values()].sort((e, t) => e.generation.generation - t.generation.generation), r = n.find((t) => t.generation.generationId === e.generationId)?.generation || yi(e), i = r ? this.orphanEventBlocks(e, r) : [];
 		for (let r of n) {
 			if (r.gap) {
 				t.push({
@@ -3518,35 +3548,35 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 					key: `${r.generation.generationId}:${t.turnId}`,
 					generation: r.generation,
 					turn: t,
-					items: i && !a ? si(i, r.generation.generationId) : void 0,
-					events: a?.filter((e) => !ai.has(e.type)),
+					items: i && !a ? li(i, r.generation.generationId) : void 0,
+					events: a?.filter((e) => !si.has(e.type)),
 					loading: e.detailLoading.has(t.reference),
 					error: e.detailErrors.get(t.reference)
 				});
 			}
-			r.generation.generationId === e.generationId && n.push(...i), n.sort((e, t) => di(e) - di(t)), t.push(...n);
+			r.generation.generationId === e.generationId && n.push(...i), n.sort((e, t) => pi(e) - pi(t)), t.push(...n);
 		}
 		return i.length && !n.some((t) => t.generation.generationId === e.generationId) && t.push(...i), t;
 	}
 	orphanEventBlocks(e, t) {
 		let n = [];
 		for (let [r, i] of e.orphanEvents) {
-			let a = i.filter((e) => !ai.has(e.type)), o = [];
-			for (let i of a) o.length && Number(i.id) !== Number(o[o.length - 1].id) + 1 && (n.push(ui(e, r, t, o)), o = []), o.push(i);
-			o.length && n.push(ui(e, r, t, o));
+			let a = i.filter((e) => !si.has(e.type)), o = [];
+			for (let i of a) o.length && Number(i.id) !== Number(o[o.length - 1].id) + 1 && (n.push(fi(e, r, t, o)), o = []), o.push(i);
+			o.length && n.push(fi(e, r, t, o));
 		}
-		return n.sort((e, t) => di(e) - di(t));
+		return n.sort((e, t) => pi(e) - pi(t));
 	}
 	connect(e) {
-		if (!this.realtime || !this.isActive(e) || e.stream || !e.generationId || !bi(e.status)) return;
-		let t = gi(e), n = new URLSearchParams({ generationId: e.generationId });
+		if (!this.realtime || !this.isActive(e) || e.stream || !e.generationId || !Si(e.status)) return;
+		let t = vi(e), n = new URLSearchParams({ generationId: e.generationId });
 		t && n.set("after", String(t));
-		let r = ++e.streamGeneration, i = this.eventSourceFactory(`${pi(e)}/stream?${n}`);
+		let r = ++e.streamGeneration, i = this.eventSourceFactory(`${hi(e)}/stream?${n}`);
 		e.stream = i, i.onmessage = (t) => {
 			if (this.isActiveStream(e, i, r)) try {
 				let n = JSON.parse(t.data);
 				if (!this.eventBelongsToContext(e, n)) return;
-				e.pendingEvents.push(n), this.onEvent?.(e.workspaceId, e.resourceId, n), this.scheduleEventFlush(e), xi(n) && this.materializeTerminalTurn(e, String(n.turnId || ""), r);
+				e.pendingEvents.push(n), this.onEvent?.(e.workspaceId, e.resourceId, n), this.scheduleEventFlush(e), Ci(n) && this.materializeTerminalTurn(e, String(n.turnId || ""), r);
 			} catch {
 				e.error = "An Agent event could not be decoded.", this.emit();
 			}
@@ -3579,7 +3609,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		e.statusSyncInFlight = !0;
 		let t = e.requestGeneration;
 		try {
-			let n = await this.api.latest(`${pi(e)}/status`, { scope: fi(e, "status") });
+			let n = await this.api.latest(`${hi(e)}/status`, { scope: mi(e, "status") });
 			if (!this.isCurrent(e, t) || !n.generation?.generationId) return;
 			let r = String(n.generation.generationId);
 			if (r !== e.generationId && (e.generationId || e.loaded)) {
@@ -3587,7 +3617,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 				return;
 			}
 			let i = e.generationId, a = String(e.status?.session?.id || "");
-			e.status = n, e.generationId = r, e.stream && (!bi(n) || a && a !== String(n.session?.id || "")) && this.closeStream(e), !e.loaded && !e.loading ? this.loadInitial(e) : e.stream || this.connect(e), i !== r && this.emit();
+			e.status = n, e.generationId = r, e.stream && (!Si(n) || a && a !== String(n.session?.id || "")) && this.closeStream(e), !e.loaded && !e.loading ? this.loadInitial(e) : e.stream || this.connect(e), i !== r && this.emit();
 		} catch (n) {
 			if (n instanceof $t || !this.isCurrent(e, t)) return;
 		} finally {
@@ -3606,12 +3636,12 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 				start: String(n),
 				end: String(r),
 				after: String(o),
-				limit: String(ni)
-			}), l = await this.api.latest(`${pi(e)}/events?${c}`, { scope: fi(e, a) });
+				limit: String(ii)
+			}), l = await this.api.latest(`${hi(e)}/events?${c}`, { scope: mi(e, a) });
 			if (!this.isCurrent(e, i)) return [];
-			let u = vi(l.events).filter((t) => this.eventBelongsToContext(e, t));
-			s = Vr([...s, ...u]);
-			let d = Number(l.page?.nextAfter) || yi(u);
+			let u = bi(l.events).filter((t) => this.eventBelongsToContext(e, t));
+			s = Ur([...s, ...u]);
+			let d = Number(l.page?.nextAfter) || xi(u);
 			if (!l.page?.hasMore || !d || d <= o) break;
 			o = d;
 		}
@@ -3630,22 +3660,22 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 					return;
 				}
 				for (let i = 0; i < 3; i++) try {
-					let i = await this.api.latest(mi(e), { scope: fi(e, `terminal-head:${r}:${t}`) });
+					let i = await this.api.latest(gi(e), { scope: mi(e, `terminal-head:${r}:${t}`) });
 					if (!e.stream || !this.isActiveStream(e, e.stream, n)) return;
 					this.mergePage(e, i);
 					let a = this.findTurnById(e, r, t);
 					if (!a?.closed) throw Error("Turn projection is not closed yet");
-					let o = await this.api.latest(hi(e, a.reference), { scope: fi(e, `terminal:${r}:${t}`) });
+					let o = await this.api.latest(_i(e, a.reference), { scope: mi(e, `terminal:${r}:${t}`) });
 					if (!e.stream || !this.isActiveStream(e, e.stream, n)) return;
 					this.flushEvents(e, !1), e.details.set(a.reference, o), e.liveEvents.delete(a.reference), this.emit();
 					return;
 				} catch (t) {
 					if (t instanceof $t || !e.stream || !this.isActiveStream(e, e.stream, n)) return;
 					if (i === 2) {
-						e.error = wi(t), this.emit();
+						e.error = Ei(t), this.emit();
 						return;
 					}
-					await Si(50 * (i + 1));
+					await wi(50 * (i + 1));
 				}
 			} finally {
 				e.terminalMaterializing.delete(i);
@@ -3657,7 +3687,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		e.headRefreshing = !0;
 		let t = e.requestGeneration;
 		try {
-			let n = await this.api.latest(mi(e), { scope: fi(e, "stream-head") });
+			let n = await this.api.latest(gi(e), { scope: mi(e, "stream-head") });
 			this.isCurrent(e, t) && (this.mergePage(e, n), this.emit());
 		} catch {} finally {
 			e.headRefreshing = !1;
@@ -3683,7 +3713,7 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		return !n || !e.status?.session?.id || n === e.status.session.id;
 	}
 	appendNotice(e, t) {
-		e.notices.some((e) => Ci(e) === Ci(t)) || (e.notices.push(t), e.notices.length > 20 && e.notices.splice(0, e.notices.length - 20));
+		e.notices.some((e) => Ti(e) === Ti(t)) || (e.notices.push(t), e.notices.length > 20 && e.notices.splice(0, e.notices.length - 20));
 	}
 	scheduleEventFlush(e) {
 		e.flushTimer ||= setTimeout(() => {
@@ -3696,10 +3726,10 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		e.pendingEvents = [];
 		for (let t of n) {
 			let n = this.turnReferenceForEvent(e, e.generationId, Number(t.id)) || this.openTurnReferenceForEvent(e, t);
-			if (n) e.liveEvents.set(n, Wr(Hr(e.liveEvents.get(n) || [], [t])));
+			if (n) e.liveEvents.set(n, Kr(Wr(e.liveEvents.get(n) || [], [t])));
 			else {
 				let n = String(t.turnId || "current");
-				e.orphanEvents.set(n, Wr(Hr(e.orphanEvents.get(n) || [], [t]))), xi(t) || this.refreshHead(e);
+				e.orphanEvents.set(n, Kr(Wr(e.orphanEvents.get(n) || [], [t]))), Ci(t) || this.refreshHead(e);
 			}
 		}
 		t && this.isActive(e) && this.emit();
@@ -3708,10 +3738,10 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		e.streamGeneration++, e.stream?.close(), e.stream = null;
 	}
 	resetForGeneration(e) {
-		e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, e.pendingEvents = [], e.requestGeneration++, this.closeStream(e), this.api.requests.abort(fi(e, "initial")), this.api.requests.abort(fi(e, "older")), this.api.requests.abort(fi(e, "status")), e.segments.clear(), e.details.clear(), e.detailLoading.clear(), e.detailErrors.clear(), e.liveEvents.clear(), e.orphanEvents.clear(), e.nextCursor = "", e.hasMoreBefore = !1, e.loading = !1, e.loadingOlder = !1, e.loaded = !1, e.error = "", e.headRefreshing = !1, e.terminalMaterializing.clear();
+		e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, e.pendingEvents = [], e.requestGeneration++, this.closeStream(e), this.api.requests.abort(mi(e, "initial")), this.api.requests.abort(mi(e, "older")), this.api.requests.abort(mi(e, "status")), e.segments.clear(), e.details.clear(), e.detailLoading.clear(), e.detailErrors.clear(), e.liveEvents.clear(), e.orphanEvents.clear(), e.nextCursor = "", e.hasMoreBefore = !1, e.loading = !1, e.loadingOlder = !1, e.loaded = !1, e.error = "", e.headRefreshing = !1, e.terminalMaterializing.clear();
 	}
 	deactivate(e) {
-		e && (e.statusSyncTimer && clearInterval(e.statusSyncTimer), e.statusSyncTimer = null, e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, this.flushEvents(e, !1), e.requestGeneration++, this.closeStream(e), e.loading = !1, e.loadingOlder = !1, this.api.requests.abort(fi(e, "initial")), this.api.requests.abort(fi(e, "older")), this.api.requests.abort(fi(e, "status")));
+		e && (e.statusSyncTimer && clearInterval(e.statusSyncTimer), e.statusSyncTimer = null, e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, this.flushEvents(e, !1), e.requestGeneration++, this.closeStream(e), e.loading = !1, e.loadingOlder = !1, this.api.requests.abort(mi(e, "initial")), this.api.requests.abort(mi(e, "older")), this.api.requests.abort(mi(e, "status")));
 	}
 	isCurrent(e, t) {
 		return !this.disposed && this.isActive(e) && e.requestGeneration === t;
@@ -3730,10 +3760,10 @@ var ti = 20, ni = 250, ri = 80, ii = 2e3, ai = /* @__PURE__ */ new Set([
 		for (let t of this.listeners) t(e);
 	}
 };
-function si(e, t) {
-	return (e.items || []).flatMap((e) => ci(e, t));
+function li(e, t) {
+	return (e.items || []).flatMap((e) => ui(e, t));
 }
-function ci(e, t) {
+function ui(e, t) {
 	let n = `${t}:${e.startEventId}:${e.type}`, r = {
 		key: n,
 		time: e.endedAt || e.startedAt,
@@ -3758,7 +3788,7 @@ function ci(e, t) {
 			rangeEndEventId: e.endEventId
 		}];
 		case "tool": {
-			let t = Zr(e.count, 1);
+			let t = $r(e.count, 1);
 			return [{
 				...r,
 				kind: "tools",
@@ -3770,7 +3800,7 @@ function ci(e, t) {
 					key: n,
 					callId: n,
 					name: "Tool activity",
-					summary: `${$r(t)} · details omitted`,
+					summary: `${ti(t)} · details omitted`,
 					status: "completed"
 				}]
 			}];
@@ -3789,7 +3819,7 @@ function ci(e, t) {
 			kind: "error",
 			text: e.text || String(i.message || "Provider error")
 		}];
-		case "lifecycle": return e.text && !zr(e.text) ? [{
+		case "lifecycle": return e.text && !Vr(e.text) ? [{
 			...r,
 			kind: "lifecycle",
 			type: e.text,
@@ -3803,10 +3833,10 @@ function ci(e, t) {
 		}];
 	}
 }
-function li(e, t) {
+function di(e, t) {
 	return e && t ? `${e}:${t}` : "";
 }
-function ui(e, t, n, r) {
+function fi(e, t, n, r) {
 	let i = r[0]?.id ?? 0;
 	return {
 		kind: "turn",
@@ -3815,29 +3845,29 @@ function ui(e, t, n, r) {
 		events: r
 	};
 }
-function di(e) {
+function pi(e) {
 	if (e.turn) return Number(e.turn.startEventId) || 0;
 	let t = e.events?.[0];
 	return t && Number(t.id) || 0;
 }
-function fi(e, t) {
+function mi(e, t) {
 	return `resource-chat:${e.key}:${t}`;
 }
-function pi(e) {
+function hi(e) {
 	return `/api/workspaces/${encodeURIComponent(e.workspaceId)}/resources/${encodeURIComponent(e.resourceId)}`;
 }
-function mi(e, t = "") {
-	let n = new URLSearchParams({ limit: String(ti) });
-	return t && n.set("cursor", t), `${pi(e)}/history/turns?${n}`;
+function gi(e, t = "") {
+	let n = new URLSearchParams({ limit: String(ri) });
+	return t && n.set("cursor", t), `${hi(e)}/history/turns?${n}`;
 }
-function hi(e, t) {
-	return `${pi(e)}/history/turns/${encodeURIComponent(t)}`;
+function _i(e, t) {
+	return `${hi(e)}/history/turns/${encodeURIComponent(t)}`;
 }
-function gi(e) {
+function vi(e) {
 	let t = [...e.segments.values()].filter((t) => t.generation.generationId === e.generationId).flatMap((e) => e.turns || []), n = [...e.liveEvents.values()].flat();
 	return Math.max(0, ...t.map((e) => Number(e.lastEventId) || 0), ...n.map((e) => Number(e.id) || 0));
 }
-function _i(e) {
+function yi(e) {
 	let t = e.status?.generation;
 	return t?.generationId ? {
 		generation: t.generation,
@@ -3851,13 +3881,13 @@ function _i(e) {
 		replacementPending: t.replacementPending
 	} : null;
 }
-function vi(e) {
+function bi(e) {
 	return Array.isArray(e) ? e.filter((e) => Number(e?.id) > 0) : [];
 }
-function yi(e) {
+function xi(e) {
 	return e.reduce((e, t) => Math.max(e, Number(t.id) || 0), 0);
 }
-function bi(e) {
+function Si(e) {
 	let t = e?.generation;
 	return !!(t?.generationId && e?.session?.id && ([
 		"starting",
@@ -3868,17 +3898,17 @@ function bi(e) {
 		"recovering"
 	].includes(String(t.status || "")) || ["idle-suspended", "stopped"].includes(String(t.status || "")) && t.resumable === !0));
 }
-function xi(e) {
+function Ci(e) {
 	return [
 		"turn.completed",
 		"turn.failed",
 		"turn.cancelled"
 	].includes(e.type);
 }
-function Si(e) {
+function wi(e) {
 	return new Promise((t) => setTimeout(t, e));
 }
-function Ci(e) {
+function Ti(e) {
 	let t = e.data || {};
 	return [
 		e.type,
@@ -3889,10 +3919,10 @@ function Ci(e) {
 		t.text
 	].map((e) => String(e ?? "")).join(":");
 }
-function wi(e) {
+function Ei(e) {
 	return e instanceof Error ? e.message : String(e);
 }
-function Ti() {
+function Di() {
 	return {
 		identity: "",
 		workspaceId: "",
@@ -3909,8 +3939,8 @@ function Ti() {
 }
 //#endregion
 //#region src/components/LifecycleNotice.svelte
-var Ei = P("<div data-component-owner=\"event-timeline\"><!><span> </span><span class=\"agent-note-time\"> </span></div>");
-function Di(e, n) {
+var Oi = P("<div data-component-owner=\"event-timeline\"><!><span> </span><span class=\"agent-note-time\"> </span></div>");
+function ki(e, n) {
 	C(n, !0);
 	let i = u(() => n.item.tone === "ok" ? "check-circle" : n.item.tone === "danger" ? "triangle-alert" : n.item.tone === "info" ? "info" : "clock");
 	function a() {
@@ -3920,7 +3950,7 @@ function Di(e, n) {
 			minute: "2-digit"
 		});
 	}
-	var o = Ei(), d = t(o);
+	var o = Oi(), d = t(o);
 	U(d, { get name() {
 		return c(i);
 	} });
@@ -3933,8 +3963,8 @@ function Di(e, n) {
 }
 //#endregion
 //#region src/components/ThinkingBlock.svelte
-var Oi = P("<details data-component-owner=\"event-timeline\" class=\"agent-reasoning-note\"><summary><!><span> </span><span class=\"agent-reasoning-chevron\"><!></span></summary> <p> </p></details>");
-function ki(e, n) {
+var Ai = P("<details data-component-owner=\"event-timeline\" class=\"agent-reasoning-note\"><summary><!><span> </span><span class=\"agent-reasoning-chevron\"><!></span></summary> <p> </p></details>");
+function ji(e, n) {
 	C(n, !0);
 	let i = N(n, "onExpand", 3, () => {}), u = o(y(!!n.item.active)), d = !!n.item.active;
 	J(() => {
@@ -3947,7 +3977,7 @@ function ki(e, n) {
 		let e = Math.round((new Date(n.item.time).getTime() - new Date(n.item.startTime).getTime()) / 1e3);
 		return !Number.isFinite(e) || e < 0 ? "Thought" : e < 60 ? `Thought for ${e} ${e === 1 ? "second" : "seconds"}` : `Thought for ${Math.floor(e / 60)}m${e % 60}s`;
 	}
-	var p = Oi(), m = t(p), h = t(m);
+	var p = Ai(), m = t(p), h = t(m);
 	U(h, { name: "brain-circuit" });
 	var _ = s(h), v = t(_, !0);
 	w(_);
@@ -3962,8 +3992,8 @@ function ki(e, n) {
 }
 //#endregion
 //#region src/components/TimelineMessage.svelte
-var Ai = P("<span class=\"agent-message-tag agent-message-role-tag\"> </span>"), ji = P("<span class=\"agent-message-tag\">steer</span>"), Mi = P("<span class=\"agent-message-source\"> </span>"), Ni = P("<div class=\"agent-message-content markdown-rendered\"></div>"), Pi = P("<p> </p>"), Fi = P("<div data-component-owner=\"event-timeline\"><div class=\"agent-message-main\"><div class=\"agent-message-meta\"><strong> </strong> <!> <!> <!> <span> </span></div> <div class=\"agent-message-bubble\"><!></div></div></div>");
-function Ii(e, n) {
+var Mi = P("<span class=\"agent-message-tag agent-message-role-tag\"> </span>"), Ni = P("<span class=\"agent-message-tag\">steer</span>"), Pi = P("<span class=\"agent-message-source\"> </span>"), Fi = P("<div class=\"agent-message-content markdown-rendered\"></div>"), Ii = P("<p> </p>"), Li = P("<div data-component-owner=\"event-timeline\"><div class=\"agent-message-main\"><div class=\"agent-message-meta\"><strong> </strong> <!> <!> <!> <span> </span></div> <div class=\"agent-message-bubble\"><!></div></div></div>");
+function Ri(e, n) {
 	C(n, !0);
 	let i = N(n, "workspaceId", 3, ""), a = N(n, "resolveResourceTitle", 3, () => null), o = N(n, "onNavigate", 3, () => {}), d = u(() => [
 		"assistant",
@@ -3990,24 +4020,24 @@ function Ii(e, n) {
 	function _(e) {
 		return e.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll("\"", "&quot;").replaceAll("'", "&#39;");
 	}
-	var v = Fi(), y = t(v), b = t(y), x = t(b), S = t(x, !0);
+	var v = Li(), y = t(v), b = t(y), x = t(b), S = t(x, !0);
 	w(x);
 	var E = s(x, 2), O = (e) => {
-		var n = Ai(), i = t(n, !0);
+		var n = Mi(), i = t(n, !0);
 		w(n), g(() => r(i, c(d))), F(e, n);
 	};
 	K(E, (e) => {
 		c(d) !== "assistant" && e(O);
 	});
 	var k = s(E, 2), A = (e) => {
-		var t = ji();
+		var t = Ni();
 		F(e, t);
 	};
 	K(k, (e) => {
 		n.item.steer && e(A);
 	});
 	var M = s(k, 2), P = (e) => {
-		var i = Mi(), a = t(i);
+		var i = Pi(), a = t(i);
 		w(i), g(() => {
 			I(i, "title", n.item.sender.sessionId), r(a, `from session ${n.item.sender.sessionId ?? ""}`);
 		}), F(e, i);
@@ -4018,14 +4048,14 @@ function Ii(e, n) {
 	var L = s(M, 2), R = t(L, !0);
 	w(L), w(b);
 	var z = s(b, 2), B = t(z), ee = (e) => {
-		var t = Ni();
+		var t = Fi();
 		D(t, h, !0), w(t), T(t, (e, t) => On?.(e, t), () => ({
 			resolveResourceTitle: a(),
 			onNavigate: o(),
 			onOpenFile: n.onOpenFile
 		})), F(e, t);
 	}, V = (e) => {
-		var i = Pi(), a = t(i, !0);
+		var i = Ii(), a = t(i, !0);
 		w(i), g(() => r(a, n.item.text || "")), F(e, i);
 	};
 	K(B, (e) => {
@@ -4036,10 +4066,10 @@ function Ii(e, n) {
 }
 //#endregion
 //#region src/components/TimelineNotice.svelte
-var Li = P("<div data-component-owner=\"event-timeline\"><div><!><strong> </strong></div> <p> </p></div>");
-function Ri(e, n) {
+var zi = P("<div data-component-owner=\"event-timeline\"><div><!><strong> </strong></div> <p> </p></div>");
+function Bi(e, n) {
 	let i = N(n, "error", 3, !1), a = N(n, "alert", 3, !1);
-	var o = Li();
+	var o = zi();
 	let l;
 	var d = t(o), f = t(d);
 	{
@@ -4057,8 +4087,8 @@ function Ri(e, n) {
 }
 //#endregion
 //#region src/components/ToolItem.svelte
-var zi = P("<pre> </pre>"), Bi = P("<details data-component-owner=\"event-timeline\"><summary><span class=\"tool-status-icon tool-status-icon-running\"><!></span><span class=\"tool-status-icon tool-status-icon-failed\"><!></span><span class=\"tool-status-icon tool-status-icon-completed\"><!></span><span> </span><small> </small></summary> <!></details>");
-function Vi(e, n) {
+var Vi = P("<pre> </pre>"), Hi = P("<details data-component-owner=\"event-timeline\"><summary><span class=\"tool-status-icon tool-status-icon-running\"><!></span><span class=\"tool-status-icon tool-status-icon-failed\"><!></span><span class=\"tool-status-icon tool-status-icon-completed\"><!></span><span> </span><small> </small></summary> <!></details>");
+function Ui(e, n) {
 	C(n, !0);
 	function i() {
 		return [n.call.name, n.call.summary].filter(Boolean).join(" · ") || "Tool call";
@@ -4070,7 +4100,7 @@ function Vi(e, n) {
 			n.call.rawPreview
 		].filter(Boolean).join("\n\n");
 	}
-	var o = Bi(), d = t(o), f = t(d), p = t(f);
+	var o = Hi(), d = t(o), f = t(d), p = t(f);
 	U(p, { name: "loader-circle" }), w(f);
 	var m = s(f), h = t(m);
 	U(h, { name: "x-circle" }), w(m);
@@ -4081,7 +4111,7 @@ function Vi(e, n) {
 	var x = s(y), S = t(x, !0);
 	w(x), w(d);
 	var T = s(d, 2), E = (e) => {
-		var n = zi(), i = t(n, !0);
+		var n = Vi(), i = t(n, !0);
 		w(n), g((e) => r(i, e), [() => a()]), F(e, n);
 	}, D = u(() => a());
 	K(T, (e) => {
@@ -4096,14 +4126,14 @@ function Vi(e, n) {
 }
 //#endregion
 //#region src/components/ToolGroup.svelte
-var Hi = P("<details data-component-owner=\"event-timeline\" class=\"agent-tool-group\"><summary><span class=\"agent-tool-group-icon\"><!></span><span class=\"agent-tool-group-title\"> </span><span class=\"agent-tool-group-preview\"> </span><span class=\"agent-tool-group-chevron\"><!></span></summary> <div class=\"agent-tool-list\"></div></details>");
-function Ui(e, n) {
+var Wi = P("<details data-component-owner=\"event-timeline\" class=\"agent-tool-group\"><summary><span class=\"agent-tool-group-icon\"><!></span><span class=\"agent-tool-group-title\"> </span><span class=\"agent-tool-group-preview\"> </span><span class=\"agent-tool-group-chevron\"><!></span></summary> <div class=\"agent-tool-list\"></div></details>");
+function Gi(e, n) {
 	C(n, !0);
-	let i = u(() => n.item.calls || []), o = u(() => Qr(n.item)), d = u(() => c(i).map(f));
+	let i = u(() => n.item.calls || []), o = u(() => ei(n.item)), d = u(() => c(i).map(f));
 	function f(e) {
 		return [e.name, e.summary].filter(Boolean).join(" · ") || "Tool call";
 	}
-	var p = Hi(), m = t(p), h = t(m), _ = t(h);
+	var p = Wi(), m = t(p), h = t(m), _ = t(h);
 	U(_, { name: "wrench" }), w(h);
 	var v = s(h), y = t(v, !0);
 	w(v);
@@ -4113,23 +4143,23 @@ function Ui(e, n) {
 	U(T, { name: "chevron-right" }), w(S), w(m);
 	var E = s(m, 2);
 	q(E, 21, () => c(i), (e) => String(e.callId || e.key), (e, t) => {
-		Vi(e, { get call() {
+		Ui(e, { get call() {
 			return c(t);
 		} });
 	}), w(E), w(p), g((e, t, i) => {
 		I(p, "data-tool-group-key", e), p.open = n.open, r(y, t), r(x, `${i ?? ""}${c(d).length > 2 ? ` · +${c(d).length - 2} more` : ""}`);
 	}, [
-		() => `${n.generationId}:${ei(n.item)}`,
-		() => $r(c(o)),
+		() => `${n.generationId}:${ni(n.item)}`,
+		() => ti(c(o)),
 		() => c(d).slice(0, 2).join(" · ")
 	]), a("toggle", p, (e) => n.onToggle(e.currentTarget.open)), F(e, p), l();
 }
 //#endregion
 //#region src/components/UnknownEvent.svelte
-var Wi = P("<details data-component-owner=\"event-timeline\" class=\"agent-tool-item agent-unknown-event\"><summary><!><span> </span></summary><pre> </pre></details>");
-function Gi(e, n) {
+var Ki = P("<details data-component-owner=\"event-timeline\" class=\"agent-tool-item agent-unknown-event\"><summary><!><span> </span></summary><pre> </pre></details>");
+function qi(e, n) {
 	C(n, !0);
-	var i = Wi(), a = t(i), o = t(a);
+	var i = Ki(), a = t(i), o = t(a);
 	U(o, { name: "info" });
 	var c = s(o), u = t(c);
 	w(c), w(a);
@@ -4140,12 +4170,12 @@ function Gi(e, n) {
 }
 //#endregion
 //#region src/components/HistoryTimeline.svelte
-var Ki = P("<div class=\"history-state\"><!><span>Loading resource History...</span></div>"), qi = P("<div class=\"history-state history-error\"><!><strong>History unavailable</strong><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), Ji = P("<button type=\"button\" class=\"secondary-button history-load-older\"><!> </button>"), Yi = P("<div class=\"history-legacy\"><!><span><strong>Legacy history</strong><small>Conversation history from before resource History was available was migrated to Artifacts.</small></span><button type=\"button\" class=\"secondary-button\">Open legacy history</button></div>"), Xi = P("<div class=\"history-state\"><!><span>No resource History yet.</span></div>"), Zi = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), Qi = P("<div class=\"history-gap\"><!><span><strong>History gap</strong> </span><!></div>"), $i = P("<span class=\"history-turn-trigger\"><span class=\"history-turn-trigger-label\">Trigger</span><span class=\"history-turn-trigger-text\"> </span></span>"), ea = P("<div class=\"history-detail-state\"><!>Loading Turn detail...</div>"), ta = P("<div class=\"history-detail-state history-error\"><!> </div>"), na = P("<div class=\"history-item\"><!></div>"), ra = P("<div class=\"history-items\"></div>"), ia = P("<section><span class=\"history-turn-dot\"></span> <button type=\"button\" class=\"history-turn-header\"><span class=\"history-turn-meta\"><span class=\"history-turn-time\"> </span> <span class=\"history-status-pill\"> </span> <span class=\"history-turn-duration\"> </span> <span class=\"history-turn-count\"> <span><!></span></span></span> <!> <span> </span></button> <!> <!> <!></section>"), aa = P("<div class=\"history-generation\"><span class=\"history-generation-label\"> </span> <strong> </strong> <span class=\"history-generation-meta\"><span> </span> <span> </span> <span class=\"history-status-pill\"> </span></span></div> <div class=\"history-track\"></div>", 1), oa = P("<!> <!> <!> <!>", 1), sa = P("<div data-component-owner=\"history-timeline\" class=\"history-timeline-root\"><!></div>");
-function ca(n, i) {
+var Ji = P("<div class=\"history-state\"><!><span>Loading resource History...</span></div>"), Yi = P("<div class=\"history-state history-error\"><!><strong>History unavailable</strong><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), Xi = P("<button type=\"button\" class=\"secondary-button history-load-older\"><!> </button>"), Zi = P("<div class=\"history-legacy\"><!><span><strong>Legacy history</strong><small>Conversation history from before resource History was available was migrated to Artifacts.</small></span><button type=\"button\" class=\"secondary-button\">Open legacy history</button></div>"), Qi = P("<div class=\"history-state\"><!><span>No resource History yet.</span></div>"), $i = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), ea = P("<div class=\"history-gap\"><!><span><strong>History gap</strong> </span><!></div>"), ta = P("<span class=\"history-turn-trigger\"><span class=\"history-turn-trigger-label\">Trigger</span><span class=\"history-turn-trigger-text\"> </span></span>"), na = P("<div class=\"history-detail-state\"><!>Loading Turn detail...</div>"), ra = P("<div class=\"history-detail-state history-error\"><!> </div>"), ia = P("<div class=\"history-item\"><!></div>"), aa = P("<div class=\"history-items\"></div>"), oa = P("<section><span class=\"history-turn-dot\"></span> <button type=\"button\" class=\"history-turn-header\"><span class=\"history-turn-meta\"><span class=\"history-turn-time\"> </span> <span class=\"history-status-pill\"> </span> <span class=\"history-turn-duration\"> </span> <span class=\"history-turn-count\"> <span><!></span></span></span> <!> <span> </span></button> <!> <!> <!></section>"), sa = P("<div class=\"history-generation\"><span class=\"history-generation-label\"> </span> <strong> </strong> <span class=\"history-generation-meta\"><span> </span> <span> </span> <span class=\"history-status-pill\"> </span></span></div> <div class=\"history-track\"></div>", 1), ca = P("<!> <!> <!> <!>", 1), la = P("<div data-component-owner=\"history-timeline\" class=\"history-timeline-root\"><!></div>");
+function ua(n, i) {
 	C(i, !0);
 	let a = N(i, "artifacts", 19, () => []), d = o(y(T())), f, p = o(""), m = o(y(/* @__PURE__ */ new Map())), _ = o(y(/* @__PURE__ */ new Set())), v = u(() => E(a(), "legacy-log.md"));
 	V(() => {
-		f = new oi({ realtime: !1 });
+		f = new ci({ realtime: !1 });
 		let e = f.subscribe((e) => {
 			x(d, e, !0), queueMicrotask(i.onIconsChanged);
 		});
@@ -4228,13 +4258,13 @@ function ca(n, i) {
 		x(_, new Set(c(_)).add(t), !0), L(e);
 	}
 	function ee(e) {
-		return Br(e.events ? Rr(e.events).map((t) => ({
+		return Hr(e.events ? Br(e.events).map((t) => ({
 			...t,
 			generationId: e.generation.generationId
 		})) : e.items || []);
 	}
 	function H(e) {
-		let t = e.kind === "tools" ? ei(e) : String(e.key ?? e.approvalId ?? e.time ?? e.type ?? "event");
+		let t = e.kind === "tools" ? ni(e) : String(e.key ?? e.approvalId ?? e.time ?? e.type ?? "event");
 		return `${e.generationId || c(d).generationId}:${e.kind}:${t}`;
 	}
 	function W(e) {
@@ -4287,22 +4317,22 @@ function ca(n, i) {
 		}
 		return t;
 	}
-	var ce = sa(), le = t(ce), ue = (e) => {
-		var n = Ki(), r = t(n);
+	var ce = la(), le = t(ce), ue = (e) => {
+		var n = Ji(), r = t(n);
 		U(r, {
 			name: "loader-circle",
 			className: "spin"
 		}), S(), w(n), F(e, n);
 	}, de = (e) => {
-		var n = qi(), i = t(n);
+		var n = Yi(), i = t(n);
 		U(i, { name: "triangle-alert" });
 		var a = s(i, 2), o = t(a, !0);
 		w(a);
 		var l = s(a);
 		w(n), g(() => r(o, c(d).error)), h("click", l, () => f?.retryHistory()), F(e, n);
 	}, fe = (n) => {
-		var a = oa(), o = b(a), l = (e) => {
-			var n = Ji(), i = t(n);
+		var a = ca(), o = b(a), l = (e) => {
+			var n = Xi(), i = t(n);
 			U(i, { name: "chevrons-up" });
 			var a = s(i, 1, !0);
 			w(n), g(() => {
@@ -4313,7 +4343,7 @@ function ca(n, i) {
 			c(d).hasMoreBefore && e(l);
 		});
 		var m = s(o, 2), _ = (e) => {
-			Ri(e, {
+			Bi(e, {
 				title: "History",
 				get text() {
 					return c(p);
@@ -4325,12 +4355,12 @@ function ca(n, i) {
 			c(p) && e(_);
 		});
 		var y = s(m, 2), C = (e) => {
-			var n = Yi(), r = t(n);
+			var n = Zi(), r = t(n);
 			U(r, { name: "archive-restore" });
 			var a = s(r, 2);
 			w(n), h("click", a, () => i.onOpenLegacy(c(v))), F(e, n);
 		}, T = (e) => {
-			var n = Xi(), r = t(n);
+			var n = Qi(), r = t(n);
 			U(r, { name: "history" }), S(), w(n), F(e, n);
 		};
 		K(y, (e) => {
@@ -4338,7 +4368,7 @@ function ca(n, i) {
 		});
 		var E = s(y, 2);
 		q(E, 17, () => c(se), (e) => e.generation.generationId, (n, a) => {
-			var o = aa(), l = b(o), m = t(l), _ = t(m);
+			var o = sa(), l = b(o), m = t(l), _ = t(m);
 			w(m);
 			var v = s(m, 2), y = t(v, !0);
 			w(v);
@@ -4351,12 +4381,12 @@ function ca(n, i) {
 			var R = s(l, 2);
 			q(R, 21, () => c(a).blocks, (e) => e.key, (n, a) => {
 				var o = e(), l = b(o), m = (e) => {
-					var n = Qi(), i = t(n);
+					var n = ea(), i = t(n);
 					U(i, { name: "triangle-alert" });
 					var o = s(i), l = s(t(o));
 					w(o);
 					var u = s(o), d = (e) => {
-						var t = Zi();
+						var t = $i();
 						h("click", t, () => f?.retryHistory()), F(e, t);
 					};
 					K(u, (e) => {
@@ -4365,7 +4395,7 @@ function ca(n, i) {
 						I(n, "data-timeline-key", c(a).key), r(l, ` — ${(c(a).gap?.message || "This generation could not be read.") ?? ""}`);
 					}), F(e, n);
 				}, _ = (e) => {
-					var n = ia();
+					var n = oa();
 					let o;
 					var l = t(n), f = s(l, 2), m = t(f), _ = t(m), v = t(_, !0);
 					w(_);
@@ -4378,7 +4408,7 @@ function ca(n, i) {
 					var N = t(A);
 					U(N, { name: "chevron-down" }), w(A), w(E), w(m);
 					var L = s(m, 2), R = (e) => {
-						var n = $i(), i = s(t(n)), o = t(i, !0);
+						var n = ta(), i = s(t(n)), o = t(i, !0);
 						w(i), w(n), g((e) => r(o, e), [() => ae(c(a))]), F(e, n);
 					}, V = u(() => ae(c(a)));
 					K(L, (e) => {
@@ -4389,7 +4419,7 @@ function ca(n, i) {
 					var ce = t(se, !0);
 					w(se), w(f);
 					var le = s(f, 2), ue = (e) => {
-						var n = ea(), r = t(n);
+						var n = na(), r = t(n);
 						U(r, {
 							name: "loader-circle",
 							className: "spin"
@@ -4399,7 +4429,7 @@ function ca(n, i) {
 						c(a).loading && e(ue);
 					});
 					var de = s(le, 2), fe = (e) => {
-						var n = ta(), i = t(n);
+						var n = ra(), i = t(n);
 						U(i, { name: "triangle-alert" });
 						var o = s(i, 1, !0);
 						w(n), g(() => r(o, c(a).error)), F(e, n);
@@ -4408,12 +4438,12 @@ function ca(n, i) {
 						c(a).error && e(fe);
 					});
 					var pe = s(de, 2), me = (e) => {
-						var n = ra();
+						var n = aa();
 						q(n, 21, () => ee(c(a)), (e) => H(e), (e, n) => {
-							var r = na(), o = t(r), s = (e) => {
+							var r = ia(), o = t(r), s = (e) => {
 								{
 									let t = u(() => c(a).generation.agentName || c(a).generation.resolvedProfile || c(a).generation.binding?.name || "Agent");
-									Ii(e, {
+									Ri(e, {
 										get item() {
 											return c(n);
 										},
@@ -4435,7 +4465,7 @@ function ca(n, i) {
 									});
 								}
 							}, l = (e) => {
-								ki(e, {
+								ji(e, {
 									get item() {
 										return c(n);
 									},
@@ -4444,7 +4474,7 @@ function ca(n, i) {
 							}, f = (e) => {
 								{
 									let t = u(() => W(c(n)));
-									Ui(e, {
+									Gi(e, {
 										get item() {
 											return c(n);
 										},
@@ -4458,7 +4488,7 @@ function ca(n, i) {
 									});
 								}
 							}, m = (e) => {
-								mr(e, {
+								gr(e, {
 									get item() {
 										return c(n);
 									},
@@ -4472,13 +4502,13 @@ function ca(n, i) {
 									onToast: (e) => x(p, e, !0)
 								});
 							}, h = (e) => {
-								Di(e, { get item() {
+								ki(e, { get item() {
 									return c(n);
 								} });
 							}, _ = (e) => {
 								{
 									let t = u(() => c(n).text || "");
-									Ri(e, {
+									Bi(e, {
 										title: "Provider error",
 										get text() {
 											return c(t);
@@ -4487,7 +4517,7 @@ function ca(n, i) {
 									});
 								}
 							}, v = (e) => {
-								Gi(e, { get item() {
+								qi(e, { get item() {
 									return c(n);
 								} });
 							};
@@ -4533,29 +4563,36 @@ function ca(n, i) {
 p(["click"]);
 //#endregion
 //#region src/components/MarkdownDocument.svelte
-var la = P("<button type=\"button\" class=\"secondary-button\"><!><span>Edit / Annotate</span></button>"), ua = P("<div class=\"markdown-preview\"><div class=\"markdown-document-actions\"><!></div><div class=\"markdown-view markdown-rendered\"></div></div>"), da = P("<pre class=\"markdown-view\"> </pre>"), fa = P("<div class=\"content-section\" data-component-owner=\"markdown-document\"><!></div>");
-function pa(e, n) {
+var da = P("<button type=\"button\" class=\"secondary-button\"><!><span>Edit</span></button>"), fa = P("<button type=\"button\" class=\"secondary-button\"><!><span>Annotate</span></button>"), pa = P("<div class=\"markdown-preview\"><div class=\"markdown-document-actions\"><!><!></div><div class=\"markdown-view markdown-rendered\"></div></div>"), ma = P("<pre class=\"markdown-view\"> </pre>"), ha = P("<div class=\"content-section\" data-component-owner=\"markdown-document\"><!></div>");
+function ga(e, n) {
 	C(n, !0);
 	let i = N(n, "editable", 3, !1), a = u(() => In(n.file.name));
-	var o = fa(), d = t(o), f = (e) => {
-		var r = ua(), a = t(r), o = t(a), c = (e) => {
-			var r = la(), i = t(r);
+	var o = ha(), d = t(o), f = (e) => {
+		var r = pa(), a = t(r), o = t(a), c = (e) => {
+			var r = da(), i = t(r);
 			U(i, { name: "pencil" }), S(), w(r), h("click", r, () => n.onEdit(n.file.path || n.file.name)), F(e, r);
 		};
 		K(o, (e) => {
 			i() && n.onEdit && e(c);
+		});
+		var l = s(o), u = (e) => {
+			var r = fa(), i = t(r);
+			U(i, { name: "message-square-plus" }), S(), w(r), h("click", r, () => n.onAnnotate(n.file.path || n.file.name)), F(e, r);
+		};
+		K(l, (e) => {
+			i() && n.onAnnotate && e(u);
 		}), w(a);
-		var l = s(a);
-		D(l, () => Tn(n.file.content || "", {
+		var d = s(a);
+		D(d, () => Tn(n.file.content || "", {
 			workspaceId: n.workspaceId,
 			resolveResourceTitle: n.resolveResourceTitle
-		}), !0), w(l), T(l, (e, t) => On?.(e, t), () => ({
+		}), !0), w(d), T(d, (e, t) => On?.(e, t), () => ({
 			resolveResourceTitle: n.resolveResourceTitle,
 			onNavigate: n.onNavigate,
 			onOpenFile: n.onOpenFile
 		})), w(r), F(e, r);
 	}, p = (e) => {
-		var i = da(), a = t(i, !0);
+		var i = ma(), a = t(i, !0);
 		w(i), g(() => r(a, n.file.content || "")), F(e, i);
 	};
 	K(d, (e) => {
@@ -4567,8 +4604,8 @@ function pa(e, n) {
 p(["click"]);
 //#endregion
 //#region src/components/SchedulerPanel.svelte
-var ma = P("<button type=\"button\" class=\"secondary-button\">Cancel edit</button>"), ha = P("<article><header><div><strong> </strong><code> </code></div><div><button type=\"button\" class=\"secondary-button\"><!><span>Edit</span></button><button type=\"button\" class=\"secondary-button danger\"><!><span>Remove</span></button></div></header> <dl><div><dt>Condition</dt><dd> </dd></div><div><dt>Target</dt><dd><code> </code></dd></div></dl></article>"), ga = P("<div class=\"empty-list-row\"><!><span>No schedules. The Server will not create empty Scheduler Turns.</span></div>"), _a = P("<div class=\"scheduler-settings-card\"><div><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div> <label><input type=\"number\" min=\"1\" max=\"10080\" step=\"1\" aria-label=\"Scheduler wake interval in minutes\"/><span>minutes</span></label> <button type=\"button\" class=\"secondary-button\"><!><span>Save</span></button></div> <div class=\"schedule-editor\"><div class=\"schedule-editor-heading\"><div><strong> </strong><span>Conditions are natural language interpreted by the Scheduler Agent.</span></div><!></div> <label><span>Description</span><input placeholder=\"What should the Scheduler understand?\"/></label> <label><span>Condition</span><textarea rows=\"3\" placeholder=\"For example: when the release branch is green after 09:00 Shanghai time\"></textarea></label> <label><span>Target resource ID</span><input placeholder=\"workspace, scheduler, project1, or project1.task1\"/></label> <button type=\"button\"><span class=\"schedule-icon schedule-icon-busy\"><!></span><span class=\"schedule-icon schedule-icon-editing\"><!></span><span class=\"schedule-icon schedule-icon-add\"><!></span><span> </span></button></div> <div class=\"schedule-list\"><!></div>", 1);
-function va(n, i) {
+var _a = P("<button type=\"button\" class=\"secondary-button\">Cancel edit</button>"), va = P("<article><header><div><strong> </strong><code> </code></div><div><button type=\"button\" class=\"secondary-button\"><!><span>Edit</span></button><button type=\"button\" class=\"secondary-button danger\"><!><span>Remove</span></button></div></header> <dl><div><dt>Condition</dt><dd> </dd></div><div><dt>Target</dt><dd><code> </code></dd></div></dl></article>"), ya = P("<div class=\"empty-list-row\"><!><span>No schedules. The Server will not create empty Scheduler Turns.</span></div>"), ba = P("<div class=\"scheduler-settings-card\"><div><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div> <label><input type=\"number\" min=\"1\" max=\"10080\" step=\"1\" aria-label=\"Scheduler wake interval in minutes\"/><span>minutes</span></label> <button type=\"button\" class=\"secondary-button\"><!><span>Save</span></button></div> <div class=\"schedule-editor\"><div class=\"schedule-editor-heading\"><div><strong> </strong><span>Conditions are natural language interpreted by the Scheduler Agent.</span></div><!></div> <label><span>Description</span><input placeholder=\"What should the Scheduler understand?\"/></label> <label><span>Condition</span><textarea rows=\"3\" placeholder=\"For example: when the release branch is green after 09:00 Shanghai time\"></textarea></label> <label><span>Target resource ID</span><input placeholder=\"workspace, scheduler, project1, or project1.task1\"/></label> <button type=\"button\"><span class=\"schedule-icon schedule-icon-busy\"><!></span><span class=\"schedule-icon schedule-icon-editing\"><!></span><span class=\"schedule-icon schedule-icon-add\"><!></span><span> </span></button></div> <div class=\"schedule-list\"><!></div>", 1);
+function xa(n, i) {
 	C(i, !0);
 	let a = new tn();
 	R(() => a.dispose());
@@ -4632,14 +4669,14 @@ function va(n, i) {
 			}
 		}
 	}
-	var k = _a(), A = b(k), M = s(t(A), 2), N = t(M);
+	var k = ba(), A = b(k), M = s(t(A), 2), N = t(M);
 	O(N), S(), w(M);
 	var P = s(M, 2), I = t(P);
 	U(I, { name: "save" }), S(), w(P), w(A);
 	var L = s(A, 2), z = t(L), B = t(z), V = t(B), W = t(V, !0);
 	w(V), S(), w(B);
 	var G = s(B), te = (e) => {
-		var t = ma();
+		var t = _a();
 		h("click", t, y), F(e, t);
 	};
 	K(G, (e) => {
@@ -4664,7 +4701,7 @@ function va(n, i) {
 	var _e = s(L, 2), ve = t(_e), ye = (n) => {
 		var a = e(), o = b(a);
 		q(o, 17, () => i.config.schedules, (e) => e.id, (e, n) => {
-			var i = ha();
+			var i = va();
 			let a;
 			var o = t(i), l = t(o), d = t(l), f = t(d, !0);
 			w(d);
@@ -4682,7 +4719,7 @@ function va(n, i) {
 			}), h("click", y, () => v(c(n))), h("click", x, () => E(c(n))), F(e, i);
 		}), F(n, a);
 	}, be = (e) => {
-		var n = ga(), r = t(n);
+		var n = ya(), r = t(n);
 		U(r, { name: "calendar-clock" }), S(), w(n), F(e, n);
 	};
 	K(ve, (e) => {
@@ -4697,8 +4734,8 @@ function va(n, i) {
 p(["click"]);
 //#endregion
 //#region src/components/DetailPanel.svelte
-var ya = P("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), ba = P("<button type=\"button\" role=\"tab\"><!><span> </span></button>"), xa = P("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>AGENTS.md unavailable</strong><span> </span></div></div>"), Sa = P("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Loading AGENTS.md...</strong></div></div>"), Ca = P("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), wa = P("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), Ta = P("<div class=\"details-header\"><h1 class=\"details-title\"> </h1></div> <div class=\"details-tabs\" role=\"tablist\" aria-label=\"Workspace details\"></div> <div id=\"detailsContent\" class=\"details-content\"><div><!></div> <div><!></div></div>", 1), Ea = P("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), Da = P("<code class=\"resource-ref-badge\"> </code>"), Oa = P("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), ka = P("<button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button>"), Aa = P("<div class=\"details-actions\"><!><!></div>"), ja = P("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), Ma = P("<div><!></div>"), Na = P("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>"), Pa = P("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>"), Fa = P("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), Ia = P("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), La = P("<div class=\"content-section\"><div class=\"template-list\"><!></div></div>"), Ra = P("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), za = P("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), Ba = P("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!> <!> <!> <div><!></div> <!> <div><!></div> <div><div class=\"content-section\"><div class=\"worktree-list\"><!></div></div></div></div>", 1), Va = P("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!></nav> <h1 class=\"details-title\"> <!></h1><!></div> <!>", 1), Ha = P("<!> <!> <!>", 1);
-function Ua(i, a) {
+var Sa = P("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), Ca = P("<button type=\"button\" role=\"tab\"><!><span> </span></button>"), wa = P("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>AGENTS.md unavailable</strong><span> </span></div></div>"), Ta = P("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Loading AGENTS.md...</strong></div></div>"), Ea = P("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), Da = P("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), Oa = P("<div class=\"details-header\"><h1 class=\"details-title\"> </h1></div> <div class=\"details-tabs\" role=\"tablist\" aria-label=\"Workspace details\"></div> <div id=\"detailsContent\" class=\"details-content\"><div><!></div> <div><!></div></div>", 1), ka = P("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), Aa = P("<code class=\"resource-ref-badge\"> </code>"), ja = P("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), Ma = P("<button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button>"), Na = P("<div class=\"details-actions\"><!><!></div>"), Pa = P("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), Fa = P("<div><!></div>"), Ia = P("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>"), La = P("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>"), Ra = P("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), za = P("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), Ba = P("<div class=\"content-section\"><div class=\"template-list\"><!></div></div>"), Va = P("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), Ha = P("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), Ua = P("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!> <!> <!> <div><!></div> <!> <div><!></div> <div><div class=\"content-section\"><div class=\"worktree-list\"><!></div></div></div></div>", 1), Wa = P("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!></nav> <h1 class=\"details-title\"> <!></h1><!></div> <!>", 1), Ga = P("<!> <!> <!>", 1);
+function Ka(i, a) {
 	C(a, !0);
 	let f = o(y(a.channel.current())), p = o(""), m = o(""), _ = o(y(/* @__PURE__ */ new Set())), v = o(null), T = o(null), E = /* @__PURE__ */ new Map(), D = new tn(), O = 0, k = u(() => (c(f).detail?.files || []).filter((e) => e.name !== "AGENTS.md")), A = u(() => new Set(c(k).map((e) => e.name))), M = u(() => c(f).workspaceAgents && !c(f).workspaceAgents.error ? {
 		name: "AGENTS.md",
@@ -4707,7 +4744,7 @@ function Ua(i, a) {
 		contentHash: c(f).workspaceAgents.contentHash
 	} : null), N = u(B), P = u(() => c(v) ? `${c(v).section}:${c(v).path}` : ""), L = u(() => c(f).resourceType === "workspace" ? !!(c(v) && (c(v).path === "AGENTS.md" || c(v).path === "")) : !c(f).detail?.archived && (c(f).resourceType === "project" || c(f).resourceType === "task"));
 	V(() => a.channel.subscribe((e) => {
-		let t = se(), n = ++O;
+		let t = Y(), n = ++O;
 		if (x(f, e, !0), e.identity !== c(p)) {
 			c(p) && c(m) && E.set(c(p), c(m)), x(p, e.identity, !0), x(v, null), x(T, null), x(_, /* @__PURE__ */ new Set(), !0);
 			let t = E.get(c(p));
@@ -4716,7 +4753,7 @@ function Ua(i, a) {
 			n && (n.scrollTop = 0);
 		} else c(N).length && !c(N).some((e) => e.id === c(m)) && x(m, c(N)[0].id, !0);
 		d().then(() => {
-			n === O && Y(t), e.onIconsChanged();
+			n === O && ce(t), e.onIconsChanged();
 		});
 	})), V(() => {
 		let e = (e) => {
@@ -4793,20 +4830,23 @@ function Ua(i, a) {
 		let r = n ? "&download=1" : "";
 		return `/api/workspaces/${encodeURIComponent(c(f).workspaceId)}/files/raw?path=${encodeURIComponent(t)}${r}`;
 	}
-	function J(e, t, n = !1) {
+	function J(e, t, n) {
 		x(v, {
 			section: e,
 			path: t,
-			edit: n
+			mode: n
 		}, !0);
 	}
 	function ne(e) {
 		J("Files", e);
 	}
 	function re(e) {
-		J("Files", e, !0);
+		J("Files", e, "edit");
 	}
 	function ie(e) {
+		J("Files", e, "annotate");
+	}
+	function ae(e) {
 		un({
 			title: "Delete artifact",
 			message: `Delete artifact "${e.split("/").pop() || e}"? This cannot be undone.`,
@@ -4816,45 +4856,45 @@ function Ua(i, a) {
 			if (t) try {
 				await c(f).onDeleteArtifact(e), c(v) && c(v).section === "Artifacts" && c(v).path === e && x(v, null);
 			} catch (e) {
-				ce(e instanceof Error ? e.message : String(e));
+				le(e instanceof Error ? e.message : String(e));
 			}
 		});
 	}
-	function ae(e, t, n) {
+	function oe(e, t, n) {
 		return c(f).resourceType === "workspace" && (e === "AGENTS.md" || e === "") ? c(f).onSaveWorkspaceAgents(t, n) : c(f).onSaveMarkdownFile(e, t, n);
 	}
-	function oe(e) {
+	function se(e) {
 		return `${e.section}:${e.path}`;
 	}
-	function se() {
+	function Y() {
 		if (!c(v)) return null;
 		let e = document.querySelector("[data-preview-scroll]");
 		return e ? {
-			key: oe(c(v)),
+			key: se(c(v)),
 			scrollTop: e.scrollTop,
 			scrollLeft: e.scrollLeft
 		} : null;
 	}
-	function Y(e) {
-		if (!e || !c(v) || e.key !== oe(c(v))) return;
+	function ce(e) {
+		if (!e || !c(v) || e.key !== se(c(v))) return;
 		let t = document.querySelector("[data-preview-scroll]");
 		t && (t.scrollTop = e.scrollTop, t.scrollLeft = e.scrollLeft);
 	}
-	function ce(e) {
+	function le(e) {
 		e && c(f).onToast(e);
 	}
-	var le = Ha(), ue = b(le), de = (e) => {
-		var n = ya(), r = t(n), i = t(r);
+	var ue = Ga(), de = b(ue), fe = (e) => {
+		var n = Sa(), r = t(n), i = t(r);
 		U(i, {
 			name: "folder-search",
 			className: "empty-state-icon"
 		}), S(2), w(r), w(n), F(e, n);
-	}, fe = (e) => {
-		var n = Ta(), i = b(n), a = t(i), o = t(a, !0);
+	}, pe = (e) => {
+		var n = Oa(), i = b(n), a = t(i), o = t(a, !0);
 		w(a), w(i);
 		var l = s(i, 2);
 		q(l, 21, () => c(N), (e) => e.id, (e, n) => {
-			var i = ba();
+			var i = Ca();
 			let a;
 			var o = t(i);
 			U(o, { get name() {
@@ -4866,7 +4906,7 @@ function Ua(i, a) {
 			}), h("click", i, () => H(c(n).id)), F(e, i);
 		}), w(l);
 		var d = s(l, 2), p = t(d), v = t(p), y = (e) => {
-			pa(e, {
+			ga(e, {
 				get file() {
 					return c(M);
 				},
@@ -4881,27 +4921,28 @@ function Ua(i, a) {
 					return c(f).onNavigate;
 				},
 				onOpenFile: ne,
-				onEdit: re
+				onEdit: re,
+				onAnnotate: ie
 			});
 		}, x = (e) => {
-			var n = xa(), i = t(n), a = t(i);
+			var n = wa(), i = t(n), a = t(i);
 			U(a, { name: "triangle-alert" });
 			var o = s(a, 2), l = t(o, !0);
 			w(o), w(i), w(n), g(() => r(l, c(f).workspaceAgents.error)), F(e, n);
 		}, C = (e) => {
-			var n = Sa(), r = t(n), i = t(r);
+			var n = Ta(), r = t(n), i = t(r);
 			U(i, { name: "loader-circle" }), S(), w(r), w(n), F(e, n);
 		};
 		K(v, (e) => {
 			c(M) ? e(y) : c(f).workspaceAgents?.error ? e(x, 1) : e(C, -1);
 		}), w(p);
 		var T = s(p, 2), E = t(T), D = (e) => {
-			var n = Ca(), i = t(n), a = t(i);
+			var n = Ea(), i = t(n), a = t(i);
 			U(a, { name: "triangle-alert" });
 			var o = s(a, 2), l = t(o, !0);
 			w(o), w(i), w(n), g(() => r(l, c(f).wiki.error)), F(e, n);
 		}, O = (e) => {
-			var n = wa(), r = t(n), i = t(r);
+			var n = Da(), r = t(n), i = t(r);
 			U(i, { name: "book-open" }), S(2), w(r), w(n), F(e, n);
 		}, k = (e) => {
 			{
@@ -4930,33 +4971,33 @@ function Ua(i, a) {
 		}), w(T), w(d), g(() => {
 			r(o, c(f).workspaceName), I(p, "hidden", c(m) !== "agents"), I(T, "hidden", c(m) !== "wiki");
 		}), F(e, n);
-	}, pe = (i) => {
-		var a = Va(), o = b(a), l = t(o), d = t(l), p = t(d, !0);
+	}, me = (i) => {
+		var a = Wa(), o = b(a), l = t(o), d = t(l), p = t(d, !0);
 		w(d);
 		var v = s(d, 2), y = (e) => {
-			var n = Ea(), i = s(b(n)), a = t(i, !0);
+			var n = ka(), i = s(b(n)), a = t(i, !0);
 			w(i), g(() => r(a, c(f).parent.title)), h("click", i, () => c(f).onNavigate(c(f).parent?.id || "workspace")), F(e, n);
 		};
 		K(v, (e) => {
 			c(f).parent && e(y);
 		}), w(l);
 		var C = s(l, 2), E = t(C, !0), D = s(E), O = (e) => {
-			var n = Da(), i = t(n, !0);
+			var n = Aa(), i = t(n, !0);
 			w(n), g((e) => r(i, e), [() => W(c(f).resourceId)]), F(e, n);
 		};
 		K(D, (e) => {
 			c(f).resourceType !== "scheduler" && e(O);
 		}), w(C);
 		var M = s(C), L = (e) => {
-			var n = Aa(), r = t(n), i = (e) => {
-				var n = Oa(), r = t(n);
+			var n = Na(), r = t(n), i = (e) => {
+				var n = ja(), r = t(n);
 				U(r, { name: "plus" }), S(), w(n), h("click", n, () => c(f).onCreateTask(c(f).resourceId)), F(e, n);
 			};
 			K(r, (e) => {
 				c(f).resourceType === "project" && e(i);
 			});
 			var a = s(r), o = (e) => {
-				var n = ka(), r = t(n);
+				var n = Ma(), r = t(n);
 				U(r, { name: "archive" }), S(), w(n), h("click", n, () => c(f).onArchive(c(f).resourceId)), F(e, n);
 			};
 			K(a, (e) => {
@@ -4967,15 +5008,15 @@ function Ua(i, a) {
 			c(f).detail && e(L);
 		}), w(o);
 		var R = s(o, 2), z = (e) => {
-			var n = ja(), r = t(n), i = t(r);
+			var n = Pa(), r = t(n), i = t(r);
 			U(i, {
 				name: "loader-circle",
 				className: "empty-state-icon"
 			}), S(), w(r), w(n), F(e, n);
 		}, B = (i) => {
-			var a = Ba(), o = b(a);
+			var a = Ua(), o = b(a);
 			q(o, 21, () => c(N), (e) => e.id, (e, n) => {
-				var i = ba();
+				var i = Ca();
 				let a;
 				var o = t(i);
 				U(o, { get name() {
@@ -4988,10 +5029,10 @@ function Ua(i, a) {
 			}), w(o);
 			var l = s(o, 2), d = t(l);
 			q(d, 17, () => c(k), (e) => e.path || e.name, (e, n) => {
-				var r = Ma(), i = t(r);
+				var r = Fa(), i = t(r);
 				{
 					let e = u(() => !c(f).detail.archived && (c(f).resourceType === "project" || c(f).resourceType === "task"));
-					pa(i, {
+					ga(i, {
 						get file() {
 							return c(n);
 						},
@@ -5008,30 +5049,31 @@ function Ua(i, a) {
 							return c(f).onNavigate;
 						},
 						onOpenFile: ne,
-						onEdit: re
+						onEdit: re,
+						onAnnotate: ie
 					});
 				}
 				w(r), g((e) => I(r, "hidden", e), [() => c(m) !== ee(c(n))]), F(e, r);
 			});
 			var p = s(d, 2), v = (e) => {
-				var n = Na(), r = t(n), i = t(r);
+				var n = Ia(), r = t(n), i = t(r);
 				U(i, { name: "file-text" }), S(2), w(r), w(n), g(() => I(n, "hidden", c(m) !== "project")), F(e, n);
 			}, y = u(() => c(f).resourceType === "project" && !c(A).has("project.md"));
 			K(p, (e) => {
 				c(y) && e(v);
 			});
 			var C = s(p, 2), E = (e) => {
-				var n = Pa(), r = t(n), i = t(r);
+				var n = La(), r = t(n), i = t(r);
 				U(i, { name: "file-text" }), S(2), w(r), w(n), g(() => I(n, "hidden", c(m) !== "task")), F(e, n);
 			}, D = u(() => c(f).resourceType === "task" && !c(A).has("task.md"));
 			K(C, (e) => {
 				c(D) && e(E);
 			});
 			var O = s(C, 2), M = (e) => {
-				var n = Ma(), r = t(n);
+				var n = Fa(), r = t(n);
 				{
 					let e = u(() => c(f).onRefreshScheduler || (async () => void 0));
-					va(r, {
+					xa(r, {
 						get workspaceId() {
 							return c(f).workspaceId;
 						},
@@ -5052,10 +5094,10 @@ function Ua(i, a) {
 				c(f).resourceType === "scheduler" && c(f).detail.scheduler && e(M);
 			});
 			var L = s(O, 2), R = t(L), z = (n) => {
-				var i = La(), a = t(i), o = t(a), l = (n) => {
+				var i = Ba(), a = t(i), o = t(a), l = (n) => {
 					var i = e(), a = b(i);
 					q(a, 17, () => c(f).detail.templates, (e) => e.name, (e, n) => {
-						var i = Fa();
+						var i = Ra();
 						let a;
 						var o = t(i);
 						U(o, { name: "file-text" });
@@ -5069,7 +5111,7 @@ function Ua(i, a) {
 						}), h("click", i, () => c(n).path && J("Templates", c(n).path)), F(e, i);
 					}), F(n, i);
 				}, u = (e) => {
-					var n = Ia(), r = t(n);
+					var n = za(), r = t(n);
 					U(r, { name: "layout-template" }), S(), w(n), F(e, n);
 				};
 				K(o, (e) => {
@@ -5084,7 +5126,7 @@ function Ua(i, a) {
 				n(i, () => c(f).identity, (e) => {
 					{
 						let t = u(() => c(f).detail.artifacts || []);
-						ca(e, {
+						ua(e, {
 							get workspaceId() {
 								return c(f).workspaceId;
 							},
@@ -5112,10 +5154,10 @@ function Ua(i, a) {
 			K(B, (e) => {
 				c(m) === "history" && e(V);
 			});
-			var W = s(B, 2), ae = t(W);
+			var W = s(B, 2), oe = t(W);
 			{
-				let e = u(() => c(f).detail.artifacts || []), t = u(() => c(f).detail.archived ? void 0 : ie);
-				Kn(ae, {
+				let e = u(() => c(f).detail.artifacts || []), t = u(() => c(f).detail.archived ? void 0 : ae);
+				Kn(oe, {
 					title: "Artifacts",
 					get entries() {
 						return c(e);
@@ -5137,10 +5179,10 @@ function Ua(i, a) {
 				});
 			}
 			w(W);
-			var oe = s(W, 2), se = t(oe), Y = t(se), ce = t(Y), le = (n) => {
+			var se = s(W, 2), Y = t(se), ce = t(Y), le = t(ce), ue = (n) => {
 				var i = e(), a = b(i);
 				q(a, 17, () => c(f).detail.repos, (e) => `${e.name}:${e.worktreePath}`, (e, n) => {
-					var i = Ra(), a = t(i), o = t(a);
+					var i = Va(), a = t(i), o = t(a);
 					U(o, {
 						name: "git-branch",
 						className: "worktree-icon"
@@ -5156,14 +5198,14 @@ function Ua(i, a) {
 						r(d, c(n).branch || "HEAD"), r(p, `${(c(n).name || "repository") ?? ""}${c(n).targetBranch || c(n).baseBranch ? ` · base ${c(n).targetBranch || c(n).baseBranch}` : ""}`), r(_, c(n).worktreePath || "");
 					}), h("click", v, () => x(T, c(n), !0)), F(e, i);
 				}), F(n, i);
-			}, ue = (e) => {
-				var n = za(), r = t(n);
+			}, de = (e) => {
+				var n = Ha(), r = t(n);
 				U(r, { name: "git-branch" }), S(), w(n), F(e, n);
 			};
-			K(ce, (e) => {
-				c(f).detail.repos?.length ? e(le) : e(ue, -1);
-			}), w(Y), w(se), w(oe), w(l), g(() => {
-				I(L, "hidden", c(m) !== "template"), I(W, "hidden", c(m) !== "artifacts"), I(oe, "hidden", c(m) !== "worktrees");
+			K(le, (e) => {
+				c(f).detail.repos?.length ? e(ue) : e(de, -1);
+			}), w(ce), w(Y), w(se), w(l), g(() => {
+				I(L, "hidden", c(m) !== "template"), I(W, "hidden", c(m) !== "artifacts"), I(se, "hidden", c(m) !== "worktrees");
 			}), F(i, a);
 		};
 		K(R, (e) => {
@@ -5172,11 +5214,11 @@ function Ua(i, a) {
 			r(p, c(f).workspaceName), r(E, c(f).resourceTitle);
 		}), h("click", d, () => c(f).onNavigate("workspace")), F(i, a);
 	};
-	K(ue, (e) => {
-		c(f).workspaceId ? c(f).resourceType === "workspace" ? e(fe, 1) : e(pe, -1) : e(de);
+	K(de, (e) => {
+		c(f).workspaceId ? c(f).resourceType === "workspace" ? e(pe, 1) : e(me, -1) : e(fe);
 	});
-	var me = s(ue, 2);
-	ar(me, {
+	var he = s(de, 2);
+	sr(he, {
 		get client() {
 			return D;
 		},
@@ -5199,13 +5241,13 @@ function Ua(i, a) {
 			return c(f).onNavigate;
 		},
 		onOpenFile: ne,
-		onSaveMarkdown: ae,
+		onSaveMarkdown: oe,
 		onClose: () => x(v, null),
-		onError: ce,
+		onError: le,
 		get onIconsChanged() {
 			return c(f).onIconsChanged;
 		}
-	}), gn(s(me, 2), {
+	}), gn(s(he, 2), {
 		get client() {
 			return D;
 		},
@@ -5219,40 +5261,40 @@ function Ua(i, a) {
 			return c(T);
 		},
 		onClose: () => x(T, null),
-		onError: ce,
+		onError: le,
 		get onIconsChanged() {
 			return c(f).onIconsChanged;
 		}
-	}), F(i, le), l();
+	}), F(i, ue), l();
 }
 p(["click"]);
 //#endregion
 //#region src/components/generation-status.ts
-var Wa = /* @__PURE__ */ new Set([
+var qa = /* @__PURE__ */ new Set([
 	"starting",
 	"running",
 	"waiting_approval",
 	"stopping",
 	"recovering"
-]), Ga = /* @__PURE__ */ new Set([
+]), Ja = /* @__PURE__ */ new Set([
 	"idle",
 	"idle-suspended",
 	"stopped",
 	"failed",
 	"archived"
 ]);
-function Ka(e) {
+function Ya(e) {
 	return String(e || "").trim();
 }
-function qa(e, t) {
-	let n = Ka(e.generation.status) || "unknown", r = t?.generation;
+function Xa(e, t) {
+	let n = Ya(e.generation.status) || "unknown", r = t?.generation;
 	if (!r || r.generationId !== e.generation.generationId) return n;
-	let i = Ka(r.status);
+	let i = Ya(r.status);
 	if (!t?.state) return i || n;
 	switch (t.state) {
-		case "working": return Wa.has(i) ? i : "running";
+		case "working": return qa.has(i) ? i : "running";
 		case "attention_required": return i === "waiting_approval" ? i : "waiting_approval";
-		case "idle": return Ga.has(i) ? i : "idle";
+		case "idle": return Ja.has(i) ? i : "idle";
 		case "archived": return "archived";
 		case "unavailable": return i === "failed" || i === "recovering" ? i : "failed";
 		default: return i || n;
@@ -5260,8 +5302,8 @@ function qa(e, t) {
 }
 //#endregion
 //#region src/components/EventTimeline.svelte
-var Ja = P("<button type=\"button\"><span class=\"load-older-icon load-older-icon-idle\"><!></span><span class=\"load-older-icon load-older-icon-busy\"><!></span><span> </span></button>"), Ya = P("<div class=\"conversation-generation\"><span> </span><strong> </strong><small> </small></div>"), Xa = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), Za = P("<div class=\"conversation-gap\"><!><span><strong>History unavailable</strong><small> </small></span><!></div>"), Qa = P("<div class=\"turn-summary-preview\"> </div>"), $a = P("<div><!></div>"), eo = P("<div class=\"turn-loading\"><!><span>Loading turn details</span></div>"), to = P("<section><!> <!> <!> <!></section>"), no = P("<!> <!>", 1), ro = P("<div class=\"turn-working-indicator\" role=\"status\" aria-live=\"polite\" data-timeline-key=\"turn-working\"><!><span>working...</span></div>"), io = P("<div class=\"tty-empty\"><!><strong>Loading resource history</strong></div>"), ao = P("<div class=\"tty-empty\"><!><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>"), oo = P("<!> <!> <!> <!> <!> <!> <!>", 1), so = P("<div class=\"tty-empty\"><!><strong>No resource selected</strong></div>"), co = P("<div data-component-owner=\"event-timeline\" class=\"event-timeline-root\"><!></div> <!>", 1);
-function lo(e, n) {
+var Za = P("<button type=\"button\"><span class=\"load-older-icon load-older-icon-idle\"><!></span><span class=\"load-older-icon load-older-icon-busy\"><!></span><span> </span></button>"), Qa = P("<div class=\"conversation-generation\"><span> </span><strong> </strong><small> </small></div>"), $a = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), eo = P("<div class=\"conversation-gap\"><!><span><strong>History unavailable</strong><small> </small></span><!></div>"), to = P("<div class=\"turn-summary-preview\"> </div>"), no = P("<div><!></div>"), ro = P("<div class=\"turn-loading\"><!><span>Loading turn details</span></div>"), io = P("<section><!> <!> <!> <!></section>"), ao = P("<!> <!>", 1), oo = P("<div class=\"turn-working-indicator\" role=\"status\" aria-live=\"polite\" data-timeline-key=\"turn-working\"><!><span>working...</span></div>"), so = P("<div class=\"tty-empty\"><!><strong>Loading resource history</strong></div>"), co = P("<div class=\"tty-empty\"><!><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>"), lo = P("<!> <!> <!> <!> <!> <!> <!>", 1), uo = P("<div class=\"tty-empty\"><!><strong>No resource selected</strong></div>"), fo = P("<div data-component-owner=\"event-timeline\" class=\"event-timeline-root\"><!></div> <!>", 1);
+function po(e, n) {
 	C(n, !0);
 	let i = o(y(n.channel.current())), a = o(y(n.channel.current().project)), f = o(y(ue())), p = o(void 0), m, _ = null, v = !1, D = !1, O = !0, k = o(null), A = new tn(), M = /* @__PURE__ */ new Map(), N = o(y(/* @__PURE__ */ new Map()));
 	V(() => {
@@ -5272,7 +5314,7 @@ function lo(e, n) {
 		let r = typeof ResizeObserver > "u" || !e ? null : new ResizeObserver(() => {
 			O && !ae() && Y();
 		});
-		e && r && r.observe(e), m = new oi({
+		e && r && r.observe(e), m = new ci({
 			onEvent: (e, t, n) => c(i).onEvent(e, t, n),
 			onNotice: (e, t, n) => c(i).onNotice(e, t, n)
 		});
@@ -5329,7 +5371,7 @@ function lo(e, n) {
 		};
 	}
 	function B(e) {
-		return Br(e.events ? c(a)(e.events).map((t) => ({
+		return Hr(e.events ? c(a)(e.events).map((t) => ({
 			...t,
 			generationId: e.generation.generationId
 		})) : e.items || []);
@@ -5392,7 +5434,7 @@ function lo(e, n) {
 		return [...e.querySelectorAll("[data-timeline-key]")].find((e) => e.getBoundingClientRect().bottom >= t) ?? null;
 	}
 	function le(e) {
-		let t = e.kind === "tools" ? ei(e) : String(e.key ?? e.approvalId ?? e.time ?? e.type ?? "event");
+		let t = e.kind === "tools" ? ni(e) : String(e.key ?? e.approvalId ?? e.time ?? e.type ?? "event");
 		return `${e.generationId || c(f).generationId}:${e.kind}:${t}`;
 	}
 	function ue() {
@@ -5410,9 +5452,9 @@ function lo(e, n) {
 			error: ""
 		};
 	}
-	var de = co(), fe = b(de), pe = t(fe), me = (e) => {
-		var n = oo(), a = b(n), o = (e) => {
-			var n = Ja();
+	var de = fo(), fe = b(de), pe = t(fe), me = (e) => {
+		var n = lo(), a = b(n), o = (e) => {
+			var n = Za();
 			let i;
 			var a = t(n), o = t(a);
 			U(o, { name: "chevrons-up" }), w(a);
@@ -5428,26 +5470,26 @@ function lo(e, n) {
 		});
 		var l = s(a, 2);
 		q(l, 19, () => c(f).blocks, (e) => e.key, (e, n, a) => {
-			var o = no(), l = b(o), d = (e) => {
-				var a = Ya(), o = t(a), l = t(o);
+			var o = ao(), l = b(o), d = (e) => {
+				var a = Qa(), o = t(a), l = t(o);
 				w(o);
 				var u = s(o), d = t(u, !0);
 				w(u);
 				var f = s(u), p = t(f, !0);
 				w(f), w(a), g((e, t) => {
 					I(a, "data-generation-id", c(n).generation.generationId), r(l, `Generation ${c(n).generation.generation ?? ""}`), r(d, c(n).generation.agentName || c(n).generation.resolvedProfile || c(n).generation.binding?.name || "Agent"), I(f, "data-generation-status", e), r(p, t);
-				}, [() => qa(c(n), c(i).status), () => qa(c(n), c(i).status)]), F(e, a);
+				}, [() => Xa(c(n), c(i).status), () => Xa(c(n), c(i).status)]), F(e, a);
 			};
 			K(l, (e) => {
 				(c(a) === 0 || c(f).blocks[c(a) - 1].generation.generationId !== c(n).generation.generationId) && e(d);
 			});
 			var p = s(l, 2), _ = (e) => {
-				var i = Za(), a = t(i);
+				var i = eo(), a = t(i);
 				U(a, { name: "triangle-alert" });
 				var o = s(a), l = s(t(o)), u = t(l, !0);
 				w(l), w(o);
 				var d = s(o), f = (e) => {
-					var t = Xa();
+					var t = $a();
 					h("click", t, () => m?.retryHistory()), F(e, t);
 				};
 				K(d, (e) => {
@@ -5456,10 +5498,10 @@ function lo(e, n) {
 					I(i, "data-timeline-key", c(n).key), r(u, c(n).gap?.message || "This generation could not be read.");
 				}), F(e, i);
 			}, v = (e) => {
-				var a = to();
+				var a = io();
 				let o;
 				var l = t(a), d = (e) => {
-					var i = Qa(), a = t(i, !0);
+					var i = to(), a = t(i, !0);
 					w(i), g(() => r(a, c(n).turn.triggerPreview)), F(e, i);
 				};
 				K(l, (e) => {
@@ -5467,10 +5509,10 @@ function lo(e, n) {
 				});
 				var p = s(l, 2);
 				q(p, 17, () => B(c(n)), (e) => le(e), (e, r) => {
-					var a = $a(), o = t(a), s = (e) => {
+					var a = no(), o = t(a), s = (e) => {
 						{
 							let t = u(() => ee(c(n)));
-							Ii(e, {
+							Ri(e, {
 								get item() {
 									return c(r);
 								},
@@ -5490,7 +5532,7 @@ function lo(e, n) {
 							});
 						}
 					}, l = (e) => {
-						ki(e, {
+						ji(e, {
 							get item() {
 								return c(r);
 							},
@@ -5499,7 +5541,7 @@ function lo(e, n) {
 					}, d = (e) => {
 						{
 							let t = u(() => J(c(r)));
-							Ui(e, {
+							Gi(e, {
 								get item() {
 									return c(r);
 								},
@@ -5513,7 +5555,7 @@ function lo(e, n) {
 							});
 						}
 					}, p = (e) => {
-						mr(e, {
+						gr(e, {
 							get item() {
 								return c(r);
 							},
@@ -5531,13 +5573,13 @@ function lo(e, n) {
 							}
 						});
 					}, m = (e) => {
-						Di(e, { get item() {
+						ki(e, { get item() {
 							return c(r);
 						} });
 					}, h = (e) => {
 						{
 							let t = u(() => c(r).text || "");
-							Ri(e, {
+							Bi(e, {
 								title: "Provider error",
 								get text() {
 									return c(t);
@@ -5546,7 +5588,7 @@ function lo(e, n) {
 							});
 						}
 					}, _ = (e) => {
-						Gi(e, { get item() {
+						qi(e, { get item() {
 							return c(r);
 						} });
 					};
@@ -5555,14 +5597,14 @@ function lo(e, n) {
 					}), w(a), g((e) => I(a, "data-timeline-key", e), [() => le(c(r))]), F(e, a);
 				});
 				var m = s(p, 2), h = (e) => {
-					var n = eo(), r = t(n);
+					var n = ro(), r = t(n);
 					U(r, { name: "loader-circle" }), S(), w(n), F(e, n);
 				};
 				K(m, (e) => {
 					c(n).loading && !c(n).items && !c(n).events && e(h);
 				});
 				var _ = s(m, 2), v = (e) => {
-					Ri(e, {
+					Bi(e, {
 						title: "Turn unavailable",
 						get text() {
 							return c(n).error;
@@ -5582,10 +5624,10 @@ function lo(e, n) {
 		});
 		var d = s(l, 2);
 		q(d, 19, () => c(f).notices, (e, t) => `notice:${c(f).identity}:${t}:${String(e.data?.text || "")}`, (e, n, r) => {
-			var i = $a(), a = t(i);
+			var i = no(), a = t(i);
 			{
 				let e = u(() => String(c(n).data?.text || "")), t = u(() => c(n).data?.level === "error");
-				Ri(a, {
+				Bi(a, {
 					title: "Forge",
 					get text() {
 						return c(e);
@@ -5598,7 +5640,7 @@ function lo(e, n) {
 			w(i), g(() => I(i, "data-timeline-key", `notice:${c(r)}`)), F(e, i);
 		});
 		var p = s(d, 2), _ = (e) => {
-			Ri(e, {
+			Bi(e, {
 				title: "Timeline error",
 				get text() {
 					return c(f).error;
@@ -5611,33 +5653,33 @@ function lo(e, n) {
 			c(f).error && e(_);
 		});
 		var v = s(p, 2), y = (e) => {
-			var n = ro(), r = t(n);
+			var n = oo(), r = t(n);
 			U(r, { name: "loader-circle" }), S(), w(n), F(e, n);
 		}, x = u(() => se(c(i).status));
 		K(v, (e) => {
 			c(x) && e(y);
 		});
 		var C = s(v, 2), E = (e) => {
-			var n = io(), r = t(n);
+			var n = so(), r = t(n);
 			U(r, { name: "loader-circle" }), S(), w(n), F(e, n);
 		};
 		K(C, (e) => {
 			c(f).loading && !c(f).blocks.length && e(E);
 		});
 		var D = s(C, 2), O = (e) => {
-			var n = ao(), r = t(n);
+			var n = co(), r = t(n);
 			U(r, { name: "bot" }), S(2), w(n), F(e, n);
 		}, k = u(() => c(f).loaded && !c(f).loading && !c(f).blocks.length && !c(f).notices.length && !se(c(i).status));
 		K(D, (e) => {
 			c(k) && e(O);
 		}), F(e, n);
 	}, he = (e) => {
-		var n = so(), r = t(n);
+		var n = uo(), r = t(n);
 		U(r, { name: "bot" }), S(), w(n), F(e, n);
 	};
 	K(pe, (e) => {
 		c(f).resourceId ? e(me) : e(he, -1);
-	}), w(fe), E(fe, (e) => x(p, e), () => c(p)), ar(s(fe, 2), {
+	}), w(fe), E(fe, (e) => x(p, e), () => c(p)), sr(s(fe, 2), {
 		get client() {
 			return A;
 		},
@@ -5671,13 +5713,13 @@ function lo(e, n) {
 p(["click"]);
 //#endregion
 //#region src/components/settings-draft.ts
-function uo() {
+function mo() {
 	return {
 		kind: "profile",
 		name: "default"
 	};
 }
-function fo(e) {
+function ho(e) {
 	return {
 		tab: e.initialTab,
 		workspacePath: "",
@@ -5686,9 +5728,9 @@ function fo(e) {
 		endpoint: e.agentHub.configuredEndpoint || "http://127.0.0.1:4646",
 		profiles: e.profiles.map((e) => ({ ...e })),
 		resourceDefaults: {
-			workspace: e.agentHub.resourceDefaults?.workspace ? { ...e.agentHub.resourceDefaults.workspace } : uo(),
-			project: e.agentHub.resourceDefaults?.project ? { ...e.agentHub.resourceDefaults.project } : uo(),
-			task: e.agentHub.resourceDefaults?.task ? { ...e.agentHub.resourceDefaults.task } : uo()
+			workspace: e.agentHub.resourceDefaults?.workspace ? { ...e.agentHub.resourceDefaults.workspace } : mo(),
+			project: e.agentHub.resourceDefaults?.project ? { ...e.agentHub.resourceDefaults.project } : mo(),
+			task: e.agentHub.resourceDefaults?.task ? { ...e.agentHub.resourceDefaults.task } : mo()
 		},
 		newProfile: {
 			key: "",
@@ -5698,7 +5740,7 @@ function fo(e) {
 		dirty: !1
 	};
 }
-function po(e) {
+function go(e) {
 	return {
 		...e,
 		profiles: e.profiles.map((e) => ({ ...e })),
@@ -5710,28 +5752,28 @@ function po(e) {
 		newProfile: { ...e.newProfile }
 	};
 }
-function mo(e) {
+function _o(e) {
 	return e instanceof Error ? e.message : String(e);
 }
 //#endregion
 //#region src/components/AgentHubSettingsPanel.svelte
-var ho = P("<span class=\"settings-pill\"> </span>"), go = P("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), _o = P("<div class=\"settings-empty\">No AgentHub agents available.</div>"), vo = P("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"agenthub-settings-panel\" data-settings-panel=\"\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>");
-function yo(e, n) {
+var vo = P("<span class=\"settings-pill\"> </span>"), yo = P("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), bo = P("<div class=\"settings-empty\">No AgentHub agents available.</div>"), xo = P("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"agenthub-settings-panel\" data-settings-panel=\"\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>");
+function So(e, n) {
 	C(n, !0);
 	let i = N(n, "draft", 15), a = N(n, "pending", 15);
 	async function o() {
 		if (!(!i().dirty || a())) {
 			a("agenthub");
 			try {
-				await n.onSaveAgentHub(po(i())), i(i().dirty = !1, !0);
+				await n.onSaveAgentHub(go(i())), i(i().dirty = !1, !0);
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				a("");
 			}
 		}
 	}
-	var u = vo(), d = s(t(u), 2), f = t(d), p = s(t(f)), m = t(p, !0);
+	var u = xo(), d = s(t(u), 2), f = t(d), p = s(t(f)), m = t(p, !0);
 	w(p), w(f);
 	var v = s(f, 2), y = s(t(v));
 	O(y), w(v);
@@ -5739,14 +5781,14 @@ function yo(e, n) {
 	w(b);
 	var T = s(b, 2);
 	q(T, 21, () => n.agentHub.capabilities, _, (e, n) => {
-		var i = ho(), a = t(i, !0);
+		var i = vo(), a = t(i, !0);
 		w(i), g(() => r(a, c(n))), F(e, i);
 	}), w(T), w(d);
 	var E = s(d, 2), D = t(E), k = s(t(D)), A = t(k);
 	w(k), w(D);
 	var M = s(D, 2);
 	q(M, 21, () => n.agentHub.agents, (e) => e.name, (e, n) => {
-		var i = go(), a = t(i), o = t(a), l = t(o, !0);
+		var i = yo(), a = t(i), o = t(a), l = t(o, !0);
 		w(o);
 		var u = s(o), d = t(u), f = t(d, !0);
 		w(d);
@@ -5755,7 +5797,7 @@ function yo(e, n) {
 			r(l, e), r(f, c(n).name), r(m, `${(c(n).providerId || "") ?? ""} · ${(c(n).available === !1 ? c(n).unavailableReason || "Unavailable" : "Available") ?? ""}`);
 		}, [() => (c(n).name || "A").slice(0, 1).toUpperCase()]), F(e, i);
 	}, (e) => {
-		var t = _o();
+		var t = bo();
 		F(e, t);
 	}), w(M), w(E);
 	var P = s(E, 2), I = t(P);
@@ -5772,8 +5814,8 @@ function yo(e, n) {
 p(["input", "click"]);
 //#endregion
 //#region src/components/AppearanceSettingsPanel.svelte
-var bo = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-dash\" x=\"34\" y=\"8\" width=\"50\" height=\"56\" rx=\"3\"></rect><rect class=\"d-dash\" x=\"90\" y=\"8\" width=\"24\" height=\"56\" rx=\"3\"></rect></svg>"), xo = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-light\" x=\"34\" y=\"8\" width=\"50\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-mid\" x=\"90\" y=\"8\" width=\"24\" height=\"56\" rx=\"3\"></rect></svg>"), So = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-light\" x=\"34\" y=\"8\" width=\"80\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-strong\" x=\"40\" y=\"13\" width=\"30\" height=\"8\" rx=\"2\"></rect><rect class=\"d-outline\" x=\"74\" y=\"13\" width=\"30\" height=\"8\" rx=\"2\"></rect></svg>"), Co = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-light\" x=\"6\" y=\"8\" width=\"70\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-mid\" x=\"82\" y=\"8\" width=\"32\" height=\"56\" rx=\"3\"></rect></svg>"), wo = P("<button type=\"button\" role=\"radio\"><span class=\"layout-diagram\"><!></span> <span class=\"layout-option-text\"><strong> </strong><small> </small></span></button>"), To = P("<div class=\"font-scale-row\"><span class=\"font-scale-label\"> </span> <input type=\"range\" min=\"80\" max=\"140\" step=\"5\"/> <span class=\"font-scale-value\"> </span></div>"), Eo = P("<div class=\"settings-panel\" data-component-owner=\"appearance-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Appearance</h2><p>Choose the workspace layout and the text size of each column. Everything applies immediately and is stored only in this browser.</p></div> <section class=\"appearance-section\" aria-label=\"Layout\"><div class=\"settings-section-heading\"><h3>Layout</h3></div> <div class=\"layout-options\" role=\"radiogroup\" aria-label=\"Workspace layout\"></div></section> <section class=\"appearance-section\" aria-label=\"Text size\"><div class=\"settings-section-heading\"><h3>Text size</h3><button type=\"button\" class=\"appearance-reset\"><!><span>Reset</span></button></div> <div class=\"font-scale-rows\"></div> <small class=\"appearance-hint\">Scales the text of each column independently from 80% to 140%.</small></section></div>");
-function Do(e, n) {
+var Co = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-dash\" x=\"34\" y=\"8\" width=\"50\" height=\"56\" rx=\"3\"></rect><rect class=\"d-dash\" x=\"90\" y=\"8\" width=\"24\" height=\"56\" rx=\"3\"></rect></svg>"), wo = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-light\" x=\"34\" y=\"8\" width=\"50\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-mid\" x=\"90\" y=\"8\" width=\"24\" height=\"56\" rx=\"3\"></rect></svg>"), To = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-strong\" x=\"6\" y=\"8\" width=\"22\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-light\" x=\"34\" y=\"8\" width=\"80\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-strong\" x=\"40\" y=\"13\" width=\"30\" height=\"8\" rx=\"2\"></rect><rect class=\"d-outline\" x=\"74\" y=\"13\" width=\"30\" height=\"8\" rx=\"2\"></rect></svg>"), Eo = f("<svg viewBox=\"0 0 120 72\" aria-hidden=\"true\"><rect class=\"d-fill-light\" x=\"6\" y=\"8\" width=\"70\" height=\"56\" rx=\"3\"></rect><rect class=\"d-fill-mid\" x=\"82\" y=\"8\" width=\"32\" height=\"56\" rx=\"3\"></rect></svg>"), Do = P("<button type=\"button\" role=\"radio\"><span class=\"layout-diagram\"><!></span> <span class=\"layout-option-text\"><strong> </strong><small> </small></span></button>"), Oo = P("<div class=\"font-scale-row\"><span class=\"font-scale-label\"> </span> <input type=\"range\" min=\"80\" max=\"140\" step=\"5\"/> <span class=\"font-scale-value\"> </span></div>"), ko = P("<div class=\"settings-panel\" data-component-owner=\"appearance-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Appearance</h2><p>Choose the workspace layout and the text size of each column. Everything applies immediately and is stored only in this browser.</p></div> <section class=\"appearance-section\" aria-label=\"Layout\"><div class=\"settings-section-heading\"><h3>Layout</h3></div> <div class=\"layout-options\" role=\"radiogroup\" aria-label=\"Workspace layout\"></div></section> <section class=\"appearance-section\" aria-label=\"Text size\"><div class=\"settings-section-heading\"><h3>Text size</h3><button type=\"button\" class=\"appearance-reset\"><!><span>Reset</span></button></div> <div class=\"font-scale-rows\"></div> <small class=\"appearance-hint\">Scales the text of each column independently from 80% to 140%.</small></section></div>");
+function Ao(e, n) {
 	C(n, !0);
 	let i = [
 		{
@@ -5810,21 +5852,21 @@ function Do(e, n) {
 			label: "Chat"
 		}
 	], o = (e) => `${Math.round(e * 100)}%`, d = u(() => a.every((e) => n.appearance.fontScales[e.id] === 1));
-	var f = Eo(), p = s(t(f), 2), m = s(t(p), 2);
+	var f = ko(), p = s(t(f), 2), m = s(t(p), 2);
 	q(m, 21, () => i, (e) => e.id, (e, i) => {
-		var a = wo();
+		var a = Do();
 		let o;
 		var l = t(a), u = t(l), d = (e) => {
-			var t = bo();
+			var t = Co();
 			F(e, t);
 		}, f = (e) => {
-			var t = xo();
+			var t = wo();
 			F(e, t);
 		}, p = (e) => {
-			var t = So();
+			var t = To();
 			F(e, t);
 		}, m = (e) => {
-			var t = Co();
+			var t = Eo();
 			F(e, t);
 		};
 		K(u, (e) => {
@@ -5841,7 +5883,7 @@ function Do(e, n) {
 	U(b, { name: "rotate-ccw" }), S(), w(y), w(v);
 	var x = s(v, 2);
 	q(x, 21, () => a, (e) => e.id, (e, i) => {
-		var a = To(), l = t(a), u = t(l, !0);
+		var a = Oo(), l = t(a), u = t(l, !0);
 		w(l);
 		var d = s(l, 2);
 		O(d);
@@ -5856,13 +5898,13 @@ function Do(e, n) {
 p(["click", "input"]);
 //#endregion
 //#region src/components/NotificationSettingsPanel.svelte
-var Oo = P("<small class=\"settings-notification-help\"> </small>"), ko = P("<div class=\"settings-panel\" data-component-owner=\"notification-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Notifications</h2><p>Choose how this browser notifies you when an Agent run finishes.</p></div> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Browser notifications</strong><small>Show one notification when a background run finishes.</small></span> <input id=\"settingsBrowserNotifications\" type=\"checkbox\"/></label> <!></section> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Completion sound</strong><small>Play one short local sound for each new notification.</small></span> <input id=\"settingsCompletionSound\" type=\"checkbox\"/></label> <small class=\"settings-notification-help\"> </small></section></div>");
-function Ao(e, n) {
+var jo = P("<small class=\"settings-notification-help\"> </small>"), Mo = P("<div class=\"settings-panel\" data-component-owner=\"notification-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Notifications</h2><p>Choose how this browser notifies you when an Agent run finishes.</p></div> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Browser notifications</strong><small>Show one notification when a background run finishes.</small></span> <input id=\"settingsBrowserNotifications\" type=\"checkbox\"/></label> <!></section> <section class=\"settings-agent-section\"><label class=\"settings-notification-option\"><span class=\"settings-notification-copy\"><strong>Completion sound</strong><small>Play one short local sound for each new notification.</small></span> <input id=\"settingsCompletionSound\" type=\"checkbox\"/></label> <small class=\"settings-notification-help\"> </small></section></div>");
+function No(e, n) {
 	C(n, !0);
-	var i = ko(), a = s(t(i), 2), o = t(a), c = s(t(o), 2);
+	var i = Mo(), a = s(t(i), 2), o = t(a), c = s(t(o), 2);
 	O(c), w(o);
 	var u = s(o, 2), d = (e) => {
-		var i = Oo(), a = t(i, !0);
+		var i = jo(), a = t(i, !0);
 		w(i), g(() => r(a, n.notifications.permissionError)), F(e, i);
 	};
 	K(u, (e) => {
@@ -5878,8 +5920,8 @@ function Ao(e, n) {
 p(["change"]);
 //#endregion
 //#region src/components/ProfilesSettingsPanel.svelte
-var jo = P("<label><span> </span><!></label>"), Mo = P("<option> </option>"), No = P("<span class=\"settings-profile-system-label\">System</span>"), Po = P("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), Fo = P("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), Io = P("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"profiles-settings-panel\" data-settings-panel=\"\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map Forge workflows to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>New Resource Defaults</h3><span>Applied once at creation</span></div> <div class=\"settings-resource-defaults\"></div> <p class=\"settings-resource-default-note\">Existing resources keep their explicit binding. Changing a profile route replaces its referenced resource generations at a safe turn boundary.</p></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>");
-function Lo(e, n) {
+var Po = P("<label><span> </span><!></label>"), Fo = P("<option> </option>"), Io = P("<span class=\"settings-profile-system-label\">System</span>"), Lo = P("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), Ro = P("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), zo = P("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"profiles-settings-panel\" data-settings-panel=\"\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map Forge workflows to AgentHub agents. System profiles are reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>New Resource Defaults</h3><span>Applied once at creation</span></div> <div class=\"settings-resource-defaults\"></div> <p class=\"settings-resource-default-note\">Existing resources keep their explicit binding. Changing a profile route replaces its referenced resource generations at a safe turn boundary.</p></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>");
+function Bo(e, n) {
 	C(n, !0);
 	let i = N(n, "draft", 15), a = N(n, "pending", 15), o = /* @__PURE__ */ new Set([
 		"default",
@@ -5926,22 +5968,22 @@ function Lo(e, n) {
 		if (!(!i().dirty || a())) {
 			a("agenthub");
 			try {
-				await n.onSaveAgentHub(po(i())), i(i().dirty = !1, !0);
+				await n.onSaveAgentHub(go(i())), i(i().dirty = !1, !0);
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				a("");
 			}
 		}
 	}
-	var b = Io(), x = s(t(b), 2), T = s(t(x), 2);
+	var b = zo(), x = s(t(b), 2), T = s(t(x), 2);
 	q(T, 20, () => [
 		["workspace", "Workspace"],
 		["project", "Project"],
 		["task", "Task"]
 	], _, (e, a) => {
 		let o = u(() => a[0]);
-		var l = jo(), d = t(l), f = t(d, !0);
+		var l = Po(), d = t(l), f = t(d, !0);
 		w(d);
 		var p = s(d);
 		{
@@ -5970,7 +6012,7 @@ function Lo(e, n) {
 	var I = s(D, 2), R = s(t(I), 2);
 	q(R, 17, () => i().profiles, _, (e, n, i) => {
 		let a = u(() => o.has(c(n).key.trim().toLowerCase()));
-		var l = Fo();
+		var l = Ro();
 		let f;
 		var v = t(l);
 		O(v);
@@ -5978,7 +6020,7 @@ function Lo(e, n) {
 		O(y);
 		var b = s(y, 2);
 		q(b, 21, () => m(c(n).agentName), _, (e, n) => {
-			var i = Mo(), a = t(i, !0);
+			var i = Fo(), a = t(i, !0);
 			w(i);
 			var o = {};
 			g(() => {
@@ -5988,10 +6030,10 @@ function Lo(e, n) {
 		var x;
 		B(b);
 		var S = s(b, 2), C = (e) => {
-			var t = No();
+			var t = Io();
 			F(e, t);
 		}, T = (e) => {
-			var n = Po(), r = t(n);
+			var n = Lo(), r = t(n);
 			U(r, { name: "trash-2" }), w(n), h("click", n, () => p(i)), F(e, n);
 		};
 		K(S, (e) => {
@@ -6006,7 +6048,7 @@ function Lo(e, n) {
 	O(V);
 	var W = s(V, 2);
 	q(W, 21, () => n.agents, _, (e, n) => {
-		var i = Mo(), a = t(i, !0);
+		var i = Fo(), a = t(i, !0);
 		w(i);
 		var o = {};
 		g(() => {
@@ -6031,8 +6073,8 @@ p([
 ]);
 //#endregion
 //#region src/components/SettingsNavigation.svelte
-var Ro = P("<span class=\"settings-tab-dot\" aria-hidden=\"true\"></span>"), zo = P("<button type=\"button\"><!> <span> </span> <!></button>"), Bo = P("<aside class=\"settings-tabs\" data-component-owner=\"settings-navigation\"><div class=\"settings-title\">System Settings</div> <!></aside>");
-function Vo(e, n) {
+var Vo = P("<span class=\"settings-tab-dot\" aria-hidden=\"true\"></span>"), Ho = P("<button type=\"button\"><!> <span> </span> <!></button>"), Uo = P("<aside class=\"settings-tabs\" data-component-owner=\"settings-navigation\"><div class=\"settings-title\">System Settings</div> <!></aside>");
+function Wo(e, n) {
 	C(n, !0);
 	let i = [
 		{
@@ -6072,9 +6114,9 @@ function Vo(e, n) {
 			sharesAgentDraft: !1
 		}
 	];
-	var a = Bo(), o = s(t(a), 2);
+	var a = Uo(), o = s(t(a), 2);
 	q(o, 17, () => i, (e) => e.id, (e, i) => {
-		var a = zo();
+		var a = Ho();
 		let o;
 		var l = t(a);
 		U(l, { get name() {
@@ -6083,7 +6125,7 @@ function Vo(e, n) {
 		var u = s(l, 2), d = t(u, !0);
 		w(u);
 		var f = s(u, 2), p = (e) => {
-			var t = Ro();
+			var t = Vo();
 			F(e, t);
 		};
 		K(f, (e) => {
@@ -6099,8 +6141,8 @@ function Vo(e, n) {
 p(["click"]);
 //#endregion
 //#region src/components/UserSettingsPanel.svelte
-var Ho = P("<div class=\"settings-panel\" data-component-owner=\"user-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>User</h2><p>Choose the name shown for messages you send from this browser.</p></div> <form id=\"settingsUserForm\" class=\"settings-user-form\"><label><span>Name</span> <input id=\"settingsUserName\" maxlength=\"80\" placeholder=\"User\"/> <small>Stored only in this browser. Empty values use User.</small></label> <div class=\"settings-form-actions\"><button type=\"submit\"><!><span>Save</span></button></div></form></div>");
-function Uo(e, n) {
+var Go = P("<div class=\"settings-panel\" data-component-owner=\"user-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>User</h2><p>Choose the name shown for messages you send from this browser.</p></div> <form id=\"settingsUserForm\" class=\"settings-user-form\"><label><span>Name</span> <input id=\"settingsUserName\" maxlength=\"80\" placeholder=\"User\"/> <small>Stored only in this browser. Empty values use User.</small></label> <div class=\"settings-form-actions\"><button type=\"submit\"><!><span>Save</span></button></div></form></div>");
+function Ko(e, n) {
 	C(n, !0);
 	let r = N(n, "pending", 15);
 	async function i(e) {
@@ -6109,13 +6151,13 @@ function Uo(e, n) {
 			try {
 				n.onUserNameInput(await n.onSaveUser(n.userName));
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				r("");
 			}
 		}
 	}
-	var o = Ho(), c = s(t(o), 2), u = t(c), d = s(t(u), 2);
+	var o = Go(), c = s(t(o), 2), u = t(c), d = s(t(u), 2);
 	O(d), S(2), w(u);
 	var f = s(u, 2), p = t(f), m = t(p);
 	U(m, { name: "save" }), S(), w(p), w(f), w(c), w(o), g(() => {
@@ -6125,17 +6167,17 @@ function Uo(e, n) {
 p(["input"]);
 //#endregion
 //#region src/components/WorkspaceSettingsPanel.svelte
-var Wo = P("<span class=\"settings-pill\">Active</span>"), Go = P("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), Ko = P("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), qo = P("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), Jo = P("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), Yo = P("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
-function Xo(e, n) {
+var qo = P("<span class=\"settings-pill\">Active</span>"), Jo = P("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), Yo = P("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), Xo = P("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), Zo = P("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), Qo = P("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
+function $o(e, n) {
 	C(n, !0);
 	let i = N(n, "draft", 15), d = N(n, "pending", 15), f = o("");
 	async function p(e) {
 		if (e.preventDefault(), !(!i().workspacePath.trim() || d())) {
 			d("workspace");
 			try {
-				await n.onAddWorkspace(po(i())), i(i().workspacePath = "", !0), i(i().createWorkspace = !1, !0);
+				await n.onAddWorkspace(go(i())), i(i().workspacePath = "", !0), i(i().createWorkspace = !1, !0);
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				d("");
 			}
@@ -6145,9 +6187,9 @@ function Xo(e, n) {
 		if (!d()) {
 			d(`remove:${e}`);
 			try {
-				await n.onRemoveWorkspace(e, po(i()));
+				await n.onRemoveWorkspace(e, go(i()));
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				d("");
 			}
@@ -6157,9 +6199,9 @@ function Xo(e, n) {
 		if (!d()) {
 			d(`icon:${e}`), x(f, "");
 			try {
-				await n.onWorkspaceIcon(e, t, po(i()));
+				await n.onWorkspaceIcon(e, t, go(i()));
 			} catch (e) {
-				n.onToast(mo(e));
+				n.onToast(_o(e));
 			} finally {
 				d("");
 			}
@@ -6169,7 +6211,7 @@ function Xo(e, n) {
 		let t = n.workspaces.find((t) => t.id === e);
 		return n.workspaceIcons.find((e) => e.id === (t?.icon || "")) || n.workspaceIcons[0];
 	}
-	var y = Yo(), b = s(t(y), 2), T = t(b);
+	var y = Qo(), b = s(t(y), 2), T = t(b);
 	O(T);
 	var E = s(T, 2), D = t(E);
 	O(D), S(2), w(E);
@@ -6180,14 +6222,14 @@ function Xo(e, n) {
 	var L = s(b, 2);
 	q(L, 21, () => n.workspaces, (e) => e.id, (e, i) => {
 		let a = u(() => v(c(i).id));
-		var o = qo(), l = t(o), p = t(l), y = t(p), b = t(y);
+		var o = Xo(), l = t(o), p = t(l), y = t(p), b = t(y);
 		w(y);
 		var S = s(y, 2), C = t(S), T = t(C, !0);
 		w(C);
 		var E = s(C), D = t(E, !0);
 		w(E), w(S), w(p);
 		var O = s(p, 2), k = t(O), A = (e) => {
-			var t = Wo();
+			var t = qo();
 			F(e, t);
 		};
 		K(k, (e) => {
@@ -6200,9 +6242,9 @@ function Xo(e, n) {
 		var z = s(M, 2), B = t(z);
 		U(B, { name: "trash-2" }), w(z), w(O), w(l);
 		var ee = s(l, 2), V = (e) => {
-			var o = Ko();
+			var o = Yo();
 			q(o, 21, () => n.workspaceIcons, (e) => e.id, (e, n) => {
-				var o = Go();
+				var o = Jo();
 				let l;
 				var u = t(o), d = s(u), f = t(d, !0);
 				w(d);
@@ -6222,7 +6264,7 @@ function Xo(e, n) {
 			I(b, "src", c(a).src), r(T, c(i).name), r(D, c(i).path), I(M, "aria-expanded", c(f) === c(i).id), M.disabled = e, I(N, "src", c(a).src), r(L, d() === `icon:${c(i).id}` ? "Saving..." : c(a).label), z.disabled = t;
 		}, [() => !!d(), () => !!d()]), h("click", M, () => x(f, c(f) === c(i).id ? "" : c(i).id, !0)), h("click", z, () => m(c(i).id)), F(e, o);
 	}, (e) => {
-		var t = Jo();
+		var t = Zo();
 		F(e, t);
 	}), w(L), w(y), g((e) => {
 		k.disabled = e, r(P, i().createWorkspace ? "Create" : "Add");
@@ -6231,16 +6273,16 @@ function Xo(e, n) {
 p(["click"]);
 //#endregion
 //#region src/components/SettingsModal.svelte
-var Zo = P("<button class=\"settings-overlay modal-enter\" type=\"button\" aria-label=\"Close settings\"></button> <div class=\"settings-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"System Settings\"><!> <div class=\"settings-content\"><button type=\"button\" class=\"settings-close\" title=\"Close\" aria-label=\"Close\"><!></button> <!></div></div>", 1);
-function Qo(n, r) {
+var es = P("<button class=\"settings-overlay modal-enter\" type=\"button\" aria-label=\"Close settings\"></button> <div class=\"settings-modal modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"System Settings\"><!> <div class=\"settings-content\"><button type=\"button\" class=\"settings-close\" title=\"Close\" aria-label=\"Close\"><!></button> <!></div></div>", 1);
+function ts(n, r) {
 	C(r, !0);
-	let i = o(y(r.channel.current())), a = o(""), u = o(-1), d = o(y(fo(c(i)))), f = o(y(c(i).userName)), p = o("");
+	let i = o(y(r.channel.current())), a = o(""), u = o(-1), d = o(y(ho(c(i)))), f = o(y(c(i).userName)), p = o("");
 	V(() => r.channel.subscribe((e) => {
 		let t = c(i);
-		if (x(i, e, !0), e.identity !== c(a)) x(a, e.identity, !0), x(u, e.dataVersion, !0), x(d, fo(e), !0), x(f, e.userName, !0), x(p, "");
+		if (x(i, e, !0), e.identity !== c(a)) x(a, e.identity, !0), x(u, e.dataVersion, !0), x(d, ho(e), !0), x(f, e.userName, !0), x(p, "");
 		else if (e.dataVersion !== c(u) && !c(d).dirty) {
 			let n = c(d).tab, r = c(f) !== t.userName;
-			x(u, e.dataVersion, !0), x(d, fo(e), !0), c(d).tab = n, r ? c(d).userName = c(f) : x(f, e.userName, !0);
+			x(u, e.dataVersion, !0), x(d, ho(e), !0), c(d).tab = n, r ? c(d).userName = c(f) : x(f, e.userName, !0);
 		}
 		queueMicrotask(e.onIconsChanged);
 	})), V(() => {
@@ -6253,8 +6295,8 @@ function Qo(n, r) {
 		c(d).dirty = !0;
 	}
 	var g = e(), _ = b(g), v = (e) => {
-		var n = Zo(), r = b(n), a = s(r, 2), o = t(a);
-		Vo(o, {
+		var n = es(), r = b(n), a = s(r, 2), o = t(a);
+		Wo(o, {
 			get activeTab() {
 				return c(d).tab;
 			},
@@ -6266,7 +6308,7 @@ function Qo(n, r) {
 		var l = s(o, 2), u = t(l), g = t(u);
 		U(g, { name: "x" }), w(u);
 		var _ = s(u, 2), v = (e) => {
-			Xo(e, {
+			$o(e, {
 				get workspaces() {
 					return c(i).workspaces;
 				},
@@ -6302,7 +6344,7 @@ function Qo(n, r) {
 				}
 			});
 		}, y = (e) => {
-			Uo(e, {
+			Ko(e, {
 				get userName() {
 					return c(f);
 				},
@@ -6323,7 +6365,7 @@ function Qo(n, r) {
 				}
 			});
 		}, S = (e) => {
-			Do(e, {
+			Ao(e, {
 				get appearance() {
 					return c(i).appearance;
 				},
@@ -6338,7 +6380,7 @@ function Qo(n, r) {
 				}
 			});
 		}, C = (e) => {
-			yo(e, {
+			So(e, {
 				get agentHub() {
 					return c(i).agentHub;
 				},
@@ -6363,7 +6405,7 @@ function Qo(n, r) {
 				}
 			});
 		}, T = (e) => {
-			Lo(e, {
+			Bo(e, {
 				get agents() {
 					return c(i).agents;
 				},
@@ -6388,7 +6430,7 @@ function Qo(n, r) {
 				}
 			});
 		}, E = (e) => {
-			Ao(e, {
+			No(e, {
 				get notifications() {
 					return c(i).notifications;
 				},
@@ -6411,8 +6453,8 @@ function Qo(n, r) {
 p(["click"]);
 //#endregion
 //#region src/components/Toast.svelte
-var $o = P("<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"> </div>");
-function es(e, n) {
+var ns = P("<div id=\"toast\" class=\"toast\" role=\"status\" aria-live=\"polite\"> </div>");
+function rs(e, n) {
 	C(n, !0);
 	let i = o(y(n.channel.current())), a = o(!1), s = null;
 	V(() => {
@@ -6425,15 +6467,15 @@ function es(e, n) {
 			e(), s !== null && window.clearTimeout(s);
 		};
 	});
-	var u = $o(), d = t(u, !0);
+	var u = ns(), d = t(u, !0);
 	w(u), g(() => {
 		I(u, "hidden", !c(a)), r(d, c(i).message);
 	}), F(e, u), l();
 }
 //#endregion
 //#region src/components/UploadDialog.svelte
-var ts = P("<div class=\"upload-empty\">Selected or pasted files upload automatically.</div>"), ns = P("<small class=\"upload-result-path\"> </small>"), rs = P("<small class=\"upload-error\"> </small>"), is = P("<div><div class=\"upload-item-heading\"><span class=\"upload-item-status-icon\"><span class=\"upload-item-status upload-item-status-queued\"><!></span><span class=\"upload-item-status upload-item-status-uploading\"><!></span><span class=\"upload-item-status upload-item-status-success\"><!></span><span class=\"upload-item-status upload-item-status-error\"><!></span></span><span><strong> </strong><small> </small></span><em> </em></div> <div class=\"upload-progress\" role=\"progressbar\" aria-valuemin=\"0\" aria-valuemax=\"100\"><span></span></div> <!> <!></div>"), as = P("<div class=\"upload-dialog-layer\" role=\"presentation\"><button class=\"upload-dialog-backdrop modal-enter\" type=\"button\" aria-label=\"Close\"></button> <div class=\"upload-dialog modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Upload files\"><header class=\"upload-dialog-header\"><div><strong>Upload files</strong><span>Files are saved in this resource's artifacts/upload/ directory.</span></div> <button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></header> <div class=\"upload-dialog-content\"><input id=\"agentUploadInput\" type=\"file\" multiple=\"\" hidden=\"\"/> <div id=\"agentUploadDropZone\" class=\"upload-drop-zone\" tabindex=\"0\" role=\"button\"><!><strong>Paste files from the clipboard</strong><span>or choose one or more files from this device</span> <button id=\"agentUploadChooseButton\" type=\"button\" class=\"secondary-button\"><!><span>Choose files</span></button></div> <div class=\"upload-list\" aria-live=\"polite\"><!> <!></div></div> <footer class=\"upload-dialog-footer\"><span> </span> <button type=\"button\">Done</button></footer></div></div>");
-function os(n, i) {
+var is = P("<div class=\"upload-empty\">Selected or pasted files upload automatically.</div>"), as = P("<small class=\"upload-result-path\"> </small>"), os = P("<small class=\"upload-error\"> </small>"), ss = P("<div><div class=\"upload-item-heading\"><span class=\"upload-item-status-icon\"><span class=\"upload-item-status upload-item-status-queued\"><!></span><span class=\"upload-item-status upload-item-status-uploading\"><!></span><span class=\"upload-item-status upload-item-status-success\"><!></span><span class=\"upload-item-status upload-item-status-error\"><!></span></span><span><strong> </strong><small> </small></span><em> </em></div> <div class=\"upload-progress\" role=\"progressbar\" aria-valuemin=\"0\" aria-valuemax=\"100\"><span></span></div> <!> <!></div>"), cs = P("<div class=\"upload-dialog-layer\" role=\"presentation\"><button class=\"upload-dialog-backdrop modal-enter\" type=\"button\" aria-label=\"Close\"></button> <div class=\"upload-dialog modal-enter\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Upload files\"><header class=\"upload-dialog-header\"><div><strong>Upload files</strong><span>Files are saved in this resource's artifacts/upload/ directory.</span></div> <button class=\"icon-button\" type=\"button\" title=\"Close\" aria-label=\"Close\"><!></button></header> <div class=\"upload-dialog-content\"><input id=\"agentUploadInput\" type=\"file\" multiple=\"\" hidden=\"\"/> <div id=\"agentUploadDropZone\" class=\"upload-drop-zone\" tabindex=\"0\" role=\"button\"><!><strong>Paste files from the clipboard</strong><span>or choose one or more files from this device</span> <button id=\"agentUploadChooseButton\" type=\"button\" class=\"secondary-button\"><!><span>Choose files</span></button></div> <div class=\"upload-list\" aria-live=\"polite\"><!> <!></div></div> <footer class=\"upload-dialog-footer\"><span> </span> <button type=\"button\">Done</button></footer></div></div>");
+function ls(n, i) {
 	C(i, !0);
 	let d = o(y(i.channel.current())), f = o(""), p = o(y([])), m = 1, _ = o(void 0), v = /* @__PURE__ */ new Map(), T = u(() => c(p).some((e) => e.status === "queued" || e.status === "uploading")), D = u(() => c(p).filter((e) => e.status === "success").length), O = u(() => c(p).filter((e) => e.status === "error").length);
 	V(() => {
@@ -6542,7 +6584,7 @@ function os(n, i) {
 		};
 	}
 	var H = e(), W = b(H), G = (e) => {
-		var n = as(), i = t(n), o = s(i, 2), l = t(o), d = s(t(l), 2), f = t(d);
+		var n = cs(), i = t(n), o = s(i, 2), l = t(o), d = s(t(l), 2), f = t(d);
 		U(f, { name: "x" }), w(d), w(l);
 		var m = s(l, 2), v = t(m);
 		E(v, (e) => x(_, e), () => c(_));
@@ -6551,7 +6593,7 @@ function os(n, i) {
 		var C = s(b, 4), k = t(C);
 		U(k, { name: "folder-open" }), S(), w(C), w(y);
 		var A = s(y, 2), N = t(A), L = (e) => {
-			var t = ts();
+			var t = is();
 			F(e, t);
 		};
 		K(N, (e) => {
@@ -6560,7 +6602,7 @@ function os(n, i) {
 		var R = s(N, 2);
 		q(R, 17, () => c(p), (e) => e.id, (e, n) => {
 			let i = u(() => ee(c(n)));
-			var a = is();
+			var a = ss();
 			let o;
 			var l = t(a), d = t(l), f = t(d), p = t(f);
 			U(p, { name: "clock-3" }), w(f);
@@ -6580,14 +6622,14 @@ function os(n, i) {
 			let N;
 			w(k);
 			var P = s(k, 2), L = (e) => {
-				var i = ns(), a = t(i, !0);
+				var i = as(), a = t(i, !0);
 				w(i), g(() => r(a, c(n).path)), F(e, i);
 			};
 			K(P, (e) => {
 				c(n).status === "success" && e(L);
 			});
 			var R = s(P, 2), z = (e) => {
-				var i = rs(), a = t(i, !0);
+				var i = os(), a = t(i, !0);
 				w(i), g(() => r(a, c(n).error || "Upload failed")), F(e, i);
 			};
 			K(R, (e) => {
@@ -6624,21 +6666,21 @@ p([
 ]);
 //#endregion
 //#region src/ForgeApp.svelte
-var ss = P("<!> <div data-component-owner=\"toast\" style=\"display: contents\"><!></div> <div data-component-owner=\"upload-dialog\" style=\"display: contents\"><!></div> <div data-component-owner=\"create-dialog\" style=\"display: contents\"><!></div> <div data-component-owner=\"settings\" style=\"display: contents\"><!></div> <div data-component-owner=\"confirm-dialog\" style=\"display: contents\"><!></div>", 1);
-function cs(e, n) {
+var us = P("<!> <div data-component-owner=\"toast\" style=\"display: contents\"><!></div> <div data-component-owner=\"upload-dialog\" style=\"display: contents\"><!></div> <div data-component-owner=\"create-dialog\" style=\"display: contents\"><!></div> <div data-component-owner=\"settings\" style=\"display: contents\"><!></div> <div data-component-owner=\"confirm-dialog\" style=\"display: contents\"><!></div>", 1);
+function ds(e, n) {
 	C(n, !0);
-	var r = ss(), i = b(r);
+	var r = us(), i = b(r);
 	Be(i, {
 		get channel() {
 			return n.channels.appShell;
 		},
 		details: (e) => {
-			Ua(e, { get channel() {
+			Ka(e, { get channel() {
 				return n.channels.detail;
 			} });
 		},
 		timeline: (e) => {
-			lo(e, { get channel() {
+			po(e, { get channel() {
 				return n.channels.timeline;
 			} });
 		},
@@ -6660,11 +6702,11 @@ function cs(e, n) {
 		}
 	});
 	var a = s(i, 2);
-	es(t(a), { get channel() {
+	rs(t(a), { get channel() {
 		return n.channels.toast;
 	} }), w(a);
 	var o = s(a, 2);
-	os(t(o), { get channel() {
+	ls(t(o), { get channel() {
 		return n.channels.upload;
 	} }), w(o);
 	var c = s(o, 2);
@@ -6672,7 +6714,7 @@ function cs(e, n) {
 		return n.channels.create;
 	} }), w(c);
 	var u = s(c, 2);
-	Qo(t(u), { get channel() {
+	ts(t(u), { get channel() {
 		return n.channels.settings;
 	} }), w(u);
 	var d = s(u, 2);
@@ -6682,8 +6724,8 @@ function cs(e, n) {
 }
 //#endregion
 //#region src/app-channels.ts
-var Z = () => void 0, ls = async () => void 0;
-function us() {
+var Z = () => void 0, fs = async () => void 0;
+function ps() {
 	return {
 		appShell: an({
 			identity: "",
@@ -6722,17 +6764,17 @@ function us() {
 				revision: 0,
 				replace: !0
 			},
-			onSwitchWorkspace: ls,
+			onSwitchWorkspace: fs,
 			onAddWorkspace: Z,
 			onCreateProject: Z,
 			onOpenSettings: Z,
-			onRefreshDoctor: ls,
-			onToggleProject: ls,
-			onSelectResource: ls,
-			onReorder: ls,
+			onRefreshDoctor: fs,
+			onToggleProject: fs,
+			onSelectResource: fs,
+			onReorder: fs,
 			onDragState: Z,
-			onToggleAttention: ls,
-			onDismissAttention: ls,
+			onToggleAttention: fs,
+			onDismissAttention: fs,
 			onPanePreview: Z,
 			onPaneCommit: Z,
 			onPaneViewport: Z,
@@ -6741,7 +6783,7 @@ function us() {
 			onMobileImmersive: Z,
 			onToast: Z,
 			onIconsChanged: Z,
-			onHistoryNavigation: ls
+			onHistoryNavigation: fs
 		}),
 		create: an({
 			open: !1,
@@ -6769,8 +6811,8 @@ function us() {
 			templateDigest: "",
 			submitting: !1,
 			onClose: Z,
-			onPreview: ls,
-			onSubmit: ls,
+			onPreview: fs,
+			onSubmit: fs,
 			previewRequestKey: () => "",
 			onConfirmTemplateSwitch: async () => !0,
 			onIconsChanged: Z
@@ -6832,11 +6874,11 @@ function us() {
 				soundError: ""
 			},
 			onClose: Z,
-			onAddWorkspace: ls,
-			onRemoveWorkspace: ls,
-			onWorkspaceIcon: ls,
+			onAddWorkspace: fs,
+			onRemoveWorkspace: fs,
+			onWorkspaceIcon: fs,
 			onSaveUser: async (e) => e,
-			onSaveAgentHub: ls,
+			onSaveAgentHub: fs,
 			onLayoutPreference: Z,
 			onFontScale: Z,
 			onResetFontScales: Z,
@@ -6886,8 +6928,8 @@ function us() {
 			onEndTurn: Z,
 			onEndGeneration: Z,
 			onDismissStopNotice: Z,
-			onSteerWaiting: ls,
-			onSaveAgentBinding: ls,
+			onSteerWaiting: fs,
+			onSaveAgentBinding: fs,
 			onIconsChanged: Z
 		}),
 		detail: an({
@@ -6914,8 +6956,8 @@ function us() {
 			onArchive: Z,
 			onSaveWorkspaceAgents: async () => ({ path: "AGENTS.md" }),
 			onSaveMarkdownFile: async (e) => ({ path: e }),
-			onDeleteArtifact: ls,
-			onSaveAgentBinding: ls,
+			onDeleteArtifact: fs,
+			onSaveAgentBinding: fs,
 			onToast: Z,
 			onIconsChanged: Z
 		}),
@@ -6930,7 +6972,7 @@ function us() {
 			project: () => [],
 			onEvent: Z,
 			onNotice: Z,
-			onApproval: ls,
+			onApproval: fs,
 			onToast: Z,
 			onIconsChanged: Z
 		}),
@@ -6954,15 +6996,15 @@ function us() {
 }
 //#endregion
 //#region src/controllers/agent-draft-store.ts
-var ds = "forge.gui.agentDraft.v2", fs = 2, ps = 50, ms = 7776e6;
-function hs(e) {
+var ms = "forge.gui.agentDraft.v2", hs = 2, gs = 50, _s = 7776e6;
+function vs(e) {
 	return encodeURIComponent(String(e || "").trim());
 }
-function gs(e) {
+function ys(e) {
 	return String(e || "").trim() || "workspace";
 }
-function _s(e = {}) {
-	let t = e.now || Date.now, n = e.maxOrphanCount ?? ps, r = e.maxAgeMs ?? ms;
+function bs(e = {}) {
+	let t = e.now || Date.now, n = e.maxOrphanCount ?? gs, r = e.maxAgeMs ?? _s;
 	function i() {
 		if ("storage" in e) return e.storage || null;
 		try {
@@ -6972,19 +7014,19 @@ function _s(e = {}) {
 		}
 	}
 	function a(e, t) {
-		let n = String(e || "").trim(), r = gs(t);
-		return !n || !r ? "" : `${ds}.resource.${hs(n)}.${hs(r)}`;
+		let n = String(e || "").trim(), r = ys(t);
+		return !n || !r ? "" : `${ms}.resource.${vs(n)}.${vs(r)}`;
 	}
 	function o(e) {
 		if (!e) return null;
 		try {
 			let t = JSON.parse(e);
-			return !t || t.version !== fs || typeof t.text != "string" ? null : {
-				version: fs,
+			return !t || t.version !== hs || typeof t.text != "string" ? null : {
+				version: hs,
 				text: t.text,
 				updatedAt: Number(t.updatedAt) || 0,
 				workspaceId: String(t.workspaceId || ""),
-				resourceId: gs(t.resourceId),
+				resourceId: ys(t.resourceId),
 				generationId: String(t.generationId || "") || void 0
 			};
 		} catch {
@@ -7021,25 +7063,25 @@ function _s(e = {}) {
 		let a = i();
 		if (a) try {
 			a.setItem(e, JSON.stringify({
-				version: fs,
+				version: hs,
 				text: n,
 				updatedAt: t(),
 				workspaceId: r.workspaceId,
-				resourceId: gs(r.resourceId),
+				resourceId: ys(r.resourceId),
 				generationId: String(r.generationId || "") || void 0
 			}));
 		} catch {}
 	}
 	function d(e, a, o) {
-		let c = i(), u = String(e || "").trim(), d = gs(a);
+		let c = i(), u = String(e || "").trim(), d = ys(a);
 		if (!c || !u) return;
-		let f = `${ds}.resource.${hs(u)}.`, p = [], m = t();
+		let f = `${ms}.resource.${vs(u)}.`, p = [], m = t();
 		try {
 			for (let e = 0; e < c.length; e++) {
 				let t = c.key(e);
 				if (!t || !t.startsWith(f)) continue;
 				let n = s(t);
-				if (!(!n || gs(n.resourceId) !== d || o.has(t))) {
+				if (!(!n || ys(n.resourceId) !== d || o.has(t))) {
 					if (!n.text || n.updatedAt > 0 && m - n.updatedAt > r) {
 						l(t);
 						continue;
@@ -7066,17 +7108,17 @@ function _s(e = {}) {
 }
 //#endregion
 //#region src/controllers/agent-draft-controller.ts
-function vs(e) {
-	let t = _s(), { runtime: n } = e;
+function xs(e) {
+	let t = bs(), { runtime: n } = e;
 	function r(n, r = e.workspaceId()) {
-		return t.keyForResource(r, gs(n));
+		return t.keyForResource(r, ys(n));
 	}
 	function i(e, t) {
 		let r = /* @__PURE__ */ new Set();
 		return n.ttyDraftWorkspaceId === e && n.ttyDraftResourceId === t && n.ttyDraftKey && r.add(n.ttyDraftKey), r;
 	}
 	function a(r = e.workspaceId(), a = n.ttyDraftResourceId) {
-		let o = r.trim(), s = gs(a);
+		let o = r.trim(), s = ys(a);
 		o && t.prune(o, s, i(o, s));
 	}
 	function o() {
@@ -7095,12 +7137,12 @@ function vs(e) {
 		n.ttyDraft = "", n.ttyMultiline = !1, n.ttyDraftKey = "", n.ttyDraftWorkspaceId = "", n.ttyDraftResourceId = "", n.ttyDraftVersion++;
 	}
 	function l(i, o = e.workspaceId(), s = "") {
-		let l = gs(i), u = r(l, o);
+		let l = ys(i), u = r(l, o);
 		if (!u) return c();
 		n.ttyDraftKey !== u && (n.ttyDraftKey = u, n.ttyDraftWorkspaceId = o.trim(), n.ttyDraftResourceId = l, n.ttyDraft = t.read(u), n.ttyMultiline = n.ttyDraft.includes("\n"), n.ttyDraftVersion++, a(n.ttyDraftWorkspaceId, n.ttyDraftResourceId));
 	}
 	function u(r) {
-		return e.workspaceId() !== r.workspaceId || n.ttyDraftResourceId !== gs(r.resourceId) || n.ttyDraftKey !== r.key || n.ttyDraft !== r.text || n.ttyDraftVersion !== r.version ? !1 : (t.remove(r.key), s("", !1), !0);
+		return e.workspaceId() !== r.workspaceId || n.ttyDraftResourceId !== ys(r.resourceId) || n.ttyDraftKey !== r.key || n.ttyDraft !== r.text || n.ttyDraftVersion !== r.version ? !1 : (t.remove(r.key), s("", !1), !0);
 	}
 	return {
 		clearResourceAfterAccepted: u,
@@ -7112,7 +7154,7 @@ function vs(e) {
 }
 //#endregion
 //#region src/controllers/agent-operation-controller.ts
-function ys(e) {
+function Ss(e) {
 	let t = 0, n = /* @__PURE__ */ new Map(), r = /* @__PURE__ */ new Set();
 	function i(r, i = "") {
 		if (n.has(r)) return null;
@@ -7148,17 +7190,17 @@ function ys(e) {
 }
 //#endregion
 //#region src/runtime/errors.ts
-function bs(e, t = "Unexpected error") {
+function Cs(e, t = "Unexpected error") {
 	return e instanceof Error && e.message ? e.message : e && typeof e == "object" && "message" in e ? String(e.message || t) : String(e || t);
 }
 //#endregion
 //#region src/controllers/create-dialog-controller.ts
-function xs(e) {
+function ws(e) {
 	let t = String(e?.id || "").trim();
 	if (!t) throw Error("The created resource did not return an id.");
 	return t;
 }
-function Ss(e) {
+function Ts(e) {
 	return {
 		open: !1,
 		identity: e,
@@ -7183,7 +7225,7 @@ function Ss(e) {
 		submitting: !1
 	};
 }
-function Cs(e) {
+function Es(e) {
 	return {
 		project: e.projectId,
 		title: e.templateName ? e.titleOverride ? e.title : "" : e.title,
@@ -7195,8 +7237,8 @@ function Cs(e) {
 		slug: e.slug
 	};
 }
-function ws(e) {
-	let t = 0, n = Ss(t), r = 0, i = null, a = "";
+function Ds(e) {
+	let t = 0, n = Ts(t), r = 0, i = null, a = "";
 	function o(e = n) {
 		return {
 			type: e.type === "task" ? "task" : "project",
@@ -7242,7 +7284,7 @@ function ws(e) {
 			onClose: f,
 			onPreview: p,
 			onSubmit: m,
-			previewRequestKey: (e) => JSON.stringify(Cs({
+			previewRequestKey: (e) => JSON.stringify(Es({
 				...t,
 				...s(e),
 				templateDigest: ""
@@ -7253,18 +7295,18 @@ function ws(e) {
 	}
 	function d(r, i = "") {
 		c(), n = {
-			...Ss(++t),
+			...Ts(++t),
 			open: !0,
 			type: r,
 			projectId: i
 		}, e.onOpen(), u();
 	}
 	function f() {
-		n.submitting || (c(), n = Ss(++t), u());
+		n.submitting || (c(), n = Ts(++t), u());
 	}
 	async function p(t) {
 		if (l(t), !n.open || !n.templateName) return;
-		let o = Cs({
+		let o = Es({
 			...n,
 			templateDigest: ""
 		}), s = JSON.stringify(o);
@@ -7292,7 +7334,7 @@ function ws(e) {
 			n.preview = t, n.templateDigest = t.template?.digest || "", n.previewKey = s;
 		} catch (e) {
 			if (h.signal.aborted || m !== r || p !== n.identity) return;
-			n.previewError = bs(e);
+			n.previewError = Cs(e);
 		} finally {
 			m === r && p === n.identity && (n.previewing = !1, i === h && (i = null), a === s && (a = ""), u());
 		}
@@ -7304,7 +7346,7 @@ function ws(e) {
 		n.submitting = !0, u();
 		try {
 			let r = "";
-			if (n.type === "project") r = xs(await e.request(`/api/workspaces/${i}/projects`, {
+			if (n.type === "project") r = ws(await e.request(`/api/workspaces/${i}/projects`, {
 				method: "POST",
 				body: JSON.stringify({
 					description: n.description,
@@ -7324,9 +7366,9 @@ function ws(e) {
 					};
 				} else {
 					if (n.templateName && !n.templateDigest && (await p(o()), !n.templateDigest)) throw Error(n.previewError || "Could not render the selected template.");
-					t = Cs(n);
+					t = Es(n);
 				}
-				r = xs(await e.request(`/api/workspaces/${i}/tasks`, {
+				r = ws(await e.request(`/api/workspaces/${i}/tasks`, {
 					method: "POST",
 					body: JSON.stringify(t)
 				})), e.toast("Task created.");
@@ -7336,7 +7378,7 @@ function ws(e) {
 			let s = ++t;
 			n.identity = s, await e.reloadTree(), i === e.workspaceId() && n.identity === s && await e.selectResource(r);
 		} catch (t) {
-			n.identity === a && (n.submitting = !1, u(), e.toast(bs(t)));
+			n.identity === a && (n.submitting = !1, u(), e.toast(Cs(t)));
 		}
 	}
 	return {
@@ -7348,7 +7390,7 @@ function ws(e) {
 }
 //#endregion
 //#region src/controllers/doctor-projection.ts
-function Ts(e, t) {
+function Os(e, t) {
 	let n = e.workspaces.find((e) => e.id === t);
 	return {
 		...e,
@@ -7362,18 +7404,18 @@ function Ts(e, t) {
 }
 //#endregion
 //#region src/controllers/notification-delivery.ts
-function Es() {
+function ks() {
 	if (window.Notification === void 0) return "unsupported";
 	let e = String(window.Notification.permission || "default");
 	return e === "granted" || e === "denied" ? e : "default";
 }
-function Ds(e) {
+function As(e) {
 	return `${e.resourceType === "project" ? "Project" : e.resourceType === "task" ? "Task" : "Session"}: ${e.title || e.resourceId || e.generationId}`;
 }
-function Os(e) {
+function js(e) {
 	return e.completionState === "failed" ? "Turn failed." : e.completionState === "cancelled" ? "Turn cancelled." : "Turn completed.";
 }
-function ks(e) {
+function Ms(e) {
 	let t = null, n = "", r = "";
 	function i() {
 		if (!e.settings().sound) return;
@@ -7397,9 +7439,9 @@ function ks(e) {
 		}
 	}
 	function a(t) {
-		if (!(!e.settings().browser || Es() !== "granted")) try {
-			let n = new window.Notification(Ds(t), {
-				body: Os(t),
+		if (!(!e.settings().browser || ks() !== "granted")) try {
+			let n = new window.Notification(As(t), {
+				body: js(t),
 				tag: `forge-${t.marker}`,
 				icon: "/favicon.svg"
 			});
@@ -7415,10 +7457,10 @@ function ks(e) {
 	}
 	function o(t) {
 		let n = e.settings();
-		n.browser && Es() === "granted" && e.claim(t, "browser", () => a(t)), n.sound && e.claim(t, "sound", i);
+		n.browser && ks() === "granted" && e.claim(t, "browser", () => a(t)), n.sound && e.claim(t, "sound", i);
 	}
 	async function s() {
-		let t = e.settings(), n = Es();
+		let t = e.settings(), n = ks();
 		if (n === "unsupported") return e.updateSettings({
 			...t,
 			browser: !1
@@ -7472,7 +7514,7 @@ function ks(e) {
 	function d() {
 		return {
 			...e.settings(),
-			permission: Es(),
+			permission: ks(),
 			permissionError: r,
 			soundError: n
 		};
@@ -7493,12 +7535,12 @@ function ks(e) {
 }
 //#endregion
 //#region src/controllers/notification-store.ts
-var As = "forge.gui.notifications.v1", js = `${As}.settings`;
-function Ms(e) {
+var Ns = "forge.gui.notifications.v1", Ps = `${Ns}.settings`;
+function Fs(e) {
 	return e && typeof e == "object" ? e : null;
 }
-function Ns(e) {
-	let t = Ms(e);
+function Is(e) {
+	let t = Fs(e);
 	if (!t) return null;
 	let n = String(t.marker || "").trim(), r = String(t.generationId || "").trim();
 	return !n || !r ? null : {
@@ -7513,7 +7555,7 @@ function Ns(e) {
 		at: Number(t.at) || Date.now()
 	};
 }
-function Ps() {
+function Ls() {
 	return {
 		version: 1,
 		seen: [],
@@ -7522,17 +7564,17 @@ function Ps() {
 		effects: []
 	};
 }
-function Fs(e) {
-	let t = Ms(e);
-	if (!t || t.version !== 1) return Ps();
+function Rs(e) {
+	let t = Fs(e);
+	if (!t || t.version !== 1) return Ls();
 	let n = Array.isArray(t.seen) ? t.seen.map((e) => {
-		let t = Ms(e);
+		let t = Fs(e);
 		return {
 			marker: String(t?.marker || "").trim(),
 			at: Number(t?.at) || Date.now()
 		};
-	}).filter((e) => e.marker) : [], r = Array.isArray(t.pending) ? t.pending.map(Ns).filter((e) => !!e) : [], i = Array.isArray(t.unread) ? t.unread.map(Ns).filter((e) => !!e) : [], a = Array.isArray(t.effects) ? t.effects.map((e) => {
-		let t = Ms(e);
+	}).filter((e) => e.marker) : [], r = Array.isArray(t.pending) ? t.pending.map(Is).filter((e) => !!e) : [], i = Array.isArray(t.unread) ? t.unread.map(Is).filter((e) => !!e) : [], a = Array.isArray(t.effects) ? t.effects.map((e) => {
+		let t = Fs(e);
 		return {
 			key: String(t?.key || "").trim(),
 			at: Number(t?.at) || Date.now()
@@ -7546,28 +7588,28 @@ function Fs(e) {
 		effects: a.slice(-2e3)
 	};
 }
-function Is(e) {
+function zs(e) {
 	let t = e.trim();
-	return t ? `${As}.state.${encodeURIComponent(t)}` : "";
+	return t ? `${Ns}.state.${encodeURIComponent(t)}` : "";
 }
-function Ls(e) {
+function Bs(e) {
 	function t(t) {
-		let n = Is(t);
-		if (!e || !n) return Ps();
+		let n = zs(t);
+		if (!e || !n) return Ls();
 		try {
 			let t = e.getItem(n);
-			if (!t) return Ps();
-			let r = Fs(JSON.parse(t));
+			if (!t) return Ls();
+			let r = Rs(JSON.parse(t));
 			return r.version !== 1 && e.removeItem(n), r;
 		} catch {
 			try {
 				e.removeItem(n);
 			} catch {}
-			return Ps();
+			return Ls();
 		}
 	}
 	function n(t, n) {
-		let r = Fs(n), i = Is(t);
+		let r = Rs(n), i = zs(t);
 		if (e && i) try {
 			e.setItem(i, JSON.stringify(r));
 		} catch {}
@@ -7579,7 +7621,7 @@ function Ls(e) {
 			sound: !1
 		};
 		try {
-			let t = Ms(JSON.parse(e.getItem(js) || "null"));
+			let t = Fs(JSON.parse(e.getItem(Ps) || "null"));
 			return !t || t.version !== 1 ? {
 				browser: !1,
 				sound: !1
@@ -7589,7 +7631,7 @@ function Ls(e) {
 			};
 		} catch {
 			try {
-				e.removeItem(js);
+				e.removeItem(Ps);
 			} catch {}
 			return {
 				browser: !1,
@@ -7599,7 +7641,7 @@ function Ls(e) {
 	}
 	function i(t) {
 		if (e) try {
-			e.setItem(js, JSON.stringify({
+			e.setItem(Ps, JSON.stringify({
 				version: 1,
 				...t
 			}));
@@ -7614,21 +7656,21 @@ function Ls(e) {
 }
 //#endregion
 //#region src/controllers/notification-projection.ts
-function Rs(e) {
+function Vs(e) {
 	let t = String(e.completionMarker || "").trim();
 	if (t) return t;
 	let n = String(e.generationId || "").trim(), r = Number(e.completionEventId) || 0;
 	return n && r > 0 ? `${n}:${r}` : "";
 }
-function zs(e) {
+function Hs(e) {
 	return String(e.generationId || e.id || "").trim();
 }
-function Bs(e) {
+function Us(e) {
 	return e.type === "turn.failed" ? "failed" : e.type === "turn.cancelled" ? "cancelled" : e.type === "turn.completed" ? "completed" : "";
 }
-function Vs(e, t) {
-	let n = String(e.resourceId || "").trim(), r = t.findResource(n), i = zs(e);
-	return !n || !i ? null : Ns({
+function Ws(e, t) {
+	let n = String(e.resourceId || "").trim(), r = t.findResource(n), i = Hs(e);
+	return !n || !i ? null : Is({
 		workspaceId: t.workspaceId,
 		generationId: i,
 		resourceId: n,
@@ -7642,7 +7684,7 @@ function Vs(e, t) {
 }
 //#endregion
 //#region src/controllers/notification-controller.ts
-function Hs(e) {
+function Gs(e) {
 	if ("storage" in e) return e.storage || null;
 	try {
 		return window.localStorage;
@@ -7650,8 +7692,8 @@ function Hs(e) {
 		return null;
 	}
 }
-function Us(e) {
-	let t = Ls(Hs(e)), n = {
+function Ks(e) {
+	let t = Bs(Gs(e)), n = {
 		ready: !1,
 		workspaceId: "",
 		store: null,
@@ -7660,7 +7702,7 @@ function Us(e) {
 		tabId: `tab-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 	};
 	function r() {
-		return n.store ||= Ps(), n.store;
+		return n.store ||= Ls(), n.store;
 	}
 	function i() {
 		return n.settings ||= t.readSettings(), n.settings;
@@ -7733,7 +7775,7 @@ function Us(e) {
 			T(t.marker);
 		}
 	}
-	let g = ks({
+	let g = Ms({
 		settings: i,
 		updateSettings: a,
 		settingsChanged: s,
@@ -7749,7 +7791,7 @@ function Us(e) {
 	function v(e) {
 		let t = window.BroadcastChannel || globalThis.BroadcastChannel;
 		if (typeof t == "function") try {
-			let r = new t(`${As}.${encodeURIComponent(e)}`);
+			let r = new t(`${Ns}.${encodeURIComponent(e)}`);
 			r.onmessage = (e) => b(e.data), n.channel = r;
 		} catch {
 			n.channel = null;
@@ -7757,7 +7799,7 @@ function Us(e) {
 	}
 	function y(e) {
 		let r = e.trim();
-		r && (_(), n.workspaceId = r, n.store = t.readStore(r), n.settings = t.readSettings(), Es() !== "granted" && (n.settings.browser = !1, t.writeSettings(n.settings)), n.ready = !1, v(r));
+		r && (_(), n.workspaceId = r, n.store = t.readStore(r), n.settings = t.readSettings(), ks() !== "granted" && (n.settings.browser = !1, t.writeSettings(n.settings)), n.ready = !1, v(r));
 	}
 	function b(t) {
 		if (!t || t.workspaceId !== n.workspaceId || t.sourceTabId === n.tabId) return;
@@ -7770,7 +7812,7 @@ function Us(e) {
 			return;
 		}
 		if (t.type === "record" && t.record) {
-			let n = Ns(t.record);
+			let n = Is(t.record);
 			if (!n) return;
 			i.seen.some((e) => e.marker === n.marker) || i.seen.push({
 				marker: n.marker,
@@ -7787,9 +7829,9 @@ function Us(e) {
 		o(), e.hasTree() && e.refreshIcons();
 	}
 	function x(t, i = "") {
-		let a = Rs(t);
+		let a = Vs(t);
 		if (!a || !n.workspaceId) return !1;
-		let s = Vs(t, {
+		let s = Ws(t, {
 			workspaceId: n.workspaceId,
 			marker: a,
 			completionState: i,
@@ -7809,10 +7851,10 @@ function Us(e) {
 		}), c.pending = c.pending.filter((e) => e.marker !== a), o(), !1);
 	}
 	function S(e) {
-		for (let t of e) Rs(t) && x(t, t.completionState || "");
+		for (let t of e) Vs(t) && x(t, t.completionState || "");
 	}
 	function C(e, t) {
-		let n = Bs(e);
+		let n = Us(e);
 		!n || !Number(e.id) || x({
 			...t,
 			completionMarker: `${t.generationId || e.sessionId || "generation"}:${e.id}`,
@@ -7842,7 +7884,7 @@ function Us(e) {
 	}
 	function D() {
 		e.scope.listen(window, "storage", (r) => {
-			r.key === Is(n.workspaceId) && r.newValue && (n.store = t.readStore(n.workspaceId), e.hasTree() && e.refreshIcons()), r.key === js && (n.settings = t.readSettings(), Es() !== "granted" && (n.settings.browser = !1), e.notificationsSettingsVisible() && e.renderSettings());
+			r.key === zs(n.workspaceId) && r.newValue && (n.store = t.readStore(n.workspaceId), e.hasTree() && e.refreshIcons()), r.key === Ps && (n.settings = t.readSettings(), ks() !== "granted" && (n.settings.browser = !1), e.notificationsSettingsVisible() && e.renderSettings());
 		}), e.scope.listen(document, "visibilitychange", () => {
 			e.flushDraft(), c() && E(e.selectedResourceId());
 		}), e.scope.listen(window, "focus", () => E(e.selectedResourceId()));
@@ -7868,76 +7910,67 @@ function Us(e) {
 }
 //#endregion
 //#region src/controllers/pane-layout-controller.ts
-var Ws = "forge.gui.paneSizes", Gs = "forge.gui.mobileImmersive", Ks = "forge.gui.layoutPreference", qs = "forge.gui.fontScales", Js = 8, Ys = 220, Xs = 360, Zs = 320, Qs = 1e4, $s = Object.freeze({
+var qs = "forge.gui.paneSizes", Js = "forge.gui.mobileImmersive", Ys = "forge.gui.layoutPreference", Xs = "forge.gui.fontScales", Zs = 8, Qs = 220, $s = 360, ec = 320, tc = 1e4, nc = Object.freeze({
 	sidebarWidth: 280,
 	chatWidth: 420,
 	sidebarAttentionHeight: 210
-}), ec = Object.freeze({
+}), rc = Object.freeze({
 	sidebarWidth: "--sidebar-width",
 	chatWidth: "--chat-width",
 	sidebarAttentionHeight: "--sidebar-attention-height"
 });
-function tc(e, t, n) {
+function ic(e, t, n) {
 	return Math.min(n, Math.max(t, e));
 }
-function nc(e) {
+function ac(e) {
 	return typeof e == "number" && Number.isFinite(e);
 }
-var rc = [
+var oc = [
 	"auto",
 	"three",
 	"two",
 	"split"
 ];
-function ic(e) {
-	return rc.includes(e) ? e : "auto";
+function sc(e) {
+	return oc.includes(e) ? e : "auto";
 }
-var ac = .8, oc = 1.4, sc = 1, cc = [
+var cc = .8, lc = 1.4, uc = 1, dc = [
 	"sidebar",
 	"details",
 	"chat"
-], lc = Object.freeze({
+], fc = Object.freeze({
 	sidebar: "--sidebar-font-scale",
 	details: "--details-font-scale",
 	chat: "--chat-font-scale"
 });
-function uc(e) {
-	return nc(e) ? Math.round(tc(e, ac, oc) * 100) / 100 : sc;
+function pc(e) {
+	return ac(e) ? Math.round(ic(e, cc, lc) * 100) / 100 : uc;
 }
-function dc(e) {
+function mc(e) {
 	let t = e && typeof e == "object" ? e : {};
 	return {
-		sidebar: uc(t.sidebar),
-		details: uc(t.details),
-		chat: uc(t.chat)
+		sidebar: pc(t.sidebar),
+		details: pc(t.details),
+		chat: pc(t.chat)
 	};
 }
-function fc(e, t = 0) {
-	let n = e && typeof e == "object" ? e : {}, r = { ...$s };
-	if (nc(n.sidebarWidth) && (r.sidebarWidth = tc(n.sidebarWidth, Ys, Qs)), nc(n.chatWidth)) r.chatWidth = tc(n.chatWidth, Zs, Qs);
-	else if (nc(n.detailsWidth) && t >= 688) {
-		let e = tc(n.detailsWidth, Xs, t - Js - Zs);
-		r.chatWidth = tc(t - Js - e, Zs, Qs);
+function hc(e, t = 0) {
+	let n = e && typeof e == "object" ? e : {}, r = { ...nc };
+	if (ac(n.sidebarWidth) && (r.sidebarWidth = ic(n.sidebarWidth, Qs, tc)), ac(n.chatWidth)) r.chatWidth = ic(n.chatWidth, ec, tc);
+	else if (ac(n.detailsWidth) && t >= 688) {
+		let e = ic(n.detailsWidth, $s, t - Zs - ec);
+		r.chatWidth = ic(t - Zs - e, ec, tc);
 	}
-	let i = nc(n.sidebarAttentionHeight) ? n.sidebarAttentionHeight : n.sidebarSessionHeight;
-	return nc(i) && (r.sidebarAttentionHeight = tc(i, 84, Qs)), r;
+	let i = ac(n.sidebarAttentionHeight) ? n.sidebarAttentionHeight : n.sidebarSessionHeight;
+	return ac(i) && (r.sidebarAttentionHeight = ic(i, 84, tc)), r;
 }
-function pc(e, t = window.localStorage) {
-	let n = { ...$s }, r = {
+function gc(e, t = window.localStorage) {
+	let n = { ...nc }, r = {
 		sidebarOpen: !1,
 		view: "details",
 		immersive: !1
-	}, i = "auto", a = dc(null), o = window.matchMedia("(max-width: 980px)"), s = window.matchMedia("(max-width: 1440px)");
+	}, i = "auto", a = mc(null), o = window.matchMedia("(max-width: 980px)"), s = window.matchMedia("(max-width: 1440px)");
 	function c() {
-		if (!t) return {};
-		try {
-			let e = JSON.parse(t.getItem(Ws) || "{}");
-			return e && typeof e == "object" && !Array.isArray(e) ? e : {};
-		} catch {
-			return {};
-		}
-	}
-	function l() {
 		if (!t) return {};
 		try {
 			let e = JSON.parse(t.getItem(qs) || "{}");
@@ -7946,11 +7979,20 @@ function pc(e, t = window.localStorage) {
 			return {};
 		}
 	}
+	function l() {
+		if (!t) return {};
+		try {
+			let e = JSON.parse(t.getItem(Xs) || "{}");
+			return e && typeof e == "object" && !Array.isArray(e) ? e : {};
+		} catch {
+			return {};
+		}
+	}
 	function u(e) {
-		document.documentElement.style.setProperty(lc[e], String(a[e]));
+		document.documentElement.style.setProperty(fc[e], String(a[e]));
 	}
 	function d() {
-		for (let e of cc) u(e);
+		for (let e of dc) u(e);
 	}
 	function f() {
 		return document.querySelector(".workspace-panel")?.getBoundingClientRect().width || 0;
@@ -7959,49 +8001,49 @@ function pc(e, t = window.localStorage) {
 		document.documentElement.style.setProperty(e, `${Math.round(t)}px`);
 	}
 	function m(e, t) {
-		if (!Object.hasOwn(ec, e) || !Number.isFinite(t)) return;
-		let r = e, i = Math.round(tc(t, r === "sidebarWidth" ? Ys : r === "chatWidth" ? Zs : 84, Qs));
-		n[r] = i, p(ec[r], i);
+		if (!Object.hasOwn(rc, e) || !Number.isFinite(t)) return;
+		let r = e, i = Math.round(ic(t, r === "sidebarWidth" ? Qs : r === "chatWidth" ? ec : 84, tc));
+		n[r] = i, p(rc[r], i);
 	}
 	function h() {
-		for (let e of Object.keys(ec)) m(e, n[e]);
+		for (let e of Object.keys(rc)) m(e, n[e]);
 	}
 	function g() {
-		t?.setItem(Ws, JSON.stringify(n));
+		t?.setItem(qs, JSON.stringify(n));
 	}
 	function _() {
 		let u = c();
-		n = fc(u, 0), h();
-		let p = nc(u.sidebarSessionHeight) && !nc(u.sidebarAttentionHeight);
-		nc(u.detailsWidth) && !nc(u.chatWidth) && !o.matches && (n = fc(u, f()), h(), p = !0), p && g();
+		n = hc(u, 0), h();
+		let p = ac(u.sidebarSessionHeight) && !ac(u.sidebarAttentionHeight);
+		ac(u.detailsWidth) && !ac(u.chatWidth) && !o.matches && (n = hc(u, f()), h(), p = !0), p && g();
 		try {
-			r.immersive = t?.getItem(Gs) === "1";
+			r.immersive = t?.getItem(Js) === "1";
 		} catch {
 			r.immersive = !1;
 		}
 		document.body.classList.toggle("chat-immersive", r.immersive);
 		try {
-			i = ic(t?.getItem(Ks));
+			i = sc(t?.getItem(Ys));
 		} catch {
 			i = "auto";
 		}
-		x(), a = dc(l()), d();
+		x(), a = mc(l()), d();
 		let m = () => {
 			x(), e();
 		};
 		o.addEventListener?.("change", m), s.addEventListener?.("change", m);
 	}
 	function v(e) {
-		if (!Object.hasOwn(ec, e) || !t) return;
+		if (!Object.hasOwn(rc, e) || !t) return;
 		let r = e, i = c();
 		delete i.detailsWidth, delete i.sidebarSessionHeight;
-		for (let e of Object.keys(ec)) nc(i[e]) || (i[e] = n[e]);
-		i[r] = n[r], t.setItem(Ws, JSON.stringify(i));
+		for (let e of Object.keys(rc)) ac(i[e]) || (i[e] = n[e]);
+		i[r] = n[r], t.setItem(qs, JSON.stringify(i));
 	}
 	function y() {
 		if (o.matches) return;
 		let e = c();
-		!nc(e.detailsWidth) || nc(e.chatWidth) || (n = fc(e, f()), h(), g());
+		!ac(e.detailsWidth) || ac(e.chatWidth) || (n = hc(e, f()), h(), g());
 	}
 	function b() {
 		return o.matches ? "single" : i === "auto" ? s.matches ? "two" : "three" : i;
@@ -8010,25 +8052,25 @@ function pc(e, t = window.localStorage) {
 		document.body.dataset.layout = b();
 	}
 	function S(n) {
-		i = ic(n);
+		i = sc(n);
 		try {
-			t?.setItem(Ks, i);
+			t?.setItem(Ys, i);
 		} catch {}
 		x(), e();
 	}
 	function C(n, r) {
-		if (Object.hasOwn(lc, n)) {
-			a[n] = uc(r), u(n);
+		if (Object.hasOwn(fc, n)) {
+			a[n] = pc(r), u(n);
 			try {
-				t?.setItem(qs, JSON.stringify(a));
+				t?.setItem(Xs, JSON.stringify(a));
 			} catch {}
 			e();
 		}
 	}
 	function w() {
-		a = dc(null), d();
+		a = mc(null), d();
 		try {
-			t?.removeItem(qs);
+			t?.removeItem(Xs);
 		} catch {}
 		e();
 	}
@@ -8041,7 +8083,7 @@ function pc(e, t = window.localStorage) {
 	function D(n) {
 		r.immersive = !!n, document.body.classList.toggle("chat-immersive", r.immersive);
 		try {
-			t?.setItem(Gs, r.immersive ? "1" : "0");
+			t?.setItem(Js, r.immersive ? "1" : "0");
 		} catch {}
 		e();
 	}
@@ -8069,7 +8111,7 @@ function pc(e, t = window.localStorage) {
 }
 //#endregion
 //#region src/controllers/resource-detail-controller.ts
-function mc(e) {
+function _c(e) {
 	function t(t) {
 		t && delete e.details[t];
 	}
@@ -8098,7 +8140,7 @@ function mc(e) {
 }
 //#endregion
 //#region src/controllers/settings-controller.ts
-function hc(e) {
+function vc(e) {
 	if (e && typeof e == "object") return {
 		kind: e.kind === "agent" ? "agent" : "profile",
 		name: e.name || "default"
@@ -8112,14 +8154,14 @@ function hc(e) {
 		name: "default"
 	};
 }
-function gc() {
+function yc() {
 	return {
-		workspace: hc(void 0),
-		project: hc(void 0),
-		task: hc(void 0)
+		workspace: vc(void 0),
+		project: vc(void 0),
+		task: vc(void 0)
 	};
 }
-function _c(e, t) {
+function bc(e, t) {
 	let n = t?.catalog || {}, r = (n.agents || []).map((e) => ({
 		...e,
 		id: e.name
@@ -8131,7 +8173,7 @@ function _c(e, t) {
 		agentProfiles: t.config?.agentProfiles || []
 	};
 }
-function vc(e) {
+function xc(e) {
 	let t = 0, n = {
 		open: !1,
 		identity: 0,
@@ -8172,9 +8214,9 @@ function vc(e) {
 				providers: l.providers || [],
 				agents: l.agents || [],
 				resourceDefaults: {
-					workspace: hc(o.config?.resourceDefaults?.workspace),
-					project: hc(o.config?.resourceDefaults?.project),
-					task: hc(o.config?.resourceDefaults?.task)
+					workspace: vc(o.config?.resourceDefaults?.workspace),
+					project: vc(o.config?.resourceDefaults?.project),
+					task: vc(o.config?.resourceDefaults?.task)
 				}
 			},
 			profiles: (i.agentProfiles || []).map((e) => ({ ...e })),
@@ -8305,9 +8347,9 @@ function vc(e) {
 			body: JSON.stringify({
 				endpoint: n.data?.agentHub?.configuredEndpoint || "http://127.0.0.1:4646",
 				agentProfiles: (n.data?.agentProfiles || []).map((e) => ({ ...e })),
-				resourceDefaults: n.data?.agentHub?.config?.resourceDefaults || gc()
+				resourceDefaults: n.data?.agentHub?.config?.resourceDefaults || yc()
 			})
-		}), await o(), e.setConfig(_c(await e.request("/api/workspaces"), n.data?.agentHub || {})), n.agentDirty = !1, e.renderAgentViews(), r(), e.onIconsChanged(), e.toast("AgentHub settings saved.");
+		}), await o(), e.setConfig(bc(await e.request("/api/workspaces"), n.data?.agentHub || {})), n.agentDirty = !1, e.renderAgentViews(), r(), e.onIconsChanged(), e.toast("AgentHub settings saved.");
 	}
 	return {
 		open: i,
@@ -8317,19 +8359,19 @@ function vc(e) {
 		isOpenTab: (e) => n.open && n.tab === e,
 		providers: () => n.data?.agentHub?.catalog?.providers || [],
 		profiles: () => n.data?.agentProfiles || [],
-		withAgentHubCatalog: _c
+		withAgentHubCatalog: bc
 	};
 }
 //#endregion
 //#region src/controllers/shell-projection.ts
-var yc = /* @__PURE__ */ new Set([
+var Sc = /* @__PURE__ */ new Set([
 	"starting",
 	"running",
 	"waiting_approval",
 	"recovering",
 	"stopping"
-]), bc = 6e4;
-function xc(e) {
+]), Cc = 6e4;
+function wc(e) {
 	let t = e.now || Date.now;
 	function n(e) {
 		if (!e) return "";
@@ -8370,10 +8412,10 @@ function xc(e) {
 	}
 	function o(e) {
 		let n = new Date(e.lastOutputAt || "").getTime();
-		if (Number.isFinite(n)) return t() - n <= bc;
-		if (!yc.has(e.status || "")) return !1;
+		if (Number.isFinite(n)) return t() - n <= Cc;
+		if (!Sc.has(e.status || "")) return !1;
 		let r = new Date(e.updatedAt || "").getTime();
-		return Number.isFinite(r) && t() - r <= bc;
+		return Number.isFinite(r) && t() - r <= Cc;
 	}
 	function s(e) {
 		if (!e?.status || e.status === "archived") return null;
@@ -8436,7 +8478,7 @@ function xc(e) {
 		};
 	}
 	function d(e) {
-		let t = (e.children || []).filter((e) => e.archived !== !0), n = t.filter((e) => yc.has(e.runtime?.status || "")).length, r = `${t.length} ${t.length === 1 ? "task" : "tasks"}`, i = `${n} working`;
+		let t = (e.children || []).filter((e) => e.archived !== !0), n = t.filter((e) => Sc.has(e.runtime?.status || "")).length, r = `${t.length} ${t.length === 1 ? "task" : "tasks"}`, i = `${n} working`;
 		return {
 			taskCount: t.length,
 			runningCount: n,
@@ -8498,34 +8540,34 @@ function xc(e) {
 }
 //#endregion
 //#region src/controllers/user-settings-controller.ts
-var Sc = "forge.gui.user.v1", Cc = 1, wc = 80;
-function Tc(e) {
+var Tc = "forge.gui.user.v1", Ec = 1, Dc = 80;
+function Oc(e) {
 	let t = String(e || "").trim();
-	return t && Array.from(t).slice(0, wc).join("") || "User";
+	return t && Array.from(t).slice(0, Dc).join("") || "User";
 }
-function Ec(e) {
+function kc(e) {
 	if (!e) return "User";
 	try {
 		let t = JSON.parse(e);
-		return !t || t.version !== Cc ? "User" : Tc(t.name);
+		return !t || t.version !== Ec ? "User" : Oc(t.name);
 	} catch {
 		return "User";
 	}
 }
-function Dc(e, t) {
+function Ac(e, t) {
 	let n = r();
 	function r() {
 		try {
-			return Ec(window.localStorage.getItem(Sc));
+			return kc(window.localStorage.getItem(Tc));
 		} catch {
 			return "User";
 		}
 	}
 	function i(e) {
-		let t = Tc(e);
+		let t = Oc(e);
 		try {
-			window.localStorage.setItem(Sc, JSON.stringify({
-				version: Cc,
+			window.localStorage.setItem(Tc, JSON.stringify({
+				version: Ec,
 				name: t
 			}));
 		} catch {
@@ -8534,7 +8576,7 @@ function Dc(e, t) {
 		return n = t, n;
 	}
 	return e.listen(window, "storage", (e) => {
-		e.key === Sc && (n = Ec(e.newValue), t());
+		e.key === Tc && (n = kc(e.newValue), t());
 	}), {
 		current: () => n,
 		save: i
@@ -8542,7 +8584,7 @@ function Dc(e, t) {
 }
 //#endregion
 //#region src/runtime/resource-scope.ts
-var Oc = class {
+var jc = class {
 	cleanups = /* @__PURE__ */ new Set();
 	disposed = !1;
 	get activeCount() {
@@ -8573,7 +8615,7 @@ var Oc = class {
 			this.cleanups.clear();
 		}
 	}
-}, kc, Ac = null, Q = {
+}, Mc, Nc = null, Q = {
 	config: null,
 	doctor: {
 		checking: !0,
@@ -8648,15 +8690,15 @@ var Oc = class {
 		text: "Workspace data is loaded through forge CLI."
 	}]
 };
-function jc() {
+function Pc() {
 	for (let e of Object.keys(Q.details)) delete Q.details[e];
 }
-var Mc = vs({
+var Fc = xs({
 	runtime: Q.agent,
 	workspaceId: () => Q.activeWorkspaceId
-}), Nc = Mc.clearResourceAfterAccepted, Pc = Mc.clearMemory, Fc = Mc.flush, Ic = Mc.restoreResource, Lc = Mc.update, Rc = ys(() => {
-	ud && (du(), ed());
-}), zc = pc(() => Rl()), Bc = bn(() => Rl()), Vc = mc({
+}), Ic = Fc.clearResourceAfterAccepted, Lc = Fc.clearMemory, Rc = Fc.flush, zc = Fc.restoreResource, Bc = Fc.update, Vc = Ss(() => {
+	pd && (mu(), rd());
+}), Hc = gc(() => Vl()), Uc = bn(() => Vl()), Wc = _c({
 	details: Q.details,
 	context: () => ({
 		workspaceId: Q.activeWorkspaceId,
@@ -8665,32 +8707,32 @@ var Mc = vs({
 		detailRequestVersion: Q.detailRequestVersion
 	}),
 	nextDetailRequestVersion: () => ++Q.detailRequestVersion,
-	isCurrentWorkspace: (e, t) => Al(e, t),
+	isCurrentWorkspace: (e, t) => Nl(e, t),
 	request: (e, t) => $(e, t)
-}), Hc = ws({
+}), Gc = Ds({
 	workspaceId: () => Q.activeWorkspaceId,
 	templates: (e) => Q.details[e]?.templates || [],
 	request: (e, t) => $(e, t),
-	publish: (e) => kc.renderCreateDialog(e),
-	toast: $u,
-	reloadTree: () => vl(),
-	selectResource: (e) => Vl(e),
+	publish: (e) => Mc.renderCreateDialog(e),
+	toast: nd,
+	reloadTree: () => xl(),
+	selectResource: (e) => Wl(e),
 	onOpen: () => {
 		Q.modalEnter = "create";
 	},
-	onIconsChanged: ed,
+	onIconsChanged: rd,
 	confirmTemplateSwitch: () => un({
 		title: "Switch template",
 		message: "Discard edited template fields and switch templates?",
 		confirmLabel: "Discard",
 		danger: !0
 	})
-}), Uc = (e) => document.getElementById(e), Wc = 5e3, Gc = {
+}), Kc = (e) => document.getElementById(e), qc = 5e3, Jc = {
 	id: "",
 	label: "Forge default",
 	src: "/favicon.svg",
 	type: "image/svg+xml"
-}, Kc = [
+}, Yc = [
 	{
 		id: "home-base",
 		label: "Home base",
@@ -8771,11 +8813,11 @@ var Mc = vs({
 		label: "Community and team",
 		src: "/workspace-icons/16-community-team.png"
 	}
-], qc = new Map(Kc.map((e) => [e.id, e])), { applyCustomOrder: Jc, archiveRedirectTarget: Yc, moveIdInList: Xc, projectTaskSummary: Zc, resourceRefText: Qc, statusModel: $c, taskOperationalState: el, taskOperationalStateKey: tl } = xc({
+], Xc = new Map(Yc.map((e) => [e.id, e])), { applyCustomOrder: Zc, archiveRedirectTarget: Qc, moveIdInList: $c, projectTaskSummary: el, resourceRefText: tl, statusModel: nl, taskOperationalState: rl, taskOperationalStateKey: il } = wc({
 	tree: () => Q.tree,
-	findResource: (e) => Pu(e),
+	findResource: (e) => Lu(e),
 	agentName: (e) => (Q.config?.agents || []).find((t) => t.id === e)?.name || e || "Forge GUI"
-}), nl = 0, rl = vc({
+}), al = 0, ol = xc({
 	config: () => Q.config || {
 		workspaces: [],
 		agents: [],
@@ -8792,66 +8834,66 @@ var Mc = vs({
 		Q.selectedId = "workspace";
 	},
 	request: (e, t) => $(e, t),
-	publish: (e) => kc.renderSettings(e),
-	agentOptions: il,
-	workspaceIcons: [Gc, ...Kc],
-	userName: ml,
+	publish: (e) => Mc.renderSettings(e),
+	agentOptions: sl,
+	workspaceIcons: [Jc, ...Yc],
+	userName: _l,
 	saveUser: (e) => {
-		if (!sl) throw Error("User settings are unavailable.");
-		return sl.save(e);
+		if (!ul) throw Error("User settings are unavailable.");
+		return ul.save(e);
 	},
 	appearance: () => {
-		let e = zc.snapshot();
+		let e = Hc.snapshot();
 		return {
 			layout: e.layout.preference,
 			fontScales: e.fontScales
 		};
 	},
-	setLayoutPreference: (e) => zc.setLayoutPreference(e),
-	setFontScale: (e, t) => zc.setFontScale(e, t),
-	resetFontScales: () => zc.resetFontScales(),
-	notificationPreferences: () => ol?.preferences() || {
+	setLayoutPreference: (e) => Hc.setLayoutPreference(e),
+	setFontScale: (e, t) => Hc.setFontScale(e, t),
+	resetFontScales: () => Hc.resetFontScales(),
+	notificationPreferences: () => ll?.preferences() || {
 		browser: !1,
 		sound: !1,
 		permission: "unsupported",
 		permissionError: "",
 		soundError: ""
 	},
-	setBrowserNotifications: (e) => ol?.setBrowserEnabled(e),
-	setCompletionSound: (e) => ol?.setSoundEnabled(e),
-	flushDraft: Fc,
-	resetAgentState: au,
+	setBrowserNotifications: (e) => ll?.setBrowserEnabled(e),
+	setCompletionSound: (e) => ll?.setSoundEnabled(e),
+	flushDraft: Rc,
+	resetAgentState: cu,
 	reloadWorkspaceContext: async () => {
-		await wl(), await vl();
+		await Dl(), await xl();
 	},
 	clearWorkspaceContext: () => {
-		Q.tree = null, jc(), Ol();
+		Q.tree = null, Pc(), jl();
 	},
-	renderWorkspace: Pl,
+	renderWorkspace: Ll,
 	renderAgentViews: () => {
-		Wu(), mu();
+		qu(), _u();
 	},
-	toast: $u,
-	onIconsChanged: ed
+	toast: nd,
+	onIconsChanged: rd
 });
-function il() {
-	return Ku().map((e) => ({
+function sl() {
+	return Yu().map((e) => ({
 		id: e.id || "",
-		label: hu(e),
-		summary: cu(e)
+		label: vu(e),
+		summary: du(e)
 	}));
 }
-function al() {
-	Rl(), Gl(), Mu(), Su(), mu(), du(), gu();
+function cl() {
+	Vl(), Jl(), Fu(), Tu(), _u(), mu(), yu();
 }
-var ol = null, sl = null;
-function cl(e) {
-	ol?.initialize(e);
+var ll = null, ul = null;
+function dl(e) {
+	ll?.initialize(e);
 }
-function ll() {
-	ol?.establishBaseline();
+function fl() {
+	ll?.establishBaseline();
 }
-function ul(e = Q.tree) {
+function pl(e = Q.tree) {
 	if (!e) return [];
 	let t = [], n = (e) => {
 		let n = e?.runtime;
@@ -8873,17 +8915,17 @@ function ul(e = Q.tree) {
 	}
 	return t;
 }
-function dl(e) {
-	ol?.observeProjections(e);
+function ml(e) {
+	ll?.observeProjections(e);
 }
-function fl(e, t) {
-	t && ol?.observeEvent(e, t);
+function hl(e, t) {
+	t && ll?.observeEvent(e, t);
 }
-function pl(e) {
-	ol?.clearResource(e);
+function gl(e) {
+	ll?.clearResource(e);
 }
-function ml() {
-	return sl?.current() || "User";
+function _l() {
+	return ul?.current() || "User";
 }
 async function $(e, t = {}) {
 	let n = await fetch(e, {
@@ -8899,7 +8941,7 @@ async function $(e, t = {}) {
 	}
 	return n.status === 204 ? null : n.json();
 }
-async function hl() {
+async function vl() {
 	try {
 		return await $("/api/doctor");
 	} catch (e) {
@@ -8910,78 +8952,78 @@ async function hl() {
 				errors: 0,
 				warnings: 0
 			},
-			error: bs(e),
+			error: Cs(e),
 			workspaces: []
 		};
 	}
 }
-async function gl() {
+async function yl() {
 	if (Q.doctor.checking) return;
 	Q.doctor = {
 		...Q.doctor,
 		checking: !0
-	}, Rl();
+	}, Vl();
 	let e = await fetch("/api/doctor", { method: "POST" });
 	e.ok || (Q.doctor = {
 		...Q.doctor,
 		checking: !1,
 		error: `${e.status} ${e.statusText}`
-	}, Rl());
+	}, Vl());
 }
-async function _l() {
-	let e = Bu(), [t, n, r] = await Promise.all([
+async function bl() {
+	let e = Uu(), [t, n, r] = await Promise.all([
 		$("/api/workspaces"),
 		$("/api/settings/agenthub"),
-		hl()
+		vl()
 	]);
-	Q.config = Xu(t, n), Q.doctor = r, Wu(), Q.activeWorkspaceId = Vu(e.workspaceId) ? e.workspaceId || "" : Q.config?.activeId || Q.config?.workspaces[0]?.id || "", Q.selectedId = e.resourceId || "workspace", Pl(), Q.activeWorkspaceId ? (cl(Q.activeWorkspaceId), await wl(), !e.resourceId && Q.lastResourceId && (Q.selectedId = Q.lastResourceId), await vl({ replaceURL: !0 })) : (Q.navigationLoading = !1, Q.tree = null, jc(), Q.workspaceAgents = null, Q.diff = null, au(), Ol());
+	Q.config = $u(t, n), Q.doctor = r, qu(), Q.activeWorkspaceId = Wu(e.workspaceId) ? e.workspaceId || "" : Q.config?.activeId || Q.config?.workspaces[0]?.id || "", Q.selectedId = e.resourceId || "workspace", Ll(), Q.activeWorkspaceId ? (dl(Q.activeWorkspaceId), await Dl(), !e.resourceId && Q.lastResourceId && (Q.selectedId = Q.lastResourceId), await xl({ replaceURL: !0 })) : (Q.navigationLoading = !1, Q.tree = null, Pc(), Q.workspaceAgents = null, Q.diff = null, cu(), jl());
 }
-async function vl(e = {}) {
+async function xl(e = {}) {
 	if (!Q.activeWorkspaceId) return;
 	let t = Q.activeWorkspaceId, n = Q.navigationVersion, r = ++Q.treeRequestVersion;
-	Q.navigationLoading = !0, Q.navigationError = "", Rl(), Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
+	Q.navigationLoading = !0, Q.navigationError = "", Vl(), Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
 	let i;
 	try {
 		i = await $(`/api/workspaces/${t}/tree`);
 	} catch (e) {
-		throw Al(t, n, r) && (Q.navigationLoading = !1, Q.navigationError = bs(e), Rl()), e;
+		throw Nl(t, n, r) && (Q.navigationLoading = !1, Q.navigationError = Cs(e), Vl()), e;
 	}
-	Al(t, n, r) && (Q.tree = i, jc(), Q.workspaceAgents = null, Q.diff = null, Iu(), zu(!1), Q.selectedId === "workspace" ? await Cl() : Q.selectedId && await yl(Q.selectedId), Al(t, n, r) && (await tu(t, Du()), Al(t, n, r) && (ll(), Q.navigationLoading = !1, Q.navigationError = "", Ol(), e.updateURL !== !1 && Hu({ replace: !!e.replaceURL }))));
+	Nl(t, n, r) && (Q.tree = i, Pc(), Q.workspaceAgents = null, Q.diff = null, zu(), Hu(!1), Q.selectedId === "workspace" ? await El() : Q.selectedId && await Sl(Q.selectedId), Nl(t, n, r) && (await iu(t, Au()), Nl(t, n, r) && (fl(), Q.navigationLoading = !1, Q.navigationError = "", jl(), e.updateURL !== !1 && Gu({ replace: !!e.replaceURL }))));
 }
-async function yl(e, t = {}) {
-	return Vc.load(e, t);
+async function Sl(e, t = {}) {
+	return Wc.load(e, t);
 }
-function bl(e, t = Q.activeWorkspaceId, n = {}) {
-	return Vc.fetch(e, t);
+function Cl(e, t = Q.activeWorkspaceId, n = {}) {
+	return Wc.fetch(e, t);
 }
-function xl(e) {
-	return Vc.snapshot(e);
+function wl(e) {
+	return Wc.snapshot(e);
 }
-function Sl(e) {
-	return Vc.apply(e);
+function Tl(e) {
+	return Wc.apply(e);
 }
-async function Cl(e = {}) {
+async function El(e = {}) {
 	if (!Q.activeWorkspaceId || Q.workspaceAgents && !e.force) return;
 	let t = Q.activeWorkspaceId, n = Q.navigationVersion, r = ++Q.workspaceAgentsRequestVersion;
 	try {
 		let e = await $(`/api/workspaces/${t}/files?path=AGENTS.md`);
-		if (!Al(t, n) || r !== Q.workspaceAgentsRequestVersion) return null;
+		if (!Nl(t, n) || r !== Q.workspaceAgentsRequestVersion) return null;
 		Q.workspaceAgents = e;
 	} catch (e) {
-		if (!Al(t, n) || r !== Q.workspaceAgentsRequestVersion) return null;
+		if (!Nl(t, n) || r !== Q.workspaceAgentsRequestVersion) return null;
 		Q.workspaceAgents = {
 			path: "AGENTS.md",
 			name: "AGENTS.md",
-			error: bs(e)
+			error: Cs(e)
 		};
 	}
 	return Q.workspaceAgents;
 }
-async function wl(e = Q.activeWorkspaceId, t = Q.navigationVersion) {
+async function Dl(e = Q.activeWorkspaceId, t = Q.navigationVersion) {
 	let n = await $(`/api/workspaces/${e}/ui-state`);
-	return Al(e, t) ? (Q.expandedProjects = new Set(n.expandedProjects || []), Q.lastResourceId = n.lastResourceId || "", Q.projectOrder = Array.isArray(n.projectOrder) ? n.projectOrder : [], Q.taskOrder = n.taskOrder && typeof n.taskOrder == "object" ? n.taskOrder : {}, !0) : !1;
+	return Nl(e, t) ? (Q.expandedProjects = new Set(n.expandedProjects || []), Q.lastResourceId = n.lastResourceId || "", Q.projectOrder = Array.isArray(n.projectOrder) ? n.projectOrder : [], Q.taskOrder = n.taskOrder && typeof n.taskOrder == "object" ? n.taskOrder : {}, !0) : !1;
 }
-async function Tl() {
+async function Ol() {
 	if (!Q.activeWorkspaceId) return;
 	let e = Q.activeWorkspaceId, t = Q.navigationVersion, n = Q.selectedId;
 	await $(`/api/workspaces/${e}/ui-state`, {
@@ -8993,70 +9035,70 @@ async function Tl() {
 			projectOrder: Q.projectOrder,
 			taskOrder: Q.taskOrder
 		})
-	}), Al(e, t) && (Q.lastResourceId = n);
+	}), Nl(e, t) && (Q.lastResourceId = n);
 }
-function El() {
-	Q.autoRefreshTimer ||= Ac?.interval(() => {
-		Dl().catch((e) => {
+function kl() {
+	Q.autoRefreshTimer ||= Nc?.interval(() => {
+		Al().catch((e) => {
 			console.warn("auto refresh failed", e);
 		});
-	}, Wc) ?? null;
+	}, qc) ?? null;
 }
-async function Dl() {
+async function Al() {
 	if (!Q.activeWorkspaceId || Q.autoRefreshInFlight || Q.listDrag) return;
 	let e = Q.autoRefreshVersion, t = Q.activeWorkspaceId, n = Q.navigationVersion, r = Q.selectedId;
 	Q.autoRefreshInFlight = !0;
 	try {
-		let [i, a] = await Promise.all([Zl(t), hl()]);
-		if (!i || !jl(t, n, e)) return;
-		let o = !Zu(Q.tree, i);
-		o && (Q.tree = i), Zu(Q.doctor, a) || (Q.doctor = a, o = !0), dl(ul(i)), Iu() && (Hu({ replace: !0 }), o = !0, r = Q.selectedId);
+		let [i, a] = await Promise.all([eu(t), vl()]);
+		if (!i || !Pl(t, n, e)) return;
+		let o = !ed(Q.tree, i);
+		o && (Q.tree = i), ed(Q.doctor, a) || (Q.doctor = a, o = !0), ml(pl(i)), zu() && (Gu({ replace: !0 }), o = !0, r = Q.selectedId);
 		let s = Q.expandedProjects.size;
-		if (zu(!1), o ||= s !== Q.expandedProjects.size, Q.selectedId === "workspace") {
+		if (Hu(!1), o ||= s !== Q.expandedProjects.size, Q.selectedId === "workspace") {
 			let r = Q.workspaceAgents;
-			if (await Cl({ force: !0 }), !jl(t, n, e)) return;
-			Zu(r, Q.workspaceAgents) || (o = !0);
+			if (await El({ force: !0 }), !Pl(t, n, e)) return;
+			ed(r, Q.workspaceAgents) || (o = !0);
 		} else if (r) {
-			let i = ++Q.detailRequestVersion, a = await bl(r, t);
-			if (!jl(t, n, e) || Q.selectedId !== r || i !== Q.detailRequestVersion) return;
-			let s = xl(r);
-			Sl(a), Zu(s, xl(r)) || (o = !0);
+			let i = ++Q.detailRequestVersion, a = await Cl(r, t);
+			if (!Pl(t, n, e) || Q.selectedId !== r || i !== Q.detailRequestVersion) return;
+			let s = wl(r);
+			Tl(a), ed(s, wl(r)) || (o = !0);
 		}
-		dl(ul(i)), await tu(t, Du()) && (o = !0), tl() !== Q.taskOperationalStateKey && (o = !0), o && Ol();
+		ml(pl(i)), await iu(t, Au()) && (o = !0), il() !== Q.taskOperationalStateKey && (o = !0), o && jl();
 	} finally {
 		Q.autoRefreshInFlight = !1;
 	}
 }
-function Ol() {
-	Rl(), Gl(), du(), ed(), Mu(), gu();
+function jl() {
+	Vl(), Jl(), mu(), rd(), Fu(), yu();
 }
-function kl() {
-	Rl(), Gl(), du(), ed(), Mu();
+function Ml() {
+	Vl(), Jl(), mu(), rd(), Fu();
 }
-function Al(e, t, n = null) {
+function Nl(e, t, n = null) {
 	return e === Q.activeWorkspaceId && t === Q.navigationVersion && (n == null || n === Q.treeRequestVersion);
 }
-function jl(e, t, n) {
-	return Al(e, t) && n === Q.autoRefreshVersion;
+function Pl(e, t, n) {
+	return Nl(e, t) && n === Q.autoRefreshVersion;
 }
-function Ml(e) {
-	return qc.get(String(e?.icon || "").trim()) || Gc;
+function Fl(e) {
+	return Xc.get(String(e?.icon || "").trim()) || Jc;
 }
-function Nl(e) {
-	let t = Ml(e), n = document.querySelector("link[rel=\"icon\"]");
+function Il(e) {
+	let t = Fl(e), n = document.querySelector("link[rel=\"icon\"]");
 	n || (n = document.createElement("link"), n.rel = "icon", document.head.appendChild(n)), n.type = "type" in t ? String(t.type || "image/png") : "image/png", n.href = t.src;
 }
-function Pl() {
+function Ll() {
 	let e = Q.config?.workspaces?.find((e) => e.id === Q.activeWorkspaceId);
-	Nl(e), Rl();
+	Il(e), Vl();
 }
-function Fl(e, t, n = "") {
-	let r = el(e), i = t === "project" && Ru(e.id), a = t === "project" ? Zc(e) : null, o = e.title || e.id;
+function Rl(e, t, n = "") {
+	let r = rl(e), i = t === "project" && Vu(e.id), a = t === "project" ? el(e) : null, o = e.title || e.id;
 	return {
 		id: e.id,
 		type: t,
 		title: o,
-		ref: Qc(e.id),
+		ref: tl(e.id),
 		active: Q.selectedId === e.id,
 		expanded: i,
 		ariaLabel: [
@@ -9065,20 +9107,20 @@ function Fl(e, t, n = "") {
 			r.label
 		].filter(Boolean).join(". "),
 		statusLabel: r.label || "",
-		status: $c(r.statusPresentation),
+		status: nl(r.statusPresentation),
 		summary: a ? {
 			taskLabel: a.taskLabel,
 			runningLabel: a.runningLabel,
 			ariaLabel: a.ariaLabel
 		} : null,
-		children: t === "project" ? Jc(e.children || [], Q.taskOrder[e.id]).map((t) => Fl(t, "task", e.id)) : [],
+		children: t === "project" ? Zc(e.children || [], Q.taskOrder[e.id]).map((t) => Rl(t, "task", e.id)) : [],
 		projectId: n,
 		followed: !!e.attention?.followed
 	};
 }
-function Il(e) {
+function zl(e) {
 	if (!e) return null;
-	let t = el(e);
+	let t = rl(e);
 	return {
 		id: e.id || "scheduler",
 		type: "scheduler",
@@ -9088,30 +9130,30 @@ function Il(e) {
 		expanded: !1,
 		ariaLabel: ["Scheduler", t.label].filter(Boolean).join(". "),
 		statusLabel: t.label || "Workspace Scheduler",
-		status: $c(t.statusPresentation),
+		status: nl(t.statusPresentation),
 		summary: null,
 		children: []
 	};
 }
-function Ll(e) {
-	let t = el(e), n = e.type === "scheduler" || e.type === "project" || e.type === "task" ? e.type : "workspace", r = e.title || e.id;
+function Bl(e) {
+	let t = rl(e), n = e.type === "scheduler" || e.type === "project" || e.type === "task" ? e.type : "workspace", r = e.title || e.id;
 	return {
 		id: e.id,
 		type: n,
 		title: r,
-		ref: n === "project" || n === "task" ? Qc(e.id) : "",
+		ref: n === "project" || n === "task" ? tl(e.id) : "",
 		selected: Q.selectedId === e.id,
 		activeTurn: !!e.runtime?.activeTurn,
 		followed: !!e.attention?.followed,
 		turnNumber: Number(e.runtime?.turnNumber) || 0,
 		agentName: String(e.runtime?.agentName || "").trim(),
 		statusLabel: t.label || (e.attention?.followed ? "Focused resource" : "Active turn"),
-		status: $c(t.statusPresentation)
+		status: nl(t.statusPresentation)
 	};
 }
-function Rl() {
-	let e = Q.tree ? Jc(Q.tree.projects || [], Q.projectOrder).map((e) => Fl(e, "project")) : [], t = Q.tree?.attentionList?.map((e) => Ll(e)) || [];
-	Q.tree && (Q.taskOperationalStateKey = tl()), kc.renderAppShell({
+function Vl() {
+	let e = Q.tree ? Zc(Q.tree.projects || [], Q.projectOrder).map((e) => Rl(e, "project")) : [], t = Q.tree?.attentionList?.map((e) => Bl(e)) || [];
+	Q.tree && (Q.taskOperationalStateKey = il()), Mc.renderAppShell({
 		identity: Q.activeWorkspaceId || "no-workspace",
 		loading: !!Q.navigationLoading,
 		error: Q.navigationError || "",
@@ -9122,89 +9164,89 @@ function Rl() {
 			name: e.name || e.id,
 			path: e.path || "",
 			icon: e.icon || "",
-			iconSrc: Ml(e).src
+			iconSrc: Fl(e).src
 		})),
-		scheduler: Il(Q.tree?.scheduler),
+		scheduler: zl(Q.tree?.scheduler),
 		projects: e,
 		attentionList: t,
-		doctor: Ts(Q.doctor, Q.activeWorkspaceId),
-		...zc.snapshot(),
-		route: Bc.projection(),
-		onSwitchWorkspace: (e) => zl(e),
-		onAddWorkspace: () => Yu("workspace").catch((e) => $u(e.message)),
-		onCreateProject: () => Ou(),
-		onOpenSettings: () => Yu().catch((e) => $u(e.message)),
-		onRefreshDoctor: gl,
-		onToggleProject: (e) => Hl(e),
-		onSelectResource: (e) => Vl(e),
-		onReorder: (e, t, n) => Bl(e, t, n),
+		doctor: Os(Q.doctor, Q.activeWorkspaceId),
+		...Hc.snapshot(),
+		route: Uc.projection(),
+		onSwitchWorkspace: (e) => Hl(e),
+		onAddWorkspace: () => Qu("workspace").catch((e) => nd(e.message)),
+		onCreateProject: () => ju(),
+		onOpenSettings: () => Qu().catch((e) => nd(e.message)),
+		onRefreshDoctor: yl,
+		onToggleProject: (e) => Gl(e),
+		onSelectResource: (e) => Wl(e),
+		onReorder: (e, t, n) => Ul(e, t, n),
 		onDragState: (e) => {
 			Q.listDrag = e;
 		},
-		onToggleAttention: (e, t) => $l(e, t),
-		onDismissAttention: (e) => eu(e),
-		onPanePreview: (e, t) => rd(e, t),
-		onPaneCommit: (e) => id(e),
-		onPaneViewport: () => ad(),
-		onMobileSidebar: (e) => od(e),
-		onMobileView: (e) => sd(e),
-		onMobileImmersive: (e) => cd(e),
-		onHistoryNavigation: (e) => md(e),
-		onToast: $u,
-		onIconsChanged: ed
+		onToggleAttention: (e, t) => nu(e, t),
+		onDismissAttention: (e) => ru(e),
+		onPanePreview: (e, t) => od(e, t),
+		onPaneCommit: (e) => sd(e),
+		onPaneViewport: () => cd(),
+		onMobileSidebar: (e) => ld(e),
+		onMobileView: (e) => ud(e),
+		onMobileImmersive: (e) => dd(e),
+		onHistoryNavigation: (e) => _d(e),
+		onToast: nd,
+		onIconsChanged: rd
 	});
 }
-async function zl(e) {
-	if (!Vu(e)) return;
+async function Hl(e) {
+	if (!Wu(e)) return;
 	if (Q.workspaceMenuOpen = !1, e === Q.activeWorkspaceId) {
-		Pl();
+		Ll();
 		return;
 	}
-	od(!1), Fc(), Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
+	ld(!1), Rc(), Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
 	let t = Q.navigationVersion;
-	await Tl().catch((e) => console.warn("failed to save UI state", e)), Q.activeWorkspaceId = e, Q.selectedId = "workspace", Q.tree = null, Q.navigationLoading = !0, Q.navigationError = "", jc(), cl(e), ju(), au(), Pl(), await wl(e, t) && (Q.selectedId = Q.lastResourceId || "workspace", await vl());
+	await Ol().catch((e) => console.warn("failed to save UI state", e)), Q.activeWorkspaceId = e, Q.selectedId = "workspace", Q.tree = null, Q.navigationLoading = !0, Q.navigationError = "", Pc(), dl(e), Pu(), cu(), Ll(), await Dl(e, t) && (Q.selectedId = Q.lastResourceId || "workspace", await xl());
 }
-async function Bl(e, t, n) {
+async function Ul(e, t, n) {
 	let r = {
 		projectOrder: [...Q.projectOrder],
 		taskOrder: Object.fromEntries(Object.entries(Q.taskOrder).map(([e, t]) => [e, Array.isArray(t) ? [...t] : []]))
 	};
 	if (e.kind === "task") {
-		let r = Pu(e.projectId);
+		let r = Lu(e.projectId);
 		if (!r) return;
-		let i = Jc(r.children || [], Q.taskOrder[e.projectId]);
+		let i = Zc(r.children || [], Q.taskOrder[e.projectId]);
 		Q.taskOrder = {
 			...Q.taskOrder,
-			[e.projectId]: Xc(i.map((e) => e.id), e.id, t.id, n)
+			[e.projectId]: $c(i.map((e) => e.id), e.id, t.id, n)
 		};
-	} else if (e.kind === "project") Q.projectOrder = Xc(Jc(Q.tree?.projects || [], Q.projectOrder).map((e) => e.id), e.id, t.id, n);
+	} else if (e.kind === "project") Q.projectOrder = $c(Zc(Q.tree?.projects || [], Q.projectOrder).map((e) => e.id), e.id, t.id, n);
 	else return;
-	Rl();
+	Vl();
 	try {
-		await Tl();
+		await Ol();
 	} catch (e) {
-		throw Q.projectOrder = r.projectOrder, Q.taskOrder = r.taskOrder, Rl(), e;
+		throw Q.projectOrder = r.projectOrder, Q.taskOrder = r.taskOrder, Vl(), e;
 	}
 }
-async function Vl(e, t = {}) {
+async function Wl(e, t = {}) {
 	let n = Q.selectedId !== e;
-	t.clearUnread !== !1 && pl(e);
+	t.clearUnread !== !1 && gl(e);
 	let r = n || !!t.forceDetail;
-	r && (Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++, e !== "workspace" && Vc.reset(e)), n && (Fc(), bu(), Q.diff = null, Pc(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.steeringMessageId = ""), Q.selectedId = e, od(!1), zu(!1), Hu(), Tl().catch((e) => console.warn("failed to save UI state", e)), kl(), await Promise.all([e === "workspace" ? Cl({ force: !!t.forceDetail }) : yl(e, { force: r }), tu(Q.activeWorkspaceId, e)]), Al(Q.activeWorkspaceId, Q.navigationVersion) && kl();
+	r && (Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++, e !== "workspace" && Wc.reset(e)), n && (Rc(), Cu(), Q.diff = null, Lc(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.steeringMessageId = ""), Q.selectedId = e, ld(!1), Hu(!1), Gu(), Ol().catch((e) => console.warn("failed to save UI state", e)), Ml(), await Promise.all([e === "workspace" ? El({ force: !!t.forceDetail }) : Sl(e, { force: r }), iu(Q.activeWorkspaceId, e)]), Nl(Q.activeWorkspaceId, Q.navigationVersion) && Ml();
 }
-async function Hl(e) {
-	Q.expandedProjects.has(e) ? Q.expandedProjects.delete(e) : Q.expandedProjects.add(e), Rl();
+async function Gl(e) {
+	Q.expandedProjects.has(e) ? Q.expandedProjects.delete(e) : Q.expandedProjects.add(e), Vl();
 	try {
-		await Tl();
+		await Ol();
 	} catch (t) {
-		throw Q.expandedProjects.has(e) ? Q.expandedProjects.delete(e) : Q.expandedProjects.add(e), Rl(), t;
+		throw Q.expandedProjects.has(e) ? Q.expandedProjects.delete(e) : Q.expandedProjects.add(e), Vl(), t;
 	}
 }
-function Ul() {
+function Kl() {
 	let e = Q.activeWorkspaceId || "", t = {
 		identity: e ? `${e}:${Q.selectedId || "workspace"}` : "empty",
 		workspaceId: e,
-		workspaceName: Uu(),
+		workspaceName: Ku(),
 		resourceId: Q.selectedId || "",
 		resourceType: "",
 		resourceTitle: "",
@@ -9216,7 +9258,7 @@ function Ul() {
 		agentBinding: Q.selectedId === "workspace" ? Q.tree?.agentBinding || {
 			kind: "profile",
 			name: "default"
-		} : Pu(Q.selectedId)?.agentBinding || {
+		} : Lu(Q.selectedId)?.agentBinding || {
 			kind: "profile",
 			name: "default"
 		},
@@ -9225,42 +9267,42 @@ function Ul() {
 			description: e.description,
 			agentName: e.agentName
 		})),
-		agents: il(),
-		resolveResourceTitle: Fu,
-		onNavigate: (e) => Kl(e).catch((e) => $u(bs(e))),
-		onCreateTask: (e) => ku(e),
-		onArchive: (e) => Nu(e).catch((e) => $u(bs(e))),
-		onSaveWorkspaceAgents: (e, t) => ql(e, t),
-		onSaveMarkdownFile: (e, t, n) => Jl(e, t, n),
-		onDeleteArtifact: (e) => Yl(e),
+		agents: sl(),
+		resolveResourceTitle: Ru,
+		onNavigate: (e) => Yl(e).catch((e) => nd(Cs(e))),
+		onCreateTask: (e) => Mu(e),
+		onArchive: (e) => Iu(e).catch((e) => nd(Cs(e))),
+		onSaveWorkspaceAgents: (e, t) => Xl(e, t),
+		onSaveMarkdownFile: (e, t, n) => Zl(e, t, n),
+		onDeleteArtifact: (e) => Ql(e),
 		onSaveAgentBinding: async (t) => {
 			let n = Q.selectedId || "workspace";
 			await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(n)}/agent-binding`, {
 				method: "PUT",
 				body: JSON.stringify(t)
-			}), await vl({ updateURL: !1 }), n !== "workspace" && await yl(n, { force: !0 }), Ol(), $u("Resource agent binding saved.");
+			}), await xl({ updateURL: !1 }), n !== "workspace" && await Sl(n, { force: !0 }), jl(), nd("Resource agent binding saved.");
 		},
 		onRefreshScheduler: async () => {
-			await vl({ updateURL: !1 }), Q.selectedId === "scheduler" && await yl("scheduler", { force: !0 }), Ol();
+			await xl({ updateURL: !1 }), Q.selectedId === "scheduler" && await Sl("scheduler", { force: !0 }), jl();
 		},
-		onToast: $u,
-		onIconsChanged: ed
+		onToast: nd,
+		onIconsChanged: rd
 	};
 	if (!Q.tree) return t;
 	if (Q.selectedId === "workspace") return {
 		...t,
 		resourceId: "workspace",
 		resourceType: "workspace",
-		resourceTitle: Uu()
+		resourceTitle: Ku()
 	};
-	let n = Pu(Q.selectedId) || Q.tree.scheduler || Q.tree.projects[0];
+	let n = Lu(Q.selectedId) || Q.tree.scheduler || Q.tree.projects[0];
 	if (!n) return {
 		...t,
 		resourceId: "workspace",
 		resourceType: "workspace",
-		resourceTitle: Uu()
+		resourceTitle: Ku()
 	};
-	let r = Q.details[n.id] || null, i = Lu(n.id);
+	let r = Q.details[n.id] || null, i = Bu(n.id);
 	return {
 		...t,
 		identity: `${e}:${n.id}:${n.type}`,
@@ -9272,10 +9314,10 @@ function Ul() {
 			title: i.title || i.id
 		} : null,
 		loading: !r,
-		detail: Wl(r)
+		detail: ql(r)
 	};
 }
-function Wl(e) {
+function ql(e) {
 	return !e || e.type !== "scheduler" && e.type !== "project" && e.type !== "task" ? null : {
 		...e,
 		type: e.type,
@@ -9283,13 +9325,13 @@ function Wl(e) {
 		path: e.path || ""
 	};
 }
-function Gl() {
-	kc.renderDetailPanel(Ul());
+function Jl() {
+	Mc.renderDetailPanel(Kl());
 }
-async function Kl(e) {
-	await Vl(e, { forceDetail: e === Q.selectedId && e !== "workspace" });
+async function Yl(e) {
+	await Wl(e, { forceDetail: e === Q.selectedId && e !== "workspace" });
 }
-async function ql(e, t) {
+async function Xl(e, t) {
 	if (!Q.activeWorkspaceId) throw Error("No workspace is selected.");
 	let n = Q.activeWorkspaceId, r = Q.navigationVersion, i = await $(`/api/workspaces/${n}/files?path=AGENTS.md`, {
 		method: "PUT",
@@ -9298,10 +9340,10 @@ async function ql(e, t) {
 			expectedContentHash: t
 		})
 	});
-	if (!Al(n, r) || Q.selectedId !== "workspace") throw Error("The workspace changed before AGENTS.md finished saving.");
-	return Q.workspaceAgents = i, Ol(), i;
+	if (!Nl(n, r) || Q.selectedId !== "workspace") throw Error("The workspace changed before AGENTS.md finished saving.");
+	return Q.workspaceAgents = i, jl(), i;
 }
-async function Jl(e, t, n) {
+async function Zl(e, t, n) {
 	let r = Q.activeWorkspaceId, i = Q.selectedId;
 	if (!r || !i || i === "workspace" || i === "scheduler") throw Error("No editable resource is selected.");
 	let a = Q.navigationVersion;
@@ -9322,78 +9364,78 @@ async function Jl(e, t, n) {
 			expectedContentHash: n
 		})
 	});
-	if (!Al(r, a) || Q.selectedId !== i) throw Error("The resource changed before the Markdown file finished saving.");
-	return await yl(i, { force: !0 }), Ol(), o;
+	if (!Nl(r, a) || Q.selectedId !== i) throw Error("The resource changed before the Markdown file finished saving.");
+	return await Sl(i, { force: !0 }), jl(), o;
 }
-async function Yl(e) {
+async function Ql(e) {
 	let t = Q.activeWorkspaceId, n = Q.selectedId;
 	if (!t || !n || n === "workspace" || n === "scheduler") throw Error("No editable resource is selected.");
 	let r = Q.navigationVersion;
-	if (await $(`/api/workspaces/${encodeURIComponent(t)}/resources/${encodeURIComponent(n)}/artifacts?path=${encodeURIComponent(e)}`, { method: "DELETE" }), !Al(t, r) || Q.selectedId !== n) throw Error("The resource changed before the artifact finished deleting.");
-	await yl(n, { force: !0 }), Ol(), $u("Artifact deleted.");
+	if (await $(`/api/workspaces/${encodeURIComponent(t)}/resources/${encodeURIComponent(n)}/artifacts?path=${encodeURIComponent(e)}`, { method: "DELETE" }), !Nl(t, r) || Q.selectedId !== n) throw Error("The resource changed before the artifact finished deleting.");
+	await Sl(n, { force: !0 }), jl(), nd("Artifact deleted.");
 }
-function Xl() {
-	Q.diffRequestVersion++, Q.diff = null, Ol();
+function $l() {
+	Q.diffRequestVersion++, Q.diff = null, jl();
 }
-async function Zl(e = Q.activeWorkspaceId) {
+async function eu(e = Q.activeWorkspaceId) {
 	let t = ++Q.treeRequestVersion, n = Q.navigationVersion, r = await $(`/api/workspaces/${e}/tree`);
-	return Al(e, n, t) ? r : null;
+	return Nl(e, n, t) ? r : null;
 }
-async function Ql() {
+async function tu() {
 	if (!Q.activeWorkspaceId || !Q.tree) return;
-	let e = await Zl(Q.activeWorkspaceId);
+	let e = await eu(Q.activeWorkspaceId);
 	e && (Q.tree = e);
 }
-async function $l(e, t) {
+async function nu(e, t) {
 	let n = Q.activeWorkspaceId;
 	!n || !e || (await $(`/api/workspaces/${encodeURIComponent(n)}/resources/${encodeURIComponent(e)}/attention`, {
 		method: "PUT",
 		body: JSON.stringify({ followed: t })
-	}), await Ql(), Ol());
-}
-async function eu(e) {
-	let t = Q.activeWorkspaceId;
-	!t || !e || (await $(`/api/workspaces/${encodeURIComponent(t)}/resources/${encodeURIComponent(e)}/attention/dismiss`, { method: "POST" }), await Ql(), Ol());
-}
-async function tu(e = Q.activeWorkspaceId, t = Du()) {
-	if (!e || !t) return !1;
-	let n = ++Q.messageStatusRequestVersion, r = `${e}:${t}`, i = await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(t)}/status`);
-	if (n !== Q.messageStatusRequestVersion || e !== Q.activeWorkspaceId || t !== Du()) return !1;
-	let a = Q.messageStatusKey !== r || !Zu(Q.messageStatus, i);
-	return Q.messageStatusKey = r, Q.messageStatus = i, a;
-}
-function nu() {
-	Q.stopNotice = null, mu();
+	}), await tu(), jl());
 }
 async function ru(e) {
+	let t = Q.activeWorkspaceId;
+	!t || !e || (await $(`/api/workspaces/${encodeURIComponent(t)}/resources/${encodeURIComponent(e)}/attention/dismiss`, { method: "POST" }), await tu(), jl());
+}
+async function iu(e = Q.activeWorkspaceId, t = Au()) {
+	if (!e || !t) return !1;
+	let n = ++Q.messageStatusRequestVersion, r = `${e}:${t}`, i = await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(t)}/status`);
+	if (n !== Q.messageStatusRequestVersion || e !== Q.activeWorkspaceId || t !== Au()) return !1;
+	let a = Q.messageStatusKey !== r || !ed(Q.messageStatus, i);
+	return Q.messageStatusKey = r, Q.messageStatus = i, a;
+}
+function au() {
+	Q.stopNotice = null, _u();
+}
+async function ou(e) {
 	if (!e || Q.steeringMessageId) return;
-	let t = Q.activeWorkspaceId, n = Du();
-	Q.steeringMessageId = e, mu();
+	let t = Q.activeWorkspaceId, n = Au();
+	Q.steeringMessageId = e, _u();
 	try {
-		await $(`/api/workspaces/${encodeURIComponent(t)}/messages/${encodeURIComponent(e)}/steer`, { method: "POST" }), await tu(t, n), t === Q.activeWorkspaceId && n === Du() && (Ol(), $u("Message inserted into the current turn."));
+		await $(`/api/workspaces/${encodeURIComponent(t)}/messages/${encodeURIComponent(e)}/steer`, { method: "POST" }), await iu(t, n), t === Q.activeWorkspaceId && n === Au() && (jl(), nd("Message inserted into the current turn."));
 	} catch (e) {
 		try {
-			await tu(t, n);
+			await iu(t, n);
 		} catch {}
 		throw e;
 	} finally {
-		Q.steeringMessageId === e && (Q.steeringMessageId = "", mu());
+		Q.steeringMessageId === e && (Q.steeringMessageId = "", _u());
 	}
 }
-async function iu() {
-	Fc(), Rc.reset(), Pc(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.stopNotice = null, await tu();
+async function su() {
+	Rc(), Vc.reset(), Lc(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.stopNotice = null, await iu();
 }
-function au() {
-	Fc(), bu(), Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, Pc(), Rc.reset(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.steeringMessageId = "", Q.stopNotice = null, Q.agent.toolGroupOpen.clear(), Q.agent.approvalDrafts.clear(), Q.agent.renderDeferredForSelection = !1, su();
+function cu() {
+	Rc(), Cu(), Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, Lc(), Vc.reset(), Q.messageStatus = null, Q.messageStatusKey = "", Q.messageStatusRequestVersion++, Q.steeringMessageId = "", Q.stopNotice = null, Q.agent.toolGroupOpen.clear(), Q.agent.approvalDrafts.clear(), Q.agent.renderDeferredForSelection = !1, uu();
 }
-function ou(e, t, n) {
-	if (e !== Q.activeWorkspaceId || t !== Du() || !n) return;
-	let r = Pu(t)?.runtime || Q.messageStatus?.generation;
+function lu(e, t, n) {
+	if (e !== Q.activeWorkspaceId || t !== Au() || !n) return;
+	let r = Lu(t)?.runtime || Q.messageStatus?.generation;
 	[
 		"turn.completed",
 		"turn.failed",
 		"turn.cancelled"
-	].includes(n.type) && fl(n, r?.generationId ? {
+	].includes(n.type) && hl(n, r?.generationId ? {
 		id: r.generationId,
 		resourceId: t,
 		generationId: r.generationId,
@@ -9405,63 +9447,63 @@ function ou(e, t, n) {
 		"session.state",
 		"approval.requested",
 		"approval.resolved"
-	].includes(n.type) && tu().then(Ol).catch((e) => console.warn("agent refresh failed", e));
+	].includes(n.type) && iu().then(jl).catch((e) => console.warn("agent refresh failed", e));
 }
-function su() {
+function uu() {
 	Q.agent.renderTimer && window.clearTimeout(Q.agent.renderTimer), Q.agent.renderTimer = null;
 }
-function cu(e) {
+function du(e) {
 	if (!e) return "";
-	let t = [lu(e.providerId)];
+	let t = [fu(e.providerId)];
 	return e.options?.model && t.push(e.options.model), t.filter(Boolean).join(" · ");
 }
-function lu(e) {
-	return (Q.config?.agentHubProviders || rl.providers()).find((t) => t.id === e)?.name || e || "Provider";
+function fu(e) {
+	return (Q.config?.agentHubProviders || ol.providers()).find((t) => t.id === e)?.name || e || "Provider";
 }
-function uu(e) {
+function pu(e) {
 	let t = window.getSelection?.();
 	return !t || t.isCollapsed || t.rangeCount === 0 ? !1 : t.getRangeAt(0).intersectsNode(e);
 }
-function du(e = {}) {
-	mu();
-	let t = Du(), n = Q.messageStatusKey === `${Q.activeWorkspaceId}:${t}` ? Q.messageStatus : null, r = (Q.config?.agents || []).find((e) => e.id === n?.resolvedAgent) || Gu(), i = Pu(t)?.runtime;
-	kc.renderAgentPanelHeader({
+function mu(e = {}) {
+	_u();
+	let t = Au(), n = Q.messageStatusKey === `${Q.activeWorkspaceId}:${t}` ? Q.messageStatus : null, r = (Q.config?.agents || []).find((e) => e.id === n?.resolvedAgent) || Ju(), i = Lu(t)?.runtime;
+	Mc.renderAgentPanelHeader({
 		identity: `${Q.activeWorkspaceId}:${t}`,
 		workspaceId: Q.activeWorkspaceId,
 		resourceId: t,
 		status: n,
-		submitting: Rc.isSending(fu(Q.activeWorkspaceId, t)),
-		agentName: hu(r),
-		modelSummary: cu(r),
+		submitting: Vc.isSending(hu(Q.activeWorkspaceId, t)),
+		agentName: vu(r),
+		modelSummary: du(r),
 		turnNumber: Number(n?.generation?.turnNumber) || Number(i?.turnNumber) || 0,
 		turnStartedAt: String(i?.turnStartedAt || ""),
-		onIconsChanged: ed
-	}), kc.renderEventTimeline({
+		onIconsChanged: rd
+	}), Mc.renderEventTimeline({
 		identity: `${Q.activeWorkspaceId}:${t}`,
 		workspaceId: Q.activeWorkspaceId,
 		resourceId: t,
 		status: n,
-		agentName: hu(r),
-		resolveResourceTitle: Fu,
-		onNavigate: (e) => Vl(e).catch((e) => $u(bs(e))),
-		project: Rr,
-		onEvent: ou,
+		agentName: vu(r),
+		resolveResourceTitle: Ru,
+		onNavigate: (e) => Wl(e).catch((e) => nd(Cs(e))),
+		project: Br,
+		onEvent: lu,
 		onNotice: () => {},
-		onApproval: Tu,
-		onToast: $u,
-		onIconsChanged: ed
+		onApproval: Ou,
+		onToast: nd,
+		onIconsChanged: rd
 	});
 }
-function fu(e, t) {
+function hu(e, t) {
 	return `${e || "workspace"}:${t || "resource"}`;
 }
-var pu = "";
-function mu(e = {}) {
+var gu = "";
+function _u(e = {}) {
 	Q.agent.skipTTYDraftSync = !1;
-	let t = Du();
-	Q.activeWorkspaceId && t && Ic(t);
-	let n = Rc.active("turn-stop") && Rc.key("turn-stop") === t, r = Rc.active("generation-end") && Rc.key("generation-end") === t, i = Q.messageStatusKey === `${Q.activeWorkspaceId}:${t}` ? Q.messageStatus : null, a = Q.activeWorkspaceId, o = `${a}:${t}`, s = !!(n || ["running", "waiting_approval"].includes(String(i?.session?.state || "")));
-	kc.renderComposer({
+	let t = Au();
+	Q.activeWorkspaceId && t && zc(t);
+	let n = Vc.active("turn-stop") && Vc.key("turn-stop") === t, r = Vc.active("generation-end") && Vc.key("generation-end") === t, i = Q.messageStatusKey === `${Q.activeWorkspaceId}:${t}` ? Q.messageStatus : null, a = Q.activeWorkspaceId, o = `${a}:${t}`, s = !!(n || ["running", "waiting_approval"].includes(String(i?.session?.state || "")));
+	Mc.renderComposer({
 		identity: `${Q.activeWorkspaceId}:${t}:${Q.agent.ttyDraftKey || ""}`,
 		workspaceId: Q.activeWorkspaceId,
 		resourceId: t,
@@ -9469,7 +9511,7 @@ function mu(e = {}) {
 		draftKey: Q.agent.ttyDraftKey || "",
 		draftResetVersion: Q.agent.ttyDraftResetVersion || 0,
 		unavailableReason: i ? i.acceptsMessages ? "" : i.archived ? "This resource is archived." : i.configError || "This resource cannot accept messages." : "Loading work status.",
-		sending: Rc.isSending(fu(Q.activeWorkspaceId, t)),
+		sending: Vc.isSending(hu(Q.activeWorkspaceId, t)),
 		canEndTurn: s,
 		endingTurn: n,
 		canEndGeneration: !!(i?.acceptsMessages && i?.generation?.generationId && !s),
@@ -9481,7 +9523,7 @@ function mu(e = {}) {
 		agentBinding: t === "workspace" ? Q.tree?.agentBinding || {
 			kind: "profile",
 			name: "default"
-		} : Pu(t)?.agentBinding || {
+		} : Lu(t)?.agentBinding || {
 			kind: "profile",
 			name: "default"
 		},
@@ -9490,127 +9532,127 @@ function mu(e = {}) {
 			description: e.description,
 			agentName: e.agentName
 		})),
-		agents: il(),
-		bindingSaving: pu === t,
-		onDraft: (e, t) => _u(e, t),
-		onSend: Eu,
-		onOpenUpload: vu,
-		onEndTurn: () => Cu().catch((e) => $u(e.message)),
-		onEndGeneration: () => wu().catch((e) => $u(e.message)),
-		onDismissStopNotice: nu,
-		onSteerWaiting: ru,
+		agents: sl(),
+		bindingSaving: gu === t,
+		onDraft: (e, t) => bu(e, t),
+		onSend: ku,
+		onOpenUpload: xu,
+		onEndTurn: () => Eu().catch((e) => nd(e.message)),
+		onEndGeneration: () => Du().catch((e) => nd(e.message)),
+		onDismissStopNotice: au,
+		onSteerWaiting: ou,
 		onSaveAgentBinding: async (e) => {
-			if (t === Du()) {
-				pu = t, mu();
+			if (t === Au()) {
+				gu = t, _u();
 				try {
 					await $(`/api/workspaces/${encodeURIComponent(a)}/resources/${encodeURIComponent(t)}/agent-binding`, {
 						method: "PUT",
 						body: JSON.stringify(e)
-					}), await vl({ updateURL: !1 }), t !== "workspace" && await yl(t, { force: !0 }), Ol(), $u("Resource agent binding saved.");
+					}), await xl({ updateURL: !1 }), t !== "workspace" && await Sl(t, { force: !0 }), jl(), nd("Resource agent binding saved.");
 				} catch (e) {
-					$u(bs(e));
+					nd(Cs(e));
 				} finally {
-					pu = "", mu();
+					gu = "", _u();
 				}
 			}
 		},
-		onIconsChanged: ed
+		onIconsChanged: rd
 	});
 }
-function hu(e) {
+function vu(e) {
 	return e?.name || e?.id || "Agent";
 }
-function gu() {
-	rl.render();
+function yu() {
+	ol.render();
 }
-function _u(e, t) {
-	!t || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Du() || t.draftKey !== Q.agent.ttyDraftKey || Lc(e);
+function bu(e, t) {
+	!t || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.ttyDraftKey || Bc(e);
 }
-function vu() {
-	let e = Du();
+function xu() {
+	let e = Au();
 	if (!e || Q.messageStatus?.archived) {
-		$u("Select an active resource before uploading files.");
+		nd("Select an active resource before uploading files.");
 		return;
 	}
-	let t = Uc("ttyInput");
-	t && Lc(t.value), Q.modalEnter = "upload", Q.uploadDialog = {
+	let t = Kc("ttyInput");
+	t && Bc(t.value), Q.modalEnter = "upload", Q.uploadDialog = {
 		open: !0,
-		identity: ++nl,
+		identity: ++al,
 		resourceId: e,
 		items: [],
 		nextId: 1
-	}, Su();
+	}, Tu();
 }
-function yu(e = [], t = {}) {
+function Su(e = [], t = {}) {
 	if (!Q.uploadDialog.open) return;
-	let n = Q.uploadDialog.resourceId === Du(), r = !t.workspaceId || t.workspaceId === Q.activeWorkspaceId, i = e.length > 0 && r && n;
-	i && (Lc(xu(Q.agent.ttyDraft, e)), Q.agent.ttyDraftResetVersion++), bu();
-	let a = Uc("ttyComposer");
-	a && delete a.dataset.composerKey, mu({ skipDraftSync: i }), Uc("ttyInput")?.focus({ preventScroll: !0 }), ed();
+	let n = Q.uploadDialog.resourceId === Au(), r = !t.workspaceId || t.workspaceId === Q.activeWorkspaceId, i = e.length > 0 && r && n;
+	i && (Bc(wu(Q.agent.ttyDraft, e)), Q.agent.ttyDraftResetVersion++), Cu();
+	let a = Kc("ttyComposer");
+	a && delete a.dataset.composerKey, _u({ skipDraftSync: i }), Kc("ttyInput")?.focus({ preventScroll: !0 }), rd();
 }
-function bu() {
+function Cu() {
 	Q.uploadDialog = {
 		open: !1,
-		identity: ++nl,
+		identity: ++al,
 		resourceId: "",
 		items: [],
 		nextId: 1
-	}, Su();
+	}, Tu();
 }
-function xu(e, t) {
+function wu(e, t) {
 	let n = t.filter(Boolean).join("\n");
 	return n ? e ? `${e}${e.endsWith("\n") ? "" : "\n"}${n}` : n : e;
 }
-function Su() {
+function Tu() {
 	let e = Q.uploadDialog;
-	kc.renderUploadDialog({
+	Mc.renderUploadDialog({
 		open: !!e.open,
 		identity: `${e.identity || 0}:${Q.activeWorkspaceId}:${e.resourceId || ""}`,
 		workspaceId: Q.activeWorkspaceId,
 		resourceId: e.resourceId || "",
-		onDone: yu,
-		onIconsChanged: ed
+		onDone: Su,
+		onIconsChanged: rd
 	});
 }
-async function Cu() {
-	let e = Q.activeWorkspaceId, t = Du(), n = Q.messageStatus?.generation?.generationId || "", r = Rc.begin("turn-stop", t);
+async function Eu() {
+	let e = Q.activeWorkspaceId, t = Au(), n = Q.messageStatus?.generation?.generationId || "", r = Vc.begin("turn-stop", t);
 	if (r) try {
 		let r = n ? `?generationId=${encodeURIComponent(n)}` : "", i = await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(t)}/turn/end${r}`, { method: "POST" }), a = Math.max(0, Number(i.cancelledPendingSteerCount || 0)), o = a === 1 ? "Turn stopped. 1 pending steer was cancelled and will not affect the next turn." : a > 1 ? `Turn stopped. ${a} pending steers were cancelled and will not affect the next turn.` : "Turn stopped. No pending steer remained; any steer already delivered to this turn was not changed.";
 		i.pendingSteerCancellationError && (o += ` Pending steer cancellation needs attention: ${i.pendingSteerCancellationError}`), Q.stopNotice = {
 			key: `${e}:${t}`,
 			text: o
-		}, await tu(e, t), Ol();
+		}, await iu(e, t), jl();
 	} finally {
-		Rc.finish(r);
+		Vc.finish(r);
 	}
 }
-async function wu() {
-	let e = Q.activeWorkspaceId, t = Du(), n = Q.messageStatus?.generation?.generationId || "";
+async function Du() {
+	let e = Q.activeWorkspaceId, t = Au(), n = Q.messageStatus?.generation?.generationId || "";
 	if (!e || !t || !n || !window.confirm("End this generation? Its AgentHub session will be stopped and archived. Your next message will start a new generation.")) return;
-	let r = Rc.begin("generation-end", t);
+	let r = Vc.begin("generation-end", t);
 	if (r) try {
-		await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(t)}/generation/end?generationId=${encodeURIComponent(n)}`, { method: "POST" }), await Promise.all([tu(e, t), Ql()]), Ol(), $u("Generation is ending. Your next message will start a new generation.");
+		await $(`/api/workspaces/${encodeURIComponent(e)}/resources/${encodeURIComponent(t)}/generation/end?generationId=${encodeURIComponent(n)}`, { method: "POST" }), await Promise.all([iu(e, t), tu()]), jl(), nd("Generation is ending. Your next message will start a new generation.");
 	} finally {
-		Rc.finish(r);
+		Vc.finish(r);
 	}
 }
-async function Tu(e, t, n) {
-	let r = Q.activeWorkspaceId, i = Du();
+async function Ou(e, t, n) {
+	let r = Q.activeWorkspaceId, i = Au();
 	await $(`/api/workspaces/${encodeURIComponent(r)}/resources/${encodeURIComponent(i)}/approval?generationId=${encodeURIComponent(e)}`, {
 		method: "POST",
 		body: JSON.stringify({
 			requestId: t,
 			...n
 		})
-	}), await tu(r, i), Ol();
+	}), await iu(r, i), jl();
 }
-async function Eu(e, t) {
-	if (!e.trim() || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Du() || t.draftKey !== Q.agent.ttyDraftKey) return {
+async function ku(e, t) {
+	if (!e.trim() || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.ttyDraftKey) return {
 		accepted: !1,
 		clear: !1
 	};
-	let n = fu(t.workspaceId, t.resourceId);
-	if (!Rc.startSending(n)) return {
+	let n = hu(t.workspaceId, t.resourceId);
+	if (!Vc.startSending(n)) return {
 		accepted: !1,
 		clear: !1
 	};
@@ -9621,50 +9663,50 @@ async function Eu(e, t) {
 			body: JSON.stringify({
 				text: e,
 				role: "user",
-				sender: { name: ml() }
+				sender: { name: _l() }
 			})
 		});
-		let n = Nc({
+		let n = Ic({
 			workspaceId: t.workspaceId,
 			resourceId: t.resourceId,
 			key: t.draftKey,
 			text: e,
 			version: r
 		});
-		return n && Q.agent.ttyDraftResetVersion++, n && Q.stopNotice?.key === `${t.workspaceId}:${t.resourceId}` && (Q.stopNotice = null), await Promise.all([tu(t.workspaceId, t.resourceId), Ql()]), Ol(), {
+		return n && Q.agent.ttyDraftResetVersion++, n && Q.stopNotice?.key === `${t.workspaceId}:${t.resourceId}` && (Q.stopNotice = null), await Promise.all([iu(t.workspaceId, t.resourceId), tu()]), jl(), {
 			accepted: !0,
 			clear: n
 		};
 	} finally {
-		Rc.stopSending(n);
+		Vc.stopSending(n);
 	}
 }
-function Du() {
-	return Q.selectedId === "workspace" ? "workspace" : Pu(Q.selectedId)?.id || "";
-}
-function Ou() {
-	Au("project");
-}
-function ku(e) {
-	Au("task", e);
-}
-function Au(e, t = "") {
-	Hc.open(e === "task" ? "task" : "project", t);
+function Au() {
+	return Q.selectedId === "workspace" ? "workspace" : Lu(Q.selectedId)?.id || "";
 }
 function ju() {
-	Hc.close();
+	Nu("project");
 }
-function Mu() {
-	Hc.render();
+function Mu(e) {
+	Nu("task", e);
 }
-async function Nu(e) {
-	let t = Yc(e, Q.projectOrder, Q.taskOrder), n = (await $(`/api/workspaces/${Q.activeWorkspaceId}/archive`, {
+function Nu(e, t = "") {
+	Gc.open(e === "task" ? "task" : "project", t);
+}
+function Pu() {
+	Gc.close();
+}
+function Fu() {
+	Gc.render();
+}
+async function Iu(e) {
+	let t = Qc(e, Q.projectOrder, Q.taskOrder), n = (await $(`/api/workspaces/${Q.activeWorkspaceId}/archive`, {
 		method: "POST",
 		body: JSON.stringify({ resourceId: e })
 	})).warnings || [];
-	$u(n.length > 0 ? ["Archived.", ...n.map((e) => `Warning: ${e.message}`)].join("\n") : "Archived."), Q.selectedId = t, await vl();
+	nd(n.length > 0 ? ["Archived.", ...n.map((e) => `Warning: ${e.message}`)].join("\n") : "Archived."), Q.selectedId = t, await xl();
 }
-function Pu(e) {
+function Lu(e) {
 	if (!Q.tree) return null;
 	if (Q.tree.scheduler?.id === e) return Q.tree.scheduler;
 	for (let t of Q.tree.projects) {
@@ -9673,199 +9715,199 @@ function Pu(e) {
 	}
 	return null;
 }
-function Fu(e) {
-	if (e === "workspace") return Uu();
-	let t = Pu(e);
+function Ru(e) {
+	if (e === "workspace") return Ku();
+	let t = Lu(e);
 	return t ? String(t.title || t.id).trim() || t.id : null;
 }
-function Iu() {
-	return Q.selectedId === "workspace" || Pu(Q.selectedId) ? !1 : (Q.selectedId = "workspace", !0);
+function zu() {
+	return Q.selectedId === "workspace" || Lu(Q.selectedId) ? !1 : (Q.selectedId = "workspace", !0);
 }
-function Lu(e) {
+function Bu(e) {
 	if (!Q.tree) return null;
 	for (let t of Q.tree.projects) if (t.id === e || (t.children || []).some((t) => t.id === e)) return t;
 	return null;
 }
-function Ru(e) {
+function Vu(e) {
 	return Q.expandedProjects.has(e);
 }
-function zu(e = !1) {
-	let t = Lu(Q.selectedId);
-	!t || t.id === Q.selectedId || Q.expandedProjects.has(t.id) || (Q.expandedProjects.add(t.id), e && Tl().catch((e) => $u(e.message)));
+function Hu(e = !1) {
+	let t = Bu(Q.selectedId);
+	!t || t.id === Q.selectedId || Q.expandedProjects.has(t.id) || (Q.expandedProjects.add(t.id), e && Ol().catch((e) => nd(e.message)));
 }
-function Bu(e = window.location.pathname) {
-	return Bc.parse(e);
+function Uu(e = window.location.pathname) {
+	return Uc.parse(e);
 }
-function Vu(e) {
+function Wu(e) {
 	return !!(e && Q.config?.workspaces.some((t) => t.id === e));
 }
-function Hu(e = {}) {
-	Bc.project(Q.activeWorkspaceId, Q.selectedId, e);
-}
-function Uu() {
-	return Q.config?.workspaces.find((e) => e.id === Q.activeWorkspaceId)?.name || "Workspace";
-}
-function Wu() {
-	let e = Ku(), t = qu();
-	e.some((e) => e.id === Q.agent.agentName) || (Q.agent.agentName = t);
-}
-function Gu() {
-	let e = Ku(), t = Q.agent.agentName || qu();
-	return e.find((e) => e.id === t) || e[0] || null;
+function Gu(e = {}) {
+	Uc.project(Q.activeWorkspaceId, Q.selectedId, e);
 }
 function Ku() {
-	return (Q.config?.agents || []).filter((e) => e.available !== !1);
+	return Q.config?.workspaces.find((e) => e.id === Q.activeWorkspaceId)?.name || "Workspace";
 }
 function qu() {
-	let e = Ku();
-	return Ju(Q.config?.agentProfiles, "default") || Ju(rl.profiles(), "default") || e[0]?.id || "";
+	let e = Yu(), t = Xu();
+	e.some((e) => e.id === Q.agent.agentName) || (Q.agent.agentName = t);
 }
-function Ju(e, t) {
+function Ju() {
+	let e = Yu(), t = Q.agent.agentName || Xu();
+	return e.find((e) => e.id === t) || e[0] || null;
+}
+function Yu() {
+	return (Q.config?.agents || []).filter((e) => e.available !== !1);
+}
+function Xu() {
+	let e = Yu();
+	return Zu(Q.config?.agentProfiles, "default") || Zu(ol.profiles(), "default") || e[0]?.id || "";
+}
+function Zu(e, t) {
 	let n = String(t || "").trim().toLowerCase(), r = (e || []).find((e) => String(e.key || "").trim().toLowerCase() === n);
 	return String(r?.agentName || "").trim();
 }
-async function Yu(e = "workspace") {
-	return rl.open(e);
+async function Qu(e = "workspace") {
+	return ol.open(e);
 }
-function Xu(e, t) {
-	return rl.withAgentHubCatalog(e, t);
+function $u(e, t) {
+	return ol.withAgentHubCatalog(e, t);
 }
-function Zu(e, t) {
+function ed(e, t) {
 	return JSON.stringify(e ?? null) === JSON.stringify(t ?? null);
 }
-var Qu = 0;
-function $u(e) {
-	kc.renderToast({
+var td = 0;
+function nd(e) {
+	Mc.renderToast({
 		message: String(e || ""),
-		revision: ++Qu
+		revision: ++td
 	});
 }
-function ed() {
+function rd() {
 	let e = window.lucide;
-	!e || Q.iconRefreshScheduled || (Q.iconRefreshScheduled = !0, Ac?.animationFrame(() => {
+	!e || Q.iconRefreshScheduled || (Q.iconRefreshScheduled = !0, Nc?.animationFrame(() => {
 		Q.iconRefreshScheduled = !1, e.createIcons({ attrs: { "stroke-width": 2 } });
 	}));
 }
-function td(e) {
-	ed(), e === "markdown" && window.marked && window.DOMPurify && (Gl(), ed()), e === "diff" && Gl();
-}
-window.forgeAssetLoaded = td;
-function nd() {
-	zc.initialize();
-}
-function rd(e, t) {
-	zc.previewPane(e, t);
-}
 function id(e) {
-	zc.commitPane(e);
+	rd(), e === "markdown" && window.marked && window.DOMPurify && (Jl(), rd()), e === "diff" && Jl();
 }
+window.forgeAssetLoaded = id;
 function ad() {
-	zc.syncViewport();
+	Hc.initialize();
 }
-function od(e) {
-	zc.setMobileSidebar(e);
+function od(e, t) {
+	Hc.previewPane(e, t);
 }
 function sd(e) {
-	zc.setMobileView(e);
+	Hc.commitPane(e);
 }
-function cd(e) {
-	zc.setMobileImmersive(e);
+function cd() {
+	Hc.syncViewport();
 }
-function ld() {
-	Ac?.listen(document, "selectionchange", () => {
-		if (!Q.agent.renderDeferredForSelection) return;
-		let e = Uc("ttyLog");
-		e && uu(e) || (Q.agent.renderDeferredForSelection = !1, du(), ed());
-	}), Ac?.listen(document, "keydown", (e) => {
-		e.key === "Escape" && Q.diff ? Xl() : e.key === "Escape" && (Q.agent.optionsOpen || Q.agent.historyOpen) && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, mu(), ed());
-	}), Ac?.listen(document, "click", (e) => {
-		let t = e.target instanceof Element ? e.target : null, n = t?.closest("[data-breadcrumb-resource]");
-		if (n) {
-			Kl(n.dataset.breadcrumbResource || "workspace").catch((e) => $u(bs(e)));
-			return;
-		}
-		(Q.agent.optionsOpen || Q.agent.historyOpen) && t && !t.closest(".tty-composer") && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, mu(), ed()), ed();
-	}), Ac?.listen(window, "beforeunload", fd), Ac?.listen(document, "visibilitychange", () => {
-		(document.hidden || document.visibilityState === "hidden") && fd();
-	});
+function ld(e) {
+	Hc.setMobileSidebar(e);
 }
-var ud = !1;
+function ud(e) {
+	Hc.setMobileView(e);
+}
 function dd(e) {
-	if (kc = e, ud) {
-		al();
-		return;
-	}
-	ud = !0;
-	let t = new Oc();
-	Ac = t, ol = Us({
-		scope: t,
-		selectedResourceId: () => Q.selectedId,
-		resourceProjections: () => ul(),
-		hasTree: () => !!Q.tree,
-		findResource: Pu,
-		selectResource: Vl,
-		notificationsSettingsVisible: () => rl.isOpenTab("notifications"),
-		renderSettings: gu,
-		refreshIcons: ed,
-		flushDraft: fd
-	}), sl = Dc(t, () => {
-		rl.isOpenTab("user") && gu();
-	}), ld(), nd(), ol.install(), Rl(), _l().catch((e) => {
-		Q.navigationLoading = !1, Q.navigationError = e.message, $u(e.message), Ol();
-	}), El();
+	Hc.setMobileImmersive(e);
 }
 function fd() {
-	Fc();
+	Nc?.listen(document, "selectionchange", () => {
+		if (!Q.agent.renderDeferredForSelection) return;
+		let e = Kc("ttyLog");
+		e && pu(e) || (Q.agent.renderDeferredForSelection = !1, mu(), rd());
+	}), Nc?.listen(document, "keydown", (e) => {
+		e.key === "Escape" && Q.diff ? $l() : e.key === "Escape" && (Q.agent.optionsOpen || Q.agent.historyOpen) && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, _u(), rd());
+	}), Nc?.listen(document, "click", (e) => {
+		let t = e.target instanceof Element ? e.target : null, n = t?.closest("[data-breadcrumb-resource]");
+		if (n) {
+			Yl(n.dataset.breadcrumbResource || "workspace").catch((e) => nd(Cs(e)));
+			return;
+		}
+		(Q.agent.optionsOpen || Q.agent.historyOpen) && t && !t.closest(".tty-composer") && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, _u(), rd()), rd();
+	}), Nc?.listen(window, "beforeunload", hd), Nc?.listen(document, "visibilitychange", () => {
+		(document.hidden || document.visibilityState === "hidden") && hd();
+	});
 }
-function pd() {
-	ud && (fd(), ud = !1, ol?.dispose(), ol = null, sl = null, Rc.reset(), su(), Hc.dispose(), Ac?.dispose(), Ac = null, Q.autoRefreshTimer = null);
+var pd = !1;
+function md(e) {
+	if (Mc = e, pd) {
+		cl();
+		return;
+	}
+	pd = !0;
+	let t = new jc();
+	Nc = t, ll = Ks({
+		scope: t,
+		selectedResourceId: () => Q.selectedId,
+		resourceProjections: () => pl(),
+		hasTree: () => !!Q.tree,
+		findResource: Lu,
+		selectResource: Wl,
+		notificationsSettingsVisible: () => ol.isOpenTab("notifications"),
+		renderSettings: yu,
+		refreshIcons: rd,
+		flushDraft: hd
+	}), ul = Ac(t, () => {
+		ol.isOpenTab("user") && yu();
+	}), fd(), ad(), ll.install(), Vl(), bl().catch((e) => {
+		Q.navigationLoading = !1, Q.navigationError = e.message, nd(e.message), jl();
+	}), kl();
 }
-async function md(e) {
-	let t = Bu(e);
-	if (!Vu(t.workspaceId)) {
-		Hu({ replace: !0 });
+function hd() {
+	Rc();
+}
+function gd() {
+	pd && (hd(), pd = !1, ll?.dispose(), ll = null, ul = null, Vc.reset(), uu(), Gc.dispose(), Nc?.dispose(), Nc = null, Q.autoRefreshTimer = null);
+}
+async function _d(e) {
+	let t = Uu(e);
+	if (!Wu(t.workspaceId)) {
+		Gu({ replace: !0 });
 		return;
 	}
 	let n = Q.activeWorkspaceId !== t.workspaceId, r = Q.selectedId;
-	Fc(), Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
+	Rc(), Q.navigationVersion++, Q.autoRefreshVersion++, Q.treeRequestVersion++, Q.detailRequestVersion++, Q.workspaceAgentsRequestVersion++, Q.diffRequestVersion++;
 	let i = Q.navigationVersion;
-	if (Q.activeWorkspaceId = t.workspaceId || "", Q.selectedId = t.resourceId || "workspace", !n && r !== Q.selectedId && Q.selectedId !== "workspace" && (Vc.reset(Q.selectedId), delete Q.details[Q.selectedId]), Q.diff = null, n && (Q.tree = null, Q.navigationLoading = !0, Q.navigationError = "", ju(), cl(Q.activeWorkspaceId)), n && au(), Pl(), n) {
-		if (!await wl(t.workspaceId || "", i)) return;
-		!t.resourceId && Q.lastResourceId && (Q.selectedId = Q.lastResourceId), await vl({ updateURL: !1 }), Al(t.workspaceId || "", i) && Hu({ replace: !0 });
+	if (Q.activeWorkspaceId = t.workspaceId || "", Q.selectedId = t.resourceId || "workspace", !n && r !== Q.selectedId && Q.selectedId !== "workspace" && (Wc.reset(Q.selectedId), delete Q.details[Q.selectedId]), Q.diff = null, n && (Q.tree = null, Q.navigationLoading = !0, Q.navigationError = "", Pu(), dl(Q.activeWorkspaceId)), n && cu(), Ll(), n) {
+		if (!await Dl(t.workspaceId || "", i)) return;
+		!t.resourceId && Q.lastResourceId && (Q.selectedId = Q.lastResourceId), await xl({ updateURL: !1 }), Nl(t.workspaceId || "", i) && Gu({ replace: !0 });
 	} else {
-		let e = Iu();
-		if (Q.selectedId === "workspace" ? await Cl() : (zu(!1), await yl(Q.selectedId)), !Al(t.workspaceId || "", i)) return;
-		r !== Q.selectedId && await iu(), Ol(), e && Hu({ replace: !0 });
+		let e = zu();
+		if (Q.selectedId === "workspace" ? await El() : (Hu(!1), await Sl(Q.selectedId)), !Nl(t.workspaceId || "", i)) return;
+		r !== Q.selectedId && await su(), jl(), e && Gu({ replace: !0 });
 	}
 }
 //#endregion
 //#region src/entry.ts
-var hd = us(), gd = {
-	renderAppShell: hd.appShell.publish,
-	renderCreateDialog: hd.create.publish,
-	renderSettings: hd.settings.publish,
-	renderUploadDialog: hd.upload.publish,
-	renderComposer: hd.composer.publish,
-	renderEventTimeline: hd.timeline.publish,
-	renderAgentPanelHeader: hd.agentHeader.publish,
-	renderDetailPanel: hd.detail.publish,
-	renderToast: hd.toast.publish
-}, _d = null;
-async function vd() {
-	if (_d) return;
+var vd = ps(), yd = {
+	renderAppShell: vd.appShell.publish,
+	renderCreateDialog: vd.create.publish,
+	renderSettings: vd.settings.publish,
+	renderUploadDialog: vd.upload.publish,
+	renderComposer: vd.composer.publish,
+	renderEventTimeline: vd.timeline.publish,
+	renderAgentPanelHeader: vd.agentHeader.publish,
+	renderDetailPanel: vd.detail.publish,
+	renderToast: vd.toast.publish
+}, bd = null;
+async function xd() {
+	if (bd) return;
 	let e = document.getElementById("app");
 	if (!e) throw Error("Forge application root is unavailable.");
-	e.dataset.componentOwner = "app-shell", _d = i(cs, {
+	e.dataset.componentOwner = "app-shell", bd = i(ds, {
 		target: e,
-		props: { channels: hd }
-	}), dd(gd);
+		props: { channels: vd }
+	}), md(yd);
 }
-async function yd() {
-	if (pd(), !_d) return;
-	let e = _d;
-	_d = null, await m(e), document.getElementById("app")?.removeAttribute("data-component-owner");
+async function Sd() {
+	if (gd(), !bd) return;
+	let e = bd;
+	bd = null, await m(e), document.getElementById("app")?.removeAttribute("data-component-owner");
 }
-window.addEventListener("pagehide", () => void yd()), window.addEventListener("pageshow", (e) => {
-	e.persisted && vd();
-}), vd().catch((e) => console.error("Failed to start the Forge application", e));
+window.addEventListener("pagehide", () => void Sd()), window.addEventListener("pageshow", (e) => {
+	e.persisted && xd();
+}), xd().catch((e) => console.error("Failed to start the Forge application", e));
 //#endregion

@@ -1,5 +1,5 @@
-import { B as e, D as t, G as n, H as r, I as i, J as a, K as o, L as s, N as c, P as l, R as u, U as d, W as f, X as p, Y as m, Z as h, a as g, d as _, g as ee, j as v, k as te, l as ne, n as y, q as re, t as ie, w as ae, x as oe, z as se } from "./Icon-qM-gEmE6.js";
-//#region node_modules/@marijn/find-cluster-break/src/index.js
+import { B as e, D as t, G as n, H as r, I as i, J as a, K as o, L as s, N as c, P as l, R as u, U as d, W as f, X as p, Y as m, Z as h, a as g, d as _, g as ee, j as v, k as te, l as ne, n as y, q as re, t as ie, w as ae, x as oe, z as se } from "./Icon-DhNPRoAS.js";
+//#region ../../../../../repos/forge/web/node_modules/@marijn/find-cluster-break/src/index.js
 var ce = [], le = [];
 (() => {
 	let e = "lc,34,7n,7,7b,19,,,,2,,2,,,20,b,1c,l,g,,2t,7,2,6,2,2,,4,z,,u,r,2j,b,1m,9,9,,o,4,,9,,3,,5,17,3,3b,f,,w,1j,,,,4,8,4,,3,7,a,2,t,,1m,,,,2,4,8,,9,,a,2,q,,2,2,1l,,4,2,4,2,2,3,3,,u,2,3,,b,2,1l,,4,5,,2,4,,k,2,m,6,,,1m,,,2,,4,8,,7,3,a,2,u,,1n,,,,c,,9,,14,,3,,1l,3,5,3,,4,7,2,b,2,t,,1m,,2,,2,,3,,5,2,7,2,b,2,s,2,1l,2,,,2,4,8,,9,,a,2,t,,20,,4,,2,3,,,8,,29,,2,7,c,8,2q,,2,9,b,6,22,2,r,,,,,,1j,e,,5,,2,5,b,,10,9,,2u,4,,6,,2,2,2,p,2,4,3,g,4,d,,2,2,6,,f,,jj,3,qa,3,t,3,t,2,u,2,1s,2,,7,8,,2,b,9,,19,3,3b,2,y,,3a,3,4,2,9,,6,3,63,2,2,,1m,,,7,,,,,2,8,6,a,2,,1c,h,1r,4,1c,7,,,5,,14,9,c,2,w,4,2,2,,3,1k,,,2,3,,,3,1m,8,2,2,48,3,,d,,7,4,,6,,3,2,5i,1m,,5,ek,,5f,x,2da,3,3x,,2o,w,fe,6,2x,2,n9w,4,,a,w,2,28,2,7k,,3,,4,,p,2,5,,47,2,q,i,d,,12,8,p,b,1a,3,1c,,2,4,2,2,13,,1v,6,2,2,2,2,c,,8,,1b,,1f,,,3,2,2,5,2,,,16,2,8,,6m,,2,,4,,fn4,,kh,g,g,g,a6,2,gt,,6a,,45,5,1ae,3,,2,5,4,14,3,4,,4l,2,fx,4,ar,2,49,b,4w,,1i,f,1k,3,1d,4,2,2,1x,3,10,5,,8,1q,,c,2,1g,9,a,4,2,,2n,3,2,,,2,6,,4g,,3,8,l,2,1l,2,,,,,m,,e,7,3,5,5f,8,2,3,,,n,,29,,2,6,,,2,,,2,,2,6j,,2,4,6,2,,2,r,2,2d,8,2,,,2,2y,,,,2,6,,,2t,3,2,4,,5,77,9,,2,6t,,a,2,,,4,,40,4,2,2,4,,w,a,14,6,2,4,8,,9,6,2,3,1a,d,,2,ba,7,,6,,,2a,m,2,7,,2,,2,3e,6,3,,,2,,7,,,20,2,3,,,,9n,2,f0b,5,1n,7,t4,,1r,4,29,,f5k,2,43q,,,3,4,5,8,8,2,7,u,4,44,3,1iz,1j,4,1e,8,,e,,m,5,,f,11s,7,,h,2,7,,2,,5,79,7,c5,4,15s,7,31,7,240,5,gx7k,2o,3k,6o".split(",").map((e) => e ? parseInt(e, 36) : 1);
@@ -62,7 +62,7 @@ function ve(e) {
 	return e < 65536 ? 1 : 2;
 }
 //#endregion
-//#region node_modules/@codemirror/state/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@codemirror/state/dist/index.js
 var x = class e {
 	lineAt(e) {
 		if (e < 0 || e > this.length) throw RangeError(`Invalid position ${e} in document of length ${this.length}`);
@@ -1932,7 +1932,7 @@ function cn(e) {
 	return t == "Esc" && (t = "Escape"), t == "Del" && (t = "Delete"), t == "Left" && (t = "ArrowLeft"), t == "Up" && (t = "ArrowUp"), t == "Right" && (t = "ArrowRight"), t == "Down" && (t = "ArrowDown"), t;
 }
 //#endregion
-//#region node_modules/@codemirror/view/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@codemirror/view/dist/index.js
 var N = typeof navigator < "u" ? navigator : {
 	userAgent: "",
 	vendor: "",
@@ -7480,7 +7480,7 @@ function bc() {
 	return yc;
 }
 //#endregion
-//#region node_modules/@lezer/common/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@lezer/common/dist/index.js
 var xc = 1024, Sc = 0, Cc = class {
 	constructor(e, t) {
 		this.from = e, this.to = t;
@@ -8604,7 +8604,7 @@ function dl(e, t) {
 	return n;
 }
 //#endregion
-//#region node_modules/@lezer/highlight/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@lezer/highlight/dist/index.js
 var fl = 0, pl = class e {
 	constructor(e, t, n, r) {
 		this.name = e, this.set = t, this.base = n, this.modified = r, this.id = fl++;
@@ -8996,7 +8996,7 @@ xl([
 	}
 ]);
 //#endregion
-//#region node_modules/@codemirror/language/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@codemirror/language/dist/index.js
 var Bl = /*@__PURE__*/ new U();
 function Vl(e) {
 	return D.define({ combine: e ? (t) => t.concat(e) : void 0 });
@@ -9803,7 +9803,7 @@ function qu(e, t) {
 }
 L.RTL, L.LTR;
 //#endregion
-//#region node_modules/@codemirror/commands/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@codemirror/commands/dist/index.js
 var Ju = (e) => {
 	let { state: t } = e, n = t.doc.lineAt(t.selection.main.from), r = $u(e.state, n.from);
 	return r.line ? Xu(e) : r.block ? Qu(e) : !1;
@@ -11237,7 +11237,7 @@ var Hp = /*@__PURE__*/ H.domEventHandlers({ mousedown(e, t) {
 } }), Up = /*@__PURE__*/ new class extends At {}();
 Up.startSide = 1, Up.endSide = -1, typeof navigator == "object" && navigator.userAgent;
 //#endregion
-//#region node_modules/codemirror/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/codemirror/dist/index.js
 var Wp = [
 	Vs(),
 	ud(),
@@ -13331,7 +13331,7 @@ function Jh(e) {
 	return e.get;
 }
 //#endregion
-//#region node_modules/@lezer/html/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@lezer/html/dist/index.js
 var Yh = 55, Xh = 1, Zh = 56, Qh = 2, $h = 57, eg = 3, tg = 4, ng = 5, rg = 6, ig = 7, ag = 8, og = 9, sg = 10, cg = 11, lg = 12, ug = 13, dg = 58, fg = 14, pg = 15, mg = 59, hg = 21, gg = 23, _g = 24, vg = 25, yg = 27, bg = 28, xg = 29, Sg = 32, Cg = 35, wg = 37, Tg = 38, Eg = 0, Dg = 1, Og = {
 	area: !0,
 	base: !0,
@@ -13740,7 +13740,7 @@ function i_(e = [], t = []) {
 	});
 }
 //#endregion
-//#region node_modules/@lezer/css/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@lezer/css/dist/index.js
 var a_ = 148, o_ = 1, s_ = 149, c_ = 150, l_ = 2, u_ = 151, d_ = 3, f_ = 4, p_ = [
 	9,
 	10,
@@ -14116,7 +14116,7 @@ function nv() {
 	return new tu(tv, tv.data.of({ autocomplete: ev }));
 }
 //#endregion
-//#region node_modules/@lezer/javascript/dist/index.js
+//#region ../../../../../repos/forge/web/node_modules/@lezer/javascript/dist/index.js
 var rv = 316, iv = 317, av = 1, ov = 2, sv = 3, cv = 4, lv = 318, uv = 320, dv = 321, fv = 5, pv = 6, mv = 0, hv = [
 	9,
 	10,
@@ -16112,8 +16112,8 @@ var pb = /code|horizontalrule|html|link|comment|processing|escape|entity|image|m
 		userEvent: "input.paste",
 		scrollIntoView: !0
 	}), !0);
-} }), hb = /* @__PURE__ */ new Map(), gb = v("<p class=\"markdown-editor-alert\" role=\"alert\">This file changed on disk while you were editing. Your draft and annotations are preserved; saving will report a conflict.</p>"), _b = v("<p class=\"markdown-editor-alert\" role=\"alert\"> </p>"), vb = v("<article><div class=\"markdown-annotation-heading\"><button type=\"button\" class=\"annotation-location\"> </button><button type=\"button\" class=\"icon-button\" title=\"Remove annotation\" aria-label=\"Remove annotation\"><!></button></div> <blockquote> </blockquote> <textarea rows=\"3\" placeholder=\"Add a comment…\"></textarea></article>"), yb = v("<aside class=\"markdown-annotation-panel\" aria-label=\"Annotations\"><header><strong>Annotations</strong><span> </span></header> <!></aside>"), bb = v("<div class=\"markdown-copy-fallback\" role=\"status\"><strong>Copy annotations manually</strong><span>Press Cmd/Ctrl+C; the complete text is selected.</span><textarea readonly=\"\" rows=\"10\"></textarea></div>"), xb = v("<section class=\"markdown-editor-shell\" data-component-owner=\"markdown-editor\"><div class=\"markdown-editor-toolbar\"><div class=\"markdown-editor-primary-actions\"><button type=\"button\" class=\"secondary-button\"><!><span>Add annotation</span></button> <button type=\"button\" class=\"secondary-button\"><!><span>Copy annotations</span></button></div> <div class=\"markdown-editor-save-actions\"><button type=\"button\" class=\"secondary-button\">Done</button> <button type=\"button\"><!><span> </span></button></div></div> <!> <!> <div><div class=\"markdown-editor-host\"></div> <!></div> <!></section>");
-function Sb(c, v) {
+} }), hb = /* @__PURE__ */ new Map(), gb = v("<div class=\"markdown-editor-primary-actions\"><button type=\"button\" class=\"secondary-button\"><!><span>Add annotation</span></button> <button type=\"button\" class=\"secondary-button\"><!><span>Copy annotations</span></button></div>"), _b = v("<div class=\"markdown-editor-save-actions\"><button type=\"button\"><!><span> </span></button></div>"), vb = v("<p class=\"markdown-editor-alert\" role=\"alert\">This file changed on disk while you were editing. Your draft is preserved; saving will report a conflict.</p>"), yb = v("<p class=\"markdown-editor-alert\" role=\"alert\"> </p>"), bb = v("<article><div class=\"markdown-annotation-heading\"><button type=\"button\" class=\"annotation-location\"> </button><button type=\"button\" class=\"icon-button\" title=\"Remove annotation\" aria-label=\"Remove annotation\"><!></button></div> <blockquote> </blockquote> <textarea rows=\"3\" placeholder=\"Add a comment…\"></textarea></article>"), xb = v("<aside class=\"markdown-annotation-panel\" aria-label=\"Annotations\"><header><strong>Annotations</strong><span> </span></header> <!></aside>"), Sb = v("<div class=\"markdown-copy-fallback\" role=\"status\"><strong>Copy annotations manually</strong><span>Press Cmd/Ctrl+C; the complete text is selected.</span><textarea readonly=\"\" rows=\"10\"></textarea></div>"), Cb = v("<section class=\"markdown-editor-shell\" data-component-owner=\"markdown-editor\"><div class=\"markdown-editor-toolbar\"><!></div> <!> <!> <div><div class=\"markdown-editor-host\"></div> <!></div> <!></section>");
+function wb(c, v) {
 	m(v, !0);
 	let ce = O.define(), le = Ye.define({
 		create: () => [],
@@ -16201,19 +16201,19 @@ function Sb(c, v) {
 			color: "#8c3b2d",
 			backgroundColor: "#f4f1ed"
 		}
-	]), fe = n(void 0), pe = n(void 0), b = null, me = n(""), he = n(""), ge = n(""), _e = n(""), ve = n(""), x = n(d([])), S = n(0), ye = n(0), be = n(!1), xe = n(""), Se = n(""), Ce = 0, we = o(() => i(ve) !== i(he)), Te = o(() => i(we) || i(x).length > 0), Ee = o(() => !!(i(Te) && i(_e) && i(ge) && i(_e) !== i(ge))), De = o(() => i(ye) > i(S));
+	]), fe = n(void 0), pe = n(void 0), b = null, me = n(""), he = n(""), ge = n(""), _e = n(""), ve = n(""), x = n(d([])), S = n(0), ye = n(0), be = n(!1), xe = n(""), Se = n(""), Ce = 0, we = o(() => v.mode === "annotate"), Te = o(() => i(ve) !== i(he)), Ee = o(() => i(Te) || i(x).length > 0), De = o(() => !!(i(Ee) && i(_e) && i(ge) && i(_e) !== i(ge))), C = o(() => i(ye) > i(S));
 	se(() => {
 		if (!i(fe)) return;
 		let e = v.identity, t = v.file.content || "", n = v.file.contentHash || "";
 		if (f(_e, n, !0), !b || e !== i(me)) {
 			f(me, e, !0);
 			let r = hb.get(e);
-			f(he, r?.baseline ?? t, !0), f(ge, r?.baselineHash ?? n, !0), f(ve, r?.draft ?? t, !0), f(x, r?.annotations.map((e) => ({ ...e })) ?? [], !0), f(xe, ""), f(Se, ""), C(i(ve), i(x));
-		} else !i(Te) && n !== i(ge) && (f(he, t, !0), f(ge, n, !0), Oe(t));
+			f(he, r?.baseline ?? t, !0), f(ge, r?.baselineHash ?? n, !0), v.mode === "annotate" ? (f(ve, t, !0), f(x, (r?.annotations ?? []).map((e) => ({ ...e })), !0)) : (f(ve, r?.draft ?? t, !0), f(x, [], !0)), f(xe, ""), f(Se, ""), Oe(v.mode === "annotate" ? t : i(ve), v.mode === "annotate" ? i(x) : []);
+		} else v.mode === "edit" && !i(Ee) && n !== i(ge) && (f(he, t, !0), f(ge, n, !0), ke(t));
 	}), y(() => {
-		Ae(), b?.destroy();
+		je(), b?.destroy();
 	});
-	function C(e, t = []) {
+	function Oe(e, t = []) {
 		if (b?.destroy(), !i(fe)) return;
 		let n = e.includes("\r\n") ? "\r\n" : "\n";
 		b = new H({
@@ -16226,6 +16226,8 @@ function Sb(c, v) {
 					Js(),
 					bc(),
 					A.lineSeparator.of(n),
+					A.readOnly.of(i(we)),
+					H.editable.of(!i(we)),
 					lb({ base: Yy }),
 					ku(de),
 					le,
@@ -16237,13 +16239,13 @@ function Sb(c, v) {
 					H.updateListener.of((e) => {
 						e.docChanged && f(ve, e.state.doc.toString(), !0);
 						let t = e.state.selection.main;
-						f(S, t.from, !0), f(ye, t.to, !0), f(x, e.state.field(le).map((e) => ({ ...e })), !0), (e.docChanged || e.transactions.some((e) => e.effects.length > 0)) && Ae();
+						f(S, t.from, !0), f(ye, t.to, !0), f(x, e.state.field(le).map((e) => ({ ...e })), !0), (e.docChanged || e.transactions.some((e) => e.effects.length > 0)) && je();
 					})
 				]
 			})
 		}), f(S, b.state.selection.main.from, !0), f(ye, b.state.selection.main.to, !0), t.length && b.dispatch({ effects: ce.of(t) }), queueMicrotask(v.onIconsChanged);
 	}
-	function Oe(e) {
+	function ke(e) {
 		b && (b.dispatch({
 			changes: {
 				from: 0,
@@ -16253,12 +16255,12 @@ function Sb(c, v) {
 			effects: ce.of([])
 		}), f(ve, e, !0));
 	}
-	function ke(e) {
-		b && (b.dispatch({ effects: ce.of(e) }), f(x, e.map((e) => ({ ...e })), !0), Ae());
+	function Ae(e) {
+		b && (b.dispatch({ effects: ce.of(e) }), f(x, e.map((e) => ({ ...e })), !0), je());
 	}
-	function Ae() {
+	function je() {
 		if (i(me)) {
-			if (i(ve) === i(he) && i(x).length === 0) {
+			if (!(v.mode === "edit" ? i(ve) !== i(he) : i(x).length > 0)) {
 				hb.delete(i(me));
 				return;
 			}
@@ -16270,8 +16272,8 @@ function Sb(c, v) {
 			});
 		}
 	}
-	function je() {
-		if (!b || !i(De)) return;
+	function Me() {
+		if (!b || !i(C)) return;
 		let e = b.state.doc.sliceString(i(S), i(ye)), t = {
 			id: `annotation-${Date.now()}-${++Ce}`,
 			from: i(S),
@@ -16280,18 +16282,18 @@ function Sb(c, v) {
 			comment: "",
 			stale: !1
 		};
-		ke([...i(x), t]), queueMicrotask(() => document.querySelector(`[data-comment-for="${t.id}"]`)?.focus());
+		Ae([...i(x), t]), queueMicrotask(() => document.querySelector(`[data-comment-for="${t.id}"]`)?.focus());
 	}
-	function Me(e, t) {
-		ke(i(x).map((n) => n.id === e ? {
+	function Ne(e, t) {
+		Ae(i(x).map((n) => n.id === e ? {
 			...n,
 			comment: t
 		} : n));
 	}
-	function Ne(e) {
-		ke(i(x).filter((t) => t.id !== e));
-	}
 	function Pe(e) {
+		Ae(i(x).filter((t) => t.id !== e));
+	}
+	function T(e) {
 		!b || e.stale || (b.dispatch({
 			selection: {
 				anchor: e.from,
@@ -16300,17 +16302,17 @@ function Sb(c, v) {
 			scrollIntoView: !0
 		}), b.focus());
 	}
-	function T(e) {
+	function Fe(e) {
 		if (!b || e.stale) return "Selection removed";
 		let t = b.state.doc.lineAt(e.from), n = b.state.doc.lineAt(e.to), r = e.from - t.from + 1, i = e.to - n.from + 1;
 		return `L${t.number}:C${r}–L${n.number}:C${i}`;
 	}
-	async function Fe() {
-		if (!(i(be) || !i(we))) {
+	async function Ie() {
+		if (!(i(be) || !i(Te))) {
 			f(be, !0), f(xe, "");
 			try {
 				let e = await v.onSave(i(ve), i(ge));
-				f(he, e.content ?? i(ve), !0), f(ge, e.contentHash || "", !0), f(_e, i(ge), !0), i(he) !== i(ve) && Oe(i(he)), Ae(), v.onToast(`${v.file.name || "Markdown file"} saved.`);
+				f(he, e.content ?? i(ve), !0), f(ge, e.contentHash || "", !0), f(_e, i(ge), !0), i(he) !== i(ve) && ke(i(he)), je(), v.onToast(`${v.file.name || "Markdown file"} saved.`);
 			} catch (e) {
 				f(xe, e instanceof Error ? e.message : String(e), !0);
 			} finally {
@@ -16318,18 +16320,18 @@ function Sb(c, v) {
 			}
 		}
 	}
-	function Ie() {
+	function Le() {
 		let e = i(ge) ? `sha256:${i(ge)}` : "unknown", t = [`文件：${v.file.path}`, `基础版本：${e}`];
-		return i(we) && t.push("状态：包含未保存修改"), t.push(""), i(x).forEach((e, n) => {
+		return i(Te) && t.push("状态：包含未保存修改"), t.push(""), i(x).forEach((e, n) => {
 			let r = e.stale ? `[选区已删除] ${e.quote}` : e.quote;
-			t.push(`${n + 1}. 位置：${T(e)}`, "   原文：");
+			t.push(`${n + 1}. 位置：${Fe(e)}`, "   原文：");
 			for (let e of r.split("\n")) t.push(`   > ${e}`);
 			t.push("", `   批注：${e.comment.trim() || "（未填写）"}`, "");
 		}), t.join("\n").trimEnd() + "\n";
 	}
-	async function Le() {
+	async function Re() {
 		if (!i(x).length) return;
-		let e = Ie();
+		let e = Le();
 		f(Se, "");
 		try {
 			if (navigator.clipboard?.writeText) {
@@ -16346,48 +16348,55 @@ function Sb(c, v) {
 		}
 		f(Se, e, !0), await s(), i(pe)?.focus(), i(pe)?.select(), v.onToast("Automatic clipboard access is unavailable. Press Cmd/Ctrl+C to copy the selected text.");
 	}
-	function Re() {
-		Ae(), v.onDone();
-	}
-	var ze = xb(), Be = e(ze), E = e(Be), Ve = e(E), He = e(Ve);
-	ie(He, { name: "message-square-plus" }), p(), h(Ve);
-	var D = r(Ve, 2), Ue = e(D);
-	ie(Ue, { name: "copy" }), p(), h(D), h(E);
-	var We = r(E, 2), Ge = e(We), Ke = r(Ge, 2);
-	let qe;
-	var Je = e(Ke);
-	{
-		let e = o(() => i(be) ? "loader-circle" : "save");
-		ie(Je, { get name() {
-			return i(e);
-		} });
-	}
-	var Xe = r(Je), Ze = e(Xe, !0);
-	h(Xe), h(Ke), h(We), h(Be);
-	var Qe = r(Be, 2), $e = (e) => {
-		var t = gb();
+	var ze = Cb(), Be = e(ze), E = e(Be), Ve = (t) => {
+		var n = gb(), a = e(n), o = e(a);
+		ie(o, { name: "message-square-plus" }), p(), h(a);
+		var s = r(a, 2), c = e(s);
+		ie(c, { name: "copy" }), p(), h(s), h(n), u(() => {
+			a.disabled = !i(C), s.disabled = !i(x).length;
+		}), l("click", a, Me), l("click", s, Re), te(t, n);
+	}, He = (n) => {
+		var a = _b(), s = e(a);
+		let c;
+		var d = e(s);
+		{
+			let e = o(() => i(be) ? "loader-circle" : "save");
+			ie(d, { get name() {
+				return i(e);
+			} });
+		}
+		var f = r(d), p = e(f, !0);
+		h(f), h(s), h(a), u(() => {
+			s.disabled = i(be) || !i(Te), c = ee(s, 1, "", null, c, { busy: i(be) }), t(p, i(be) ? "Saving" : "Save");
+		}), l("click", s, Ie), te(n, a);
+	};
+	ae(E, (e) => {
+		v.mode === "annotate" ? e(Ve) : e(He, -1);
+	}), h(Be);
+	var D = r(Be, 2), Ue = (e) => {
+		var t = vb();
 		te(e, t);
 	};
-	ae(Qe, (e) => {
-		i(Ee) && e($e);
+	ae(D, (e) => {
+		v.mode === "edit" && i(De) && e(Ue);
 	});
-	var et = r(Qe, 2), tt = (n) => {
-		var r = _b(), a = e(r, !0);
+	var We = r(D, 2), Ge = (n) => {
+		var r = yb(), a = e(r, !0);
 		h(r), u(() => t(a, i(xe))), te(n, r);
 	};
-	ae(et, (e) => {
-		i(xe) && e(tt);
+	ae(We, (e) => {
+		i(xe) && e(Ge);
 	});
-	var nt = r(et, 2);
-	let rt;
-	var it = e(nt);
-	g(it, (e) => f(fe, e), () => i(fe));
-	var at = r(it, 2), ot = (n) => {
-		var a = yb(), o = e(a), s = r(e(o)), c = e(s, !0);
+	var Ke = r(We, 2);
+	let qe;
+	var Je = e(Ke);
+	g(Je, (e) => f(fe, e), () => i(fe));
+	var Xe = r(Je, 2), Ze = (n) => {
+		var a = xb(), o = e(a), s = r(e(o)), c = e(s, !0);
 		h(s), h(o);
 		var d = r(o, 2);
 		oe(d, 17, () => i(x), (e) => e.id, (n, a) => {
-			var o = vb();
+			var o = bb();
 			let s;
 			var c = e(o), d = e(c), f = e(d, !0);
 			h(d);
@@ -16398,22 +16407,22 @@ function Sb(c, v) {
 			var y = r(g, 2);
 			re(y), h(o), u((e, n) => {
 				s = ee(o, 1, "", null, s, { stale: i(a).stale }), d.disabled = i(a).stale, t(f, e), t(v, i(a).stale ? `[Selection removed] ${i(a).quote}` : i(a).quote), _(y, i(a).comment), ne(y, "data-comment-for", i(a).id), ne(y, "aria-label", n);
-			}, [() => T(i(a)), () => `Comment for ${T(i(a))}`]), l("click", d, () => Pe(i(a))), l("click", p, () => Ne(i(a).id)), l("input", y, (e) => Me(i(a).id, e.currentTarget.value)), te(n, o);
+			}, [() => Fe(i(a)), () => `Comment for ${Fe(i(a))}`]), l("click", d, () => T(i(a))), l("click", p, () => Pe(i(a).id)), l("input", y, (e) => Ne(i(a).id, e.currentTarget.value)), te(n, o);
 		}), h(a), u(() => t(c, i(x).length)), te(n, a);
 	};
-	ae(at, (e) => {
-		i(x).length && e(ot);
-	}), h(nt);
-	var st = r(nt, 2), ct = (t) => {
-		var n = bb(), a = r(e(n), 2);
+	ae(Xe, (e) => {
+		v.mode === "annotate" && i(x).length && e(Ze);
+	}), h(Ke);
+	var Qe = r(Ke, 2), $e = (t) => {
+		var n = Sb(), a = r(e(n), 2);
 		re(a), g(a, (e) => f(pe, e), () => i(pe)), h(n), u(() => _(a, i(Se))), te(t, n);
 	};
-	ae(st, (e) => {
-		i(Se) && e(ct);
+	ae(Qe, (e) => {
+		i(Se) && e($e);
 	}), h(ze), u(() => {
-		ne(ze, "data-editor-identity", v.identity), Ve.disabled = !i(De), D.disabled = !i(x).length, Ke.disabled = i(be) || !i(we), qe = ee(Ke, 1, "", null, qe, { busy: i(be) }), t(Ze, i(be) ? "Saving" : "Save"), rt = ee(nt, 1, "markdown-editor-layout", null, rt, { "with-annotations": i(x).length > 0 });
-	}), l("click", Ve, je), l("click", D, Le), l("click", Ge, Re), l("click", Ke, Fe), te(c, ze), a();
+		ne(ze, "data-editor-identity", v.identity), qe = ee(Ke, 1, "markdown-editor-layout", null, qe, { "with-annotations": v.mode === "annotate" && i(x).length > 0 });
+	}), te(c, ze), a();
 }
 c(["click", "input"]);
 //#endregion
-export { Sb as default };
+export { wb as default };
