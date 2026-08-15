@@ -164,7 +164,7 @@
 }
 
 :where([data-component-owner="markdown-editor"]) .markdown-copy-fallback span {
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 12px;
 }
 

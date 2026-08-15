@@ -38,7 +38,7 @@ describe("HistoryTimeline", () => {
     await tick();
 
     await vi.waitFor(() => expect(target.querySelectorAll(".history-turn")).toHaveLength(1));
-    expect(target.querySelector(".history-turn-title")?.textContent).toContain("cancelled · no final reply");
+    expect(target.querySelector(".history-turn-meta .history-status-pill")?.textContent).toContain("cancelled · no final reply");
     expect(target.querySelector(".history-turn-preview")?.textContent).toBe("No final reply");
   });
 });

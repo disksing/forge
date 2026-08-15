@@ -1,20 +1,23 @@
-/* HistoryTimeline styles. Keep selectors within the documented ownership boundary. */
+/* HistoryTimeline styles. Keep selectors within the documented ownership boundary.
+
+   Layout: a continuous timeline. Each Generation is a small gray band label;
+   its Turns sit on a shared left rail, marked by a status-colored dot. Turn
+   previews clamp to two lines; expanded conversation detail renders in a white
+   card nested inside the rail. */
 [data-component-owner="history-timeline"].history-timeline-root {
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-height: 100%;
   padding: 14px 2px 28px;
 }
 
 [data-component-owner="history-timeline"] .history-state,
 [data-component-owner="history-timeline"] .history-legacy,
-[data-component-owner="history-timeline"] .history-gap,
 [data-component-owner="history-timeline"] .history-detail-state {
   align-items: center;
   display: flex;
   gap: 9px;
-  color: var(--text-muted);
+  color: var(--muted);
   font-size: 13px;
 }
 
@@ -24,130 +27,235 @@
 }
 
 [data-component-owner="history-timeline"] .history-state span,
-[data-component-owner="history-timeline"] .history-legacy small,
-[data-component-owner="history-timeline"] .history-gap small {
+[data-component-owner="history-timeline"] .history-legacy small {
   display: block;
 }
 
 [data-component-owner="history-timeline"] .history-state strong,
-[data-component-owner="history-timeline"] .history-legacy strong,
-[data-component-owner="history-timeline"] .history-gap strong {
-  color: var(--text-primary);
+[data-component-owner="history-timeline"] .history-legacy strong {
+  color: var(--text);
 }
 
 [data-component-owner="history-timeline"] .history-error {
-  color: var(--danger-text, #b42318);
+  color: var(--accent-deep);
   flex-wrap: wrap;
 }
 
 [data-component-owner="history-timeline"] .history-load-older {
-  align-self: center;
+  align-self: flex-start;
+  margin: 0 0 6px 33px;
 }
 
+/* Status pill: colored dot + label, tones follow the page palette. */
+[data-component-owner="history-timeline"] .history-status-pill {
+  align-items: center;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+[data-component-owner="history-timeline"] .history-status-pill::before {
+  background: currentColor;
+  border-radius: 50%;
+  content: "";
+  height: 7px;
+  width: 7px;
+}
+
+[data-component-owner="history-timeline"] .history-status-pill[data-tone="completed"] { color: var(--green-deep); }
+[data-component-owner="history-timeline"] .history-status-pill[data-tone="active"] { color: var(--blue); }
+[data-component-owner="history-timeline"] .history-status-pill[data-tone="cancelled"] { color: var(--amber-deep); }
+[data-component-owner="history-timeline"] .history-status-pill[data-tone="failed"] { color: var(--accent-deep); }
+[data-component-owner="history-timeline"] .history-status-pill[data-tone="neutral"] { color: var(--faint); }
+
+/* Generation section label: a compact gray band. */
 [data-component-owner="history-timeline"] .history-generation {
-  border-bottom: 1px solid var(--border-subtle);
+  align-items: baseline;
+  background: var(--bg);
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
   display: flex;
   flex-wrap: wrap;
-  gap: 7px 14px;
-  justify-content: space-between;
-  padding: 11px 10px 8px;
+  gap: 6px 14px;
+  margin: 18px 0 4px;
+  padding: 6px 10px;
 }
 
-[data-component-owner="history-timeline"] .history-generation div {
-  align-items: baseline;
-  display: flex;
-  gap: 8px;
+[data-component-owner="history-timeline"] .history-load-older + .history-generation {
+  margin-top: 4px;
 }
 
-[data-component-owner="history-timeline"] .history-generation span,
-[data-component-owner="history-timeline"] .history-generation-meta,
-[data-component-owner="history-timeline"] .history-turn-count,
-[data-component-owner="history-timeline"] .history-turn-title small {
-  color: var(--text-muted);
+[data-component-owner="history-timeline"] .history-generation-label {
+  color: var(--faint);
   font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+[data-component-owner="history-timeline"] .history-generation strong {
+  font-size: 13px;
 }
 
 [data-component-owner="history-timeline"] .history-generation-meta {
+  align-items: baseline;
   display: flex;
   flex-wrap: wrap;
   gap: 5px 10px;
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 11px;
 }
 
-[data-component-owner="history-timeline"] .history-gap,
-[data-component-owner="history-timeline"] .history-legacy {
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  padding: 12px;
-}
-
-[data-component-owner="history-timeline"] .history-gap > span,
-[data-component-owner="history-timeline"] .history-legacy > span {
-  flex: 1;
+/* The shared rail every Turn hangs from. */
+[data-component-owner="history-timeline"] .history-track {
+  border-left: 2px solid var(--line-soft);
+  margin-left: 7px;
+  padding-left: 26px;
+  position: relative;
 }
 
 [data-component-owner="history-timeline"] .history-turn {
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  overflow: hidden;
+  padding: 10px 0;
+  position: relative;
 }
 
+[data-component-owner="history-timeline"] .history-turn + .history-turn {
+  border-top: 1px dashed var(--line-soft);
+}
+
+[data-component-owner="history-timeline"] .history-turn-dot {
+  background: var(--faint);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  height: 11px;
+  left: -34px;
+  outline: 1px solid var(--line);
+  position: absolute;
+  top: 14px;
+  width: 11px;
+}
+
+[data-component-owner="history-timeline"] .history-turn-dot[data-tone="completed"] { background: var(--green); }
+[data-component-owner="history-timeline"] .history-turn-dot[data-tone="active"] { background: var(--blue); }
+[data-component-owner="history-timeline"] .history-turn-dot[data-tone="cancelled"] { background: var(--amber); }
+[data-component-owner="history-timeline"] .history-turn-dot[data-tone="failed"] { background: var(--red); }
+
 [data-component-owner="history-timeline"] .history-turn-header {
-  align-items: center;
   background: transparent;
   border: 0;
+  border-radius: 6px;
   color: inherit;
   cursor: pointer;
-  display: grid;
-  gap: 10px;
-  grid-template-columns: minmax(118px, auto) minmax(0, 1fr) auto;
-  padding: 11px 12px;
+  display: block;
+  padding: 2px 8px 2px 0;
   text-align: left;
   width: 100%;
 }
 
-[data-component-owner="history-timeline"] .history-turn-header:hover {
-  background: var(--surface-hover);
+[data-component-owner="history-timeline"] .history-turn-header:hover .history-turn-preview {
+  color: var(--text);
 }
 
-[data-component-owner="history-timeline"] .history-turn-title {
+[data-component-owner="history-timeline"] .history-turn-meta {
+  align-items: baseline;
+  color: var(--faint);
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 8px;
 }
 
-[data-component-owner="history-timeline"] .history-turn-preview {
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+[data-component-owner="history-timeline"] .history-turn-time {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
 }
 
 [data-component-owner="history-timeline"] .history-turn-count {
   align-items: center;
   display: flex;
   gap: 5px;
+  margin-left: auto;
   white-space: nowrap;
 }
 
+[data-component-owner="history-timeline"] .history-turn-preview {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: var(--muted);
+  display: -webkit-box;
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin-top: 3px;
+  overflow: hidden;
+}
+
+[data-component-owner="history-timeline"] .history-turn-preview-empty {
+  color: var(--faint);
+  font-style: italic;
+}
+
+/* Expanded conversation detail: white card nested inside the rail. */
 [data-component-owner="history-timeline"] .history-items {
-  border-top: 1px solid var(--border-subtle);
+  background: #fff;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 12px;
+  margin-top: 8px;
+  padding: 10px 12px;
 }
 
 [data-component-owner="history-timeline"] .history-item {
   min-width: 0;
 }
 
-@media (max-width: 720px) {
-  [data-component-owner="history-timeline"] .history-turn-header {
-    grid-template-columns: 1fr auto;
-  }
+[data-component-owner="history-timeline"] .history-detail-state {
+  margin-top: 8px;
+}
 
-  [data-component-owner="history-timeline"] .history-turn-preview {
-    grid-column: 1 / -1;
-    grid-row: 2;
+/* Unreadable generation segment: soft red banner on the rail. */
+[data-component-owner="history-timeline"] .history-gap {
+  align-items: center;
+  background: var(--accent-soft);
+  border: 1px solid #f3d7d3;
+  border-radius: 8px;
+  color: var(--muted);
+  display: flex;
+  font-size: 13px;
+  gap: 9px;
+  margin: 10px 0;
+  padding: 10px 12px;
+}
+
+[data-component-owner="history-timeline"] .history-gap > span {
+  flex: 1;
+}
+
+[data-component-owner="history-timeline"] .history-gap strong {
+  color: var(--accent-deep);
+}
+
+[data-component-owner="history-timeline"] .history-gap svg {
+  color: var(--accent);
+}
+
+[data-component-owner="history-timeline"] .history-legacy {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+[data-component-owner="history-timeline"] .history-legacy > span {
+  flex: 1;
+}
+
+@media (max-width: 720px) {
+  [data-component-owner="history-timeline"] .history-turn-count {
+    margin-left: 0;
+    width: 100%;
   }
 }
