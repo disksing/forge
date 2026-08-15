@@ -100,6 +100,10 @@ function read(relativePath: string): string {
   return readFileSync(resolve(root, relativePath), "utf8");
 }
 
+function zIndexes(relativePath: string): number[] {
+  return [...read(relativePath).matchAll(/z-index:\s*(\d+)/g)].map((match) => Number(match[1]));
+}
+
 function selectorHeaders(css: string): string[] {
   const source = css.replaceAll(/\/\*[\s\S]*?\*\//g, "");
   const headers: string[] = [];
@@ -160,6 +164,16 @@ describe("CSS ownership", () => {
     for (const header of selectorHeaders(read("src/components/SettingsPanel.css"))) {
       for (const selector of header.split(",")) expect(selector.trim()).toContain("[data-component-owner][data-settings-panel]");
     }
+  });
+
+  it("keeps file previews above application navigation and below higher-priority dialogs", () => {
+    const filePreview = Math.max(...zIndexes("src/components/FilePreviewModal.css"));
+    const navigation = Math.max(...zIndexes("src/components/AppShell.css"), ...zIndexes("src/components/MobileToolbar.css"));
+    const higherPriorityDialogs = ["CreateDialog", "UploadDialog", "SettingsModal", "ConfirmDialog", "DoctorDialog"]
+      .map((component) => Math.max(...zIndexes(`src/components/${component}.css`)));
+
+    expect(filePreview).toBeGreaterThan(navigation);
+    expect(filePreview).toBeLessThan(Math.min(...higherPriorityDialogs));
   });
 
   it("marks nested component roots with the same owner used by their CSS", () => {
