@@ -88,16 +88,22 @@ func (m *agentManager) resolveResourceAgent(workspace guiWorkspace, resourceID s
 			if kindErr != nil {
 				return resolvedResourceAgent{}, kindErr
 			}
-			fallback := resourceDefaultProfile(cfg.ResourceDefaults, kind)
-			fallbackAgent := configuredAgentProfileName(cfg.AgentProfiles, fallback)
-			if fallbackAgent != "" {
-				resolved.ResolvedProfile, resolved.AgentName = fallback, fallbackAgent
-			} else if global := configuredAgentProfileName(cfg.AgentProfiles, "default"); global != "" {
-				resolved.ResolvedProfile, resolved.AgentName = "default", global
+			fallback := resourceDefaultForKind(cfg.ResourceDefaults, kind)
+			if fallback.Kind == "agent" {
+				resolved.ResolvedProfile = ""
+				resolved.AgentName = fallback.Name
+				resolved.ConfigError = fmt.Sprintf("Agent Profile %q cannot be resolved; using fallback Agent %q", requested, fallback.Name)
 			} else {
-				return resolvedAgentError(resolved, requested, fallback)
+				fallbackAgent := configuredAgentProfileName(cfg.AgentProfiles, fallback.Name)
+				if fallbackAgent != "" {
+					resolved.ResolvedProfile, resolved.AgentName = fallback.Name, fallbackAgent
+				} else if global := configuredAgentProfileName(cfg.AgentProfiles, "default"); global != "" {
+					resolved.ResolvedProfile, resolved.AgentName = "default", global
+				} else {
+					return resolvedAgentError(resolved, requested, fallback.Name)
+				}
+				resolved.ConfigError = fmt.Sprintf("Agent Profile %q cannot be resolved; using fallback Profile %q", requested, resolved.ResolvedProfile)
 			}
-			resolved.ConfigError = fmt.Sprintf("Agent Profile %q cannot be resolved; using fallback Profile %q", requested, resolved.ResolvedProfile)
 		}
 		digest := sha256.Sum256([]byte(requested + "\x00" + resolved.ResolvedProfile + "\x00" + resolved.AgentName + "\x00" + resolved.ConfigError))
 		resolved.ProfileRevision = hex.EncodeToString(digest[:8])
@@ -124,7 +130,7 @@ func resourceAgentKind(workspace *app.Workspace, resourceID string) (string, err
 	return "project", nil
 }
 
-func resourceDefaultProfile(defaults resourceAgentDefaults, kind string) string {
+func resourceDefaultForKind(defaults resourceAgentDefaults, kind string) resourceDefaultBinding {
 	defaults = normalizeResourceAgentDefaults(defaults)
 	switch kind {
 	case "workspace":
@@ -132,10 +138,18 @@ func resourceDefaultProfile(defaults resourceAgentDefaults, kind string) string 
 	case "task":
 		return defaults.Task
 	case app.SchedulerResourceID:
-		return "fast"
+		return resourceDefaultBinding{Kind: "profile", Name: "fast"}
 	default:
 		return defaults.Project
 	}
+}
+
+func toAppResourceAgentDefaults(defaults resourceAgentDefaults) app.ResourceAgentDefaults {
+	defaults = normalizeResourceAgentDefaults(defaults)
+	convert := func(binding resourceDefaultBinding) app.AgentBinding {
+		return app.AgentBinding{Kind: binding.Kind, Name: binding.Name}
+	}
+	return app.ResourceAgentDefaults{Workspace: convert(defaults.Workspace), Project: convert(defaults.Project), Task: convert(defaults.Task)}
 }
 
 func resolvedAgentError(resolved resolvedResourceAgent, requested, fallback string) (resolvedResourceAgent, error) {
@@ -412,9 +426,7 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 			continue
 		}
 		effectiveDefaults := effectiveResourceAgentDefaults(next.ResourceDefaults, toConfigProfileRoutes(next.AgentProfiles))
-		if _, err := forgeWorkspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-			Workspace: effectiveDefaults.Workspace, Project: effectiveDefaults.Project, Task: effectiveDefaults.Task,
-		}); err != nil {
+		if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
 			failures = append(failures, fmt.Sprintf("%s: persist resource defaults: %v", workspace.ID, err))
 			continue
 		}

@@ -32,15 +32,42 @@ func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Version != 4 || cfg.ResourceDefaults != defaultResourceAgentDefaults() {
+	if cfg.Version != 5 || cfg.ResourceDefaults != defaultResourceAgentDefaults() {
 		t.Fatalf("upgraded config = %#v", cfg)
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(data, []byte(`"version": 4`)) || !bytes.Contains(data, []byte(`"workspace": "default"`)) {
+	if !bytes.Contains(data, []byte(`"version": 5`)) || !bytes.Contains(data, []byte(`"resourceDefaults"`)) || !bytes.Contains(data, []byte(`"kind": "profile"`)) {
 		t.Fatalf("version three config was not written back: %s", data)
+	}
+}
+
+func TestReadAgentHubConfigMigratesLegacyStringResourceDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gui.json")
+	legacy := `{"version":4,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old","resourceDefaults":{"workspace":"fast","project":"default","task":"reasoning"}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := readAgentHubConfigFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := resourceAgentDefaults{
+		Workspace: resourceDefaultBinding{Kind: "profile", Name: "fast"},
+		Project:   resourceDefaultBinding{Kind: "profile", Name: "default"},
+		Task:      resourceDefaultBinding{Kind: "profile", Name: "reasoning"},
+	}
+	if cfg.Version != 5 || cfg.ResourceDefaults != expected {
+		t.Fatalf("migrated config = %#v", cfg)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`"version": 5`)) || !bytes.Contains(data, []byte(`"kind": "profile"`)) || bytes.Contains(data, []byte(`"workspace": "fast"`)) {
+		t.Fatalf("legacy defaults were not rewritten in structured form: %s", data)
 	}
 }
 
@@ -82,7 +109,7 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(saved, []byte(`"version": 4`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) || !bytes.Contains(saved, []byte(`"resourceDefaults"`)) {
+	if !bytes.Contains(saved, []byte(`"version": 5`)) || !bytes.Contains(saved, []byte(`"agentHubInstanceId"`)) || !bytes.Contains(saved, []byte(`"resourceDefaults"`)) {
 		t.Fatalf("unexpected persisted config: %s", saved)
 	}
 	if bytes.Contains(saved, []byte(`"agentProviders"`)) || bytes.Contains(saved, []byte(`"defaultChatAgentId"`)) {
@@ -339,16 +366,20 @@ func TestMissingTypedResourceDefaultIsPersistedAndFallsBackGlobally(t *testing.T
 	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
 		AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "stable-id",
 		AgentProfiles:    []agentHubProfileRoute{{Key: "default", AgentName: "gpt-5.6-sol"}},
-		ResourceDefaults: resourceAgentDefaults{Workspace: "default", Project: "deleted-project-default", Task: "default"},
+		ResourceDefaults: resourceAgentDefaults{
+			Workspace: resourceDefaultBinding{Kind: "profile", Name: "default"},
+			Project:   resourceDefaultBinding{Kind: "profile", Name: "deleted-project-default"},
+			Task:      resourceDefaultBinding{Kind: "profile", Name: "default"},
+		},
 	}, catalog)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ResourceDefaults.Project != "deleted-project-default" {
+	if cfg.ResourceDefaults.Project.Name != "deleted-project-default" {
 		t.Fatalf("normalization rewrote unresolved configured default: %+v", cfg.ResourceDefaults)
 	}
 	effective := effectiveResourceAgentDefaults(cfg.ResourceDefaults, toConfigProfileRoutes(cfg.AgentProfiles))
-	if effective.Project != "default" {
+	if effective.Project != (resourceDefaultBinding{Kind: "profile", Name: "default"}) {
 		t.Fatalf("missing Project default did not fall back globally: %+v", effective)
 	}
 }

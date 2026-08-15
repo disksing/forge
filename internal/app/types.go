@@ -3,6 +3,7 @@ package app
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 type Config struct {
@@ -19,9 +20,45 @@ type AgentBinding struct {
 }
 
 type ResourceAgentDefaults struct {
-	Workspace string `json:"workspace"`
-	Project   string `json:"project"`
-	Task      string `json:"task"`
+	Workspace AgentBinding `json:"workspace"`
+	Project   AgentBinding `json:"project"`
+	Task      AgentBinding `json:"task"`
+}
+
+// UnmarshalJSON accepts both the structured binding form and the legacy
+// profile-name string form used before resource defaults could target an
+// Agent directly.
+func (defaults *ResourceAgentDefaults) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		Workspace json.RawMessage `json:"workspace"`
+		Project   json.RawMessage `json:"project"`
+		Task      json.RawMessage `json:"task"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	decode := func(data []byte, target *AgentBinding) error {
+		if len(data) == 0 || string(data) == "null" {
+			return nil
+		}
+		var legacy string
+		if err := json.Unmarshal(data, &legacy); err == nil {
+			name := strings.TrimSpace(legacy)
+			if name == "" {
+				return nil
+			}
+			*target = AgentBinding{Kind: "profile", Name: name}
+			return nil
+		}
+		return json.Unmarshal(data, target)
+	}
+	if err := decode(raw.Workspace, &defaults.Workspace); err != nil {
+		return err
+	}
+	if err := decode(raw.Project, &defaults.Project); err != nil {
+		return err
+	}
+	return decode(raw.Task, &defaults.Task)
 }
 
 type WorkspaceRuntimeConfig struct {

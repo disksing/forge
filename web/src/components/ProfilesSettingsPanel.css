@@ -19,6 +19,27 @@
   font-weight: 650;
 }
 
+:where([data-component-owner="profiles-settings-panel"]) .settings-resource-defaults .agent-binding {
+  width: 100%;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-resource-defaults .agent-binding-button {
+  width: 100%;
+  height: 36px;
+  justify-content: space-between;
+  border: 1px solid #c3c9d1;
+  background: #fff;
+  color: #2c3e50;
+  padding: 0 10px;
+  font-size: 13px;
+}
+
+:where([data-component-owner="profiles-settings-panel"]) .settings-resource-defaults .agent-binding-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 :where([data-component-owner="profiles-settings-panel"]) .settings-resource-default-note {
   margin: 10px 0 0;
   color: #667482;

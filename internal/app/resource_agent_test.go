@@ -1,6 +1,7 @@
 package app_test
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -40,7 +41,11 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	if _, err := workspace.SetResourceAgentBinding(project.ID, direct); err != nil {
 		t.Fatal(err)
 	}
-	after, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{Workspace: "fast", Project: "fast", Task: "reasoning"})
+	after, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+		Workspace: app.AgentBinding{Kind: "profile", Name: "fast"},
+		Project:   app.AgentBinding{Kind: "profile", Name: "fast"},
+		Task:      app.AgentBinding{Kind: "profile", Name: "reasoning"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,5 +72,50 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	info, err := os.Stat(filepath.Join(workspace.Root(), ".forge", "runtime"))
 	if err != nil || !info.IsDir() || info.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("runtime directory permissions mismatch: info=%v err=%v", info, err)
+	}
+}
+
+func TestResourceDefaultsAcceptDirectAgentBindings(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
+		Workspace: app.AgentBinding{Kind: "profile", Name: "default"},
+		Project:   app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
+		Task:      app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Agent default project", "agent-default")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if project.AgentBinding != (app.AgentBinding{Kind: "agent", Name: "Kimi-K3"}) {
+		t.Fatalf("new Project did not use the direct Agent default: %#v", project.AgentBinding)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Agent default task", Slug: "agent-default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.AgentBinding != (app.AgentBinding{Kind: "agent", Name: "Kimi-K3"}) {
+		t.Fatalf("new Task did not use the direct Agent default: %#v", task.AgentBinding)
+	}
+}
+
+func TestLegacyStringResourceDefaultsDecodeAsProfiles(t *testing.T) {
+	data := []byte(`{"version":1,"language":"en","resourceDefaults":{"workspace":"Fast","project":{"kind":"agent","name":"Kimi-K3"},"task":"default"}}`)
+	var cfg app.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ResourceDefaults.Workspace != (app.AgentBinding{Kind: "profile", Name: "Fast"}) {
+		t.Fatalf("legacy Workspace default decoded as %#v", cfg.ResourceDefaults.Workspace)
+	}
+	if cfg.ResourceDefaults.Project != (app.AgentBinding{Kind: "agent", Name: "Kimi-K3"}) {
+		t.Fatalf("structured Project default decoded as %#v", cfg.ResourceDefaults.Project)
+	}
+	if cfg.ResourceDefaults.Task != (app.AgentBinding{Kind: "profile", Name: "default"}) {
+		t.Fatalf("legacy Task default decoded as %#v", cfg.ResourceDefaults.Task)
 	}
 }

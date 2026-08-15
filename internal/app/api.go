@@ -271,7 +271,10 @@ func (w *Workspace) migrate(language string) error {
 	if err := writeWorkspaceConfig(w.root, config); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
-	if err := ensureOpenResourceBindings(w.root, ResourceAgentDefaults{Project: "default", Task: "default"}); err != nil {
+	if err := ensureOpenResourceBindings(w.root, ResourceAgentDefaults{
+		Project: AgentBinding{Kind: "profile", Name: "default"},
+		Task:    AgentBinding{Kind: "profile", Name: "default"},
+	}); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
 	return nil
@@ -526,7 +529,7 @@ func (w *Workspace) createProject(input CreateProjectInput) (Project, error) {
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
 	}
-	project.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(cfg.ResourceDefaults.Project)}
+	project.AgentBinding = normalizeDefaultBinding(cfg.ResourceDefaults.Project)
 	language, err := workspaceLanguage(w.root)
 	if err != nil {
 		return Project{}, &APIError{Operation: "create project", Kind: "project", Workspace: w.root, Err: err}
@@ -676,7 +679,7 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 		if configErr != nil {
 			return Task{}, &APIError{Operation: "create task", Kind: "task", Workspace: w.root, ResourceID: id, Err: configErr}
 		}
-		task.AgentBinding = AgentBinding{Kind: "profile", Name: normalizeDefaultProfile(cfg.ResourceDefaults.Task)}
+		task.AgentBinding = normalizeDefaultBinding(cfg.ResourceDefaults.Task)
 	}
 	task.Template = templateSource
 	language, err := workspaceLanguage(w.root)

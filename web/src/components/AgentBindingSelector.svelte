@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
 
+  import "./AgentBindingSelector.css";
+
   import type { AgentOption } from "../models/common";
   import type { ResourceAgentBindingModel, ResourceAgentProfileModel } from "../models/detail";
   import Icon from "./Icon.svelte";
@@ -11,6 +13,7 @@
     agents,
     disabled = false,
     ariaLabel = "Agent binding",
+    openUp = true,
     onSelect,
   }: {
     value: ResourceAgentBindingModel;
@@ -18,6 +21,9 @@
     agents: AgentOption[];
     disabled?: boolean;
     ariaLabel?: string;
+    // The composer sits at the bottom of the viewport, so by default the menu
+    // opens upward. Settings panels pass openUp=false to open downward.
+    openUp?: boolean;
     onSelect: (value: ResourceAgentBindingModel) => void;
   } = $props();
 
@@ -70,16 +76,17 @@
     };
   });
 
-  // The composer sits at the bottom of the viewport and the menu opens
-  // upward, so the usable height is the distance from the button to the top
-  // of the viewport minus the gap above the button and a small top margin.
-  // Grow the menu up to that space instead of a fixed cap so long agent lists
-  // stay visible instead of being clipped into a small scroll area.
+  // Size the menu against the free space on its opening side: upward menus
+  // (composer at the bottom of the viewport) measure the distance to the top,
+  // downward menus (settings panel) measure the distance to the bottom, minus
+  // a small margin. Grow the menu up to that space instead of a fixed cap so
+  // long agent lists stay visible instead of being clipped into a small
+  // scroll area.
   function fitMenuToViewport(): void {
     if (!root || !menu) return;
-    const top = root.getBoundingClientRect().top;
-    const maxHeight = Math.max(120, Math.floor(top - 14));
-    menu.style.maxHeight = `${maxHeight}px`;
+    const rect = root.getBoundingClientRect();
+    const available = openUp ? rect.top - 14 : window.innerHeight - rect.bottom - 14;
+    menu.style.maxHeight = `${Math.max(120, Math.floor(available))}px`;
   }
 
   // Size the menu as a two-column table: every primary label shares the width
@@ -162,7 +169,7 @@
   }
 </script>
 
-<span class="agent-binding" bind:this={root}>
+<span class="agent-binding" data-component-owner="agent-binding-selector" data-placement={openUp ? "up" : "down"} bind:this={root}>
   <button type="button" class="agent-binding-button" {disabled} aria-haspopup="listbox" aria-expanded={open} aria-label={ariaLabel} onclick={() => { open = !open; }}>
     <span class="agent-binding-label">{selectedLabel}</span>
     <Icon name="chevrons-up-down" className="agent-binding-icon" />

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	agentHubConfigVersion = 4
+	agentHubConfigVersion = 5
 	agentHubSourceApp     = "forge"
 )
 
@@ -85,34 +85,48 @@ func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (ag
 func effectiveResourceAgentDefaults(defaults resourceAgentDefaults, profiles []agentProfileRoute) resourceAgentDefaults {
 	defaults = normalizeResourceAgentDefaults(defaults)
 	globalAvailable := configuredAgentProfileName(profiles, "default") != ""
-	resolve := func(name string) string {
-		if configuredAgentProfileName(profiles, name) != "" {
-			return name
+	resolve := func(binding resourceDefaultBinding) resourceDefaultBinding {
+		if binding.Kind == "agent" {
+			return binding
+		}
+		if configuredAgentProfileName(profiles, binding.Name) != "" {
+			return binding
 		}
 		if globalAvailable {
-			return "default"
+			return resourceDefaultBinding{Kind: "profile", Name: "default"}
 		}
-		return name
+		return binding
 	}
 	return resourceAgentDefaults{Workspace: resolve(defaults.Workspace), Project: resolve(defaults.Project), Task: resolve(defaults.Task)}
 }
 
 func defaultResourceAgentDefaults() resourceAgentDefaults {
-	return resourceAgentDefaults{Workspace: "default", Project: "default", Task: "default"}
+	return resourceAgentDefaults{
+		Workspace: resourceDefaultBinding{Kind: "profile", Name: "default"},
+		Project:   resourceDefaultBinding{Kind: "profile", Name: "default"},
+		Task:      resourceDefaultBinding{Kind: "profile", Name: "default"},
+	}
+}
+
+func normalizeResourceAgentDefaultBinding(value resourceDefaultBinding) resourceDefaultBinding {
+	kind := strings.ToLower(strings.TrimSpace(value.Kind))
+	name := strings.TrimSpace(value.Name)
+	if kind != "agent" {
+		kind = "profile"
+		name = strings.ToLower(name)
+	}
+	if name == "" {
+		return resourceDefaultBinding{Kind: "profile", Name: "default"}
+	}
+	return resourceDefaultBinding{Kind: kind, Name: name}
 }
 
 func normalizeResourceAgentDefaults(value resourceAgentDefaults) resourceAgentDefaults {
-	defaults := defaultResourceAgentDefaults()
-	if normalized := strings.ToLower(strings.TrimSpace(value.Workspace)); normalized != "" {
-		defaults.Workspace = normalized
+	return resourceAgentDefaults{
+		Workspace: normalizeResourceAgentDefaultBinding(value.Workspace),
+		Project:   normalizeResourceAgentDefaultBinding(value.Project),
+		Task:      normalizeResourceAgentDefaultBinding(value.Task),
 	}
-	if normalized := strings.ToLower(strings.TrimSpace(value.Project)); normalized != "" {
-		defaults.Project = normalized
-	}
-	if normalized := strings.ToLower(strings.TrimSpace(value.Task)); normalized != "" {
-		defaults.Task = normalized
-	}
-	return defaults
 }
 
 func normalizeAgentHubProfileRoutes(routes []agentHubProfileRoute, catalog agentHubCatalog) ([]agentHubProfileRoute, error) {
