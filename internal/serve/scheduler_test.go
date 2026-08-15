@@ -18,9 +18,9 @@ func TestSchedulerHTTPAPIUsesApplicationStore(t *testing.T) {
 	if _, err := app.Initialize(root, "en"); err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: "workspace-scheduler", Name: "Scheduler", Path: root}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace}}); err != nil {
+	workspace := serveWorkspace{ID: "workspace-scheduler", Name: "Scheduler", Path: root}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}}); err != nil {
 		t.Fatal(err)
 	}
 	request := func(method, path, body string) *httptest.ResponseRecorder {

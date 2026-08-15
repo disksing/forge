@@ -115,7 +115,7 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 // closeRuntimeTestRun stops one generation's AgentHub session and marks the
 // run stopped on disk so cleanup assertions can converge without the removed
 // run lifecycle handlers.
-func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorkspace, runID string) *httptest.ResponseRecorder {
+func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWorkspace, runID string) *httptest.ResponseRecorder {
 	t.Helper()
 	response := httptest.NewRecorder()
 	run, err := loadAgentRun(workspace.Path, runID)
@@ -146,7 +146,7 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorks
 	return response
 }
 
-func seedTestForgeSession(t *testing.T, workspace guiWorkspace, externalID string) string {
+func seedTestForgeSession(t *testing.T, workspace serveWorkspace, externalID string) string {
 	t.Helper()
 	return "legacy-session-" + newRunID()
 }

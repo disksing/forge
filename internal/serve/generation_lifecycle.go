@@ -599,7 +599,7 @@ func GuardedLifecycleCommit(plan GenerationLifecyclePlan, facts GenerationLifecy
 // boundary after a
 // network effect. It is intentionally small and read-only; the caller decides
 // how to re-plan when the result is stale.
-func legacyLifecyclePlanStillCurrent(workspace guiWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
+func legacyLifecyclePlanStillCurrent(workspace serveWorkspace, plan GenerationLifecyclePlan, session *agentHubSession) (bool, error) {
 	if strings.TrimSpace(plan.GenerationID) != "" {
 		current, found, err := currentResourceGeneration(workspace.Path, plan.Guard.ResourceID)
 		if err != nil {

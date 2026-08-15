@@ -32,7 +32,7 @@ func sourceLookupKey(instanceID, externalID string) string {
 	return strings.TrimSpace(instanceID) + "\x00" + strings.TrimSpace(externalID)
 }
 
-func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace guiWorkspace, resourceID string) (bool, error) {
+func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace serveWorkspace, resourceID string) (bool, error) {
 	runs, err := loadAgentRunsCurrent(workspace.Path)
 	if err != nil {
 		return false, err
@@ -62,7 +62,7 @@ func (m *agentManager) resourceHasActiveTurn(ctx context.Context, workspace guiW
 	return false, nil
 }
 
-func (m *agentManager) resolveResourceAgent(workspace guiWorkspace, resourceID string, cfg config) (resolvedResourceAgent, error) {
+func (m *agentManager) resolveResourceAgent(workspace serveWorkspace, resourceID string, cfg config) (resolvedResourceAgent, error) {
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return resolvedResourceAgent{}, err
@@ -158,7 +158,7 @@ func nextResourceGeneration(workspacePath, resourceID string) (int, error) {
 	return store.NextGeneration(resourceID)
 }
 
-func resourceGenerationTitle(workspace guiWorkspace, resourceID string, generation int) (string, error) {
+func resourceGenerationTitle(workspace serveWorkspace, resourceID string, generation int) (string, error) {
 	resourceID = normalizedResourceID(resourceID)
 	title := strings.TrimSpace(workspace.Name)
 	if resourceID == app.SchedulerResourceID {
@@ -222,7 +222,7 @@ func (rt *agentRuntime) deliverPendingResourceMessages(ctx context.Context, m *a
 // resource ordering must invoke it from that resource's controller. Pending
 // inputs remain owned by the Workspace mailbox; generation creation never
 // transfers or rewrites them.
-func (m *agentManager) createResourceGeneration(ctx context.Context, workspace guiWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
+func (m *agentManager) createResourceGeneration(ctx context.Context, workspace serveWorkspace, resourceID, cwd string, cfg config, client *agentHubClient, resolved resolvedResourceAgent) (agentRun, error) {
 	generation, err := nextResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
 		return agentRun{}, err
@@ -320,13 +320,13 @@ func (m *agentManager) createResourceGeneration(ctx context.Context, workspace g
 	return rt.snapshotRun(), nil
 }
 
-func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
+func (m *agentManager) resourceBindingChanged(ctx context.Context, workspace serveWorkspace, resourceID string, binding app.AgentBinding) error {
 	return m.withResourceController(ctx, workspace, resourceID, func() error {
 		return m.resourceBindingChangedLocked(ctx, workspace, resourceID, binding)
 	})
 }
 
-func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspace guiWorkspace, resourceID string, binding app.AgentBinding) error {
+func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspace serveWorkspace, resourceID string, binding app.AgentBinding) error {
 	_ = binding
 	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil || !found {
@@ -406,7 +406,7 @@ func (m *agentManager) resourceBindingChangedLocked(ctx context.Context, workspa
 	return nil
 }
 
-func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next agentHubGUIConfig) error {
+func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next agentHubServeConfig) error {
 	_ = previous
 	var failures []string
 	for _, workspace := range next.Workspaces {

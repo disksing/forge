@@ -1,7 +1,16 @@
-const PANE_SIZE_KEY = "forge.gui.paneSizes";
-const MOBILE_IMMERSIVE_KEY = "forge.gui.mobileImmersive";
-const LAYOUT_PREFERENCE_KEY = "forge.gui.layoutPreference";
-const FONT_SCALE_KEY = "forge.gui.fontScales";
+import { migrateStorageKey } from "./storage-migration";
+
+const PANE_SIZE_KEY = "forge.web.paneSizes";
+const MOBILE_IMMERSIVE_KEY = "forge.web.mobileImmersive";
+const LAYOUT_PREFERENCE_KEY = "forge.web.layoutPreference";
+const FONT_SCALE_KEY = "forge.web.fontScales";
+// Pre-rename keys whose values are migrated on startup.
+const LEGACY_KEYS: Array<[string, string]> = [
+	["forge.gui.paneSizes", PANE_SIZE_KEY],
+	["forge.gui.mobileImmersive", MOBILE_IMMERSIVE_KEY],
+	["forge.gui.layoutPreference", LAYOUT_PREFERENCE_KEY],
+	["forge.gui.fontScales", FONT_SCALE_KEY]
+];
 const PANE_HANDLE_WIDTH = 8;
 const SIDEBAR_MIN_WIDTH = 220;
 const DETAILS_MIN_WIDTH = 360;
@@ -162,6 +171,7 @@ export function createPaneLayoutController(onChange: () => void, storage: Storag
 	}
 
 	function initialize(): void {
+		for (const [oldKey, newKey] of LEGACY_KEYS) migrateStorageKey(storage, oldKey, newKey);
 		const raw = readStoredPaneSizes();
 		paneSizes = normalizePaneSizes(raw, 0);
 		applyPaneSizes();

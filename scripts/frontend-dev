@@ -12,7 +12,7 @@ fi
 forge_dev_runtime=$(mktemp -d "${TMPDIR:-/tmp}/forge-frontend-dev.XXXXXX")
 mkdir -p "$forge_dev_runtime/agenthub"
 go -C "$root" build -o "$forge_dev_runtime/forge" ./cli/cmd/forge
-FORGE_GUI_CONFIG="$forge_dev_runtime/gui.json" \
+FORGE_SERVE_CONFIG="$forge_dev_runtime/serve.json" \
 AGENTHUB_DATA_DIR="$forge_dev_runtime/agenthub" \
 "$forge_dev_runtime/forge" serve --addr=127.0.0.1:4936 --workspace="$workspace" &
 forge_dev_server_pid=$!

@@ -6,17 +6,20 @@ Generation 生命周期的 canonical facts、operation 优先级、网络 effect
 
 ## 配置与所有权
 
-持久化 GUI 配置使用 schema version 4，包含 Workspace、AgentHub endpoint、Forge instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 GUI 创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 Forge 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
+持久化配置使用 schema version 4，包含 Workspace、AgentHub endpoint、Forge instance ID、Profile 路由，以及新建 Workspace/Project/Task 的分类型默认 Profile。Application、CLI 和 Web 界面创建资源时都读取持久化到 Workspace 的同一组默认值；类型默认不可解析时使用全局 `default`。读取 version 3 时会补齐三个 `default` 并写回 version 4。每个 Workspace 可保存一个内置图标键；缺失或未知值回退为 Forge 默认图标。Settings 的 `User` 页签把用户名保存在当前浏览器的 `localStorage` 中，不进入服务配置或 Workspace 数据。
 
 可用环境变量：
 
 ```text
 FORGE_AGENTHUB_URL  AgentHub endpoint override
-FORGE_GUI_CONFIG    GUI configuration file path
+FORGE_SERVE_CONFIG  serve configuration file path
+FORGE_GUI_CONFIG    legacy alias of FORGE_SERVE_CONFIG
 ```
 
-未设置 `FORGE_GUI_CONFIG` 时，GUI 配置默认保存于 `~/.forge/gui.json`。
-已有安装需要先停止正在运行的 Forge，再将旧文件
+未设置 `FORGE_SERVE_CONFIG` 时，配置默认保存于 `~/.forge/serve.json`；已存在的
+`~/.forge/gui.json`（改名前的默认位置）会继续使用。`FORGE_GUI_CONFIG` 是改名前的环境变量，继续作为
+`FORGE_SERVE_CONFIG` 的 fallback 生效，已有部署无需调整。
+更早的安装需要先停止正在运行的 Forge，再将旧文件
 `~/Library/Application Support/forge/gui.json` 移动到 `~/.forge/gui.json`；服务不会自动读取旧位置。
 
 每个被管理的 Workspace 同时只能由一个 `forge serve` 进程持有。服务启动时为配置中的每个 Workspace 获取 `<workspace>/.forge/serve.lock` 的 OS advisory 独占锁，并在整个生命周期内保持文件描述符打开。锁冲突会让启动整体失败并释放本轮已取得的锁。
@@ -25,7 +28,7 @@ FORGE_GUI_CONFIG    GUI configuration file path
 
 项目、任务、日志、归档、文件预览、Wiki、diff 和模板路由都以显式 Workspace ID 为作用域。结构化模板由 `internal/app` 校验和渲染；`POST .../tasks/preview` 返回最终标题、Markdown 和模板来源/digest，创建时可提交 `expectedTemplateDigest` 防止预览后模板发生变化。
 
-Scheduler API 同样委托 `internal/app`，提供 `GET/POST .../scheduler`、`PUT/DELETE .../scheduler/{scheduleId}` 与 `PUT .../scheduler/settings`。Server 不解析自然语言 condition；GUI 使用这些接口维护调度项、独立绑定和唤醒间隔。
+Scheduler API 同样委托 `internal/app`，提供 `GET/POST .../scheduler`、`PUT/DELETE .../scheduler/{scheduleId}` 与 `PUT .../scheduler/settings`。Server 不解析自然语言 condition；Web 界面使用这些接口维护调度项、独立绑定和唤醒间隔。
 
 ## Resource generation and AgentHub facts
 
@@ -60,7 +63,7 @@ POST /api/workspaces/{workspaceId}/resources/{resourceId}/attention/dismiss
 
 `POST .../generation/end?generationId={currentGenerationId}` 只在没有活动 Turn/approval 时接受。它以 generation ID 防止过期页面误操作，随后沿统一 lifecycle 完成 Session Stop、stopped 确认、Archive 和 generation retire；不会立即创建空 successor，下一条 mailbox 消息会按资源当前绑定懒创建新 generation。
 
-`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含 `attention.followed` 与 `attention.dismissedTurn`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准，ready/stopped 快照即使残留上一个 `currentTurnId` 也会被清理。Activity 先列出 active 资源：active 组按当前 Turn 的 `turnStartedAt` 倒序，idle 组按最近规范终态的 `completionAt` 倒序，同时间再按标题和资源 ID 稳定排序；输出和轮询变化的 `updatedAt` 不参与排序。Turn 结束后，只有已关注且当前资源 turn ordinal 大于 dismiss ordinal 的资源继续保留。缺少 `dismissedTurn` 表示用户从未 dismiss 过该资源。`PUT .../attention` 接收 `{ "followed": true|false }`；重新关注会清除 dismiss 边界，使资源立即可见。`POST .../attention/dismiss` 记录当前资源 turn ordinal。创建 Project/Task 和向任意资源发送已接受的消息都会自动关注对应资源。关注状态持久化在 `.forge/gui-state.json`，浏览器写入导航 UI 状态时会保留该字段。
+`GET /api/workspaces/{workspaceId}/tree` 还会返回由服务端计算的 `attentionList`。资源树快照包含 `attention.followed` 与 `attention.dismissedTurn`，runtime 快照包含资源级的 `turnNumber`、`activeTurn` 和 `turnStartedAt`。列表始终包含有活动 Turn 的资源，Web 在运行中不显示 dismiss 控件；`activeTurn` 以 AgentHub Session 的 `running`/`waiting_approval` 状态为准，ready/stopped 快照即使残留上一个 `currentTurnId` 也会被清理。Activity 先列出 active 资源：active 组按当前 Turn 的 `turnStartedAt` 倒序，idle 组按最近规范终态的 `completionAt` 倒序，同时间再按标题和资源 ID 稳定排序；输出和轮询变化的 `updatedAt` 不参与排序。Turn 结束后，只有已关注且当前资源 turn ordinal 大于 dismiss ordinal 的资源继续保留。缺少 `dismissedTurn` 表示用户从未 dismiss 过该资源。`PUT .../attention` 接收 `{ "followed": true|false }`；重新关注会清除 dismiss 边界，使资源立即可见。`POST .../attention/dismiss` 记录当前资源 turn ordinal。创建 Project/Task 和向任意资源发送已接受的消息都会自动关注对应资源。关注状态持久化在 `.forge/ui-state.json`（改名前的 `gui-state.json` 仍会读取并在下次保存时迁移），浏览器写入导航 UI 状态时会保留该字段。
 
 发送正文示例：
 
@@ -94,7 +97,7 @@ Forge 定期从 AgentHub 拉取 Session 状态并以同一 desired-state reconci
 
 同一周期 reconciler 还读取每个 Workspace 的 `scheduler.json` 并生成稳定、enqueue-only 的 `scheduler_tick` mailbox 消息；该消息显式以 `requestedMode=enqueue`、`actualMode=enqueue`、`ModeFrozen=true` 接受，不能被生成消息公共 helper 改成 `steer`。空列表不会生成消息；配置变化在 Scheduler 忙碌时最多保留一个 waiting tick。间隔基准只接受由 Server tick 触发且 canonical 状态为 `completed` 的 Turn 结束时间，普通用户 Turn 不会重置计时；失败 tick 和无法恢复历史的 tick 使用恢复原因重新唤醒。资源级 `scheduler.json` checkpoint 保留最近 tick 的稳定 ID、generation/Session/Turn、配置 digest 和 delivery/Turn terminal 边界，即使 tick receipt 已 compact，Server 重启也不会重复或丢失恢复判断。
 
-资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 Forge Session store 或写入 API。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，GUI 不再提供 Session 新建、切换、恢复或关闭控件。内部 lifecycle controller 仍保留 AgentHub Session 的 Stop/Resume effect；这不是用户级 Session API，也不建立旁路恢复状态机。
+资源 generation 的创建、AgentHub 绑定和生命周期由资源级 API 与 reconciler 负责；不再存在独立的 Forge Session store 或写入 API。资源级 Session Lock 已删除；资源聊天由单一当前代际串行化，Web 界面不再提供 Session 新建、切换、恢复或关闭控件。内部 lifecycle controller 仍保留 AgentHub Session 的 Stop/Resume effect；这不是用户级 Session API，也不建立旁路恢复状态机。
 
 ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/approval、待处理 mailbox 投递或生命周期收敛时由 Forge 自动休眠。空闲边界持久化在 generation 记录中，reconciler 会重新核对精确 AgentHub Session，在资源/Turn 互斥边界内执行 Stop；确认 durable `stopped` 后仍保留同一 current generation/Session，公共 runtime 标记为 `idle-suspended`。可恢复的 suspended/stopped current generation 仍允许浏览器保持只读事件流，避免同一 Session Resume 后丢失实时更新；永久关闭的浏览器 EventSource 会在后续状态变化时重新建立。之后的 user、agent、system 或 Scheduler 消息保留在 mailbox，按同一 planner 规划幂等 Resume，确认原 Session ready 后再投递；Forge 或 AgentHub 重启后观察到的 `requested`/`daemon_recovery`/idle stopped 统一走这条按需路径。没有消息时保持 stopped，不批量启动 provider。只有 binding/profile 变化、资源归档、Session archived/missing、身份/source 不匹配或 AgentHub 明确报告 provider/native resume 不可恢复，才进入 Stop/Archive/retire 并按需创建新 generation；临时 Resume 失败保留 mailbox 与 receipt，等待下一次 receipt/replan。普通轮询和 Server 重启不会重置计时。
 
@@ -102,6 +105,6 @@ ready 的 current generation 在连续空闲 30 分钟且没有活动 Turn/appro
 
 AgentHub 的固定 revision `@agenthub/event-timeline` 仍只负责解释当前开放 Turn 的 canonical raw events 和 provider tool semantics；Forge 自己的 adapter 渲染已关闭 Turn 的紧凑 items，不制造伪 canonical events。恢复诊断使用独立 `forge.notice`。上传直接写入目标资源的 `artifacts/upload/`，不会为了上传创建 generation，未发送路径仍留在资源级草稿中。
 
-资源 generation 向 AgentHub Session 注入 `FORGE_WORKSPACE_ROOT`、`FORGE_WORKSPACE_INSTANCE_ID` 和 `FORGE_RESOURCE_ID`，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 GUI 委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两类系统通知在 durable accept 时请求 `steer` 且保持 `ModeFrozen=false`，交由普通 mailbox reconcile 按目标活动 Turn 与 steer capability 冻结为 `steer` 或降级为 `enqueue`（分别记录 `no_active_turn`/`steer_unsupported`）；已冻结模式重试不得漂移。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
+资源 generation 向 AgentHub Session 注入 `FORGE_WORKSPACE_ROOT`、`FORGE_WORKSPACE_INSTANCE_ID` 和 `FORGE_RESOURCE_ID`，供本地 CLI 验证 Agent sender provenance。创建仍由 CLI 或 Web 界面委托 `internal/app` 完成，不经过 mailbox；创建没有初始消息或 generation。每条输入的 `subscribeResult` 省略时默认为 true，实际 delivered 后按 generation+Turn+稳定 sender 建立订阅；同一 sender 在同一 Turn 的多条输入聚合为一条 `turn_result`，payload 带全部源 message IDs，其他 sender 独立投递。`undeliverable`/终态 `delivery_unknown` 会生成 `delivery_terminal_notice`。两类系统通知在 durable accept 时请求 `steer` 且保持 `ModeFrozen=false`，交由普通 mailbox reconcile 按目标活动 Turn 与 steer capability 冻结为 `steer` 或降级为 `enqueue`（分别记录 `no_active_turn`/`steer_unsupported`）；已冻结模式重试不得漂移。结果和终态通知在源资源的独立 outbox 中保存可恢复 operation：目标 mailbox durable accepted 后清空生成正文，只保留 accepted/delivery 摘要，目标 delivery 进入明确终态后删除 operation 并把最小 notification 摘要写入源 receipt。目标 Workspace 必须已注册并由同一 Server 拥有。目标缺失、归档或未注册会写入 receipt 终态，系统生成消息强制 `subscribeResult=false`，不会再生成通知。
 
 持久 schema 升级是无损的：一次性版本化迁移会删除 Workspace/Project/Task 中旧的 `creator`/`createdBy` 字段，并把已 durable 的旧 callback/outbox 类型转换为当前 `turn_result`；已完成历史不会重新批量通知。mailbox schema v1/v2 与 generation pending queue 只执行一次 staging/marker migration，旧 `.forge/runtime/mailbox.json` 保留为回滚证据，不会被新版本继续改写。迁移中断可重试，已提交资源按稳定 ID 合并，marker 只在资源 store 与 pending queue 收敛后写入；旧 Forge 只能回滚到仍理解旧文件的版本，不能在新 marker/store 上继续写入或覆盖新资源文档。`.forge/initializing.json` 表示可重试但尚未完成的 Workspace 初始化，正常打开会拒绝该半成品并提示重新执行 `forge init`。发布前可备份 Workspace；代码回滚不要求改写资源 JSON，回滚前应暂停跨 Workspace 通知。

@@ -1,4 +1,7 @@
-const STORAGE_PREFIX = "forge.gui.agentDraft.v2";
+import { migrateStoragePrefix } from "./storage-migration";
+
+const STORAGE_PREFIX = "forge.web.agentDraft.v2";
+const LEGACY_STORAGE_PREFIX = "forge.gui.agentDraft.v2";
 const STORAGE_VERSION = 2;
 const DEFAULT_MAX_ORPHAN_COUNT = 50;
 const DEFAULT_MAX_AGE_MS = 90 * 24 * 60 * 60 * 1000;
@@ -43,6 +46,8 @@ export function createAgentDraftStore(options: AgentDraftStoreOptions = {}) {
 			return null;
 		}
 	}
+
+	migrateStoragePrefix(storage(), LEGACY_STORAGE_PREFIX, STORAGE_PREFIX);
 
 	function keyForResource(workspaceId: unknown, resourceId: unknown): string {
 		const workspace = String(workspaceId || "").trim();

@@ -142,19 +142,19 @@ func TestStoreMigratesBothLegacyIndexesAndKeepsRollbackEvidence(t *testing.T) {
 			{"id": "run-current", "resourceId": "project1.task1", "generation": 2, "generationId": "gen-current", "status": "idle", "updatedAt": "2026-08-01T00:00:02Z"},
 		},
 	}
-	guiRuns := []map[string]any{
+	legacyRuns := []map[string]any{
 		{"id": "run-cold", "resourceId": "project2", "generation": 0, "status": "stopped", "updatedAt": "2026-08-01T00:00:03Z"},
 	}
 	generationBytes, err := json.Marshal(generationIndex)
 	if err != nil {
 		t.Fatal(err)
 	}
-	guiBytes, err := json.Marshal(guiRuns)
+	legacyBytes, err := json.Marshal(legacyRuns)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeTestFile(t, legacyGenerationPath, generationBytes)
-	writeTestFile(t, legacyGUIPath, guiBytes)
+	writeTestFile(t, legacyGUIPath, legacyBytes)
 
 	store, err := Open(root, "instance-migration")
 	if err != nil {
@@ -188,7 +188,7 @@ func TestStoreMigratesBothLegacyIndexesAndKeepsRollbackEvidence(t *testing.T) {
 	if got := mustReadTestFile(t, legacyGenerationPath); string(got) != string(generationBytes) {
 		t.Fatal("legacy generations index was modified")
 	}
-	if got := mustReadTestFile(t, legacyGUIPath); string(got) != string(guiBytes) {
+	if got := mustReadTestFile(t, legacyGUIPath); string(got) != string(legacyBytes) {
 		t.Fatal("legacy GUI runs index was modified")
 	}
 

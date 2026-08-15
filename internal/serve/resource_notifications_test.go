@@ -13,10 +13,10 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-func newNotificationTestManager(t *testing.T, hubURL string, workspaces []guiWorkspace) *agentManager {
+func newNotificationTestManager(t *testing.T, hubURL string, workspaces []serveWorkspace) *agentManager {
 	t.Helper()
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	data, err := json.Marshal(agentHubGUIConfig{
+	configPath := filepath.Join(t.TempDir(), "serve.json")
+	data, err := json.Marshal(agentHubServeConfig{
 		Version: agentHubConfigVersion, Workspaces: workspaces,
 		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-notification-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
@@ -68,8 +68,8 @@ func TestTurnResultSubscriptionsOnlyNotifyTurnOpeners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: "notification", Name: "Notification", Path: root}
-	manager := newNotificationTestManager(t, hub.URL, []guiWorkspace{workspace})
+	workspace := serveWorkspace{ID: "notification", Name: "Notification", Path: root}
+	manager := newNotificationTestManager(t, hub.URL, []serveWorkspace{workspace})
 	client, err := newAgentHubClient(hub.URL, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -286,9 +286,9 @@ func TestTerminalDeliveryNoticeRoutesToResourceSenderWithoutBounce(t *testing.T)
 		t.Fatal(err)
 	}
 	targetRuntime, _ := targetApp.RuntimeConfig()
-	sourceWorkspace := guiWorkspace{ID: "source", Path: sourceRoot}
-	targetWorkspace := guiWorkspace{ID: "target", Path: targetRoot}
-	manager := newNotificationTestManager(t, hub.URL, []guiWorkspace{sourceWorkspace, targetWorkspace})
+	sourceWorkspace := serveWorkspace{ID: "source", Path: sourceRoot}
+	targetWorkspace := serveWorkspace{ID: "target", Path: targetRoot}
+	manager := newNotificationTestManager(t, hub.URL, []serveWorkspace{sourceWorkspace, targetWorkspace})
 	client, _ := newAgentHubClient(hub.URL, nil)
 	now := time.Now().Format(time.RFC3339Nano)
 	original := resourceMailboxMessage{
@@ -362,8 +362,8 @@ func TestNotificationReceiptTerminatesWhenTargetWorkspaceIsUnavailable(t *testin
 	if _, err := app.Initialize(root, "en"); err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: "source", Path: root}
-	manager := newNotificationTestManager(t, hub.URL, []guiWorkspace{workspace})
+	workspace := serveWorkspace{ID: "source", Path: root}
+	manager := newNotificationTestManager(t, hub.URL, []serveWorkspace{workspace})
 	now := time.Now().Format(time.RFC3339Nano)
 	source := resourceMailboxMessage{
 		ID: "msg-source", ResourceID: "workspace", Text: "source", Role: "agent",

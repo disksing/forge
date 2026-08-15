@@ -133,48 +133,48 @@
 </script>
 
 {#if model.stopNotice}
-  <div class="tty-turn-stop-notice" role="status">
+  <div class="chat-turn-stop-notice" role="status">
     <span>{model.stopNotice}</span>
-    <button type="button" class="tty-turn-stop-dismiss" aria-label="Dismiss turn stop notice" onclick={model.onDismissStopNotice}>Dismiss</button>
+    <button type="button" class="chat-turn-stop-dismiss" aria-label="Dismiss turn stop notice" onclick={model.onDismissStopNotice}>Dismiss</button>
   </div>
 {/if}
 {#if model.waitingMessages.length}
-  <section class="tty-message-queue" aria-label="Waiting messages">
-    <div class="tty-message-queue-header"><span>Waiting messages</span><span class="tty-message-count">{model.waitingMessages.length}</span></div>
-    <div class="tty-message-list">
+  <section class="chat-message-queue" aria-label="Waiting messages">
+    <div class="chat-message-queue-header"><span>Waiting messages</span><span class="chat-message-count">{model.waitingMessages.length}</span></div>
+    <div class="chat-message-list">
       {#each model.waitingMessages as message (message.messageId)}
-        <div class="tty-message-item" data-message-id={message.messageId}>
-          <span class="tty-message-text" title={message.text}>{message.text}</span>
-          <span class="tty-message-mode">{message.actualMode || message.requestedMode}</span>
-          <button type="button" class="tty-message-steer" disabled={!model.canSteerWaiting || Boolean(model.steeringMessageId)} title={model.canSteerWaiting ? "Insert this waiting message into the current turn" : "Available when the current turn supports steer"} aria-label={`Insert waiting message into current turn: ${message.text}`} onclick={() => steerWaiting(message.messageId)}>
+        <div class="chat-message-item" data-message-id={message.messageId}>
+          <span class="chat-message-text" title={message.text}>{message.text}</span>
+          <span class="chat-message-mode">{message.actualMode || message.requestedMode}</span>
+          <button type="button" class="chat-message-steer" disabled={!model.canSteerWaiting || Boolean(model.steeringMessageId)} title={model.canSteerWaiting ? "Insert this waiting message into the current turn" : "Available when the current turn supports steer"} aria-label={`Insert waiting message into current turn: ${message.text}`} onclick={() => steerWaiting(message.messageId)}>
             {#if model.steeringMessageId === message.messageId}<Icon name="loader-circle" />{:else}<Icon name="corner-up-left" />{/if}
             <span>Insert now</span>
           </button>
         </div>
       {/each}
     </div>
-    {#if queueError}<div class="tty-message-queue-error" role="alert">{queueError}</div>{/if}
+    {#if queueError}<div class="chat-message-queue-error" role="alert">{queueError}</div>{/if}
   </section>
 {/if}
 {#if pendingText}
-  <div class="tty-send-feedback" data-send-state="submitting" role="status" aria-live="polite">
+  <div class="chat-send-feedback" data-send-state="submitting" role="status" aria-live="polite">
     <Icon name="loader-circle" />
-    <span class="tty-send-feedback-content"><strong>Submitting</strong><span class="tty-send-feedback-text">{pendingText}</span></span>
+    <span class="chat-send-feedback-content"><strong>Submitting</strong><span class="chat-send-feedback-text">{pendingText}</span></span>
   </div>
 {/if}
-<form id="ttyForm" class="tty-input" onsubmit={send}>
-    <textarea id="ttyInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || "Message this resource"} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>
-    <div class="tty-composer-bar">
-      <button type="button" id="agentUploadButton" class="tty-upload-button" title="Upload files" aria-label="Upload files" disabled={Boolean(model.unavailableReason)} onclick={model.onOpenUpload}><Icon name="plus" /></button>
-      <div class="tty-composer-options">
-        <span class="tty-agent-binding"><AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={blocked || model.bindingSaving} ariaLabel="Binding target" onSelect={selectBinding} /></span>
+<form id="chatForm" class="chat-input" onsubmit={send}>
+    <textarea id="chatInput" bind:this={input} rows="1" autocomplete="off" data-agent-draft-key={model.draftKey} placeholder={model.unavailableReason || "Message this resource"} disabled={blocked} value={draft} oninput={(event) => updateDraft(event.currentTarget.value)} onkeydown={keydown}></textarea>
+    <div class="chat-composer-bar">
+      <button type="button" id="agentUploadButton" class="chat-upload-button" title="Upload files" aria-label="Upload files" disabled={Boolean(model.unavailableReason)} onclick={model.onOpenUpload}><Icon name="plus" /></button>
+      <div class="chat-composer-options">
+        <span class="chat-agent-binding"><AgentBindingSelector value={model.agentBinding} profiles={model.agentProfiles} agents={model.agents} disabled={blocked || model.bindingSaving} ariaLabel="Binding target" onSelect={selectBinding} /></span>
         {#if model.canEndTurn}
-          <button type="button" id="agentEndTurnButton" class="tty-composer-action tty-end-turn-button" class:busy={model.endingTurn} disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><span class="tty-composer-icon tty-composer-icon-idle"><Icon name="pause" /></span><span class="tty-composer-icon tty-composer-icon-busy"><Icon name="loader-circle" /></span></button>
+          <button type="button" id="agentEndTurnButton" class="chat-composer-action chat-end-turn-button" class:busy={model.endingTurn} disabled={model.endingTurn} title="End current turn" aria-label="End current turn" onclick={model.onEndTurn}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="pause" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
         {:else if model.canEndGeneration}
-          <button type="button" id="agentEndGenerationButton" class="tty-composer-action tty-end-generation-button" class:busy={model.endingGeneration} disabled={model.endingGeneration} title="End current generation" aria-label="End current generation" onclick={model.onEndGeneration}><span class="tty-composer-icon tty-composer-icon-idle"><Icon name="archive" /></span><span class="tty-composer-icon tty-composer-icon-busy"><Icon name="loader-circle" /></span></button>
+          <button type="button" id="agentEndGenerationButton" class="chat-composer-action chat-end-generation-button" class:busy={model.endingGeneration} disabled={model.endingGeneration} title="End current generation" aria-label="End current generation" onclick={model.onEndGeneration}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="archive" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
         {/if}
-        <button type="submit" class="tty-send-button" class:busy={sending} title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><span class="tty-composer-icon tty-composer-icon-idle"><Icon name="send" /></span><span class="tty-composer-icon tty-composer-icon-busy"><Icon name="loader-circle" /></span></button>
+        <button type="submit" class="chat-send-button" class:busy={sending} title={sending ? "Sending..." : model.unavailableReason || "Send input"} aria-label={sending ? "Sending..." : model.unavailableReason || "Send input"} disabled={blocked}><span class="chat-composer-icon chat-composer-icon-idle"><Icon name="send" /></span><span class="chat-composer-icon chat-composer-icon-busy"><Icon name="loader-circle" /></span></button>
       </div>
     </div>
   </form>
-  {#if error}<div class="tty-composer-error" role="alert"><span>{error}</span><button type="button" class="secondary-button" disabled={sending} onclick={() => send()}>Retry</button></div>{/if}
+  {#if error}<div class="chat-composer-error" role="alert"><span>{error}</span><button type="button" class="secondary-button" disabled={sending} onclick={() => send()}>Retry</button></div>{/if}

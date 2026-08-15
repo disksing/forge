@@ -42,10 +42,10 @@ func TestDoctorMonitorScansConfiguredWorkspacesAndServesCache(t *testing.T) {
 	}
 	hub := doctorAgentHub(t)
 	defer hub.Close()
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath}
 	cfg := config{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "One", Path: workspacePath}},
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "One", Path: workspacePath}},
 		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-doctor-test",
 		AgentProfiles: []agentProfileRoute{
 			{Key: "default", AgentName: "fake-agent"},
@@ -97,10 +97,10 @@ func TestDoctorMonitorMarksCatalogFailureIncompleteWithoutAgentFalsePositives(t 
 	if _, err := app.Initialize(workspacePath, "en"); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath}
 	if err := s.saveConfig(config{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspacePath}},
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspacePath}},
 		AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "forge-doctor-test",
 		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "missing-agent"}},
 	}); err != nil {

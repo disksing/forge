@@ -24,10 +24,10 @@ var systemAgentProfileDefinitions = []systemAgentProfileDefinition{
 	{Key: "default", Description: "Balanced, recommended agent"},
 }
 
-type agentHubGUIConfig struct {
+type agentHubServeConfig struct {
 	Version            int                    `json:"version"`
 	ActiveID           string                 `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace         `json:"workspaces"`
+	Workspaces         []serveWorkspace         `json:"workspaces"`
 	AgentHubEndpoint   string                 `json:"agentHubEndpoint"`
 	AgentHubInstanceID string                 `json:"agentHubInstanceId"`
 	AgentProfiles      []agentHubProfileRoute `json:"agentProfiles,omitempty"`
@@ -54,26 +54,26 @@ func newAgentHubInstanceID() (string, error) {
 	return "forge-" + hex.EncodeToString(random[:]), nil
 }
 
-func normalizeAgentHubConfig(cfg agentHubGUIConfig, catalog agentHubCatalog) (agentHubGUIConfig, error) {
+func normalizeAgentHubConfig(cfg agentHubServeConfig, catalog agentHubCatalog) (agentHubServeConfig, error) {
 	cfg.Version = agentHubConfigVersion
 	if cfg.Workspaces == nil {
-		cfg.Workspaces = []guiWorkspace{}
+		cfg.Workspaces = []serveWorkspace{}
 	}
 	endpoint, err := normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
-		return agentHubGUIConfig{}, err
+		return agentHubServeConfig{}, err
 	}
 	cfg.AgentHubEndpoint = endpoint
 	cfg.AgentHubInstanceID = strings.TrimSpace(cfg.AgentHubInstanceID)
 	if cfg.AgentHubInstanceID == "" {
 		cfg.AgentHubInstanceID, err = newAgentHubInstanceID()
 		if err != nil {
-			return agentHubGUIConfig{}, err
+			return agentHubServeConfig{}, err
 		}
 	}
 	cfg.AgentProfiles, err = normalizeAgentHubProfileRoutes(cfg.AgentProfiles, catalog)
 	if err != nil {
-		return agentHubGUIConfig{}, err
+		return agentHubServeConfig{}, err
 	}
 	return cfg, nil
 }

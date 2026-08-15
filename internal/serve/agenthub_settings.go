@@ -11,7 +11,7 @@ import (
 )
 
 type agentHubSettingsResponse struct {
-	Config             agentHubGUIConfig `json:"config"`
+	Config             agentHubServeConfig `json:"config"`
 	ConfiguredEndpoint string            `json:"configuredEndpoint"`
 	EffectiveEndpoint  string            `json:"effectiveEndpoint"`
 	Connected          bool              `json:"connected"`
@@ -183,7 +183,7 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	}, nil
 }
 
-func writeAgentHubConfigFile(path string, cfg agentHubGUIConfig) error {
+func writeAgentHubConfigFile(path string, cfg agentHubServeConfig) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -191,35 +191,35 @@ func writeAgentHubConfigFile(path string, cfg agentHubGUIConfig) error {
 	return atomicWriteConfig(path, append(data, '\n'))
 }
 
-func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
+func readAgentHubConfigFile(path string) (agentHubServeConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return agentHubGUIConfig{
-				Version: agentHubConfigVersion, Workspaces: []guiWorkspace{},
+			return agentHubServeConfig{
+				Version: agentHubConfigVersion, Workspaces: []serveWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
 			}, nil
 		}
-		return agentHubGUIConfig{}, err
+		return agentHubServeConfig{}, err
 	}
 	var version struct {
 		Version int `json:"version"`
 	}
 	if err := json.Unmarshal(data, &version); err != nil {
-		return agentHubGUIConfig{}, err
+		return agentHubServeConfig{}, err
 	}
 	if version.Version < 3 {
-		return agentHubGUIConfig{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", version.Version)
+		return agentHubServeConfig{}, fmt.Errorf("unsupported Forge serve configuration version %d; migrate the configuration before starting forge serve", version.Version)
 	}
 	needsUpgrade := version.Version != agentHubConfigVersion
-	var cfg agentHubGUIConfig
+	var cfg agentHubServeConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return agentHubGUIConfig{}, err
+		return agentHubServeConfig{}, err
 	}
 	cfg.Version = agentHubConfigVersion
 	if needsUpgrade {
 		if err := writeAgentHubConfigFile(path, cfg); err != nil {
-			return agentHubGUIConfig{}, err
+			return agentHubServeConfig{}, err
 		}
 	}
 	return cfg, nil

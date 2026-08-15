@@ -59,7 +59,7 @@ func TestCreateForgeSessionUsesAgentHubLiveness(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(&server{})
-	id, err := manager.createForgeSession(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace},
+	id, err := manager.createForgeSession(context.Background(), serveWorkspace{ID: "workspace-one", Path: workspace},
 		agentRun{ID: "run-one", SourceExternalID: "workspace-one/run-one"},
 		config{AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "forge-one"})
 	if err != nil || id == "" {
@@ -87,7 +87,7 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(&server{})
-	got, err := manager.agentRunCwd(context.Background(), guiWorkspace{Path: workspace}, "project1.task1", "")
+	got, err := manager.agentRunCwd(context.Background(), serveWorkspace{Path: workspace}, "project1.task1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +107,7 @@ func TestEndForgeSessionIgnoresAlreadyPrunedSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(&server{})
-	if err := manager.endForgeSession(context.Background(), guiWorkspace{Path: workspace}, "session-pruned"); err != nil {
+	if err := manager.endForgeSession(context.Background(), serveWorkspace{Path: workspace}, "session-pruned"); err != nil {
 		t.Fatalf("already-pruned session should be treated as ended: %v", err)
 	}
 }

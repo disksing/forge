@@ -16,7 +16,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace guiWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {
+func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace serveWorkspace, resourceID, text, mode string, sender *agentHubMessageSender) resourceMailboxMessage {
 	t.Helper()
 	message, err := manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{
 		Text: text, Mode: mode, Role: "agent", Sender: sender,
@@ -285,7 +285,7 @@ func TestResourceMailboxReceiptRetentionReturnsStableExpiredError(t *testing.T) 
 	if found || !errors.As(err, &apiErr) || apiErr.Code != "message_receipt_expired" || resourceErrorStatus(err) != http.StatusGone {
 		t.Fatalf("expired receipt lookup = found=%v err=%v", found, err)
 	}
-	manager := newNotificationTestManager(t, "http://127.0.0.1:1", []guiWorkspace{{ID: "workspace", Path: root}})
+	manager := newNotificationTestManager(t, "http://127.0.0.1:1", []serveWorkspace{{ID: "workspace", Path: root}})
 	recorder := httptest.NewRecorder()
 	manager.handleResourceMessage(recorder, httptest.NewRequest(http.MethodGet, "/messages/msg-retention-0", nil), "workspace", "msg-retention-0")
 	if recorder.Code != http.StatusGone || !strings.Contains(recorder.Body.String(), `"code":"message_receipt_expired"`) {
@@ -560,8 +560,8 @@ func TestResourceMailboxArchiveRaceEitherRejectsOrTerminatesAcceptedMessage(t *t
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	configData, _ := json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+	configData, _ := json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
@@ -609,8 +609,8 @@ func TestResourceMailboxPersistsBindingAndTemporaryDeliveryErrors(t *testing.T) 
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
-	configData, _ := json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+	configData, _ := json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
 	})
 	if err := os.WriteFile(configPath, configData, 0o600); err != nil {
@@ -624,8 +624,8 @@ func TestResourceMailboxPersistsBindingAndTemporaryDeliveryErrors(t *testing.T) 
 	// Restore a valid binding but make AgentHub unreachable. The same accepted
 	// message remains queued and reports a distinct retryable delivery class.
 	hub.Close()
-	configData, _ = json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+	configData, _ = json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentHubEndpoint: hub.URL, AgentHubInstanceID: "forge-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
@@ -829,6 +829,6 @@ func TestResourceServerAPIStructuredErrors(t *testing.T) {
 	}
 }
 
-func acceptTestResourceMessageWithError(manager *agentManager, workspace guiWorkspace, resourceID string) (resourceMailboxMessage, error) {
+func acceptTestResourceMessageWithError(manager *agentManager, workspace serveWorkspace, resourceID string) (resourceMailboxMessage, error) {
 	return manager.acceptResourceMessage(context.Background(), workspace, resourceID, resourceMessageRequest{Text: "no", Mode: resourceMessageModeSteer})
 }

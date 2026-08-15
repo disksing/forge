@@ -62,8 +62,8 @@ func TestRestoredProfileWithSameAgentClearsErrorWithoutReplacement(t *testing.T)
 		t.Fatal(err)
 	}
 	manager.registerRuntime(newAgentHubRuntime(manager, workspace, run, nil))
-	data, err := json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace}, AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "forge-runtime-test",
+	data, err := json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace}, AgentHubEndpoint: "http://127.0.0.1:1", AgentHubInstanceID: "forge-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}, {Key: "restored", AgentName: "fake-agent"}},
 	})
 	if err != nil {

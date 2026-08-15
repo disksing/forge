@@ -86,7 +86,7 @@ func (key resourceControllerKey) string() string {
 	return key.workspaceInstanceID + "\x00" + key.resourceID
 }
 
-func (m *agentManager) resourceControllerKey(workspace guiWorkspace, resourceID string) (resourceControllerKey, error) {
+func (m *agentManager) resourceControllerKey(workspace serveWorkspace, resourceID string) (resourceControllerKey, error) {
 	instanceID, err := workspaceInstanceID(workspace.Path)
 	if err != nil {
 		return resourceControllerKey{}, err
@@ -98,7 +98,7 @@ func (m *agentManager) resourceControllerKey(workspace guiWorkspace, resourceID 
 	return resourceControllerKey{workspaceInstanceID: instanceID, resourceID: normalizedResourceID(resourceID)}, nil
 }
 
-func (m *agentManager) controllerForResource(workspace guiWorkspace, resourceID string) (*resourceController, error) {
+func (m *agentManager) controllerForResource(workspace serveWorkspace, resourceID string) (*resourceController, error) {
 	key, err := m.resourceControllerKey(workspace, resourceID)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (m *agentManager) controllerForResource(workspace guiWorkspace, resourceID 
 	return controller, nil
 }
 
-func (m *agentManager) withResourceController(ctx context.Context, workspace guiWorkspace, resourceID string, fn func() error) error {
+func (m *agentManager) withResourceController(ctx context.Context, workspace serveWorkspace, resourceID string, fn func() error) error {
 	controller, err := m.controllerForResource(workspace, resourceID)
 	if err != nil {
 		return err
@@ -122,7 +122,7 @@ func (m *agentManager) withResourceController(ctx context.Context, workspace gui
 	return controller.do(ctx, fn)
 }
 
-func (m *agentManager) enqueueResourceController(workspace guiWorkspace, resourceID string, fn func() error) error {
+func (m *agentManager) enqueueResourceController(workspace serveWorkspace, resourceID string, fn func() error) error {
 	controller, err := m.controllerForResource(workspace, resourceID)
 	if err != nil {
 		return err

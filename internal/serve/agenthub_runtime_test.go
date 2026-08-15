@@ -508,7 +508,7 @@ func (f *runtimeFakeAgentHub) appendLocked(sessionID, eventType string, data any
 	return event
 }
 
-func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspace, string) {
+func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, serveWorkspace, string) {
 	t.Helper()
 	workspacePath := t.TempDir()
 	forgeWorkspace, err := app.Initialize(workspacePath, "en")
@@ -522,10 +522,10 @@ func newRuntimeTestManager(t *testing.T, hubURL string) (*agentManager, guiWorks
 	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Runtime test task", Slug: "runtime-test"}); err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	configData, _ := json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+	workspace := serveWorkspace{ID: "workspace-test", Name: "Test", Path: workspacePath}
+	configPath := filepath.Join(t.TempDir(), "serve.json")
+	configData, _ := json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-runtime-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
@@ -605,7 +605,7 @@ func TestCreateResourceGenerationPersistsAgentHubCatalogSnapshot(t *testing.T) {
 	}
 }
 
-func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace guiWorkspace, body string) (*httptest.ResponseRecorder, agentRun) {
+func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWorkspace, body string) (*httptest.ResponseRecorder, agentRun) {
 	t.Helper()
 	var request struct {
 		ResourceID string `json:"resourceId"`
@@ -1121,7 +1121,7 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	}
 }
 
-func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace guiWorkspace, resourceID, body string) *httptest.ResponseRecorder {
+func sendRuntimeAgentInput(t *testing.T, manager *agentManager, workspace serveWorkspace, resourceID, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	var request struct {
 		Text     string `json:"text"`

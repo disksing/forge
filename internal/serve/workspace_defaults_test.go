@@ -24,10 +24,10 @@ func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: "workspace-defaults", Name: "Defaults", Path: root}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	workspace := serveWorkspace{ID: "workspace-defaults", Name: "Defaults", Path: root}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
 	if err := s.saveConfig(config{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "fake-agent"}, {Key: "review", AgentName: "fake-agent"}},
 	}); err != nil {
 		t.Fatal(err)

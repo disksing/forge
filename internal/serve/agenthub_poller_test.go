@@ -15,7 +15,7 @@ import (
 
 // seedPollerRun registers an AgentHub session in the fake and persists the
 // matching local run projection for the poller to reconcile.
-func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspace, run agentRun, session agentHubSession) {
+func seedPollerRun(t *testing.T, fake *runtimeFakeAgentHub, workspace serveWorkspace, run agentRun, session agentHubSession) {
 	t.Helper()
 	if run.ForgeSessionID != "" {
 		run.ForgeSessionID = seedTestForgeSession(t, workspace, run.SourceExternalID)

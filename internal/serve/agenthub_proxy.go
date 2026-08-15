@@ -11,7 +11,7 @@ import (
 )
 
 // This file implements the same-origin, cache-free, on-demand AgentHub events
-// proxy. The Forge GUI server never parses, stores, or replays event content
+// proxy. The Forge serve server never parses, stores, or replays event content
 // here: JSON pages are forwarded byte-for-byte and SSE frames are forwarded as
 // a raw stream. The only Forge addition is the forge.notice frames interleaved
 // into the proxy stream so existing browser notifications keep working.
@@ -22,7 +22,7 @@ import (
 var errAgentHubProxyUnbound = errors.New("run is not attached to AgentHub")
 
 // errAgentHubProxyConfig marks AgentHub client configuration failures, which
-// the proxy reports as 503 because the GUI itself is not ready to serve events.
+// the proxy reports as 503 because the web UI itself is not ready to serve events.
 var errAgentHubProxyConfig = errors.New("AgentHub is not configured")
 
 // resolveAgentHubProxyTarget finds an internal generation record and a live

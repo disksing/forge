@@ -233,13 +233,13 @@ func findSchedulerTickTurn(ctx context.Context, client *agentHubClient, sessionI
 // Scheduler resource controller. It converts elapsed Server time and durable
 // Scheduler configuration changes into ordinary enqueue-only mailbox
 // messages. AgentHub remains the canonical Turn owner.
-func (m *agentManager) reconcileSchedulerLocked(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+func (m *agentManager) reconcileSchedulerLocked(ctx context.Context, workspace serveWorkspace, client *agentHubClient) error {
 	return m.withResourceController(ctx, workspace, app.SchedulerResourceID, func() error {
 		return m.reconcileScheduler(ctx, workspace, client)
 	})
 }
 
-func (m *agentManager) reconcileScheduler(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+func (m *agentManager) reconcileScheduler(ctx context.Context, workspace serveWorkspace, client *agentHubClient) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

@@ -803,7 +803,7 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y - 60);
   await page.mouse.up();
   await expect.poll(() => activityPanel.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(initialHeight + 40);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("forge.gui.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("forge.web.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
 
   await attentionRow.hover();
   await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
@@ -878,7 +878,7 @@ test("keeps a newly created task Activity row aligned when its first turn starts
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Start the first turn");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
@@ -926,8 +926,8 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   await page.getByRole("button", { name: "Update schedule" }).click();
   await expect(page.locator(".schedule-list article")).toContainText("Notify after release verification");
 
-  page.once("dialog", (dialog) => dialog.accept());
   await page.locator(".schedule-list article").getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("alertdialog", { name: "Remove schedule" }).getByRole("button", { name: "Remove" }).click();
   await expect(page.locator(".schedule-list article")).toHaveCount(0);
   expect(harness.schedulerBodies.map(({ method }) => method)).toEqual(["POST", "PUT", "PUT", "DELETE"]);
   expect(harness.schedulerBodies[0].body).toEqual({
@@ -1056,11 +1056,11 @@ test("renders History turn detail with conversation timeline components", async 
 test("keeps narrow chat content inside the column while code blocks scroll locally", async ({ page }) => {
   await installMockApi(page, "project1.task1", false, false, false, [], "idle", 0, "narrow-layout");
   await page.addInitScript(() => {
-    localStorage.setItem("forge.gui.paneSizes", JSON.stringify({ sidebarWidth: 280, chatWidth: 320, sidebarAttentionHeight: 210 }));
+    localStorage.setItem("forge.web.paneSizes", JSON.stringify({ sidebarWidth: 280, chatWidth: 320, sidebarAttentionHeight: 210 }));
   });
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const log = page.locator("#ttyLog");
+  const log = page.locator("#chatTimeline");
   await expect(log.locator(".agent-message-row.user")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered table")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered pre")).toHaveCount(1);
@@ -1112,15 +1112,15 @@ test("pages resource history, sends input, receives SSE, and preserves active re
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  await expect(page.locator("#ttyLog")).toContainText("SSE update for project1.task1");
-  await expect(page.locator("#ttyLog")).toContainText("gen-1 baseline message 1");
+  await expect(page.locator("#chatTimeline")).toContainText("SSE update for project1.task1");
+  await expect(page.locator("#chatTimeline")).toContainText("gen-1 baseline message 1");
   const historyAnchor = page.locator(".conversation-turn").filter({ hasText: "gen-1 baseline message 1" }).first();
   await expect(historyAnchor).toBeVisible();
   await historyAnchor.evaluate((node) => node.setAttribute("data-history-anchor", "stable"));
   await page.locator("#loadOlderAgentEventsButton, .load-older-events").click();
-  await expect(page.locator("#ttyLog")).toContainText("gen-1 older history");
+  await expect(page.locator("#chatTimeline")).toContainText("gen-1 older history");
   await expect(historyAnchor).toHaveAttribute("data-history-anchor", "stable");
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Preserve this draft until accepted");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
@@ -1129,7 +1129,7 @@ test("pages resource history, sends input, receives SSE, and preserves active re
   await expect(input).toHaveValue("");
 
   await input.fill("Draft survives refresh");
-  const before = await page.locator("#ttyLog").evaluate((log) => {
+  const before = await page.locator("#chatTimeline").evaluate((log) => {
     log.scrollTop = Math.max(1, Math.floor(log.scrollHeight / 3));
     const bubble = log.querySelector(".agent-message-bubble");
     const text = bubble?.firstChild;
@@ -1146,7 +1146,7 @@ test("pages resource history, sends input, receives SSE, and preserves active re
 
   await expect(input).toBeFocused();
   await expect(input).toHaveValue("Draft survives refresh");
-  const after = await page.locator("#ttyLog").evaluate((log) => ({
+  const after = await page.locator("#chatTimeline").evaluate((log) => ({
     scrollTop: log.scrollTop,
     selection: window.getSelection()?.toString() || "",
   }));
@@ -1161,10 +1161,10 @@ test("shows waiting messages above the composer and inserts one through steer", 
   const harness = await installMockApi(page, "project1.task1", true);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const queue = page.locator(".tty-message-queue");
+  const queue = page.locator(".chat-message-queue");
   await expect(queue).toBeVisible();
   await expect(queue).toContainText("Review the mailbox change now");
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   const queueBounds = await queue.boundingBox();
   const inputBounds = await input.boundingBox();
   expect(queueBounds).not.toBeNull();
@@ -1194,8 +1194,8 @@ test("keeps the Svelte template editor stable and ignores an older preview respo
   await dialog.getByRole("option", { name: /Feature A/ }).click();
   await dialog.getByLabel("Summary *").fill("older");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-a" && (body.templateFields as Record<string, unknown>)?.summary === "older").length).toBe(1);
-  page.once("dialog", (confirmation) => confirmation.accept());
   await dialog.getByRole("option", { name: /Feature B/ }).click();
+  await page.getByRole("alertdialog", { name: "Switch template" }).getByRole("button", { name: "Discard" }).click();
   await dialog.getByLabel("Summary *").fill("newer");
   await expect.poll(() => harness.previewBodies.filter((body) => body.templateName === "feature-b" && (body.templateFields as Record<string, unknown>)?.summary === "newer").length).toBe(1);
 
@@ -1258,7 +1258,7 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   const harness = await installMockApi(page, "project1.task1", false, false, false, [], "idle", 500);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Keep this draft");
   await input.evaluate((node) => { node.dataset.identityProbe = "same-composer"; });
   await page.waitForTimeout(5_200);
@@ -1279,7 +1279,7 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await page.evaluate(() => {
     const state = window as Window & { __settingsPublicationTimer?: number };
     state.__settingsPublicationTimer = window.setInterval(() => window.dispatchEvent(new StorageEvent("storage", {
-      key: "forge.gui.user.v1",
+      key: "forge.web.user.v1",
       newValue: JSON.stringify({ version: 1, name: "Remote User" }),
     })), 10);
   });
