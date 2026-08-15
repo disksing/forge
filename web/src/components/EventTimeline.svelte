@@ -5,6 +5,7 @@
 
   import ApprovalCard from "./ApprovalCard.svelte";
   import { ChatSessionController } from "./chat-state";
+  import { effectiveGenerationStatus } from "./generation-status";
   import LifecycleNotice from "./LifecycleNotice.svelte";
   import type { ModelChannel } from "./model-channel";
   import Icon from "./Icon.svelte";
@@ -12,6 +13,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
+  import { toolGroupKey } from "./tool-group";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
 
@@ -112,6 +114,10 @@
     return block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
   }
 
+  function blockAgentName(block: ConversationBlock): string {
+    return block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || model.agentName || "Agent";
+  }
+
   async function autoFill(identity: string): Promise<void> {
     let pages = 0;
     while (pages < 16 && snapshot.identity === identity && snapshot.hasMoreBefore) {
@@ -183,7 +189,8 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    return `${item.generationId || snapshot.generationId}:${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
+    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
   }
 
   function emptySnapshot(): ChatContextSnapshot {
@@ -201,7 +208,7 @@
     {#each snapshot.blocks as block, index (block.key)}
       {#if index === 0 || snapshot.blocks[index - 1].generation.generationId !== block.generation.generationId}
         <div class="conversation-generation" data-generation-id={block.generation.generationId}>
-          <span>Generation {block.generation.generation}</span><strong>{block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"}</strong><small>{block.generation.status}</small>
+          <span>Generation {block.generation.generation}</span><strong>{block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"}</strong><small data-generation-status={effectiveGenerationStatus(block, model.status)}>{effectiveGenerationStatus(block, model.status)}</small>
         </div>
       {/if}
       {#if block.kind === "gap"}
@@ -212,7 +219,7 @@
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
               {#if item.kind === "message"}
-                <TimelineMessage {item} agentName={model.agentName} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
+                <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
               {:else if item.kind === "thinking"}
                 <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "tools"}

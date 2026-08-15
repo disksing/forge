@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import EventTimeline from "../../src/components/EventTimeline.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
-import type { AgentEvent, EventTimelineModel, TimelineItem } from "../../src/components/models";
+import HistoryTimeline from "../../src/components/HistoryTimeline.svelte";
+import type { AgentEvent, AgentTurnItem, EventTimelineModel, ResourceMessageStatus, TimelineItem } from "../../src/components/models";
+import { projectConversationEvents } from "../../src/components/timeline-events";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -26,18 +28,88 @@ function project(events: AgentEvent[]): TimelineItem[] {
   return events.map((event) => ({ kind: "message", key: event.id, role: "assistant", text: String(event.data?.text || "") }));
 }
 
-function model(resourceId: string): EventTimelineModel {
+function status(resourceId: string, generationId = `gen-${resourceId}`, generation = 1, state: ResourceMessageStatus["state"] = "idle", generationStatus = "idle", sessionState = "idle"): ResourceMessageStatus {
   return {
-    identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
-    status: { resourceId, state: "idle", acceptsMessages: true, canSteerWaiting: false, waitingMessages: [], generation: { generation: 1, generationId: `gen-${resourceId}`, status: "idle" }, session: { id: `session-${resourceId}`, state: "idle" } },
-    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+    resourceId, state, acceptsMessages: true, canSteerWaiting: false, waitingMessages: [],
+    generation: { generation, generationId, status: generationStatus },
+    session: { id: `session-${resourceId}`, state: sessionState, currentTurnId: sessionState === "running" ? "turn-1" : undefined },
   };
 }
 
-function history(resourceId: string) {
+function model(resourceId: string, nextStatus = status(resourceId), projector: (events: AgentEvent[]) => TimelineItem[] = project): EventTimelineModel {
+  return {
+    identity: `workspace-a:${resourceId}`, workspaceId: "workspace-a", resourceId,
+    status: nextStatus,
+    agentName: "Test Agent", resolveResourceTitle: () => null, onNavigate: vi.fn(), project: projector, onEvent: vi.fn(), onNotice: vi.fn(), onApproval: vi.fn(async () => undefined), onToast: vi.fn(), onIconsChanged: vi.fn(),
+  };
+}
+
+function history(resourceId: string, items: AgentTurnItem[] = [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: "2026-08-12T00:00:00Z", endedAt: "2026-08-12T00:00:00Z" }]) {
   const generation = { generation: 1, generationId: `gen-${resourceId}`, title: resourceId, status: "idle", createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
   const turn = { reference: `ref-${resourceId}`, turnId: "turn-1", status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation };
-  return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] } };
+  return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items } };
+}
+
+function generationModel(resourceId: string, generation: number, generationId: string, agentName: string): EventTimelineModel {
+  const value = model(resourceId);
+  value.agentName = agentName;
+  value.status = {
+    ...value.status!,
+    resolvedAgent: agentName,
+    generation: { ...value.status!.generation!, generation, generationId },
+  };
+  return value;
+}
+
+function multiGenerationHistory(resourceId: string) {
+  const agents = ["deepseek", "codex", "deepseek"];
+  const generations = agents.map((agentName, index) => ({
+    generation: index + 1,
+    generationId: `gen-${index + 1}`,
+    title: `${resourceId} generation ${index + 1}`,
+    agentName,
+    status: "idle",
+    createdAt: `2026-08-1${2 + index}T00:00:00Z`,
+    updatedAt: `2026-08-1${2 + index}T00:00:00Z`,
+  }));
+  const turns = generations.map((generation, index) => ({
+    reference: `ref-${index + 1}`,
+    turnId: `turn-${index + 1}`,
+    status: "completed",
+    closed: true,
+    startedAt: generation.createdAt,
+    durationMs: 10,
+    triggerPreview: `summary ${index + 1}`,
+    eventCount: 2,
+    toolEventCount: 0,
+    startEventId: index * 2 + 1,
+    lastEventId: index * 2 + 2,
+    endEventId: index * 2 + 2,
+    generation,
+  }));
+  const details = turns.map((turn, index) => ({
+    turn,
+    latestEventId: turn.lastEventId,
+    items: [{ type: "message", role: "assistant", text: `${agents[index]} reply`, startEventId: turn.startEventId, endEventId: turn.lastEventId, startedAt: turn.startedAt, endedAt: turn.startedAt }],
+  }));
+  return {
+    page: { resourceId, segments: generations.map((generation, index) => ({ generation, turns: [turns[index]] })), page: { limit: 20, hasMore: false } },
+    details,
+  };
+}
+
+function conversationAuthors(target: HTMLElement): string[] {
+  return [...target.querySelectorAll<HTMLElement>("section.conversation-turn .agent-message-meta strong")].map((node) => node.textContent || "");
+}
+
+function historyGeneration(resourceId: string, generation: number, generationId: string, generationStatus: string) {
+  const generationRecord = { generation, generationId, title: resourceId, status: generationStatus, createdAt: "2026-08-12T00:00:00Z", updatedAt: "2026-08-12T00:00:00Z" };
+  const turn = { reference: `ref-${resourceId}-${generation}`, turnId: `turn-${generation}`, status: "completed", closed: true, startedAt: "2026-08-12T00:00:00Z", durationMs: 10, triggerPreview: `summary ${resourceId}`, eventCount: 2, toolEventCount: 0, startEventId: 1, lastEventId: 2, endEventId: 2, generation: generationRecord };
+  return {
+    generation: generationRecord,
+    page: { resourceId, segments: [{ generation: generationRecord, turns: [turn] }], page: { limit: 20, hasMore: false } },
+    detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] },
+  };
 }
 
 describe("EventTimeline", () => {
@@ -106,6 +178,45 @@ describe("EventTimeline", () => {
     expect(FakeEventSource.instances[0].url).toContain("/resources/task-a/stream?");
   });
 
+  it("keeps the current Generation badge aligned through lifecycle, refresh, and Generation changes", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    let fixture = historyGeneration("task-a", 1, "gen-task-a", "running");
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a", status("task-a", "gen-task-a", 1, "working", "starting", "starting")));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    const badge = () => target.querySelector<HTMLElement>(".conversation-generation small");
+    await vi.waitFor(() => expect(badge()?.textContent).toBe("starting"));
+
+    // A stale generation status must not leave the badge idle while the
+    // resource is working.
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "working", "idle", "running")));
+    await tick();
+    expect(badge()?.textContent).toBe("running");
+
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "idle", "idle", "idle")));
+    await tick();
+    expect(badge()?.textContent).toBe("idle");
+
+    channel.publish(model("task-a", status("task-a", "gen-task-a", 1, "idle", "stopped", "stopped")));
+    await tick();
+    expect(badge()?.textContent).toBe("stopped");
+
+    fixture = historyGeneration("task-a", 2, "gen-task-a-2", "running");
+    channel.publish(model("task-a", status("task-a", "gen-task-a-2", 2, "working", "running", "running")));
+    await vi.waitFor(() => expect(target.querySelector("[data-generation-id='gen-task-a-2'] small")?.textContent).toBe("running"));
+
+    // The history page can still contain the old running value after a
+    // refresh; the live status must win for the current Generation.
+    channel.publish(model("task-a", status("task-a", "gen-task-a-2", 2, "idle", "idle", "idle")));
+    await tick();
+    expect(target.querySelector("[data-generation-id='gen-task-a-2'] small")?.textContent).toBe("idle");
+  });
+
   it("invalidates the old resource view and stream immediately on resource switch", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -128,5 +239,97 @@ describe("EventTimeline", () => {
     expect(target.textContent).not.toContain("message task-a");
     await vi.waitFor(() => expect(target.textContent).toContain("message task-b"));
     expect(oldStream.closed).toBe(true);
+  });
+
+  it("keeps historical assistant authors bound to their Generation across switches and reload", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = multiGenerationHistory("task-a");
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path.includes("/history/turns/ref-")) {
+        const index = Number(path.match(/ref-(\d+)/)?.[1] || 0) - 1;
+        return new Response(JSON.stringify(fixture.details[index]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify(fixture.page), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const channel = createModelChannel(generationModel("task-a", 3, "gen-3", "deepseek"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    channel.publish(generationModel("task-a", 2, "gen-2", "codex"));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    channel.publish(generationModel("task-a", 3, "gen-3", "deepseek"));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    unmount(component);
+    const reloaded = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(reloaded));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+  });
+
+  it("keeps compact tool counts and expands to the same group in Chat and History", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const startedAt = "2026-08-12T00:00:00Z";
+    const fixture = history("task-a", [
+      { type: "message", role: "user", text: "run tools", startEventId: 1, endEventId: 1, startedAt, endedAt: startedAt },
+      { type: "tool", startEventId: 2, endEventId: 5, count: 2, startedAt, endedAt: startedAt },
+      { type: "message", role: "assistant", text: "done", startEventId: 6, endEventId: 6, startedAt, endedAt: startedAt },
+    ]);
+    Object.assign(fixture.turn, { eventCount: 6, toolEventCount: 4, lastEventId: 6, endEventId: 6 });
+    fixture.detail.turn = fixture.turn;
+    const events: AgentEvent[] = [
+      { id: 1, type: "message.input", turnId: "turn-1", sessionId: "session-task-a", data: { role: "user", text: "run tools" } },
+      { id: 2, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"] } } } },
+      { id: 3, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "commandExecution", id: "call-1", command: ["echo", "one"], status: "completed" } } } },
+      { id: 4, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/started", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup" } } } },
+      { id: 5, type: "tool.event", turnId: "turn-1", sessionId: "session-task-a", data: { method: "item/completed", raw: { item: { type: "mcpToolCall", id: "call-2", server: "fixture", tool: "lookup", status: "completed", result: "ok" } } } },
+      { id: 6, type: "message.assistant.delta", turnId: "turn-1", sessionId: "session-task-a", data: { text: "done" } },
+    ];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      const body = path.includes("/events?") ? { events, page: { hasMore: false, nextAfter: 6 } } : path.includes("/history/turns/ref-") ? fixture.detail : fixture.page;
+      return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    }));
+
+    const chatTarget = document.body.appendChild(document.createElement("div"));
+    chatTarget.className = "tty-log";
+    const chat = mount(EventTimeline, { target: chatTarget, props: { channel: createModelChannel(model("task-a", status("task-a"), projectConversationEvents)) } });
+    cleanups.push(() => unmount(chat));
+    await vi.waitFor(() => expect(chatTarget.querySelector(".agent-tool-group")).not.toBeNull());
+    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(1);
+
+    const chatGroup = chatTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    chatGroup.open = true;
+    chatGroup.dispatchEvent(new Event("toggle"));
+    await vi.waitFor(() => expect(chatTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect(chatTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(chatTarget.textContent).toContain("Command");
+    expect(chatTarget.textContent).toContain("MCP");
+
+    const historyTarget = document.body.appendChild(document.createElement("div"));
+    const historyComponent = mount(HistoryTimeline, { target: historyTarget, props: {
+      workspaceId: "workspace-a", resourceId: "task-a", artifacts: [], resolveResourceTitle: () => null,
+      onNavigate: () => undefined, onOpenLegacy: () => undefined, onIconsChanged: () => undefined,
+    } });
+    cleanups.push(() => unmount(historyComponent));
+    await vi.waitFor(() => expect(historyTarget.querySelector(".history-turn-header")).not.toBeNull());
+    historyTarget.querySelector<HTMLButtonElement>(".history-turn-header")!.click();
+    await vi.waitFor(() => expect(historyTarget.querySelector(".agent-tool-group")).not.toBeNull());
+    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
+    expect(historyTarget.querySelector(".agent-tool-group-preview")?.textContent).toContain("2 tool calls");
+    const historyGroup = historyTarget.querySelector<HTMLDetailsElement>(".agent-tool-group")!;
+    historyGroup.open = true;
+    historyGroup.dispatchEvent(new Event("toggle"));
+    await vi.waitFor(() => expect(historyTarget.querySelectorAll(".agent-tool-item")).toHaveLength(2));
+    expect(historyTarget.querySelector(".agent-tool-group-title")?.textContent).toBe("2 tool calls");
   });
 });

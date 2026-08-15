@@ -211,6 +211,7 @@ export interface TimelineItem {
   type?: string;
   preview?: string;
   calls?: Array<Record<string, unknown> & { key?: string | number; callId?: string; name?: string; summary?: string; status?: string; output?: string; error?: string; method?: string; rawPreview?: string }>;
+  toolCallCount?: number;
   approvalId?: string;
   title?: string;
   detail?: string;
