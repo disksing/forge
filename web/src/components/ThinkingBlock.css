@@ -1,7 +1,11 @@
 /* Thinking is activity, not conversation: keep it indented on a thin
    muted rail so dialogue messages stay visually dominant. */
 :where([data-component-owner="event-timeline"]) .agent-reasoning-note {
-  width: 100%;
+  /* The indentation is part of the available inline space, not an extra
+     width on top of the conversation column. */
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
   margin: 4px 0 4px 26px;
   border: 0;
   border-left: 2px solid var(--line-soft);
