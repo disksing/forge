@@ -33,9 +33,8 @@ func normalizeDefaultBinding(value AgentBinding) AgentBinding {
 
 func normalizeResourceDefaults(value ResourceAgentDefaults) ResourceAgentDefaults {
 	return ResourceAgentDefaults{
-		Workspace: normalizeDefaultBinding(value.Workspace),
-		Project:   normalizeDefaultBinding(value.Project),
-		Task:      normalizeDefaultBinding(value.Task),
+		Project: normalizeDefaultBinding(value.Project),
+		Task:    normalizeDefaultBinding(value.Task),
 	}
 }
 
@@ -71,10 +70,12 @@ func newWorkspaceInstanceID() (string, error) {
 }
 
 // EnsureResourceRuntime performs the minimal, lossless stage-one conversion:
-// it assigns a stable Workspace instance id and explicit bindings to every
-// open resource that predates bindings. Existing files and worktrees are not
-// otherwise changed.
-func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (WorkspaceRuntimeConfig, error) {
+// it assigns a stable Workspace instance id, initializes missing resource
+// defaults to the default Profile, and assigns explicit bindings to every
+// open resource that predates bindings. Existing configured values are never
+// overwritten; the Workspace owns its defaults after initialization. Existing
+// files and worktrees are not otherwise changed.
+func (w *Workspace) EnsureResourceRuntime() (WorkspaceRuntimeConfig, error) {
 	if err := w.require(); err != nil {
 		return WorkspaceRuntimeConfig{}, err
 	}
@@ -85,7 +86,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 			return err
 		}
 		changed := false
-		normalizedDefaults := normalizeResourceDefaults(defaults)
+		normalizedDefaults := normalizeResourceDefaults(cfg.ResourceDefaults)
 		if cfg.ResourceDefaults != normalizedDefaults {
 			cfg.ResourceDefaults = normalizedDefaults
 			changed = true
@@ -98,7 +99,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 			changed = true
 		}
 		if strings.TrimSpace(cfg.AgentBinding.Name) == "" {
-			cfg.AgentBinding = normalizeDefaultBinding(defaults.Workspace)
+			cfg.AgentBinding = defaultAgentBinding()
 			changed = true
 		}
 		binding, err := NormalizeAgentBinding(cfg.AgentBinding)
@@ -114,7 +115,7 @@ func (w *Workspace) EnsureResourceRuntime(defaults ResourceAgentDefaults) (Works
 				return err
 			}
 		}
-		if err := ensureOpenResourceBindings(w.root, defaults); err != nil {
+		if err := ensureOpenResourceBindings(w.root, cfg.ResourceDefaults); err != nil {
 			return err
 		}
 		if err := os.MkdirAll(filepath.Join(w.root, ".forge", "runtime"), 0o700); err != nil {
@@ -232,6 +233,70 @@ func (w *Workspace) SetResourceAgentBinding(id string, binding AgentBinding) (Ag
 	})
 	if err != nil {
 		return AgentBinding{}, &APIError{Operation: "set resource agent binding", Kind: "binding", Workspace: w.root, ResourceID: id, Err: err}
+	}
+	return binding, nil
+}
+
+// SetResourceAgentDefaults updates the Workspace-level default bindings
+// applied to newly created Projects and Tasks. Existing resources keep their
+// explicit bindings.
+func (w *Workspace) SetResourceAgentDefaults(defaults ResourceAgentDefaults) (ResourceAgentDefaults, error) {
+	if err := w.require(); err != nil {
+		return ResourceAgentDefaults{}, err
+	}
+	normalized := normalizeResourceDefaults(defaults)
+	if _, err := NormalizeAgentBinding(normalized.Project); err != nil {
+		return ResourceAgentDefaults{}, &APIError{Operation: "set resource agent defaults", Kind: "binding", Workspace: w.root, Err: err}
+	}
+	if _, err := NormalizeAgentBinding(normalized.Task); err != nil {
+		return ResourceAgentDefaults{}, &APIError{Operation: "set resource agent defaults", Kind: "binding", Workspace: w.root, Err: err}
+	}
+	err := withWorkspaceMutationLock(w.root, func() error {
+		cfg, err := readWorkspaceConfig(w.root)
+		if err != nil {
+			return err
+		}
+		cfg.ResourceDefaults = normalized
+		return writeWorkspaceConfig(w.root, cfg)
+	})
+	if err != nil {
+		return ResourceAgentDefaults{}, &APIError{Operation: "set resource agent defaults", Kind: "binding", Workspace: w.root, Err: err}
+	}
+	return normalized, nil
+}
+
+// SetProjectTaskDefault sets the Project-level default binding applied to
+// newly created Tasks. An empty binding clears the override so the Project
+// inherits the Workspace default.
+func (w *Workspace) SetProjectTaskDefault(id string, binding AgentBinding) (AgentBinding, error) {
+	if err := w.require(); err != nil {
+		return AgentBinding{}, err
+	}
+	cleared := strings.TrimSpace(binding.Kind) == "" && strings.TrimSpace(binding.Name) == ""
+	if cleared {
+		binding = AgentBinding{}
+	} else {
+		var err error
+		binding, err = NormalizeAgentBinding(binding)
+		if err != nil {
+			return AgentBinding{}, &APIError{Operation: "set project task default", Kind: "binding", Workspace: w.root, ResourceID: id, Err: err}
+		}
+	}
+	err := withWorkspaceMutationLock(w.root, func() error {
+		path, resource, err := loadOpenResource(w.root, strings.TrimSpace(id))
+		if err != nil {
+			return err
+		}
+		project, ok := resource.(*Project)
+		if !ok {
+			return fmt.Errorf("resource %s is not a project", id)
+		}
+		project.TaskDefault = binding
+		project.UpdatedAt = time.Now().Format(time.RFC3339)
+		return writeResourceMetadata(path, project)
+	})
+	if err != nil {
+		return AgentBinding{}, &APIError{Operation: "set project task default", Kind: "binding", Workspace: w.root, ResourceID: id, Err: err}
 	}
 	return binding, nil
 }

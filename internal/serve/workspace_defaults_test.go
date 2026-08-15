@@ -1,0 +1,98 @@
+package serve
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/disksing/forge/internal/app"
+)
+
+func TestWorkspaceDefaultsAndProjectTaskDefaultHTTPAPI(t *testing.T) {
+	root := t.TempDir()
+	forgeWorkspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	project, err := forgeWorkspace.CreateProject("Project", "project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := guiWorkspace{ID: "workspace-defaults", Name: "Defaults", Path: root}
+	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	if err := s.saveConfig(config{
+		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+		AgentProfiles: []agentProfileRoute{{Key: "default", AgentName: "fake-agent"}, {Key: "review", AgentName: "fake-agent"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, body string) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		s.handleWorkspace(recorder, httptest.NewRequest(method, path, strings.NewReader(body)))
+		return recorder
+	}
+
+	defaultsResponse := request(http.MethodPut, "/api/workspaces/workspace-defaults/defaults", `{"project":{"kind":"profile","name":"review"},"task":{"kind":"agent","name":"task-agent"}}`)
+	var defaultsBody struct {
+		ResourceDefaults app.ResourceAgentDefaults `json:"resourceDefaults"`
+	}
+	defaultsErr := json.Unmarshal(defaultsResponse.Body.Bytes(), &defaultsBody)
+	if defaultsResponse.Code != http.StatusOK || defaultsErr != nil {
+		t.Fatalf("update Workspace defaults = %d %s", defaultsResponse.Code, defaultsResponse.Body.String())
+	}
+	if defaultsBody.ResourceDefaults.Project.Name != "review" || defaultsBody.ResourceDefaults.Task != (app.AgentBinding{Kind: "agent", Name: "task-agent"}) {
+		t.Fatalf("updated Workspace defaults = %#v", defaultsBody.ResourceDefaults)
+	}
+
+	unknownProfile := request(http.MethodPut, "/api/workspaces/workspace-defaults/defaults", `{"project":{"kind":"profile","name":"missing"},"task":{"kind":"profile","name":"default"}}`)
+	if unknownProfile.Code != http.StatusBadRequest {
+		t.Fatalf("unknown Profile default = %d %s", unknownProfile.Code, unknownProfile.Body.String())
+	}
+
+	taskDefaultResponse := request(http.MethodPut, "/api/workspaces/workspace-defaults/resources/project1/task-default", `{"kind":"profile","name":"review"}`)
+	var taskDefaultBody struct {
+		TaskDefault app.AgentBinding `json:"taskDefault"`
+	}
+	taskDefaultErr := json.Unmarshal(taskDefaultResponse.Body.Bytes(), &taskDefaultBody)
+	if taskDefaultResponse.Code != http.StatusOK || taskDefaultErr != nil || taskDefaultBody.TaskDefault != (app.AgentBinding{Kind: "profile", Name: "review"}) {
+		t.Fatalf("update Project Task default = %d %s", taskDefaultResponse.Code, taskDefaultResponse.Body.String())
+	}
+
+	task, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task.AgentBinding != (app.AgentBinding{Kind: "profile", Name: "review"}) {
+		t.Fatalf("Task did not use the Project default: %#v", task.AgentBinding)
+	}
+
+	clearedResponse := request(http.MethodPut, "/api/workspaces/workspace-defaults/resources/project1/task-default", `{}`)
+	var clearedBody struct {
+		TaskDefault app.AgentBinding `json:"taskDefault"`
+	}
+	clearedErr := json.Unmarshal(clearedResponse.Body.Bytes(), &clearedBody)
+	if clearedResponse.Code != http.StatusOK || clearedErr != nil || clearedBody.TaskDefault != (app.AgentBinding{}) {
+		t.Fatalf("clear Project Task default = %d %s", clearedResponse.Code, clearedResponse.Body.String())
+	}
+
+	nonProject := request(http.MethodPut, "/api/workspaces/workspace-defaults/resources/"+task.ID+"/task-default", `{"kind":"profile","name":"review"}`)
+	if nonProject.Code != http.StatusBadRequest {
+		t.Fatalf("Task default on a Task = %d %s", nonProject.Code, nonProject.Body.String())
+	}
+
+	treeResponse := request(http.MethodGet, "/api/workspaces/workspace-defaults/tree", "")
+	if treeResponse.Code != http.StatusOK || !strings.Contains(treeResponse.Body.String(), `"resourceDefaults"`) || !strings.Contains(treeResponse.Body.String(), `"review"`) {
+		t.Fatalf("tree did not project Workspace defaults: %d %s", treeResponse.Code, treeResponse.Body.String())
+	}
+
+	detailResponse := request(http.MethodGet, "/api/workspaces/workspace-defaults/resources/project1", "")
+	if detailResponse.Code != http.StatusOK {
+		t.Fatalf("read Project detail = %d %s", detailResponse.Code, detailResponse.Body.String())
+	}
+}

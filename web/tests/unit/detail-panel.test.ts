@@ -29,6 +29,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     },
     wiki: null,
     workspaceAgents: null,
+    workspaceDefaults: { project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "default" } },
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
     agents: [{ id: "fake-agent", label: "Fake Agent", summary: "fake" }],
@@ -38,6 +39,8 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onSaveMarkdownFile: vi.fn(async (path, content) => ({ path, content, contentHash: "saved" })),
     onDeleteArtifact: vi.fn(async () => undefined),
     onSaveAgentBinding: vi.fn(async () => undefined),
+    onSaveWorkspaceDefaults: vi.fn(async () => undefined),
+    onSaveTaskDefault: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
     ...overrides,
   };
@@ -340,7 +343,7 @@ describe("DetailPanel", () => {
     await tick();
 
     const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
-    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["AGENTS.md", "Wiki"]);
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["AGENTS.md", "Wiki", "Settings"]);
     expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("AGENTS.md");
     // The managed block is no longer hidden from the rendered document.
     expect(target.querySelector('[data-doc-file="AGENTS.md"]')).not.toBeNull();
@@ -393,6 +396,70 @@ describe("DetailPanel", () => {
     await tick();
     const expandedRow = target.querySelector<HTMLButtonElement>(".artifact-row.directory")!;
     expect(expandedRow.classList.contains("open")).toBe(true);
+  });
+
+  it("saves Workspace bindings and defaults from the settings tab", async () => {
+    const saveBinding = vi.fn(async () => undefined);
+    const saveDefaults = vi.fn(async () => undefined);
+    const { target } = mountModel(resourceModel({
+      identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n", contentHash: "hash-a" },
+      onSaveAgentBinding: saveBinding, onSaveWorkspaceDefaults: saveDefaults,
+    }));
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Settings"))!.click();
+    await tick();
+
+    expect(target.textContent).toContain("Workspace Agent");
+    expect(target.textContent).toContain("New Project default");
+    expect(target.textContent).toContain("New Task default");
+    const selectors = Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"));
+    expect(selectors.length).toBe(3);
+
+    selectors[0].click();
+    await tick();
+    target.querySelector<HTMLButtonElement>('[data-binding="agent:fake-agent"]')!.click();
+    await vi.waitFor(() => expect(saveBinding).toHaveBeenCalledWith({ kind: "agent", name: "fake-agent" }));
+    await vi.waitFor(() => expect(Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"))[1].disabled).toBe(false));
+
+    Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"))[1].click();
+    await tick();
+    target.querySelector<HTMLButtonElement>('[data-binding="agent:fake-agent"]')!.click();
+    await vi.waitFor(() => expect(saveDefaults).toHaveBeenCalledWith({ project: { kind: "agent", name: "fake-agent" }, task: { kind: "profile", name: "default" } }));
+  });
+
+  it("shows the inheritable Task default on the project settings tab", async () => {
+    const saveTaskDefault = vi.fn(async () => undefined);
+    const initial = resourceModel({
+      identity: "ws:project1:project", resourceId: "project1", resourceType: "project", resourceTitle: "Project", parent: null,
+      detail: { id: "project1", type: "project", title: "Project", path: "project1", agentBinding: { kind: "profile", name: "default" }, files: [], artifacts: [] },
+      onSaveTaskDefault: saveTaskDefault,
+    });
+    const { channel, target } = mountModel(initial);
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Settings"))!.click();
+    await tick();
+
+    const selectors = Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"));
+    expect(selectors.length).toBe(2);
+    expect(selectors[1].textContent).toContain("Inherit");
+
+    selectors[1].click();
+    await tick();
+    target.querySelector<HTMLButtonElement>('[data-binding="profile:default"]')!.click();
+    await vi.waitFor(() => expect(saveTaskDefault).toHaveBeenCalledWith("project1", { kind: "profile", name: "default" }));
+
+    channel.publish(resourceModel({
+      identity: "ws:project1:project", resourceId: "project1", resourceType: "project", resourceTitle: "Project", parent: null,
+      detail: { id: "project1", type: "project", title: "Project", path: "project1", agentBinding: { kind: "profile", name: "default" }, taskDefault: { kind: "profile", name: "default" }, files: [], artifacts: [] },
+      onSaveTaskDefault: saveTaskDefault,
+    }));
+    await vi.waitFor(() => expect(Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"))[1].disabled).toBe(false));
+
+    Array.from(target.querySelectorAll<HTMLButtonElement>(".agent-binding-button"))[1].click();
+    await tick();
+    target.querySelector<HTMLButtonElement>('[data-binding="inherit"]')!.click();
+    await vi.waitFor(() => expect(saveTaskDefault).toHaveBeenCalledWith("project1", null));
   });
 
 });

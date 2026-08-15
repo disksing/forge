@@ -1,0 +1,50 @@
+.resource-settings {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.resource-settings-card {
+  align-items: center;
+  background: var(--surface-raised, #fff);
+  border: 1px solid var(--border-subtle, #dfe4eb);
+  border-radius: 10px;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+  padding: 14px;
+}
+
+.resource-settings-card > div:first-child {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.resource-settings-card span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.resource-settings-interval {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+}
+
+.resource-settings-interval label {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+}
+
+.resource-settings-interval input {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-subtle, #ccd4df);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  padding: 8px 9px;
+  width: 92px;
+}

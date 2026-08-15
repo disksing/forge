@@ -915,6 +915,10 @@ function detailPanelModel(): DetailPanelModel {
 		detail: null,
 		wiki: controllerState.tree?.wiki || null,
 		workspaceAgents: controllerState.workspaceAgents,
+		workspaceDefaults: {
+			project: controllerState.tree?.resourceDefaults?.project || { kind: "profile", name: "default" },
+			task: controllerState.tree?.resourceDefaults?.task || { kind: "profile", name: "default" }
+		},
 		agentBinding: controllerState.selectedId === "workspace"
 			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
 			: findResource(controllerState.selectedId)?.agentBinding || { kind: "profile", name: "default" },
@@ -936,6 +940,23 @@ function detailPanelModel(): DetailPanelModel {
 			if (resourceId !== "workspace") await loadDetail(resourceId, { force: true });
 			publishViewModels();
 			toast("Resource agent binding saved.");
+		},
+		onSaveWorkspaceDefaults: async (defaults) => {
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/defaults`, {
+				method: "PUT", body: JSON.stringify(defaults)
+			});
+			await loadTree({ updateURL: false });
+			publishViewModels();
+			toast("Workspace default bindings saved.");
+		},
+		onSaveTaskDefault: async (projectId, binding) => {
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(projectId)}/task-default`, {
+				method: "PUT", body: JSON.stringify(binding || {})
+			});
+			await loadTree({ updateURL: false });
+			await loadDetail(projectId, { force: true });
+			publishViewModels();
+			toast(binding ? "Project Task default saved." : "Project Task default reset to inherit.");
 		},
 		onRefreshScheduler: async () => {
 			await loadTree({ updateURL: false });

@@ -14,17 +14,6 @@ export interface NotificationPreferences {
   soundError: string;
 }
 
-export interface ResourceDefaultBinding {
-  kind: "profile" | "agent";
-  name: string;
-}
-
-export interface ResourceAgentDefaults {
-  workspace: ResourceDefaultBinding;
-  project: ResourceDefaultBinding;
-  task: ResourceDefaultBinding;
-}
-
 export interface AgentHubSettings {
   configuredEndpoint: string;
   connected: boolean;
@@ -35,7 +24,6 @@ export interface AgentHubSettings {
   capabilities: string[];
   providers: Array<{ id: string; name?: string }>;
   agents: Array<{ name: string; providerId?: string; available?: boolean; unavailableReason?: string }>;
-  resourceDefaults?: ResourceAgentDefaults;
 }
 
 export interface AppearanceSettings {
@@ -50,7 +38,6 @@ export interface SettingsDraft {
   userName: string;
   endpoint: string;
   profiles: ProfileDraft[];
-  resourceDefaults: ResourceAgentDefaults;
   newProfile: ProfileDraft;
   dirty: boolean;
 }

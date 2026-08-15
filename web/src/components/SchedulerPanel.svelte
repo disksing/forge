@@ -19,11 +19,7 @@
   let description = $state("");
   let condition = $state("");
   let target = $state("workspace");
-  let interval = $state(30);
   let saving = $state(false);
-  $effect(() => {
-    interval = config.wakeIntervalMinutes;
-  });
 
   function edit(schedule: ScheduleRecord): void {
     editingId = schedule.id;
@@ -70,30 +66,7 @@
       onToast(reason instanceof Error ? reason.message : String(reason));
     }
   }
-
-  async function saveInterval(): Promise<void> {
-    if (!Number.isInteger(interval) || interval < 1 || interval > 10080 || saving) return;
-    saving = true;
-    try {
-      await client.request(`/api/workspaces/${encodeURIComponent(workspaceId)}/scheduler/settings`, {
-        method: "PUT",
-        body: JSON.stringify({ agentBinding: config.agentBinding, wakeIntervalMinutes: interval })
-      });
-      await onChanged();
-      onToast("Scheduler interval saved.");
-    } catch (reason) {
-      onToast(reason instanceof Error ? reason.message : String(reason));
-    } finally {
-      saving = false;
-    }
-  }
 </script>
-
-<div class="scheduler-settings-card">
-  <div><strong>Wake interval</strong><span>Minutes after the previous Server-triggered Scheduler Turn completes. Empty schedule lists do not wake.</span></div>
-  <label><input type="number" min="1" max="10080" step="1" bind:value={interval} aria-label="Scheduler wake interval in minutes" /><span>minutes</span></label>
-  <button type="button" class="secondary-button" disabled={saving || interval === config.wakeIntervalMinutes} onclick={saveInterval}><Icon name="save" /><span>Save</span></button>
-</div>
 
 <div class="schedule-editor">
   <div class="schedule-editor-heading"><div><strong>{editingId ? "Edit schedule" : "Add schedule"}</strong><span>Conditions are natural language interpreted by the Scheduler Agent.</span></div>{#if editingId}<button type="button" class="secondary-button" onclick={clearForm}>Cancel edit</button>{/if}</div>

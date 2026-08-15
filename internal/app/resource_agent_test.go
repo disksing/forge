@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/disksing/forge/internal/app"
@@ -41,11 +42,13 @@ func TestResourceAgentBindingsAreExplicitAndStable(t *testing.T) {
 	if _, err := workspace.SetResourceAgentBinding(project.ID, direct); err != nil {
 		t.Fatal(err)
 	}
-	after, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-		Workspace: app.AgentBinding{Kind: "profile", Name: "fast"},
-		Project:   app.AgentBinding{Kind: "profile", Name: "fast"},
-		Task:      app.AgentBinding{Kind: "profile", Name: "reasoning"},
-	})
+	if _, err := workspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+		Project: app.AgentBinding{Kind: "profile", Name: "fast"},
+		Task:    app.AgentBinding{Kind: "profile", Name: "reasoning"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := workspace.EnsureResourceRuntime()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,10 +83,12 @@ func TestResourceDefaultsAcceptDirectAgentBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.EnsureResourceRuntime(app.ResourceAgentDefaults{
-		Workspace: app.AgentBinding{Kind: "profile", Name: "default"},
-		Project:   app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
-		Task:      app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
+	if _, err := workspace.EnsureResourceRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+		Project: app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
+		Task:    app.AgentBinding{Kind: "agent", Name: "Kimi-K3"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,13 +114,100 @@ func TestLegacyStringResourceDefaultsDecodeAsProfiles(t *testing.T) {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ResourceDefaults.Workspace != (app.AgentBinding{Kind: "profile", Name: "Fast"}) {
-		t.Fatalf("legacy Workspace default decoded as %#v", cfg.ResourceDefaults.Workspace)
-	}
 	if cfg.ResourceDefaults.Project != (app.AgentBinding{Kind: "agent", Name: "Kimi-K3"}) {
 		t.Fatalf("structured Project default decoded as %#v", cfg.ResourceDefaults.Project)
 	}
 	if cfg.ResourceDefaults.Task != (app.AgentBinding{Kind: "profile", Name: "default"}) {
 		t.Fatalf("legacy Task default decoded as %#v", cfg.ResourceDefaults.Task)
+	}
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "\"workspace\"") {
+		t.Fatalf("removed Workspace default survived re-encoding: %s", out)
+	}
+}
+
+func TestCreateTaskInheritsWorkspaceDefaultUnlessProjectOverrides(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.EnsureResourceRuntime(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SetResourceAgentDefaults(app.ResourceAgentDefaults{
+		Project: app.AgentBinding{Kind: "profile", Name: "default"},
+		Task:    app.AgentBinding{Kind: "profile", Name: "workspace-task"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	inheriting, err := workspace.CreateProject("Inheriting project", "inheriting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	overriding, err := workspace.CreateProject("Overriding project", "overriding")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.SetProjectTaskDefault(overriding.ID, app.AgentBinding{Kind: "agent", Name: "project-agent"}); err != nil {
+		t.Fatal(err)
+	}
+	inheritedTask, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: inheriting.ID, Title: "Inherited task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inheritedTask.AgentBinding != (app.AgentBinding{Kind: "profile", Name: "workspace-task"}) {
+		t.Fatalf("Task did not inherit the Workspace default: %#v", inheritedTask.AgentBinding)
+	}
+	overriddenTask, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: overriding.ID, Title: "Overridden task"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overriddenTask.AgentBinding != (app.AgentBinding{Kind: "agent", Name: "project-agent"}) {
+		t.Fatalf("Task did not use the Project default: %#v", overriddenTask.AgentBinding)
+	}
+	cleared, err := workspace.SetProjectTaskDefault(overriding.ID, app.AgentBinding{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleared != (app.AgentBinding{}) {
+		t.Fatalf("cleared Project Task default = %#v", cleared)
+	}
+	detail, err := workspace.Resource(inheriting.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.TaskDefault != (app.AgentBinding{}) {
+		t.Fatalf("inheriting Project detail exposed a Task default: %#v", detail.TaskDefault)
+	}
+}
+
+func TestEnsureResourceRuntimeNeverOverwritesWorkspaceDefaults(t *testing.T) {
+	workspace, err := app.Initialize(t.TempDir(), "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := workspace.EnsureResourceRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.ResourceDefaults.Project != (app.AgentBinding{Kind: "profile", Name: "default"}) || runtime.ResourceDefaults.Task != (app.AgentBinding{Kind: "profile", Name: "default"}) {
+		t.Fatalf("fresh Workspace defaults = %#v", runtime.ResourceDefaults)
+	}
+	custom := app.ResourceAgentDefaults{
+		Project: app.AgentBinding{Kind: "profile", Name: "custom-project"},
+		Task:    app.AgentBinding{Kind: "agent", Name: "custom-task"},
+	}
+	if _, err := workspace.SetResourceAgentDefaults(custom); err != nil {
+		t.Fatal(err)
+	}
+	again, err := workspace.EnsureResourceRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ResourceDefaults != custom {
+		t.Fatalf("EnsureResourceRuntime overwrote Workspace defaults: %#v", again.ResourceDefaults)
 	}
 }

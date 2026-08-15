@@ -14,6 +14,8 @@
     disabled = false,
     ariaLabel = "Agent binding",
     openUp = true,
+    allowInherit = false,
+    inheritLabel = "Inherit",
     onSelect,
   }: {
     value: ResourceAgentBindingModel;
@@ -24,6 +26,10 @@
     // The composer sits at the bottom of the viewport, so by default the menu
     // opens upward. Settings panels pass openUp=false to open downward.
     openUp?: boolean;
+    // Project Task defaults can inherit the Workspace default; an empty
+    // binding name means "inherit" and adds the pseudo option to the menu.
+    allowInherit?: boolean;
+    inheritLabel?: string;
     onSelect: (value: ResourceAgentBindingModel) => void;
   } = $props();
 
@@ -36,9 +42,10 @@
 
   const profileOptions = $derived(profileSelections());
   const agentOptions = $derived(agentSelections());
-  const selectedValue = $derived(serialize(value));
+  const inheritSelected = $derived(allowInherit && !value.name);
+  const selectedValue = $derived(inheritSelected ? "inherit" : serialize(value));
   const selectedLabel = $derived(
-    [...profileOptions, ...agentOptions].find((option) => serialize(option.value) === selectedValue)?.label || value.name || "Unavailable"
+    inheritSelected ? inheritLabel : [...profileOptions, ...agentOptions].find((option) => serialize(option.value) === selectedValue)?.label || value.name || "Unavailable"
   );
 
   // The composer sits at the bottom of the viewport, where a native select
@@ -158,7 +165,8 @@
 
   function choose(option: BindingOption): void {
     open = false;
-    if (serialize(option.value) === selectedValue) return;
+    const optionKey = allowInherit && !option.value.name ? "inherit" : serialize(option.value);
+    if (optionKey === selectedValue) return;
     onSelect(option.value);
   }
 
@@ -176,6 +184,16 @@
   </button>
   {#if open}
     <div class="agent-binding-menu" role="listbox" aria-label={ariaLabel} tabindex="-1" bind:this={menu} onkeydown={keydown}>
+      {#if allowInherit}
+        <div class="agent-binding-group" role="group" aria-label="Inherit">
+          <button type="button" class="agent-binding-option" role="option" aria-selected={inheritSelected} data-binding="inherit" onclick={() => choose({ value: { kind: "profile", name: "" }, label: inheritLabel, primary: inheritLabel, secondary: "" })}>
+            <span class="agent-binding-option-primary">{inheritLabel}</span>
+            <span class="agent-binding-option-secondary"></span>
+            <Icon name="check" className={inheritSelected ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
+          </button>
+        </div>
+        {#if profileOptions.length || agentOptions.length}<div class="agent-binding-divider"></div>{/if}
+      {/if}
       {#if profileOptions.length}
         <div class="agent-binding-group" role="group" aria-label="Profiles">
           <div class="agent-binding-group-title">Profiles</div>

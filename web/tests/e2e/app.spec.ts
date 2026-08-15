@@ -903,7 +903,7 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   await page.locator('[data-component-owner="scheduler-nav"] button').click();
   await expect(page).toHaveURL(/\/w\/ws-test\/r\/scheduler$/);
   await expect(page.getByRole("heading", { name: /Scheduler/ }).first()).toBeVisible();
-  await expect(page.locator(".details-tabs [role=\"tab\"]")).toHaveText(["Schedules", "Context"]);
+  await expect(page.locator(".details-tabs [role=\"tab\"]")).toHaveText(["Schedules", "Context", "Settings"]);
   await expect(page.getByRole("tab", { name: "Schedules" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText("No schedules. The Server will not create empty Scheduler Turns.")).toBeVisible();
 
@@ -914,10 +914,12 @@ test("manages natural-language schedules from the fixed Scheduler resource", asy
   await expect(page.locator(".schedule-list article")).toContainText("Notify when the release is ready");
   await expect(page.locator(".schedule-list article")).toContainText("project1.task1");
 
+  await page.getByRole("tab", { name: "Settings" }).click();
   const interval = page.getByLabel("Scheduler wake interval in minutes");
   await interval.fill("45");
-  await page.locator(".scheduler-settings-card").getByRole("button", { name: "Save" }).click();
+  await page.locator(".resource-settings-interval").getByRole("button", { name: "Save" }).click();
   await expect(interval).toHaveValue("45");
+  await page.getByRole("tab", { name: "Schedules" }).click();
 
   await page.locator(".schedule-list article").getByRole("button", { name: "Edit" }).click();
   await page.getByLabel("Description").fill("Notify after release verification");

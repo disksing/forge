@@ -34,6 +34,11 @@ func validateResource(resource Resource) error {
 		if !topProjectName.MatchString(meta.ID) {
 			return fmt.Errorf("project id must match projectN, got %q", meta.ID)
 		}
+		if strings.TrimSpace(typed.TaskDefault.Kind) != "" || strings.TrimSpace(typed.TaskDefault.Name) != "" {
+			if _, err := NormalizeAgentBinding(typed.TaskDefault); err != nil {
+				return fmt.Errorf("project task default: %w", err)
+			}
+		}
 	case *Task:
 		if meta.Type != resourceTypeTask {
 			return fmt.Errorf("task type must be %q, got %q", resourceTypeTask, meta.Type)

@@ -271,10 +271,7 @@ func (w *Workspace) migrate(language string) error {
 	if err := writeWorkspaceConfig(w.root, config); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
-	if err := ensureOpenResourceBindings(w.root, ResourceAgentDefaults{
-		Project: AgentBinding{Kind: "profile", Name: "default"},
-		Task:    AgentBinding{Kind: "profile", Name: "default"},
-	}); err != nil {
+	if err := ensureOpenResourceBindings(w.root, normalizeResourceDefaults(config.ResourceDefaults)); err != nil {
 		return &APIError{Operation: "migrate Workspace", Kind: "workspace", Workspace: w.root, Err: err}
 	}
 	return nil
@@ -674,6 +671,9 @@ func (w *Workspace) createTask(input CreateTaskInput) (Task, error) {
 	task := newTask(id, parentID, title, "")
 	if strings.TrimSpace(input.AgentBinding.Name) != "" || strings.TrimSpace(input.AgentBinding.Kind) != "" {
 		task.AgentBinding, err = NormalizeAgentBinding(input.AgentBinding)
+	} else if strings.TrimSpace(parent.TaskDefault.Name) != "" {
+		// A Project-level Task default overrides the Workspace default.
+		task.AgentBinding, err = NormalizeAgentBinding(parent.TaskDefault)
 	} else {
 		cfg, configErr := readWorkspaceConfig(w.root)
 		if configErr != nil {

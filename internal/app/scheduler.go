@@ -69,7 +69,7 @@ type SchedulerSettingsInput struct {
 func defaultSchedulerConfig() SchedulerConfig {
 	return SchedulerConfig{
 		SchemaVersion:       schedulerSchemaVersion,
-		AgentBinding:        AgentBinding{Kind: "profile", Name: "fast"},
+		AgentBinding:        AgentBinding{Kind: "profile", Name: "default"},
 		WakeIntervalMinutes: defaultSchedulerWakeMinutes,
 		Schedules:           []Schedule{},
 	}

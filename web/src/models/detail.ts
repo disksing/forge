@@ -45,6 +45,7 @@ export interface ResourceDetailModel {
   path: string;
   archived?: boolean;
   agentBinding?: ResourceAgentBindingModel;
+  taskDefault?: ResourceAgentBindingModel;
   files?: ResourceFileModel[];
   artifacts?: FileTreeModel[];
   repos?: ResourceRepoModel[];
@@ -92,6 +93,7 @@ export interface DetailPanelModel {
   detail: ResourceDetailModel | null;
   wiki: { exists?: boolean; error?: string; entries?: FileTreeModel[] } | null;
   workspaceAgents: WorkspaceAgentsModel | null;
+  workspaceDefaults: { project: ResourceAgentBindingModel; task: ResourceAgentBindingModel };
   agentBinding: ResourceAgentBindingModel;
   agentProfiles: ResourceAgentProfileModel[];
   agents: AgentOption[];
@@ -103,6 +105,8 @@ export interface DetailPanelModel {
   onSaveMarkdownFile: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>;
   onDeleteArtifact: (path: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
+  onSaveWorkspaceDefaults: (defaults: { project: ResourceAgentBindingModel; task: ResourceAgentBindingModel }) => Promise<void>;
+  onSaveTaskDefault: (projectId: string, binding: ResourceAgentBindingModel | null) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;
   onIconsChanged: () => void;

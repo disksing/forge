@@ -19,15 +19,17 @@ type AgentBinding struct {
 	Name string `json:"name"`
 }
 
+// ResourceAgentDefaults selects the Agent binding applied to newly created
+// Projects and Tasks in this Workspace. The Workspace's own binding lives in
+// Config.AgentBinding and always initializes to the default Profile.
 type ResourceAgentDefaults struct {
-	Workspace AgentBinding `json:"workspace"`
-	Project   AgentBinding `json:"project"`
-	Task      AgentBinding `json:"task"`
+	Project AgentBinding `json:"project"`
+	Task    AgentBinding `json:"task"`
 }
 
 // UnmarshalJSON accepts both the structured binding form and the legacy
 // profile-name string form used before resource defaults could target an
-// Agent directly.
+// Agent directly. The removed workspace entry is accepted and ignored.
 func (defaults *ResourceAgentDefaults) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Workspace json.RawMessage `json:"workspace"`
@@ -51,9 +53,6 @@ func (defaults *ResourceAgentDefaults) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		return json.Unmarshal(data, target)
-	}
-	if err := decode(raw.Workspace, &defaults.Workspace); err != nil {
-		return err
 	}
 	if err := decode(raw.Project, &defaults.Project); err != nil {
 		return err
@@ -80,6 +79,10 @@ type ResourceMeta struct {
 type Project struct {
 	ResourceMeta
 	Description string `json:"description,omitempty"`
+	// TaskDefault optionally overrides the Workspace's new-Task default
+	// binding for Tasks created in this Project. An empty binding means the
+	// Project inherits the Workspace default.
+	TaskDefault AgentBinding `json:"taskDefault,omitempty"`
 }
 
 type Task struct {
@@ -108,17 +111,19 @@ func (task *Task) resourceMeta() *ResourceMeta       { return &task.ResourceMeta
 func (project Project) MarshalJSON() ([]byte, error) {
 	type projectJSON struct {
 		ResourceMeta
-		Parent      *string `json:"parent"`
-		Description string  `json:"description,omitempty"`
+		Parent      *string      `json:"parent"`
+		Description string       `json:"description,omitempty"`
+		TaskDefault AgentBinding `json:"taskDefault,omitempty"`
 	}
-	return json.Marshal(projectJSON{ResourceMeta: project.ResourceMeta, Description: project.Description})
+	return json.Marshal(projectJSON{ResourceMeta: project.ResourceMeta, Description: project.Description, TaskDefault: project.TaskDefault})
 }
 
 func (project *Project) UnmarshalJSON(data []byte) error {
 	type projectJSON struct {
 		ResourceMeta
-		Parent      *string `json:"parent"`
-		Description string  `json:"description,omitempty"`
+		Parent      *string      `json:"parent"`
+		Description string       `json:"description,omitempty"`
+		TaskDefault AgentBinding `json:"taskDefault,omitempty"`
 	}
 	var decoded projectJSON
 	if err := json.Unmarshal(data, &decoded); err != nil {
@@ -129,6 +134,7 @@ func (project *Project) UnmarshalJSON(data []byte) error {
 	}
 	project.ResourceMeta = decoded.ResourceMeta
 	project.Description = decoded.Description
+	project.TaskDefault = decoded.TaskDefault
 	return nil
 }
 

@@ -10,6 +10,7 @@ export interface ResourceRecord {
   status?: string;
   archived?: boolean;
   agentBinding?: { kind: "profile" | "agent"; name: string };
+  taskDefault?: { kind: "profile" | "agent"; name: string };
   updatedAt?: string;
   children?: ResourceRecord[];
   files?: ResourceFileModel[];
@@ -63,8 +64,14 @@ export interface SchedulerConfigRecord {
   schedules: ScheduleRecord[];
 }
 
+export interface ResourceAgentDefaultsRecord {
+  project: { kind: "profile" | "agent"; name: string };
+  task: { kind: "profile" | "agent"; name: string };
+}
+
 export interface WorkspaceTree {
   agentBinding?: { kind: "profile" | "agent"; name: string };
+  resourceDefaults?: ResourceAgentDefaultsRecord;
   scheduler?: ResourceRecord;
   projects: ResourceRecord[];
   attentionList?: ResourceRecord[];

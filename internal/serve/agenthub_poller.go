@@ -141,7 +141,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 		}
 	}
 	profileConfig := agentHubGUIConfig{
-		Workspaces: cfg.Workspaces, ResourceDefaults: cfg.ResourceDefaults,
+		Workspaces:    cfg.Workspaces,
 		AgentProfiles: make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles)),
 	}
 	for _, route := range cfg.AgentProfiles {

@@ -49,6 +49,7 @@ type ResourceDetailView struct {
 	Templates    []TaskTemplate      `json:"templates,omitempty"`
 	Template     *TaskTemplateSource `json:"template,omitempty"`
 	Scheduler    *SchedulerConfig    `json:"scheduler,omitempty"`
+	TaskDefault  AgentBinding        `json:"taskDefault,omitempty"`
 }
 
 type TaskTemplate struct {
@@ -187,6 +188,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 	switch typed := entry.Resource.(type) {
 	case *Project:
 		detail.Description = typed.Description
+		detail.TaskDefault = typed.TaskDefault
 		workspace := &Workspace{root: root}
 		templates, err := workspace.Templates(typed.ID)
 		if err == nil {

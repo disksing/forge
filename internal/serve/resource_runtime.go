@@ -88,7 +88,7 @@ func (m *agentManager) resolveResourceAgent(workspace guiWorkspace, resourceID s
 			if kindErr != nil {
 				return resolvedResourceAgent{}, kindErr
 			}
-			fallback := resourceDefaultForKind(cfg.ResourceDefaults, kind)
+			fallback := workspaceResourceDefaultForKind(runtimeConfig, kind)
 			if fallback.Kind == "agent" {
 				resolved.ResolvedProfile = ""
 				resolved.AgentName = fallback.Name
@@ -130,26 +130,19 @@ func resourceAgentKind(workspace *app.Workspace, resourceID string) (string, err
 	return "project", nil
 }
 
-func resourceDefaultForKind(defaults resourceAgentDefaults, kind string) resourceDefaultBinding {
-	defaults = normalizeResourceAgentDefaults(defaults)
+// workspaceResourceDefaultForKind returns the Workspace-configured default
+// binding used as the fallback when a resource's Profile binding cannot be
+// resolved. Projects and Tasks use their Workspace defaults; the Workspace
+// and Scheduler fall back to the always-available default Profile.
+func workspaceResourceDefaultForKind(runtimeConfig app.WorkspaceRuntimeConfig, kind string) app.AgentBinding {
 	switch kind {
-	case "workspace":
-		return defaults.Workspace
+	case "project":
+		return runtimeConfig.ResourceDefaults.Project
 	case "task":
-		return defaults.Task
-	case app.SchedulerResourceID:
-		return resourceDefaultBinding{Kind: "profile", Name: "fast"}
+		return runtimeConfig.ResourceDefaults.Task
 	default:
-		return defaults.Project
+		return app.AgentBinding{Kind: "profile", Name: "default"}
 	}
-}
-
-func toAppResourceAgentDefaults(defaults resourceAgentDefaults) app.ResourceAgentDefaults {
-	defaults = normalizeResourceAgentDefaults(defaults)
-	convert := func(binding resourceDefaultBinding) app.AgentBinding {
-		return app.AgentBinding{Kind: binding.Kind, Name: binding.Name}
-	}
-	return app.ResourceAgentDefaults{Workspace: convert(defaults.Workspace), Project: convert(defaults.Project), Task: convert(defaults.Task)}
 }
 
 func resolvedAgentError(resolved resolvedResourceAgent, requested, fallback string) (resolvedResourceAgent, error) {
@@ -425,11 +418,6 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
 			continue
 		}
-		effectiveDefaults := effectiveResourceAgentDefaults(next.ResourceDefaults, toConfigProfileRoutes(next.AgentProfiles))
-		if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
-			failures = append(failures, fmt.Sprintf("%s: persist resource defaults: %v", workspace.ID, err))
-			continue
-		}
 		runtimeConfig, err := forgeWorkspace.RuntimeConfig()
 		if err != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, err))
@@ -473,14 +461,6 @@ func (m *agentManager) profileRoutesChanged(ctx context.Context, previous, next 
 		return fmt.Errorf("replace resource agent generations: %s", strings.Join(failures, "; "))
 	}
 	return nil
-}
-
-func toConfigProfileRoutes(routes []agentHubProfileRoute) []agentProfileRoute {
-	result := make([]agentProfileRoute, 0, len(routes))
-	for _, route := range routes {
-		result = append(result, agentProfileRoute{Key: route.Key, Description: route.Description, AgentName: route.AgentName})
-	}
-	return result
 }
 
 func (m *agentManager) retireResourceGeneration(ctx context.Context, rt *agentRuntime) {

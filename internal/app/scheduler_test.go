@@ -22,7 +22,7 @@ func TestInitializeCreatesSchedulerResource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if config.SchemaVersion != 1 || config.AgentBinding.Kind != "profile" || config.AgentBinding.Name != "fast" || config.WakeIntervalMinutes != 30 || len(config.Schedules) != 0 {
+	if config.SchemaVersion != 1 || config.AgentBinding.Kind != "profile" || config.AgentBinding.Name != "default" || config.WakeIntervalMinutes != 30 || len(config.Schedules) != 0 {
 		t.Fatalf("default Scheduler configuration = %#v", config)
 	}
 	tree, err := workspace.Tree()

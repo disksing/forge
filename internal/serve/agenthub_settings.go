@@ -22,9 +22,8 @@ type agentHubSettingsResponse struct {
 }
 
 type updateAgentHubSettingsRequest struct {
-	Endpoint         string                 `json:"endpoint"`
-	AgentProfiles    []agentHubProfileRoute `json:"agentProfiles"`
-	ResourceDefaults resourceAgentDefaults  `json:"resourceDefaults"`
+	Endpoint      string                 `json:"endpoint"`
+	AgentProfiles []agentHubProfileRoute `json:"agentProfiles"`
 }
 
 func (s *server) handleAgentHubSettings(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +157,6 @@ func (s *server) saveAgentHubSettings(ctx context.Context, request updateAgentHu
 	previous := cfg
 	cfg.AgentHubEndpoint = configured
 	cfg.AgentProfiles = request.AgentProfiles
-	cfg.ResourceDefaults = request.ResourceDefaults
 	cfg, err = normalizeAgentHubConfig(cfg, catalog)
 	if err != nil {
 		return agentHubSettingsResponse{}, err
@@ -200,7 +198,6 @@ func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
 			return agentHubGUIConfig{
 				Version: agentHubConfigVersion, Workspaces: []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
-				ResourceDefaults: defaultResourceAgentDefaults(),
 			}, nil
 		}
 		return agentHubGUIConfig{}, err
@@ -220,7 +217,6 @@ func readAgentHubConfigFile(path string) (agentHubGUIConfig, error) {
 		return agentHubGUIConfig{}, err
 	}
 	cfg.Version = agentHubConfigVersion
-	cfg.ResourceDefaults = normalizeResourceAgentDefaults(cfg.ResourceDefaults)
 	if needsUpgrade {
 		if err := writeAgentHubConfigFile(path, cfg); err != nil {
 			return agentHubGUIConfig{}, err

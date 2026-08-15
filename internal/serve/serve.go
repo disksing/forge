@@ -32,50 +32,12 @@ import (
 var staticFiles = web.Assets
 
 type config struct {
-	Version            int                   `json:"version"`
-	ActiveID           string                `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace        `json:"workspaces"`
-	AgentHubEndpoint   string                `json:"agentHubEndpoint,omitempty"`
-	AgentHubInstanceID string                `json:"agentHubInstanceId,omitempty"`
-	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
-	ResourceDefaults   resourceAgentDefaults `json:"resourceDefaults"`
-}
-
-type resourceAgentDefaults struct {
-	Workspace resourceDefaultBinding `json:"workspace"`
-	Project   resourceDefaultBinding `json:"project"`
-	Task      resourceDefaultBinding `json:"task"`
-}
-
-// resourceDefaultBinding selects the Agent binding applied to newly created
-// resources of one kind. Kind is "profile" or "agent".
-type resourceDefaultBinding struct {
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-}
-
-// UnmarshalJSON accepts both the structured form and the legacy profile-name
-// string used before resource defaults could target an Agent directly.
-func (binding *resourceDefaultBinding) UnmarshalJSON(data []byte) error {
-	var legacy string
-	if err := json.Unmarshal(data, &legacy); err == nil {
-		name := strings.TrimSpace(legacy)
-		if name == "" {
-			*binding = resourceDefaultBinding{}
-			return nil
-		}
-		*binding = resourceDefaultBinding{Kind: "profile", Name: name}
-		return nil
-	}
-	var structured struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
-	}
-	if err := json.Unmarshal(data, &structured); err != nil {
-		return err
-	}
-	*binding = resourceDefaultBinding{Kind: structured.Kind, Name: structured.Name}
-	return nil
+	Version            int                 `json:"version"`
+	ActiveID           string              `json:"activeId,omitempty"`
+	Workspaces         []guiWorkspace      `json:"workspaces"`
+	AgentHubEndpoint   string              `json:"agentHubEndpoint,omitempty"`
+	AgentHubInstanceID string              `json:"agentHubInstanceId,omitempty"`
+	AgentProfiles      []agentProfileRoute `json:"agentProfiles,omitempty"`
 }
 
 type agentProfileRoute struct {
@@ -111,12 +73,13 @@ var workspaceIconFiles = map[string]string{
 }
 
 type workspaceTree struct {
-	Root          string             `json:"root"`
-	AgentBinding  app.AgentBinding   `json:"agentBinding"`
-	Scheduler     resourceSnapshot   `json:"scheduler"`
-	Projects      []resourceSnapshot `json:"projects"`
-	AttentionList []resourceSnapshot `json:"attentionList"`
-	Wiki          workspaceWiki      `json:"wiki"`
+	Root             string                    `json:"root"`
+	AgentBinding     app.AgentBinding          `json:"agentBinding"`
+	ResourceDefaults app.ResourceAgentDefaults `json:"resourceDefaults"`
+	Scheduler        resourceSnapshot          `json:"scheduler"`
+	Projects         []resourceSnapshot        `json:"projects"`
+	AttentionList    []resourceSnapshot        `json:"attentionList"`
+	Wiki             workspaceWiki             `json:"wiki"`
 }
 
 type workspaceWiki struct {
@@ -378,6 +341,13 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch parts[1] {
+	case "defaults":
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		s.updateWorkspaceDefaults(w, r, id)
+		return
 	case "tree":
 		if r.Method != http.MethodGet {
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -448,6 +418,14 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			s.updateResourceAgentBinding(w, r, id, parts[2])
+			return
+		}
+		if len(parts) == 4 && parts[3] == "task-default" {
+			if r.Method != http.MethodPut {
+				w.WriteHeader(http.StatusMethodNotAllowed)
+				return
+			}
+			s.updateProjectTaskDefault(w, r, id, parts[2])
 			return
 		}
 		if r.Method != http.MethodGet {
@@ -540,6 +518,95 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+// validateProfileBinding rejects Profile bindings that have no configured
+// route, mirroring the agent-binding endpoint.
+func (s *server) validateProfileBinding(binding app.AgentBinding) error {
+	if binding.Kind != "profile" {
+		return nil
+	}
+	cfg, err := s.loadConfig()
+	if err != nil {
+		return err
+	}
+	if configuredAgentProfileName(cfg.AgentProfiles, binding.Name) == "" {
+		return fmt.Errorf("unknown or unconfigured Agent Profile %q", binding.Name)
+	}
+	return nil
+}
+
+func (s *server) updateWorkspaceDefaults(w http.ResponseWriter, r *http.Request, workspaceID string) {
+	var body struct {
+		Project app.AgentBinding `json:"project"`
+		Task    app.AgentBinding `json:"task"`
+	}
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	defaults := app.ResourceAgentDefaults{Project: body.Project, Task: body.Task}
+	for _, binding := range []app.AgentBinding{defaults.Project, defaults.Task} {
+		if err := s.validateProfileBinding(binding); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := forgeWorkspace.SetResourceAgentDefaults(defaults)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"resourceDefaults": updated})
+}
+
+func (s *server) updateProjectTaskDefault(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
+	var binding app.AgentBinding
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&binding); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(binding.Kind) != "" || strings.TrimSpace(binding.Name) != "" {
+		normalized, err := app.NormalizeAgentBinding(binding)
+		if err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+		if err := s.validateProfileBinding(normalized); err != nil {
+			writeError(w, err, http.StatusBadRequest)
+			return
+		}
+	}
+	workspace, err := s.workspace(workspaceID)
+	if err != nil {
+		writeError(w, err, http.StatusNotFound)
+		return
+	}
+	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	updated, err := forgeWorkspace.SetProjectTaskDefault(resourceID, binding)
+	if err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, map[string]any{"taskDefault": updated})
 }
 
 func (s *server) updateResourceAgentBinding(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -644,18 +711,6 @@ func (s *server) createProject(w http.ResponseWriter, r *http.Request, id string
 		writeError(w, err, http.StatusBadRequest)
 		return
 	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: effectiveDefaults.Project.Kind, Name: effectiveDefaults.Project.Name})
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	result.AgentBinding = binding
 	if err := s.followResource(workspace.Path, result.ID); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -730,18 +785,6 @@ func (s *server) createTask(w http.ResponseWriter, r *http.Request, id string) {
 		writeError(w, err, status)
 		return
 	}
-	cfg, err := s.loadConfig()
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	binding, err := forgeWorkspace.SetResourceAgentBinding(result.ID, app.AgentBinding{Kind: effectiveDefaults.Task.Kind, Name: effectiveDefaults.Task.Name})
-	if err != nil {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	result.AgentBinding = binding
 	if err := s.followResource(workspace.Path, result.ID); err != nil {
 		writeError(w, err, http.StatusInternalServerError)
 		return
@@ -1232,7 +1275,6 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 			s.locks.release(canonical)
 		}
 	}()
-	initializedNow := false
 	tree, err := s.treeAt(ctx, canonical)
 	if err != nil {
 		if !create {
@@ -1241,7 +1283,6 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 		if _, initErr := app.Initialize(canonical, ""); initErr != nil {
 			return guiWorkspace{}, initErr
 		}
-		initializedNow = true
 		tree, err = s.treeAt(ctx, canonical)
 		if err != nil {
 			return guiWorkspace{}, err
@@ -1260,14 +1301,8 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	if err != nil {
 		return guiWorkspace{}, err
 	}
-	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-	if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
+	if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
 		return guiWorkspace{}, err
-	}
-	if initializedNow {
-		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: effectiveDefaults.Workspace.Kind, Name: effectiveDefaults.Workspace.Name}); err != nil {
-			return guiWorkspace{}, err
-		}
 	}
 	replaced := false
 	for i := range cfg.Workspaces {
@@ -1304,8 +1339,7 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 		if err != nil {
 			return fmt.Errorf("open Workspace %s for resource runtime: %w", workspace.ID, err)
 		}
-		effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
-		if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
+		if _, err := forgeWorkspace.EnsureResourceRuntime(); err != nil {
 			return fmt.Errorf("initialize Workspace %s resource runtime: %w", workspace.ID, err)
 		}
 		if _, err := forgeWorkspace.EnsureScheduler(); err != nil {
@@ -1407,8 +1441,13 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 	runtimeConfig, runtimeErr := forgeWorkspace.RuntimeConfig()
 	if runtimeErr == nil {
 		tree.AgentBinding = runtimeConfig.AgentBinding
+		tree.ResourceDefaults = runtimeConfig.ResourceDefaults
 	} else {
 		tree.AgentBinding = app.AgentBinding{Kind: "profile", Name: "default"}
+		tree.ResourceDefaults = app.ResourceAgentDefaults{
+			Project: app.AgentBinding{Kind: "profile", Name: "default"},
+			Task:    app.AgentBinding{Kind: "profile", Name: "default"},
+		}
 	}
 	if err := s.enrichTreeResourceRuntime(path, &tree); err != nil {
 		return workspaceTree{}, err
@@ -1632,7 +1671,6 @@ func (s *server) loadConfig() (config, error) {
 				Workspaces:       []guiWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
 				AgentProfiles:    []agentProfileRoute{},
-				ResourceDefaults: defaultResourceAgentDefaults(),
 			}
 			normalized, normalizeErr := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
 			if normalizeErr != nil {
@@ -1652,9 +1690,8 @@ func (s *server) loadConfig() (config, error) {
 	if cfg.Version < 3 {
 		return config{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", cfg.Version)
 	}
-	needsUpgrade := cfg.Version != agentHubConfigVersion || cfg.ResourceDefaults != normalizeResourceAgentDefaults(cfg.ResourceDefaults)
+	needsUpgrade := cfg.Version != agentHubConfigVersion
 	cfg.Version = agentHubConfigVersion
-	cfg.ResourceDefaults = normalizeResourceAgentDefaults(cfg.ResourceDefaults)
 	cfg.AgentHubEndpoint, err = normalizeAgentHubEndpoint(cfg.AgentHubEndpoint)
 	if err != nil {
 		return config{}, err
@@ -1696,7 +1733,6 @@ func (s *server) saveConfig(cfg config) error {
 		AgentHubEndpoint:   cfg.AgentHubEndpoint,
 		AgentHubInstanceID: cfg.AgentHubInstanceID,
 		AgentProfiles:      routes,
-		ResourceDefaults:   normalizeResourceAgentDefaults(cfg.ResourceDefaults),
 	}, "", "  ")
 	if err != nil {
 		return err

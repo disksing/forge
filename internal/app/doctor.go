@@ -206,9 +206,8 @@ func (s *doctorScanner) scanWorkspaceConfig() {
 		s.resourceBindings = append(s.resourceBindings, doctorResourceBinding{resourceID: "workspace", path: workspaceConfigFile, binding: binding})
 	}
 	for kind, binding := range map[string]AgentBinding{
-		"workspace": config.ResourceDefaults.Workspace,
-		"project":   config.ResourceDefaults.Project,
-		"task":      config.ResourceDefaults.Task,
+		"project": config.ResourceDefaults.Project,
+		"task":    config.ResourceDefaults.Task,
 	} {
 		binding = normalizeDefaultBinding(binding)
 		s.resourceBindings = append(s.resourceBindings, doctorResourceBinding{
@@ -279,6 +278,9 @@ func (s *doctorScanner) scanProject(path, name string) {
 	s.registerResource(resourceID, rel)
 	s.openResources[resourceID] = rel
 	s.resourceBindings = append(s.resourceBindings, doctorResourceBinding{resourceID: resourceID, path: filepath.Join(rel, projectJSONFile), binding: project.AgentBinding})
+	if strings.TrimSpace(project.TaskDefault.Name) != "" {
+		s.resourceBindings = append(s.resourceBindings, doctorResourceBinding{resourceID: "default:" + resourceID + ".task", path: filepath.Join(rel, projectJSONFile), binding: project.TaskDefault})
+	}
 	s.checkResourceTimestamps(project.CreatedAt, project.UpdatedAt, filepath.Join(rel, projectJSONFile), resourceID)
 	s.checkOptionalMarkdown(filepath.Join(path, projectMDFile), filepath.Join(rel, projectMDFile), resourceID)
 	s.checkManagedFile(filepath.Join(path, "AGENTS.md"), filepath.Join(rel, "AGENTS.md"), resourceID, taskAgentsBlock(&project, s.language))
