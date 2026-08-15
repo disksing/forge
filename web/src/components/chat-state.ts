@@ -5,6 +5,7 @@ import type {
   ResourceHistoryTurnDetail, ResourceHistoryTurnSummary, ResourceMessageStatus, TimelineItem,
 } from "./models";
 import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents } from "./timeline-events";
+import { formatToolCallCount, normalizeToolCallCount } from "./tool-group";
 
 const HISTORY_LIMIT = 20;
 const EVENT_LIMIT = 250;
@@ -96,15 +97,13 @@ export class ChatSessionController {
       return;
     }
     const context = this.contexts.get(nextKey) ?? this.createContext(workspaceId, resourceId);
+    this.api.requests.abort(requestScope(context, "status"));
     const nextGeneration = String(status?.generation?.generationId || "");
     const generationChanged = Boolean(context.generationId && nextGeneration && context.generationId !== nextGeneration);
     context.status = status;
     context.generationId = nextGeneration;
     if (generationChanged) {
-      this.closeStream(context);
-      context.loaded = false;
-      context.nextCursor = "";
-      context.hasMoreBefore = false;
+      this.resetForGeneration(context);
       void this.loadInitial(context);
     } else if (!context.loaded && !context.loading) {
       void this.loadInitial(context);
@@ -385,8 +384,30 @@ export class ChatSessionController {
       if (stream.readyState === 2) {
         context.stream = null;
         context.streamGeneration++;
+        void this.refreshAfterStreamFailure(context);
       }
     };
+  }
+
+  private async refreshAfterStreamFailure(context: ResourceChatContext): Promise<void> {
+    const generation = context.requestGeneration;
+    try {
+      const status = await this.api.latest<ResourceMessageStatus>(`${resourceBase(context)}/status`, { scope: requestScope(context, "status") });
+      if (!this.isCurrent(context, generation) || !status.generation?.generationId) return;
+      const nextGeneration = String(status.generation.generationId);
+      if (nextGeneration !== context.generationId) {
+        this.activate(context.workspaceId, context.resourceId, status);
+        return;
+      }
+      context.status = status;
+      this.emit();
+      this.connect(context);
+    } catch (error) {
+      // A stream failure should not replace useful history with a transient
+      // status error. The next stream failure or application status refresh
+      // retries reconciliation.
+      if (error instanceof StaleResponseError || !this.isCurrent(context, generation)) return;
+    }
   }
 
   private async loadTurnRange(context: ResourceChatContext, detail: ResourceHistoryTurnDetail, generation: number): Promise<AgentEvent[]> {
@@ -547,6 +568,31 @@ export class ChatSessionController {
     context.stream = null;
   }
 
+  private resetForGeneration(context: ResourceChatContext): void {
+    if (context.flushTimer) clearTimeout(context.flushTimer);
+    context.flushTimer = null;
+    context.pendingEvents = [];
+    context.requestGeneration++;
+    this.closeStream(context);
+    this.api.requests.abort(requestScope(context, "initial"));
+    this.api.requests.abort(requestScope(context, "older"));
+    this.api.requests.abort(requestScope(context, "status"));
+    context.segments.clear();
+    context.details.clear();
+    context.detailLoading.clear();
+    context.detailErrors.clear();
+    context.liveEvents.clear();
+    context.orphanEvents.clear();
+    context.nextCursor = "";
+    context.hasMoreBefore = false;
+    context.loading = false;
+    context.loadingOlder = false;
+    context.loaded = false;
+    context.error = "";
+    context.headRefreshing = false;
+    context.terminalMaterializing.clear();
+  }
+
   private deactivate(context?: ResourceChatContext): void {
     if (!context) return;
     if (context.flushTimer) clearTimeout(context.flushTimer);
@@ -558,6 +604,7 @@ export class ChatSessionController {
     context.loadingOlder = false;
     this.api.requests.abort(requestScope(context, "initial"));
     this.api.requests.abort(requestScope(context, "older"));
+    this.api.requests.abort(requestScope(context, "status"));
   }
 
   private isCurrent(context: ResourceChatContext, generation: number): boolean {
@@ -593,7 +640,10 @@ function compactTurnItem(item: AgentTurnItem, generationId: string): TimelineIte
   switch (item.type) {
     case "message": return [{ ...base, kind: "message", role: item.role || "user", sender: item.sender, steer: item.steer, text: item.text || "" }];
     case "thinking": return [{ ...base, kind: "thinking", text: `Reasoning details omitted from compact history · ${Math.max(1, Number(item.count) || 1)} update(s)`, compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId }];
-    case "tool": return [{ ...base, kind: "tools", compact: true, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId, calls: [{ key, callId: key, name: "Tool activity", summary: `${Math.max(1, Number(item.count) || 1)} call(s) · details omitted`, status: "completed" }] }];
+    case "tool": {
+      const count = normalizeToolCallCount(item.count, 1);
+      return [{ ...base, kind: "tools", compact: true, toolCallCount: count, rangeStartEventId: item.startEventId, rangeEndEventId: item.endEventId, calls: [{ key, callId: key, name: "Tool activity", summary: `${formatToolCallCount(count)} · details omitted`, status: "completed" }] }];
+    }
     case "approval": return [{ ...base, kind: "approval", approvalId: String(data.requestId || data.approvalId || key), title: String(data.title || "Approval"), question: String(data.question || ""), status: String(data.status || (data.decision ? "resolved" : "pending")), decision: String(data.decision || "") }];
     case "error": return [{ ...base, kind: "error", text: item.text || String(data.message || "Provider error") }];
     case "lifecycle": return item.text && !isHiddenConversationLifecycleText(item.text) ? [{ ...base, kind: "lifecycle", type: item.text, text: item.text }] : [];
