@@ -1,7 +1,8 @@
 /* MarkdownEditor styles. Keep selectors within the documented ownership boundary. */
 
 :where([data-component-owner="markdown-editor"]).markdown-editor-shell {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-height: 0;
 }
@@ -21,6 +22,8 @@
 :where([data-component-owner="markdown-editor"]) .markdown-editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  flex: 1;
   min-height: 420px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -35,7 +38,7 @@
 :where([data-component-owner="markdown-editor"]) .markdown-editor-host,
 :where([data-component-owner="markdown-editor"]) .markdown-editor-host .cm-editor {
   min-width: 0;
-  min-height: 420px;
+  min-height: 0;
   height: 100%;
 }
 
