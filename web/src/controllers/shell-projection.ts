@@ -6,7 +6,6 @@ export interface TaskStatusState {
   className: string;
   iconName: string;
   label: string;
-  dimension: string;
   recentOutput: boolean;
 }
 
@@ -99,24 +98,20 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   }
 
   function resourceStatusState(runtime: ResourceRuntime | undefined): TaskStatusState | null {
-    if (!runtime?.status || runtime.status === "archived" ||
-      (["stopped", "idle-suspended"].includes(runtime.status) && runtime.resumable !== true)) return null;
+    if (!runtime?.status || runtime.status === "archived") return null;
     const recentOutput = hasRecentAgentOutput(runtime);
     switch (runtime.status) {
-      case "starting": return { kind: "resource-starting", className: "task-status-session-running", iconName: "loader-circle", label: "Resource starting", dimension: "resource", recentOutput };
-      case "running": return { kind: "resource-running", className: "task-status-session-running", iconName: "loader-circle", label: "Resource working", dimension: "resource", recentOutput };
-      case "waiting_approval": return { kind: "resource-approval", className: "task-status-attention", iconName: "shield-question", label: "Resource waiting for approval", dimension: "resource", recentOutput };
-      case "stopping": return { kind: "resource-stopping", className: "task-status-session-stopping", iconName: "loader-circle", label: "Resource stopping", dimension: "resource", recentOutput };
-      case "recovering": return { kind: "resource-recovering", className: "task-status-attention", iconName: "rotate-ccw", label: "Resource recovering", dimension: "resource", recentOutput };
-      case "idle": return { kind: "resource-idle", className: "task-status-info", iconName: "message-square", label: "Resource ready", dimension: "resource", recentOutput };
+      case "running": return { kind: "resource-running", className: "task-status-session-running", iconName: "loader-circle", label: "Resource working", recentOutput };
+      case "waiting_approval": return { kind: "resource-approval", className: "task-status-attention", iconName: "shield-question", label: "Resource waiting for approval", recentOutput };
+      case "starting":
+      case "stopping":
+      case "recovering":
+      case "idle":
       case "idle-suspended":
-      case "stopped": return { kind: "resource-suspended", className: "task-status-info", iconName: "pause-circle", label: "Resource sleeping", dimension: "resource", recentOutput };
-      default: return { kind: "resource-active", className: "task-status-neutral", iconName: "circle-dot", label: `Resource ${runtime.status}`, dimension: "resource", recentOutput };
+      case "stopped":
+        return null;
+      default: return { kind: "resource-active", className: "task-status-neutral", iconName: "circle-dot", label: `Resource ${runtime.status}`, recentOutput };
     }
-  }
-
-  function taskStatusState(kind: string, className: string, iconName: string, label: string, dimension: string, runtime?: ResourceRuntime): TaskStatusState {
-    return { kind, className, iconName, label, dimension, recentOutput: Boolean(runtime && hasRecentAgentOutput(runtime)) };
   }
 
   function operationalStatusPresentation(statuses: Array<TaskStatusState | null>): OperationalStatusPresentation {
@@ -134,8 +129,7 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
   function taskOperationalState(item: ResourceRecord): TaskOperationalState {
     const status = resourceStatusState(item.runtime);
     const label = status?.label || "";
-    const hideRestingTaskStatus = item.type === "task" && ["resource-idle", "resource-suspended"].includes(status?.kind || "");
-    const statusPresentation = operationalStatusPresentation(hideRestingTaskStatus ? [] : [status]);
+    const statusPresentation = operationalStatusPresentation(status ? [status] : []);
     return { session: status, statusPresentation, className: statusPresentation.className, label };
   }
 
@@ -210,6 +204,5 @@ export function createShellProjection(dependencies: ShellProjectionDependencies)
     statusModel,
     taskOperationalState,
     taskOperationalStateKey,
-    taskStatusState,
   };
 }
