@@ -5199,8 +5199,10 @@ var ec = 20, tc = 250, nc = 80, rc = /* @__PURE__ */ new Set([
 			this.emit();
 			return;
 		}
-		let a = this.contexts.get(r) ?? this.createContext(e, t), o = String(n?.generation?.generationId || ""), s = !!(a.generationId && o && a.generationId !== o);
-		a.status = n, a.generationId = o, s ? (this.closeStream(a), a.loaded = !1, a.nextCursor = "", a.hasMoreBefore = !1, this.loadInitial(a)) : !a.loaded && !a.loading ? this.loadInitial(a) : this.realtime && this.connect(a), (i || s) && this.emit();
+		let a = this.contexts.get(r) ?? this.createContext(e, t);
+		this.api.requests.abort(uc(a, "status"));
+		let o = String(n?.generation?.generationId || ""), s = !!(a.generationId && o && a.generationId !== o);
+		a.status = n, a.generationId = o, s ? (this.resetForGeneration(a), this.loadInitial(a)) : !a.loaded && !a.loading ? this.loadInitial(a) : this.realtime && this.connect(a), (i || s) && this.emit();
 	}
 	async loadOlder() {
 		let e = this.activeContext();
@@ -5401,8 +5403,22 @@ var ec = 20, tc = 250, nc = 80, rc = /* @__PURE__ */ new Set([
 				i.close();
 				return;
 			}
-			i.readyState === 2 && (e.stream = null, e.streamGeneration++);
+			i.readyState === 2 && (e.stream = null, e.streamGeneration++, this.refreshAfterStreamFailure(e));
 		};
+	}
+	async refreshAfterStreamFailure(e) {
+		let t = e.requestGeneration;
+		try {
+			let n = await this.api.latest(`${dc(e)}/status`, { scope: uc(e, "status") });
+			if (!this.isCurrent(e, t) || !n.generation?.generationId) return;
+			if (String(n.generation.generationId) !== e.generationId) {
+				this.activate(e.workspaceId, e.resourceId, n);
+				return;
+			}
+			e.status = n, this.emit(), this.connect(e);
+		} catch (n) {
+			if (n instanceof go || !this.isCurrent(e, t)) return;
+		}
 	}
 	async loadTurnRange(e, t, n) {
 		let r = Math.max(1, Number(t.turn.startEventId) || 1), i = Math.max(r, Number(t.turn.lastEventId) || 0, Number(t.latestEventId) || 0);
@@ -5517,8 +5533,11 @@ var ec = 20, tc = 250, nc = 80, rc = /* @__PURE__ */ new Set([
 	closeStream(e) {
 		e.streamGeneration++, e.stream?.close(), e.stream = null;
 	}
+	resetForGeneration(e) {
+		e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, e.pendingEvents = [], e.requestGeneration++, this.closeStream(e), this.api.requests.abort(uc(e, "initial")), this.api.requests.abort(uc(e, "older")), this.api.requests.abort(uc(e, "status")), e.segments.clear(), e.details.clear(), e.detailLoading.clear(), e.detailErrors.clear(), e.liveEvents.clear(), e.orphanEvents.clear(), e.nextCursor = "", e.hasMoreBefore = !1, e.loading = !1, e.loadingOlder = !1, e.loaded = !1, e.error = "", e.headRefreshing = !1, e.terminalMaterializing.clear();
+	}
 	deactivate(e) {
-		e && (e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, this.flushEvents(e, !1), e.requestGeneration++, this.closeStream(e), e.loading = !1, e.loadingOlder = !1, this.api.requests.abort(uc(e, "initial")), this.api.requests.abort(uc(e, "older")));
+		e && (e.flushTimer && clearTimeout(e.flushTimer), e.flushTimer = null, this.flushEvents(e, !1), e.requestGeneration++, this.closeStream(e), e.loading = !1, e.loadingOlder = !1, this.api.requests.abort(uc(e, "initial")), this.api.requests.abort(uc(e, "older")), this.api.requests.abort(uc(e, "status")));
 	}
 	isCurrent(e, t) {
 		return !this.disposed && this.isActive(e) && e.requestGeneration === t;
