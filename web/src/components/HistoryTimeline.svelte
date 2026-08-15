@@ -115,6 +115,25 @@
   function turnKey(block: ConversationBlock): string {
     return block.turn?.reference || block.key;
   }
+
+  function turnHasNoFinalReply(block: ConversationBlock): boolean {
+    const turn = block.turn;
+    if (!turn) return false;
+    const status = (turn.status || "").toLowerCase();
+    return ["cancelled", "canceled", "interrupted", "failed"].includes(status) && !turn.finalReplyPreview?.trim();
+  }
+
+  function turnStatusText(block: ConversationBlock): string {
+    const turn = block.turn;
+    if (!turn) return "unknown";
+    const status = turn.status || "unknown";
+    return turnHasNoFinalReply(block) ? `${status} · no final reply` : status;
+  }
+
+  function turnPreviewText(block: ConversationBlock): string {
+    if (turnHasNoFinalReply(block)) return "No final reply";
+    return block.turn?.finalReplyPreview || block.turn?.triggerPreview || "Select to load conversation detail";
+  }
 </script>
 
 <div data-component-owner="history-timeline" class="history-timeline-root">
@@ -142,8 +161,8 @@
       {:else if block.turn}
         <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
           <button type="button" class="history-turn-header" onclick={() => loadTurn(block)} aria-expanded={blockLoaded(block)}>
-            <span class="history-turn-title"><strong>Turn</strong><small>{formatTime(block.turn.startedAt)} · {formatDuration(block.turn.durationMs)} · {block.turn.status || "unknown"}</small></span>
-            <span class="history-turn-preview">{block.turn.finalReplyPreview || block.turn.triggerPreview || "Select to load conversation detail"}</span>
+            <span class="history-turn-title"><strong>Turn</strong><small>{formatTime(block.turn.startedAt)} · {formatDuration(block.turn.durationMs)} · {turnStatusText(block)}</small></span>
+            <span class="history-turn-preview">{turnPreviewText(block)}</span>
             <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={blockLoaded(block) ? "chevron-up" : "chevron-down"} /></span>
           </button>
           {#if block.loading}<div class="history-detail-state"><Icon name="loader-circle" className="spin" />Loading Turn detail...</div>{/if}

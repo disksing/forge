@@ -112,6 +112,41 @@ func historyTestTurn(id string, first int64, closed bool) agentHubTurn {
 	}
 }
 
+func TestResourceHistoryPreservesCancelledTurnStatus(t *testing.T) {
+	fake := newHistoryFakeAgentHub()
+	hub := httptest.NewServer(fake)
+	defer hub.Close()
+	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
+	now := time.Now().Format(time.RFC3339Nano)
+	if err := saveAgentRun(workspace.Path, agentRun{
+		ID: "run-cancelled-history", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+		Generation: 1, GenerationID: "gen-cancelled-history", AgentHubSessionID: "ses-cancelled-history",
+		Status: "idle", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cancelled := historyTestTurn("turn-cancelled", 1, true)
+	cancelled.Status = "cancelled"
+	cancelled.FinalReplyPreview = ""
+	fake.mu.Lock()
+	fake.turns["ses-cancelled-history"] = []agentHubTurn{cancelled}
+	fake.mu.Unlock()
+
+	recorder := httptest.NewRecorder()
+	manager.server.handleWorkspace(recorder, httptest.NewRequest(http.MethodGet,
+		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/history/turns?limit=1", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("cancelled history failed: %d %s", recorder.Code, recorder.Body.String())
+	}
+	var page resourceHistoryPage
+	if err := json.Unmarshal(recorder.Body.Bytes(), &page); err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Segments) != 1 || len(page.Segments[0].Turns) != 1 || page.Segments[0].Turns[0].Status != "cancelled" || page.Segments[0].Turns[0].FinalReplyPreview != "" {
+		t.Fatalf("cancelled history projection = %#v", page)
+	}
+}
+
 func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 	fake := newHistoryFakeAgentHub()
 	hub := httptest.NewServer(fake)

@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"testing"
 )
@@ -86,6 +87,36 @@ func TestAgentHubTurnTerminalKinds(t *testing.T) {
 		if isAgentHubTurnTerminal(eventType) {
 			t.Fatalf("%s must not manufacture a completion marker", eventType)
 		}
+	}
+}
+
+func TestAgentRunCompletionProjectionPreservesCancellationAndReplyPresence(t *testing.T) {
+	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
+	session := agentHubSession{ID: "ses-cancelled", State: "ready", LastEventID: 3}
+	runtime := newAgentHubRuntime(manager, workspace, agentRun{
+		ID: "run-cancelled", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
+	}, nil)
+	runtime.recordTurnCompletionHistory(session, []agentHubEvent{
+		{ID: 2, Type: "tool.event", TurnID: "turn-cancelled"},
+		{ID: 3, Type: "turn.cancelled", TurnID: "turn-cancelled", Time: "2026-08-15T01:00:03Z"},
+	}, 3)
+	got := runtime.snapshotRun()
+	if got.CompletionState != "cancelled" || got.CompletionTurnID != "turn-cancelled" || got.CompletionHasFinalReply {
+		t.Fatalf("cancelled completion projection = %#v", got)
+	}
+
+	runtime = newAgentHubRuntime(manager, workspace, agentRun{
+		ID: "run-cancelled-with-reply", WorkspaceID: workspace.ID, AgentHubSessionID: session.ID,
+		CompletionSessionID: session.ID, CompletionCursor: 1, Status: "running",
+	}, nil)
+	runtime.recordTurnCompletionHistory(session, []agentHubEvent{
+		{ID: 2, Type: "message.assistant.delta", TurnID: "turn-cancelled", Data: json.RawMessage(`{"text":"answer"}`)},
+		{ID: 3, Type: "turn.cancelled", TurnID: "turn-cancelled", Time: "2026-08-15T01:00:03Z"},
+	}, 3)
+	got = runtime.snapshotRun()
+	if got.CompletionState != "cancelled" || !got.CompletionHasFinalReply {
+		t.Fatalf("cancelled completion with reply = %#v", got)
 	}
 }
 

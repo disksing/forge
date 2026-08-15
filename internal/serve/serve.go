@@ -1450,22 +1450,23 @@ func (s *server) treeAt(ctx context.Context, path string) (workspaceTree, error)
 }
 
 type resourceRuntimeSnapshot struct {
-	Generation         int    `json:"generation,omitempty"`
-	GenerationID       string `json:"generationId"`
-	Status             string `json:"status"`
-	AgentName          string `json:"agentName,omitempty"`
-	UpdatedAt          string `json:"updatedAt,omitempty"`
-	LastOutputAt       string `json:"lastOutputAt,omitempty"`
-	CompletionMarker   string `json:"completionMarker,omitempty"`
-	CompletionState    string `json:"completionState,omitempty"`
-	CompletionAt       string `json:"completionAt,omitempty"`
-	ReplacementPending bool   `json:"replacementPending,omitempty"`
-	Resumable          bool   `json:"resumable,omitempty"`
-	IdleSuspended      bool   `json:"idleSuspended,omitempty"`
-	ResumeUnavailable  bool   `json:"resumeUnavailable,omitempty"`
-	TurnNumber         int    `json:"turnNumber,omitempty"`
-	ActiveTurn         bool   `json:"activeTurn,omitempty"`
-	TurnStartedAt      string `json:"turnStartedAt,omitempty"`
+	Generation              int    `json:"generation,omitempty"`
+	GenerationID            string `json:"generationId"`
+	Status                  string `json:"status"`
+	AgentName               string `json:"agentName,omitempty"`
+	UpdatedAt               string `json:"updatedAt,omitempty"`
+	LastOutputAt            string `json:"lastOutputAt,omitempty"`
+	CompletionMarker        string `json:"completionMarker,omitempty"`
+	CompletionState         string `json:"completionState,omitempty"`
+	CompletionHasFinalReply bool   `json:"completionHasFinalReply"`
+	CompletionAt            string `json:"completionAt,omitempty"`
+	ReplacementPending      bool   `json:"replacementPending,omitempty"`
+	Resumable               bool   `json:"resumable,omitempty"`
+	IdleSuspended           bool   `json:"idleSuspended,omitempty"`
+	ResumeUnavailable       bool   `json:"resumeUnavailable,omitempty"`
+	TurnNumber              int    `json:"turnNumber,omitempty"`
+	ActiveTurn              bool   `json:"activeTurn,omitempty"`
+	TurnStartedAt           string `json:"turnStartedAt,omitempty"`
 }
 
 func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
@@ -1493,7 +1494,7 @@ func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspace
 			item.Runtime = &resourceRuntimeSnapshot{
 				Generation: run.Generation, GenerationID: run.GenerationID, Status: run.Status,
 				AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
-				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
+				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
 				CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
 				Resumable:         (run.Status == "stopped" || run.Status == "idle-suspended") && run.AgentHubSessionID != "" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested,
 				IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),

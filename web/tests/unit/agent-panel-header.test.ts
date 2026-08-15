@@ -74,6 +74,19 @@ describe("AgentPanelHeader", () => {
     expect(target.querySelector(".agent-header-turn")?.textContent).toBe("Idle · Turn 3 completed");
   });
 
+  it("keeps an interrupted Turn status and explains a missing final reply", async () => {
+    const { target } = mountModel(model({
+      status: status({
+        state: "idle",
+        session: { state: "ready" },
+        generation: { generation: 1, generationId: "gen-1", status: "idle", turnNumber: 3, completionState: "cancelled", completionHasFinalReply: false },
+      }),
+    }));
+    await tick();
+
+    expect(target.querySelector(".agent-header-turn")?.textContent).toBe("Idle · Turn 3 cancelled · no final reply");
+  });
+
   it("shows the attention state and the queued count", async () => {
     const { target } = mountModel(model({
       status: status({

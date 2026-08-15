@@ -3105,9 +3105,22 @@ function pa(e, t) {
 		let t = Math.max(0, e), n = Math.floor(t / 3600), r = Math.floor(t % 3600 / 60), i = t % 60, a = (e) => String(e).padStart(2, "0");
 		return n > 0 ? `${n}:${a(r)}:${a(i)}` : `${a(r)}:${a(i)}`;
 	}
-	let u = /* @__PURE__ */ N(() => {
+	function u(e) {
+		switch (e) {
+			case "cancelled":
+			case "canceled": return "cancelled";
+			case "interrupted": return "interrupted";
+			case "failed": return "failed";
+			default: return "completed";
+		}
+	}
+	let d = /* @__PURE__ */ N(() => {
 		let e = V(n).turnNumber;
-		if (V(i) === "idle") return e > 0 ? `Idle · Turn ${e} completed` : "";
+		if (V(i) === "idle") {
+			if (e <= 0) return "";
+			let t = u(String(V(n).status?.generation?.completionState || "").trim().toLowerCase());
+			return `Idle · Turn ${e} ${t}${t !== "completed" && V(n).status?.generation?.completionHasFinalReply === !1 ? " · no final reply" : ""}`;
+		}
 		if (V(i) === "empty" || V(i) === "loading") return "";
 		if (Number.isFinite(V(s))) {
 			let t = l(Math.floor((V(r) - V(s)) / 1e3));
@@ -3115,33 +3128,33 @@ function pa(e, t) {
 		}
 		return e > 0 ? `Turn ${e}` : "";
 	});
-	var d = fa(), f = L(d), p = R(L(f), 2), m = L(p, !0);
-	k(p);
-	var h = R(p, 2), g = L(h, !0);
-	k(h);
-	var _ = R(h, 2), v = (e) => {
+	var f = fa(), p = L(f), m = R(L(p), 2), h = L(m, !0);
+	k(m);
+	var g = R(m, 2), _ = L(g, !0);
+	k(g);
+	var v = R(g, 2), y = (e) => {
 		var t = la(), n = L(t);
 		k(t), z(() => G(n, `· ${V(o) ?? ""} queued`)), W(e, t);
 	};
-	K(_, (e) => {
-		V(o) > 0 && e(v);
-	}), k(f);
-	var y = R(f, 2), b = L(y), x = (e) => {
+	K(v, (e) => {
+		V(o) > 0 && e(y);
+	}), k(p);
+	var b = R(p, 2), x = L(b), S = (e) => {
 		var t = ua(), r = L(t, !0);
 		k(t), z(() => G(r, V(n).modelSummary)), W(e, t);
 	};
-	K(b, (e) => {
-		V(n).modelSummary && e(x);
+	K(x, (e) => {
+		V(n).modelSummary && e(S);
 	});
-	var S = R(b, 2), C = (e) => {
+	var C = R(x, 2), w = (e) => {
 		var t = da(), n = L(t, !0);
-		k(t), z(() => G(n, V(u))), W(e, t);
+		k(t), z(() => G(n, V(d))), W(e, t);
 	};
-	K(S, (e) => {
-		V(u) && e(C);
-	}), k(y), k(d), z(() => {
-		Y(d, "data-state", V(i)), G(m, V(n).agentName), G(g, V(a));
-	}), W(e, d), M();
+	K(C, (e) => {
+		V(d) && e(w);
+	}), k(b), k(f), z(() => {
+		Y(f, "data-state", V(i)), G(h, V(n).agentName), G(_, V(a));
+	}), W(e, f), M();
 }
 //#endregion
 //#region src/components/AgentBindingSelector.svelte
@@ -6012,20 +6025,40 @@ function ol(e, t) {
 	function x(e) {
 		return e.turn?.reference || e.key;
 	}
-	var S = al(), C = L(S), w = (e) => {
+	function S(e) {
+		let t = e.turn;
+		if (!t) return !1;
+		let n = (t.status || "").toLowerCase();
+		return [
+			"cancelled",
+			"canceled",
+			"interrupted",
+			"failed"
+		].includes(n) && !t.finalReplyPreview?.trim();
+	}
+	function C(e) {
+		let t = e.turn;
+		if (!t) return "unknown";
+		let n = t.status || "unknown";
+		return S(e) ? `${n} · no final reply` : n;
+	}
+	function w(e) {
+		return S(e) ? "No final reply" : e.turn?.finalReplyPreview || e.turn?.triggerPreview || "Select to load conversation detail";
+	}
+	var T = al(), E = L(T), D = (e) => {
 		var t = Wc();
 		X(L(t), {
 			name: "loader-circle",
 			className: "spin"
 		}), A(), k(t), W(e, t);
-	}, T = (e) => {
+	}, ee = (e) => {
 		var t = Gc(), n = L(t);
 		X(n, { name: "triangle-alert" });
 		var a = R(n, 2), o = L(a, !0);
 		k(a);
 		var s = R(a);
 		k(t), z(() => G(o, V(r).error)), H("click", s, () => i?.retryHistory()), W(e, t);
-	}, E = (e) => {
+	}, te = (e) => {
 		var n = il(), o = un(n), c = (e) => {
 			var t = Kc(), n = L(t);
 			X(n, { name: "chevrons-up" });
@@ -6049,18 +6082,18 @@ function ol(e, t) {
 		K(l, (e) => {
 			V(a) && e(S);
 		});
-		var C = R(l, 2), w = (e) => {
+		var T = R(l, 2), E = (e) => {
 			var n = qc(), r = L(n);
 			X(r, { name: "archive-restore" });
 			var i = R(r, 2);
 			k(n), H("click", i, () => t.onOpenLegacy(V(s))), W(e, n);
-		}, T = (e) => {
+		}, D = (e) => {
 			var t = Jc();
 			X(L(t), { name: "history" }), A(), k(t), W(e, t);
 		};
-		K(C, (e) => {
-			V(r).loaded && !V(r).blocks.length && V(s) ? e(w) : V(r).loaded && !V(r).blocks.length && e(T, 1);
-		}), q(R(C, 2), 19, () => V(r).blocks, (e) => e.key, (e, n, o) => {
+		K(T, (e) => {
+			V(r).loaded && !V(r).blocks.length && V(s) ? e(E) : V(r).loaded && !V(r).blocks.length && e(D, 1);
+		}), q(R(T, 2), 19, () => V(r).blocks, (e) => e.key, (e, n, o) => {
 			var s = rl(), c = un(s), l = (e) => {
 				var t = Yc(), r = L(t), i = L(r), a = L(i);
 				k(i);
@@ -6082,7 +6115,7 @@ function ol(e, t) {
 			K(c, (e) => {
 				(V(o) === 0 || V(r).blocks[V(o) - 1].generation.generationId !== V(n).generation.generationId) && e(l);
 			});
-			var S = R(c, 2), C = (e) => {
+			var S = R(c, 2), T = (e) => {
 				var t = Zc(), r = L(t);
 				X(r, { name: "triangle-alert" });
 				var a = R(r), o = R(L(a)), s = L(o, !0);
@@ -6096,41 +6129,41 @@ function ol(e, t) {
 				}), k(t), z(() => {
 					Y(t, "data-timeline-key", V(n).key), G(s, V(n).gap?.message || "This generation could not be read.");
 				}), W(e, t);
-			}, w = (e) => {
+			}, E = (e) => {
 				var i = nl();
 				let o;
 				var s = L(i), c = L(s), l = R(L(c)), f = L(l);
 				k(l), k(c);
-				var S = R(c, 2), C = L(S, !0);
+				var S = R(c, 2), T = L(S, !0);
 				k(S);
-				var w = R(S, 2), T = L(w), E = R(T);
+				var E = R(S, 2), D = L(E), ee = R(D);
 				{
 					let e = /* @__PURE__ */ N(() => m(V(n)) ? "chevron-up" : "chevron-down");
-					X(E, { get name() {
+					X(ee, { get name() {
 						return V(e);
 					} });
 				}
-				k(w), k(s);
-				var D = R(s, 2), ee = (e) => {
+				k(E), k(s);
+				var te = R(s, 2), ne = (e) => {
 					var t = Qc();
 					X(L(t), {
 						name: "loader-circle",
 						className: "spin"
 					}), A(), k(t), W(e, t);
 				};
-				K(D, (e) => {
-					V(n).loading && e(ee);
+				K(te, (e) => {
+					V(n).loading && e(ne);
 				});
-				var te = R(D, 2), ne = (e) => {
+				var re = R(te, 2), ie = (e) => {
 					var t = $c(), r = L(t);
 					X(r, { name: "triangle-alert" });
 					var i = R(r, 1, !0);
 					k(t), z(() => G(i, V(n).error)), W(e, t);
 				};
-				K(te, (e) => {
-					V(n).error && e(ne);
+				K(re, (e) => {
+					V(n).error && e(ie);
 				});
-				var re = R(te, 2), ie = (e) => {
+				var ae = R(re, 2), oe = (e) => {
 					var i = tl();
 					q(i, 21, () => h(V(n)), (e) => g(e), (e, i) => {
 						var o = el(), s = L(o), c = (e) => {
@@ -6215,26 +6248,28 @@ function ol(e, t) {
 							V(i).kind === "message" ? e(c) : V(i).kind === "thinking" ? e(l, 1) : V(i).kind === "tools" ? e(u, 2) : V(i).kind === "approval" ? e(d, 3) : V(i).kind === "lifecycle" ? e(f, 4) : V(i).kind === "error" ? e(p, 5) : e(m, -1);
 						}), k(o), z(() => Y(o, "data-history-kind", V(i).kind)), W(e, o);
 					}), k(i), W(e, i);
-				}, ae = /* @__PURE__ */ N(() => m(V(n)));
-				K(re, (e) => {
-					V(ae) && e(ie);
-				}), k(i), z((e, t, r, a) => {
-					o = J(i, 1, "history-turn", null, o, { "history-turn-loading": V(n).loading }), Y(i, "data-timeline-key", e), Y(s, "aria-expanded", t), G(f, `${r ?? ""} · ${a ?? ""} · ${(V(n).turn.status || "unknown") ?? ""}`), G(C, V(n).turn.finalReplyPreview || V(n).turn.triggerPreview || "Select to load conversation detail"), G(T, `${V(n).turn.eventCount ?? ""} events · ${V(n).turn.toolEventCount ?? ""} tools `);
+				}, se = /* @__PURE__ */ N(() => m(V(n)));
+				K(ae, (e) => {
+					V(se) && e(oe);
+				}), k(i), z((e, t, r, a, c, l) => {
+					o = J(i, 1, "history-turn", null, o, { "history-turn-loading": V(n).loading }), Y(i, "data-timeline-key", e), Y(s, "aria-expanded", t), G(f, `${r ?? ""} · ${a ?? ""} · ${c ?? ""}`), G(T, l), G(D, `${V(n).turn.eventCount ?? ""} events · ${V(n).turn.toolEventCount ?? ""} tools `);
 				}, [
 					() => x(V(n)),
 					() => m(V(n)),
 					() => u(V(n).turn.startedAt),
-					() => d(V(n).turn.durationMs)
+					() => d(V(n).turn.durationMs),
+					() => C(V(n)),
+					() => w(V(n))
 				]), H("click", s, () => p(V(n))), W(e, i);
 			};
 			K(S, (e) => {
-				V(n).kind === "gap" ? e(C) : V(n).turn && e(w, 1);
+				V(n).kind === "gap" ? e(T) : V(n).turn && e(E, 1);
 			}), W(e, s);
 		}), W(e, n);
 	};
-	K(C, (e) => {
-		V(r).loading && !V(r).loaded ? e(w) : V(r).error && !V(r).loaded ? e(T, 1) : e(E, -1);
-	}), k(S), W(e, S), M();
+	K(E, (e) => {
+		V(r).loading && !V(r).loaded ? e(D) : V(r).error && !V(r).loaded ? e(ee, 1) : e(te, -1);
+	}), k(T), W(e, T), M();
 }
 Cr(["click"]);
 //#endregion

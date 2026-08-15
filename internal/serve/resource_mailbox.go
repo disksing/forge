@@ -171,18 +171,20 @@ type resourceMailboxCounts struct {
 }
 
 type resourceGenerationStatus struct {
-	Generation         int    `json:"generation"`
-	GenerationID       string `json:"generationId"`
-	Status             string `json:"status"`
-	ReplacementPending bool   `json:"replacementPending"`
-	Resumable          bool   `json:"resumable,omitempty"`
-	IdleSuspended      bool   `json:"idleSuspended,omitempty"`
-	ResumeUnavailable  bool   `json:"resumeUnavailable,omitempty"`
-	IdleSinceAt        string `json:"idleSinceAt,omitempty"`
-	IdleDeadlineAt     string `json:"idleDeadlineAt,omitempty"`
-	IdleSleepRequested bool   `json:"idleSleepRequested,omitempty"`
-	TurnNumber         int    `json:"turnNumber,omitempty"`
-	AgentHubSessionID  string `json:"agentHubSessionId,omitempty"`
+	Generation              int    `json:"generation"`
+	GenerationID            string `json:"generationId"`
+	Status                  string `json:"status"`
+	CompletionState         string `json:"completionState,omitempty"`
+	CompletionHasFinalReply bool   `json:"completionHasFinalReply"`
+	ReplacementPending      bool   `json:"replacementPending"`
+	Resumable               bool   `json:"resumable,omitempty"`
+	IdleSuspended           bool   `json:"idleSuspended,omitempty"`
+	ResumeUnavailable       bool   `json:"resumeUnavailable,omitempty"`
+	IdleSinceAt             string `json:"idleSinceAt,omitempty"`
+	IdleDeadlineAt          string `json:"idleDeadlineAt,omitempty"`
+	IdleSleepRequested      bool   `json:"idleSleepRequested,omitempty"`
+	TurnNumber              int    `json:"turnNumber,omitempty"`
+	AgentHubSessionID       string `json:"agentHubSessionId,omitempty"`
 }
 
 type resourceSessionStatus struct {
@@ -880,6 +882,7 @@ func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspac
 	status.Generation = &resourceGenerationStatus{
 		Generation: run.Generation, GenerationID: run.GenerationID,
 		Status: run.Status, ReplacementPending: run.ReplacementPending,
+		CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
 		IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),
 		ResumeUnavailable: run.SessionResumeUnavailable,
 		IdleSinceAt:       run.IdleSinceAt, IdleDeadlineAt: run.IdleDeadlineAt,

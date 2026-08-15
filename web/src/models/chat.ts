@@ -73,6 +73,8 @@ export interface ResourceGenerationStatus {
   generation: number;
   generationId: string;
   status: string;
+  completionState?: string;
+  completionHasFinalReply?: boolean;
   turnNumber?: number;
   replacementPending?: boolean;
   resumable?: boolean;

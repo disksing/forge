@@ -336,7 +336,7 @@ func resourceRuntimeSnapshotForRun(run agentRun) *resourceRuntimeSnapshot {
 	return &resourceRuntimeSnapshot{
 		Generation: run.Generation, GenerationID: run.GenerationID, Status: run.Status,
 		AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
-		CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState,
+		CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
 		CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
 		Resumable:         (run.Status == "stopped" || run.Status == "idle-suspended") && run.AgentHubSessionID != "" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested,
 		IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),

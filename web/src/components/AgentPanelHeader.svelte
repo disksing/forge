@@ -44,9 +44,29 @@
     return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
   }
 
+  function completionLabel(value: string): string {
+    switch (value) {
+      case "cancelled":
+      case "canceled":
+        return "cancelled";
+      case "interrupted":
+        return "interrupted";
+      case "failed":
+        return "failed";
+      default:
+        return "completed";
+    }
+  }
+
   const turnText = $derived.by(() => {
     const turn = model.turnNumber;
-    if (stateKey === "idle") return turn > 0 ? `Idle · Turn ${turn} completed` : "";
+    if (stateKey === "idle") {
+      if (turn <= 0) return "";
+      const state = String(model.status?.generation?.completionState || "").trim().toLowerCase();
+      const label = completionLabel(state);
+      const noReply = label !== "completed" && model.status?.generation?.completionHasFinalReply === false ? " · no final reply" : "";
+      return `Idle · Turn ${turn} ${label}${noReply}`;
+    }
     if (stateKey === "empty" || stateKey === "loading") return "";
     if (Number.isFinite(turnStart)) {
       const elapsed = formatElapsed(Math.floor((now - turnStart) / 1000));

@@ -445,6 +445,7 @@ func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg confi
 				runtime.run.CompletionEventID = 0
 				runtime.run.CompletionMarker = ""
 				runtime.run.CompletionState = ""
+				runtime.run.CompletionHasFinalReply = false
 				runtime.run.CompletionTurnID = ""
 				runtime.run.CompletionAt = ""
 				runtime.run.CompletionPending = false
@@ -638,6 +639,7 @@ func (rt *agentRuntime) applyAgentHubSessionState(m *agentManager, session agent
 				runtime.run.CompletionEventID = 0
 				runtime.run.CompletionMarker = ""
 				runtime.run.CompletionState = ""
+				runtime.run.CompletionHasFinalReply = false
 				runtime.run.CompletionTurnID = ""
 				runtime.run.CompletionAt = ""
 				runtime.run.CompletionPending = false

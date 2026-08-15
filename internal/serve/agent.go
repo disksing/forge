@@ -99,14 +99,15 @@ type agentRun struct {
 	// turn.* terminal events, so status projections cannot manufacture a
 	// completion. Both fields live in the local generation record and are
 	// rebuilt/reconciled from AgentHub's durable event log.
-	CompletionCursor    int64  `json:"completionCursor,omitempty"`
-	CompletionSessionID string `json:"completionSessionId,omitempty"`
-	CompletionEventID   int64  `json:"completionEventId,omitempty"`
-	CompletionMarker    string `json:"completionMarker,omitempty"`
-	CompletionState     string `json:"completionState,omitempty"`
-	CompletionTurnID    string `json:"completionTurnId,omitempty"`
-	CompletionAt        string `json:"completionAt,omitempty"`
-	CompletionPending   bool   `json:"completionPending,omitempty"`
+	CompletionCursor        int64  `json:"completionCursor,omitempty"`
+	CompletionSessionID     string `json:"completionSessionId,omitempty"`
+	CompletionEventID       int64  `json:"completionEventId,omitempty"`
+	CompletionMarker        string `json:"completionMarker,omitempty"`
+	CompletionState         string `json:"completionState,omitempty"`
+	CompletionHasFinalReply bool   `json:"completionHasFinalReply,omitempty"`
+	CompletionTurnID        string `json:"completionTurnId,omitempty"`
+	CompletionAt            string `json:"completionAt,omitempty"`
+	CompletionPending       bool   `json:"completionPending,omitempty"`
 	// Retired and Legacy are storage projection flags, not public runtime
 	// fields. Retired records are immutable history and must never enter the
 	// lifecycle reconciler.
@@ -541,6 +542,7 @@ func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
 		run.CompletionEventID = 0
 		run.CompletionMarker = ""
 		run.CompletionState = ""
+		run.CompletionHasFinalReply = false
 		run.CompletionTurnID = ""
 		run.CompletionAt = ""
 		run.CompletionPending = false
@@ -571,6 +573,7 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 			run.CompletionEventID = 0
 			run.CompletionMarker = ""
 			run.CompletionState = ""
+			run.CompletionHasFinalReply = false
 			run.CompletionTurnID = ""
 			run.CompletionAt = ""
 			run.CompletionPending = false
@@ -648,16 +651,26 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 			run.CompletionEventID = 0
 			run.CompletionMarker = ""
 			run.CompletionState = ""
+			run.CompletionHasFinalReply = false
 			run.CompletionTurnID = ""
 			run.CompletionAt = ""
 		}
 		cursor := run.CompletionCursor
 		latestTerminal := agentHubEvent{}
+		finalReplyByTurn := make(map[string]bool)
 		for _, event := range history {
 			if event.ID <= cursor {
 				continue
 			}
 			cursor = event.ID
+			if event.Type == "message.assistant.delta" && strings.TrimSpace(event.TurnID) != "" {
+				var data struct {
+					Text string `json:"text"`
+				}
+				if json.Unmarshal(event.Data, &data) == nil && strings.TrimSpace(data.Text) != "" {
+					finalReplyByTurn[event.TurnID] = true
+				}
+			}
 			if isAgentHubTurnTerminal(event.Type) && event.ID > latestTerminal.ID {
 				latestTerminal = event
 			}
@@ -670,6 +683,7 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 			run.CompletionEventID = latestTerminal.ID
 			run.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
 			run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
+			run.CompletionHasFinalReply = finalReplyByTurn[latestTerminal.TurnID]
 			run.CompletionTurnID = latestTerminal.TurnID
 			run.CompletionAt = latestTerminal.Time
 			if session.State == "ready" && !run.IdleSleepStopRequested {
