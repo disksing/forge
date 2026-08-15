@@ -31,6 +31,13 @@
   let deferredSnapshot: ChatContextSnapshot | null = null;
   let followAfterUpdate = false;
   let contextChanged = false;
+  // Sticky pinned-to-bottom state. Transient layout changes outside the
+  // scroller (composer send feedback, growing textarea, message queue) shrink
+  // its clientHeight without firing a scroll event, so an instantaneous
+  // isNearBottom probe at update time would falsely report that the user
+  // scrolled away and permanently drop follow. Only user scrolls may change
+  // this flag; layout shifts re-pin through the ResizeObserver below.
+  let follow = true;
   let preview = $state<{ section: string; path: string } | null>(null);
   const client = new ApiClient();
   const openCache = new Map<string, Map<string, boolean>>();
@@ -38,6 +45,12 @@
 
   onMount(() => {
     const scroll = scroller();
+    const trackFollow = () => { follow = isNearBottom(scroller()); };
+    scroll?.addEventListener("scroll", trackFollow, { passive: true });
+    const followResize = typeof ResizeObserver === "undefined" || !scroll ? null : new ResizeObserver(() => {
+      if (follow && !hasActiveSelection()) scrollToBottom();
+    });
+    if (scroll && followResize) followResize.observe(scroll);
     controller = new ChatSessionController({
       onEvent: (workspaceId, resourceId, event) => model.onEvent(workspaceId, resourceId, event),
       onNotice: (workspaceId, resourceId, notice) => model.onNotice(workspaceId, resourceId, notice),
@@ -46,7 +59,7 @@
     const unsubscribeModel = channel.subscribe((next) => {
       const previousIdentity = model.identity;
       const workingChanged = turnIsWorking(model.status) !== turnIsWorking(next.status);
-      const followWorkingChange = workingChanged && isNearBottom(scroller());
+      const followWorkingChange = workingChanged && follow;
       model = next;
       if (next.project !== projector) projector = next.project;
       if (next.identity !== previousIdentity) {
@@ -79,6 +92,8 @@
       unsubscribeModel();
       document.removeEventListener("selectionchange", selectionChanged);
       document.removeEventListener("keydown", keydown);
+      scroll?.removeEventListener("scroll", trackFollow);
+      followResize?.disconnect();
       controller?.dispose();
       controller = undefined;
       if (scroll) scroll.removeAttribute("data-agent-resource-id");
@@ -98,7 +113,8 @@
   function applySnapshot(next: ChatContextSnapshot): void {
     const scroll = scroller();
     const changed = next.identity !== snapshot.identity;
-    followAfterUpdate = changed || contextChanged || isNearBottom(scroll);
+    if (changed || contextChanged) follow = true;
+    followAfterUpdate = follow;
     contextChanged = false;
     snapshot = next;
     if (scroll) scroll.dataset.agentResourceId = next.resourceId;
