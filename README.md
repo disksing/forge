@@ -338,7 +338,7 @@ forge workspace resource --id=<resource> --json
 forge serve [--addr=<address>] [--workspace=<path>] [--version]
 ```
 
-`forge agent list` queries the owning `forge serve` process for the read-only AgentHub agent catalog. The default output lists each agent's name, provider, and availability; pass `--json` for the full catalog including providers and probes.
+`forge agent list` queries the owning `forge serve` process for the configured Forge Agent Profiles and the read-only AgentHub agent catalog. The default output lists profiles (key, agent, description) followed by agents (name, provider, availability); pass `--json` for the complete structured result including profiles, providers, and probes.
 
 `forge init` and `forge migrate` accept `--language=en` or `--language=zh-CN`.
 The selected language is stored in `forge.json` and controls generated Markdown

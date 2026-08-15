@@ -13,12 +13,24 @@ const agentListUsage = "usage: forge agent list [--server=<url>] [--json]"
 
 // agentHubSettingsResponse mirrors the subset of the Forge Server
 // /api/settings/agenthub response the agent list command needs. The catalog is
-// read-only and owned by AgentHub; Forge only relays it.
+// read-only and owned by AgentHub; Agent Profiles are Forge Server
+// configuration that maps a profile key to a catalog agent.
 type agentHubSettingsResponse struct {
 	Connected  bool                `json:"connected"`
 	Compatible bool                `json:"compatible"`
 	Error      string              `json:"error,omitempty"`
+	Config     agentHubConfigJSON  `json:"config"`
 	Catalog    agentHubCatalogJSON `json:"catalog"`
+}
+
+type agentHubConfigJSON struct {
+	AgentProfiles []agentProfileJSON `json:"agentProfiles,omitempty"`
+}
+
+type agentProfileJSON struct {
+	Key         string `json:"key"`
+	Description string `json:"description,omitempty"`
+	AgentName   string `json:"agentName"`
 }
 
 type agentHubCatalogJSON struct {
@@ -47,6 +59,13 @@ type agentProbeJSON struct {
 	Type       string `json:"type"`
 	Command    string `json:"command,omitempty"`
 	Available  bool   `json:"available"`
+}
+
+// agentListResult is the complete agent surface exposed by forge agent list:
+// Forge Agent Profiles plus the read-only AgentHub catalog.
+type agentListResult struct {
+	Profiles []agentProfileJSON  `json:"profiles"`
+	Catalog  agentHubCatalogJSON `json:"catalog"`
 }
 
 func runAgent(args []string) error {
@@ -89,15 +108,32 @@ func runAgentList(args []string) error {
 	if message := strings.TrimSpace(response.Error); message != "" {
 		return errors.New(message)
 	}
-	if jsonOutput {
-		return printJSON(response.Catalog)
+	profiles := response.Config.AgentProfiles
+	if profiles == nil {
+		profiles = []agentProfileJSON{}
 	}
-	printAgentList(response.Catalog)
+	result := agentListResult{Profiles: profiles, Catalog: response.Catalog}
+	if jsonOutput {
+		return printJSON(result)
+	}
+	printAgentList(result)
 	return nil
 }
 
-func printAgentList(catalog agentHubCatalogJSON) {
-	for _, agent := range catalog.Agents {
+func printAgentList(result agentListResult) {
+	if len(result.Profiles) > 0 {
+		fmt.Fprintln(os.Stdout, "Profiles")
+		for _, profile := range result.Profiles {
+			description := strings.TrimSpace(profile.Description)
+			if description == "" {
+				description = "-"
+			}
+			fmt.Fprintf(os.Stdout, "%s\t%s\t%s\n", profile.Key, profile.AgentName, description)
+		}
+		fmt.Fprintln(os.Stdout)
+	}
+	fmt.Fprintln(os.Stdout, "Agents")
+	for _, agent := range result.Catalog.Agents {
 		provider := strings.TrimSpace(agent.ProviderID)
 		if provider == "" {
 			provider = "-"
@@ -119,9 +155,10 @@ func printAgentHelp() {
 
 Commands:
   forge agent list [--server=<url>] [--json]
-    Query the owning forge serve process for the AgentHub agent catalog. The
-    default output lists each agent's name, provider, and availability as
-    tab-separated rows. Use --json for the complete catalog including providers
+    Query the owning forge serve process for the AgentHub agent catalog and the
+    configured Forge Agent Profiles. The default output lists profiles (key,
+    agent, description) followed by agents (name, provider, availability). Use
+    --json for the complete structured result including profiles, providers,
     and probes. --server overrides the owner address discovered from
     .forge/serve.lock.
 `)
