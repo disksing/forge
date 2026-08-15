@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildTimeline as buildAgentHubTimeline } from "../../vendor/agenthub-event-timeline";
 import type { AgentEvent, TimelineItem } from "../../src/components/models";
-import { compactTimelineEvents, isHiddenConversationLifecycleText, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
+import { compactTimelineEvents, isHiddenConversationLifecycleText, markTurnFinalAssistant, mergeCanonicalEventBatch, mergeCanonicalEvents, visibleConversationTimelineItems } from "../../src/components/timeline-events";
 
 function toolUpdate(id: number, callId: string, text: string): AgentEvent {
   return {
@@ -92,5 +92,40 @@ describe("timeline event algorithms", () => {
       "turn.started",
       "turn.completed",
     ].every((value) => isHiddenConversationLifecycleText(value))).toBe(true);
+  });
+
+  it("marks only the last assistant message of a turn as final", () => {
+    const items: TimelineItem[] = [
+      { kind: "message", role: "user", text: "question" },
+      { kind: "message", role: "assistant", text: "progress" },
+      { kind: "tools", key: "group-a" },
+      { kind: "message", role: "assistant", text: "final reply" },
+    ];
+
+    const marked = markTurnFinalAssistant(items);
+
+    expect(marked[0]).toBe(items[0]);
+    expect(marked[1].turnFinal).toBe(false);
+    expect(marked[2]).toBe(items[2]);
+    expect(marked[3].turnFinal).toBe(true);
+    // Non-assistant items pass through untouched.
+    expect(items[0].turnFinal).toBeUndefined();
+  });
+
+  it("keeps item identity when turnFinal annotations are already correct", () => {
+    const items: TimelineItem[] = [
+      { kind: "message", role: "assistant", text: "progress", turnFinal: false },
+      { kind: "message", role: "assistant", text: "final reply", turnFinal: true },
+    ];
+
+    const marked = markTurnFinalAssistant(items);
+
+    expect(marked[0]).toBe(items[0]);
+    expect(marked[1]).toBe(items[1]);
+  });
+
+  it("leaves a turn without assistant messages untouched", () => {
+    const items: TimelineItem[] = [{ kind: "message", role: "user", text: "question" }];
+    expect(markTurnFinalAssistant(items)[0]).toBe(items[0]);
   });
 });

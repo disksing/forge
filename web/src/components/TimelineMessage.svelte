@@ -6,6 +6,10 @@
 
   let { item, agentName, workspaceId = "", resolveResourceTitle = () => null, onNavigate = () => {} }: { item: TimelineItem; agentName: string; workspaceId?: string; resolveResourceTitle?: ResourceTitleResolver; onNavigate?: (resourceId: string) => void } = $props();
   let role = $derived(["assistant", "system", "agent"].includes(String(item.role)) ? String(item.role) : "user");
+  // The `final` class marks the turn's last assistant message and keeps the
+  // ink rail; mid-turn progress updates (turnFinal === false) fall back to
+  // the muted gray rail. Standalone items without the annotation stay final.
+  let rowClass = $derived(role === "assistant" ? (item.turnFinal === false ? "assistant" : "assistant final") : role);
 
   function senderName(): string {
     if (item.role === "assistant") return agentName || "Agent";
@@ -30,7 +34,7 @@
   }
 </script>
 
-<div data-component-owner="event-timeline" class={`agent-message-row ${role === "assistant" ? "assistant final" : role}`}>
+<div data-component-owner="event-timeline" class={`agent-message-row ${rowClass}`}>
   <div class="agent-message-main">
     <div class="agent-message-meta">
       <strong>{senderName()}</strong>
