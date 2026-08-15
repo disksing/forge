@@ -12,6 +12,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
+  import { toolGroupKey } from "./tool-group";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
 
@@ -183,7 +184,8 @@
   }
 
   function timelineKey(item: TimelineItem): string {
-    return `${item.generationId || snapshot.generationId}:${item.kind}:${String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event")}`;
+    const key = item.kind === "tools" ? toolGroupKey(item) : String(item.key ?? item.approvalId ?? item.time ?? item.type ?? "event");
+    return `${item.generationId || snapshot.generationId}:${item.kind}:${key}`;
   }
 
   function emptySnapshot(): ChatContextSnapshot {
