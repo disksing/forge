@@ -26,50 +26,43 @@ describe("shell projection", () => {
     expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ taskCount: 2, runningCount: 1 });
   });
 
-  it("keeps resumable stopped generations sleeping while using the ordinary task icon", () => {
+  it("shows the approval icon for a resource waiting for approval", () => {
     const task = tree.projects[0].children![0];
-    for (const status of ["idle-suspended", "stopped"]) {
-      task.runtime = { generationId: "gen-task1", status, resumable: true };
-      const state = projection.taskOperationalState(task);
-      expect(state.session).toMatchObject({
-        kind: "resource-suspended",
-        label: "Resource sleeping",
-      });
-      expect(state.label).toBe("Resource sleeping");
-      expect(state.statusPresentation).toMatchObject({
-        hasTaskState: false,
-        statuses: [],
-      });
-    }
-    expect(projection.projectTaskSummary(tree.projects[0])).toMatchObject({ runningCount: 0 });
-
-    const project = tree.projects[0];
-    project.runtime = { generationId: "gen-project1", status: "idle-suspended", resumable: true };
-    expect(projection.taskOperationalState(project).statusPresentation).toMatchObject({
+    task.runtime = { generationId: "gen-task1", status: "waiting_approval" };
+    const state = projection.taskOperationalState(task);
+    expect(state.session).toMatchObject({ kind: "resource-approval", label: "Resource waiting for approval" });
+    expect(state.statusPresentation).toMatchObject({
       hasTaskState: true,
-      statuses: [{ iconName: "pause-circle" }],
+      statuses: [{ iconName: "shield-question" }],
     });
   });
 
-  it("uses the ordinary task icon for an idle generation while preserving its ready label", () => {
+  it("shows no status icon for resting or transitional generations across resources", () => {
     const task = tree.projects[0].children![0];
-    task.runtime = { generationId: "gen-task1", status: "idle" };
-    const state = projection.taskOperationalState(task);
-    expect(state.session).toMatchObject({
-      kind: "resource-idle",
-      label: "Resource ready",
-    });
-    expect(state.label).toBe("Resource ready");
-    expect(state.statusPresentation).toMatchObject({
-      hasTaskState: false,
-      statuses: [],
-    });
-
     const project = tree.projects[0];
-    project.runtime = { generationId: "gen-project1", status: "idle" };
-    expect(projection.taskOperationalState(project).statusPresentation).toMatchObject({
+    for (const status of ["starting", "stopping", "recovering", "idle", "idle-suspended", "stopped"]) {
+      task.runtime = { generationId: "gen-task1", status };
+      const taskState = projection.taskOperationalState(task);
+      expect(taskState.session).toBeNull();
+      expect(taskState.label).toBe("");
+      expect(taskState.statusPresentation).toMatchObject({ hasTaskState: false, statuses: [] });
+
+      project.runtime = { generationId: "gen-project1", status };
+      const projectState = projection.taskOperationalState(project);
+      expect(projectState.session).toBeNull();
+      expect(projectState.label).toBe("");
+      expect(projectState.statusPresentation).toMatchObject({ hasTaskState: false, statuses: [] });
+    }
+  });
+
+  it("keeps the neutral fallback icon for unknown generation statuses", () => {
+    const task = tree.projects[0].children![0];
+    task.runtime = { generationId: "gen-task1", status: "failed" };
+    const state = projection.taskOperationalState(task);
+    expect(state.session).toMatchObject({ kind: "resource-active", label: "Resource failed" });
+    expect(state.statusPresentation).toMatchObject({
       hasTaskState: true,
-      statuses: [{ iconName: "message-square" }],
+      statuses: [{ iconName: "circle-dot" }],
     });
   });
 

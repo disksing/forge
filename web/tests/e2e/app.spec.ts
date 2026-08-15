@@ -727,7 +727,7 @@ test("uses the ordinary file icon for an idle task in the tree and Activity", as
   await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
-  await expect(activityRow).toContainText("Resource ready");
+  await expect(activityRow).toContainText("Focused resource");
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="message-square"]')).toHaveCount(0);
 });
@@ -743,7 +743,7 @@ test("uses the ordinary file icon for a sleeping task in the tree and Activity",
   await taskRow.locator('[aria-label="Follow Infrastructure task"]').click();
 
   const activityRow = page.locator('[data-component-owner="attention-list"] button.activity-row', { hasText: "Infrastructure task" });
-  await expect(activityRow).toContainText("Resource sleeping");
+  await expect(activityRow).toContainText("Focused resource");
   await expect(activityRow.locator('.activity-status [data-lucide="file-text"]')).toHaveCount(1);
   await expect(activityRow.locator('.activity-status [data-lucide="pause-circle"]')).toHaveCount(0);
 });
