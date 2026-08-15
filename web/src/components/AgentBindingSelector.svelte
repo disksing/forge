@@ -45,6 +45,7 @@
   $effect(() => {
     if (!open || !menu) return;
     fitMenuToViewport();
+    alignOptionColumns();
     const target = menu.querySelector<HTMLElement>('[aria-selected="true"]') ?? menu.querySelector<HTMLElement>(".agent-binding-option");
     void tick().then(() => target?.focus());
   });
@@ -74,6 +75,23 @@
     const top = root.getBoundingClientRect().top;
     const maxHeight = Math.max(120, Math.floor(top - 14));
     menu.style.maxHeight = `${maxHeight}px`;
+  }
+
+  // Size the menu as a two-column table: every primary label shares the width
+  // of the longest one and every secondary the width of the longest one, so
+  // the gap between the columns is uniform instead of varying per row.
+  function alignOptionColumns(): void {
+    if (!menu) return;
+    let primary = 0;
+    let secondary = 0;
+    menu.querySelectorAll<HTMLElement>(".agent-binding-option-primary").forEach((el) => {
+      primary = Math.max(primary, el.scrollWidth);
+    });
+    menu.querySelectorAll<HTMLElement>(".agent-binding-option-secondary").forEach((el) => {
+      secondary = Math.max(secondary, el.scrollWidth);
+    });
+    if (primary > 0) menu.style.setProperty("--binding-primary-width", `${Math.ceil(primary)}px`);
+    if (secondary > 0) menu.style.setProperty("--binding-secondary-width", `${Math.ceil(secondary)}px`);
   }
 
   function normalize(value: string): string {
@@ -141,26 +159,26 @@
   {#if open}
     <div class="agent-binding-menu" role="listbox" aria-label={ariaLabel} tabindex="-1" bind:this={menu} onkeydown={keydown}>
       {#if profileOptions.length}
-        <div class="agent-binding-group" role="group" aria-label="Profile">
-          <div class="agent-binding-group-title">Profile</div>
+        <div class="agent-binding-group" role="group" aria-label="Profiles">
+          <div class="agent-binding-group-title">Profiles</div>
           {#each profileOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
-              {#if serialize(option.value) === selectedValue}<Icon name="check" className="agent-binding-check" />{/if}
+              <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
         </div>
       {/if}
       {#if agentOptions.length}
         {#if profileOptions.length}<div class="agent-binding-divider"></div>{/if}
-        <div class="agent-binding-group" role="group" aria-label="Agent">
-          <div class="agent-binding-group-title">Agent</div>
+        <div class="agent-binding-group" role="group" aria-label="Agents">
+          <div class="agent-binding-group-title">Agents</div>
           {#each agentOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
               {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
-              {#if serialize(option.value) === selectedValue}<Icon name="check" className="agent-binding-check" />{/if}
+              <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
         </div>

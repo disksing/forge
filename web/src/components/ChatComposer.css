@@ -285,15 +285,19 @@
 /* The composer sits at the bottom of the viewport, so the menu opens upward
    and scrolls within its own bounds instead of clipping off-screen. The
    260px cap is a fallback; AgentBindingSelector measures the space above the
-   button and raises the cap so long agent lists stay visible. */
+   button and raises the cap so long agent lists stay visible. The menu hugs
+   its content: AgentBindingSelector measures the longest primary and
+   secondary labels and pins both columns to those widths so every row shares
+   the same column boundary. */
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-menu {
   position: absolute;
   right: 0;
   bottom: calc(100% + 6px);
   z-index: 40;
   box-sizing: border-box;
+  width: max-content;
   min-width: 100%;
-  max-width: 300px;
+  max-width: min(340px, calc(100vw - 24px));
   max-height: 260px;
   overflow-y: auto;
   padding: 5px;
@@ -304,22 +308,15 @@
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-group-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px 5px;
+  margin: 1px 0 3px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #eef1f4;
   color: #334150;
   font-size: calc(11px * var(--chat-font-scale, 1));
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-}
-
-:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-group-title::after {
-  content: "";
-  flex: 1;
-  height: 1px;
-  background: #e3e8ee;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-divider {
@@ -332,8 +329,7 @@
   width: 100%;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
   padding: 6px 8px;
   border: 0;
   border-radius: 5px;
@@ -345,6 +341,8 @@
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option-primary {
+  flex: 0 1 auto;
+  width: var(--binding-primary-width, auto);
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -354,6 +352,7 @@
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-option-secondary {
   flex: 0 1 auto;
+  width: var(--binding-secondary-width, auto);
   margin-left: auto;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -377,6 +376,12 @@
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-check {
   flex: 0 0 auto;
+}
+
+/* Reserve the check column on unselected rows so the secondary labels keep a
+   uniform right edge across the whole menu. */
+:where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-check-hidden {
+  visibility: hidden;
 }
 
 :where([data-component-owner="chat-composer"]) .tty-agent-binding .agent-binding-check svg {
