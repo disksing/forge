@@ -76,14 +76,14 @@ interface ControllerState {
 	agent: {
 		renderTimer: number | null;
 		draftPrompt: string;
-		ttyDraft: string;
-		ttyMultiline: boolean;
-		ttyDraftKey: string;
-		ttyDraftWorkspaceId: string;
-		ttyDraftResourceId: string;
-		ttyDraftVersion: number;
-		ttyDraftResetVersion: number;
-		skipTTYDraftSync: boolean;
+		chatDraft: string;
+		chatMultiline: boolean;
+		chatDraftKey: string;
+		chatDraftWorkspaceId: string;
+		chatDraftResourceId: string;
+		chatDraftVersion: number;
+		chatDraftResetVersion: number;
+		skipChatDraftSync: boolean;
 		agentName: string;
 		optionsOpen: boolean;
 		historyOpen: boolean;
@@ -91,7 +91,6 @@ interface ControllerState {
 		approvalDrafts: Map<string, Record<string, unknown>>;
 		renderDeferredForSelection: boolean;
 	};
-	tty: Array<{ type: string; text: string }>;
 }
 
 const controllerState: ControllerState = {
@@ -138,28 +137,21 @@ const controllerState: ControllerState = {
 	agent: {
 		renderTimer: null as number | null,
 		draftPrompt: "",
-		ttyDraft: "",
-		ttyMultiline: false,
-		ttyDraftKey: "",
-		ttyDraftWorkspaceId: "",
-		ttyDraftResourceId: "",
-		ttyDraftVersion: 0,
-		ttyDraftResetVersion: 0,
-		skipTTYDraftSync: false,
+		chatDraft: "",
+		chatMultiline: false,
+		chatDraftKey: "",
+		chatDraftWorkspaceId: "",
+		chatDraftResourceId: "",
+		chatDraftVersion: 0,
+		chatDraftResetVersion: 0,
+		skipChatDraftSync: false,
 		agentName: "",
 		optionsOpen: false,
 		historyOpen: false,
 		toolGroupOpen: /* @__PURE__ */ new Map<string, boolean>(),
 		approvalDrafts: /* @__PURE__ */ new Map<string, Record<string, unknown>>(),
 		renderDeferredForSelection: false
-	},
-	tty: [{
-		type: "system",
-		text: "Forge GUI initialized."
-	}, {
-		type: "system",
-		text: "Workspace data is loaded through forge CLI."
-	}] as Array<{ type: string; text: string }>
+	}
 };
 
 function clearResourceDetailState() {
@@ -178,7 +170,7 @@ const updateAgentDraft = agentDraftController.update;
 
 const agentOperations = createAgentOperationController(() => {
 	if (!appBooted) return;
-	renderTTY();
+	renderChatPanel();
 	refreshIcons();
 });
 const paneLayoutController = createPaneLayoutController(() => renderAppShell());
@@ -357,7 +349,7 @@ const settingsController = createSettingsController({
 		publishViewModels();
 	},
 	renderWorkspace: renderWorkspaceSelect,
-	renderAgentViews: () => { applyAgentConfig(); renderTTYComposer(); },
+	renderAgentViews: () => { applyAgentConfig(); renderChatComposer(); },
 	toast,
 	onIconsChanged: refreshIcons
 });
@@ -373,8 +365,8 @@ function publishAllViewModels() {
 	renderDetails();
 	renderCreateDialog();
 	renderAgentUploadDialog();
-	renderTTYComposer();
-	renderTTY();
+	renderChatComposer();
+	renderChatPanel();
 	renderSettingsModal();
 }
 let notificationController: ReturnType<typeof createNotificationController> | null = null;
@@ -644,7 +636,7 @@ async function autoRefresh() {
 function publishViewModels() {
 	renderAppShell();
 	renderDetails();
-	renderTTY();
+	renderChatPanel();
 	refreshIcons();
 	renderCreateDialog();
 	renderSettingsModal();
@@ -652,7 +644,7 @@ function publishViewModels() {
 function renderSelectionPanels() {
 	renderAppShell();
 	renderDetails();
-	renderTTY();
+	renderChatPanel();
 	refreshIcons();
 	renderCreateDialog();
 }
@@ -1088,7 +1080,7 @@ async function refreshResourceMessageStatus(workspaceId = controllerState.active
 
 function dismissStopNotice(): void {
 	controllerState.stopNotice = null;
-	renderTTYComposer();
+	renderChatComposer();
 }
 
 async function steerWaitingMessage(messageId: string): Promise<void> {
@@ -1096,7 +1088,7 @@ async function steerWaitingMessage(messageId: string): Promise<void> {
 	const workspaceId = controllerState.activeWorkspaceId;
 	const resourceId = selectedAgentResourceId();
 	controllerState.steeringMessageId = messageId;
-	renderTTYComposer();
+	renderChatComposer();
 	try {
 		await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/messages/${encodeURIComponent(messageId)}/steer`, { method: "POST" });
 		await refreshResourceMessageStatus(workspaceId, resourceId);
@@ -1110,7 +1102,7 @@ async function steerWaitingMessage(messageId: string): Promise<void> {
 	} finally {
 		if (controllerState.steeringMessageId === messageId) {
 			controllerState.steeringMessageId = "";
-			renderTTYComposer();
+			renderChatComposer();
 		}
 	}
 }
@@ -1176,13 +1168,13 @@ function agentConfigSummary(agent: AgentConfig | null | undefined): string {
 function providerName(providerId: string | undefined): string {
 	return (controllerState.config?.agentHubProviders || settingsController.providers()).find((item) => item.id === providerId)?.name || providerId || "Provider";
 }
-function ttyLogHasActiveSelection(log: HTMLElement): boolean {
+function chatTimelineHasActiveSelection(log: HTMLElement): boolean {
 	const selection = window.getSelection?.();
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) return false;
 	return selection.getRangeAt(0).intersectsNode(log);
 }
-function renderTTY(_options: RenderOptions = {}): void {
-	renderTTYComposer();
+function renderChatPanel(_options: RenderOptions = {}): void {
+	renderChatComposer();
 	const resourceId = selectedAgentResourceId();
 	const status = controllerState.messageStatusKey === `${controllerState.activeWorkspaceId}:${resourceId}` ? controllerState.messageStatus : null;
 	const configured = (controllerState.config?.agents || []).find((agent) => agent.id === status?.resolvedAgent);
@@ -1220,8 +1212,8 @@ function resourceMutationKey(workspaceId: string, resourceId: string): string {
 	return `${workspaceId || "workspace"}:${resourceId || "resource"}`;
 }
 let agentBindingSavingFor = "";
-function renderTTYComposer(_options: RenderOptions = {}): void {
-	controllerState.agent.skipTTYDraftSync = false;
+function renderChatComposer(_options: RenderOptions = {}): void {
+	controllerState.agent.skipChatDraftSync = false;
 	const resourceId = selectedAgentResourceId();
 	if (controllerState.activeWorkspaceId && resourceId) restoreAgentDraftForResource(resourceId);
 	const stopTurnPending = agentOperations.active("turn-stop") && agentOperations.key("turn-stop") === resourceId;
@@ -1231,12 +1223,12 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 	const stopNoticeKey = `${workspaceId}:${resourceId}`;
 	const canEndTurn = Boolean(stopTurnPending || ["running", "waiting_approval"].includes(String(messageStatus?.session?.state || "")));
 	publisher.renderComposer({
-		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.ttyDraftKey || ""}`,
+		identity: `${controllerState.activeWorkspaceId}:${resourceId}:${controllerState.agent.chatDraftKey || ""}`,
 		workspaceId: controllerState.activeWorkspaceId,
 		resourceId,
-		draft: controllerState.agent.ttyDraft || "",
-		draftKey: controllerState.agent.ttyDraftKey || "",
-		draftResetVersion: controllerState.agent.ttyDraftResetVersion || 0,
+		draft: controllerState.agent.chatDraft || "",
+		draftKey: controllerState.agent.chatDraftKey || "",
+		draftResetVersion: controllerState.agent.chatDraftResetVersion || 0,
 		unavailableReason: !messageStatus ? "Loading work status." : !messageStatus.acceptsMessages ? (messageStatus.archived ? "This resource is archived." : messageStatus.configError || "This resource cannot accept messages.") : "",
 		sending: agentOperations.isSending(resourceMutationKey(controllerState.activeWorkspaceId, resourceId)),
 		canEndTurn,
@@ -1254,7 +1246,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		agents: svelteAgentOptions(),
 		bindingSaving: agentBindingSavingFor === resourceId,
 		onDraft: (text, draftContext) => updateAgentDraftFromSvelte(text, draftContext),
-		onSend: submitTTYInput,
+		onSend: submitChatInput,
 		onOpenUpload: openAgentUploadDialog,
 		onEndTurn: () => stopAgentTurn().catch((err) => toast(err.message)),
 		onEndGeneration: () => endAgentGeneration().catch((err) => toast(err.message)),
@@ -1263,7 +1255,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 		onSaveAgentBinding: async (binding) => {
 			if (resourceId !== selectedAgentResourceId()) return;
 			agentBindingSavingFor = resourceId;
-			renderTTYComposer();
+			renderChatComposer();
 			try {
 				await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
 					method: "PUT", body: JSON.stringify(binding)
@@ -1276,7 +1268,7 @@ function renderTTYComposer(_options: RenderOptions = {}): void {
 				toast(errorMessage(err));
 			} finally {
 				agentBindingSavingFor = "";
-				renderTTYComposer();
+				renderChatComposer();
 			}
 		},
 		onIconsChanged: refreshIcons
@@ -1289,7 +1281,7 @@ function renderSettingsModal(): void {
 	settingsController.render();
 }
 function updateAgentDraftFromSvelte(text: string, context: ComposerContext): void {
-	if (!context || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.ttyDraftKey) return;
+	if (!context || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.chatDraftKey) return;
 	updateAgentDraft(text);
 }
 function openAgentUploadDialog(): void {
@@ -1298,7 +1290,7 @@ function openAgentUploadDialog(): void {
 		toast("Select an active resource before uploading files.");
 		return;
 	}
-	const input = elementById<HTMLInputElement>("ttyInput");
+	const input = elementById<HTMLInputElement>("chatInput");
 	if (input) updateAgentDraft(input.value);
 	controllerState.modalEnter = "upload";
 	controllerState.uploadDialog = {
@@ -1316,14 +1308,14 @@ function closeAgentUploadDialog(paths: string[] = [], context: UploadContext = {
 	const sameWorkspace = !context.workspaceId || context.workspaceId === controllerState.activeWorkspaceId;
 	const shouldSkipDraftSync = paths.length > 0 && sameWorkspace && sameResource;
 	if (shouldSkipDraftSync) {
-		updateAgentDraft(appendUploadedPaths(controllerState.agent.ttyDraft, paths));
-		controllerState.agent.ttyDraftResetVersion++;
+		updateAgentDraft(appendUploadedPaths(controllerState.agent.chatDraft, paths));
+		controllerState.agent.chatDraftResetVersion++;
 	}
 	discardAgentUploadDialog();
-	const composer = elementById("ttyComposer");
+	const composer = elementById("chatComposer");
 	if (composer) delete composer.dataset.composerKey;
-	renderTTYComposer({ skipDraftSync: shouldSkipDraftSync });
-	elementById("ttyInput")?.focus({ preventScroll: true });
+	renderChatComposer({ skipDraftSync: shouldSkipDraftSync });
+	elementById("chatInput")?.focus({ preventScroll: true });
 	refreshIcons();
 }
 function discardAgentUploadDialog(): void {
@@ -1408,18 +1400,18 @@ async function resolveResourceApproval(generationId: string, requestId: string, 
 	await refreshResourceMessageStatus(workspaceId, resourceId);
 	publishViewModels();
 }
-async function submitTTYInput(rawText: string, context: ComposerContext): Promise<{ accepted: boolean; clear: boolean }> {
-	if (!rawText.trim() || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.ttyDraftKey) return { accepted: false, clear: false };
+async function submitChatInput(rawText: string, context: ComposerContext): Promise<{ accepted: boolean; clear: boolean }> {
+	if (!rawText.trim() || context.workspaceId !== controllerState.activeWorkspaceId || context.resourceId !== selectedAgentResourceId() || context.draftKey !== controllerState.agent.chatDraftKey) return { accepted: false, clear: false };
 	const key = resourceMutationKey(context.workspaceId, context.resourceId);
 	if (!agentOperations.startSending(key)) return { accepted: false, clear: false };
-	const version = controllerState.agent.ttyDraftVersion;
+	const version = controllerState.agent.chatDraftVersion;
 	try {
 		await api(`/api/workspaces/${encodeURIComponent(context.workspaceId)}/resources/${encodeURIComponent(context.resourceId)}/messages`, {
 			method: "POST", body: JSON.stringify({ text: rawText, role: "user", sender: { name: currentUserName() } })
 		});
 		const accepted = true;
 		const clear = clearResourceDraftAfterAccepted({ workspaceId: context.workspaceId, resourceId: context.resourceId, key: context.draftKey, text: rawText, version });
-		if (clear) controllerState.agent.ttyDraftResetVersion++;
+		if (clear) controllerState.agent.chatDraftResetVersion++;
 		if (clear && controllerState.stopNotice?.key === `${context.workspaceId}:${context.resourceId}`) controllerState.stopNotice = null;
 		await Promise.all([refreshResourceMessageStatus(context.workspaceId, context.resourceId), refreshTreeAfterResourceMutation()]);
 		publishViewModels();
@@ -1605,10 +1597,10 @@ function setMobileImmersive(immersive: boolean): void {
 function installControllerListeners(): void {
 	lifecycle?.listen(document, "selectionchange", () => {
 	if (!controllerState.agent.renderDeferredForSelection) return;
-	const log = elementById("ttyLog");
-	if (log && ttyLogHasActiveSelection(log)) return;
+	const log = elementById("chatTimeline");
+	if (log && chatTimelineHasActiveSelection(log)) return;
 	controllerState.agent.renderDeferredForSelection = false;
-	renderTTY();
+	renderChatPanel();
 	refreshIcons();
 	});
 	lifecycle?.listen(document, "keydown", (event) => {
@@ -1616,7 +1608,7 @@ function installControllerListeners(): void {
 	else if (event.key === "Escape" && (controllerState.agent.optionsOpen || controllerState.agent.historyOpen)) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
-		renderTTYComposer();
+		renderChatComposer();
 		refreshIcons();
 	}
 	});
@@ -1627,11 +1619,11 @@ function installControllerListeners(): void {
 		openBreadcrumbResource(breadcrumbButton.dataset.breadcrumbResource || "workspace").catch((err) => toast(errorMessage(err)));
 		return;
 	}
-	const outsideAgentPanelMenu = (controllerState.agent.optionsOpen || controllerState.agent.historyOpen) && target && !target.closest(".tty-composer");
+	const outsideAgentPanelMenu = (controllerState.agent.optionsOpen || controllerState.agent.historyOpen) && target && !target.closest(".chat-composer");
 	if (outsideAgentPanelMenu) {
 		controllerState.agent.optionsOpen = false;
 		controllerState.agent.historyOpen = false;
-		renderTTYComposer();
+		renderChatComposer();
 		refreshIcons();
 	}
 	refreshIcons();

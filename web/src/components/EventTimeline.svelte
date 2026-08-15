@@ -289,10 +289,10 @@
         <Icon name="loader-circle" /><span>working...</span>
       </div>
     {/if}
-    {#if snapshot.loading && !snapshot.blocks.length}<div class="tty-empty"><Icon name="loader-circle" /><strong>Loading resource history</strong></div>{/if}
-    {#if snapshot.loaded && !snapshot.loading && !snapshot.blocks.length && !snapshot.notices.length && !turnIsWorking(model.status)}<div class="tty-empty"><Icon name="bot" /><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>{/if}
+    {#if snapshot.loading && !snapshot.blocks.length}<div class="chat-timeline-empty"><Icon name="loader-circle" /><strong>Loading resource history</strong></div>{/if}
+    {#if snapshot.loaded && !snapshot.loading && !snapshot.blocks.length && !snapshot.notices.length && !turnIsWorking(model.status)}<div class="chat-timeline-empty"><Icon name="bot" /><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>{/if}
   {:else}
-    <div class="tty-empty"><Icon name="bot" /><strong>No resource selected</strong></div>
+    <div class="chat-timeline-empty"><Icon name="bot" /><strong>No resource selected</strong></div>
   {/if}
 </div>
 

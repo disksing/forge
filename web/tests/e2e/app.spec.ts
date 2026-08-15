@@ -878,7 +878,7 @@ test("keeps a newly created task Activity row aligned when its first turn starts
     titleTop: row.querySelector(".activity-title")!.getBoundingClientRect().top,
     actionsTop: row.querySelector(".activity-actions")!.getBoundingClientRect().top,
   }));
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Start the first turn");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
@@ -1058,7 +1058,7 @@ test("keeps narrow chat content inside the column while code blocks scroll local
   });
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const log = page.locator("#ttyLog");
+  const log = page.locator("#chatTimeline");
   await expect(log.locator(".agent-message-row.user")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered table")).toHaveCount(1);
   await expect(log.locator(".markdown-rendered pre")).toHaveCount(1);
@@ -1110,15 +1110,15 @@ test("pages resource history, sends input, receives SSE, and preserves active re
   const harness = await installMockApi(page);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  await expect(page.locator("#ttyLog")).toContainText("SSE update for project1.task1");
-  await expect(page.locator("#ttyLog")).toContainText("gen-1 baseline message 1");
+  await expect(page.locator("#chatTimeline")).toContainText("SSE update for project1.task1");
+  await expect(page.locator("#chatTimeline")).toContainText("gen-1 baseline message 1");
   const historyAnchor = page.locator(".conversation-turn").filter({ hasText: "gen-1 baseline message 1" }).first();
   await expect(historyAnchor).toBeVisible();
   await historyAnchor.evaluate((node) => node.setAttribute("data-history-anchor", "stable"));
   await page.locator("#loadOlderAgentEventsButton, .load-older-events").click();
-  await expect(page.locator("#ttyLog")).toContainText("gen-1 older history");
+  await expect(page.locator("#chatTimeline")).toContainText("gen-1 older history");
   await expect(historyAnchor).toHaveAttribute("data-history-anchor", "stable");
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Preserve this draft until accepted");
   await input.press("Enter");
   await expect.poll(() => harness.inputBodies.length).toBe(1);
@@ -1127,7 +1127,7 @@ test("pages resource history, sends input, receives SSE, and preserves active re
   await expect(input).toHaveValue("");
 
   await input.fill("Draft survives refresh");
-  const before = await page.locator("#ttyLog").evaluate((log) => {
+  const before = await page.locator("#chatTimeline").evaluate((log) => {
     log.scrollTop = Math.max(1, Math.floor(log.scrollHeight / 3));
     const bubble = log.querySelector(".agent-message-bubble");
     const text = bubble?.firstChild;
@@ -1144,7 +1144,7 @@ test("pages resource history, sends input, receives SSE, and preserves active re
 
   await expect(input).toBeFocused();
   await expect(input).toHaveValue("Draft survives refresh");
-  const after = await page.locator("#ttyLog").evaluate((log) => ({
+  const after = await page.locator("#chatTimeline").evaluate((log) => ({
     scrollTop: log.scrollTop,
     selection: window.getSelection()?.toString() || "",
   }));
@@ -1159,10 +1159,10 @@ test("shows waiting messages above the composer and inserts one through steer", 
   const harness = await installMockApi(page, "project1.task1", true);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const queue = page.locator(".tty-message-queue");
+  const queue = page.locator(".chat-message-queue");
   await expect(queue).toBeVisible();
   await expect(queue).toContainText("Review the mailbox change now");
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   const queueBounds = await queue.boundingBox();
   const inputBounds = await input.boundingBox();
   expect(queueBounds).not.toBeNull();
@@ -1256,7 +1256,7 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   const harness = await installMockApi(page, "project1.task1", false, false, false, [], "idle", 500);
   await page.goto("/w/ws-test/r/project1.task1");
 
-  const input = page.locator("#ttyInput");
+  const input = page.locator("#chatInput");
   await input.fill("Keep this draft");
   await input.evaluate((node) => { node.dataset.identityProbe = "same-composer"; });
   await page.waitForTimeout(5_200);
