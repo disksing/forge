@@ -350,3 +350,64 @@ func TestMigrateIsolatesLegacySessionProjectionWithoutTouchingRuntime(t *testing
 		t.Fatalf("repeat migration was not idempotent: %v", err)
 	}
 }
+
+func TestResourceDetailToleratesDeletedMarkdownAndDirectories(t *testing.T) {
+	root := t.TempDir()
+	workspace, err := app.Initialize(root, "en")
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := workspace.CreateProject("Missing files", "missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, err := workspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Deleted docs", Slug: "docs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	taskValue, err := workspace.ResourceValue(task.ID)
+	if err != nil || taskValue.Task == nil {
+		t.Fatalf("resource value = %#v, %v", taskValue, err)
+	}
+	taskPath := filepath.Join(root, filepath.FromSlash(taskValue.Path))
+	if err := os.Remove(filepath.Join(taskPath, "task.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(taskPath, "artifacts")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(taskPath, "worktree")); err != nil {
+		t.Fatal(err)
+	}
+
+	detail, err := workspace.Resource(task.ID)
+	if err != nil {
+		t.Fatalf("resource detail = %#v, %v", detail, err)
+	}
+	if len(detail.Files) != 1 || detail.Files[0].Name != "AGENTS.md" {
+		t.Fatalf("expected only AGENTS.md after deleting task.md, got %#v", detail.Files)
+	}
+	if detail.Artifacts == nil || len(detail.Artifacts) != 0 {
+		t.Fatalf("expected empty artifacts slice after deleting artifacts dir, got %#v", detail.Artifacts)
+	}
+	if detail.Worktrees == nil || len(detail.Worktrees) != 0 {
+		t.Fatalf("expected empty worktrees slice after deleting worktree dir, got %#v", detail.Worktrees)
+	}
+
+	projectValue, err := workspace.ResourceValue(project.ID)
+	if err != nil || projectValue.Project == nil {
+		t.Fatalf("resource value = %#v, %v", projectValue, err)
+	}
+	projectPath := filepath.Join(root, filepath.FromSlash(projectValue.Path))
+	if err := os.Remove(filepath.Join(projectPath, "project.md")); err != nil {
+		t.Fatal(err)
+	}
+	projectDetail, err := workspace.Resource(project.ID)
+	if err != nil {
+		t.Fatalf("project detail = %#v, %v", projectDetail, err)
+	}
+	if len(projectDetail.Files) != 1 || projectDetail.Files[0].Name != "AGENTS.md" {
+		t.Fatalf("expected only AGENTS.md after deleting project.md, got %#v", projectDetail.Files)
+	}
+}

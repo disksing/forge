@@ -113,16 +113,41 @@ function historyTurns(generationId: string) {
   }));
 }
 
+type ConversationFixture = "default" | "narrow-layout";
+
 const resourceGeneration = {
   generation: 1, generationId: "gen-1", title: "Infrastructure task", status: "idle",
   agentName: "test-agent", createdAt: now, updatedAt: now,
 };
 
-function resourceTurnSummaries() {
-  return historyTurns("gen-1").map((turn) => ({
+function narrowLayoutTurn() {
+  const startedAt = "2026-08-10T12:00:00Z";
+  const longToken = "narrow-layout-token-".repeat(18);
+  const codeLine = "0123456789abcdef".repeat(24);
+  const items = [
+    { type: "message", role: "user", sender: { name: "Test User" }, text: "An ordinary message must stay inside the narrow chat column.", startEventId: 1, endEventId: 1, startedAt, endedAt: startedAt },
+    { type: "message", role: "assistant", text: "## Rich text\n\nThis message has **bold text**, a list, and a safe [link](https://example.com).", startEventId: 2, endEventId: 2, startedAt, endedAt: startedAt },
+    { type: "message", role: "assistant", text: `Long token: ${longToken}`, startEventId: 3, endEventId: 3, startedAt, endedAt: startedAt },
+    { type: "message", role: "assistant", text: `| Field | Value |\n| --- | --- |\n| token | ${longToken} |`, startEventId: 4, endEventId: 4, startedAt, endedAt: startedAt },
+    { type: "message", role: "assistant", text: ["Code block keeps its own local horizontal scroll:", "", "```text", codeLine, "```"].join("\n"), startEventId: 5, endEventId: 5, startedAt, endedAt: startedAt },
+    { type: "thinking", count: 1, startEventId: 6, endEventId: 6, startedAt, endedAt: startedAt },
+    { type: "tool", count: 2, startEventId: 7, endEventId: 7, startedAt, endedAt: startedAt },
+  ];
+  return {
+    id: "turn-narrow-layout", turnId: "turn-narrow-layout", status: "completed", closed: true,
+    startEventId: 1, endEventId: 7, firstEventId: 1, lastEventId: 7, items,
+  };
+}
+
+function conversationTurns(fixture: ConversationFixture) {
+  return fixture === "narrow-layout" ? [narrowLayoutTurn()] : historyTurns("gen-1");
+}
+
+function resourceTurnSummaries(fixture: ConversationFixture = "default") {
+  return conversationTurns(fixture).map((turn) => ({
     reference: `ref-${turn.turnId}`, turnId: turn.turnId, status: turn.status, closed: turn.closed,
     startedAt: turn.items[0].startedAt, durationMs: 0, triggerPreview: turn.items[0].text,
-    eventCount: 1, toolEventCount: 0, startEventId: turn.startEventId, lastEventId: turn.lastEventId,
+    eventCount: turn.items.length, toolEventCount: turn.items.filter((item) => item.type === "tool").length, startEventId: turn.startEventId, lastEventId: turn.lastEventId,
     endEventId: turn.endEventId, generation: resourceGeneration,
   }));
 }
@@ -131,7 +156,7 @@ async function json(route: Route, body: unknown, status = 200) {
   await route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
-async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0): Promise<Harness> {
+async function installMockApi(page: Page, lastResourceId = "project1.task1", withWaitingMessage = false, initialTurnRunning = false, startWithoutRuntime = false, extraAgents: string[] = [], initialIdleStatus: "idle" | "idle-suspended" = "idle", settingsRefreshDelayMs = 0, conversationFixture: ConversationFixture = "default"): Promise<Harness> {
   const harness: Harness = { inputBodies: [], taskBodies: [], previewBodies: [], settingsBodies: [], uploadNames: [], streamRequests: [], treeRequests: 0, agentsBodies: [], uiStateBodies: [], steeredMessageIds: [], schedulerBodies: [], bindingBodies: [], attentionBodies: [] };
   let waitingMessages = withWaitingMessage ? [{ messageId: "msg-waiting", resourceId: "project1.task1", text: "Review the mailbox change now", status: "waiting", acceptedAt: now, requestedMode: "enqueue", actualMode: "enqueue" }] : [];
   const attentionStates: Record<string, { followed: boolean; dismissedTurn?: number }> = {};
@@ -328,9 +353,10 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
     const historyTurnDetailMatch = path.match(/^\/api\/workspaces\/ws-test\/resources\/project1\.task1\/history\/turns\/(.+)$/);
     if (historyTurnDetailMatch && method === "GET") {
       const reference = decodeURIComponent(historyTurnDetailMatch[1]);
-      const summary = resourceTurnSummaries().find((turn) => turn.reference === reference);
+      const summaries = resourceTurnSummaries(conversationFixture);
+      const summary = summaries.find((turn) => turn.reference === reference);
       if (!summary) return json(route, { error: "turn not found" }, 404);
-      const source = historyTurns("gen-1").find((turn) => turn.turnId === summary.turnId)!;
+      const source = conversationTurns(conversationFixture).find((turn) => turn.turnId === summary.turnId)!;
       return json(route, { turn: summary, items: source.items, latestEventId: 64 });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/history/turns" && method === "GET") {
@@ -342,7 +368,7 @@ async function installMockApi(page: Page, lastResourceId = "project1.task1", wit
         };
         return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: [summary] }], page: { limit: 20, hasMore: false } });
       }
-      return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: resourceTurnSummaries() }], page: { limit: 20, nextCursor: "older", hasMore: true } });
+      return json(route, { resourceId: "project1.task1", segments: [{ generation: resourceGeneration, turns: resourceTurnSummaries(conversationFixture) }], page: { limit: 20, nextCursor: "older", hasMore: true } });
     }
     if (path === "/api/workspaces/ws-test/resources/project1.task1/stream" && method === "GET") {
       harness.streamRequests.push("project1.task1");
@@ -848,6 +874,54 @@ test("renders History turn detail with conversation timeline components", async 
   await expect(firstItem.locator(".agent-message-row")).toBeVisible();
   await expect(firstItem).toContainText("gen-1 baseline message 1");
   await expect(history.locator(".history-item-label")).toHaveCount(0);
+});
+
+test("keeps narrow chat content inside the column while code blocks scroll locally", async ({ page }) => {
+  await installMockApi(page, "project1.task1", false, false, false, [], "idle", 0, "narrow-layout");
+  await page.addInitScript(() => {
+    localStorage.setItem("forge.gui.paneSizes", JSON.stringify({ sidebarWidth: 280, chatWidth: 320, sidebarAttentionHeight: 210 }));
+  });
+  await page.goto("/w/ws-test/r/project1.task1");
+
+  const log = page.locator("#ttyLog");
+  await expect(log.locator(".agent-message-row.user")).toHaveCount(1);
+  await expect(log.locator(".markdown-rendered table")).toHaveCount(1);
+  await expect(log.locator(".markdown-rendered pre")).toHaveCount(1);
+  await expect(log.locator(".agent-reasoning-note")).toHaveCount(1);
+  await expect(log.locator(".agent-tool-group")).toHaveCount(1);
+
+  await expect.poll(() => log.evaluate((element) => {
+    const widthDelta = (node: Element | null) => {
+      if (!node) return -1;
+      const box = node as HTMLElement;
+      return box.scrollWidth - box.clientWidth;
+    };
+    const messages = [...element.querySelectorAll<HTMLElement>(".agent-message-row")];
+    const content = [...element.querySelectorAll<HTMLElement>(".agent-message-content")];
+    const nonCodeContent = content.filter((node) => !node.querySelector("pre"));
+    const activity = [...element.querySelectorAll<HTMLElement>(".agent-reasoning-note, .agent-tool-group")];
+    const table = element.querySelector<HTMLElement>(".markdown-rendered table");
+    const code = element.querySelector<HTMLElement>(".markdown-rendered pre");
+    return {
+      overflowX: getComputedStyle(element).overflowX,
+      overflowY: getComputedStyle(element).overflowY,
+      rootOverflow: widthDelta(element),
+      ordinaryMessageOverflow: widthDelta(messages.find((node) => node.classList.contains("user")) || null),
+      contentOverflow: Math.max(0, ...nonCodeContent.map(widthDelta)),
+      activityOverflow: Math.max(0, ...activity.map(widthDelta)),
+      tableOverflow: widthDelta(table),
+      codeHasLocalOverflow: Boolean(code && code.scrollWidth > code.clientWidth && code.clientWidth <= element.clientWidth),
+    };
+  })).toEqual({
+    overflowX: "hidden",
+    overflowY: "auto",
+    rootOverflow: 0,
+    ordinaryMessageOverflow: 0,
+    contentOverflow: 0,
+    activityOverflow: 0,
+    tableOverflow: 0,
+    codeHasLocalOverflow: true,
+  });
 });
 
 test("shows a working indicator for the active Turn", async ({ page }) => {

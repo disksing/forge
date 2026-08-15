@@ -325,6 +325,13 @@
   background: #f4f5f7;
 }
 
+:where([data-component-owner="detail-panel"]) .detail-missing {
+  min-height: 140px;
+  border: 1px dashed #dcdfe4;
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
 @media (max-width:980px) {
   :where([data-component-owner="detail-panel"]) .details-header,
   :where([data-component-owner="detail-panel"]) .content-section {
