@@ -394,6 +394,10 @@ func (s *server) handleWorkspace(w http.ResponseWriter, r *http.Request) {
 			s.saveResourceMarkdownFile(w, r, id, parts[2])
 			return
 		}
+		if len(parts) == 4 && parts[3] == "artifacts" {
+			s.deleteResourceArtifact(w, r, id, parts[2])
+			return
+		}
 		if len(parts) >= 5 && parts[3] == "history" {
 			s.agents.handleResourceHistory(w, r, id, parts[2], parts[4:])
 			return

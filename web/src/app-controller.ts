@@ -925,6 +925,7 @@ function detailPanelModel(): DetailPanelModel {
 		onArchive: (resourceId: string) => archiveResource(resourceId).catch((err) => toast(errorMessage(err))),
 		onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => saveWorkspaceAgentsFromDetail(content, expectedContentHash),
 		onSaveMarkdownFile: (path: string, content: string, expectedContentHash: string) => saveMarkdownFileFromDetail(path, content, expectedContentHash),
+		onDeleteArtifact: (path: string) => deleteArtifactFromDetail(path),
 		onSaveAgentBinding: async (binding) => {
 			const resourceId = controllerState.selectedId || "workspace";
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/agent-binding`, {
@@ -1025,6 +1026,19 @@ async function saveMarkdownFileFromDetail(path: string, content: string, expecte
 	await loadDetail(resourceId, { force: true });
 	publishViewModels();
 	return saved;
+}
+async function deleteArtifactFromDetail(path: string): Promise<void> {
+	const workspaceId = controllerState.activeWorkspaceId;
+	const resourceId = controllerState.selectedId;
+	if (!workspaceId || !resourceId || resourceId === "workspace" || resourceId === "scheduler") throw new Error("No editable resource is selected.");
+	const navigationVersion = controllerState.navigationVersion;
+	await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/resources/${encodeURIComponent(resourceId)}/artifacts?path=${encodeURIComponent(path)}`, {
+		method: "DELETE"
+	});
+	if (!isCurrentWorkspaceView(workspaceId, navigationVersion) || controllerState.selectedId !== resourceId) throw new Error("The resource changed before the artifact finished deleting.");
+	await loadDetail(resourceId, { force: true });
+	publishViewModels();
+	toast("Artifact deleted.");
 }
 function closeDiff(): void {
 	controllerState.diffRequestVersion++;

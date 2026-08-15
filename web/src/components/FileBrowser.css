@@ -156,6 +156,31 @@
   height: 14px;
 }
 
+:where([data-component-owner="file-browser"]) .artifact-delete {
+  display: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 6px;
+  color: #5c6b7a;
+  cursor: pointer;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-row:hover .artifact-delete,
+:where([data-component-owner="file-browser"]) .artifact-row:focus-within .artifact-delete {
+  display: grid;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-delete:hover {
+  background: #dcdfe4;
+  color: #c0392b;
+}
+
+:where([data-component-owner="file-browser"]) .artifact-delete .artifact-delete-icon {
+  width: 14px;
+  height: 14px;
+}
+
 :where([data-component-owner="file-browser"]) .artifact-row.active small {
   color: #2980b9;
 }

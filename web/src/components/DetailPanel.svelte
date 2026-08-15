@@ -142,6 +142,14 @@
     openPreview("Files", path);
   }
 
+  function deleteArtifact(path: string): void {
+    const name = path.split("/").pop() || path;
+    if (!window.confirm(`Delete artifact "${name}"? This cannot be undone.`)) return;
+    model.onDeleteArtifact(path).then(() => {
+      if (preview && preview.section === "Artifacts" && preview.path === path) preview = null;
+    }).catch((err) => toastError(err instanceof Error ? err.message : String(err)));
+  }
+
   function saveWorkspaceAgents(_path: string, content: string, expectedContentHash: string): Promise<FilePreviewModel> {
     return model.onSaveWorkspaceAgents(content, expectedContentHash);
   }
@@ -216,7 +224,7 @@
         {/if}
       </div>
       {#if activeTab === "history"}{#key model.identity}<HistoryTimeline workspaceId={model.workspaceId} resourceId={model.resourceId} artifacts={model.detail.artifacts || []} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenLegacy={(path) => openPreview("Artifacts", path)} onIconsChanged={model.onIconsChanged} />{/key}{/if}
-      <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} showHeading={false} /></div>
+      <div hidden={activeTab !== "artifacts"}><FileBrowser title="Artifacts" entries={model.detail.artifacts || []} emptyMessage="No artifacts." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} onDelete={model.detail.archived ? undefined : deleteArtifact} showHeading={false} /></div>
       <div hidden={activeTab !== "worktrees"}><div class="content-section"><div class="worktree-list">{#if model.detail.repos?.length}{#each model.detail.repos as repo (`${repo.name}:${repo.worktreePath}`)}<div class="worktree-row"><div class="worktree-main"><Icon name="git-branch" className="worktree-icon" /><div><strong>{repo.branch || "HEAD"}</strong><span>{repo.name || "repository"}{(repo.targetBranch || repo.baseBranch) ? ` · base ${repo.targetBranch || repo.baseBranch}` : ""}</span><small>{repo.worktreePath || ""}</small></div></div><button type="button" class="secondary-button" onclick={() => diffRepo = repo}><Icon name="git-compare-arrows" /><span>View Diff</span></button></div>{/each}{:else}<div class="empty-list-row"><Icon name="git-branch" /><span>No worktrees.</span></div>{/if}</div></div></div>
     </div>
   {/if}

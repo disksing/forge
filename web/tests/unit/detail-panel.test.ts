@@ -33,6 +33,7 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onNavigate: vi.fn(), onCreateTask: vi.fn(), onArchive: vi.fn(),
     onSaveWorkspaceAgents: vi.fn(async () => ({ path: "AGENTS.md", content: "", contentHash: "saved" })),
     onSaveMarkdownFile: vi.fn(async (path, content) => ({ path, content, contentHash: "saved" })),
+    onDeleteArtifact: vi.fn(async () => undefined),
     onSaveAgentBinding: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
     ...overrides,
@@ -221,6 +222,36 @@ describe("DetailPanel", () => {
     expect((Array.from(target.querySelectorAll(".artifact-row")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("nested.txt"))).toBe(nestedNode);
     expect(nestedNode.dataset.identityProbe).toBe("expanded");
 
+  });
+
+  it("confirms before deleting an artifact", async () => {
+    const onDeleteArtifact = vi.fn(async () => undefined);
+    const { target } = mountModel(resourceModel({ onDeleteArtifact }));
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Artifacts"))!.click();
+    await tick();
+    const row = (Array.from(target.querySelectorAll(".artifact-row")) as HTMLElement[]).find((button) => button.textContent?.includes("a.txt"))!;
+    const deleteButton = row.querySelector<HTMLElement>(".artifact-delete")!;
+    expect(deleteButton).not.toBeNull();
+
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    deleteButton.click();
+    await tick();
+    expect(confirmSpy).toHaveBeenCalledOnce();
+    expect(onDeleteArtifact).not.toHaveBeenCalled();
+
+    confirmSpy.mockReturnValue(true);
+    deleteButton.click();
+    await vi.waitFor(() => expect(onDeleteArtifact).toHaveBeenCalledWith("project1/task1/artifacts/a.txt"));
+  });
+
+  it("hides artifact delete controls for archived resources", async () => {
+    const initial = resourceModel();
+    const { target } = mountModel(resourceModel({ detail: { ...initial.detail!, archived: true } }));
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Artifacts"))!.click();
+    await tick();
+    expect(target.querySelector(".artifact-delete")).toBeNull();
   });
 
   it("ignores a late preview response after selecting another file", async () => {

@@ -101,6 +101,7 @@ export interface DetailPanelModel {
   onArchive: (resourceId: string) => void;
   onSaveWorkspaceAgents: (content: string, expectedContentHash: string) => Promise<WorkspaceAgentsModel>;
   onSaveMarkdownFile: (path: string, content: string, expectedContentHash: string) => Promise<FilePreviewModel>;
+  onDeleteArtifact: (path: string) => Promise<void>;
   onSaveAgentBinding: (binding: ResourceAgentBindingModel) => Promise<void>;
   onRefreshScheduler?: () => Promise<void>;
   onToast: (message: string) => void;
