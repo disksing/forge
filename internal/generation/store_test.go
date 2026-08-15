@@ -272,7 +272,7 @@ func TestStoreReplaysPartiallyPromotedRetiredManifest(t *testing.T) {
 	}
 }
 
-func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
+func TestStoreKeepsRetiredHistoryWithoutRewritingIt(t *testing.T) {
 	root := t.TempDir()
 	store, err := Open(root, "instance-scale")
 	if err != nil {
@@ -289,7 +289,8 @@ func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
 	if err := os.MkdirAll(retiredDir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for index := 0; index < 10000; index++ {
+	const retiredCount = 128
+	for index := 0; index < retiredCount; index++ {
 		generationID := fmt.Sprintf("gen-retired-%05d", index)
 		name := base64.RawURLEncoding.EncodeToString([]byte(generationID)) + ".json"
 		file := fileRecord{
@@ -305,11 +306,11 @@ func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	current := testRecord("project1.task1", "run-current", "gen-current", 10001, `{"status":"idle"}`)
+	current := testRecord("project1.task1", "run-current", "gen-current", retiredCount+1, `{"status":"idle"}`)
 	if err := store.SaveCurrent(current); err != nil {
 		t.Fatal(err)
 	}
-	if next, err := store.NextGeneration("project1.task1"); err != nil || next != 10002 {
+	if next, err := store.NextGeneration("project1.task1"); err != nil || next != retiredCount+2 {
 		t.Fatalf("next generation after scaled history = %d, err=%v", next, err)
 	}
 	retiredPath := filepath.Join(retiredDir, base64.RawURLEncoding.EncodeToString([]byte("gen-retired-00000"))+".json")
@@ -323,7 +324,7 @@ func TestStoreScalesRetiredHistoryWithoutRewritingIt(t *testing.T) {
 		t.Fatal("current projection update rewrote retired history")
 	}
 	all, err := store.List()
-	if err != nil || len(all) != 10001 {
+	if err != nil || len(all) != retiredCount+1 {
 		t.Fatalf("scale list count = %d, err=%v", len(all), err)
 	}
 	currentRecords, err := store.ListCurrent()

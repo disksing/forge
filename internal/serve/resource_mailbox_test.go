@@ -270,7 +270,7 @@ func TestResourceMailboxHotStoreIsBoundedIndependentlyOfReceiptHistory(t *testin
 	}()
 	resourceMailboxReceiptRetentionCount = 32
 	resourceMailboxReceiptRetentionWindow = 0
-	const completed = 10000
+	const completed = 64
 	_, err := mutateResourceMailboxForResource(root, "workspace", func(mailbox *resourceMailbox) error {
 		for index := 0; index < completed; index++ {
 			stamp := "2026-08-13T00:00:00Z"

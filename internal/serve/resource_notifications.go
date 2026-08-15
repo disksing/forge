@@ -207,7 +207,7 @@ func mirrorNotificationDelivery(receipt *resourceNotificationReceipt, message re
 	switch message.Status {
 	case resourceMessageDelivered:
 		receipt.Status = resourceNotificationDelivered
-	case resourceMessageUndeliverable, resourceMessageDeliveryUnknown:
+	case resourceMessageCancelled, resourceMessageUndeliverable, resourceMessageDeliveryUnknown:
 		receipt.Status = resourceNotificationTerminal
 	}
 }
@@ -294,7 +294,7 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 		}); err != nil {
 			return err
 		}
-		if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
+		if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageCancelled || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
 			return removeMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0])
 		}
 		return updateMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0], func(current *resourceMailboxNotificationOp) {
@@ -392,7 +392,7 @@ func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspac
 	}); err != nil {
 		return err
 	}
-	if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
+	if latest.Status == resourceMessageDelivered || latest.Status == resourceMessageCancelled || latest.Status == resourceMessageUndeliverable || latest.Status == resourceMessageDeliveryUnknown {
 		return removeMailboxNotificationOperation(source.Path, mailboxOperationSourceIDs(operation)[0])
 	}
 	return nil
@@ -629,7 +629,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace guiWorkspace, instanceID string, message resourceMailboxMessage) error {
 	if message.Type != "" || message.Role != "agent" || message.Sender == nil || strings.TrimSpace(message.Sender.ID) == "" ||
 		strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" ||
-		(message.Status != resourceMessageUndeliverable && message.Status != resourceMessageDeliveryUnknown) {
+		(message.Status != resourceMessageCancelled && message.Status != resourceMessageUndeliverable && message.Status != resourceMessageDeliveryUnknown) {
 		return nil
 	}
 	receiptID := notificationMessageID(resourceMessageTypeDeliveryTerminal, instanceID, message.ResourceID, message.ID, message.Status)
