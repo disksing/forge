@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { mount, tick, unmount } from "svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -33,7 +34,7 @@ describe("Workspace AGENTS save flow", () => {
     vi.unstubAllGlobals();
   });
 
-  it("immediately echoes added, updated, and cleared user content while hiding the managed block", async () => {
+  it("renders and saves the full workspace AGENTS.md content including the managed block", async () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: false,
       media: query,
@@ -45,10 +46,9 @@ describe("Workspace AGENTS save flow", () => {
       dispatchEvent: () => false,
     }));
 
-    let userContent = "";
+    let fullContent = `# Notes\n\n${managedBlock}\n`;
     let hashVersion = 0;
     const saveBodies: Array<{ content: string; expectedContentHash: string }> = [];
-    const fullAgentsContent = () => userContent ? `${userContent}\n\n${managedBlock}\n` : `${managedBlock}\n`;
     const contentHash = () => `agents-v${hashVersion}`;
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input), window.location.origin);
@@ -69,10 +69,10 @@ describe("Workspace AGENTS save flow", () => {
           const body = JSON.parse(String(init?.body || "{}")) as { content?: string; expectedContentHash?: string };
           saveBodies.push({ content: String(body.content || ""), expectedContentHash: String(body.expectedContentHash || "") });
           if (body.expectedContentHash !== contentHash()) return json({ error: "stale AGENTS.md" }, 409);
-          userContent = String(body.content || "");
+          fullContent = String(body.content || "");
           hashVersion++;
         }
-        return json({ path: "AGENTS.md", name: "AGENTS.md", content: fullAgentsContent(), contentHash: contentHash() });
+        return json({ path: "AGENTS.md", name: "AGENTS.md", content: fullContent, contentHash: contentHash() });
       }
       if (url.pathname === "/api/workspaces/ws-test/resources/workspace/status" && method === "GET") {
         return json({ acceptsMessages: true, waitingMessages: [], canSteerWaiting: false, session: { state: "idle" } });
@@ -103,36 +103,23 @@ describe("Workspace AGENTS save flow", () => {
     mounted.push(mount(DetailPanel, { target, props: { channel: channels.detail } }));
     await tick();
 
-    const editor = () => target.querySelector<HTMLTextAreaElement>("#workspaceAgentsContent")!;
-    const save = async (content: string): Promise<void> => {
-      const expectedSaveCount = saveBodies.length + 1;
-      editor().focus();
-      editor().value = content;
-      editor().dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: content }));
-      await tick();
-      await tick();
-      const button = target.querySelector<HTMLButtonElement>("#workspaceAgentsForm button[type=submit]")!;
-      expect(button.disabled).toBe(false);
-      button.click();
-      await vi.waitFor(() => expect(saveBodies).toHaveLength(expectedSaveCount));
-      await vi.waitFor(() => expect(channels.detail.current().workspaceAgents?.contentHash).toBe(`agents-v${expectedSaveCount}`));
-      await tick();
-      expect(editor().value).toBe(content);
-      expect(target.querySelector<HTMLButtonElement>("#workspaceAgentsForm button[type=submit]")?.disabled).toBe(true);
-      expect(editor().value).not.toContain("managed by forge cli");
-    };
+    // The full document, including the managed block, is rendered in the AGENTS.md tab.
+    expect(target.querySelector('[data-doc-file="AGENTS.md"]')).not.toBeNull();
+    expect(target.textContent).toContain("Generated guidance.");
 
-    expect(editor().value).toBe("");
-    await save("new user guidance");
-    await save("updated user guidance");
-    await save("");
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    edit.click();
+    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
+    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "\nEdited.\n" } });
+    await tick();
 
-    expect(saveBodies).toEqual([
-      { content: "new user guidance", expectedContentHash: "agents-v0" },
-      { content: "updated user guidance", expectedContentHash: "agents-v1" },
-      { content: "", expectedContentHash: "agents-v2" },
-    ]);
-    expect(channels.detail.current().workspaceAgents?.content).toBe(`${managedBlock}\n`);
-    expect(channels.detail.current().workspaceAgents?.contentHash).toBe("agents-v3");
+    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    saveButton.click();
+    await vi.waitFor(() => expect(saveBodies).toHaveLength(1));
+    expect(saveBodies[0]).toEqual({
+      content: `# Notes\n\n${managedBlock}\n\nEdited.\n`,
+      expectedContentHash: "agents-v0",
+    });
   });
 });

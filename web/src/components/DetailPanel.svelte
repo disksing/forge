@@ -12,8 +12,7 @@
   import HistoryTimeline from "./HistoryTimeline.svelte";
   import MarkdownDocument from "./MarkdownDocument.svelte";
   import SchedulerPanel from "./SchedulerPanel.svelte";
-  import WorkspaceAgentsEditor from "./WorkspaceAgentsEditor.svelte";
-  import type { DetailPanelModel, ResourceFileModel, ResourceRepoModel } from "./models";
+  import type { DetailPanelModel, FilePreviewModel, ResourceFileModel, ResourceRepoModel } from "./models";
 
   let { channel }: { channel: ModelChannel<DetailPanelModel> } = $props();
   // svelte-ignore state_referenced_locally
@@ -31,6 +30,12 @@
 
   const files = $derived((model.detail?.files || []).filter((file) => file.name !== "AGENTS.md"));
   const fileNames = $derived(new Set(files.map((file) => file.name)));
+  const agentsFile = $derived(model.workspaceAgents && !model.workspaceAgents.error ? {
+    name: "AGENTS.md",
+    path: model.workspaceAgents.path || "AGENTS.md",
+    content: model.workspaceAgents.content || "",
+    contentHash: model.workspaceAgents.contentHash,
+  } as ResourceFileModel : null);
   const tabs = $derived(resourceTabs());
   const activePreviewPath = $derived(preview ? `${preview.section}:${preview.path}` : "");
 
@@ -71,6 +76,7 @@
 
   function initialTab(value: DetailPanelModel): string {
     const detailFiles = (value.detail?.files || []).filter((file) => file.name !== "AGENTS.md");
+    if (value.resourceType === "workspace") return "agents";
     if (value.resourceType === "scheduler") return "schedules";
     if (value.resourceType === "project" && detailFiles.some((file) => file.name === "project.md")) return "project";
     if (detailFiles.some((file) => file.name === "task.md")) return "task";
@@ -80,6 +86,10 @@
   }
 
   function resourceTabs(): Array<{ id: string; label: string; icon: string }> {
+    if (model.resourceType === "workspace") return [
+	  { id: "agents", label: "AGENTS.md", icon: "file-text" },
+	  { id: "wiki", label: "Wiki", icon: "book-open" }
+	];
     if (!model.detail) return [];
 	if (model.resourceType === "scheduler") return [
 	  { id: "schedules", label: "Schedules", icon: "calendar-clock" },
@@ -132,6 +142,10 @@
     openPreview("Files", path);
   }
 
+  function saveWorkspaceAgents(_path: string, content: string, expectedContentHash: string): Promise<FilePreviewModel> {
+    return model.onSaveWorkspaceAgents(content, expectedContentHash);
+  }
+
   function previewKey(value: { section: string; path: string }): string {
     return `${value.section}:${value.path}`;
   }
@@ -164,11 +178,20 @@
   <div id="detailsContent" class="details-content"><div class="empty-state"><Icon name="folder-search" className="empty-state-icon" /><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>
 {:else if model.resourceType === "workspace"}
   <div class="details-header"><h1 class="details-title">{model.workspaceName}</h1></div>
+  <div class="details-tabs" role="tablist" aria-label="Workspace details">
+    {#each tabs as tab (tab.id)}<button type="button" class:active={activeTab === tab.id} class="details-tab" role="tab" aria-selected={activeTab === tab.id} onclick={() => selectTab(tab.id)}><Icon name={tab.icon} /><span>{tab.label}</span></button>{/each}
+  </div>
   <div id="detailsContent" class="details-content">
-    <WorkspaceAgentsEditor identity={model.identity} file={model.workspaceAgents} onSave={model.onSaveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
-    {#if model.wiki?.error}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
-    {:else if !model.wiki?.exists}<div class="content-section"><h3><Icon name="book-open" /><span>Wiki</span></h3><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>
-    {:else}<FileBrowser title="Wiki" entries={model.wiki.entries || []} emptyMessage="No Wiki files yet." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} />{/if}
+    <div hidden={activeTab !== "agents"}>
+      {#if agentsFile}<MarkdownDocument file={agentsFile} workspaceId={model.workspaceId} editable={true} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} onSave={saveWorkspaceAgents} onToast={model.onToast} onIconsChanged={model.onIconsChanged} />
+      {:else if model.workspaceAgents?.error}<div class="content-section"><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>AGENTS.md unavailable</strong><span>{model.workspaceAgents.error}</span></div></div>
+      {:else}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="loader-circle" /><strong>Loading AGENTS.md...</strong></div></div>{/if}
+    </div>
+    <div hidden={activeTab !== "wiki"}>
+      {#if model.wiki?.error}<div class="content-section"><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
+      {:else if !model.wiki?.exists}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>
+      {:else}<FileBrowser title="Wiki" entries={model.wiki.entries || []} emptyMessage="No Wiki files yet." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} showHeading={false} />{/if}
+    </div>
   </div>
 {:else}
   <div class="details-header">

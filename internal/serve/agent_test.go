@@ -121,18 +121,6 @@ func agentUploadRequest(t *testing.T, name, content string) *http.Request {
 	return request
 }
 
-func TestReplaceAgentsUserContentPreservesManagedBlock(t *testing.T) {
-	current := "# Old Notes\n\n" + agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n\n# Tail\n"
-	got, err := replaceAgentsUserContent(current, "# New Notes\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "# New Notes\n\n" + agentsManagedStart + "\nsystem\n" + agentsManagedEnd + "\n"
-	if got != want {
-		t.Fatalf("unexpected AGENTS.md content\nwant:\n%s\ngot:\n%s", want, got)
-	}
-}
-
 func writeCurrentTestConfig(t *testing.T, path, workspace string) {
 	t.Helper()
 	data, err := json.Marshal(agentHubGUIConfig{

@@ -99,7 +99,7 @@ describe("DetailPanel", () => {
 
     const documentSection = target.querySelector('[data-doc-file="task.md"]')!;
     expect(documentSection.querySelector("h3")).toBeNull();
-    expect(documentSection.querySelector(".markdown-open-file")).toBeNull();
+    expect(documentSection.querySelector(".markdown-open-file")).not.toBeNull();
 
     const artifactsSection = target.querySelector('[data-component-owner="file-browser"]')!;
     expect(artifactsSection.querySelector("h3")).toBeNull();
@@ -293,32 +293,43 @@ describe("DetailPanel", () => {
     expect(target.querySelector('[role="dialog"]')?.textContent).not.toContain("stale diff");
   });
 
-  it("preserves a dirty editor and its selection when the server content changes", async () => {
-    const save = vi.fn(async () => { throw new Error("AGENTS.md changed on disk"); });
+  it("renders workspace AGENTS.md in full across AGENTS.md and Wiki tabs", async () => {
     const initial = resourceModel({
       identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
-      workspaceAgents: { path: "AGENTS.md", content: "local baseline", contentHash: "hash-a" },
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nGenerated guidance.\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a" },
+      wiki: { exists: true, entries: [{ name: "index.md", path: "wiki/index.md", type: "file", size: 10 }] },
+    });
+    const { target } = mountModel(initial);
+    await tick();
+
+    const tabs = Array.from(target.querySelectorAll<HTMLButtonElement>("[role=tab]"));
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(["AGENTS.md", "Wiki"]);
+    expect(target.querySelector('[role="tab"][aria-selected="true"]')?.textContent).toContain("AGENTS.md");
+    // The managed block is no longer hidden from the rendered document.
+    expect(target.querySelector('[data-doc-file="AGENTS.md"]')).not.toBeNull();
+    expect(target.textContent).toContain("Generated guidance.");
+    expect(target.querySelector(".markdown-open-file")).not.toBeNull();
+  });
+
+  it("edits workspace AGENTS.md through the Markdown source editor", async () => {
+    const save = vi.fn(async (_content: string, _hash: string) => ({ path: "AGENTS.md", name: "AGENTS.md", content: "# Notes\n\nEdited.\n", contentHash: "saved-hash" }));
+    const initial = resourceModel({
+      identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
+      workspaceAgents: { path: "AGENTS.md", content: "# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n", contentHash: "hash-a" },
       onSaveWorkspaceAgents: save,
     });
-    const { channel, target } = mountModel(initial);
+    const { target } = mountModel(initial);
     await tick();
-    const textarea = target.querySelector("textarea")!;
-    textarea.focus();
-    textarea.value = "unsaved local draft";
-    textarea.setSelectionRange(8, 13);
-    textarea.scrollTop = 18;
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    channel.publish({ ...initial, workspaceAgents: { path: "AGENTS.md", content: "server changed", contentHash: "hash-b" } });
+    const edit = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.includes("Edit / Annotate"))!;
+    edit.click();
+    await vi.waitFor(() => expect(target.querySelector(".cm-editor")).not.toBeNull());
+    const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
+    view.dispatch({ changes: { from: view.state.doc.length, insert: "\nEdited.\n" } });
     await tick();
-    expect(textarea.value).toBe("unsaved local draft");
-    expect(document.activeElement).toBe(textarea);
-    expect([textarea.selectionStart, textarea.selectionEnd, textarea.scrollTop]).toEqual([8, 13, 18]);
-    expect(target.textContent).toContain("changed on disk while you were editing");
-    (target.querySelector('button[type="submit"]') as HTMLButtonElement).click();
-    await tick(); await tick();
-    expect(save).toHaveBeenCalledWith("unsaved local draft", "hash-a");
-    expect(textarea.value).toBe("unsaved local draft");
-    expect(target.textContent).toContain("AGENTS.md changed on disk");
+    const saveButton = Array.from(target.querySelectorAll<HTMLButtonElement>("button")).find((button) => button.textContent?.trim() === "Save")!;
+    saveButton.click();
+    await vi.waitFor(() => expect(save).toHaveBeenCalledOnce());
+    expect(save).toHaveBeenCalledWith("# Notes\n\n<!-- managed by forge cli -->\nsystem\n<!-- end of forge cli prompt -->\n\nEdited.\n", "hash-a");
   });
 
   it("keeps file-browser directory icons stable and toggles expansion with a class", async () => {

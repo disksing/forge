@@ -110,11 +110,6 @@ var workspaceIconFiles = map[string]string{
 	"community-team":          "16-community-team.png",
 }
 
-const (
-	agentsManagedStart = "<!-- managed by forge cli -->"
-	agentsManagedEnd   = "<!-- end of forge cli prompt -->"
-)
-
 type workspaceTree struct {
 	Root          string             `json:"root"`
 	AgentBinding  app.AgentBinding   `json:"agentBinding"`
@@ -1073,58 +1068,40 @@ func (s *server) saveWorkspaceAgentsFile(w http.ResponseWriter, r *http.Request,
 		Content             string `json:"content"`
 		ExpectedContentHash string `json:"expectedContentHash"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, markdownSaveRequestMaxBytes)
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
 		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		writeError(w, err, http.StatusBadRequest)
+		return
+	}
+	if strings.TrimSpace(body.ExpectedContentHash) == "" {
+		writeError(w, errors.New("expectedContentHash is required"), http.StatusBadRequest)
+		return
+	}
+	content := []byte(body.Content)
+	if len(content) > previewMaxBytes {
+		writeError(w, fmt.Errorf("AGENTS.md files larger than %d bytes cannot be edited", previewMaxBytes), http.StatusRequestEntityTooLarge)
+		return
+	}
+	if !utf8.Valid(content) || containsNUL(content) {
+		writeError(w, errors.New("AGENTS.md content must be valid UTF-8 text"), http.StatusBadRequest)
 		return
 	}
 	path := filepath.Join(workspace.Path, "AGENTS.md")
-	current := ""
-	currentData := []byte{}
-	if data, err := os.ReadFile(path); err == nil {
-		currentData = data
-		current = string(data)
-	} else if !os.IsNotExist(err) {
-		writeError(w, err, http.StatusInternalServerError)
-		return
-	}
-	if body.ExpectedContentHash != "" && body.ExpectedContentHash != previewContentHash(currentData) {
-		writeError(w, errors.New("AGENTS.md changed on disk; reload it before saving or reconcile the preserved draft"), http.StatusConflict)
-		return
-	}
-	updated, err := replaceAgentsUserContent(current, body.Content)
-	if err != nil {
-		writeError(w, err, http.StatusBadRequest)
-		return
-	}
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+	if err := replaceMarkdownFile(path, content, body.ExpectedContentHash); err != nil {
+		if errors.Is(err, errMarkdownContentConflict) {
+			writeError(w, errors.New("AGENTS.md changed on disk; reconcile the preserved browser draft before saving"), http.StatusConflict)
+			return
+		}
 		writeError(w, err, http.StatusInternalServerError)
 		return
 	}
 	s.previewFile(w, r, id)
-}
-
-func replaceAgentsUserContent(current, userContent string) (string, error) {
-	start := strings.Index(current, agentsManagedStart)
-	end := strings.Index(current, agentsManagedEnd)
-	if (start == -1) != (end == -1) {
-		return "", errors.New("AGENTS.md has only one forge managed marker")
-	}
-	userContent = strings.TrimRight(userContent, " \t\r\n")
-	if start == -1 {
-		if userContent == "" {
-			return "", nil
-		}
-		return userContent + "\n", nil
-	}
-	if end < start {
-		return "", errors.New("AGENTS.md forge managed end marker appears before start marker")
-	}
-	end += len(agentsManagedEnd)
-	managedBlock := strings.TrimRight(current[start:end], " \t\r\n")
-	if userContent == "" {
-		return managedBlock + "\n", nil
-	}
-	return userContent + "\n\n" + managedBlock + "\n", nil
 }
 
 func isHiddenAgentsPath(relPath string) bool {

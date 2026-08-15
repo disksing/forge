@@ -5,22 +5,6 @@ export function isMarkdownFile(path = ""): boolean {
   return /\.(md|markdown|mdown|mkdn)$/i.test(path);
 }
 
-export function stripForgeManagedBlocks(content: string): string {
-  const startMarker = "<!-- managed by forge cli -->";
-  const endMarker = "<!-- end of forge cli prompt -->";
-  let result = "";
-  let cursor = 0;
-  while (cursor < content.length) {
-    const start = content.indexOf(startMarker, cursor);
-    if (start < 0) return (result + content.slice(cursor)).trim();
-    const end = content.indexOf(endMarker, start + startMarker.length);
-    if (end < 0) return (result + content.slice(cursor)).trim();
-    result += content.slice(cursor, start);
-    cursor = end + endMarker.length;
-  }
-  return result.trim();
-}
-
 export function relativeTime(value: string): string {
   const timestamp = Date.parse(value || "");
   if (!Number.isFinite(timestamp)) return "unknown";
