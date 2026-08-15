@@ -4,6 +4,7 @@
   import { onDestroy, onMount, tick } from "svelte";
 
   import { ApiClient } from "../api/client";
+  import { confirmDialog } from "../controllers/confirm-dialog-controller";
   import type { ModelChannel } from "./model-channel";
   import DiffModal from "./DiffModal.svelte";
   import FileBrowser from "./FileBrowser.svelte";
@@ -149,10 +150,15 @@
 
   function deleteArtifact(path: string): void {
     const name = path.split("/").pop() || path;
-    if (!window.confirm(`Delete artifact "${name}"? This cannot be undone.`)) return;
-    model.onDeleteArtifact(path).then(() => {
-      if (preview && preview.section === "Artifacts" && preview.path === path) preview = null;
-    }).catch((err) => toastError(err instanceof Error ? err.message : String(err)));
+    void confirmDialog({ title: "Delete artifact", message: `Delete artifact "${name}"? This cannot be undone.`, confirmLabel: "Delete", danger: true }).then(async (confirmed) => {
+      if (!confirmed) return;
+      try {
+        await model.onDeleteArtifact(path);
+        if (preview && preview.section === "Artifacts" && preview.path === path) preview = null;
+      } catch (err) {
+        toastError(err instanceof Error ? err.message : String(err));
+      }
+    });
   }
 
   function saveMarkdownViaModal(path: string, content: string, expectedContentHash: string): Promise<FilePreviewModel> {

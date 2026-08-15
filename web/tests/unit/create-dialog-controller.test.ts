@@ -34,7 +34,7 @@ function harness(responder: (path: string, init?: RequestInit) => unknown | Prom
 		selectResource,
 		onOpen: vi.fn(),
 		onIconsChanged: vi.fn(),
-		confirmTemplateSwitch: () => true,
+		confirmTemplateSwitch: async () => true,
 	});
 	return {
 		controller,

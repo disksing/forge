@@ -6,6 +6,9 @@ import DetailPanel from "../../src/components/DetailPanel.svelte";
 import { createModelChannel } from "../../src/components/model-channel";
 import type { DetailPanelModel } from "../../src/components/models";
 
+const { confirmDialogMock } = vi.hoisted(() => ({ confirmDialogMock: vi.fn() }));
+vi.mock("../../src/controllers/confirm-dialog-controller", () => ({ confirmDialog: confirmDialogMock }));
+
 const mounted: Array<ReturnType<typeof mount>> = [];
 
 function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelModel {
@@ -238,13 +241,12 @@ describe("DetailPanel", () => {
     const deleteButton = row.querySelector<HTMLElement>(".artifact-delete")!;
     expect(deleteButton).not.toBeNull();
 
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmSpy = confirmDialogMock.mockReset().mockResolvedValue(false);
     deleteButton.click();
-    await tick();
-    expect(confirmSpy).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(confirmSpy).toHaveBeenCalledOnce());
     expect(onDeleteArtifact).not.toHaveBeenCalled();
 
-    confirmSpy.mockReturnValue(true);
+    confirmSpy.mockResolvedValue(true);
     deleteButton.click();
     await vi.waitFor(() => expect(onDeleteArtifact).toHaveBeenCalledWith("project1/task1/artifacts/a.txt"));
   });

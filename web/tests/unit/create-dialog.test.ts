@@ -35,7 +35,7 @@ function model(overrides: Partial<CreateDialogModel> = {}): CreateDialogModel {
     },
     templates: [], preview: null, previewKey: "", previewing: false,
     previewError: "", templateDigest: "", submitting: false, onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
-    previewRequestKey: (draft) => JSON.stringify(draft), onConfirmTemplateSwitch: () => true, onIconsChanged: vi.fn(),
+    previewRequestKey: (draft) => JSON.stringify(draft), onConfirmTemplateSwitch: async () => true, onIconsChanged: vi.fn(),
     ...overrides,
   };
 }

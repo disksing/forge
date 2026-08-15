@@ -39,9 +39,9 @@
     }, delay);
   }
 
-  function changeTemplate(next: string): void {
+  async function changeTemplate(next: string): Promise<void> {
     if (model.submitting || next === draft.templateName) return;
-    if ((Object.values(draft.templateFields).some((value) => Boolean(value)) || draft.titleOverride || draft.editedMarkdown != null) && !model.onConfirmTemplateSwitch()) return;
+    if ((Object.values(draft.templateFields).some((value) => Boolean(value)) || draft.titleOverride || draft.editedMarkdown != null) && !(await model.onConfirmTemplateSwitch())) return;
     const template = model.templates.find((item) => item.name === next);
     draft.templateName = next;
     draft.templateFields = {};

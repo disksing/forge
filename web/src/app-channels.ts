@@ -36,7 +36,7 @@ export function createForgeAppChannels(): ForgeAppChannels {
     create: createModelChannel<CreateDialogModel>({
       open: false, identity: "", workspaceId: "", draft: { type: "project", projectId: "", templateName: "", templateFields: {}, title: "", titleOverride: false, description: "", detail: "", slug: "", activeTab: "edit", editedMarkdown: null, showOptions: false },
       templates: [], preview: null, previewKey: "", previewing: false, previewError: "", templateDigest: "", submitting: false,
-      onClose: noop, onPreview: noopAsync, onSubmit: noopAsync, previewRequestKey: () => "", onConfirmTemplateSwitch: () => true, onIconsChanged: noop,
+      onClose: noop, onPreview: noopAsync, onSubmit: noopAsync, previewRequestKey: () => "", onConfirmTemplateSwitch: async () => true, onIconsChanged: noop,
     }),
     settings: createModelChannel<SettingsModel>({
       open: false, identity: "", dataVersion: 0, initialTab: "workspace", workspaces: [], activeWorkspaceId: "", workspaceIcons: [{ id: "", label: "Forge default", src: "/favicon.svg" }], workspaceIconSavingId: "", userName: "User",

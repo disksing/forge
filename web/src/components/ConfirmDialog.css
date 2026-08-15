@@ -1,0 +1,106 @@
+/* ConfirmDialog styles. Keep selectors within the documented ownership boundary. */
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(34, 49, 63, 0.42);
+  backdrop-filter: blur(3px);
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog {
+  position: relative;
+  width: min(440px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #c3c9d1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 16px 20px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  color: #2980b9;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-icon-danger {
+  color: #e74c3c;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-header strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-content {
+  padding: 18px 20px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-content p {
+  margin: 0;
+  color: #4a5560;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line-soft);
+  padding: 14px 20px;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-footer button {
+  min-width: 82px;
+  min-height: 34px;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm {
+  background: #2980b9;
+  color: #fff;
+}
+
+:where([data-component-owner="confirm-dialog"]) .confirm-dialog-confirm-danger {
+  background: #e74c3c;
+}
+
+@media (max-width:980px) {
+  :where([data-component-owner="confirm-dialog"]) .confirm-dialog-layer {
+    padding: 12px;
+  }
+
+  :where([data-component-owner="confirm-dialog"]) .confirm-dialog {
+    width: calc(100vw - 24px);
+  }
+}

@@ -3,6 +3,7 @@
 
   import { onDestroy } from "svelte";
   import { ApiClient } from "../api/client";
+  import { confirmDialog } from "../controllers/confirm-dialog-controller";
   import type { ScheduleRecord, SchedulerConfigRecord } from "../models/workspace";
   import Icon from "./Icon.svelte";
 
@@ -59,7 +60,7 @@
   }
 
   async function remove(schedule: ScheduleRecord): Promise<void> {
-    if (!window.confirm(`Remove schedule ${schedule.id}?`)) return;
+    if (!(await confirmDialog({ title: "Remove schedule", message: `Remove schedule ${schedule.id}?`, confirmLabel: "Remove", danger: true }))) return;
     try {
       await client.request(`/api/workspaces/${encodeURIComponent(workspaceId)}/scheduler/${encodeURIComponent(schedule.id)}`, { method: "DELETE" });
       if (editingId === schedule.id) clearForm();

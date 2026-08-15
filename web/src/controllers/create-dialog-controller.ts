@@ -23,7 +23,7 @@ export interface CreateDialogDependencies {
 	selectResource(resourceId: string): Promise<void>;
 	onOpen(): void;
 	onIconsChanged(): void;
-	confirmTemplateSwitch(): boolean;
+	confirmTemplateSwitch(): Promise<boolean>;
 }
 
 interface CreatedResource {

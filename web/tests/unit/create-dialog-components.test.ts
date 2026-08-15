@@ -42,7 +42,7 @@ function model(currentDraft: CreateDraft, overrides: Partial<CreateDialogModel> 
     open: true, identity: "dialog-1:task:project1", workspaceId: "workspace-a", draft: currentDraft,
     templates: [featureTemplate], preview: null, previewKey: "", previewing: false,
     previewError: "", templateDigest: "", submitting: false, onClose: vi.fn(), onPreview: vi.fn(), onSubmit: vi.fn(),
-    previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: () => true, onIconsChanged: vi.fn(),
+    previewRequestKey: (next) => JSON.stringify(next), onConfirmTemplateSwitch: async () => true, onIconsChanged: vi.fn(),
     ...overrides,
   };
 }
@@ -139,7 +139,7 @@ describe("CreateDialog child components", () => {
   it("coordinates template defaults, switch confirmation, and debounced preview", async () => {
     vi.useFakeTimers();
     const current = draft({ templateName: "feature-a", templateFields: { summary: "Local value" } });
-    const confirm = vi.fn().mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const confirm = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
     const onPreview = vi.fn().mockResolvedValue(undefined);
     const alternate = { ...featureTemplate, name: "feature-b", title: "Feature B" };
     const currentModel = model(current, { templates: [featureTemplate, alternate], onConfirmTemplateSwitch: confirm, onPreview });
@@ -149,8 +149,10 @@ describe("CreateDialog child components", () => {
     const alternateCard = host.querySelectorAll<HTMLButtonElement>('[role="option"]')[2];
 
     alternateCard.click();
+    await vi.advanceTimersByTimeAsync(0);
     expect(current.templateName).toBe("feature-a");
     alternateCard.click();
+    await vi.advanceTimersByTimeAsync(0);
     expect(current.templateName).toBe("feature-b");
     expect(current.templateFields.summary).toBe("Default summary");
     await vi.advanceTimersByTimeAsync(200);

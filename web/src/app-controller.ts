@@ -8,6 +8,7 @@ import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceCo
 import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
+import { confirmDialog } from "./controllers/confirm-dialog-controller";
 import { createCreateDialogController } from "./controllers/create-dialog-controller";
 import { doctorSnapshotForWorkspace } from "./controllers/doctor-projection";
 import { createNotificationController, type NotificationSource } from "./controllers/notification-controller";
@@ -206,7 +207,7 @@ const createDialogController = createCreateDialogController({
 		controllerState.modalEnter = "create";
 	},
 	onIconsChanged: refreshIcons,
-	confirmTemplateSwitch: () => window.confirm("Discard edited template fields and switch templates?")
+	confirmTemplateSwitch: () => confirmDialog({ title: "Switch template", message: "Discard edited template fields and switch templates?", confirmLabel: "Discard", danger: true })
 });
 const elementById = <ElementType extends HTMLElement = HTMLElement>(id: string): ElementType | null => document.getElementById(id) as ElementType | null;
 const AUTO_REFRESH_INTERVAL_MS = 5e3;
@@ -1547,7 +1548,7 @@ async function openSettings(tab: SettingsModel["initialTab"] = "workspace"): Pro
 	return settingsController.open(tab);
 }
 function closeSettings(dirty = false): void {
-	settingsController.close(dirty);
+	void settingsController.close(dirty);
 }
 async function refreshSettings(): Promise<void> {
 	await settingsController.refresh();

@@ -2,12 +2,14 @@
   import AppShell from "./components/AppShell.svelte";
   import AgentPanelHeader from "./components/AgentPanelHeader.svelte";
   import ChatComposer from "./components/ChatComposer.svelte";
+  import ConfirmDialog from "./components/ConfirmDialog.svelte";
   import CreateDialog from "./components/CreateDialog.svelte";
   import DetailPanel from "./components/DetailPanel.svelte";
   import EventTimeline from "./components/EventTimeline.svelte";
   import SettingsModal from "./components/SettingsModal.svelte";
   import Toast from "./components/Toast.svelte";
   import UploadDialog from "./components/UploadDialog.svelte";
+  import { confirmDialogChannel } from "./controllers/confirm-dialog-controller";
   import type { ForgeAppChannels } from "./app-channels";
 
   let { channels }: { channels: ForgeAppChannels } = $props();
@@ -23,3 +25,4 @@
 <div data-component-owner="upload-dialog" style="display: contents"><UploadDialog channel={channels.upload} /></div>
 <div data-component-owner="create-dialog" style="display: contents"><CreateDialog channel={channels.create} /></div>
 <div data-component-owner="settings" style="display: contents"><SettingsModal channel={channels.settings} /></div>
+<div data-component-owner="confirm-dialog" style="display: contents"><ConfirmDialog channel={confirmDialogChannel} /></div>

@@ -1,4 +1,5 @@
 import type { AgentOption, AppearanceSettings, NotificationPreferences, ResourceDefaultBinding, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
+import { confirmDialog } from "./confirm-dialog-controller";
 import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
 export type SettingsAgent = AgentConfig;
@@ -208,8 +209,8 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		render();
 	}
 
-	function close(dirty = state.agentDirty): void {
-		if (state.open && dirty && !window.confirm("Discard unsaved agent settings changes?")) return;
+	async function close(dirty = state.agentDirty): Promise<void> {
+		if (state.open && dirty && !(await confirmDialog({ title: "Discard changes", message: "Discard unsaved agent settings changes?", confirmLabel: "Discard", danger: true }))) return;
 		state.open = false;
 		state.identity = ++identity;
 		state.agentDirty = false;
