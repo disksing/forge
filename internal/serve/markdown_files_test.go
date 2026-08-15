@@ -61,8 +61,8 @@ func newMarkdownFileTestFixture(t *testing.T) markdownFileTestFixture {
 			t.Fatal(err)
 		}
 	}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: root}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: root}}}); err != nil {
 		t.Fatal(err)
 	}
 	return markdownFileTestFixture{server: s, workspace: workspace, root: root, projectPath: projectPath, taskPath: taskPath}

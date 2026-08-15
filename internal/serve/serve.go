@@ -34,7 +34,7 @@ var staticFiles = web.Assets
 type config struct {
 	Version            int                   `json:"version"`
 	ActiveID           string                `json:"activeId,omitempty"`
-	Workspaces         []guiWorkspace        `json:"workspaces"`
+	Workspaces         []serveWorkspace        `json:"workspaces"`
 	AgentHubEndpoint   string                `json:"agentHubEndpoint,omitempty"`
 	AgentHubInstanceID string                `json:"agentHubInstanceId,omitempty"`
 	AgentProfiles      []agentProfileRoute   `json:"agentProfiles,omitempty"`
@@ -84,7 +84,7 @@ type agentProfileRoute struct {
 	AgentName   string `json:"agentName,omitempty"`
 }
 
-type guiWorkspace struct {
+type serveWorkspace struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Path string `json:"path"`
@@ -167,7 +167,7 @@ type diffResponse struct {
 	HasChanges bool   `json:"hasChanges"`
 }
 
-type guiState struct {
+type uiState struct {
 	Version          int                               `json:"version"`
 	ExpandedProjects []string                          `json:"expandedProjects"`
 	LastResourceID   string                            `json:"lastResourceId,omitempty"`
@@ -205,13 +205,15 @@ Options:
 Workspace ownership:
   Each managed Workspace is exclusively owned by one forge serve process via
   an OS advisory lock at <workspace>/.forge/serve.lock. A second instance
-  using a different FORGE_GUI_CONFIG cannot manage the same Workspace; it
+  using a different FORGE_SERVE_CONFIG cannot manage the same Workspace; it
   fails at startup before session recovery begins. The OS releases the
   lock automatically when the owning process exits.
 
 Environment overrides:
-  FORGE_AGENTHUB_URL  AgentHub endpoint override
-  FORGE_GUI_CONFIG    GUI configuration file path (default ~/.forge/gui.json)
+  FORGE_AGENTHUB_URL    AgentHub endpoint override
+  FORGE_SERVE_CONFIG    serve configuration file path (default ~/.forge/serve.json;
+                        an existing ~/.forge/gui.json keeps being used)
+  FORGE_GUI_CONFIG      legacy alias of FORGE_SERVE_CONFIG
 `
 
 // PrintHelp writes the forge serve usage text to stdout.
@@ -252,7 +254,7 @@ func Main(args []string) error {
 	if err != nil {
 		return err
 	}
-	configLock, err := acquireGUIConfigLock(configPath, addr)
+	configLock, err := acquireServeConfigLock(configPath, addr)
 	if err != nil {
 		return err
 	}
@@ -600,7 +602,7 @@ func (s *server) handleUIState(w http.ResponseWriter, r *http.Request, id string
 		}
 		writeJSON(w, state)
 	case http.MethodPut:
-		var state guiState
+		var state uiState
 		if err := json.NewDecoder(r.Body).Decode(&state); err != nil {
 			writeError(w, err, http.StatusBadRequest)
 			return
@@ -953,7 +955,7 @@ func (s *server) worktreeDiff(w http.ResponseWriter, r *http.Request, id string)
 	}
 	cleanRelPath := filepath.ToSlash(filepath.Clean(relPath))
 	if isHiddenAgentsPath(cleanRelPath) {
-		writeError(w, errors.New("project and task AGENTS.md files are hidden in Forge GUI"), http.StatusNotFound)
+		writeError(w, errors.New("project and task AGENTS.md files are hidden in the Forge web UI"), http.StatusNotFound)
 		return
 	}
 	abs, err := safeWorkspacePath(workspace.Path, relPath)
@@ -1195,27 +1197,27 @@ func (s *server) addCurrentDirectoryIfEmpty(ctx context.Context) {
 	}
 }
 
-func (s *server) addWorkspace(ctx context.Context, path string) (guiWorkspace, error) {
+func (s *server) addWorkspace(ctx context.Context, path string) (serveWorkspace, error) {
 	return s.addWorkspaceWithOptions(ctx, path, false)
 }
 
-func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool) (workspace guiWorkspace, err error) {
+func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, create bool) (workspace serveWorkspace, err error) {
 	path = strings.TrimSpace(path)
 	if path == "" {
-		return guiWorkspace{}, errors.New("workspace path is required")
+		return serveWorkspace{}, errors.New("workspace path is required")
 	}
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	if create {
 		if err := os.MkdirAll(abs, 0o755); err != nil {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 	}
 	canonical, err := canonicalWorkspacePath(abs)
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	// Ownership comes first: the lock is acquired before the Workspace is
 	// inspected or persisted, and rolled back if any later step fails, so a
@@ -1223,7 +1225,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	locked := false
 	if s.locks != nil && !s.locks.owns(canonical) {
 		if _, err := s.locks.acquire(canonical); err != nil {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 		locked = true
 	}
@@ -1236,37 +1238,37 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	tree, err := s.treeAt(ctx, canonical)
 	if err != nil {
 		if !create {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 		if _, initErr := app.Initialize(canonical, ""); initErr != nil {
-			return guiWorkspace{}, initErr
+			return serveWorkspace{}, initErr
 		}
 		initializedNow = true
 		tree, err = s.treeAt(ctx, canonical)
 		if err != nil {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 	}
-	workspace = guiWorkspace{
+	workspace = serveWorkspace{
 		ID:   workspaceID(tree.Root),
 		Name: workspaceName(tree.Root),
 		Path: tree.Root,
 	}
 	cfg, err := s.loadConfig()
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	forgeWorkspace, err := app.OpenWorkspace(tree.Root)
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	effectiveDefaults := effectiveResourceAgentDefaults(cfg.ResourceDefaults, cfg.AgentProfiles)
 	if _, err := forgeWorkspace.EnsureResourceRuntime(toAppResourceAgentDefaults(effectiveDefaults)); err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	if initializedNow {
 		if _, err := forgeWorkspace.SetResourceAgentBinding("workspace", app.AgentBinding{Kind: effectiveDefaults.Workspace.Kind, Name: effectiveDefaults.Workspace.Name}); err != nil {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 	}
 	replaced := false
@@ -1283,7 +1285,7 @@ func (s *server) addWorkspaceWithOptions(ctx context.Context, path string, creat
 	}
 	cfg.ActiveID = workspace.ID
 	if err := s.saveConfig(cfg); err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	if s.doctor != nil {
 		s.doctor.requestScan()
@@ -1318,16 +1320,16 @@ func (s *server) ensureConfiguredResourceRuntimes() error {
 	return nil
 }
 
-func (s *server) updateWorkspaceIcon(id, icon string) (guiWorkspace, error) {
+func (s *server) updateWorkspaceIcon(id, icon string) (serveWorkspace, error) {
 	icon = strings.TrimSpace(icon)
 	if icon != "" {
 		if _, ok := workspaceIconFiles[icon]; !ok {
-			return guiWorkspace{}, fmt.Errorf("unknown workspace icon: %s", icon)
+			return serveWorkspace{}, fmt.Errorf("unknown workspace icon: %s", icon)
 		}
 	}
 	cfg, err := s.loadConfig()
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	for i := range cfg.Workspaces {
 		if cfg.Workspaces[i].ID != id {
@@ -1335,11 +1337,11 @@ func (s *server) updateWorkspaceIcon(id, icon string) (guiWorkspace, error) {
 		}
 		cfg.Workspaces[i].Icon = icon
 		if err := s.saveConfig(cfg); err != nil {
-			return guiWorkspace{}, err
+			return serveWorkspace{}, err
 		}
 		return cfg.Workspaces[i], nil
 	}
-	return guiWorkspace{}, fmt.Errorf("workspace not found: %s", id)
+	return serveWorkspace{}, fmt.Errorf("workspace not found: %s", id)
 }
 
 func (s *server) removeWorkspace(id string) error {
@@ -1512,17 +1514,17 @@ func (s *server) resource(ctx context.Context, id string, resourceID string) (ap
 	return forgeWorkspace.Resource(resourceID)
 }
 
-func (s *server) loadUIState(id string) (guiState, error) {
+func (s *server) loadUIState(id string) (uiState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
 	if err != nil {
-		return guiState{}, err
+		return uiState{}, err
 	}
-	return loadGUIStateFile(guiStatePath(workspace.Path))
+	return loadUIStateFile(uiStatePath(workspace.Path))
 }
 
-func (s *server) saveUIState(id string, state guiState) error {
+func (s *server) saveUIState(id string, state uiState) error {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
 	workspace, err := s.workspace(id)
@@ -1531,12 +1533,12 @@ func (s *server) saveUIState(id string, state guiState) error {
 	}
 	// UI navigation updates predate attention state. Preserve the server-owned
 	// attention map so an older browser cannot overwrite stars or dismissals.
-	existing, err := loadGUIStateFile(guiStatePath(workspace.Path))
+	existing, err := loadUIStateFile(uiStatePath(workspace.Path))
 	if err != nil {
 		return err
 	}
 	state.Attention = existing.Attention
-	return saveGUIStateFile(guiStatePath(workspace.Path), state)
+	return saveUIStateFile(uiStatePath(workspace.Path), state)
 }
 
 func (s *server) buildDiff(ctx context.Context, worktreePath string, base string) (string, error) {
@@ -1554,7 +1556,7 @@ func (s *server) buildDiff(ctx context.Context, worktreePath string, base string
 	}
 	diff := strings.TrimLeft(strings.Join(parts, "\n"), "\n")
 	if len(diff) > diffMaxBytes {
-		diff = diff[:diffMaxBytes] + "\n\n--- Diff truncated by Forge GUI ---\n"
+		diff = diff[:diffMaxBytes] + "\n\n--- Diff truncated by Forge ---\n"
 	}
 	return diff, nil
 }
@@ -1606,20 +1608,20 @@ func (s *server) runGit(ctx context.Context, worktreePath string, args ...string
 	return out, nil
 }
 
-func (s *server) workspace(id string) (guiWorkspace, error) {
+func (s *server) workspace(id string) (serveWorkspace, error) {
 	cfg, err := s.loadConfig()
 	if err != nil {
-		return guiWorkspace{}, err
+		return serveWorkspace{}, err
 	}
 	for _, workspace := range cfg.Workspaces {
 		if workspace.ID == id {
 			if err := s.requireWorkspaceOwnership(workspace.Path); err != nil {
-				return guiWorkspace{}, err
+				return serveWorkspace{}, err
 			}
 			return workspace, nil
 		}
 	}
-	return guiWorkspace{}, fmt.Errorf("workspace not found: %s", id)
+	return serveWorkspace{}, fmt.Errorf("workspace not found: %s", id)
 }
 
 func (s *server) loadConfig() (config, error) {
@@ -1629,7 +1631,7 @@ func (s *server) loadConfig() (config, error) {
 		if os.IsNotExist(err) {
 			cfg = config{
 				Version:          agentHubConfigVersion,
-				Workspaces:       []guiWorkspace{},
+				Workspaces:       []serveWorkspace{},
 				AgentHubEndpoint: defaultAgentHubEndpoint,
 				AgentProfiles:    []agentProfileRoute{},
 				ResourceDefaults: defaultResourceAgentDefaults(),
@@ -1647,10 +1649,10 @@ func (s *server) loadConfig() (config, error) {
 		return config{}, err
 	}
 	if cfg.Workspaces == nil {
-		cfg.Workspaces = []guiWorkspace{}
+		cfg.Workspaces = []serveWorkspace{}
 	}
 	if cfg.Version < 3 {
-		return config{}, fmt.Errorf("unsupported Forge GUI configuration version %d; migrate the configuration before starting Forge GUI", cfg.Version)
+		return config{}, fmt.Errorf("unsupported Forge serve configuration version %d; migrate the configuration before starting forge serve", cfg.Version)
 	}
 	needsUpgrade := cfg.Version != agentHubConfigVersion || cfg.ResourceDefaults != normalizeResourceAgentDefaults(cfg.ResourceDefaults)
 	cfg.Version = agentHubConfigVersion
@@ -1677,7 +1679,7 @@ func (s *server) loadConfig() (config, error) {
 
 func (s *server) saveConfig(cfg config) error {
 	if cfg.Version < agentHubConfigVersion {
-		return fmt.Errorf("unsupported Forge GUI configuration version %d", cfg.Version)
+		return fmt.Errorf("unsupported Forge serve configuration version %d", cfg.Version)
 	}
 	normalizedProfiles, err := normalizeConfigAgentProfileRoutes(cfg.AgentProfiles)
 	if err != nil {
@@ -1689,7 +1691,7 @@ func (s *server) saveConfig(cfg config) error {
 			Key: route.Key, Description: route.Description, AgentName: route.AgentName,
 		})
 	}
-	data, err := json.MarshalIndent(agentHubGUIConfig{
+	data, err := json.MarshalIndent(agentHubServeConfig{
 		Version:            agentHubConfigVersion,
 		ActiveID:           cfg.ActiveID,
 		Workspaces:         cfg.Workspaces,
@@ -1705,6 +1707,11 @@ func (s *server) saveConfig(cfg config) error {
 }
 
 func defaultConfigPath() (string, error) {
+	if path := strings.TrimSpace(os.Getenv("FORGE_SERVE_CONFIG")); path != "" {
+		return path, nil
+	}
+	// FORGE_GUI_CONFIG predates the serve rename; keep honoring it so existing
+	// deployments (for example launchd plists) keep working.
 	if path := strings.TrimSpace(os.Getenv("FORGE_GUI_CONFIG")); path != "" {
 		return path, nil
 	}
@@ -1712,7 +1719,12 @@ func defaultConfigPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".forge", "gui.json"), nil
+	// Existing installs keep their pre-rename configuration file.
+	legacy := filepath.Join(home, ".forge", "gui.json")
+	if _, err := os.Stat(legacy); err == nil {
+		return legacy, nil
+	}
+	return filepath.Join(home, ".forge", "serve.json"), nil
 }
 
 func workspaceID(path string) string {
@@ -1728,7 +1740,7 @@ func workspaceName(path string) string {
 	return name
 }
 
-func guiStatePath(workspacePath string) string {
+func uiStatePath(workspacePath string) string {
 	return filepath.Join(workspacePath, ".forge", "gui-state.json")
 }
 

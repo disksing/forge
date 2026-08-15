@@ -252,7 +252,7 @@ func TestRemovedStartAndServeSubcommands(t *testing.T) {
 		"usage: forge serve [--addr=<address>] [--workspace=<path>] [--version]",
 		"in-process application API",
 		"FORGE_AGENTHUB_URL",
-		"FORGE_GUI_CONFIG",
+		"FORGE_SERVE_CONFIG",
 	} {
 		if !strings.Contains(serveHelp, marker) {
 			t.Fatalf("expected forge serve help to contain %q, got:\n%s", marker, serveHelp)

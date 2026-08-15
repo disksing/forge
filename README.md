@@ -2,15 +2,15 @@
 
 Forge is a local, filesystem-first workspace manager for people and AI coding agents. It combines a deterministic CLI with a responsive web UI for organizing projects and tasks, running interactive agent sessions, and reviewing the resulting files and Git changes.
 
-The workspace is the source of truth. Contracts are Markdown, structured state is JSON, resource History is the canonical conversation projection, generated output is stored as artifacts, and code changes live in task-owned Git worktrees. The GUI is a control plane over those files rather than a separate project database.
+The workspace is the source of truth. Contracts are Markdown, structured state is JSON, resource History is the canonical conversation projection, generated output is stored as artifacts, and code changes live in task-owned Git worktrees. The web UI is a control plane over those files rather than a separate project database.
 
 ## Highlights
 
-- **Transparent local state.** Projects, tasks, resource History, artifacts, templates, and Wiki pages remain inspectable workspace data that can be backed up or repaired without the GUI.
+- **Transparent local state.** Projects, tasks, resource History, artifacts, templates, and Wiki pages remain inspectable workspace data that can be backed up or repaired without the web UI.
 - **Purpose-built agent context.** Durable scope and acceptance criteria are paired with bounded resource History so a new agent can resume without reconstructing the task from an obsolete manual timeline.
 - **Isolated code changes.** Repositories under `repos/` are shared source caches; each coding task records its own branch and worktree under `task.../worktree/`.
 - **Explicit file ownership.** Generated agent instructions allow writes only in the starting resource and its task worktrees, while keeping other Workspace resources read-only.
-- **Interactive agents through AgentHub.** Forge GUI uses AgentHub as its only execution and conversation surface, including streaming chat, resumable history, file uploads, approvals, and mid-turn user intervention.
+- **Interactive agents through AgentHub.** The Forge web UI uses AgentHub as its only execution and conversation surface, including streaming chat, resumable history, file uploads, approvals, and mid-turn user intervention.
 - **A workspace-oriented UI.** Switch between workspaces, browse projects and tasks, inspect Markdown and artifacts, preview Wiki pages, review worktree diffs, monitor resource runtime state, and use the details/chat layout on desktop or mobile. The layout adapts to the window width: three columns (sidebar, details, chat) on wide screens, two columns with a tabbed details/chat pane below 1440px, and a single-column mobile layout below 980px. The Appearance tab in System Settings lets users override the responsive choice manually — auto, three columns, tabbed two columns, or a split view that collapses the sidebar into a drawer with details and chat side by side — and scale the text of the sidebar, details, and chat columns independently; both preferences are stored in the browser.
 - **Agent-interpreted scheduling.** Every Workspace has a Forge-managed Scheduler resource that evaluates natural-language conditions and sends ordinary resource messages without introducing a second execution protocol.
 
@@ -41,7 +41,7 @@ Resource-level Session Locks are not part of Forge. Multiple sessions can run ag
 
 - Go 1.22 or newer
 - Git
-- A compatible AgentHub service for GUI chat
+- A compatible AgentHub service for web chat
 
 ## Build
 
@@ -77,7 +77,7 @@ forge task create --project=project1 --slug first-change \
   "First change"
 ```
 
-Open the GUI for that workspace:
+Open the web UI for that workspace:
 
 ```bash
 forge serve --workspace "$PWD"
@@ -85,9 +85,9 @@ forge serve --workspace "$PWD"
 
 Then visit [http://127.0.0.1:4936](http://127.0.0.1:4936). Configure the AgentHub endpoint and Agent Profiles in Settings.
 
-The GUI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
+The web UI has no built-in authentication. Its default loopback address is appropriate for local use; do not expose it to an untrusted network.
 
-## Forge GUI
+## Forge Web UI
 
 The main UI is split into navigation, resource details, and agent chat:
 
@@ -120,7 +120,7 @@ The Web sidebar has a server-owned Attention list below the resource tree. Proje
 
 The Server sends enqueue-only `scheduler_tick` system messages. It does not interpret conditions itself. An empty schedule list produces no Turn; adding or changing a schedule requests an immediate coalesced tick. Otherwise the interval is measured from the end of the previous completed Server-triggered Scheduler Turn, so user chat with the Scheduler does not postpone its next wake. Restart recovery checks durable mailbox and canonical AgentHub Turn state before deciding whether one recovery tick is needed. Messages to schedule targets may repeat, and receivers use the schedule ID to handle duplicates.
 
-The Scheduler may target only `workspace`, `scheduler`, or an open Project/Task in the same Workspace. Use the fixed GUI entry to bind its Agent/Profile, change the interval, maintain schedules, inspect context, and chat. The CLI exposes schedule data only:
+The Scheduler may target only `workspace`, `scheduler`, or an open Project/Task in the same Workspace. Use the fixed web UI entry to bind its Agent/Profile, change the interval, maintain schedules, inspect context, and chat. The CLI exposes schedule data only:
 
 ```text
 forge scheduler list [--json]
@@ -149,19 +149,21 @@ Useful overrides:
 
 ```text
 FORGE_AGENTHUB_URL  AgentHub endpoint override
-FORGE_GUI_CONFIG    GUI configuration file
+FORGE_SERVE_CONFIG  serve configuration file
+FORGE_GUI_CONFIG    legacy alias of FORGE_SERVE_CONFIG
 ```
 
-When `FORGE_GUI_CONFIG` is unset, Forge stores the GUI configuration at
-`~/.forge/gui.json`.
+When neither variable is set, Forge stores the serve configuration at
+`~/.forge/serve.json`; an existing `~/.forge/gui.json` (the pre-rename
+default) keeps being used.
 
-For an existing installation, stop the running Forge GUI before migrating the
-old file from `~/Library/Application Support/forge/gui.json` to
+For a very old installation, stop the running Forge service before migrating
+the file from `~/Library/Application Support/forge/gui.json` to
 `~/.forge/gui.json`. The old location is not read automatically.
 
 `forge serve` no longer reads the former `FORGE_CLI` override. Remove that setting when upgrading; Workspace operations use the in-process typed API and the configured Workspace path.
 
-Each running GUI instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_GUI_CONFIG` cannot write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before runtime recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
+Each running serve instance exclusively locks its configuration file, and every managed Workspace is additionally owned by exactly one `forge serve` process through an OS advisory lock at `<workspace>/.forge/serve.lock`. A second instance with a different `FORGE_SERVE_CONFIG` cannot write a Workspace owned by another instance: startup fails with the canonical Workspace path and owner diagnostics before runtime recovery begins, and dynamically adding an owned Workspace is rejected. Path aliases such as relative paths, `..`, and symlinks resolve to the same canonical Workspace and cannot bypass ownership. The OS releases the lock automatically when the owning process exits, so a later instance can take over. Use a separate config path, address, and workspace for an isolated test instance. See [internal/serve/README.md](internal/serve/README.md) for the AgentHub boundary, current settings behavior, and isolated validation.
 
 ## Task Worktrees
 
@@ -390,10 +392,10 @@ go run ./cli/cmd/forge help
 go run ./cli/cmd/forge serve --workspace /path/to/AgentWorkspace
 ```
 
-When testing a second GUI instance, isolate all mutable state. Each Workspace can only be managed by one `forge serve` process at a time, so a test instance must point at its own isolated Workspace; pointing it at a real Workspace now fails fast with a lock-conflict error instead of corrupting shared state, but tests must still use isolated Workspaces to avoid real business writes:
+When testing a second serve instance, isolate all mutable state. Each Workspace can only be managed by one `forge serve` process at a time, so a test instance must point at its own isolated Workspace; pointing it at a real Workspace now fails fast with a lock-conflict error instead of corrupting shared state, but tests must still use isolated Workspaces to avoid real business writes:
 
 ```bash
-FORGE_GUI_CONFIG=/tmp/forge-gui-test/gui.json \
+FORGE_SERVE_CONFIG=/tmp/forge-serve-test/serve.json \
   go run ./cli/cmd/forge serve \
   --addr 127.0.0.1:4999 \
   --workspace /tmp/forge-workspace-test

@@ -182,7 +182,7 @@ type agentRuntime struct {
 	turnActionMu          sync.Mutex
 	retirementMu          sync.Mutex
 	forgeSessionReleaseMu sync.Mutex
-	workspace             guiWorkspace
+	workspace             serveWorkspace
 	manager               *agentManager
 	run                   agentRun
 	agentHub              *agentHubClient
@@ -373,7 +373,7 @@ func agentRunMatchesResource(run agentRun, resourceID string) bool {
 	return run.ResourceID == resourceID
 }
 
-func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWorkspace, run agentRun, cfg config) (string, error) {
+func (m *agentManager) createForgeSession(ctx context.Context, workspace serveWorkspace, run agentRun, cfg config) (string, error) {
 	// Resource generations are now the Forge-side lifecycle record. Legacy
 	// agent-run compatibility code still carries a synthetic identifier so its
 	// in-memory control flow can converge, but it never creates a Forge Session
@@ -387,7 +387,7 @@ func (m *agentManager) createForgeSession(ctx context.Context, workspace guiWork
 	return "", nil
 }
 
-func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace guiWorkspace, forgeSessionID, agentHubSessionID string) error {
+func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace serveWorkspace, forgeSessionID, agentHubSessionID string) error {
 	// AgentHubSessionID is persisted on the generation record itself. This
 	// compatibility hook intentionally has no filesystem side effect.
 	_ = ctx
@@ -397,7 +397,7 @@ func (m *agentManager) bindForgeSessionAgentHub(ctx context.Context, workspace g
 	return nil
 }
 
-func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspace, sessionID string) error {
+func (m *agentManager) endForgeSession(ctx context.Context, workspace serveWorkspace, sessionID string) error {
 	// Kept as a no-op for the unregistered legacy control path. There is no
 	// Forge Session projection to release in the resource lifecycle.
 	_ = ctx
@@ -406,7 +406,7 @@ func (m *agentManager) endForgeSession(ctx context.Context, workspace guiWorkspa
 	return nil
 }
 
-func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, resourceID, requested string) (string, error) {
+func (m *agentManager) agentRunCwd(ctx context.Context, workspace serveWorkspace, resourceID, requested string) (string, error) {
 	if strings.TrimSpace(requested) != "" {
 		return agentCwd(workspace.Path, requested)
 	}
@@ -416,7 +416,7 @@ func (m *agentManager) agentRunCwd(ctx context.Context, workspace guiWorkspace, 
 	return m.resourceDir(ctx, workspace, resourceID)
 }
 
-func (m *agentManager) resourceDir(ctx context.Context, workspace guiWorkspace, resourceID string) (string, error) {
+func (m *agentManager) resourceDir(ctx context.Context, workspace serveWorkspace, resourceID string) (string, error) {
 	_ = ctx
 	resourceID = strings.TrimSpace(resourceID)
 	forgeWorkspace, err := app.OpenWorkspace(workspace.Path)
@@ -473,16 +473,16 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 	m.resolveAgentHubApproval(w, r, rt, req)
 }
 
-func (m *agentManager) workspaceRuntime(workspaceID, runID string) (guiWorkspace, *agentRuntime, error) {
+func (m *agentManager) workspaceRuntime(workspaceID, runID string) (serveWorkspace, *agentRuntime, error) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
-		return guiWorkspace{}, nil, err
+		return serveWorkspace{}, nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	rt := m.runtimes[runID]
 	if rt != nil && rt.workspace.ID != workspaceID {
-		return guiWorkspace{}, nil, errors.New("run belongs to another workspace")
+		return serveWorkspace{}, nil, errors.New("run belongs to another workspace")
 	}
 	return workspace, rt, nil
 }

@@ -667,7 +667,7 @@ Commands:
 
   forge workspace tree --json
     Print a lightweight JSON tree of open projects, open tasks, and resource
-    runtime state for GUI and tool integrations.
+    runtime state for web and tool integrations.
 
   forge workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,

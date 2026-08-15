@@ -82,7 +82,7 @@ func resourceUploadManager(t *testing.T, workspace string) (*agentManager, strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	writeCurrentTestConfig(t, configPath, workspace)
 	manager := newAgentManager(&server{config: configPath})
 	return manager, task.ID, filepath.Join(workspace, filepath.FromSlash(task.Path))
@@ -123,9 +123,9 @@ func agentUploadRequest(t *testing.T, name, content string) *http.Request {
 
 func writeCurrentTestConfig(t *testing.T, path, workspace string) {
 	t.Helper()
-	data, err := json.Marshal(agentHubGUIConfig{
+	data, err := json.Marshal(agentHubServeConfig{
 		Version:            agentHubConfigVersion,
-		Workspaces:         []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+		Workspaces:         []serveWorkspace{{ID: "workspace-one", Path: workspace}},
 		AgentHubEndpoint:   defaultAgentHubEndpoint,
 		AgentHubInstanceID: "forge-test",
 		AgentProfiles:      []agentHubProfileRoute{{Key: "default", AgentName: "test-agent"}},

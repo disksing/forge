@@ -171,7 +171,7 @@ func decodeResourceHistoryReference(value, expectedKind, instanceID, resourceID 
 	return reference, nil
 }
 
-func resourceHistoryInstanceID(workspace guiWorkspace) (string, error) {
+func resourceHistoryInstanceID(workspace serveWorkspace) (string, error) {
 	opened, err := app.OpenWorkspace(workspace.Path)
 	if err != nil {
 		return "", err
@@ -297,7 +297,7 @@ func parseResourceHistoryLimit(value string) (int, error) {
 	return limit, nil
 }
 
-func validateResourceHistoryTarget(workspace guiWorkspace, resourceID string) error {
+func validateResourceHistoryTarget(workspace serveWorkspace, resourceID string) error {
 	exists, _, _, err := resourceExistsAndArchived(workspace.Path, resourceID)
 	if err != nil || !exists {
 		if err == nil {
@@ -308,7 +308,7 @@ func validateResourceHistoryTarget(workspace guiWorkspace, resourceID string) er
 	return nil
 }
 
-func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace guiWorkspace, resourceID, cursorValue string, limit int) (resourceHistoryPage, error) {
+func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveWorkspace, resourceID, cursorValue string, limit int) (resourceHistoryPage, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
 		return resourceHistoryPage{}, err
@@ -436,7 +436,7 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace guiWor
 	return page, nil
 }
 
-func resourceHistoryRunByReference(workspace guiWorkspace, resourceID string, reference resourceHistoryReference) (agentRun, error) {
+func resourceHistoryRunByReference(workspace serveWorkspace, resourceID string, reference resourceHistoryReference) (agentRun, error) {
 	runs, err := resourceHistoryRuns(workspace.Path, resourceID)
 	if err != nil {
 		return agentRun{}, err
@@ -456,7 +456,7 @@ func resourceHistoryRunByReference(workspace guiWorkspace, resourceID string, re
 // resource History, not just the current one, so read-only event paging can
 // expand compact Turn ranges from older generations. An unknown generation
 // keeps the generation_changed semantics live clients already handle.
-func resourceHistoryRunByGeneration(workspace guiWorkspace, resourceID, generationID string) (agentRun, error) {
+func resourceHistoryRunByGeneration(workspace serveWorkspace, resourceID, generationID string) (agentRun, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
 		return agentRun{}, err
@@ -476,7 +476,7 @@ func resourceHistoryRunByGeneration(workspace guiWorkspace, resourceID, generati
 	return agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
 }
 
-func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace guiWorkspace, resourceID, value string) (resourceHistoryTurnDetail, error) {
+func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveWorkspace, resourceID, value string) (resourceHistoryTurnDetail, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
 		return resourceHistoryTurnDetail{}, err
@@ -544,7 +544,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace guiWor
 	return detail, nil
 }
 
-func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace guiWorkspace, resourceID, value string) (resourceHistoryEventDetail, error) {
+func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serveWorkspace, resourceID, value string) (resourceHistoryEventDetail, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
 		return resourceHistoryEventDetail{}, err

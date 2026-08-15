@@ -9,9 +9,9 @@ import (
 	"testing"
 )
 
-func TestGUIConfigLockPreventsSecondInstance(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "forge", "gui.json")
-	first, err := acquireGUIConfigLock(configPath, "127.0.0.1:4936")
+func TestServeConfigLockPreventsSecondInstance(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "forge", "serve.json")
+	first, err := acquireServeConfigLock(configPath, "127.0.0.1:4936")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -20,7 +20,7 @@ func TestGUIConfigLockPreventsSecondInstance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var metadata guiConfigLockMetadata
+	var metadata serveConfigLockMetadata
 	if err := json.Unmarshal(data, &metadata); err != nil {
 		t.Fatal(err)
 	}
@@ -32,12 +32,12 @@ func TestGUIConfigLockPreventsSecondInstance(t *testing.T) {
 		t.Fatalf("unexpected lock metadata: %#v", metadata)
 	}
 
-	second, err := acquireGUIConfigLock(configPath, "127.0.0.1:4999")
+	second, err := acquireServeConfigLock(configPath, "127.0.0.1:4999")
 	if err == nil {
 		_ = second.Close()
 		t.Fatal("expected the second config lock to fail")
 	}
-	for _, want := range []string{absConfigPath, "PID " + strconv.Itoa(os.Getpid()), "127.0.0.1:4936", "FORGE_GUI_CONFIG"} {
+	for _, want := range []string{absConfigPath, "PID " + strconv.Itoa(os.Getpid()), "127.0.0.1:4936", "FORGE_SERVE_CONFIG"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("config lock conflict is missing %q: %v", want, err)
 		}
@@ -46,7 +46,7 @@ func TestGUIConfigLockPreventsSecondInstance(t *testing.T) {
 	if err := first.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, err := acquireGUIConfigLock(configPath, "127.0.0.1:4999")
+	reopened, err := acquireServeConfigLock(configPath, "127.0.0.1:4999")
 	if err != nil {
 		t.Fatalf("config lock should be reusable after release: %v", err)
 	}
@@ -55,14 +55,14 @@ func TestGUIConfigLockPreventsSecondInstance(t *testing.T) {
 	}
 }
 
-func TestGUIConfigLockAllowsDifferentConfigs(t *testing.T) {
+func TestServeConfigLockAllowsDifferentConfigs(t *testing.T) {
 	dir := t.TempDir()
-	first, err := acquireGUIConfigLock(filepath.Join(dir, "first.json"), "127.0.0.1:4936")
+	first, err := acquireServeConfigLock(filepath.Join(dir, "first.json"), "127.0.0.1:4936")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer first.Close()
-	second, err := acquireGUIConfigLock(filepath.Join(dir, "second.json"), "127.0.0.1:4999")
+	second, err := acquireServeConfigLock(filepath.Join(dir, "second.json"), "127.0.0.1:4999")
 	if err != nil {
 		t.Fatal(err)
 	}

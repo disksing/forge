@@ -23,8 +23,8 @@ func attentionTestServer(t *testing.T) (*server, string) {
 	if _, err := forgeWorkspace.CreateProject("Attention project", "attention"); err != nil {
 		t.Fatal(err)
 	}
-	server := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := server.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}, AgentHubEndpoint: "http://127.0.0.1:1"}); err != nil {
+	server := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := server.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}, AgentHubEndpoint: "http://127.0.0.1:1"}); err != nil {
 		t.Fatal(err)
 	}
 	return server, workspace
@@ -207,7 +207,7 @@ func TestAcceptResourceMessageAutomaticallyFollowsResource(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	manager := newAgentManager(server)
 	server.agents = manager
-	message, err := manager.acceptResourceMessage(context.Background(), guiWorkspace{ID: "workspace-one", Path: workspace}, "project1", resourceMessageRequest{Text: "hello", Role: "user"})
+	message, err := manager.acceptResourceMessage(context.Background(), serveWorkspace{ID: "workspace-one", Path: workspace}, "project1", resourceMessageRequest{Text: "hello", Role: "user"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,8 +228,8 @@ func TestCreateProjectAndTaskAutomaticallyFollowResources(t *testing.T) {
 	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	server := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := server.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}, AgentHubEndpoint: "http://127.0.0.1:1"}); err != nil {
+	server := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := server.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}, AgentHubEndpoint: "http://127.0.0.1:1"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -274,7 +274,7 @@ func TestTurnOrdinalChangesOnlyForNewAgentHubTurn(t *testing.T) {
 	workspace := t.TempDir()
 	manager := newAgentManager(&server{})
 	runtime := &agentRuntime{
-		workspace: guiWorkspace{ID: "workspace-one", Path: workspace},
+		workspace: serveWorkspace{ID: "workspace-one", Path: workspace},
 		manager:   manager,
 		run:       agentRun{ID: "run-turn-ordinal", WorkspaceID: "workspace-one", ResourceID: "project1", GenerationID: "gen-turn-ordinal", Status: "idle"},
 	}

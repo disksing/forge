@@ -882,7 +882,7 @@ func publicResourceState(archived bool, unavailableReason string, generation *re
 	return "idle"
 }
 
-func (m *agentManager) resourceStatus(ctx context.Context, workspace guiWorkspace, resourceID string) (resourceStatusResponse, error) {
+func (m *agentManager) resourceStatus(ctx context.Context, workspace serveWorkspace, resourceID string) (resourceStatusResponse, error) {
 	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
 		return resourceStatusResponse{}, err
 	}
@@ -1083,7 +1083,7 @@ func currentRunByGenerationID(workspacePath, generationID string) (agentRun, boo
 	return agentRun{}, false, nil
 }
 
-func (m *agentManager) ensureRuntime(workspace guiWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
+func (m *agentManager) ensureRuntime(workspace serveWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
 	rt := m.runtimeByID(run.ID)
 	if rt != nil {
 		return rt
@@ -1094,7 +1094,7 @@ func (m *agentManager) ensureRuntime(workspace guiWorkspace, run agentRun, clien
 	return rt
 }
 
-func (m *agentManager) ensureMailboxGeneration(ctx context.Context, workspace guiWorkspace, resourceID string) (agentRun, *agentRuntime, *agentHubClient, error) {
+func (m *agentManager) ensureMailboxGeneration(ctx context.Context, workspace serveWorkspace, resourceID string) (agentRun, *agentRuntime, *agentHubClient, error) {
 	if run, found, err := currentResourceGeneration(workspace.Path, resourceID); err != nil {
 		return agentRun{}, nil, nil, err
 	} else if found {
@@ -1155,7 +1155,7 @@ func recordMailboxFailure(workspacePath, messageID string, err error) {
 	})
 }
 
-func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
+func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace serveWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
 	resourceID = normalizedResourceID(resourceID)
 	var message resourceMailboxMessage
 	err := m.withResourceController(ctx, workspace, resourceID, func() error {
@@ -1178,7 +1178,7 @@ func (m *agentManager) acceptResourceMessage(ctx context.Context, workspace guiW
 // acceptResourceMessageDurable validates the resource and persists the
 // mailbox acceptance. It deliberately does not contact AgentHub; callers must
 // wake the resource controller after this short durable boundary.
-func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspace guiWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
+func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspace serveWorkspace, resourceID string, request resourceMessageRequest) (resourceMailboxMessage, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := m.server.requireWorkspaceOwnership(workspace.Path); err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
@@ -1208,7 +1208,7 @@ func (m *agentManager) acceptResourceMessageDurable(ctx context.Context, workspa
 	return message, nil
 }
 
-func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace guiWorkspace, messageID string) (resourceMailboxMessage, error) {
+func (m *agentManager) promoteWaitingMessage(ctx context.Context, workspace serveWorkspace, messageID string) (resourceMailboxMessage, error) {
 	resourceID, err := mailboxMessageResourceID(workspace.Path, messageID)
 	if err != nil {
 		return resourceMailboxMessage{}, err
@@ -1248,7 +1248,7 @@ func mailboxMessageResourceID(workspacePath, messageID string) (string, error) {
 	return normalizedResourceID(message.ResourceID), nil
 }
 
-func (m *agentManager) promoteWaitingMessageLocked(ctx context.Context, workspace guiWorkspace, messageID string) (resourceMailboxMessage, error) {
+func (m *agentManager) promoteWaitingMessageLocked(ctx context.Context, workspace serveWorkspace, messageID string) (resourceMailboxMessage, error) {
 	if err := m.server.requireWorkspaceOwnership(workspace.Path); err != nil {
 		return resourceMailboxMessage{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
 	}
@@ -1306,7 +1306,7 @@ func (m *agentManager) promoteWaitingMessageLocked(ctx context.Context, workspac
 	return message, nil
 }
 
-func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, workspace guiWorkspace, resourceID string) error {
+func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, workspace serveWorkspace, resourceID string) error {
 	resourceID = normalizedResourceID(resourceID)
 	_, archived, _, resourceErr := resourceExistsAndArchived(workspace.Path, resourceID)
 	if resourceErr != nil {
@@ -1707,7 +1707,7 @@ func (m *agentManager) reconcileResourceMailboxLocked(ctx context.Context, works
 	return errors.New("resource mailbox reconciliation exceeded its bounded iteration limit")
 }
 
-func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspace guiWorkspace) error {
+func (m *agentManager) reconcileWorkspaceMailboxes(ctx context.Context, workspace serveWorkspace) error {
 	if err := migrateLegacyResourceMailbox(workspace.Path); err != nil {
 		return err
 	}

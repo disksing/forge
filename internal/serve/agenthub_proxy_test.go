@@ -98,12 +98,12 @@ func (f *proxyFakeAgentHub) serveStream(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspace) {
+func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, serveWorkspace) {
 	t.Helper()
-	workspace := guiWorkspace{ID: "workspace-one", Path: t.TempDir()}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
-	data, err := json.Marshal(agentHubGUIConfig{
-		Version: agentHubConfigVersion, Workspaces: []guiWorkspace{workspace},
+	workspace := serveWorkspace{ID: "workspace-one", Path: t.TempDir()}
+	configPath := filepath.Join(t.TempDir(), "serve.json")
+	data, err := json.Marshal(agentHubServeConfig{
+		Version: agentHubConfigVersion, Workspaces: []serveWorkspace{workspace},
 		AgentHubEndpoint: hubURL, AgentHubInstanceID: "forge-proxy-test",
 		AgentProfiles: []agentHubProfileRoute{{Key: "default", AgentName: "fake-agent"}},
 	})
@@ -119,7 +119,7 @@ func newProxyTestManager(t *testing.T, hubURL string) (*agentManager, guiWorkspa
 	return manager, workspace
 }
 
-func registerProxyTestRun(manager *agentManager, workspace guiWorkspace, run agentRun) {
+func registerProxyTestRun(manager *agentManager, workspace serveWorkspace, run agentRun) {
 	manager.registerRuntime(&agentRuntime{workspace: workspace, run: run})
 }
 
@@ -308,7 +308,7 @@ func TestAgentHubProxyEventsMapsUpstreamErrors(t *testing.T) {
 	}
 }
 
-func proxyGUIServer(t *testing.T, manager *agentManager, workspaceID, runID, endpoint string) *httptest.Server {
+func proxyServeServer(t *testing.T, manager *agentManager, workspaceID, runID, endpoint string) *httptest.Server {
 	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		manager.proxyAgentHubStream(w, r, workspaceID, runID)
@@ -338,16 +338,16 @@ func TestAgentHubProxyStreamForwardsFramesCursorAndCacheHeader(t *testing.T) {
 	registerProxyTestRun(manager, workspace, agentRun{
 		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	gui := proxyGUIServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, gui.URL+"/stream?after=3", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, serveServer.URL+"/stream?after=3", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	request.Header.Set("Last-Event-ID", "4")
-	response, err := gui.Client().Do(request)
+	response, err := serveServer.Client().Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -397,15 +397,15 @@ func TestAgentHubProxyStreamInterleavesForgeNotice(t *testing.T) {
 	registerProxyTestRun(manager, workspace, agentRun{
 		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	gui := proxyGUIServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, gui.URL+"/stream", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, serveServer.URL+"/stream", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := gui.Client().Do(request)
+	response, err := serveServer.Client().Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -445,14 +445,14 @@ func TestAgentHubProxyStreamDisconnectCancelsUpstream(t *testing.T) {
 	registerProxyTestRun(manager, workspace, agentRun{
 		ID: "run-one", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_one", Status: "idle",
 	})
-	gui := proxyGUIServer(t, manager, workspace.ID, "run-one", "stream")
+	serveServer := proxyServeServer(t, manager, workspace.ID, "run-one", "stream")
 
 	ctx, cancel := context.WithCancel(context.Background())
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, gui.URL+"/stream", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, serveServer.URL+"/stream", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err := gui.Client().Do(request)
+	response, err := serveServer.Client().Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}

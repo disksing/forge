@@ -32,7 +32,7 @@ go -C "$root" build -o "$binary_path" ./cli/cmd/forge
 	"$binary_path" init --language=en
 )
 
-FORGE_GUI_CONFIG="$runtime_dir/gui.json" \
+FORGE_SERVE_CONFIG="$runtime_dir/serve.json" \
 FORGE_AGENTHUB_URL="http://127.0.0.1:1" \
 AGENTHUB_DATA_DIR="$agenthub_data_dir" \
 "$binary_path" serve --addr="127.0.0.1:$port" --workspace="$workspace_dir"

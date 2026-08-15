@@ -12,7 +12,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-func addRuntimeTestWorkspace(t *testing.T, manager *agentManager, id, name string) guiWorkspace {
+func addRuntimeTestWorkspace(t *testing.T, manager *agentManager, id, name string) serveWorkspace {
 	t.Helper()
 	path := t.TempDir()
 	forgeWorkspace, err := app.Initialize(path, "en")
@@ -26,7 +26,7 @@ func addRuntimeTestWorkspace(t *testing.T, manager *agentManager, id, name strin
 	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: name + " task", Slug: strings.ToLower(name) + "-task"}); err != nil {
 		t.Fatal(err)
 	}
-	workspace := guiWorkspace{ID: id, Name: name, Path: path}
+	workspace := serveWorkspace{ID: id, Name: name, Path: path}
 	cfg, err := manager.server.loadConfig()
 	if err != nil {
 		t.Fatal(err)

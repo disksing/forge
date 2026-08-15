@@ -30,14 +30,14 @@ func workspaceInstanceID(workspacePath string) (string, error) {
 	return strings.TrimSpace(runtime.InstanceID), nil
 }
 
-func (m *agentManager) managedWorkspaceByInstanceID(instanceID string) (guiWorkspace, bool, error) {
+func (m *agentManager) managedWorkspaceByInstanceID(instanceID string) (serveWorkspace, bool, error) {
 	instanceID = strings.TrimSpace(instanceID)
 	if instanceID == "" {
-		return guiWorkspace{}, false, nil
+		return serveWorkspace{}, false, nil
 	}
 	cfg, err := m.server.loadConfig()
 	if err != nil {
-		return guiWorkspace{}, false, err
+		return serveWorkspace{}, false, err
 	}
 	for _, workspace := range cfg.Workspaces {
 		if !m.server.ownsWorkspace(workspace.Path) {
@@ -51,7 +51,7 @@ func (m *agentManager) managedWorkspaceByInstanceID(instanceID string) (guiWorks
 			return workspace, true, nil
 		}
 	}
-	return guiWorkspace{}, false, nil
+	return serveWorkspace{}, false, nil
 }
 
 func lastAssistantText(turn agentHubTurn) string {
@@ -212,7 +212,7 @@ func mirrorNotificationDelivery(receipt *resourceNotificationReceipt, message re
 	}
 }
 
-func (m *agentManager) routeNotification(ctx context.Context, source guiWorkspace, sourceMessage resourceMailboxMessage, generated resourceMailboxMessage) error {
+func (m *agentManager) routeNotification(ctx context.Context, source serveWorkspace, sourceMessage resourceMailboxMessage, generated resourceMailboxMessage) error {
 	receipt := sourceMessage.Notification
 	if receipt == nil {
 		return nil
@@ -424,7 +424,7 @@ func turnResultSubscriptionGroupKey(message resourceMailboxMessage) string {
 	}, "\x00")
 }
 
-func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, workspace guiWorkspace, instanceID string, client *agentHubClient) error {
+func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, workspace serveWorkspace, instanceID string, client *agentHubClient) error {
 	hotMailboxes, err := loadAllHotResourceMailboxes(workspace.Path)
 	if err != nil {
 		return err
@@ -626,7 +626,7 @@ func (m *agentManager) reconcileTurnResultSubscriptions(ctx context.Context, wor
 	return nil
 }
 
-func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace guiWorkspace, instanceID string, message resourceMailboxMessage) error {
+func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace serveWorkspace, instanceID string, message resourceMailboxMessage) error {
 	if message.Type != "" || message.Role != "agent" || message.Sender == nil || strings.TrimSpace(message.Sender.ID) == "" ||
 		strings.TrimSpace(message.SenderWorkspaceInstanceID) == "" ||
 		(message.Status != resourceMessageCancelled && message.Status != resourceMessageUndeliverable && message.Status != resourceMessageDeliveryUnknown) {
@@ -650,7 +650,7 @@ func (m *agentManager) reconcileTerminalNotice(ctx context.Context, workspace gu
 	return m.routeNotification(ctx, workspace, updated, generated)
 }
 
-func (m *agentManager) reconcileWorkspaceNotifications(ctx context.Context, workspace guiWorkspace, client *agentHubClient) error {
+func (m *agentManager) reconcileWorkspaceNotifications(ctx context.Context, workspace serveWorkspace, client *agentHubClient) error {
 	instanceID, err := workspaceInstanceID(workspace.Path)
 	if err != nil {
 		return err

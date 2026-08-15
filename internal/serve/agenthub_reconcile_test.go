@@ -20,7 +20,7 @@ func seedArchivedSession(fake *runtimeFakeAgentHub, session agentHubSession, wit
 	fake.mu.Unlock()
 }
 
-func archivedTestRun(workspace guiWorkspace, id string) agentRun {
+func archivedTestRun(workspace serveWorkspace, id string) agentRun {
 	now := "2026-08-01T00:00:01Z"
 	return agentRun{
 		ID: id, WorkspaceID: workspace.ID, ResourceID: "project1.task1",

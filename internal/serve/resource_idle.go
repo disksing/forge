@@ -104,7 +104,7 @@ func (m *agentManager) idleDeadlineDue(run agentRun) bool {
 	return !deadline.IsZero() && !m.resourceNow().Before(deadline)
 }
 
-func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace guiWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
+func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace serveWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
 	return m.withResourceController(ctx, workspace, observed.ResourceID, func() error {
 		return m.reconcileIdleGenerationLocked(ctx, workspace, observed, observedSession, client)
 	})
@@ -114,7 +114,7 @@ func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace gu
 // projection and under the resource controller. It re-reads the exact
 // generation and Session before persisting the Stop guard, so an old poll
 // response cannot stop a replacement generation.
-func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, workspace guiWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
+func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, workspace serveWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
 	if strings.TrimSpace(observed.GenerationID) == "" || client == nil {
 		return nil
 	}
@@ -164,7 +164,7 @@ func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, worksp
 	return m.startIdleRetirementLocked(ctx, workspace, run, rt, client)
 }
 
-func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace guiWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient) error {
+func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace serveWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient) error {
 	if rt == nil || client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
 		return nil
 	}

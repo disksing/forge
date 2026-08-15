@@ -6,7 +6,7 @@ import (
 )
 
 type settingsResponse struct {
-	Workspaces []guiWorkspace `json:"workspaces"`
+	Workspaces []serveWorkspace `json:"workspaces"`
 	ActiveID   string         `json:"activeId,omitempty"`
 }
 

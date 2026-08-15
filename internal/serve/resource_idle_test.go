@@ -13,7 +13,7 @@ import (
 	"github.com/disksing/forge/internal/app"
 )
 
-func idleTestRun(workspace guiWorkspace, resourceID, runID, sessionID string, deadline time.Time) agentRun {
+func idleTestRun(workspace serveWorkspace, resourceID, runID, sessionID string, deadline time.Time) agentRun {
 	boundary := deadline.Add(-30 * time.Minute)
 	return agentRun{
 		ID:                runID,
@@ -37,7 +37,7 @@ func idleTestRun(workspace guiWorkspace, resourceID, runID, sessionID string, de
 	}
 }
 
-func seedIdleTestRun(t *testing.T, fake *runtimeFakeAgentHub, workspace guiWorkspace, run agentRun, state string) {
+func seedIdleTestRun(t *testing.T, fake *runtimeFakeAgentHub, workspace serveWorkspace, run agentRun, state string) {
 	t.Helper()
 	seedPollerRun(t, fake, workspace, run, agentHubSession{
 		ID: run.AgentHubSessionID, State: state, AgentName: "fake-agent",

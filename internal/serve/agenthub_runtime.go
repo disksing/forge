@@ -181,7 +181,7 @@ func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSess
 		source.App, source.InstanceID, source.ExternalID, strings.Join(ids, ", "))
 }
 
-func newAgentHubRuntime(m *agentManager, workspace guiWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
+func newAgentHubRuntime(m *agentManager, workspace serveWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
 	return &agentRuntime{
 		workspace: workspace, manager: m, run: run,
 		agentHub: client,
@@ -291,7 +291,7 @@ type interruptRunResponse struct {
 	PendingSteerCancellationError string   `json:"pendingSteerCancellationError,omitempty"`
 }
 
-type interruptRunPostAction func(guiWorkspace, string) (cancelledResourceMessages, error)
+type interruptRunPostAction func(serveWorkspace, string) (cancelledResourceMessages, error)
 
 func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
 	response, err := m.interruptRunWithPostAction(r.Context(), workspaceID, runID, nil)
@@ -555,13 +555,13 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 // the bounded durable history needed for the completion marker. candidates
 // carries the sessions found by the single instance-wide startup query.
 // Live runs may recreate a missing AgentHub session from the source tuple.
-func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
+func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, run agentRun, candidates []agentHubSession) error {
 	return m.withResourceController(ctx, workspace, run.ResourceID, func() error {
 		return m.recoverAgentHubRunLocked(ctx, cfg, client, workspace, run, candidates)
 	})
 }
 
-func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config, client *agentHubClient, workspace guiWorkspace, run agentRun, candidates []agentHubSession) error {
+func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, run agentRun, candidates []agentHubSession) error {
 	source := agentHubSource{App: agentHubSourceApp, InstanceID: runSourceInstanceID(cfg, run), ExternalID: run.SourceExternalID}
 	live := isLiveAgentStatus(run.Status)
 	if len(candidates) == 0 && live {
@@ -665,7 +665,7 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	return nil
 }
 
-func (m *agentManager) markAgentRunRecovering(workspace guiWorkspace, run agentRun) {
+func (m *agentManager) markAgentRunRecovering(workspace serveWorkspace, run agentRun) {
 	run.Status = "recovering"
 	run.UpdatedAt = time.Now().Format(time.RFC3339)
 	if rt := m.runtimeByID(run.ID); rt != nil {

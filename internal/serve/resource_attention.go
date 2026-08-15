@@ -38,17 +38,17 @@ func cloneIntPointer(value *int) *int {
 	return &cloned
 }
 
-func loadGUIStateFile(path string) (guiState, error) {
+func loadUIStateFile(path string) (uiState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return guiState{Version: 1, ExpandedProjects: []string{}, Attention: map[string]resourceAttentionState{}}, nil
+			return uiState{Version: 1, ExpandedProjects: []string{}, Attention: map[string]resourceAttentionState{}}, nil
 		}
-		return guiState{}, err
+		return uiState{}, err
 	}
-	var state guiState
+	var state uiState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return guiState{}, err
+		return uiState{}, err
 	}
 	if state.Version == 0 {
 		state.Version = 1
@@ -62,7 +62,7 @@ func loadGUIStateFile(path string) (guiState, error) {
 	return state, nil
 }
 
-func saveGUIStateFile(path string, state guiState) error {
+func saveUIStateFile(path string, state uiState) error {
 	state.Version = 1
 	state.ExpandedProjects = uniqueNonEmpty(state.ExpandedProjects)
 	if state.Attention == nil {
@@ -103,7 +103,7 @@ func saveGUIStateFile(path string, state guiState) error {
 func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadGUIStateFile(guiStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +113,7 @@ func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionS
 func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState)) (resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadGUIStateFile(guiStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return resourceAttentionState{}, err
 	}
@@ -124,7 +124,7 @@ func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate f
 	attention := state.Attention[resourceID]
 	mutate(&attention)
 	state.Attention[resourceID] = attention
-	if err := saveGUIStateFile(guiStatePath(path), state); err != nil {
+	if err := saveUIStateFile(uiStatePath(path), state); err != nil {
 		return resourceAttentionState{}, err
 	}
 	return attention, nil
@@ -144,7 +144,7 @@ func (s *server) followResource(path, resourceID string) error {
 func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadGUIStateFile(guiStatePath(path))
+	state, err := loadUIStateFile(uiStatePath(path))
 	if err != nil {
 		return 0, err
 	}
@@ -166,7 +166,7 @@ func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error
 	}
 	attention.TurnNumber = maximum + 1
 	state.Attention[resourceID] = attention
-	if err := saveGUIStateFile(guiStatePath(path), state); err != nil {
+	if err := saveUIStateFile(uiStatePath(path), state); err != nil {
 		return 0, err
 	}
 	return attention.TurnNumber, nil

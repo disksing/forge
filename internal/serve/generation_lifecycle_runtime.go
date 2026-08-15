@@ -32,7 +32,7 @@ func resumeRetryDelay(failureCount int) time.Duration {
 // ResumeSession operation. The resource controller has already serialized the
 // resource, while turnActionMu serializes this Session with direct Turn
 // actions. No store write is held across the AgentHub request.
-func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, workspace guiWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient, plan GenerationLifecyclePlan) (bool, bool, error) {
+func (m *agentManager) resumeStoppedGenerationLocked(ctx context.Context, workspace serveWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient, plan GenerationLifecyclePlan) (bool, bool, error) {
 	if rt == nil || client == nil || plan.Operation != GenerationOperationResumeSession || strings.TrimSpace(run.AgentHubSessionID) == "" {
 		return false, false, nil
 	}

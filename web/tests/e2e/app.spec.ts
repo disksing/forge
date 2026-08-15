@@ -803,7 +803,7 @@ test("follows and dismisses a resource from the tree and attention list", async 
   await page.mouse.move(handleBox.x + handleBox.width / 2, handleBox.y - 60);
   await page.mouse.up();
   await expect.poll(() => activityPanel.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(initialHeight + 40);
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("forge.gui.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("forge.web.paneSizes") || "{}").sidebarAttentionHeight)).toBeGreaterThan(initialHeight + 40);
 
   await attentionRow.hover();
   await attentionRow.locator('[aria-label="Dismiss Migration project"]').click();
@@ -1054,7 +1054,7 @@ test("renders History turn detail with conversation timeline components", async 
 test("keeps narrow chat content inside the column while code blocks scroll locally", async ({ page }) => {
   await installMockApi(page, "project1.task1", false, false, false, [], "idle", 0, "narrow-layout");
   await page.addInitScript(() => {
-    localStorage.setItem("forge.gui.paneSizes", JSON.stringify({ sidebarWidth: 280, chatWidth: 320, sidebarAttentionHeight: 210 }));
+    localStorage.setItem("forge.web.paneSizes", JSON.stringify({ sidebarWidth: 280, chatWidth: 320, sidebarAttentionHeight: 210 }));
   });
   await page.goto("/w/ws-test/r/project1.task1");
 
@@ -1277,7 +1277,7 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await page.evaluate(() => {
     const state = window as Window & { __settingsPublicationTimer?: number };
     state.__settingsPublicationTimer = window.setInterval(() => window.dispatchEvent(new StorageEvent("storage", {
-      key: "forge.gui.user.v1",
+      key: "forge.web.user.v1",
       newValue: JSON.stringify({ version: 1, name: "Remote User" }),
     })), 10);
   });

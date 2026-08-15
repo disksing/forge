@@ -101,11 +101,11 @@ func TestCanonicalFrontendAssetsAndHistoryFallback(t *testing.T) {
 }
 
 func TestWorkspaceIconCanBeUpdatedAndReset(t *testing.T) {
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath}
 	if err := s.saveConfig(config{
 		Version:    agentHubConfigVersion,
-		Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "One", Path: t.TempDir()}},
+		Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "One", Path: t.TempDir()}},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestWorkspaceIconCanBeUpdatedAndReset(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("workspace icon update returned %d: %s", rec.Code, rec.Body.String())
 	}
-	var workspace guiWorkspace
+	var workspace serveWorkspace
 	if err := json.Unmarshal(rec.Body.Bytes(), &workspace); err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestAddingExistingWorkspacePreservesIcon(t *testing.T) {
 	if _, err := app.Initialize(workspacePath, "en"); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
 	workspace, err := s.addWorkspace(context.Background(), workspacePath)
 	if err != nil {
 		t.Fatal(err)
@@ -197,8 +197,8 @@ func TestWorkspaceWikiPreviewIsScopedAndReadable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -272,8 +272,8 @@ func TestWorkspaceFileLinkResolvesSluggedDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -309,8 +309,8 @@ func TestCreateTaskMapsTemplateBodyAsCompleteMarkdown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -340,8 +340,8 @@ func TestRemovedAutomationHTTPInputsAreRejected(t *testing.T) {
 	if _, err := forgeWorkspace.CreateProject("API project", "api"); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -380,8 +380,8 @@ func TestArchiveResourceUsesUnifiedResourceCommand(t *testing.T) {
 	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Archive task", Slug: "archive"}); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -413,8 +413,8 @@ func TestArchiveResourceReturnsNonBlockingWarningsAfterMove(t *testing.T) {
 	if _, err := forgeWorkspace.CreateTask(app.CreateTaskInput{ProjectID: project.ID, Title: "Open child", Slug: "child"}); err != nil {
 		t.Fatal(err)
 	}
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -444,9 +444,9 @@ func TestWorkspaceAgentsSaveRejectsChangedContentHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -488,9 +488,9 @@ func TestWorkspaceAgentsSaveWritesFullContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Name: "Test", Path: workspace.Root()}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -531,8 +531,8 @@ func TestRawFileDownloadServesAttachment(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -729,8 +729,8 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -752,8 +752,8 @@ func TestRawFileServesUTF8Charset(t *testing.T) {
 
 func TestUIStateRoundTripsLastResource(t *testing.T) {
 	workspace := t.TempDir()
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -763,7 +763,7 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ui-state PUT to succeed, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var saved guiState
+	var saved uiState
 	if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
 		t.Fatal(err)
 	}
@@ -777,7 +777,7 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ui-state GET to succeed, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var loaded guiState
+	var loaded uiState
 	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil {
 		t.Fatal(err)
 	}
@@ -796,8 +796,8 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 
 func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 	workspace := t.TempDir()
-	s := &server{config: filepath.Join(t.TempDir(), "gui.json")}
-	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
+	s := &server{config: filepath.Join(t.TempDir(), "serve.json")}
+	if err := s.saveConfig(config{Version: agentHubConfigVersion, Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}}}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -814,7 +814,7 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected ui-state GET to succeed, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var loaded guiState
+	var loaded uiState
 	if err := json.Unmarshal(rec.Body.Bytes(), &loaded); err != nil {
 		t.Fatal(err)
 	}

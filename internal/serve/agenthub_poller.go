@@ -140,7 +140,7 @@ func (m *agentManager) pollAgentHubSessions(ctx context.Context) error {
 			m.reconcileAgentHubRun(ctx, cfg, workspace, run, byExternalID, byID, client)
 		}
 	}
-	profileConfig := agentHubGUIConfig{
+	profileConfig := agentHubServeConfig{
 		Workspaces: cfg.Workspaces, ResourceDefaults: cfg.ResourceDefaults,
 		AgentProfiles: make([]agentHubProfileRoute, 0, len(cfg.AgentProfiles)),
 	}
@@ -229,7 +229,7 @@ func inspectTaskArchiveStates(workspace *app.Workspace, runs []agentRun) map[str
 // active AgentHub session whose owning Forge resource is archived. Resource
 // generations are also archived after the durable stopped edge. It returns true
 // when normal reconciliation should be skipped for this poll.
-func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
+func (m *agentManager) stopAgentHubSessionForArchivedResource(ctx context.Context, cfg config, workspace serveWorkspace, run agentRun, session agentHubSession, client *agentHubClient) bool {
 	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
 		return false
 	}
@@ -348,14 +348,14 @@ func agentHubSessionExactlyMatchesRun(cfg config, run agentRun, session agentHub
 // archived-after-stopped reconciliation, while a session that is truly gone
 // conservatively moves live runs to recovering and keeps terminal runs
 // untouched.
-func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+func (m *agentManager) reconcileAgentHubRun(ctx context.Context, cfg config, workspace serveWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	_ = m.withResourceController(ctx, workspace, run.ResourceID, func() error {
 		m.reconcileAgentHubRunLocked(ctx, cfg, workspace, run, byExternalID, byID, client)
 		return nil
 	})
 }
 
-func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg config, workspace guiWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
+func (m *agentManager) reconcileAgentHubRunLocked(ctx context.Context, cfg config, workspace serveWorkspace, run agentRun, byExternalID, byID map[string]agentHubSession, client *agentHubClient) {
 	session, found := byExternalID[sourceLookupKey(runSourceInstanceID(cfg, run), run.SourceExternalID)]
 	if !found {
 		session, found = byID[strings.TrimSpace(run.AgentHubSessionID)]

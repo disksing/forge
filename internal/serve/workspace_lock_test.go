@@ -114,11 +114,11 @@ func TestAcquireConfiguredWorkspaceLocksAllOrNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	if err := s.saveConfig(config{
 		Version: agentHubConfigVersion,
-		Workspaces: []guiWorkspace{
+		Workspaces: []serveWorkspace{
 			{ID: "a", Path: wsA},
 			{ID: "b", Path: wsB},
 		},
@@ -150,7 +150,7 @@ func TestAddWorkspaceAcquiresLockAndDeduplicates(t *testing.T) {
 	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath, locks: newWorkspaceLockManager("127.0.0.1:4936", configPath)}
 
 	added, err := s.addWorkspace(context.Background(), workspace)
@@ -195,7 +195,7 @@ func TestAddWorkspaceConflictLeavesConfigUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath, locks: newWorkspaceLockManager("127.0.0.1:4999", configPath)}
 	if _, err := s.addWorkspace(context.Background(), workspace); err == nil {
 		t.Fatal("expected addWorkspace to fail on lock conflict")
@@ -243,7 +243,7 @@ func TestRemoveWorkspaceReleasesLock(t *testing.T) {
 	if _, err := app.Initialize(workspace, "en"); err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	added, err := s.addWorkspace(context.Background(), workspace)
 	if err != nil {
@@ -263,11 +263,11 @@ func TestRemoveWorkspaceReleasesLock(t *testing.T) {
 
 func TestUnownedWorkspaceRejectsManagementAndWrites(t *testing.T) {
 	workspace := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "gui.json")
+	configPath := filepath.Join(t.TempDir(), "serve.json")
 	s := &server{config: configPath, locks: newWorkspaceLockManager("", configPath)}
 	if err := s.saveConfig(config{
 		Version:    agentHubConfigVersion,
-		Workspaces: []guiWorkspace{{ID: "workspace-one", Path: workspace}},
+		Workspaces: []serveWorkspace{{ID: "workspace-one", Path: workspace}},
 	}); err != nil {
 		t.Fatal(err)
 	}

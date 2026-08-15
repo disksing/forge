@@ -14,17 +14,17 @@ import (
 )
 
 func TestReadAgentHubConfigRejectsRemovedVersion(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gui.json")
+	path := filepath.Join(t.TempDir(), "serve.json")
 	if err := os.WriteFile(path, []byte(`{"version":2,"workspaces":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := readAgentHubConfigFile(path); err == nil || !strings.Contains(err.Error(), "unsupported Forge GUI configuration version") {
+	if _, err := readAgentHubConfigFile(path); err == nil || !strings.Contains(err.Error(), "unsupported Forge serve configuration version") {
 		t.Fatalf("expected removed config version to be rejected, got %v", err)
 	}
 }
 
 func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gui.json")
+	path := filepath.Join(t.TempDir(), "serve.json")
 	if err := os.WriteFile(path, []byte(`{"version":3,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestReadAgentHubConfigUpgradesVersionThreeDefaults(t *testing.T) {
 }
 
 func TestReadAgentHubConfigMigratesLegacyStringResourceDefaults(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gui.json")
+	path := filepath.Join(t.TempDir(), "serve.json")
 	legacy := `{"version":4,"workspaces":[],"agentHubEndpoint":"http://127.0.0.1:4646","agentHubInstanceId":"forge-old","resourceDefaults":{"workspace":"fast","project":"default","task":"reasoning"}}`
 	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	}))
 	defer fake.Close()
 	t.Setenv("FORGE_AGENTHUB_URL", "")
-	path := filepath.Join(t.TempDir(), "gui.json")
+	path := filepath.Join(t.TempDir(), "serve.json")
 	server := &server{config: path}
 	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
 		"endpoint":`+strconv.Quote(fake.URL)+`,
@@ -115,7 +115,7 @@ func TestAgentHubSettingsSaveValidatesCurrentConfig(t *testing.T) {
 	if bytes.Contains(saved, []byte(`"agentProviders"`)) || bytes.Contains(saved, []byte(`"defaultChatAgentId"`)) {
 		t.Fatalf("persisted config contains removed fields: %s", saved)
 	}
-	var savedConfig agentHubGUIConfig
+	var savedConfig agentHubServeConfig
 	if err := json.Unmarshal(saved, &savedConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -147,7 +147,7 @@ func TestAgentHubSettingsSaveAllowsUnavailableProfileTarget(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	path := filepath.Join(t.TempDir(), "gui.json")
+	path := filepath.Join(t.TempDir(), "serve.json")
 	server := &server{config: path}
 	request := httptest.NewRequest(http.MethodPut, "/api/settings/agenthub", strings.NewReader(`{
 		"endpoint":`+strconv.Quote(fake.URL)+`,
@@ -167,7 +167,7 @@ func TestAgentHubSettingsSaveAllowsUnavailableProfileTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var saved agentHubGUIConfig
+	var saved agentHubServeConfig
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatal(err)
 	}
@@ -200,8 +200,8 @@ func TestAgentHubSettingsReadDoesNotSynthesizeScheduler(t *testing.T) {
 		}
 	}))
 	defer fake.Close()
-	path := filepath.Join(t.TempDir(), "gui.json")
-	legacy := agentHubGUIConfig{
+	path := filepath.Join(t.TempDir(), "serve.json")
+	legacy := agentHubServeConfig{
 		Version: agentHubConfigVersion, AgentHubEndpoint: fake.URL,
 		AgentHubInstanceID: "stable-id",
 		AgentProfiles: []agentHubProfileRoute{
@@ -276,7 +276,7 @@ func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
 	}
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+	cfg, err := normalizeAgentHubConfig(agentHubServeConfig{
 		AgentHubEndpoint:   defaultAgentHubEndpoint,
 		AgentHubInstanceID: "stable-id",
 		AgentProfiles: []agentHubProfileRoute{
@@ -310,7 +310,7 @@ func TestAgentHubConfigEnvironmentOverrideAndValidation(t *testing.T) {
 func TestSystemAgentProfilesAreFixedAndReserved(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+	cfg, err := normalizeAgentHubConfig(agentHubServeConfig{
 		AgentHubEndpoint:   defaultAgentHubEndpoint,
 		AgentHubInstanceID: "stable-id",
 		AgentProfiles: []agentHubProfileRoute{
@@ -349,7 +349,7 @@ func TestSystemAgentProfilesAreFixedAndReserved(t *testing.T) {
 func TestNoSchedulerProfileIsSynthesized(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+	cfg, err := normalizeAgentHubConfig(agentHubServeConfig{
 		AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "stable-id",
 	}, catalog)
 	if err != nil {
@@ -363,7 +363,7 @@ func TestNoSchedulerProfileIsSynthesized(t *testing.T) {
 func TestMissingTypedResourceDefaultIsPersistedAndFallsBackGlobally(t *testing.T) {
 	var catalog agentHubCatalog
 	readJSONFixture(t, "agenthub-catalog.json", &catalog)
-	cfg, err := normalizeAgentHubConfig(agentHubGUIConfig{
+	cfg, err := normalizeAgentHubConfig(agentHubServeConfig{
 		AgentHubEndpoint: defaultAgentHubEndpoint, AgentHubInstanceID: "stable-id",
 		AgentProfiles:    []agentHubProfileRoute{{Key: "default", AgentName: "gpt-5.6-sol"}},
 		ResourceDefaults: resourceAgentDefaults{
@@ -385,8 +385,8 @@ func TestMissingTypedResourceDefaultIsPersistedAndFallsBackGlobally(t *testing.T
 }
 
 func TestLoadConfigDoesNotPersistSchedulerMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "gui.json")
-	legacy := agentHubGUIConfig{
+	path := filepath.Join(t.TempDir(), "serve.json")
+	legacy := agentHubServeConfig{
 		Version: agentHubConfigVersion, AgentHubEndpoint: defaultAgentHubEndpoint,
 		AgentHubInstanceID: "stable-id",
 		AgentProfiles: []agentHubProfileRoute{

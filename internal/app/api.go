@@ -361,7 +361,7 @@ type CreateTaskInput struct {
 }
 
 // TaskPreview is the side-effect-free result of resolving task content and
-// execution settings. It is also the contract shown by GUI and CLI previews.
+// execution settings. It is also the contract shown by web and CLI previews.
 type TaskPreview struct {
 	ProjectID string              `json:"project"`
 	Title     string              `json:"title"`
@@ -392,7 +392,7 @@ func (w *Workspace) Tree() (WorkspaceTree, error) {
 	return tree, nil
 }
 
-// Resource returns detailed resource data for GUI and service consumers.
+// Resource returns detailed resource data for web and service consumers.
 func (w *Workspace) Resource(id string) (ResourceDetailView, error) {
 	if err := w.require(); err != nil {
 		return ResourceDetailView{}, err

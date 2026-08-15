@@ -18,7 +18,7 @@ type resourceEndGenerationResponse struct {
 	GenerationID string `json:"generationId,omitempty"`
 }
 
-func (m *agentManager) currentResourceRun(workspace guiWorkspace, resourceID string) (agentRun, error) {
+func (m *agentManager) currentResourceRun(workspace serveWorkspace, resourceID string) (agentRun, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
 		return agentRun{}, err
@@ -33,17 +33,17 @@ func (m *agentManager) currentResourceRun(workspace guiWorkspace, resourceID str
 	return run, nil
 }
 
-func (m *agentManager) resolveResourceLiveTarget(workspaceID, resourceID, expectedGeneration string) (guiWorkspace, agentRun, error) {
+func (m *agentManager) resolveResourceLiveTarget(workspaceID, resourceID, expectedGeneration string) (serveWorkspace, agentRun, error) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
-		return guiWorkspace{}, agentRun{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
+		return serveWorkspace{}, agentRun{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
 	}
 	run, err := m.currentResourceRun(workspace, resourceID)
 	if err != nil {
-		return guiWorkspace{}, agentRun{}, err
+		return serveWorkspace{}, agentRun{}, err
 	}
 	if expected := strings.TrimSpace(expectedGeneration); expected != "" && expected != run.GenerationID {
-		return guiWorkspace{}, agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
+		return serveWorkspace{}, agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
 	}
 	return workspace, run, nil
 }
@@ -126,7 +126,7 @@ func (m *agentManager) handleResourceEndTurn(w http.ResponseWriter, r *http.Requ
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	response, interruptErr := m.interruptRunWithPostAction(r.Context(), workspaceID, run.ID, func(workspace guiWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
+	response, interruptErr := m.interruptRunWithPostAction(r.Context(), workspaceID, run.ID, func(workspace serveWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
 		return cancelPendingSteerMessages(workspace.Path, targetResourceID)
 	})
 	if interruptErr != nil {
@@ -175,7 +175,7 @@ func (m *agentManager) handleResourceEndGeneration(w http.ResponseWriter, r *htt
 	writeJSON(w, response)
 }
 
-func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, workspace guiWorkspace, resourceID, expectedGenerationID string) (resourceEndGenerationResponse, *agentRuntime, error) {
+func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, workspace serveWorkspace, resourceID, expectedGenerationID string) (resourceEndGenerationResponse, *agentRuntime, error) {
 	exists, archived, _, err := resourceExistsAndArchived(workspace.Path, resourceID)
 	if err != nil || !exists {
 		if err == nil {
@@ -252,7 +252,7 @@ func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, w
 	return resourceEndGenerationResponse{Status: "ending", GenerationID: updated.GenerationID}, rt, nil
 }
 
-func resourceUploadCwd(workspace guiWorkspace, resourceID string) (string, error) {
+func resourceUploadCwd(workspace serveWorkspace, resourceID string) (string, error) {
 	resourceID = normalizedResourceID(resourceID)
 	exists, archived, _, err := resourceExistsAndArchived(workspace.Path, resourceID)
 	if err != nil || !exists {
