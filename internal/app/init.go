@@ -93,7 +93,7 @@ func findEnclosingWorkspaceRoot(start string) (string, error) {
 		return "", err
 	}
 	for {
-		if pathExists(filepath.Join(cwd, configFile)) || isDir(filepath.Join(cwd, reposDir)) {
+		if hasWorkspaceConfig(cwd) || isDir(filepath.Join(cwd, reposDir)) {
 			return cwd, nil
 		}
 		parent := filepath.Dir(cwd)

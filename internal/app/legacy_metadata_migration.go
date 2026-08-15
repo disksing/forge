@@ -46,7 +46,7 @@ func migrateLegacyMetadata(root string) error {
 			return nil
 		}
 		name := entry.Name()
-		if name == "forge.json" || name == "project.json" || name == "task.json" || name == "scheduler.json" {
+		if name == workspaceConfigFile || name == legacyWorkspaceConfigFile || name == "project.json" || name == "task.json" || name == "scheduler.json" {
 			files = append(files, path)
 		}
 		return nil

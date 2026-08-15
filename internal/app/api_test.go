@@ -269,7 +269,7 @@ func TestMigrateDropsRemovedAgentCommandConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configPath := filepath.Join(root, "forge.json")
+	configPath := filepath.Join(root, "workspace.json")
 	if err := os.WriteFile(configPath, []byte(`{"version":1,"language":"en","agentCommand":["legacy"]}`+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
