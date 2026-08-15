@@ -1,4 +1,4 @@
-import { A as e, B as t, C as n, D as r, E as i, F as a, G as o, H as s, I as c, J as l, K as u, L as d, M as f, N as p, O as m, P as h, R as g, S as _, T as v, U as y, V as b, W as x, X as S, Y as C, Z as w, _ as T, a as E, b as D, c as O, d as k, f as A, g as j, h as M, i as N, j as P, k as F, l as I, m as L, n as R, o as z, p as B, q as ee, r as V, s as H, t as U, u as W, v as G, w as K, x as q, y as te, z as J } from "./Icon-DhNPRoAS.js";
+import { A as e, B as t, C as n, D as r, E as i, F as a, G as o, H as s, I as c, J as l, K as u, L as d, M as f, N as p, O as m, P as h, R as g, S as _, T as v, U as y, V as b, W as x, X as S, Y as C, Z as w, _ as T, a as E, b as D, c as O, d as k, f as A, g as j, h as M, i as N, j as P, k as F, l as I, m as L, n as R, o as z, p as B, q as ee, r as V, s as H, t as U, u as W, v as G, w as K, x as q, y as te, z as J } from "./Icon-qM-gEmE6.js";
 //#region src/components/DoctorDialog.svelte
 var ne = P("<div class=\"doctor-global-error\"><strong>Doctor could not run</strong><span> </span></div>"), re = P("<div class=\"doctor-empty\"><!><span>Checking configured Workspaces…</span></div>"), ie = P("<div class=\"doctor-empty\"><!><span>No configured Workspace problems.</span></div>"), ae = P("<code> </code>"), oe = P("<p> </p>"), se = P("<article><div class=\"doctor-issue-icon\"><!></div> <div class=\"doctor-issue-copy\"><div class=\"doctor-issue-title\"><strong> </strong><span> </span></div> <!> <!></div></article>"), Y = P("<section class=\"doctor-workspace\"><div class=\"doctor-workspace-heading\"><div><h3> </h3><code> </code></div> <span> </span></div> <div class=\"doctor-issues\"></div></section>"), ce = P("<div data-component-owner=\"doctor-dialog\" class=\"doctor-backdrop\" role=\"presentation\"><div class=\"doctor-dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"doctorTitle\"><header><div><h2 id=\"doctorTitle\">Workspace problems</h2> <p> </p></div> <div class=\"doctor-header-actions\"><button type=\"button\" class=\"doctor-refresh\" aria-label=\"Refresh workspace checks\"><!> Refresh</button> <button type=\"button\" class=\"doctor-close\" aria-label=\"Close workspace problems\"><!></button></div></header> <div class=\"doctor-content\"><!> <!></div></div></div>");
 function le(n, i) {
@@ -608,7 +608,7 @@ function Le(e, n) {
 p(["click"]);
 //#endregion
 //#region src/components/AppShell.svelte
-var Re = P("<button id=\"doctorButton\" type=\"button\" title=\"Workspace problems\"><!><span> </span></button>"), ze = P("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><!><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><div class=\"workspace-toolbar\"><button id=\"splitMenuButton\" class=\"workspace-menu-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button></div> <div class=\"workspace-view-tabs\"><div class=\"workspace-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"paneDetailsTab\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"paneChatTab\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div></div> <section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div class=\"tty-panel\"><!><div id=\"ttyLog\" class=\"tty-log\" data-component-owner=\"event-timeline\"><!></div><div id=\"ttyComposer\" class=\"tty-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div> <!>", 1);
+var Re = P("<button id=\"doctorButton\" type=\"button\" title=\"Workspace problems\"><!><span> </span></button>"), ze = P("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><!><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><div class=\"workspace-toolbar\"><button id=\"splitMenuButton\" class=\"workspace-menu-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button></div> <div class=\"workspace-view-tabs\"><div class=\"workspace-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"paneDetailsTab\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"paneChatTab\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div></div> <section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div class=\"chat-panel\"><!><div id=\"chatTimeline\" class=\"chat-timeline\" data-component-owner=\"event-timeline\"><!></div><div id=\"chatComposer\" class=\"chat-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div> <!>", 1);
 function Be(n, i) {
 	C(i, !0);
 	let a = o(y(i.channel.current())), d = o(0), f = o(!1);
@@ -1127,7 +1127,7 @@ function Qe(e, n) {
 p(["click", "keydown"]);
 //#endregion
 //#region src/components/ChatComposer.svelte
-var $e = P("<div class=\"tty-turn-stop-notice\" role=\"status\"><span> </span> <button type=\"button\" class=\"tty-turn-stop-dismiss\" aria-label=\"Dismiss turn stop notice\">Dismiss</button></div>"), et = P("<div class=\"tty-message-item\"><span class=\"tty-message-text\"> </span> <span class=\"tty-message-mode\"> </span> <button type=\"button\" class=\"tty-message-steer\"><!> <span>Insert now</span></button></div>"), tt = P("<div class=\"tty-message-queue-error\" role=\"alert\"> </div>"), nt = P("<section class=\"tty-message-queue\" aria-label=\"Waiting messages\"><div class=\"tty-message-queue-header\"><span>Waiting messages</span><span class=\"tty-message-count\"> </span></div> <div class=\"tty-message-list\"></div> <!></section>"), rt = P("<div class=\"tty-send-feedback\" data-send-state=\"submitting\" role=\"status\" aria-live=\"polite\"><!> <span class=\"tty-send-feedback-content\"><strong>Submitting</strong><span class=\"tty-send-feedback-text\"> </span></span></div>"), it = P("<button type=\"button\" id=\"agentEndTurnButton\" title=\"End current turn\" aria-label=\"End current turn\"><span class=\"tty-composer-icon tty-composer-icon-idle\"><!></span><span class=\"tty-composer-icon tty-composer-icon-busy\"><!></span></button>"), at = P("<button type=\"button\" id=\"agentEndGenerationButton\" title=\"End current generation\" aria-label=\"End current generation\"><span class=\"tty-composer-icon tty-composer-icon-idle\"><!></span><span class=\"tty-composer-icon tty-composer-icon-busy\"><!></span></button>"), ot = P("<div class=\"tty-composer-error\" role=\"alert\"><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), st = P("<!> <!> <!> <form id=\"ttyForm\" class=\"tty-input\"><textarea id=\"ttyInput\" rows=\"1\" autocomplete=\"off\"></textarea> <div class=\"tty-composer-bar\"><button type=\"button\" id=\"agentUploadButton\" class=\"tty-upload-button\" title=\"Upload files\" aria-label=\"Upload files\"><!></button> <div class=\"tty-composer-options\"><span class=\"tty-agent-binding\"><!></span> <!> <button type=\"submit\"><span class=\"tty-composer-icon tty-composer-icon-idle\"><!></span><span class=\"tty-composer-icon tty-composer-icon-busy\"><!></span></button></div></div></form> <!>", 1);
+var $e = P("<div class=\"chat-turn-stop-notice\" role=\"status\"><span> </span> <button type=\"button\" class=\"chat-turn-stop-dismiss\" aria-label=\"Dismiss turn stop notice\">Dismiss</button></div>"), et = P("<div class=\"chat-message-item\"><span class=\"chat-message-text\"> </span> <span class=\"chat-message-mode\"> </span> <button type=\"button\" class=\"chat-message-steer\"><!> <span>Insert now</span></button></div>"), tt = P("<div class=\"chat-message-queue-error\" role=\"alert\"> </div>"), nt = P("<section class=\"chat-message-queue\" aria-label=\"Waiting messages\"><div class=\"chat-message-queue-header\"><span>Waiting messages</span><span class=\"chat-message-count\"> </span></div> <div class=\"chat-message-list\"></div> <!></section>"), rt = P("<div class=\"chat-send-feedback\" data-send-state=\"submitting\" role=\"status\" aria-live=\"polite\"><!> <span class=\"chat-send-feedback-content\"><strong>Submitting</strong><span class=\"chat-send-feedback-text\"> </span></span></div>"), it = P("<button type=\"button\" id=\"agentEndTurnButton\" title=\"End current turn\" aria-label=\"End current turn\"><span class=\"chat-composer-icon chat-composer-icon-idle\"><!></span><span class=\"chat-composer-icon chat-composer-icon-busy\"><!></span></button>"), at = P("<button type=\"button\" id=\"agentEndGenerationButton\" title=\"End current generation\" aria-label=\"End current generation\"><span class=\"chat-composer-icon chat-composer-icon-idle\"><!></span><span class=\"chat-composer-icon chat-composer-icon-busy\"><!></span></button>"), ot = P("<div class=\"chat-composer-error\" role=\"alert\"><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), st = P("<!> <!> <!> <form id=\"chatForm\" class=\"chat-input\"><textarea id=\"chatInput\" rows=\"1\" autocomplete=\"off\"></textarea> <div class=\"chat-composer-bar\"><button type=\"button\" id=\"agentUploadButton\" class=\"chat-upload-button\" title=\"Upload files\" aria-label=\"Upload files\"><!></button> <div class=\"chat-composer-options\"><span class=\"chat-agent-binding\"><!></span> <!> <button type=\"submit\"><span class=\"chat-composer-icon chat-composer-icon-idle\"><!></span><span class=\"chat-composer-icon chat-composer-icon-busy\"><!></span></button></div></div></form> <!>", 1);
 function ct(e, n) {
 	C(n, !0);
 	let i = n.channel.current(), f = o(y(i)), p = o(y(i.identity)), m = o(y(i.draftResetVersion)), _ = o(y(i.draft)), v = o(!1), T = o(""), D = o(""), O = o(""), A = o(!1), M = o(void 0), N = u(() => !!c(f).unavailableReason || c(v) || c(f).sending);
@@ -1281,7 +1281,7 @@ function ct(e, n) {
 		U(a, { name: "pause" }), w(i);
 		var o = s(i), l = t(o);
 		U(l, { name: "loader-circle" }), w(o), w(n), g(() => {
-			r = j(n, 1, "tty-composer-action tty-end-turn-button", null, r, { busy: c(f).endingTurn }), n.disabled = c(f).endingTurn;
+			r = j(n, 1, "chat-composer-action chat-end-turn-button", null, r, { busy: c(f).endingTurn }), n.disabled = c(f).endingTurn;
 		}), h("click", n, function(...e) {
 			c(f).onEndTurn?.apply(this, e);
 		}), F(e, n);
@@ -1292,7 +1292,7 @@ function ct(e, n) {
 		U(a, { name: "archive" }), w(i);
 		var o = s(i), l = t(o);
 		U(l, { name: "loader-circle" }), w(o), w(n), g(() => {
-			r = j(n, 1, "tty-composer-action tty-end-generation-button", null, r, { busy: c(f).endingGeneration }), n.disabled = c(f).endingGeneration;
+			r = j(n, 1, "chat-composer-action chat-end-generation-button", null, r, { busy: c(f).endingGeneration }), n.disabled = c(f).endingGeneration;
 		}), h("click", n, function(...e) {
 			c(f).onEndGeneration?.apply(this, e);
 		}), F(e, n);
@@ -1317,7 +1317,7 @@ function ct(e, n) {
 	K(Ce, (e) => {
 		c(D) && e(we);
 	}), g((e) => {
-		I(Y, "data-agent-draft-key", c(f).draftKey), I(Y, "placeholder", c(f).unavailableReason || "Message this resource"), Y.disabled = c(N), k(Y, c(_)), le.disabled = e, ve = j(_e, 1, "tty-send-button", null, ve, { busy: c(v) }), I(_e, "title", c(v) ? "Sending..." : c(f).unavailableReason || "Send input"), I(_e, "aria-label", c(v) ? "Sending..." : c(f).unavailableReason || "Send input"), _e.disabled = c(N);
+		I(Y, "data-agent-draft-key", c(f).draftKey), I(Y, "placeholder", c(f).unavailableReason || "Message this resource"), Y.disabled = c(N), k(Y, c(_)), le.disabled = e, ve = j(_e, 1, "chat-send-button", null, ve, { busy: c(v) }), I(_e, "title", c(v) ? "Sending..." : c(f).unavailableReason || "Send input"), I(_e, "aria-label", c(v) ? "Sending..." : c(f).unavailableReason || "Send input"), _e.disabled = c(N);
 	}, [() => !!c(f).unavailableReason]), a("submit", se, R), h("input", Y, (e) => L(e.currentTarget.value)), h("keydown", Y, B), h("click", le, function(...e) {
 		c(f).onOpenUpload?.apply(this, e);
 	}), F(e, G), l();
@@ -2461,7 +2461,7 @@ p(["click", "keydown"]);
 //#region src/components/LazyMarkdownEditor.svelte
 var qn = P("<div class=\"file-modal-empty error-preview\"><strong>Markdown editor unavailable</strong><span> </span></div>"), Jn = P("<div class=\"file-modal-empty\"><strong>Loading Markdown editor…</strong></div>");
 function Yn(n, i) {
-	let a = import("./MarkdownEditor-DP6grlTn.js");
+	let a = import("./MarkdownEditor-BE2A1DVn.js");
 	var o = e(), l = b(o);
 	v(l, () => a, (e) => {
 		var t = Jn();
@@ -5302,7 +5302,7 @@ function Xa(e, t) {
 }
 //#endregion
 //#region src/components/EventTimeline.svelte
-var Za = P("<button type=\"button\"><span class=\"load-older-icon load-older-icon-idle\"><!></span><span class=\"load-older-icon load-older-icon-busy\"><!></span><span> </span></button>"), Qa = P("<div class=\"conversation-generation\"><span> </span><strong> </strong><small> </small></div>"), $a = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), eo = P("<div class=\"conversation-gap\"><!><span><strong>History unavailable</strong><small> </small></span><!></div>"), to = P("<div class=\"turn-summary-preview\"> </div>"), no = P("<div><!></div>"), ro = P("<div class=\"turn-loading\"><!><span>Loading turn details</span></div>"), io = P("<section><!> <!> <!> <!></section>"), ao = P("<!> <!>", 1), oo = P("<div class=\"turn-working-indicator\" role=\"status\" aria-live=\"polite\" data-timeline-key=\"turn-working\"><!><span>working...</span></div>"), so = P("<div class=\"tty-empty\"><!><strong>Loading resource history</strong></div>"), co = P("<div class=\"tty-empty\"><!><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>"), lo = P("<!> <!> <!> <!> <!> <!> <!>", 1), uo = P("<div class=\"tty-empty\"><!><strong>No resource selected</strong></div>"), fo = P("<div data-component-owner=\"event-timeline\" class=\"event-timeline-root\"><!></div> <!>", 1);
+var Za = P("<button type=\"button\"><span class=\"load-older-icon load-older-icon-idle\"><!></span><span class=\"load-older-icon load-older-icon-busy\"><!></span><span> </span></button>"), Qa = P("<div class=\"conversation-generation\"><span> </span><strong> </strong><small> </small></div>"), $a = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), eo = P("<div class=\"conversation-gap\"><!><span><strong>History unavailable</strong><small> </small></span><!></div>"), to = P("<div class=\"turn-summary-preview\"> </div>"), no = P("<div><!></div>"), ro = P("<div class=\"turn-loading\"><!><span>Loading turn details</span></div>"), io = P("<section><!> <!> <!> <!></section>"), ao = P("<!> <!>", 1), oo = P("<div class=\"turn-working-indicator\" role=\"status\" aria-live=\"polite\" data-timeline-key=\"turn-working\"><!><span>working...</span></div>"), so = P("<div class=\"chat-timeline-empty\"><!><strong>Loading resource history</strong></div>"), co = P("<div class=\"chat-timeline-empty\"><!><strong>No conversation yet</strong><span>Send a message to start this resource's conversation.</span></div>"), lo = P("<!> <!> <!> <!> <!> <!> <!>", 1), uo = P("<div class=\"chat-timeline-empty\"><!><strong>No resource selected</strong></div>"), fo = P("<div data-component-owner=\"event-timeline\" class=\"event-timeline-root\"><!></div> <!>", 1);
 function po(e, n) {
 	C(n, !0);
 	let i = o(y(n.channel.current())), a = o(y(n.channel.current().project)), f = o(y(ue())), p = o(void 0), m, _ = null, v = !1, D = !1, O = !0, k = o(null), A = new tn(), M = /* @__PURE__ */ new Map(), N = o(y(/* @__PURE__ */ new Map()));
@@ -7115,34 +7115,34 @@ function xs(e) {
 	}
 	function i(e, t) {
 		let r = /* @__PURE__ */ new Set();
-		return n.ttyDraftWorkspaceId === e && n.ttyDraftResourceId === t && n.ttyDraftKey && r.add(n.ttyDraftKey), r;
+		return n.chatDraftWorkspaceId === e && n.chatDraftResourceId === t && n.chatDraftKey && r.add(n.chatDraftKey), r;
 	}
-	function a(r = e.workspaceId(), a = n.ttyDraftResourceId) {
+	function a(r = e.workspaceId(), a = n.chatDraftResourceId) {
 		let o = r.trim(), s = ys(a);
 		o && t.prune(o, s, i(o, s));
 	}
 	function o() {
-		if (!n.ttyDraftKey) return;
+		if (!n.chatDraftKey) return;
 		let e = {
-			workspaceId: n.ttyDraftWorkspaceId,
-			resourceId: n.ttyDraftResourceId
+			workspaceId: n.chatDraftWorkspaceId,
+			resourceId: n.chatDraftResourceId
 		};
-		t.write(n.ttyDraftKey, n.ttyDraft, e), a(e.workspaceId, e.resourceId);
+		t.write(n.chatDraftKey, n.chatDraft, e), a(e.workspaceId, e.resourceId);
 	}
 	function s(e, t = !0) {
 		let r = String(e ?? "");
-		n.ttyDraft !== r && (n.ttyDraft = r, n.ttyDraftVersion++), n.ttyMultiline = r.includes("\n"), t && o();
+		n.chatDraft !== r && (n.chatDraft = r, n.chatDraftVersion++), n.chatMultiline = r.includes("\n"), t && o();
 	}
 	function c() {
-		n.ttyDraft = "", n.ttyMultiline = !1, n.ttyDraftKey = "", n.ttyDraftWorkspaceId = "", n.ttyDraftResourceId = "", n.ttyDraftVersion++;
+		n.chatDraft = "", n.chatMultiline = !1, n.chatDraftKey = "", n.chatDraftWorkspaceId = "", n.chatDraftResourceId = "", n.chatDraftVersion++;
 	}
 	function l(i, o = e.workspaceId(), s = "") {
 		let l = ys(i), u = r(l, o);
 		if (!u) return c();
-		n.ttyDraftKey !== u && (n.ttyDraftKey = u, n.ttyDraftWorkspaceId = o.trim(), n.ttyDraftResourceId = l, n.ttyDraft = t.read(u), n.ttyMultiline = n.ttyDraft.includes("\n"), n.ttyDraftVersion++, a(n.ttyDraftWorkspaceId, n.ttyDraftResourceId));
+		n.chatDraftKey !== u && (n.chatDraftKey = u, n.chatDraftWorkspaceId = o.trim(), n.chatDraftResourceId = l, n.chatDraft = t.read(u), n.chatMultiline = n.chatDraft.includes("\n"), n.chatDraftVersion++, a(n.chatDraftWorkspaceId, n.chatDraftResourceId));
 	}
 	function u(r) {
-		return e.workspaceId() !== r.workspaceId || n.ttyDraftResourceId !== ys(r.resourceId) || n.ttyDraftKey !== r.key || n.ttyDraft !== r.text || n.ttyDraftVersion !== r.version ? !1 : (t.remove(r.key), s("", !1), !0);
+		return e.workspaceId() !== r.workspaceId || n.chatDraftResourceId !== ys(r.resourceId) || n.chatDraftKey !== r.key || n.chatDraft !== r.text || n.chatDraftVersion !== r.version ? !1 : (t.remove(r.key), s("", !1), !0);
 	}
 	return {
 		clearResourceAfterAccepted: u,
@@ -8667,28 +8667,21 @@ var jc = class {
 	agent: {
 		renderTimer: null,
 		draftPrompt: "",
-		ttyDraft: "",
-		ttyMultiline: !1,
-		ttyDraftKey: "",
-		ttyDraftWorkspaceId: "",
-		ttyDraftResourceId: "",
-		ttyDraftVersion: 0,
-		ttyDraftResetVersion: 0,
-		skipTTYDraftSync: !1,
+		chatDraft: "",
+		chatMultiline: !1,
+		chatDraftKey: "",
+		chatDraftWorkspaceId: "",
+		chatDraftResourceId: "",
+		chatDraftVersion: 0,
+		chatDraftResetVersion: 0,
+		skipChatDraftSync: !1,
 		agentName: "",
 		optionsOpen: !1,
 		historyOpen: !1,
 		toolGroupOpen: /* @__PURE__ */ new Map(),
 		approvalDrafts: /* @__PURE__ */ new Map(),
 		renderDeferredForSelection: !1
-	},
-	tty: [{
-		type: "system",
-		text: "Forge GUI initialized."
-	}, {
-		type: "system",
-		text: "Workspace data is loaded through forge CLI."
-	}]
+	}
 };
 function Pc() {
 	for (let e of Object.keys(Q.details)) delete Q.details[e];
@@ -9499,17 +9492,17 @@ function hu(e, t) {
 }
 var gu = "";
 function _u(e = {}) {
-	Q.agent.skipTTYDraftSync = !1;
+	Q.agent.skipChatDraftSync = !1;
 	let t = Au();
 	Q.activeWorkspaceId && t && zc(t);
 	let n = Vc.active("turn-stop") && Vc.key("turn-stop") === t, r = Vc.active("generation-end") && Vc.key("generation-end") === t, i = Q.messageStatusKey === `${Q.activeWorkspaceId}:${t}` ? Q.messageStatus : null, a = Q.activeWorkspaceId, o = `${a}:${t}`, s = !!(n || ["running", "waiting_approval"].includes(String(i?.session?.state || "")));
 	Mc.renderComposer({
-		identity: `${Q.activeWorkspaceId}:${t}:${Q.agent.ttyDraftKey || ""}`,
+		identity: `${Q.activeWorkspaceId}:${t}:${Q.agent.chatDraftKey || ""}`,
 		workspaceId: Q.activeWorkspaceId,
 		resourceId: t,
-		draft: Q.agent.ttyDraft || "",
-		draftKey: Q.agent.ttyDraftKey || "",
-		draftResetVersion: Q.agent.ttyDraftResetVersion || 0,
+		draft: Q.agent.chatDraft || "",
+		draftKey: Q.agent.chatDraftKey || "",
+		draftResetVersion: Q.agent.chatDraftResetVersion || 0,
 		unavailableReason: i ? i.acceptsMessages ? "" : i.archived ? "This resource is archived." : i.configError || "This resource cannot accept messages." : "Loading work status.",
 		sending: Vc.isSending(hu(Q.activeWorkspaceId, t)),
 		canEndTurn: s,
@@ -9566,7 +9559,7 @@ function yu() {
 	ol.render();
 }
 function bu(e, t) {
-	!t || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.ttyDraftKey || Bc(e);
+	!t || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.chatDraftKey || Bc(e);
 }
 function xu() {
 	let e = Au();
@@ -9574,7 +9567,7 @@ function xu() {
 		nd("Select an active resource before uploading files.");
 		return;
 	}
-	let t = Kc("ttyInput");
+	let t = Kc("chatInput");
 	t && Bc(t.value), Q.modalEnter = "upload", Q.uploadDialog = {
 		open: !0,
 		identity: ++al,
@@ -9586,9 +9579,9 @@ function xu() {
 function Su(e = [], t = {}) {
 	if (!Q.uploadDialog.open) return;
 	let n = Q.uploadDialog.resourceId === Au(), r = !t.workspaceId || t.workspaceId === Q.activeWorkspaceId, i = e.length > 0 && r && n;
-	i && (Bc(wu(Q.agent.ttyDraft, e)), Q.agent.ttyDraftResetVersion++), Cu();
-	let a = Kc("ttyComposer");
-	a && delete a.dataset.composerKey, _u({ skipDraftSync: i }), Kc("ttyInput")?.focus({ preventScroll: !0 }), rd();
+	i && (Bc(wu(Q.agent.chatDraft, e)), Q.agent.chatDraftResetVersion++), Cu();
+	let a = Kc("chatComposer");
+	a && delete a.dataset.composerKey, _u({ skipDraftSync: i }), Kc("chatInput")?.focus({ preventScroll: !0 }), rd();
 }
 function Cu() {
 	Q.uploadDialog = {
@@ -9647,7 +9640,7 @@ async function Ou(e, t, n) {
 	}), await iu(r, i), jl();
 }
 async function ku(e, t) {
-	if (!e.trim() || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.ttyDraftKey) return {
+	if (!e.trim() || t.workspaceId !== Q.activeWorkspaceId || t.resourceId !== Au() || t.draftKey !== Q.agent.chatDraftKey) return {
 		accepted: !1,
 		clear: !1
 	};
@@ -9656,7 +9649,7 @@ async function ku(e, t) {
 		accepted: !1,
 		clear: !1
 	};
-	let r = Q.agent.ttyDraftVersion;
+	let r = Q.agent.chatDraftVersion;
 	try {
 		await $(`/api/workspaces/${encodeURIComponent(t.workspaceId)}/resources/${encodeURIComponent(t.resourceId)}/messages`, {
 			method: "POST",
@@ -9673,7 +9666,7 @@ async function ku(e, t) {
 			text: e,
 			version: r
 		});
-		return n && Q.agent.ttyDraftResetVersion++, n && Q.stopNotice?.key === `${t.workspaceId}:${t.resourceId}` && (Q.stopNotice = null), await Promise.all([iu(t.workspaceId, t.resourceId), tu()]), jl(), {
+		return n && Q.agent.chatDraftResetVersion++, n && Q.stopNotice?.key === `${t.workspaceId}:${t.resourceId}` && (Q.stopNotice = null), await Promise.all([iu(t.workspaceId, t.resourceId), tu()]), jl(), {
 			accepted: !0,
 			clear: n
 		};
@@ -9816,7 +9809,7 @@ function dd(e) {
 function fd() {
 	Nc?.listen(document, "selectionchange", () => {
 		if (!Q.agent.renderDeferredForSelection) return;
-		let e = Kc("ttyLog");
+		let e = Kc("chatTimeline");
 		e && pu(e) || (Q.agent.renderDeferredForSelection = !1, mu(), rd());
 	}), Nc?.listen(document, "keydown", (e) => {
 		e.key === "Escape" && Q.diff ? $l() : e.key === "Escape" && (Q.agent.optionsOpen || Q.agent.historyOpen) && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, _u(), rd());
@@ -9826,7 +9819,7 @@ function fd() {
 			Yl(n.dataset.breadcrumbResource || "workspace").catch((e) => nd(Cs(e)));
 			return;
 		}
-		(Q.agent.optionsOpen || Q.agent.historyOpen) && t && !t.closest(".tty-composer") && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, _u(), rd()), rd();
+		(Q.agent.optionsOpen || Q.agent.historyOpen) && t && !t.closest(".chat-composer") && (Q.agent.optionsOpen = !1, Q.agent.historyOpen = !1, _u(), rd()), rd();
 	}), Nc?.listen(window, "beforeunload", hd), Nc?.listen(document, "visibilitychange", () => {
 		(document.hidden || document.visibilityState === "hidden") && hd();
 	});
