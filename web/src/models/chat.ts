@@ -227,6 +227,9 @@ export interface TimelineItem {
   compact?: boolean;
   rangeStartEventId?: number;
   rangeEndEventId?: number;
+  // turnFinal marks the last assistant message of a turn; earlier mid-turn
+  // progress updates get turnFinal=false so the UI can mute their rail.
+  turnFinal?: boolean;
 }
 
 export interface ChatContextSnapshot {

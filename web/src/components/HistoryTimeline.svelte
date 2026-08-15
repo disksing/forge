@@ -11,7 +11,7 @@
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
   import { toolGroupKey } from "./tool-group";
-  import { projectConversationEvents } from "./timeline-events";
+  import { markTurnFinalAssistant, projectConversationEvents } from "./timeline-events";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
   import type { ConversationBlock, FileTreeModel, TimelineItem, ChatContextSnapshot } from "./models";
@@ -31,6 +31,7 @@
   let controller: ChatSessionController | undefined;
   let notice = $state("");
   let openTools = $state(new Map<string, boolean>());
+  let expandedTurns = $state(new Set<string>());
   const legacyArtifact = $derived(findArtifact(artifacts, "legacy-log.md"));
 
   onMount(() => {
@@ -63,7 +64,8 @@
   function formatTime(value?: string): string {
     if (!value) return "Unknown time";
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString(undefined, { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
   }
 
   function formatDuration(milliseconds?: number): string {
@@ -77,6 +79,20 @@
     return value?.trim() || `Unknown ${label}`;
   }
 
+  type StatusTone = "completed" | "active" | "cancelled" | "failed" | "neutral";
+
+  const ACTIVE_STATUSES = new Set(["starting", "running", "waiting_approval", "stopping", "recovering", "active"]);
+  const CANCELLED_STATUSES = new Set(["cancelled", "canceled", "interrupted"]);
+
+  function statusTone(status?: string): StatusTone {
+    const normalized = (status || "").trim().toLowerCase();
+    if (normalized === "completed" || normalized === "stopped") return "completed";
+    if (ACTIVE_STATUSES.has(normalized)) return "active";
+    if (CANCELLED_STATUSES.has(normalized)) return "cancelled";
+    if (normalized === "failed") return "failed";
+    return "neutral";
+  }
+
   function loadTurn(block: ConversationBlock): void {
     if (block.kind === "turn" && block.turn?.reference) void controller?.loadTurn(block.turn.reference);
   }
@@ -85,12 +101,32 @@
     return Boolean(block.items || block.events);
   }
 
+  // Toggle the expanded conversation detail: the first click expands and
+  // loads the Turn, the next click collapses it again without dropping the
+  // already-loaded detail so reopening is instant.
+  function isTurnExpanded(block: ConversationBlock): boolean {
+    return expandedTurns.has(turnKey(block)) && blockLoaded(block);
+  }
+
+  function toggleTurn(block: ConversationBlock): void {
+    const key = turnKey(block);
+    if (expandedTurns.has(key)) {
+      const next = new Set(expandedTurns);
+      next.delete(key);
+      expandedTurns = next;
+      return;
+    }
+    expandedTurns = new Set(expandedTurns).add(key);
+    loadTurn(block);
+  }
+
   // Expanded Turns render through the same item components as the live Chat
   // timeline so History stays readable instead of dumping raw text rows.
   function blockItems(block: ConversationBlock): TimelineItem[] {
-    return block.events
+    const items = block.events
       ? projectConversationEvents(block.events).map((item) => ({ ...item, generationId: block.generation.generationId }))
       : block.items || [];
+    return markTurnFinalAssistant(items);
   }
 
   function timelineKey(item: TimelineItem): string {
@@ -134,9 +170,32 @@
     return turnHasNoFinalReply(block) ? `${status} · no final reply` : status;
   }
 
+  function turnTriggerText(block: ConversationBlock): string {
+    return block.turn?.triggerPreview?.trim() || "";
+  }
+
   function turnPreviewText(block: ConversationBlock): string {
     if (turnHasNoFinalReply(block)) return "No final reply";
-    return block.turn?.finalReplyPreview || block.turn?.triggerPreview || "Select to load conversation detail";
+    return block.turn?.finalReplyPreview?.trim() || "Select to load conversation detail";
+  }
+
+  interface GenerationGroup {
+    generation: ConversationBlock["generation"];
+    blocks: ConversationBlock[];
+  }
+
+  const generationGroups = $derived(groupByGeneration(snapshot.blocks));
+
+  // Blocks arrive ordered; consecutive blocks sharing a generation render as
+  // one labeled section with a single timeline track.
+  function groupByGeneration(blocks: ConversationBlock[]): GenerationGroup[] {
+    const groups: GenerationGroup[] = [];
+    for (const block of blocks) {
+      const last = groups[groups.length - 1];
+      if (last && last.generation.generationId === block.generation.generationId) last.blocks.push(block);
+      else groups.push({ generation: block.generation, blocks: [block] });
+    }
+    return groups;
   }
 </script>
 
@@ -153,49 +212,64 @@
     {:else if snapshot.loaded && !snapshot.blocks.length}
       <div class="history-state"><Icon name="history" /><span>No resource History yet.</span></div>
     {/if}
-    {#each snapshot.blocks as block, index (block.key)}
-      {#if index === 0 || snapshot.blocks[index - 1].generation.generationId !== block.generation.generationId}
-        <div class="history-generation" data-generation-id={block.generation.generationId}>
-          <div><span>Generation {block.generation.generation}</span><strong>{valueOrUnknown(block.generation.agentName, "agent")}</strong></div>
-          <div class="history-generation-meta"><span>Provider: {valueOrUnknown(block.generation.provider || block.generation.providerId, "provider")}</span><span>Model: {valueOrUnknown(block.generation.model, "model")}</span><span>Status: {block.generation.status || "unknown"}</span></div>
-        </div>
-      {/if}
-      {#if block.kind === "gap"}
-        <div class="history-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History gap</strong><small>{block.gap?.message || "This generation could not be read."}</small></span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
-      {:else if block.turn}
-        <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
-          <button type="button" class="history-turn-header" onclick={() => loadTurn(block)} aria-expanded={blockLoaded(block)}>
-            <span class="history-turn-title"><strong>Turn</strong><small>{formatTime(block.turn.startedAt)} · {formatDuration(block.turn.durationMs)} · {turnStatusText(block)}</small></span>
-            <span class="history-turn-preview">{turnPreviewText(block)}</span>
-            <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={blockLoaded(block) ? "chevron-up" : "chevron-down"} /></span>
-          </button>
-          {#if block.loading}<div class="history-detail-state"><Icon name="loader-circle" className="spin" />Loading Turn detail...</div>{/if}
-          {#if block.error}<div class="history-detail-state history-error"><Icon name="triangle-alert" />{block.error}</div>{/if}
-          {#if blockLoaded(block)}
-            <div class="history-items">
-              {#each blockItems(block) as item (timelineKey(item))}
-                <div class="history-item" data-history-kind={item.kind}>
-                  {#if item.kind === "message"}
-                    <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} {workspaceId} {resolveResourceTitle} {onNavigate} />
-                  {:else if item.kind === "thinking"}
-                    <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
-                  {:else if item.kind === "tools"}
-                    <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
-                  {:else if item.kind === "approval"}
-                    <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={readOnlyApproval} onToast={(message) => (notice = message)} />
-                  {:else if item.kind === "lifecycle"}
-                    <LifecycleNotice {item} />
-                  {:else if item.kind === "error"}
-                    <TimelineNotice title="Provider error" text={item.text || ""} error />
-                  {:else}
-                    <UnknownEvent {item} />
-                  {/if}
+    {#each generationGroups as group (group.generation.generationId)}
+      <div class="history-generation" data-generation-id={group.generation.generationId}>
+        <span class="history-generation-label">Generation {group.generation.generation}</span>
+        <strong>{valueOrUnknown(group.generation.agentName, "agent")}</strong>
+        <span class="history-generation-meta">
+          <span>{valueOrUnknown(group.generation.provider || group.generation.providerId, "provider")}</span>
+          <span>{valueOrUnknown(group.generation.model, "model")}</span>
+          <span class="history-status-pill" data-tone={statusTone(group.generation.status)}>{group.generation.status || "unknown"}</span>
+        </span>
+      </div>
+      <div class="history-track">
+        {#each group.blocks as block (block.key)}
+          {#if block.kind === "gap"}
+            <div class="history-gap" data-timeline-key={block.key}><Icon name="triangle-alert" /><span><strong>History gap</strong> — {block.gap?.message || "This generation could not be read."}</span>{#if block.gap?.retryable}<button type="button" class="secondary-button" onclick={() => controller?.retryHistory()}>Retry</button>{/if}</div>
+          {:else if block.turn}
+            <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
+              <span class="history-turn-dot" data-tone={statusTone(block.turn.status)}></span>
+              <button type="button" class="history-turn-header" onclick={() => toggleTurn(block)} aria-expanded={isTurnExpanded(block)}>
+                <span class="history-turn-meta">
+                  <span class="history-turn-time">{formatTime(block.turn.startedAt)}</span>
+                  <span class="history-status-pill" data-tone={statusTone(block.turn.status)}>{turnStatusText(block)}</span>
+                  <span class="history-turn-duration">{formatDuration(block.turn.durationMs)}</span>
+                  <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={isTurnExpanded(block) ? "chevron-up" : "chevron-down"} /></span>
+                </span>
+                {#if turnTriggerText(block)}
+                  <span class="history-turn-trigger"><span class="history-turn-trigger-label">Trigger</span><span class="history-turn-trigger-text">{turnTriggerText(block)}</span></span>
+                {/if}
+                <span class="history-turn-preview" class:history-turn-preview-empty={turnHasNoFinalReply(block)}>{turnPreviewText(block)}</span>
+              </button>
+              {#if block.loading}<div class="history-detail-state"><Icon name="loader-circle" className="spin" />Loading Turn detail...</div>{/if}
+              {#if block.error}<div class="history-detail-state history-error"><Icon name="triangle-alert" />{block.error}</div>{/if}
+              {#if isTurnExpanded(block)}
+                <div class="history-items">
+                  {#each blockItems(block) as item (timelineKey(item))}
+                    <div class="history-item" data-history-kind={item.kind}>
+                      {#if item.kind === "message"}
+                        <TimelineMessage {item} agentName={block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || "Agent"} {workspaceId} {resolveResourceTitle} {onNavigate} />
+                      {:else if item.kind === "thinking"}
+                        <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
+                      {:else if item.kind === "tools"}
+                        <ToolGroup {item} generationId={block.generation.generationId} open={toolOpen(item)} onToggle={(open) => rememberToolOpen(item, open)} />
+                      {:else if item.kind === "approval"}
+                        <ApprovalCard {item} generationId={block.generation.generationId} contextIdentity={snapshot.identity} onApproval={readOnlyApproval} onToast={(message) => (notice = message)} />
+                      {:else if item.kind === "lifecycle"}
+                        <LifecycleNotice {item} />
+                      {:else if item.kind === "error"}
+                        <TimelineNotice title="Provider error" text={item.text || ""} error />
+                      {:else}
+                        <UnknownEvent {item} />
+                      {/if}
+                    </div>
+                  {/each}
                 </div>
-              {/each}
-            </div>
+              {/if}
+            </section>
           {/if}
-        </section>
-      {/if}
+        {/each}
+      </div>
     {/each}
   {/if}
 </div>

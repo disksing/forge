@@ -857,8 +857,10 @@ test("keeps Svelte Detail documents, History, previews, diffs, and edits stable 
 
   await panel.getByRole("tab", { name: "History" }).click();
   const history = panel.locator('[data-component-owner="history-timeline"]');
-  await expect(history).toContainText("Provider:");
-  await expect(history).toContainText("Model:");
+  await expect(history).toContainText("Generation 1");
+  await expect(history).toContainText("test-agent");
+  await expect(history).toContainText("Unknown provider");
+  await expect(history).toContainText("Unknown model");
   const firstTurn = history.locator(".history-turn").first();
   await firstTurn.locator(".history-turn-header").click();
   await expect(firstTurn).toContainText("gen-1 baseline message 1");
