@@ -785,12 +785,49 @@ func TestUIStateRoundTripsLastResource(t *testing.T) {
 		t.Fatalf("expected persisted ui-state, got %+v", loaded)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "gui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), `"lastResourceId": "project1.task2"`) {
-		t.Fatalf("expected gui-state.json to persist lastResourceId, got %s", data)
+		t.Fatalf("expected ui-state.json to persist lastResourceId, got %s", data)
+	}
+}
+
+func TestUIStateMigratesLegacyGUIStateFile(t *testing.T) {
+	workspace := t.TempDir()
+	legacy := filepath.Join(workspace, ".forge", "gui-state.json")
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte(`{"version":1,"expandedProjects":["project1"],"lastResourceId":"project1.task2","attention":{"project1":{"followed":true,"turnNumber":3}}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	state, err := loadUIStateFile(readUIStatePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.LastResourceID != "project1.task2" || !state.Attention["project1"].Followed {
+		t.Fatalf("expected legacy gui-state.json to load, got %+v", state)
+	}
+
+	if err := saveUIStateFile(uiStatePath(workspace), state); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(uiStatePath(workspace)); err != nil {
+		t.Fatalf("expected ui-state.json to exist: %v", err)
+	}
+	if _, err := os.Stat(legacy); !os.IsNotExist(err) {
+		t.Fatalf("expected legacy gui-state.json to be removed, got %v", err)
+	}
+
+	reloaded, err := loadUIStateFile(readUIStatePath(workspace))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.LastResourceID != "project1.task2" || !reloaded.Attention["project1"].Followed {
+		t.Fatalf("expected migrated state to round-trip, got %+v", reloaded)
 	}
 }
 
@@ -825,11 +862,11 @@ func TestUIStateRoundTripsCustomOrder(t *testing.T) {
 		t.Fatalf("expected persisted task order, got %+v", loaded.TaskOrder)
 	}
 
-	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "gui-state.json"))
+	data, err := os.ReadFile(filepath.Join(workspace, ".forge", "ui-state.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(data), `"projectOrder"`) || !strings.Contains(string(data), `"taskOrder"`) || strings.Contains(string(data), `"sessionOrder"`) {
-		t.Fatalf("expected gui-state.json to persist custom order fields, got %s", data)
+		t.Fatalf("expected ui-state.json to persist custom order fields, got %s", data)
 	}
 }

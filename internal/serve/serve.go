@@ -1521,7 +1521,7 @@ func (s *server) loadUIState(id string) (uiState, error) {
 	if err != nil {
 		return uiState{}, err
 	}
-	return loadUIStateFile(uiStatePath(workspace.Path))
+	return loadUIStateFile(readUIStatePath(workspace.Path))
 }
 
 func (s *server) saveUIState(id string, state uiState) error {
@@ -1533,7 +1533,7 @@ func (s *server) saveUIState(id string, state uiState) error {
 	}
 	// UI navigation updates predate attention state. Preserve the server-owned
 	// attention map so an older browser cannot overwrite stars or dismissals.
-	existing, err := loadUIStateFile(uiStatePath(workspace.Path))
+	existing, err := loadUIStateFile(readUIStatePath(workspace.Path))
 	if err != nil {
 		return err
 	}
@@ -1741,7 +1741,26 @@ func workspaceName(path string) string {
 }
 
 func uiStatePath(workspacePath string) string {
+	return filepath.Join(workspacePath, ".forge", "ui-state.json")
+}
+
+// legacyUIStatePath is the pre-rename location, kept as a read fallback and
+// removed once the state is saved under the new name.
+func legacyUIStatePath(workspacePath string) string {
 	return filepath.Join(workspacePath, ".forge", "gui-state.json")
+}
+
+// readUIStatePath resolves the state file to load, falling back to the legacy
+// name for Workspaces last written before the rename.
+func readUIStatePath(workspacePath string) string {
+	path := uiStatePath(workspacePath)
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	if _, err := os.Stat(legacyUIStatePath(workspacePath)); err == nil {
+		return legacyUIStatePath(workspacePath)
+	}
+	return path
 }
 
 func uniqueNonEmpty(values []string) []string {

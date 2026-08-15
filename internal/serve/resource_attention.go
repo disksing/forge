@@ -76,7 +76,7 @@ func saveUIStateFile(path string, state uiState) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	file, err := os.CreateTemp(filepath.Dir(path), ".gui-state-*.tmp")
+	file, err := os.CreateTemp(filepath.Dir(path), ".ui-state-*.tmp")
 	if err != nil {
 		return err
 	}
@@ -97,13 +97,21 @@ func saveUIStateFile(path string, state uiState) error {
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tempPath, path)
+	if err := os.Rename(tempPath, path); err != nil {
+		return err
+	}
+	// Best-effort removal of the pre-rename state file; it stays as a read
+	// fallback if removal fails.
+	if legacy := filepath.Join(filepath.Dir(path), "gui-state.json"); legacy != path {
+		_ = os.Remove(legacy)
+	}
+	return nil
 }
 
 func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	state, err := loadUIStateFile(readUIStatePath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +121,7 @@ func (s *server) loadAttentionAtPath(path string) (map[string]resourceAttentionS
 func (s *server) mutateResourceAttentionAtPath(path, resourceID string, mutate func(*resourceAttentionState)) (resourceAttentionState, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	state, err := loadUIStateFile(readUIStatePath(path))
 	if err != nil {
 		return resourceAttentionState{}, err
 	}
@@ -144,7 +152,7 @@ func (s *server) followResource(path, resourceID string) error {
 func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error) {
 	s.uiStateMu.Lock()
 	defer s.uiStateMu.Unlock()
-	state, err := loadUIStateFile(uiStatePath(path))
+	state, err := loadUIStateFile(readUIStatePath(path))
 	if err != nil {
 		return 0, err
 	}
