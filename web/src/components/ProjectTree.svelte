@@ -108,7 +108,14 @@
         (event.currentTarget as HTMLElement | null)?.blur();
         await onToggle(item.id);
       }
-      else await onSelect(item.id);
+      else {
+        // Pointer clicks on the row itself focus the row button, and the
+        // tree-item:focus-within rule would then pin the follow star
+        // visible even after the pointer leaves the row. Drop that focus;
+        // keyboard activation (detail === 0) keeps it.
+        if (event.detail > 0) (event.currentTarget as HTMLElement | null)?.blur();
+        await onSelect(item.id);
+      }
     } catch (reason) {
       onToast(reason instanceof Error ? reason.message : String(reason));
     }
