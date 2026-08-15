@@ -31,6 +31,7 @@
   let controller: ChatSessionController | undefined;
   let notice = $state("");
   let openTools = $state(new Map<string, boolean>());
+  let expandedTurns = $state(new Set<string>());
   const legacyArtifact = $derived(findArtifact(artifacts, "legacy-log.md"));
 
   onMount(() => {
@@ -100,6 +101,25 @@
     return Boolean(block.items || block.events);
   }
 
+  // Toggle the expanded conversation detail: the first click expands and
+  // loads the Turn, the next click collapses it again without dropping the
+  // already-loaded detail so reopening is instant.
+  function isTurnExpanded(block: ConversationBlock): boolean {
+    return expandedTurns.has(turnKey(block)) && blockLoaded(block);
+  }
+
+  function toggleTurn(block: ConversationBlock): void {
+    const key = turnKey(block);
+    if (expandedTurns.has(key)) {
+      const next = new Set(expandedTurns);
+      next.delete(key);
+      expandedTurns = next;
+      return;
+    }
+    expandedTurns = new Set(expandedTurns).add(key);
+    loadTurn(block);
+  }
+
   // Expanded Turns render through the same item components as the live Chat
   // timeline so History stays readable instead of dumping raw text rows.
   function blockItems(block: ConversationBlock): TimelineItem[] {
@@ -150,9 +170,13 @@
     return turnHasNoFinalReply(block) ? `${status} · no final reply` : status;
   }
 
+  function turnTriggerText(block: ConversationBlock): string {
+    return block.turn?.triggerPreview?.trim() || "";
+  }
+
   function turnPreviewText(block: ConversationBlock): string {
     if (turnHasNoFinalReply(block)) return "No final reply";
-    return block.turn?.finalReplyPreview || block.turn?.triggerPreview || "Select to load conversation detail";
+    return block.turn?.finalReplyPreview?.trim() || "Select to load conversation detail";
   }
 
   interface GenerationGroup {
@@ -205,18 +229,21 @@
           {:else if block.turn}
             <section class="history-turn" class:history-turn-loading={block.loading} data-timeline-key={turnKey(block)}>
               <span class="history-turn-dot" data-tone={statusTone(block.turn.status)}></span>
-              <button type="button" class="history-turn-header" onclick={() => loadTurn(block)} aria-expanded={blockLoaded(block)}>
+              <button type="button" class="history-turn-header" onclick={() => toggleTurn(block)} aria-expanded={isTurnExpanded(block)}>
                 <span class="history-turn-meta">
                   <span class="history-turn-time">{formatTime(block.turn.startedAt)}</span>
                   <span class="history-status-pill" data-tone={statusTone(block.turn.status)}>{turnStatusText(block)}</span>
                   <span class="history-turn-duration">{formatDuration(block.turn.durationMs)}</span>
-                  <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={blockLoaded(block) ? "chevron-up" : "chevron-down"} /></span>
+                  <span class="history-turn-count">{block.turn.eventCount} events · {block.turn.toolEventCount} tools <Icon name={isTurnExpanded(block) ? "chevron-up" : "chevron-down"} /></span>
                 </span>
+                {#if turnTriggerText(block)}
+                  <span class="history-turn-trigger"><span class="history-turn-trigger-label">Trigger</span><span class="history-turn-trigger-text">{turnTriggerText(block)}</span></span>
+                {/if}
                 <span class="history-turn-preview" class:history-turn-preview-empty={turnHasNoFinalReply(block)}>{turnPreviewText(block)}</span>
               </button>
               {#if block.loading}<div class="history-detail-state"><Icon name="loader-circle" className="spin" />Loading Turn detail...</div>{/if}
               {#if block.error}<div class="history-detail-state history-error"><Icon name="triangle-alert" />{block.error}</div>{/if}
-              {#if blockLoaded(block)}
+              {#if isTurnExpanded(block)}
                 <div class="history-items">
                   {#each blockItems(block) as item (timelineKey(item))}
                     <div class="history-item" data-history-kind={item.kind}>

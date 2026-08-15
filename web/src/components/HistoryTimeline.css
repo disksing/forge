@@ -192,6 +192,34 @@
   overflow: hidden;
 }
 
+/* Trigger preview: a small green "TRIGGER" tag followed by the input text,
+   clamped like the reply preview so long prompts stay compact. */
+[data-component-owner="history-timeline"] .history-turn-trigger {
+  align-items: baseline;
+  color: var(--muted);
+  display: flex;
+  font-size: 12.5px;
+  gap: 8px;
+  line-height: 1.5;
+  margin-top: 4px;
+}
+
+[data-component-owner="history-timeline"] .history-turn-trigger-label {
+  color: var(--green-deep);
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+[data-component-owner="history-timeline"] .history-turn-trigger-text {
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  overflow: hidden;
+}
+
 [data-component-owner="history-timeline"] .history-turn-preview-empty {
   color: var(--faint);
   font-style: italic;
