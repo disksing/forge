@@ -171,6 +171,31 @@ describe("AppShell responsibility components", () => {
     expect(collapsedChevron.querySelector('i[data-lucide="chevron-right"]')).not.toBeNull();
   });
 
+  it("ProjectTree chevron toggle drops row focus so the star does not stick", async () => {
+    const onToggle = vi.fn(async () => undefined);
+    const onSelect = vi.fn(async () => undefined);
+    const project = { ...resource("project-a"), children: [resource("task-a", "task")] };
+    const target = document.body.appendChild(document.createElement("div"));
+    const component = mount(ProjectTree, { target, props: {
+      identity: "workspace-a", loading: false, error: "", projects: [project],
+      onCreate: vi.fn(), onToggle, onSelect,
+      onReorder: vi.fn(async () => undefined), onDragState: vi.fn(), onToggleAttention: vi.fn(async () => undefined), onToast: vi.fn(),
+    } });
+    cleanups.push(() => unmount(component));
+    await tick();
+
+    // A pointer click on the chevron focuses the row button in browsers; a
+    // focused row keeps its focus-within rule active, pinning the follow
+    // star visible after the pointer leaves. The toggle must drop focus.
+    const row = target.querySelector<HTMLElement>(".tree-item")!;
+    row.focus();
+    target.querySelector<HTMLElement>('[data-project-toggle="project-a"]')!.click();
+    await vi.waitFor(() => expect(onToggle).toHaveBeenCalledWith("project-a"));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(document.activeElement).not.toBe(row);
+    expect(row.contains(document.activeElement)).toBe(false);
+  });
+
   it("ProjectTree follow star drops pointer focus but keeps keyboard focus", async () => {
     const onToggleAttention = vi.fn(async () => undefined);
     const target = document.body.appendChild(document.createElement("div"));

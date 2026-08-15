@@ -230,7 +230,7 @@ function xe(n, i) {
 	async function O(e, t) {
 		let n = e.target instanceof Element ? e.target : null;
 		if (!n?.closest(".drag-handle")) try {
-			t.type === "project" && n?.closest("[data-project-toggle]") ? await i.onToggle(t.id) : await i.onSelect(t.id);
+			t.type === "project" && n?.closest("[data-project-toggle]") ? (e.currentTarget?.blur(), await i.onToggle(t.id)) : await i.onSelect(t.id);
 		} catch (e) {
 			i.onToast(e instanceof Error ? e.message : String(e));
 		}

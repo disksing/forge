@@ -101,7 +101,13 @@
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest(".drag-handle")) return;
     try {
-      if (item.type === "project" && target?.closest("[data-project-toggle]")) await onToggle(item.id);
+      if (item.type === "project" && target?.closest("[data-project-toggle]")) {
+        // Pointer clicks on the chevron focus the row button, and the
+        // tree-item:focus-within rule would then pin the follow star
+        // visible even after the pointer leaves the row. Drop that focus.
+        (event.currentTarget as HTMLElement | null)?.blur();
+        await onToggle(item.id);
+      }
       else await onSelect(item.id);
     } catch (reason) {
       onToast(reason instanceof Error ? reason.message : String(reason));
