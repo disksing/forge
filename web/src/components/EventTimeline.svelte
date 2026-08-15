@@ -112,6 +112,10 @@
     return block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
   }
 
+  function blockAgentName(block: ConversationBlock): string {
+    return block.generation.agentName || block.generation.resolvedProfile || block.generation.binding?.name || model.agentName || "Agent";
+  }
+
   async function autoFill(identity: string): Promise<void> {
     let pages = 0;
     while (pages < 16 && snapshot.identity === identity && snapshot.hasMoreBefore) {
@@ -212,7 +216,7 @@
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
               {#if item.kind === "message"}
-                <TimelineMessage {item} agentName={model.agentName} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
+                <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} />
               {:else if item.kind === "thinking"}
                 <ThinkingBlock {item} onExpand={() => expandCompact(item)} />
               {:else if item.kind === "tools"}

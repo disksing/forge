@@ -40,6 +40,58 @@ function history(resourceId: string) {
   return { generation, turn, page: { resourceId, segments: [{ generation, turns: [turn] }], page: { limit: 20, hasMore: false } }, detail: { turn, latestEventId: 2, items: [{ type: "message", role: "user", text: `message ${resourceId}`, startEventId: 1, endEventId: 1, startedAt: turn.startedAt, endedAt: turn.startedAt }] } };
 }
 
+function generationModel(resourceId: string, generation: number, generationId: string, agentName: string): EventTimelineModel {
+  const value = model(resourceId);
+  value.agentName = agentName;
+  value.status = {
+    ...value.status!,
+    resolvedAgent: agentName,
+    generation: { ...value.status!.generation!, generation, generationId },
+  };
+  return value;
+}
+
+function multiGenerationHistory(resourceId: string) {
+  const agents = ["deepseek", "codex", "deepseek"];
+  const generations = agents.map((agentName, index) => ({
+    generation: index + 1,
+    generationId: `gen-${index + 1}`,
+    title: `${resourceId} generation ${index + 1}`,
+    agentName,
+    status: "idle",
+    createdAt: `2026-08-1${2 + index}T00:00:00Z`,
+    updatedAt: `2026-08-1${2 + index}T00:00:00Z`,
+  }));
+  const turns = generations.map((generation, index) => ({
+    reference: `ref-${index + 1}`,
+    turnId: `turn-${index + 1}`,
+    status: "completed",
+    closed: true,
+    startedAt: generation.createdAt,
+    durationMs: 10,
+    triggerPreview: `summary ${index + 1}`,
+    eventCount: 2,
+    toolEventCount: 0,
+    startEventId: index * 2 + 1,
+    lastEventId: index * 2 + 2,
+    endEventId: index * 2 + 2,
+    generation,
+  }));
+  const details = turns.map((turn, index) => ({
+    turn,
+    latestEventId: turn.lastEventId,
+    items: [{ type: "message", role: "assistant", text: `${agents[index]} reply`, startEventId: turn.startEventId, endEventId: turn.lastEventId, startedAt: turn.startedAt, endedAt: turn.startedAt }],
+  }));
+  return {
+    page: { resourceId, segments: generations.map((generation, index) => ({ generation, turns: [turns[index]] })), page: { limit: 20, hasMore: false } },
+    details,
+  };
+}
+
+function conversationAuthors(target: HTMLElement): string[] {
+  return [...target.querySelectorAll<HTMLElement>("section.conversation-turn .agent-message-meta strong")].map((node) => node.textContent || "");
+}
+
 describe("EventTimeline", () => {
   it("shows working only while a Turn is actively running", async () => {
     FakeEventSource.instances = [];
@@ -128,5 +180,37 @@ describe("EventTimeline", () => {
     expect(target.textContent).not.toContain("message task-a");
     await vi.waitFor(() => expect(target.textContent).toContain("message task-b"));
     expect(oldStream.closed).toBe(true);
+  });
+
+  it("keeps historical assistant authors bound to their Generation across switches and reload", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const fixture = multiGenerationHistory("task-a");
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const path = String(input);
+      if (path.includes("/history/turns/ref-")) {
+        const index = Number(path.match(/ref-(\d+)/)?.[1] || 0) - 1;
+        return new Response(JSON.stringify(fixture.details[index]), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify(fixture.page), { status: 200, headers: { "content-type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchImpl);
+    const channel = createModelChannel(generationModel("task-a", 3, "gen-3", "deepseek"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "tty-log";
+    const component = mount(EventTimeline, { target, props: { channel } });
+
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    channel.publish(generationModel("task-a", 2, "gen-2", "codex"));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    channel.publish(generationModel("task-a", 3, "gen-3", "deepseek"));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
+
+    unmount(component);
+    const reloaded = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(reloaded));
+    await vi.waitFor(() => expect(conversationAuthors(target)).toEqual(["deepseek", "codex", "deepseek"]));
   });
 });
