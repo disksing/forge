@@ -233,6 +233,14 @@ export interface TimelineItem {
   // turnFinal marks the last assistant message of a turn; earlier mid-turn
   // progress updates get turnFinal=false so the UI can mute their rail.
   turnFinal?: boolean;
+  // agentStart marks the first item of an uninterrupted run of activity the
+  // turn's bound agent produced (reasoning, tool calls, approvals, assistant
+  // messages). The run head carries the agent's name so the label attaches
+  // to the first event even when reasoning or tool calls precede the first
+  // progress update. Later items of the same run get agentContinuation and
+  // render without repeating the name.
+  agentStart?: boolean;
+  agentContinuation?: boolean;
 }
 
 export interface ChatContextSnapshot {

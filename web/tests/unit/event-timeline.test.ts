@@ -237,6 +237,50 @@ describe("EventTimeline", () => {
     expect(target.querySelector(".agent-message-row.user")?.classList.contains("final")).toBe(false);
   });
 
+  it("labels the first agent event of a turn instead of the first progress update", async () => {
+    FakeEventSource.instances = [];
+    vi.stubGlobal("EventSource", FakeEventSource);
+    const startedAt = "2026-08-12T00:00:00Z";
+    const fixture = history("task-a", [
+      { type: "message", role: "user", text: "question", startEventId: 1, endEventId: 1, startedAt, endedAt: startedAt },
+      { type: "thinking", startEventId: 2, endEventId: 2, count: 1, startedAt, endedAt: startedAt },
+      { type: "tool", startEventId: 3, endEventId: 4, count: 1, startedAt, endedAt: startedAt },
+      { type: "message", role: "assistant", text: "final reply", startEventId: 5, endEventId: 5, startedAt, endedAt: startedAt },
+    ]);
+    Object.assign(fixture.turn, { eventCount: 5, toolEventCount: 2, lastEventId: 5, endEventId: 5 });
+    fixture.detail.turn = fixture.turn;
+    fixture.detail.latestEventId = 5;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).includes("/history/turns/ref-") ? fixture.detail : fixture.page), { status: 200, headers: { "content-type": "application/json" } })));
+    const channel = createModelChannel(model("task-a"));
+    const target = document.body.appendChild(document.createElement("div"));
+    target.className = "chat-timeline";
+    const component = mount(EventTimeline, { target, props: { channel } });
+    cleanups.push(() => unmount(component));
+
+    await vi.waitFor(() => expect(target.textContent).toContain("final reply"));
+    const section = target.querySelector<HTMLElement>("section.conversation-turn")!;
+    const rows = [...section.querySelectorAll<HTMLElement>(":scope > [data-timeline-key]")];
+    expect(rows).toHaveLength(4);
+
+    // Reasoning and tool calls precede the reply: the run header introduces
+    // the thinking block so the agent's name attaches to the first event.
+    const header = rows[1].querySelector<HTMLElement>(".agent-run-header");
+    expect(header?.textContent).toBe("Test Agent");
+    expect(rows[1].querySelector(".agent-reasoning-note")).not.toBeNull();
+    expect(rows[2].querySelector(".agent-run-header")).toBeNull();
+    expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
+
+    // The reply continues the same run: no repeated name on its meta row.
+    const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
+    expect(reply?.querySelector(".agent-message-meta strong")).toBeNull();
+    expect(reply?.classList.contains("final")).toBe(true);
+
+    // Exactly one agent label renders for the whole run; message meta rows
+    // only keep the user's name.
+    expect(section.querySelectorAll(".agent-run-header")).toHaveLength(1);
+    expect(conversationAuthors(target)).toEqual(["User"]);
+  });
+
   it("keeps the generation boundary while hiding routine lifecycle detail", async () => {
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);

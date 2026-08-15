@@ -62,6 +62,19 @@ describe("timeline rendering components", () => {
     expect(agent.querySelector(".agent-message-row")?.classList.contains("final")).toBe(false);
   });
 
+  it("hides the repeated agent name on assistant messages continuing a run", () => {
+    const head = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "first", agentStart: true }, agentName: "Codex" });
+    expect(head.querySelector(".agent-message-meta strong")?.textContent).toBe("Codex");
+
+    const continuation = mounted(TimelineMessage, { item: { kind: "message", role: "assistant", text: "next", agentStart: false, agentContinuation: true }, agentName: "Codex" });
+    expect(continuation.querySelector(".agent-message-meta strong")).toBeNull();
+    expect(continuation.textContent).toContain("next");
+
+    // Other agents always keep their sender name.
+    const delegated = mounted(TimelineMessage, { item: { kind: "message", role: "agent", text: "note", sender: { name: "Builder" }, agentContinuation: true }, agentName: "Codex" });
+    expect(delegated.querySelector(".agent-message-meta strong")?.textContent).toBe("Builder");
+  });
+
   it("renders active and completed thinking duration states", () => {
     const active = mounted(ThinkingBlock, { item: { kind: "thinking", active: true, text: "working" } });
     expect(active.querySelector("details")?.open).toBe(true);

@@ -34,6 +34,23 @@
 :where([data-component-owner="event-timeline"]) .agent-message-row.agent .agent-message-meta strong { color: var(--blue); }
 :where([data-component-owner="event-timeline"]) .agent-message-meta span { color: #9aa6b3; font-size: calc(11px * var(--chat-font-scale, 1)); }
 
+/* A run header labels a stretch of agent activity (reasoning, tool calls,
+   approvals, and the turn's messages) so the agent's name attaches to the
+   first event of the run instead of the first progress update. It mirrors
+   the message meta row: the name outdents left of the activity rail. The
+   self-matching selector keeps the header styled in the History view, where
+   the event-timeline owner is not an ancestor. */
+:where([data-component-owner="event-timeline"]) .agent-run-header,
+:where(.agent-run-header[data-component-owner="event-timeline"]) {
+  margin: 16px 0 2px;
+}
+
+:where([data-component-owner="event-timeline"]) .agent-run-header strong {
+  font-size: calc(13.5px * var(--chat-font-scale, 1));
+  font-weight: 700;
+  color: var(--ink);
+}
+
 :where([data-component-owner="event-timeline"]) .agent-message-meta .agent-message-tag {
   padding: 0;
   border: 0;

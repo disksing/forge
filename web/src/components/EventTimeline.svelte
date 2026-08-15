@@ -15,7 +15,7 @@
   import ThinkingBlock from "./ThinkingBlock.svelte";
   import TimelineMessage from "./TimelineMessage.svelte";
   import TimelineNotice from "./TimelineNotice.svelte";
-  import { markTurnFinalAssistant } from "./timeline-events";
+  import { markTurnAgentRuns, markTurnFinalAssistant } from "./timeline-events";
   import { toolGroupKey } from "./tool-group";
   import ToolGroup from "./ToolGroup.svelte";
   import UnknownEvent from "./UnknownEvent.svelte";
@@ -143,7 +143,7 @@
 
   function blockItems(block: ConversationBlock): TimelineItem[] {
     const items = block.events ? projector(block.events).map((item) => ({ ...item, generationId: block.generation.generationId })) : block.items || [];
-    return markTurnFinalAssistant(items);
+    return markTurnAgentRuns(markTurnFinalAssistant(items));
   }
 
   function blockAgentName(block: ConversationBlock): string {
@@ -258,6 +258,13 @@
           {#if block.turn?.triggerPreview && !block.items && !block.events}<div class="turn-summary-preview">{block.turn.triggerPreview}</div>{/if}
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
+              {#if item.agentStart && item.kind !== "message"}
+                <!-- Reasoning, tool calls, and approvals render without their own
+                     author label, so a run that starts with them gets a header;
+                     otherwise the agent's name would first appear on the initial
+                     progress update instead of the turn's first event. -->
+                <div data-component-owner="event-timeline" class="agent-run-header"><strong>{blockAgentName(block)}</strong></div>
+              {/if}
               {#if item.kind === "message"}
                 <TimelineMessage {item} agentName={blockAgentName(block)} workspaceId={model.workspaceId} resolveResourceTitle={model.resolveResourceTitle} onNavigate={model.onNavigate} onOpenFile={openLinkedFile} />
               {:else if item.kind === "thinking"}
