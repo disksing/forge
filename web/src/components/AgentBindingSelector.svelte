@@ -164,7 +164,7 @@
           {#each profileOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
-              {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
+              <span class="agent-binding-option-secondary">{option.secondary}</span>
               <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
@@ -177,7 +177,7 @@
           {#each agentOptions as option (serialize(option.value))}
             <button type="button" class="agent-binding-option" role="option" aria-selected={serialize(option.value) === selectedValue} data-binding={serialize(option.value)} onclick={() => choose(option)}>
               <span class="agent-binding-option-primary">{option.primary}</span>
-              {#if option.secondary}<span class="agent-binding-option-secondary">{option.secondary}</span>{/if}
+              <span class="agent-binding-option-secondary">{option.secondary}</span>
               <Icon name="check" className={serialize(option.value) === selectedValue ? "agent-binding-check" : "agent-binding-check agent-binding-check-hidden"} />
             </button>
           {/each}
