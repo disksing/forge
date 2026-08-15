@@ -243,6 +243,34 @@ describe("resource conversation controller", () => {
     expect(latest.blocks).toEqual([]);
   });
 
+  it("publishes the reactivated resource snapshot while its status refresh is pending", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("task-b")) return response({ resourceId: "task-b", segments: [{ generation: generation(3), turns: [turn(3, "turn-b", 1, 2)] }], page: { limit: 20, hasMore: false } });
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [turn(3, "turn-a", 1, 2)] }], page: { limit: 20, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", status());
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a"]));
+    value.activate("workspace-a", "task-b", { ...status(), resourceId: "task-b" });
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-b"]));
+
+    // Selecting a previously viewed resource first republishes the view model
+    // without a runtime status; the conversation must switch to that resource
+    // immediately instead of keeping the previous resource on screen.
+    value.activate("workspace-a", "task-a", null);
+    expect(latest.identity).toBe("workspace-a:task-a");
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a"]);
+
+    // The real status arrives right after; the snapshot must stay on the
+    // reactivated resource.
+    value.activate("workspace-a", "task-a", status());
+    expect(latest.identity).toBe("workspace-a:task-a");
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a"]);
+  });
+
   it("reconnects after a fatal stream failure when the same generation resumes", async () => {
     const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [] }], page: { limit: 20, hasMore: false } }));
     const value = controller(fetchImpl);
