@@ -3863,7 +3863,7 @@ function Ti(e, n) {
 }
 //#endregion
 //#region src/components/HistoryTimeline.svelte
-var Ei = P("<div class=\"history-state\"><!><span>Loading resource History...</span></div>"), Di = P("<div class=\"history-state history-error\"><!><strong>History unavailable</strong><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), Oi = P("<button type=\"button\" class=\"secondary-button history-load-older\"><!> </button>"), ki = P("<div class=\"history-legacy\"><!><span><strong>Legacy history</strong><small>Conversation history from before resource History was available was migrated to Artifacts.</small></span><button type=\"button\" class=\"secondary-button\">Open legacy history</button></div>"), Ai = P("<div class=\"history-state\"><!><span>No resource History yet.</span></div>"), ji = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), Mi = P("<div class=\"history-gap\"><!><span><strong>History gap</strong> </span><!></div>"), Ni = P("<span class=\"history-turn-trigger\"><span class=\"history-turn-trigger-label\">Trigger</span><span class=\"history-turn-trigger-text\"> </span></span>"), Pi = P("<div class=\"history-detail-state\"><!>Loading Turn detail...</div>"), Fi = P("<div class=\"history-detail-state history-error\"><!> </div>"), Ii = P("<div class=\"history-item\"><!></div>"), Li = P("<div class=\"history-items\"></div>"), Ri = P("<section><span class=\"history-turn-dot\"></span> <button type=\"button\" class=\"history-turn-header\"><span class=\"history-turn-meta\"><span class=\"history-turn-time\"> </span> <span class=\"history-status-pill\"> </span> <span class=\"history-turn-duration\"> </span> <span class=\"history-turn-count\"> <!></span></span> <!> <span> </span></button> <!> <!> <!></section>"), zi = P("<div class=\"history-generation\"><span class=\"history-generation-label\"> </span> <strong> </strong> <span class=\"history-generation-meta\"><span> </span> <span> </span> <span class=\"history-status-pill\"> </span></span></div> <div class=\"history-track\"></div>", 1), Bi = P("<!> <!> <!> <!>", 1), Vi = P("<div data-component-owner=\"history-timeline\" class=\"history-timeline-root\"><!></div>");
+var Ei = P("<div class=\"history-state\"><!><span>Loading resource History...</span></div>"), Di = P("<div class=\"history-state history-error\"><!><strong>History unavailable</strong><span> </span><button type=\"button\" class=\"secondary-button\">Retry</button></div>"), Oi = P("<button type=\"button\" class=\"secondary-button history-load-older\"><!> </button>"), ki = P("<div class=\"history-legacy\"><!><span><strong>Legacy history</strong><small>Conversation history from before resource History was available was migrated to Artifacts.</small></span><button type=\"button\" class=\"secondary-button\">Open legacy history</button></div>"), Ai = P("<div class=\"history-state\"><!><span>No resource History yet.</span></div>"), ji = P("<button type=\"button\" class=\"secondary-button\">Retry</button>"), Mi = P("<div class=\"history-gap\"><!><span><strong>History gap</strong> </span><!></div>"), Ni = P("<span class=\"history-turn-trigger\"><span class=\"history-turn-trigger-label\">Trigger</span><span class=\"history-turn-trigger-text\"> </span></span>"), Pi = P("<div class=\"history-detail-state\"><!>Loading Turn detail...</div>"), Fi = P("<div class=\"history-detail-state history-error\"><!> </div>"), Ii = P("<div class=\"history-item\"><!></div>"), Li = P("<div class=\"history-items\"></div>"), Ri = P("<section><span class=\"history-turn-dot\"></span> <button type=\"button\" class=\"history-turn-header\"><span class=\"history-turn-meta\"><span class=\"history-turn-time\"> </span> <span class=\"history-status-pill\"> </span> <span class=\"history-turn-duration\"> </span> <span class=\"history-turn-count\"> <span><!></span></span></span> <!> <span> </span></button> <!> <!> <!></section>"), zi = P("<div class=\"history-generation\"><span class=\"history-generation-label\"> </span> <strong> </strong> <span class=\"history-generation-meta\"><span> </span> <span> </span> <span class=\"history-status-pill\"> </span></span></div> <div class=\"history-track\"></div>", 1), Bi = P("<!> <!> <!> <!>", 1), Vi = P("<div data-component-owner=\"history-timeline\" class=\"history-timeline-root\"><!></div>");
 function Hi(n, i) {
 	C(i, !0);
 	let a = N(i, "artifacts", 19, () => []), d = o(y(T())), f, p = o(""), m = o(y(/* @__PURE__ */ new Map())), _ = o(y(/* @__PURE__ */ new Set())), v = u(() => E(a(), "legacy-log.md"));
@@ -4097,44 +4097,40 @@ function Hi(n, i) {
 					var C = s(y, 2), T = t(C, !0);
 					w(C);
 					var E = s(C, 2), k = t(E), A = s(k);
-					{
-						let e = u(() => z(c(a)) ? "chevron-up" : "chevron-down");
-						W(A, { get name() {
-							return c(e);
-						} });
-					}
-					w(E), w(m);
-					var M = s(m, 2), N = (e) => {
+					let M;
+					var N = t(A);
+					W(N, { name: "chevron-down" }), w(A), w(E), w(m);
+					var L = s(m, 2), R = (e) => {
 						var n = Ni(), i = s(t(n)), o = t(i, !0);
 						w(i), w(n), g((e) => r(o, e), [() => re(c(a))]), F(e, n);
-					}, L = u(() => re(c(a)));
-					q(M, (e) => {
-						c(L) && e(N);
+					}, H = u(() => re(c(a)));
+					q(L, (e) => {
+						c(H) && e(R);
 					});
-					var R = s(M, 2);
-					let H;
-					var ae = t(R, !0);
-					w(R), w(f);
-					var oe = s(f, 2), se = (e) => {
+					var ae = s(L, 2);
+					let oe;
+					var se = t(ae, !0);
+					w(ae), w(f);
+					var ce = s(f, 2), le = (e) => {
 						var n = Pi(), r = t(n);
 						W(r, {
 							name: "loader-circle",
 							className: "spin"
 						}), S(), w(n), F(e, n);
 					};
-					q(oe, (e) => {
-						c(a).loading && e(se);
+					q(ce, (e) => {
+						c(a).loading && e(le);
 					});
-					var ce = s(oe, 2), le = (e) => {
+					var ue = s(ce, 2), de = (e) => {
 						var n = Fi(), i = t(n);
 						W(i, { name: "triangle-alert" });
 						var o = s(i, 1, !0);
 						w(n), g(() => r(o, c(a).error)), F(e, n);
 					};
-					q(ce, (e) => {
-						c(a).error && e(le);
+					q(ue, (e) => {
+						c(a).error && e(de);
 					});
-					var ue = s(ce, 2), de = (e) => {
+					var fe = s(ue, 2), pe = (e) => {
 						var n = Li();
 						J(n, 21, () => V(c(a)), (e) => U(e), (e, n) => {
 							var r = Ii(), o = t(r), s = (e) => {
@@ -4219,11 +4215,11 @@ function Hi(n, i) {
 								c(n).kind === "message" ? e(s) : c(n).kind === "thinking" ? e(l, 1) : c(n).kind === "tools" ? e(f, 2) : c(n).kind === "approval" ? e(m, 3) : c(n).kind === "lifecycle" ? e(h, 4) : c(n).kind === "error" ? e(_, 5) : e(v, -1);
 							}), w(r), g(() => I(r, "data-history-kind", c(n).kind)), F(e, r);
 						}), w(n), F(e, n);
-					}, fe = u(() => z(c(a)));
-					q(ue, (e) => {
-						c(fe) && e(de);
-					}), w(n), g((e, t, i, s, u, d, p, m, h) => {
-						o = j(n, 1, "history-turn", null, o, { "history-turn-loading": c(a).loading }), I(n, "data-timeline-key", e), I(l, "data-tone", t), I(f, "aria-expanded", i), r(v, s), I(y, "data-tone", u), r(b, d), r(T, p), r(k, `${c(a).turn.eventCount ?? ""} events · ${c(a).turn.toolEventCount ?? ""} tools `), H = j(R, 1, "history-turn-preview", null, H, m), r(ae, h);
+					}, me = u(() => z(c(a)));
+					q(fe, (e) => {
+						c(me) && e(pe);
+					}), w(n), g((e, t, i, s, u, d, p, m, h, g) => {
+						o = j(n, 1, "history-turn", null, o, { "history-turn-loading": c(a).loading }), I(n, "data-timeline-key", e), I(l, "data-tone", t), I(f, "aria-expanded", i), r(v, s), I(y, "data-tone", u), r(b, d), r(T, p), r(k, `${c(a).turn.eventCount ?? ""} events · ${c(a).turn.toolEventCount ?? ""} tools `), M = j(A, 1, "history-turn-chevron", null, M, m), oe = j(ae, 1, "history-turn-preview", null, oe, h), r(se, g);
 					}, [
 						() => te(c(a)),
 						() => P(c(a).turn.status),
@@ -4232,6 +4228,7 @@ function Hi(n, i) {
 						() => P(c(a).turn.status),
 						() => X(c(a)),
 						() => O(c(a).turn.durationMs),
+						() => ({ expanded: z(c(a)) }),
 						() => ({ "history-turn-preview-empty": ne(c(a)) }),
 						() => ie(c(a))
 					]), h("click", f, () => B(c(a))), F(e, n);
