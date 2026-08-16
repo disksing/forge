@@ -315,7 +315,9 @@ const {
 	projectTaskSummary,
 	resourceRefText,
 	statusModel: appShellStatusModel,
+	noTaskOperationalState,
 	taskOperationalState,
+	taskWorkflowState,
 	taskOperationalStateKey,
 } = createShellProjection({
 	tree: () => controllerState.tree,
@@ -682,7 +684,7 @@ function renderWorkspaceSelect() {
 	renderAppShell();
 }
 function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", projectId = ""): ShellResourceItem {
-	const taskState = taskOperationalState(item);
+	const taskState = kind === "task" ? taskWorkflowState(item) : noTaskOperationalState();
 	const expanded = kind === "project" && isProjectExpanded(item.id);
 	const summary = kind === "project" ? projectTaskSummary(item) : null;
 	const title = item.title || item.id;
@@ -712,7 +714,7 @@ function appShellResourceModel(item: ResourceRecord, kind: "project" | "task", p
 }
 function appShellSchedulerModel(item: ResourceRecord | null | undefined): ShellResourceItem | null {
 	if (!item) return null;
-	const state = taskOperationalState(item);
+	const state = noTaskOperationalState();
 	return {
 		id: item.id || "scheduler",
 		type: "scheduler",

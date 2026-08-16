@@ -154,7 +154,6 @@
       {#each projects as project (project.id)}
         <button type="button" class={`tree-item ${statusClass(project.status)} ${project.active ? "active" : ""} ${drag?.id === project.id ? "drag-source" : ""} ${rowDropClass(project.id)}`} aria-label={project.ariaLabel || undefined} title={project.statusLabel || undefined} onclick={(event) => activate(event, project)} ondragover={(event) => updateDrop(event, { kind: "project", id: project.id, projectId: "" })} ondrop={(event) => commitDrop(event, { kind: "project", id: project.id, projectId: "" })}>
           <span class="chevron" class:expanded={project.expanded} data-project-toggle={project.children.length ? project.id : undefined}>{#if project.children.length}<Icon name="chevron-right" />{/if}</span>
-          <StatusPresentation status={project.status} />
           <Icon name="folder" className="tree-icon" />
           <span class="name"><span class="name-text">{project.title}</span><span class="resource-ref">{project.ref}</span>{#if project.summary && !project.expanded}<span class="project-task-summary" aria-hidden="true"><span class="project-task-summary-count">{project.summary.taskLabel}</span><span class="project-task-summary-separator">·</span><span class="project-task-summary-running">{project.summary.runningLabel}</span></span>{/if}</span>
           <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -168,7 +167,7 @@
               <button type="button" class={`tree-item task-item ${statusClass(task.status)} ${task.active ? "active" : ""} ${drag?.id === task.id ? "drag-source" : ""} ${rowDropClass(task.id)}`} aria-label={task.ariaLabel || undefined} title={task.statusLabel || undefined} onclick={(event) => activate(event, task)} ondragover={(event) => updateDrop(event, { kind: "task", id: task.id, projectId: project.id })} ondrop={(event) => commitDrop(event, { kind: "task", id: task.id, projectId: project.id })}>
                 <span class="chevron"></span>
                 <StatusPresentation status={task.status} />
-                <Icon name="file-text" className="tree-icon" /><span class="name"><span class="name-text">{task.title}</span><span class="resource-ref">{task.ref}</span></span>
+                <span class="name"><span class="name-text">{task.title}</span><span class="resource-ref">{task.ref}</span></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <span class:followed={task.followed} class="attention-star" role="checkbox" aria-checked={task.followed} tabindex="0" aria-label={task.followed ? `Unfollow ${task.title}` : `Follow ${task.title}`} title={task.followed ? "Unfollow" : "Follow"} onclick={(event) => toggleAttention(event, task)} onkeydown={(event) => attentionKeydown(event, task)}><Icon name="star" /></span>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->

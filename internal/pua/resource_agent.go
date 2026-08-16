@@ -30,6 +30,7 @@ const (
 	workspaceStatusUsage            = "usage: pua workspace status [--server=<url>]"
 	projectStatusUsage              = "usage: pua project status [--project=<project>] [--server=<url>]"
 	taskStatusUsage                 = "usage: pua task status [--project=<project>] [--task=<task>] [--server=<url>]"
+	taskStateUsage                  = "usage: pua task state [--project=<project>] [--task=<task>] [--server=<url>] | pua task state set <waiting|blocked|paused|completed> [--note=<text>] [--project=<project>] [--task=<task>] [--server=<url>]"
 	messageSendUsage                = "usage: pua message send --to=<resource> [--mode=steer|enqueue|interrupt] [--subscribe-result=false] [--server=<url>] <message>"
 	messageShowUsage                = "usage: pua message show --id=<message-id> [--server=<url>]"
 	workspaceHistoryUsage           = "usage: pua workspace history [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]"
@@ -389,6 +390,66 @@ func runTaskStatus(args []string) error {
 		return err
 	}
 	return runResourceStatus(taskID, serverURL)
+}
+
+func runTaskState(args []string) error {
+	set := len(args) > 0 && args[0] == "set"
+	if set {
+		args = args[1:]
+	}
+	remaining, serverURL, err := splitServerArg(args, taskStateUsage)
+	if err != nil {
+		return err
+	}
+	state := ""
+	note := ""
+	filtered := make([]string, 0, len(remaining))
+	for index := 0; index < len(remaining); index++ {
+		arg := remaining[index]
+		switch {
+		case set && strings.HasPrefix(arg, "--note="):
+			if note != "" {
+				return errors.New(taskStateUsage)
+			}
+			note = strings.TrimSpace(strings.TrimPrefix(arg, "--note="))
+		case set && arg == "--note":
+			if note != "" || index+1 >= len(remaining) {
+				return errors.New(taskStateUsage)
+			}
+			index++
+			note = strings.TrimSpace(remaining[index])
+		case set && !strings.HasPrefix(arg, "--") && state == "":
+			state = strings.TrimSpace(arg)
+		default:
+			filtered = append(filtered, arg)
+		}
+	}
+	if !set && note != "" || set && state == "" {
+		return errors.New(taskStateUsage)
+	}
+	if set && state != "waiting" && state != "blocked" && state != "paused" && state != "completed" {
+		return errors.New("task state must be waiting, blocked, paused, or completed")
+	}
+	taskID, err := resolveTaskArg(filtered, "state")
+	if err != nil {
+		return err
+	}
+	client, _, err := newResourceServerClient(serverURL)
+	if err != nil {
+		return err
+	}
+	path := fmt.Sprintf("/api/workspaces/%s/resources/%s/task-state", url.PathEscape(client.workspaceID), url.PathEscape(taskID))
+	method := http.MethodGet
+	var body any
+	if set {
+		method = http.MethodPut
+		body = map[string]string{"state": state, "note": note}
+	}
+	var response map[string]any
+	if err := client.request(context.Background(), method, path, body, &response); err != nil {
+		return err
+	}
+	return printJSON(response)
 }
 
 func runMessage(args []string) error {

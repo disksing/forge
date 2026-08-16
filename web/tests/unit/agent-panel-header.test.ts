@@ -15,7 +15,7 @@ afterEach(async () => {
 function status(overrides: Partial<ResourceMessageStatus> = {}): ResourceMessageStatus {
   return {
     resourceId: "task-a",
-    state: "working",
+    sessionState: "working",
     canSteerWaiting: false,
     waitingMessages: [],
     generation: { generation: 1, generationId: "gen-1", status: "active", turnNumber: 3 },
@@ -66,7 +66,7 @@ describe("AgentPanelHeader", () => {
   });
 
   it("switches to the completed-turn label when idle", async () => {
-    const { target } = mountModel(model({ status: status({ state: "idle", session: { state: "idle" } }) }));
+    const { target } = mountModel(model({ status: status({ sessionState: "idle", session: { state: "idle" } }) }));
     await tick();
 
     const header = target.querySelector<HTMLElement>(".agent-panel-header")!;
@@ -78,7 +78,7 @@ describe("AgentPanelHeader", () => {
   it("keeps an interrupted Turn status and explains a missing final reply", async () => {
     const { target } = mountModel(model({
       status: status({
-        state: "idle",
+        sessionState: "idle",
         session: { state: "ready" },
         generation: { generation: 1, generationId: "gen-1", status: "idle", turnNumber: 3, completionState: "cancelled", completionHasFinalReply: false },
       }),
@@ -90,7 +90,7 @@ describe("AgentPanelHeader", () => {
 
   it("shows submitting while the first message is waiting for acceptance", async () => {
     const { target } = mountModel(model({
-      status: status({ state: "idle", session: { state: "idle" } }),
+      status: status({ sessionState: "idle", session: { state: "idle" } }),
       submitting: true,
     }));
     await tick();
@@ -104,7 +104,7 @@ describe("AgentPanelHeader", () => {
   it("shows the attention state and the queued count", async () => {
     const { target } = mountModel(model({
       status: status({
-        state: "attention_required",
+        sessionState: "attention_required",
         waitingMessages: [{ messageId: "m1", text: "hi", status: "waiting", acceptedAt: "", requestedMode: "enqueue", actualMode: "enqueue" }],
       }),
     }));

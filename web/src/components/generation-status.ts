@@ -33,9 +33,9 @@ export function effectiveGenerationStatus(block: ConversationBlock, status: Reso
   if (!liveGeneration || liveGeneration.generationId !== block.generation.generationId) return historyStatus;
 
   const liveStatus = normalized(liveGeneration.status);
-  if (!status?.state) return liveStatus || historyStatus;
+  if (!status?.sessionState) return liveStatus || historyStatus;
 
-  switch (status.state) {
+  switch (status.sessionState) {
     case "working":
       return ACTIVE_GENERATION_STATUSES.has(liveStatus) ? liveStatus : "running";
     case "attention_required":

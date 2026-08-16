@@ -22,34 +22,40 @@ type WorkspaceWikiView struct {
 }
 
 type ResourceTreeView struct {
-	ID           string             `json:"id"`
-	Type         string             `json:"type"`
-	Title        string             `json:"title"`
-	Path         string             `json:"path"`
-	Archived     bool               `json:"archived"`
-	AgentBinding AgentBinding       `json:"agentBinding"`
-	Children     []ResourceTreeView `json:"children,omitempty"`
+	ID             string             `json:"id"`
+	Type           string             `json:"type"`
+	Title          string             `json:"title"`
+	Path           string             `json:"path"`
+	Archived       bool               `json:"archived"`
+	AgentBinding   AgentBinding       `json:"agentBinding"`
+	State          TaskState          `json:"state,omitempty"`
+	StateNote      string             `json:"stateNote,omitempty"`
+	StateUpdatedAt string             `json:"stateUpdatedAt,omitempty"`
+	Children       []ResourceTreeView `json:"children,omitempty"`
 }
 
 type ResourceDetailView struct {
-	ID           string              `json:"id"`
-	Type         string              `json:"type"`
-	Title        string              `json:"title"`
-	Description  string              `json:"description,omitempty"`
-	CreatedAt    string              `json:"createdAt"`
-	UpdatedAt    string              `json:"updatedAt"`
-	Path         string              `json:"path"`
-	Archived     bool                `json:"archived"`
-	AgentBinding AgentBinding        `json:"agentBinding"`
-	Repos        []TaskRepo          `json:"repos,omitempty"`
-	Files        []ResourceFile      `json:"files,omitempty"`
-	Artifacts    []FileTreeEntry     `json:"artifacts"`
-	Worktrees    []FileTreeEntry     `json:"worktrees"`
-	Children     []ResourceTreeView  `json:"children,omitempty"`
-	Templates    []TaskTemplate      `json:"templates,omitempty"`
-	Template     *TaskTemplateSource `json:"template,omitempty"`
-	Scheduler    *SchedulerConfig    `json:"scheduler,omitempty"`
-	TaskDefault  AgentBinding        `json:"taskDefault,omitempty"`
+	ID             string              `json:"id"`
+	Type           string              `json:"type"`
+	Title          string              `json:"title"`
+	Description    string              `json:"description,omitempty"`
+	CreatedAt      string              `json:"createdAt"`
+	UpdatedAt      string              `json:"updatedAt"`
+	Path           string              `json:"path"`
+	Archived       bool                `json:"archived"`
+	AgentBinding   AgentBinding        `json:"agentBinding"`
+	State          TaskState           `json:"state,omitempty"`
+	StateNote      string              `json:"stateNote,omitempty"`
+	StateUpdatedAt string              `json:"stateUpdatedAt,omitempty"`
+	Repos          []TaskRepo          `json:"repos,omitempty"`
+	Files          []ResourceFile      `json:"files,omitempty"`
+	Artifacts      []FileTreeEntry     `json:"artifacts"`
+	Worktrees      []FileTreeEntry     `json:"worktrees"`
+	Children       []ResourceTreeView  `json:"children,omitempty"`
+	Templates      []TaskTemplate      `json:"templates,omitempty"`
+	Template       *TaskTemplateSource `json:"template,omitempty"`
+	Scheduler      *SchedulerConfig    `json:"scheduler,omitempty"`
+	TaskDefault    AgentBinding        `json:"taskDefault,omitempty"`
 }
 
 type TaskTemplate struct {
@@ -159,6 +165,11 @@ func buildResourceTreeItem(root string, entry resourceEntry, includeChildren boo
 		Archived:     isArchivedPath(root, entry.Path),
 		AgentBinding: meta.AgentBinding,
 	}
+	if task, ok := entry.Resource.(*Task); ok {
+		item.State = task.State
+		item.StateNote = task.StateNote
+		item.StateUpdatedAt = task.StateUpdatedAt
+	}
 	if includeChildren && isProject(entry.Resource) {
 		children, err := projectChildTreeItems(root, entry, false)
 		if err != nil {
@@ -195,6 +206,9 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		}
 	case *Task:
 		detail.Description = typed.Description
+		detail.State = typed.State
+		detail.StateNote = typed.StateNote
+		detail.StateUpdatedAt = typed.StateUpdatedAt
 		detail.Repos = discoverTaskRepos(root, entry.Path)
 		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))

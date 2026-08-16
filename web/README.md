@@ -73,7 +73,7 @@ The shell has one canonical Workspace and Resource selection. That selection dri
 | --- | --- | --- |
 | `MobileToolbar` | Mobile navigation, Details/Chat tabs, immersive toggle, and sidebar backdrop | `mobile-toolbar` |
 | `WorkspaceSwitcher` | Active Workspace presentation, menu dismissal, switch deduplication, pending state, and switch errors | `workspace-switcher` |
-| `SchedulerNav` | Fixed Scheduler entry between the Workspace switcher and Project tree, with resource status and selection | `scheduler-nav` |
+| `SchedulerNav` | Fixed Scheduler entry between the Workspace switcher and Project tree, with selection | `scheduler-nav` |
 | `ProjectTree` | Keyed Project/Task rows, expansion/selection dispatch, same-kind drag ordering, and Tree empty/error states | `project-tree` |
 | `AttentionList` | Server-computed focused resources, Project/Task star toggles, active-Turn retention without dismiss controls, and idle-row dismiss actions | `attention-list` |
 | `StatusPresentation` | Shared status/lock icon markup and animation used by resource tree rows | `status-presentation` |

@@ -15,7 +15,7 @@
     model = next;
   }));
 
-  const stateKey = $derived(!model.resourceId ? "empty" : model.submitting ? "submitting" : model.status?.state || "loading");
+  const stateKey = $derived(!model.resourceId ? "empty" : model.submitting ? "submitting" : model.status?.sessionState || "loading");
   const stateLabel = $derived(stateKey === "submitting" ? "Submitting"
     : stateKey === "working" ? "Working"
     : stateKey === "idle" ? "Idle"

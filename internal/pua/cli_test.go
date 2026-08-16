@@ -107,6 +107,7 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 			t.Fatal(err)
 		}
 		var requestBody map[string]any
+		var taskStateBody map[string]any
 		turnRef := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"k":"turn","w":"instance","r":"project1.task1","g":"gen-1","t":"turn-1"}`))
 		eventRef := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"k":"event","w":"instance","r":"project1.task1","g":"gen-1","e":1}`))
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -117,7 +118,14 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 				}
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","resourceId":"project1.task1","requestedMode":"interrupt","actualMode":"interrupt","status":"delivered","reference":"messages/msg-test"}`)
 			case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/resources/") && strings.HasSuffix(r.URL.Path, "/status"):
-				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"idle","exists":true,"acceptsMessages":true}`)
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","sessionState":"idle","exists":true,"acceptsMessages":true}`)
+			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/task-state"):
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"waiting","note":"CI is running"}`)
+			case r.Method == http.MethodPut && strings.HasSuffix(r.URL.Path, "/resources/project1.task1/task-state"):
+				if err := json.NewDecoder(r.Body).Decode(&taskStateBody); err != nil {
+					t.Error(err)
+				}
+				_, _ = io.WriteString(w, `{"resourceId":"project1.task1","state":"blocked","note":"Need approval"}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/messages/msg-test"):
 				_, _ = io.WriteString(w, `{"messageId":"msg-test","status":"delivered"}`)
 			case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/resources/workspace/history/turns"):
@@ -168,11 +176,20 @@ func TestStatusAndMessageCommandsUseOwningServerAndProvenance(t *testing.T) {
 		if status := run(t, "task", "status"); !strings.Contains(status, `"acceptsMessages": true`) {
 			t.Fatalf("unexpected inferred status response: %s", status)
 		}
-		if status := run(t, "project", "status", "--project=1"); !strings.Contains(status, `"state": "idle"`) {
+		if status := run(t, "project", "status", "--project=1"); !strings.Contains(status, `"sessionState": "idle"`) {
 			t.Fatalf("unexpected project status response: %s", status)
 		}
-		if status := run(t, "workspace", "status"); !strings.Contains(status, `"state": "idle"`) {
+		if status := run(t, "workspace", "status"); !strings.Contains(status, `"sessionState": "idle"`) {
 			t.Fatalf("unexpected workspace status response: %s", status)
+		}
+		if state := run(t, "task", "state"); !strings.Contains(state, `"state": "waiting"`) || !strings.Contains(state, `"note": "CI is running"`) {
+			t.Fatalf("unexpected task state response: %s", state)
+		}
+		if state := run(t, "task", "state", "set", "blocked", "--note", "Need approval"); !strings.Contains(state, `"state": "blocked"`) {
+			t.Fatalf("unexpected task state update response: %s", state)
+		}
+		if taskStateBody["state"] != "blocked" || taskStateBody["note"] != "Need approval" {
+			t.Fatalf("unexpected task state request: %#v", taskStateBody)
 		}
 		if message := run(t, "message", "show", "--id=msg-test"); !strings.Contains(message, `"status": "delivered"`) {
 			t.Fatalf("unexpected message response: %s", message)

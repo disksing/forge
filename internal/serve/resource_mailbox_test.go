@@ -27,7 +27,7 @@ func acceptTestResourceMessage(t *testing.T, manager *agentManager, workspace se
 	return message
 }
 
-func TestPublicResourceStateKeepsWaitingOutOfTaskState(t *testing.T) {
+func TestPublicSessionStateKeepsWaitingOutOfTaskState(t *testing.T) {
 	tests := []struct {
 		name         string
 		archived     bool
@@ -47,7 +47,7 @@ func TestPublicResourceStateKeepsWaitingOutOfTaskState(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := publicResourceState(test.archived, test.unavailable, test.generation, test.session, test.runtimeError); got != test.want {
+			if got := publicSessionState(test.archived, test.unavailable, test.generation, test.session, test.runtimeError); got != test.want {
 				t.Fatalf("public state = %q, want %q", got, test.want)
 			}
 		})
@@ -707,7 +707,7 @@ func TestResourceServerAPIStatusSendAndMessageQuery(t *testing.T) {
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if !status.Exists || !status.AcceptsMessages || status.Archived || status.State != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 {
+	if !status.Exists || !status.AcceptsMessages || status.Archived || status.SessionState != "working" || status.Generation == nil || status.Session == nil || status.Messages.Delivered != 1 {
 		t.Fatalf("resource status mismatch: %#v", status)
 	}
 
@@ -755,7 +755,7 @@ func TestResourceServerAPIListsAndSteersWaitingMessageInPlace(t *testing.T) {
 	if err := json.Unmarshal(statusRecorder.Body.Bytes(), &status); err != nil {
 		t.Fatal(err)
 	}
-	if status.State != "working" || !status.CanSteerWaiting || status.Messages.Waiting != 1 || len(status.WaitingMessages) != 1 ||
+	if status.SessionState != "working" || !status.CanSteerWaiting || status.Messages.Waiting != 1 || len(status.WaitingMessages) != 1 ||
 		status.WaitingMessages[0].MessageID != waiting.ID || status.WaitingMessages[0].Text != "move this now" || status.WaitingMessages[0].Status != "waiting" {
 		t.Fatalf("waiting projection mismatch: %#v", status)
 	}

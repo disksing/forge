@@ -18,7 +18,7 @@ func workspaceTreeFromApp(tree app.WorkspaceTree) workspaceTree {
 }
 
 func resourceSnapshotFromApp(resource app.ResourceTreeView) resourceSnapshot {
-	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived, AgentBinding: resource.AgentBinding}
+	result := resourceSnapshot{ID: resource.ID, Type: resource.Type, Title: resource.Title, Path: resource.Path, Archived: resource.Archived, AgentBinding: resource.AgentBinding, State: resource.State, StateNote: resource.StateNote, StateUpdatedAt: resource.StateUpdatedAt}
 	for _, child := range resource.Children {
 		result.Children = append(result.Children, resourceSnapshotFromApp(child))
 	}

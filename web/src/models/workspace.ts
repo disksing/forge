@@ -7,7 +7,9 @@ export interface ResourceRecord {
   title?: string;
   path?: string;
   description?: string;
-  status?: string;
+  state?: "not_started" | "in_progress" | "waiting" | "blocked" | "paused" | "completed" | "error";
+  stateNote?: string;
+  stateUpdatedAt?: string;
   archived?: boolean;
   agentBinding?: { kind: "profile" | "agent"; name: string };
   taskDefault?: { kind: "profile" | "agent"; name: string };
