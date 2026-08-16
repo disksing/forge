@@ -25,7 +25,7 @@ let application: ReturnType<typeof mount> | null = null;
 async function mountApplication(): Promise<void> {
   if (application) return;
   const target = document.getElementById("app");
-  if (!target) throw new Error("Forge application root is unavailable.");
+  if (!target) throw new Error("PUA application root is unavailable.");
   if (window.location.pathname === "/file") {
     target.dataset.componentOwner = "file-preview-fullscreen";
     application = mount(FilePreviewFullscreen, { target });
@@ -50,4 +50,4 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted) void mountApplication();
 });
 
-void mountApplication().catch((error) => console.error("Failed to start the Forge application", error));
+void mountApplication().catch((error) => console.error("Failed to start the PUA application", error));

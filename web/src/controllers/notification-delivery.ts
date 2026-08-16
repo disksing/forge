@@ -72,7 +72,7 @@ export function createNotificationDelivery(dependencies: NotificationDeliveryDep
   function sendBrowser(record: NotificationRecord): void {
     if (!dependencies.settings().browser || notificationPermission() !== "granted") return;
     try {
-      const notification = new window.Notification(notificationDisplayTitle(record), { body: notificationDisplayBody(record), tag: `forge-${record.marker}`, icon: "/favicon.svg" });
+      const notification = new window.Notification(notificationDisplayTitle(record), { body: notificationDisplayBody(record), tag: `pua-${record.marker}`, icon: "/favicon.svg" });
       notification.onclick = () => {
         try { window.focus(); } catch (_) {}
         void dependencies.navigate(record).catch((error) => console.warn("notification navigation failed", error));
@@ -99,7 +99,7 @@ export function createNotificationDelivery(dependencies: NotificationDeliveryDep
     }
     if (permission === "denied") {
       dependencies.updateSettings({ ...settings, browser: false });
-      permissionError = "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically.";
+      permissionError = "Chrome denied permission. Restore it in Chrome site settings; PUA will not ask again automatically.";
       dependencies.settingsChanged();
       return permission;
     }
@@ -111,7 +111,7 @@ export function createNotificationDelivery(dependencies: NotificationDeliveryDep
     }
     dependencies.updateSettings({ ...settings, browser: next === "granted" });
     permissionError = next === "granted" ? "" : next === "denied"
-      ? "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically."
+      ? "Chrome denied permission. Restore it in Chrome site settings; PUA will not ask again automatically."
       : "Notification permission is still pending.";
     dependencies.settingsChanged();
     return next;

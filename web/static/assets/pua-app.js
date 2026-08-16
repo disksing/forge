@@ -1,4 +1,4 @@
-import { $ as e, A as t, B as n, C as r, D as i, E as a, F as o, G as s, H as c, I as l, J as u, K as d, L as f, M as p, N as m, O as h, P as g, Q as _, R as v, S as y, T as b, U as x, V as S, W as C, X as w, Y as T, Z as E, _ as D, a as O, b as k, c as A, d as j, et as M, f as N, g as P, h as F, i as I, j as L, k as R, l as z, m as B, n as V, o as H, p as U, q as W, r as G, s as K, t as ee, tt as q, u as te, v as ne, w as re, x as ie, y as ae, z as J } from "./markdown-editor-session-CilIxIPO.js";
+import { $ as e, A as t, B as n, C as r, D as i, E as a, F as o, G as s, H as c, I as l, J as u, K as d, L as f, M as p, N as m, O as h, P as g, Q as _, R as v, S as y, T as b, U as x, V as S, W as C, X as w, Y as T, Z as E, _ as D, a as O, b as k, c as A, d as j, et as M, f as N, g as P, h as F, i as I, j as L, k as R, l as z, m as B, n as V, o as H, p as U, q as W, r as G, s as K, t as ee, tt as q, u as te, v as ne, w as re, x as ie, y as ae, z as J } from "./markdown-editor-session-tW-EHpVy.js";
 //#region src/components/DoctorDialog.svelte
 var oe = o("<div class=\"doctor-global-error\"><strong>Doctor could not run</strong><span> </span></div>"), se = o("<div class=\"doctor-empty\"><!><span>Checking configured Workspaces…</span></div>"), Y = o("<div class=\"doctor-empty\"><!><span>No configured Workspace problems.</span></div>"), ce = o("<code> </code>"), le = o("<p> </p>"), ue = o("<article><div class=\"doctor-issue-icon\"><!></div> <div class=\"doctor-issue-copy\"><div class=\"doctor-issue-title\"><strong> </strong><span> </span></div> <!> <!></div></article>"), de = o("<section class=\"doctor-workspace\"><div class=\"doctor-workspace-heading\"><div><h3> </h3><code> </code></div> <span> </span></div> <div class=\"doctor-issues\"></div></section>"), fe = o("<div data-component-owner=\"doctor-dialog\" class=\"doctor-backdrop\" role=\"presentation\"><div class=\"doctor-dialog\" role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"doctorTitle\"><header><div><h2 id=\"doctorTitle\">Workspace problems</h2> <p> </p></div> <div class=\"doctor-header-actions\"><button type=\"button\" class=\"doctor-refresh\" aria-label=\"Refresh workspace checks\"><!> Refresh</button> <button type=\"button\" class=\"doctor-close\" aria-label=\"Close workspace problems\"><!></button></div></header> <div class=\"doctor-content\"><!> <!></div></div></div>");
 function pe(t, r) {
@@ -608,7 +608,7 @@ function Ve(t, r) {
 f(["click"]);
 //#endregion
 //#region src/components/AppShell.svelte
-var He = o("<button id=\"doctorButton\" type=\"button\" title=\"Workspace problems\"><!><span> </span></button>"), Ue = o("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">F</div><div class=\"brand-copy\"><strong>Forge</strong><span> </span></div><!><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><div class=\"workspace-toolbar\"><button id=\"splitMenuButton\" class=\"workspace-menu-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button></div> <div class=\"workspace-view-tabs\"><div class=\"workspace-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"paneDetailsTab\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"paneChatTab\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div></div> <section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div class=\"chat-panel\"><!><div id=\"chatTimeline\" class=\"chat-timeline\" data-component-owner=\"event-timeline\"><!></div><div id=\"chatComposer\" class=\"chat-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div> <!>", 1);
+var He = o("<button id=\"doctorButton\" type=\"button\" title=\"Workspace problems\"><!><span> </span></button>"), Ue = o("<div data-component-owner=\"app-shell\" class=\"app-shell\"><!> <aside id=\"mobileSidebar\" class=\"sidebar\"><div class=\"brand-band\"><div class=\"brand-mark\">P</div><div class=\"brand-copy\"><strong>PUA</strong><span> </span></div><!><button id=\"systemSettingsButton\" class=\"brand-settings\" type=\"button\" title=\"Settings\" aria-label=\"Settings\"><!></button></div> <!> <!> <!> <!> <!></aside> <!> <main class=\"workspace-panel\"><div class=\"workspace-toolbar\"><button id=\"splitMenuButton\" class=\"workspace-menu-button\" type=\"button\" aria-label=\"Open navigation\" aria-controls=\"mobileSidebar\"><!></button></div> <div class=\"workspace-view-tabs\"><div class=\"workspace-view-switcher\" role=\"tablist\" aria-label=\"Workspace view\"><button id=\"paneDetailsTab\" type=\"button\" role=\"tab\" aria-controls=\"detailsPanel\">Details</button> <button id=\"paneChatTab\" type=\"button\" role=\"tab\" aria-controls=\"agentPanel\">Chat</button></div></div> <section id=\"detailsPanel\" class=\"details-panel\" data-component-owner=\"detail-panel\"><!></section> <!> <aside id=\"agentPanel\" class=\"agent-panel\"><div class=\"chat-panel\"><!><div id=\"chatTimeline\" class=\"chat-timeline\" data-component-owner=\"event-timeline\"><!></div><div id=\"chatComposer\" class=\"chat-composer\" data-component-owner=\"chat-composer\"><!></div></div></aside></main></div> <!>", 1);
 function We(t, i) {
 	e(i, !0);
 	let a = T(W(i.channel.current())), o = T(0), l = T(!1);
@@ -2496,7 +2496,7 @@ f(["click", "keydown"]);
 //#region src/components/LazyMarkdownEditor.svelte
 var Qn = o("<div class=\"file-modal-empty error-preview\"><strong>Markdown editor unavailable</strong><span> </span></div>"), $n = o("<div class=\"file-modal-empty\"><strong>Loading Markdown editor…</strong></div>");
 function er(e, t) {
-	let r = import("./MarkdownEditor-D9-VZa6n.js");
+	let r = import("./MarkdownEditor-DMept7rK.js");
 	var i = g(), a = s(i);
 	R(a, () => r, (e) => {
 		var t = $n();
@@ -3674,7 +3674,7 @@ var di = 20, fi = 250, pi = 80, mi = 2e3, hi = /* @__PURE__ */ new Set([
 				let n = JSON.parse(t.data);
 				this.flushEvents(e, !1), this.appendNotice(e, n), this.onNotice?.(e.workspaceId, e.resourceId, n), this.emit();
 			} catch {
-				e.error = "A Forge notice could not be decoded.", this.emit();
+				e.error = "A PUA notice could not be decoded.", this.emit();
 			}
 		}), i.onerror = () => {
 			if (!this.isActiveStream(e, i, r)) {
@@ -5042,7 +5042,7 @@ function Ra(t, r) {
 f(["click"]);
 //#endregion
 //#region src/components/DetailPanel.svelte
-var za = o("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), Ba = o("<button type=\"button\" role=\"tab\"><!><span> </span></button>"), Va = o("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>AGENTS.md unavailable</strong><span> </span></div></div>"), Ha = o("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Loading AGENTS.md...</strong></div></div>"), Ua = o("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), Wa = o("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>"), Ga = o("<div class=\"details-header\"><h1 class=\"details-title\"> </h1></div> <div class=\"details-tabs\" role=\"tablist\" aria-label=\"Workspace details\"></div> <div id=\"detailsContent\" class=\"details-content\"><div><!></div> <div><!></div> <div><!></div></div>", 1), Ka = o("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), qa = o("<code class=\"resource-ref-badge\"> </code>"), Ja = o("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), Ya = o("<button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button>"), Xa = o("<div class=\"details-actions\"><!><!></div>"), Za = o("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), Qa = o("<div><!></div>"), $a = o("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>"), eo = o("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>"), to = o("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), no = o("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ro = o("<div class=\"content-section\"><div class=\"template-list\"><!></div></div>"), io = o("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), ao = o("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), oo = o("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!> <!> <!> <div><!></div> <div><!></div> <!> <div><!></div> <div><div class=\"content-section\"><div class=\"worktree-list\"><!></div></div></div></div>", 1), so = o("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!></nav> <h1 class=\"details-title\"> <!></h1><!></div> <!>", 1), co = o("<!> <!> <!>", 1);
+var za = o("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>No workspace selected</strong><span>Add an AgentWorkspace path in the sidebar.</span></div></div>"), Ba = o("<button type=\"button\" role=\"tab\"><!><span> </span></button>"), Va = o("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>AGENTS.md unavailable</strong><span> </span></div></div>"), Ha = o("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Loading AGENTS.md...</strong></div></div>"), Ua = o("<div class=\"content-section\"><div class=\"file-modal-empty error-preview wiki-status\"><!><strong>Wiki unavailable</strong><span> </span></div></div>"), Wa = o("<div class=\"content-section\"><div class=\"file-modal-empty wiki-status\"><!><strong>Wiki not initialized</strong><span>Run pua migrate to create wiki/index.md.</span></div></div>"), Ga = o("<div class=\"details-header\"><h1 class=\"details-title\"> </h1></div> <div class=\"details-tabs\" role=\"tablist\" aria-label=\"Workspace details\"></div> <div id=\"detailsContent\" class=\"details-content\"><div><!></div> <div><!></div> <div><!></div></div>", 1), Ka = o("<span class=\"breadcrumb-separator\">/</span><button type=\"button\" class=\"breadcrumb-link\"> </button>", 1), qa = o("<code class=\"resource-ref-badge\"> </code>"), Ja = o("<button type=\"button\" id=\"newTaskButton\"><!><span>New Task</span></button>"), Ya = o("<button type=\"button\" class=\"danger\" id=\"archiveButton\"><!><span>Archive</span></button>"), Xa = o("<div class=\"details-actions\"><!><!></div>"), Za = o("<div id=\"detailsContent\" class=\"details-content\"><div class=\"empty-state\"><!><strong>Loading details...</strong></div></div>"), Qa = o("<div><!></div>"), $a = o("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Project brief is missing</strong><span>project.md was not found in this project directory.</span></div></div>"), eo = o("<div class=\"content-section\"><div class=\"file-modal-empty detail-missing\"><!><strong>Task brief is missing</strong><span>task.md was not found in this task directory.</span></div></div>"), to = o("<button type=\"button\"><!><span><strong> </strong><small> </small></span><!></button>"), no = o("<div class=\"empty-list-row\"><!><span>No task templates in templates/*.md.</span></div>"), ro = o("<div class=\"content-section\"><div class=\"template-list\"><!></div></div>"), io = o("<div class=\"worktree-row\"><div class=\"worktree-main\"><!><div><strong> </strong><span> </span><small> </small></div></div><button type=\"button\" class=\"secondary-button\"><!><span>View Diff</span></button></div>"), ao = o("<div class=\"empty-list-row\"><!><span>No worktrees.</span></div>"), oo = o("<div class=\"details-tabs\" role=\"tablist\" aria-label=\"Resource details\"></div> <div id=\"detailsContent\" class=\"details-content\"><!> <!> <!> <!> <div><!></div> <div><!></div> <!> <div><!></div> <div><div class=\"content-section\"><div class=\"worktree-list\"><!></div></div></div></div>", 1), so = o("<div class=\"details-header\"><nav class=\"breadcrumb\" aria-label=\"Location\"><button type=\"button\" class=\"breadcrumb-link\"> </button> <!></nav> <h1 class=\"details-title\"> <!></h1><!></div> <!>", 1), co = o("<!> <!> <!>", 1);
 function lo(t, r) {
 	e(r, !0);
 	let a = T(W(r.channel.current())), o = T(""), l = T(""), f = T(W(/* @__PURE__ */ new Set())), p = T(null), y = T(null), x = /* @__PURE__ */ new Map(), E = new sn(), D = 0, A = w(() => (n(a).detail?.files || []).filter((e) => e.name !== "AGENTS.md")), j = w(() => new Set(n(A).map((e) => e.name))), N = w(() => n(a).workspaceAgents && !n(a).workspaceAgents.error ? {
@@ -5971,7 +5971,7 @@ function Mo(t, r) {
 			{
 				let e = w(() => String(n(t).data?.text || "")), r = w(() => n(t).data?.level === "error");
 				Yi(a, {
-					title: "Forge",
+					title: "PUA",
 					get text() {
 						return n(e);
 					},
@@ -6084,7 +6084,7 @@ function Fo(e) {
 }
 //#endregion
 //#region src/components/AgentHubSettingsPanel.svelte
-var Io = o("<span class=\"settings-pill\"> </span>"), Lo = o("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), Ro = o("<div class=\"settings-empty\">No AgentHub agents available.</div>"), zo = o("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"agenthub-settings-panel\" data-settings-panel=\"\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>");
+var Io = o("<span class=\"settings-pill\"> </span>"), Lo = o("<div class=\"settings-service-row\"><div class=\"settings-provider-main\"><span class=\"settings-agent-mark\"> </span><span><strong> </strong><small> </small></span></div></div>"), Ro = o("<div class=\"settings-empty\">No AgentHub agents available.</div>"), zo = o("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"agenthub-settings-panel\" data-settings-panel=\"\" data-settings-section=\"agenthub\"><div class=\"settings-panel-header\"><h2>AgentHub</h2><p>PUA connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Connection</h3><span class=\"settings-pill\"> </span></div> <label class=\"settings-default-agent\"><span>Endpoint</span><input id=\"settingsAgentHubEndpoint\"/></label> <small> </small> <div class=\"settings-provider-list\"></div></section> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Catalog</h3><span> </span></div> <div class=\"settings-agent-list\"></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button id=\"settingsSaveButton\" type=\"button\"><!><span>Save All</span></button></div></div>");
 function Bo(t, r) {
 	e(r, !0);
 	let i = A(r, "draft", 15), o = A(r, "pending", 15);
@@ -6247,7 +6247,7 @@ function Zo(t, n) {
 f(["change"]);
 //#endregion
 //#region src/components/ProfilesSettingsPanel.svelte
-var Qo = o("<option> </option>"), $o = o("<span class=\"settings-profile-system-label\">System</span>"), es = o("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), ts = o("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), ns = o("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"profiles-settings-panel\" data-settings-panel=\"\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map Forge workflows to AgentHub agents. The default profile is reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>");
+var Qo = o("<option> </option>"), $o = o("<span class=\"settings-profile-system-label\">System</span>"), es = o("<button type=\"button\" class=\"settings-danger-button\" title=\"Delete Profile\"><!></button>"), ts = o("<div><input aria-label=\"Profile key\"/> <input aria-label=\"Summary\"/> <select aria-label=\"AgentHub Agent\"></select> <!></div>"), ns = o("<div class=\"settings-panel settings-agent-panel\" data-component-owner=\"profiles-settings-panel\" data-settings-panel=\"\" data-settings-section=\"profiles\"><div class=\"settings-panel-header\"><h2>Agent Profiles</h2><p>Profiles map PUA workflows to AgentHub agents. The default profile is reserved; custom profile keys must be unique.</p></div> <section class=\"settings-agent-section\"><div class=\"settings-section-heading\"><h3>Profile Routes</h3><span> </span></div> <div class=\"settings-profile-table\"><div class=\"settings-profile-row settings-profile-head\"><span>Profile key</span><span>Summary</span><span>AgentHub Agent</span><span></span></div> <!> <div class=\"settings-profile-row settings-profile-new\"><input id=\"settingsNewProfileKey\" placeholder=\"New key\" aria-label=\"New profile key\"/> <input id=\"settingsNewProfileDescription\" placeholder=\"New profile summary\" aria-label=\"New profile summary\"/> <select id=\"settingsNewProfileAgent\" aria-label=\"New profile agent\"></select> <button id=\"settingsAddProfileButton\" type=\"button\"><!><span>Add</span></button></div></div></section> <div class=\"settings-form-actions settings-save-bar\"><span> </span><button type=\"button\"><!><span>Save All</span></button></div></div>");
 function rs(t, r) {
 	e(r, !0);
 	let i = A(r, "draft", 15), o = A(r, "pending", 15), s = /* @__PURE__ */ new Set(["default"]);
@@ -6456,7 +6456,7 @@ function ls(t, n) {
 f(["input"]);
 //#endregion
 //#region src/components/WorkspaceSettingsPanel.svelte
-var us = o("<span class=\"settings-pill\">Active</span>"), ds = o("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), fs = o("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), ps = o("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), ms = o("<div class=\"settings-empty\">No workspaces managed by Forge GUI.</div>"), hs = o("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run forge init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
+var us = o("<span class=\"settings-pill\">Active</span>"), ds = o("<button type=\"button\" role=\"radio\"><img alt=\"\"/><span> </span><!></button>"), fs = o("<div class=\"settings-workspace-icon-picker\" role=\"radiogroup\"></div>"), ps = o("<div class=\"settings-workspace-entry\"><div class=\"settings-list-row\"><div class=\"settings-row-main\"><span class=\"settings-workspace-mark\"><img alt=\"\" aria-hidden=\"true\"/></span> <span><strong> </strong><small> </small></span></div> <div class=\"settings-row-actions\"><!> <button type=\"button\" class=\"settings-workspace-icon-button\" title=\"Change workspace icon\"><img alt=\"\"/> <span> </span> <!></button> <button type=\"button\" class=\"settings-danger-button\" title=\"Remove workspace\"><!></button></div></div> <!></div>"), ms = o("<div class=\"settings-empty\">No workspaces managed by PUA GUI.</div>"), hs = o("<div class=\"settings-panel\" data-component-owner=\"workspace-settings-panel\" data-settings-panel=\"\"><div class=\"settings-panel-header\"><h2>Workspaces</h2> <p>Add existing AgentWorkspace folders or create and initialize a new PUA workspace.</p></div> <form id=\"settingsWorkspaceForm\" class=\"settings-path-form\"><input id=\"settingsWorkspacePath\" placeholder=\"/Users/me/Documents/AgentWorkspace\"/> <label class=\"settings-check\"><input id=\"settingsWorkspaceCreate\" type=\"checkbox\"/> <span>Create directory and run pua init</span></label> <button type=\"submit\"><!><span> </span></button></form> <div class=\"settings-list\"></div></div>");
 function gs(t, r) {
 	e(r, !0);
 	let i = A(r, "draft", 15), a = A(r, "pending", 15), o = T("");
@@ -7013,7 +7013,7 @@ function Os(t, n) {
 }
 //#endregion
 //#region src/components/FilePreviewFullscreen.svelte
-var ks = o("<div class=\"file-fullscreen-state\" data-component-owner=\"file-preview-fullscreen\"><div class=\"file-modal-empty error-preview\"><!><strong>File preview unavailable</strong><span>Missing workspace or file parameters in the full-screen URL.</span><a class=\"secondary-button\" href=\"/\">Back to Forge</a></div></div>");
+var ks = o("<div class=\"file-fullscreen-state\" data-component-owner=\"file-preview-fullscreen\"><div class=\"file-modal-empty error-preview\"><!><strong>File preview unavailable</strong><span>Missing workspace or file parameters in the full-screen URL.</span><a class=\"secondary-button\" href=\"/\">Back to PUA</a></div></div>");
 function As(t, r) {
 	e(r, !0);
 	let i = new URLSearchParams(window.location.search), a = i.get("workspaceId") || "", o = i.get("resourceId") || "", c = i.get("section") || "Files", l = i.get("path") || "", d = i.get("mode"), f = i.get("editable"), p = f == null ? o === "workspace" ? l === "AGENTS.md" || l === "" : o !== "scheduler" : f === "1", v = I(), y = d ?? v?.mode ?? "preview";
@@ -7227,7 +7227,7 @@ function Ms() {
 			activeWorkspaceId: "",
 			workspaceIcons: [{
 				id: "",
-				label: "Forge default",
+				label: "PUA default",
 				src: "/favicon.svg"
 			}],
 			workspaceIconSavingId: "",
@@ -7414,7 +7414,7 @@ function Ps(e, t, n) {
 }
 //#endregion
 //#region src/controllers/agent-draft-store.ts
-var Fs = "forge.web.agentDraft.v2", Is = "forge.gui.agentDraft.v2", Ls = 2, Rs = 50, zs = 7776e6;
+var Fs = "pua.web.agentDraft.v2", Is = ["forge.web.agentDraft.v2", "forge.gui.agentDraft.v2"], Ls = 2, Rs = 50, zs = 7776e6;
 function Bs(e) {
 	return encodeURIComponent(String(e || "").trim());
 }
@@ -7431,7 +7431,7 @@ function Hs(e = {}) {
 			return null;
 		}
 	}
-	Ps(i(), Is, Fs);
+	for (let e of Is) Ps(i(), e, Fs);
 	function a(e, t) {
 		let n = String(e || "").trim(), r = Vs(t);
 		return !n || !r ? "" : `${Fs}.resource.${Bs(n)}.${Bs(r)}`;
@@ -7861,7 +7861,7 @@ function ec(e) {
 		if (!(!e.settings().browser || Zs() !== "granted")) try {
 			let n = new window.Notification(Qs(t), {
 				body: $s(t),
-				tag: `forge-${t.marker}`,
+				tag: `pua-${t.marker}`,
 				icon: "/favicon.svg"
 			});
 			n.onclick = () => {
@@ -7887,7 +7887,7 @@ function ec(e) {
 		if (n === "denied") return e.updateSettings({
 			...t,
 			browser: !1
-		}), r = "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically.", e.settingsChanged(), n;
+		}), r = "Chrome denied permission. Restore it in Chrome site settings; PUA will not ask again automatically.", e.settingsChanged(), n;
 		let i = n;
 		if (n === "default") try {
 			i = await window.Notification.requestPermission();
@@ -7897,7 +7897,7 @@ function ec(e) {
 		return e.updateSettings({
 			...t,
 			browser: i === "granted"
-		}), r = i === "granted" ? "" : i === "denied" ? "Chrome denied permission. Restore it in Chrome site settings; Forge will not ask again automatically." : "Notification permission is still pending.", e.settingsChanged(), i;
+		}), r = i === "granted" ? "" : i === "denied" ? "Chrome denied permission. Restore it in Chrome site settings; PUA will not ask again automatically." : "Notification permission is still pending.", e.settingsChanged(), i;
 	}
 	function c(t) {
 		let n = e.settings();
@@ -7954,7 +7954,7 @@ function ec(e) {
 }
 //#endregion
 //#region src/controllers/notification-store.ts
-var tc = "forge.web.notifications.v1", nc = "forge.gui.notifications.v1", rc = `${tc}.settings`;
+var tc = "pua.web.notifications.v1", nc = ["forge.web.notifications.v1", "forge.gui.notifications.v1"], rc = `${tc}.settings`;
 function ic(e) {
 	return e && typeof e == "object" ? e : null;
 }
@@ -8012,7 +8012,7 @@ function cc(e) {
 	return t ? `${tc}.state.${encodeURIComponent(t)}` : "";
 }
 function lc(e) {
-	Ps(e, nc, tc);
+	for (let t of nc) Ps(e, t, tc);
 	function t(t) {
 		let n = cc(t);
 		if (!e || !n) return oc();
@@ -8176,7 +8176,7 @@ function hc(e) {
 		}, a = typeof navigator < "u" ? navigator.locks : null;
 		if (!a || typeof a.request != "function") return i();
 		try {
-			a.request(`forge.web.notification.${n.workspaceId}.${d(e, t)}`, { ifAvailable: !0 }, (e) => {
+			a.request(`pua.web.notification.${n.workspaceId}.${d(e, t)}`, { ifAvailable: !0 }, (e) => {
 				e && i();
 			}).catch((e) => {
 				console.warn("notification effect lock unavailable", e), i();
@@ -8330,11 +8330,15 @@ function hc(e) {
 }
 //#endregion
 //#region src/controllers/pane-layout-controller.ts
-var gc = "forge.web.paneSizes", _c = "forge.web.mobileImmersive", vc = "forge.web.layoutPreference", yc = "forge.web.fontScales", bc = [
+var gc = "pua.web.paneSizes", _c = "pua.web.mobileImmersive", vc = "pua.web.layoutPreference", yc = "pua.web.fontScales", bc = [
 	["forge.gui.paneSizes", gc],
 	["forge.gui.mobileImmersive", _c],
 	["forge.gui.layoutPreference", vc],
-	["forge.gui.fontScales", yc]
+	["forge.gui.fontScales", yc],
+	["forge.web.paneSizes", gc],
+	["forge.web.mobileImmersive", _c],
+	["forge.web.layoutPreference", vc],
+	["forge.web.fontScales", yc]
 ], xc = 8, Sc = 220, Cc = 360, wc = 320, Tc = 1e4, Ec = Object.freeze({
 	sidebarWidth: 280,
 	chatWidth: 420,
@@ -8715,7 +8719,7 @@ function Uc(e) {
 			let t = n.activeId || n.workspaces[0]?.id || "";
 			e.setActiveWorkspaceId(t), e.selectWorkspaceResource(), e.resetAgentState(), t ? await e.reloadWorkspaceContext() : e.clearWorkspaceContext();
 		} else e.renderWorkspace();
-		await l(), r(), e.toast("Workspace removed from Forge GUI.");
+		await l(), r(), e.toast("Workspace removed from PUA GUI.");
 	}
 	async function f(t, i) {
 		if (!(!t || n.workspaceIconSavingId)) {
@@ -8731,7 +8735,7 @@ function Uc(e) {
 				}), n.data = {
 					...n.data,
 					workspaces: a(n.data?.workspaces)
-				}, e.renderWorkspace(), e.toast(i ? "Workspace icon saved." : "Workspace icon reset to the Forge default.");
+				}, e.renderWorkspace(), e.toast(i ? "Workspace icon saved." : "Workspace icon reset to the PUA default.");
 			} finally {
 				n.workspaceIconSavingId = "", r();
 			}
@@ -8935,7 +8939,7 @@ function Kc(e) {
 }
 //#endregion
 //#region src/controllers/user-settings-controller.ts
-var qc = "forge.web.user.v1", Jc = "forge.gui.user.v1", Yc = 1, Xc = 80;
+var qc = "pua.web.user.v1", Jc = ["forge.web.user.v1", "forge.gui.user.v1"], Yc = 1, Xc = 80;
 function Zc(e) {
 	let t = String(e || "").trim();
 	return t && Array.from(t).slice(0, Xc).join("") || "User";
@@ -8954,7 +8958,7 @@ function $c(e, t) {
 	try {
 		n = window.localStorage;
 	} catch {}
-	Ns(n, Jc, qc);
+	for (let e of Jc) Ns(n, e, qc);
 	let r = i();
 	function i() {
 		try {
@@ -9122,7 +9126,7 @@ var il = Us({
 	})
 }), hl = (e) => document.getElementById(e), gl = 5e3, _l = {
 	id: "",
-	label: "Forge default",
+	label: "PUA default",
 	src: "/favicon.svg",
 	type: "image/svg+xml"
 }, vl = [
@@ -9209,7 +9213,7 @@ var il = Us({
 ], yl = new Map(vl.map((e) => [e.id, e])), { applyCustomOrder: bl, archiveRedirectTarget: xl, moveIdInList: Sl, projectTaskSummary: Cl, resourceRefText: wl, statusModel: Tl, taskOperationalState: El, taskOperationalStateKey: Dl } = Kc({
 	tree: () => Q.tree,
 	findResource: (e) => od(e),
-	agentName: (e) => (Q.config?.agents || []).find((t) => t.id === e)?.name || e || "Forge GUI"
+	agentName: (e) => (Q.config?.agents || []).find((t) => t.id === e)?.name || e || "PUA GUI"
 }), Ol = 0, kl = Uc({
 	config: () => Q.config || {
 		workspaces: [],
@@ -10206,7 +10210,7 @@ function Ed() {
 function Dd(e) {
 	Ed(), e === "markdown" && window.marked && window.DOMPurify && (_u(), Ed()), e === "diff" && _u();
 }
-window.forgeAssetLoaded = Dd;
+window.puaAssetLoaded = Dd;
 function Od() {
 	dl.initialize();
 }
@@ -10311,7 +10315,7 @@ var Vd = Ms(), Hd = {
 async function Wd() {
 	if (Ud) return;
 	let e = document.getElementById("app");
-	if (!e) throw Error("Forge application root is unavailable.");
+	if (!e) throw Error("PUA application root is unavailable.");
 	if (window.location.pathname === "/file") {
 		e.dataset.componentOwner = "file-preview-fullscreen", Ud = t(As, { target: e });
 		return;
@@ -10328,5 +10332,5 @@ async function Gd() {
 }
 window.addEventListener("pagehide", () => void Gd()), window.addEventListener("pageshow", (e) => {
 	e.persisted && Wd();
-}), Wd().catch((e) => console.error("Failed to start the Forge application", e));
+}), Wd().catch((e) => console.error("Failed to start the PUA application", e));
 //#endregion

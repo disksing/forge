@@ -78,13 +78,13 @@
 <div class="settings-panel" data-component-owner="workspace-settings-panel" data-settings-panel>
   <div class="settings-panel-header">
     <h2>Workspaces</h2>
-    <p>Add existing AgentWorkspace folders or create and initialize a new Forge workspace.</p>
+    <p>Add existing AgentWorkspace folders or create and initialize a new PUA workspace.</p>
   </div>
   <form id="settingsWorkspaceForm" class="settings-path-form" onsubmit={addWorkspace}>
     <input id="settingsWorkspacePath" bind:value={draft.workspacePath} placeholder="/Users/me/Documents/AgentWorkspace" />
     <label class="settings-check">
       <input id="settingsWorkspaceCreate" type="checkbox" bind:checked={draft.createWorkspace} />
-      <span>Create directory and run forge init</span>
+      <span>Create directory and run pua init</span>
     </label>
     <button type="submit" disabled={Boolean(pending)}><Icon name="plus" /><span>{draft.createWorkspace ? "Create" : "Add"}</span></button>
   </form>
@@ -125,7 +125,7 @@
         {/if}
       </div>
     {:else}
-      <div class="settings-empty">No workspaces managed by Forge GUI.</div>
+      <div class="settings-empty">No workspaces managed by PUA GUI.</div>
     {/each}
   </div>
 </div>

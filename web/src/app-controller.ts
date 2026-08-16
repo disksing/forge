@@ -213,7 +213,7 @@ interface UploadContext { workspaceId?: string; resourceId?: string }
 interface WorkspaceIconOption { id: string; label: string; src: string; type?: string }
 const DEFAULT_WORKSPACE_ICON: WorkspaceIconOption = {
 	id: "",
-	label: "Forge default",
+	label: "PUA default",
 	src: "/favicon.svg",
 	type: "image/svg+xml"
 };
@@ -312,7 +312,7 @@ const {
 } = createShellProjection({
 	tree: () => controllerState.tree,
 	findResource: (id) => findResource(id),
-	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "Forge GUI",
+	agentName: (agentId) => (controllerState.config?.agents || []).find((agent) => agent.id === agentId)?.name || agentId || "PUA GUI",
 });
 let uploadDialogIdentity = 0;
 const settingsController = createSettingsController({
@@ -1593,7 +1593,7 @@ function optionalAssetLoaded(asset: string): void {
 	}
 	if (asset === "diff") renderDetails();
 }
-window.forgeAssetLoaded = optionalAssetLoaded;
+window.puaAssetLoaded = optionalAssetLoaded;
 function initPaneResize(): void {
 	paneLayoutController.initialize();
 }

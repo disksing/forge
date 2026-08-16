@@ -106,7 +106,7 @@
 
 {#if invalid}
   <div class="file-fullscreen-state" data-component-owner="file-preview-fullscreen">
-    <div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>File preview unavailable</strong><span>Missing workspace or file parameters in the full-screen URL.</span><a class="secondary-button" href="/">Back to Forge</a></div>
+    <div class="file-modal-empty error-preview"><Icon name="triangle-alert" /><strong>File preview unavailable</strong><span>Missing workspace or file parameters in the full-screen URL.</span><a class="secondary-button" href="/">Back to PUA</a></div>
   </div>
 {:else}
   <FilePreviewModal {client} {workspaceId} {resourceId} selection={selection} {editable} fullscreen resolveResourceTitle={(target) => target} onNavigate={navigateToResource} onOpenFile={openFile} onSaveMarkdown={saveMarkdown} onClose={() => window.close()} onError={(message) => console.warn("Full-screen preview:", message)} onIconsChanged={refreshIcons} />

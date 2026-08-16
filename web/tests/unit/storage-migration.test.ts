@@ -39,7 +39,7 @@ describe("storage-migration helpers", () => {
 	});
 });
 
-describe("forge.gui to forge.web key migration", () => {
+describe("legacy Forge keys to PUA key migration", () => {
 	function mockMatchMedia(): void {
 		Object.defineProperty(window, "matchMedia", {
 			configurable: true,
@@ -63,7 +63,7 @@ describe("forge.gui to forge.web key migration", () => {
 		expect(storage.getItem("forge.gui.layoutPreference")).toBeNull();
 		expect(storage.getItem("forge.gui.fontScales")).toBeNull();
 		expect(storage.getItem("forge.gui.mobileImmersive")).toBeNull();
-		expect(storage.getItem("forge.web.mobileImmersive")).toBe("1");
+		expect(storage.getItem("pua.web.mobileImmersive")).toBe("1");
 	});
 
 	it("migrates notification state and settings under the legacy prefix", () => {
@@ -83,7 +83,7 @@ describe("forge.gui to forge.web key migration", () => {
 		const drafts = createAgentDraftStore({ storage });
 		drafts.write(drafts.keyForResource("ws", "task1"), "hello", { workspaceId: "ws", resourceId: "task1" });
 		const key = drafts.keyForResource("ws", "task1");
-		storage.setItem(key.replace("forge.web.agentDraft.v2", "forge.gui.agentDraft.v2"), storage.getItem(key) || "");
+		storage.setItem(key.replace("pua.web.agentDraft.v2", "forge.gui.agentDraft.v2"), storage.getItem(key) || "");
 		storage.removeItem(key);
 		const migrated = createAgentDraftStore({ storage });
 		expect(migrated.read(migrated.keyForResource("ws", "task1"))).toBe("hello");

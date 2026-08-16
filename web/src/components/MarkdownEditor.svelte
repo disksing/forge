@@ -271,7 +271,7 @@
         return;
       }
     } catch {
-      // The production Forge origin is plain LAN HTTP, where Async Clipboard
+      // The production PUA origin is plain LAN HTTP, where Async Clipboard
       // is commonly unavailable. Continue to the synchronous fallback.
     }
     const temporary = document.createElement("textarea");

@@ -386,7 +386,7 @@ export class ChatSessionController {
         this.onNotice?.(context.workspaceId, context.resourceId, notice);
         this.emit();
       } catch {
-        context.error = "A Forge notice could not be decoded.";
+        context.error = "A PUA notice could not be decoded.";
         this.emit();
       }
     });

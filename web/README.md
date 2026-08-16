@@ -1,12 +1,12 @@
-# Forge web application
+# PUA web application
 
-This directory owns the complete Forge web application: Svelte 5 and TypeScript source, frontend tests and build tooling, the static HTML/vendor tree, generated Vite assets, and the Go embed boundary. `src/entry.ts` is the only production application entry point, and all components use runes mode. Vite emits deterministic `forge-app.js` and `forge-app.css` assets into `static/assets`; `assets.go` embeds `static/` so the released Forge binary has no Node runtime dependency.
+This directory owns the complete PUA web application: Svelte 5 and TypeScript source, frontend tests and build tooling, the static HTML/vendor tree, generated Vite assets, and the Go embed boundary. `src/entry.ts` is the only production application entry point, and all components use runes mode. Vite emits deterministic `pua-app.js` and `pua-app.css` assets into `static/assets`; `assets.go` embeds `static/` so the released PUA binary has no Node runtime dependency.
 
 The directory layers are intentional:
 
 - `src/` contains editable application source.
 - `tests/` contains Vitest fixtures/component tests and Playwright flows.
-- `static/` contains the HTML shell, immutable vendor/icon assets, and generated `assets/forge-app.{js,css}` files served at runtime.
+- `static/` contains the HTML shell, immutable vendor/icon assets, and generated `assets/pua-app.{js,css}` files served at runtime.
 - `assets.go` exposes the complete static tree to the Go server through `go:embed`.
 
 ## Architecture and ownership
@@ -15,7 +15,7 @@ The directory layers are intentional:
 - `controllers/` contains independently testable domain boundaries. Controllers receive browser/server access and cross-domain effects through explicit dependencies; none imports `app-controller.ts` or owns a second application-wide store.
 - `models/` separates the common, create, settings, chat, detail, shell, and Workspace contracts. `components/models.ts` is a compatibility barrel only; production modules import their owning domain directly, and `noImplicitAny` is enabled.
 - `components/` owns the entire interactive UI. Components receive typed models and callbacks through `ModelChannel`, and keep form, focus, selection, expansion, and pending-action state locally when that state belongs to the view.
-- `entry.ts` creates the typed channels and mounts one `ForgeApp` root. `ForgeApp.svelte` composes the shell, panes, dialogs, and toast; the static HTML document provides one `#app` mount point plus vendor scripts.
+- `entry.ts` creates the typed channels and mounts one `PUAApp` root. `PUAApp.svelte` composes the shell, panes, dialogs, and toast; the static HTML document provides one `#app` mount point plus vendor scripts.
 - `api/client.ts` owns scoped request cancellation and stale-response rejection. Detail previews, Diff requests, uploads, and chat history are keyed by Workspace, Resource, generation, path, or mode identity as appropriate.
 - `app.css` is the global style entry and imports only `styles/tokens.css`, browser defaults from `styles/base.css`, deliberately shared UI primitives, and the `.markdown-rendered` rich-content boundary. It must not contain component selectors.
 - Every visual Svelte component owns an adjacent `ComponentName.css` module imported by that component. Selectors are bounded by the component's `data-component-owner`; composed roots declare the attribute at the owning boundary. `:where(...)` keeps the boundary from increasing the original selector specificity.
@@ -137,4 +137,4 @@ npm run test:e2e
 
 `npm run test:perf` runs the opt-in performance and bounded-DOM gates described above; the regular `npm test` suite excludes them.
 
-`npm run dev` proxies `/api` to Forge on `127.0.0.1:4936`. Run development and browser tests only against an isolated Workspace.
+`npm run dev` proxies `/api` to PUA on `127.0.0.1:4936`. Run development and browser tests only against an isolated Workspace.

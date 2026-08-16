@@ -10,5 +10,5 @@ interface Window {
   Diff2Html?: { html(diff: string, options: Record<string, unknown>): string };
   lucide?: { createIcons(options?: Record<string, unknown>): void };
   webkitAudioContext?: typeof AudioContext;
-  forgeAssetLoaded?: (asset: string) => void;
+  puaAssetLoaded?: (asset: string) => void;
 }

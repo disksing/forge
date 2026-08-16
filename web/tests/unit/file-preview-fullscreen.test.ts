@@ -76,7 +76,7 @@ describe("FilePreviewFullscreen", () => {
   });
 
   it("restores an unsaved draft and saves through the resource documents endpoint", async () => {
-    localStorage.setItem("forge:file-preview-handoff", JSON.stringify({
+    localStorage.setItem("pua:file-preview-handoff", JSON.stringify({
       version: 1,
       workspaceId: "ws",
       resourceId: "project1.task1",
@@ -95,7 +95,7 @@ describe("FilePreviewFullscreen", () => {
     const target = mountFullscreen();
     await vi.waitFor(() => expect(target.querySelector<HTMLElement>('[role="dialog"] .cm-editor')).not.toBeNull());
     expect(target.querySelector(".cm-content")?.textContent).toContain("Edited draft.");
-    expect(localStorage.getItem("forge:file-preview-handoff")).toBeNull();
+    expect(localStorage.getItem("pua:file-preview-handoff")).toBeNull();
 
     const view = EditorView.findFromDOM(target.querySelector<HTMLElement>(".cm-editor")!)!;
     view.dispatch({ changes: { from: view.state.doc.length, insert: "\nAdded.\n" } });
@@ -108,7 +108,7 @@ describe("FilePreviewFullscreen", () => {
   });
 
   it("restores annotations handed over from the dialog window", async () => {
-    localStorage.setItem("forge:file-preview-handoff", JSON.stringify({
+    localStorage.setItem("pua:file-preview-handoff", JSON.stringify({
       version: 1,
       workspaceId: "ws",
       resourceId: "project1.task1",

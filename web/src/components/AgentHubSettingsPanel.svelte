@@ -36,7 +36,7 @@
 </script>
 
 <div class="settings-panel settings-agent-panel" data-component-owner="agenthub-settings-panel" data-settings-panel data-settings-section="agenthub">
-  <div class="settings-panel-header"><h2>AgentHub</h2><p>Forge connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div>
+  <div class="settings-panel-header"><h2>AgentHub</h2><p>PUA connects to AgentHub for providers, agents, and durable sessions. Provider and agent definitions are read-only here.</p></div>
   <section class="settings-agent-section">
     <div class="settings-section-heading"><h3>Connection</h3><span class="settings-pill">{agentHub.connected && agentHub.compatible ? "Compatible" : agentHub.connected ? "Incompatible" : "Unavailable"}</span></div>
     <label class="settings-default-agent"><span>Endpoint</span><input id="settingsAgentHubEndpoint" bind:value={draft.endpoint} oninput={onDirty} /></label>

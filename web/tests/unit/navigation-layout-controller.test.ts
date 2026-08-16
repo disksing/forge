@@ -40,15 +40,15 @@ describe("route and pane layout controllers", () => {
 		layout.initialize();
 		layout.previewPane("chatWidth", 510);
 		layout.commitPane("chatWidth");
-		expect(JSON.parse(storage.getItem("forge.web.paneSizes") || "{}").chatWidth).toBe(510);
+		expect(JSON.parse(storage.getItem("pua.web.paneSizes") || "{}").chatWidth).toBe(510);
 	});
 
 	it("migrates the former sessions panel height to the Activity panel", () => {
-		storage.setItem("forge.web.paneSizes", JSON.stringify({ sidebarWidth: 300, chatWidth: 480, sidebarSessionHeight: 260 }));
+		storage.setItem("pua.web.paneSizes", JSON.stringify({ sidebarWidth: 300, chatWidth: 480, sidebarSessionHeight: 260 }));
 		const layout = createPaneLayoutController(() => undefined, storage);
 		layout.initialize();
 		expect(layout.snapshot().paneSizes.sidebarAttentionHeight).toBe(260);
-		expect(JSON.parse(storage.getItem("forge.web.paneSizes") || "{}")).toEqual({
+		expect(JSON.parse(storage.getItem("pua.web.paneSizes") || "{}")).toEqual({
 			sidebarWidth: 300,
 			chatWidth: 480,
 			sidebarAttentionHeight: 260
@@ -78,7 +78,7 @@ describe("route and pane layout controllers", () => {
 		layout.setLayoutPreference("split");
 		expect(document.body.dataset.layout).toBe("split");
 		expect(layout.snapshot().layout).toEqual({ preference: "split", effective: "split" });
-		expect(storage.getItem("forge.web.layoutPreference")).toBe("split");
+		expect(storage.getItem("pua.web.layoutPreference")).toBe("split");
 
 		mockMatchMedia({});
 		layout = createPaneLayoutController(() => undefined, storage);
@@ -106,7 +106,7 @@ describe("route and pane layout controllers", () => {
 		expect(document.documentElement.style.getPropertyValue("--sidebar-font-scale")).toBe("1.25");
 		expect(document.documentElement.style.getPropertyValue("--details-font-scale")).toBe("0.8");
 		expect(document.documentElement.style.getPropertyValue("--chat-font-scale")).toBe("1.4");
-		expect(JSON.parse(storage.getItem("forge.web.fontScales") || "{}")).toEqual({ sidebar: 1.25, details: 0.8, chat: 1.4 });
+		expect(JSON.parse(storage.getItem("pua.web.fontScales") || "{}")).toEqual({ sidebar: 1.25, details: 0.8, chat: 1.4 });
 		expect(changed).toHaveBeenCalledTimes(3);
 
 		layout = createPaneLayoutController(() => undefined, storage);
@@ -115,11 +115,11 @@ describe("route and pane layout controllers", () => {
 
 		layout.resetFontScales();
 		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1, details: 1, chat: 1 });
-		expect(storage.getItem("forge.web.fontScales")).toBeNull();
+		expect(storage.getItem("pua.web.fontScales")).toBeNull();
 	});
 
 	it("ignores malformed stored font scales", () => {
-		storage.setItem("forge.web.fontScales", JSON.stringify({ sidebar: "wide", details: 3, chat: 1.1 }));
+		storage.setItem("pua.web.fontScales", JSON.stringify({ sidebar: "wide", details: 3, chat: 1.1 }));
 		const layout = createPaneLayoutController(() => undefined, storage);
 		layout.initialize();
 		expect(layout.snapshot().fontScales).toEqual({ sidebar: 1, details: 1.4, chat: 1.1 });

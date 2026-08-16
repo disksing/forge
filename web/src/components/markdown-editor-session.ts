@@ -21,7 +21,8 @@ export const markdownEditorSessions = new Map<string, MarkdownEditorSession>();
 // A full-screen handoff carries the live editor state from the dialog window
 // into the separate full-screen page (a new browsing context), where the
 // module memory above does not exist yet. The target page reads and removes it.
-export const FILE_PREVIEW_HANDOFF_KEY = "forge:file-preview-handoff";
+export const FILE_PREVIEW_HANDOFF_KEY = "pua:file-preview-handoff";
+const LEGACY_FILE_PREVIEW_HANDOFF_KEY = "forge:file-preview-handoff";
 
 export interface FilePreviewHandoff {
   version: 1;
@@ -39,6 +40,9 @@ export interface FilePreviewHandoff {
 
 export function readFilePreviewHandoff(): FilePreviewHandoff | null {
   try {
+    const legacy = localStorage.getItem(LEGACY_FILE_PREVIEW_HANDOFF_KEY);
+    if (localStorage.getItem(FILE_PREVIEW_HANDOFF_KEY) === null && legacy !== null) localStorage.setItem(FILE_PREVIEW_HANDOFF_KEY, legacy);
+    localStorage.removeItem(LEGACY_FILE_PREVIEW_HANDOFF_KEY);
     const raw = localStorage.getItem(FILE_PREVIEW_HANDOFF_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as FilePreviewHandoff;

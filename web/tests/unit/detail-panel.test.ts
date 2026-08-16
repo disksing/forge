@@ -89,7 +89,7 @@ describe("DetailPanel", () => {
   });
 
   it("opens the file in a full-screen window without download controls", async () => {
-    localStorage.removeItem("forge:file-preview-handoff");
+    localStorage.removeItem("pua:file-preview-handoff");
     const open = vi.fn();
     vi.stubGlobal("open", open);
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
@@ -115,7 +115,7 @@ describe("DetailPanel", () => {
     expect(url.searchParams.get("path")).toBe("project1/task1/task.md");
     expect(url.searchParams.get("mode")).toBe("edit");
     expect(url.searchParams.get("editable")).toBe("1");
-    const handoff = JSON.parse(localStorage.getItem("forge:file-preview-handoff") || "{}");
+    const handoff = JSON.parse(localStorage.getItem("pua:file-preview-handoff") || "{}");
     expect(handoff.mode).toBe("edit");
     expect(handoff.path).toBe("project1/task1/task.md");
   });

@@ -111,7 +111,7 @@ export function createNotificationController(dependencies: NotificationControlle
     const locks = typeof navigator !== "undefined" ? navigator.locks : null;
     if (!locks || typeof locks.request !== "function") return run();
     try {
-      void locks.request(`forge.web.notification.${state.workspaceId}.${effectKey(record, kind)}`, { ifAvailable: true }, (lock) => {
+      void locks.request(`pua.web.notification.${state.workspaceId}.${effectKey(record, kind)}`, { ifAvailable: true }, (lock) => {
         if (lock) run();
       }).catch((error) => {
         console.warn("notification effect lock unavailable", error);

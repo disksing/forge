@@ -69,11 +69,11 @@ describe("NotificationController", () => {
 		expect(first.observeProjections([completion])).toBeUndefined();
 		first.observeProjections([completion]);
 
-		expect(JSON.parse(storage.getItem("forge.web.notifications.v1.state.workspace-a") || "{}").unread[0].generationId).toBe("gen-1");
-		expect(JSON.parse(storage.getItem("forge.web.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(1);
+		expect(JSON.parse(storage.getItem("pua.web.notifications.v1.state.workspace-a") || "{}").unread[0].generationId).toBe("gen-1");
+		expect(JSON.parse(storage.getItem("pua.web.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(1);
 
 		second.clearResource("task1");
-		expect(JSON.parse(storage.getItem("forge.web.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(0);
+		expect(JSON.parse(storage.getItem("pua.web.notifications.v1.state.workspace-a") || "{}").unread).toHaveLength(0);
 
 		first.dispose();
 		second.dispose();

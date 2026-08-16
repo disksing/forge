@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { defineConfig, devices } from "@playwright/test";
 
-const port = Number(process.env.FORGE_E2E_PORT || "14936");
-const runtimeDir = join(tmpdir(), `forge-frontend-e2e-${port}`);
+const port = Number(process.env.PUA_E2E_PORT || "14936");
+const runtimeDir = join(tmpdir(), `pua-frontend-e2e-${port}`);
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -32,8 +32,8 @@ export default defineConfig({
   webServer: {
     command: "../scripts/frontend-e2e-server",
     env: {
-      FORGE_E2E_PORT: String(port),
-      FORGE_E2E_RUNTIME_DIR: runtimeDir,
+      PUA_E2E_PORT: String(port),
+      PUA_E2E_RUNTIME_DIR: runtimeDir,
     },
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

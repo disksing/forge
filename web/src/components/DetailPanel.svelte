@@ -219,7 +219,7 @@
     </div>
     <div hidden={activeTab !== "wiki"}>
       {#if model.wiki?.error}<div class="content-section"><div class="file-modal-empty error-preview wiki-status"><Icon name="triangle-alert" /><strong>Wiki unavailable</strong><span>{model.wiki.error}</span></div></div>
-      {:else if !model.wiki?.exists}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run forge migrate to create wiki/index.md.</span></div></div>
+      {:else if !model.wiki?.exists}<div class="content-section"><div class="file-modal-empty wiki-status"><Icon name="book-open" /><strong>Wiki not initialized</strong><span>Run pua migrate to create wiki/index.md.</span></div></div>
       {:else}<FileBrowser title="Wiki" entries={model.wiki.entries || []} emptyMessage="No Wiki files yet." {expanded} activePath={activePreviewPath} onToggle={toggleFile} onPreview={openPreview} {rawURL} showHeading={false} />{/if}
     </div>
     <div hidden={activeTab !== "settings"}><ResourceSettingsPanel {model} /></div>

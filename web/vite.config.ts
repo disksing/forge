@@ -11,10 +11,10 @@ export default defineConfig({
   cacheDir: resolve(root, ".vite"),
   plugins: [
     {
-      name: "forge-svelte-development-entry",
+      name: "pua-svelte-development-entry",
       enforce: "pre",
       async resolveId(id, importer) {
-        if (id === "/assets/forge-app.js") {
+        if (id === "/assets/pua-app.js") {
           return resolve(root, "src/entry.ts");
         }
         if ((id === "svelte" || id.startsWith("svelte/")) && !importer?.includes("/node_modules/svelte/")) {
@@ -32,12 +32,12 @@ export default defineConfig({
     lib: {
       entry: resolve(root, "src/entry.ts"),
       formats: ["es"],
-      fileName: () => "forge-app.js",
-      cssFileName: "forge-app",
+      fileName: () => "pua-app.js",
+      cssFileName: "pua-app",
     },
     rollupOptions: {
       output: {
-        assetFileNames: "forge-app.[ext]",
+        assetFileNames: "pua-app.[ext]",
       },
     },
   },

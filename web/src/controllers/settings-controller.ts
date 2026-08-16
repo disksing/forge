@@ -63,7 +63,7 @@ export interface SettingsControllerDependencies {
 
 export function configWithAgentHubCatalog(base: ForgeSettingsConfig, agentHub: AgentHubData): ForgeSettingsConfig {
 	const catalog = agentHub?.catalog || {};
-	// AgentHub is the source of truth for Agent definitions. Forge's workspace
+	// AgentHub is the source of truth for Agent definitions. PUA's workspace
 	// settings endpoint only contains workspaces and profile routes, so there
 	// is no local agent list to merge against.
 	const agents = (catalog.agents || []).map((agent) => ({
@@ -260,7 +260,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		} else dependencies.renderWorkspace();
 		await refreshPreservingAgentDraft();
 		render();
-		dependencies.toast("Workspace removed from Forge GUI.");
+		dependencies.toast("Workspace removed from PUA GUI.");
 	}
 
 	async function updateWorkspaceIcon(id: string, iconId: string): Promise<void> {
@@ -275,7 +275,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			dependencies.setConfig({ ...dependencies.config(), workspaces: replace(dependencies.config().workspaces) });
 			state.data = { ...state.data, workspaces: replace(state.data?.workspaces) };
 			dependencies.renderWorkspace();
-			dependencies.toast(iconId ? "Workspace icon saved." : "Workspace icon reset to the Forge default.");
+			dependencies.toast(iconId ? "Workspace icon saved." : "Workspace icon reset to the PUA default.");
 		} finally {
 			state.workspaceIconSavingId = "";
 			render();
