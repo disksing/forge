@@ -62,6 +62,7 @@ describe("FilePreviewFullscreen", () => {
     expect(dialog.querySelector(".file-modal-backdrop")).toBeNull();
     expect(dialog.parentElement?.classList.contains("fullscreen")).toBe(true);
     expect(dialog.textContent).not.toContain("Download");
+    expect(dialog.textContent).not.toContain("Full screen");
     expect(Array.from(dialog.querySelectorAll("button")).some((button) => button.textContent?.trim() === "Preview")).toBe(true);
   });
 
