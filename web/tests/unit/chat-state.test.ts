@@ -113,6 +113,58 @@ describe("resource conversation controller", () => {
     expect(latest.blocks.map((block) => block.key)).toEqual(["gen-1:old", "gap:gen-2", "gen-3:new"]);
   });
 
+  it("reloads a gap-only generation once the status references its session", async () => {
+    const summary = turn(3, "turn-a", 1, 3);
+    let sessionBound = false;
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns?")) {
+        return sessionBound
+          ? response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [summary] }], page: { limit: 20, hasMore: false } })
+          : response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [], gap: { code: "session_missing", message: "generation has no AgentHub Session reference", retryable: false } }], page: { limit: 20, hasMore: false } });
+      }
+      if (path.includes("/history/turns/ref-")) return response(detail(summary));
+      return response({ error: "unexpected" });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+
+    // The first load races the AgentHub Session bind and caches the gap.
+    const starting = status(3);
+    delete starting.session;
+    value.activate("workspace-a", "task-a", starting);
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gap:gen-3"]));
+
+    // Once the polled status carries the session, the gap heals by itself.
+    sessionBound = true;
+    value.activate("workspace-a", "task-a", status(3));
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gen-3:turn-a"]));
+
+    // A later refresh with the same session must not reload again.
+    const historyRequests = fetchImpl.mock.calls.filter(([url]) => String(url).includes("/history/turns?")).length;
+    value.activate("workspace-a", "task-a", status(3));
+    await Promise.resolve();
+    expect(fetchImpl.mock.calls.filter(([url]) => String(url).includes("/history/turns?"))).toHaveLength(historyRequests);
+  });
+
+  it("does not reload a gap-only generation while the session reference is unchanged", async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [], gap: { code: "session_missing", message: "generation has no AgentHub Session reference", retryable: false } }], page: { limit: 20, hasMore: false } }));
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    const starting = status(3);
+    delete starting.session;
+    value.activate("workspace-a", "task-a", starting);
+    await vi.waitFor(() => expect(latest.blocks.map((block) => block.key)).toEqual(["gap:gen-3"]));
+
+    const historyRequests = fetchImpl.mock.calls.length;
+    value.activate("workspace-a", "task-a", starting);
+    await Promise.resolve();
+    expect(fetchImpl.mock.calls).toHaveLength(historyRequests);
+    expect(latest.blocks.map((block) => block.key)).toEqual(["gap:gen-3"]);
+  });
+
   it("uses resource-scoped raw events and SSE only for the current open turn", async () => {
     const open = turn(3, "open", 5, 7, false);
     const fetchImpl = vi.fn<typeof fetch>(async (url) => {

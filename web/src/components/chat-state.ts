@@ -122,11 +122,15 @@ export class ChatSessionController {
     // poll alive; generation ordering below rejects an older response.
     this.startStatusSync(context);
     const generationChanged = Boolean(context.generationId && nextGeneration && context.generationId !== nextGeneration);
+    const previousSessionId = String(context.status?.session?.id || "");
     context.status = status;
     context.generationId = nextGeneration;
+    const nextSessionId = String(status?.session?.id || "");
     if (generationChanged) {
       this.resetForGeneration(context);
       void this.loadInitial(context);
+    } else if (context.loaded && !context.loading && nextSessionId && nextSessionId !== previousSessionId && this.hasUnresolvedGap(context, nextGeneration)) {
+      this.reloadGapContext(context);
     } else if (!context.loaded && !context.loading) {
       void this.loadInitial(context);
     } else if (this.realtime) {
@@ -163,6 +167,20 @@ export class ChatSessionController {
   retryHistory(): void {
     const context = this.activeContext();
     if (!context || context.loading) return;
+    this.reloadGapContext(context);
+  }
+
+  // A generation whose history was requested before its AgentHub Session was
+  // bound is cached as a gap with no turns. Once a status refresh references
+  // the session, the gap can heal, so the context reloads instead of showing
+  // "History unavailable" until a manual refresh.
+  private hasUnresolvedGap(context: ResourceChatContext, generationId: string): boolean {
+    if (!generationId) return false;
+    const segment = context.segments.get(generationId);
+    return Boolean(segment?.gap && !(segment?.turns || []).length);
+  }
+
+  private reloadGapContext(context: ResourceChatContext): void {
     context.loaded = false;
     context.nextCursor = "";
     context.hasMoreBefore = false;
@@ -452,8 +470,10 @@ export class ChatSessionController {
       const previousSessionId = String(context.status?.session?.id || "");
       context.status = status;
       context.generationId = nextGeneration;
-      if (context.stream && (!isStreamable(status) || (previousSessionId && previousSessionId !== String(status.session?.id || "")))) this.closeStream(context);
-      if (!context.loaded && !context.loading) void this.loadInitial(context);
+      const nextSessionId = String(status.session?.id || "");
+      if (context.stream && (!isStreamable(status) || (previousSessionId && previousSessionId !== nextSessionId))) this.closeStream(context);
+      if (context.loaded && !context.loading && nextSessionId && nextSessionId !== previousSessionId && this.hasUnresolvedGap(context, nextGeneration)) this.reloadGapContext(context);
+      else if (!context.loaded && !context.loading) void this.loadInitial(context);
       else if (!context.stream) this.connect(context);
       if (previousGenerationId !== nextGeneration) this.emit();
     } catch (error) {
