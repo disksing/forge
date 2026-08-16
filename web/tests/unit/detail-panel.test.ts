@@ -31,6 +31,8 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     wiki: null,
     workspaceAgents: null,
     workspaceDefaults: { project: { kind: "profile", name: "default" }, task: { kind: "profile", name: "default" } },
+    workspaceUsers: [],
+    currentUserName: "User",
     generationPolicy: { enabled: true, maxTurns: 20, maxAccumulatedTurnMinutes: 120 },
     agentBinding: { kind: "profile", name: "default" },
     agentProfiles: [{ key: "default", description: "Default", agentName: "fake-agent" }],
@@ -44,6 +46,8 @@ function resourceModel(overrides: Partial<DetailPanelModel> = {}): DetailPanelMo
     onRenameResource: vi.fn(async () => undefined),
     onSaveDescription: vi.fn(async () => undefined),
     onSaveWorkspaceDefaults: vi.fn(async () => undefined),
+    onSaveWorkspaceUserPreference: vi.fn(async () => undefined),
+    onDeleteWorkspaceUser: vi.fn(async () => undefined),
     onSaveGenerationPolicy: vi.fn(async () => undefined),
     onSaveTaskDefault: vi.fn(async () => undefined),
     onToast: vi.fn(), onIconsChanged: vi.fn(),
@@ -465,6 +469,40 @@ describe("DetailPanel", () => {
     await tick();
     target.querySelector<HTMLButtonElement>('[data-binding="agent:fake-agent"]')!.click();
     await vi.waitFor(() => expect(saveDefaults).toHaveBeenCalledWith({ project: { kind: "agent", name: "fake-agent" }, task: { kind: "profile", name: "default" } }));
+  });
+
+  it("manages Workspace users from the Workspace settings tab", async () => {
+    const savePreference = vi.fn(async () => undefined);
+    const deleteUser = vi.fn(async () => undefined);
+    const { target } = mountModel(resourceModel({
+      identity: "ws:workspace", resourceId: "workspace", resourceType: "workspace", resourceTitle: "Test workspace", detail: null,
+      workspaceUsers: [
+        { version: 1, name: "User", preference: "Default tone" },
+        { version: 1, name: "Alice", preference: "Concise" },
+      ],
+      currentUserName: "User",
+      onSaveWorkspaceUserPreference: savePreference,
+      onDeleteWorkspaceUser: deleteUser,
+    }));
+    await tick();
+    (Array.from(target.querySelectorAll(".details-tab")) as HTMLButtonElement[]).find((button) => button.textContent?.includes("Settings"))!.click();
+    await tick();
+
+    expect(target.textContent).toContain("Users");
+    const rows = target.querySelectorAll<HTMLElement>(".resource-settings-user-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].querySelector<HTMLButtonElement>('[title="Switch to another user before deleting this user"]')?.disabled).toBe(true);
+
+    const preference = rows[1].querySelector<HTMLTextAreaElement>('[aria-label="Preference for Alice"]')!;
+    preference.value = "Use concise replies";
+    preference.dispatchEvent(new InputEvent("input", { bubbles: true }));
+    rows[1].querySelector<HTMLButtonElement>(".resource-settings-user-save")!.click();
+    await vi.waitFor(() => expect(savePreference).toHaveBeenCalledWith("Alice", "Use concise replies"));
+
+    const deleteButton = rows[1].querySelector<HTMLButtonElement>('[title="Delete Alice"]')!;
+    await vi.waitFor(() => expect(deleteButton.disabled).toBe(false));
+    deleteButton.click();
+    await vi.waitFor(() => expect(deleteUser).toHaveBeenCalledWith("Alice"));
   });
 
   it("saves the Workspace Generation policy from the settings tab", async () => {

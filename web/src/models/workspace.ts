@@ -132,3 +132,9 @@ export interface WorkspaceConfig {
   agentProfiles: AgentProfile[];
   agentHubProviders?: Array<{ id: string; name?: string }>;
 }
+
+export interface WorkspaceUser {
+  version: number;
+  name: string;
+  preference: string;
+}

@@ -23,7 +23,6 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     workspaceIcons: [{ id: "", label: "PUA default", src: "/favicon.svg" }],
     workspaceIconSavingId: "",
     userName: "User",
-    users: [{ version: 1, name: "User", preference: "" }],
     appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
@@ -45,8 +44,6 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onWorkspaceIcon: vi.fn(async () => undefined),
     onSaveWorkspaceName: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
-    onSaveUserPreference: vi.fn(async () => undefined),
-    onDeleteUser: vi.fn(async () => undefined),
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),
     onResetFontScales: vi.fn(),

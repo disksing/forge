@@ -561,8 +561,9 @@ async function installShellMockApi(page: Page): Promise<ShellHarness> {
     if (path === "/api/settings/agenthub") {
       return json(route, { config: { agentProfiles: [] }, connected: false, compatible: false, catalog: { providers: [], agents: [], probes: [] } });
     }
-    if (/^\/api\/workspaces\/ws-[ab]\/users$/.test(path) && method === "POST") {
-      return json(route, { version: 1, name: "User", preference: "" });
+    if (/^\/api\/workspaces\/ws-[ab]\/users$/.test(path)) {
+      if (method === "POST") return json(route, { version: 1, name: "User", preference: "" });
+      return json(route, { users: [{ version: 1, name: "User", preference: "" }] });
     }
     const uiStateMatch = path.match(/^\/api\/workspaces\/(ws-[ab])\/ui-state$/);
     if (uiStateMatch) {
@@ -1389,6 +1390,25 @@ test("preserves composer draft through upload and Settings", async ({ page }) =>
   await settings.getByRole("button", { name: "Close" }).click();
 
   await expect(input).toHaveValue("Keep this draft\nartifacts/upload/notes.txt");
+});
+
+test("manages users in the Workspace resource settings instead of System Settings", async ({ page }) => {
+  await installMockApi(page, "workspace");
+  await page.goto("/w/ws-test");
+
+  await page.getByRole("tab", { name: "Settings", exact: true }).click();
+  const details = page.locator("#detailsPanel");
+  await expect(details.locator(".resource-settings-section-head strong", { hasText: "Users" })).toBeVisible();
+  await expect(details.getByText("User", { exact: true })).toBeVisible();
+  await expect(details.getByTitle("Switch to another user before deleting this user")).toBeDisabled();
+
+  await details.getByLabel("Preference for User").fill("Prefer concise replies");
+  await details.getByRole("button", { name: "Save preference" }).click();
+  await expect(page.locator("#toast")).toContainText("Preferences saved for User.");
+
+  await page.locator("#systemSettingsButton").click();
+  const systemSettings = page.getByRole("dialog", { name: "System Settings" });
+  await expect(systemSettings.getByRole("heading", { name: "Workspace users", exact: true })).toHaveCount(0);
 });
 
 test("keeps canonical navigation synchronized across history, workspace restore, and reorder rollback", async ({ page }) => {

@@ -1,4 +1,4 @@
-import type { AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption, WorkspaceUser } from "../components/models";
+import type { AgentOption, AppearanceSettings, NotificationPreferences, SettingsDraft, SettingsModel, WorkspaceOption } from "../components/models";
 import { confirmDialog } from "./confirm-dialog-controller";
 import type { AgentConfig, AgentProfile, WorkspaceConfig } from "../models/workspace";
 
@@ -30,7 +30,6 @@ interface SettingsData {
 	agents?: SettingsAgent[];
 	agentProfiles?: SettingsProfile[];
 	agentHub?: AgentHubData;
-	users?: WorkspaceUser[];
 }
 
 export interface SettingsControllerDependencies {
@@ -127,7 +126,6 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			workspaceIcons: dependencies.workspaceIcons,
 			workspaceIconSavingId: state.workspaceIconSavingId,
 			userName: dependencies.userName(),
-			users: data.users || [],
 			appearance: dependencies.appearance(),
 			agentHub: {
 				configuredEndpoint: hub.configuredEndpoint || "http://127.0.0.1:4646",
@@ -155,8 +153,6 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 				dependencies.toast(normalized === "User" ? "User name reset to User." : `User name saved as ${normalized}.`);
 				return normalized;
 			},
-			onSaveUserPreference: updateUserPreference,
-			onDeleteUser: deleteUser,
 			onLayoutPreference: (preference) => {
 				dependencies.setLayoutPreference(preference);
 				render();
@@ -201,9 +197,7 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 			dependencies.request<PUASettingsConfig>("/api/workspaces"),
 			dependencies.request<AgentHubData>("/api/settings/agenthub")
 		]);
-		const workspaceId = dependencies.activeWorkspaceId();
-		const userResult = workspaceId ? await dependencies.request<{ users?: WorkspaceUser[] }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/users`) : { users: [] };
-		state.data = { ...base, agentHub, users: userResult.users || [] };
+		state.data = { ...base, agentHub };
 		state.dataVersion++;
 	}
 
@@ -302,28 +296,6 @@ export function createSettingsController(dependencies: SettingsControllerDepende
 		dependencies.renderWorkspace();
 		render();
 		dependencies.toast("Workspace name saved.");
-	}
-
-	async function updateUserPreference(name: string, preference: string): Promise<void> {
-		const workspaceId = dependencies.activeWorkspaceId();
-		if (!workspaceId) throw new Error("No active Workspace.");
-		await dependencies.request(`/api/workspaces/${encodeURIComponent(workspaceId)}/users/${encodeURIComponent(name)}`, {
-			method: "PUT", body: JSON.stringify({ preference })
-		});
-		await refreshPreservingAgentDraft();
-		render();
-		dependencies.toast(`Preferences saved for ${name}.`);
-	}
-
-	async function deleteUser(name: string): Promise<void> {
-		const workspaceId = dependencies.activeWorkspaceId();
-		if (!workspaceId) throw new Error("No active Workspace.");
-		if (name === dependencies.userName()) throw new Error("Switch to another user before deleting the current user.");
-		if (!(await confirmDialog({ title: "Delete user", message: `Delete ${name} and all of this user's Workspace UI state?`, confirmLabel: "Delete", danger: true }))) return;
-		await dependencies.request(`/api/workspaces/${encodeURIComponent(workspaceId)}/users/${encodeURIComponent(name)}`, { method: "DELETE" });
-		await refreshPreservingAgentDraft();
-		render();
-		dependencies.toast(`User ${name} deleted.`);
 	}
 
 	async function saveAgentSettings(): Promise<void> {

@@ -4,7 +4,7 @@ import type { CreateDialogModel, TaskTemplate } from "./models/create";
 import type { DetailPanelModel } from "./models/detail";
 import type { SettingsModel } from "./models/settings";
 import type { AppShellModel, DoctorSnapshotModel, ShellAttentionItem, ShellDragTarget, ShellResourceItem, ShellStatusPresentation } from "./models/shell";
-import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree } from "./models/workspace";
+import type { AgentConfig, AgentProfile, DiffRecord, ResourceRecord, WorkspaceConfig, WorkspaceFileRecord, WorkspaceTree, WorkspaceUser } from "./models/workspace";
 import type { ArchiveResponse } from "./api/types";
 import { createAgentDraftController } from "./controllers/agent-draft-controller";
 import { createAgentOperationController } from "./controllers/agent-operation-controller";
@@ -44,6 +44,7 @@ interface ControllerState {
 	tree: WorkspaceTree | null;
 	details: Record<string, ResourceRecord>;
 	workspaceAgents: WorkspaceFileRecord | null;
+	workspaceUsers: WorkspaceUser[];
 	activeWorkspaceId: string;
 	navigationLoading: boolean;
 	navigationError: string;
@@ -99,6 +100,7 @@ const controllerState: ControllerState = {
 	tree: null,
 	details: {},
 	workspaceAgents: null,
+	workspaceUsers: [],
 	activeWorkspaceId: "",
 	navigationLoading: true,
 	navigationError: "",
@@ -362,6 +364,7 @@ const settingsController = createSettingsController({
 	reloadWorkspaceContext: async () => { await registerWorkspaceUser(controllerState.activeWorkspaceId); await loadUIState(); await loadTree(); },
 	clearWorkspaceContext: () => {
 		controllerState.tree = null;
+		controllerState.workspaceUsers = [];
 		clearResourceDetailState();
 		publishViewModels();
 	},
@@ -455,6 +458,16 @@ async function registerWorkspaceUser(workspaceId: string, name = currentUserName
 		method: "POST",
 		body: JSON.stringify({ name })
 	});
+	await loadWorkspaceUsers(workspaceId);
+}
+
+async function loadWorkspaceUsers(workspaceId = controllerState.activeWorkspaceId): Promise<void> {
+	if (!workspaceId) {
+		controllerState.workspaceUsers = [];
+		return;
+	}
+	const result = await api<{ users?: WorkspaceUser[] }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/users`);
+	if (workspaceId === controllerState.activeWorkspaceId) controllerState.workspaceUsers = result.users || [];
 }
 
 async function fetchDoctorSnapshot(): Promise<DoctorSnapshotModel> {
@@ -506,6 +519,7 @@ async function load() {
 		controllerState.tree = null;
 		clearResourceDetailState();
 		controllerState.workspaceAgents = null;
+		controllerState.workspaceUsers = [];
 		controllerState.diff = null;
 		resetAgentState();
 		publishViewModels();
@@ -946,6 +960,8 @@ function detailPanelModel(): DetailPanelModel {
 			project: controllerState.tree?.resourceDefaults?.project || { kind: "profile", name: "default" },
 			task: controllerState.tree?.resourceDefaults?.task || { kind: "profile", name: "default" }
 		},
+		workspaceUsers: controllerState.workspaceUsers,
+		currentUserName: currentUserName(),
 		generationPolicy: controllerState.tree?.generationPolicy || { enabled: true, maxTurns: 20, maxAccumulatedTurnMinutes: 120 },
 		agentBinding: controllerState.selectedId === "workspace"
 			? controllerState.tree?.agentBinding || { kind: "profile", name: "default" }
@@ -996,6 +1012,22 @@ function detailPanelModel(): DetailPanelModel {
 			await loadTree({ updateURL: false });
 			publishViewModels();
 			toast("Workspace default bindings saved.");
+		},
+		onSaveWorkspaceUserPreference: async (name, preference) => {
+			const profile = await api<WorkspaceUser>(`/api/workspaces/${encodeURIComponent(workspaceId)}/users/${encodeURIComponent(name)}`, {
+				method: "PUT", body: JSON.stringify({ preference })
+			});
+			controllerState.workspaceUsers = controllerState.workspaceUsers.map((user) => user.name === profile.name ? profile : user);
+			publishViewModels();
+			toast(`Preferences saved for ${name}.`);
+		},
+		onDeleteWorkspaceUser: async (name) => {
+			if (name === currentUserName()) throw new Error("Switch to another user before deleting the current user.");
+			if (!(await confirmDialog({ title: "Delete user", message: `Delete ${name} and all of this user's Workspace UI state?`, confirmLabel: "Delete", danger: true }))) return;
+			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/users/${encodeURIComponent(name)}`, { method: "DELETE" });
+			controllerState.workspaceUsers = controllerState.workspaceUsers.filter((user) => user.name !== name);
+			publishViewModels();
+			toast(`User ${name} deleted.`);
 		},
 		onSaveGenerationPolicy: async (policy) => {
 			await api(`/api/workspaces/${encodeURIComponent(workspaceId)}/generation-policy`, {

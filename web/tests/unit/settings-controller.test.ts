@@ -17,7 +17,6 @@ describe("SettingsController", () => {
 			request: async <T>(path: string): Promise<T> => {
 				if (path === "/api/workspaces") return base as T;
 				if (path === "/api/settings/agenthub") return {} as T;
-				if (path.endsWith("/users")) return { users: [{ version: 1, name: "User", preference: "" }] } as T;
 				throw new Error(`Unexpected request: ${path}`);
 			},
 			publish,

@@ -153,6 +153,63 @@
   width: 82px;
 }
 
+.resource-settings-user-row {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.resource-settings-user-row + .resource-settings-user-row {
+  border-top: 1px solid var(--line-soft, #e8eaee);
+}
+
+.resource-settings-user-head,
+.resource-settings-user-actions {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.resource-settings-user-head {
+  justify-content: space-between;
+}
+
+.resource-settings-current-user {
+  background: var(--bg, #f4f5f7);
+  border-radius: 999px;
+  color: var(--text-muted, #5c6b7a);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+}
+
+.resource-settings-user-preference {
+  display: grid;
+  gap: 5px;
+  color: var(--text-muted, #5c6b7a);
+  font-size: 12px;
+}
+
+.resource-settings-user-preference textarea {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-subtle, #ccd4df);
+  border-radius: 7px;
+  color: inherit;
+  font: inherit;
+  min-height: 72px;
+  padding: 8px 9px;
+  resize: vertical;
+  width: 100%;
+}
+
+.resource-settings-user-save {
+  justify-self: start;
+}
+
+.resource-settings-user-actions .danger {
+  color: var(--red, #c0392b);
+}
+
 @media (max-width: 720px) {
   .resource-settings-policy-budgets {
     align-items: stretch;

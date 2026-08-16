@@ -22,6 +22,7 @@
   let descEditing = $state(false);
   let descDraft = $state("");
   let descInput = $state<HTMLInputElement | null>(null);
+  let preferenceDrafts = $state<Record<string, string>>({});
   $effect(() => {
     const wake = model.detail?.scheduler?.wakeIntervalMinutes;
     if (typeof wake === "number") interval = wake;
@@ -61,6 +62,18 @@
   function saveWorkspaceDefault(kind: "project" | "task", binding: ResourceAgentBindingModel): void {
     const defaults = { ...model.workspaceDefaults, [kind]: binding };
     void run(`default:${kind}`, () => model.onSaveWorkspaceDefaults(defaults));
+  }
+
+  function saveUserPreference(name: string, fallback: string): void {
+    const preference = preferenceDrafts[name] ?? fallback;
+    void run(`user:${name}`, async () => {
+      await model.onSaveWorkspaceUserPreference(name, preference);
+      delete preferenceDrafts[name];
+    });
+  }
+
+  function deleteUser(name: string): void {
+    void run(`delete-user:${name}`, () => model.onDeleteWorkspaceUser(name));
   }
 
   function saveGenerationPolicy(): void {
@@ -199,6 +212,32 @@
           <div class="resource-settings-row-label"><strong>New Task default</strong><span>Applied once when a Task is created, unless its Project overrides it.</span></div>
           <AgentBindingSelector value={model.workspaceDefaults.task} profiles={model.agentProfiles} agents={model.agents} disabled={Boolean(pending)} openUp={false} ariaLabel="New Task default binding" onSelect={(value) => saveWorkspaceDefault("task", value)} />
         </div>
+      </div>
+    </section>
+    <section class="resource-settings-section">
+      <div class="resource-settings-section-head">
+        <strong>Users</strong>
+        <span>Workspace-local users and the preferences Agents can query with the CLI.</span>
+      </div>
+      <div class="resource-settings-list">
+        {#each model.workspaceUsers as user (user.name)}
+          <div class="resource-settings-user-row">
+            <div class="resource-settings-user-head">
+              <strong>{user.name}</strong>
+              <div class="resource-settings-user-actions">
+                {#if user.name === model.currentUserName}<span class="resource-settings-current-user">Current</span>{/if}
+                <button type="button" class="secondary-button danger" title={user.name === model.currentUserName ? "Switch to another user before deleting this user" : `Delete ${user.name}`} disabled={Boolean(pending) || user.name === model.currentUserName} onclick={() => deleteUser(user.name)}><Icon name="trash-2" /><span>Delete</span></button>
+              </div>
+            </div>
+            <label class="resource-settings-user-preference">
+              <span>Preference</span>
+              <textarea value={preferenceDrafts[user.name] ?? user.preference} aria-label={`Preference for ${user.name}`} disabled={Boolean(pending)} oninput={(event) => preferenceDrafts[user.name] = (event.currentTarget as HTMLTextAreaElement).value} placeholder="How should Agents address this user or shape their replies?"></textarea>
+            </label>
+            <button type="button" class="secondary-button resource-settings-user-save" disabled={Boolean(pending)} onclick={() => saveUserPreference(user.name, user.preference)}><Icon name="save" /><span>{pending === `user:${user.name}` ? "Saving..." : "Save preference"}</span></button>
+          </div>
+        {:else}
+          <div class="resource-settings-row"><span class="resource-settings-value-text">No users registered in this Workspace.</span></div>
+        {/each}
       </div>
     </section>
   {:else if model.resourceType === "scheduler"}

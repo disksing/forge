@@ -26,7 +26,6 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     ],
     workspaceIconSavingId: "",
     userName: "User",
-    users: [{ version: 1, name: "User", preference: "" }],
     appearance: { layout: "auto", fontScales: { sidebar: 1, details: 1, chat: 1 } },
     agentHub: {
       configuredEndpoint: "http://127.0.0.1:4646",
@@ -51,8 +50,6 @@ function model(overrides: Partial<SettingsModel> = {}): SettingsModel {
     onWorkspaceIcon: vi.fn(async () => undefined),
     onSaveWorkspaceName: vi.fn(async () => undefined),
     onSaveUser: vi.fn(async (name) => name.trim() || "User"),
-    onSaveUserPreference: vi.fn(async () => undefined),
-    onDeleteUser: vi.fn(async () => undefined),
     onLayoutPreference: vi.fn(),
     onFontScale: vi.fn(),
     onResetFontScales: vi.fn(),
@@ -167,31 +164,6 @@ describe("settings domain panels", () => {
     await tick();
     expect(failing.onSaveWorkspaceName).toHaveBeenCalledTimes(1);
     expect(failingTarget.querySelector(".settings-workspace-name-form")).toBeNull();
-  });
-
-  it("edits Workspace user preferences and protects the current user from deletion", async () => {
-    const onSaveUserPreference = vi.fn(async () => undefined);
-    const current = model({
-      users: [
-        { version: 1, name: "User", preference: "Default tone" },
-        { version: 1, name: "Alice", preference: "Concise" },
-      ],
-      onSaveUserPreference,
-    });
-    const draft = createSettingsDraft(current);
-    const target = document.body.appendChild(document.createElement("div"));
-    const component = mount(SettingsPanelHarness, { target, props: { panel: "workspace", model: current, initialDraft: draft } });
-    cleanups.push(() => unmount(component));
-    await tick();
-
-    const entries = target.querySelectorAll<HTMLElement>(".settings-user-entry");
-    expect(entries).toHaveLength(2);
-    expect(entries[0].querySelector<HTMLButtonElement>(".settings-danger-button")?.disabled).toBe(true);
-    const preference = entries[1].querySelector<HTMLTextAreaElement>("textarea")!;
-    preference.value = "Use concise replies";
-    preference.dispatchEvent(new InputEvent("input", { bubbles: true }));
-    entries[1].querySelector<HTMLButtonElement>(".settings-form-actions button")!.click();
-    await vi.waitFor(() => expect(onSaveUserPreference).toHaveBeenCalledWith("Alice", "Use concise replies"));
   });
 
   it("normalizes and persists browser-local user names while containing save failures", async () => {
