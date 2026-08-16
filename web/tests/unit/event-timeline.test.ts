@@ -272,16 +272,17 @@ describe("EventTimeline", () => {
     expect(rows[2].querySelector(".agent-run-header")).toBeNull();
     expect(rows[2].querySelector(".agent-tool-group")).not.toBeNull();
 
-    // The reply continues the same run: its whole meta row moves up to the
-    // run header, so no name or timestamp repeats on the message.
+    // The reply belongs to the same run but still renders its own meta row
+    // with the agent's name and the message's timestamp.
     const reply = rows[3].querySelector<HTMLElement>(".agent-message-row.assistant");
-    expect(reply?.querySelector(".agent-message-meta")).toBeNull();
+    expect(reply?.querySelector(".agent-message-meta strong")?.textContent).toBe("Test Agent");
+    expect(reply?.querySelector(".agent-message-meta span")?.textContent).toBe(formatClock(startedAt));
     expect(reply?.classList.contains("final")).toBe(true);
 
-    // Exactly one agent label renders for the whole run; message meta rows
-    // only keep the user's name.
+    // Exactly one run header renders for the opening activity; every
+    // message meta row keeps its sender's name.
     expect(section.querySelectorAll(".agent-run-header")).toHaveLength(1);
-    expect(conversationAuthors(target)).toEqual(["User"]);
+    expect(conversationAuthors(target)).toEqual(["User", "Test Agent"]);
   });
 
   it("keeps the generation boundary while hiding routine lifecycle detail", async () => {

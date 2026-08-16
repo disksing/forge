@@ -258,7 +258,7 @@
           {#if block.turn?.triggerPreview && !block.items && !block.events}<div class="turn-summary-preview">{block.turn.triggerPreview}</div>{/if}
           {#each blockItems(block) as item (timelineKey(item))}
             <div data-timeline-key={timelineKey(item)}>
-              {#if item.agentStart && item.kind !== "message"}
+              {#if item.agentStart}
                 <!-- Reasoning, tool calls, and approvals render without their own
                      author label, so a run that starts with them gets a header
                      carrying the agent's name and the run's start time;

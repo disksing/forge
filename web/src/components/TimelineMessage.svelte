@@ -36,18 +36,15 @@
 
 <div data-component-owner="event-timeline" class={`agent-message-row ${rowClass}`}>
   <div class="agent-message-main">
-    {#if role !== "assistant" || !item.agentContinuation}
-      <!-- Assistant messages continuing a run drop the whole meta row: the
-           run header above the run's first event already carries the name
-           and the run's start time. -->
-      <div class="agent-message-meta">
-        <strong>{senderName()}</strong>
-        {#if role !== "assistant"}<span class="agent-message-tag agent-message-role-tag">{role}</span>{/if}
-        {#if item.steer}<span class="agent-message-tag">steer</span>{/if}
-        {#if role === "agent" && item.sender?.sessionId}<span class="agent-message-source" title={item.sender.sessionId}>from session {item.sender.sessionId}</span>{/if}
-        <span>{clock()}</span>
-      </div>
-    {/if}
+    <!-- Every progress update and the final reply render the full meta row
+         with the sender's name and the message's own timestamp. -->
+    <div class="agent-message-meta">
+      <strong>{senderName()}</strong>
+      {#if role !== "assistant"}<span class="agent-message-tag agent-message-role-tag">{role}</span>{/if}
+      {#if item.steer}<span class="agent-message-tag">steer</span>{/if}
+      {#if role === "agent" && item.sender?.sessionId}<span class="agent-message-source" title={item.sender.sessionId}>from session {item.sender.sessionId}</span>{/if}
+      <span>{clock()}</span>
+    </div>
     <div class="agent-message-bubble">
       {#if role === "assistant" || role === "agent"}<div class="agent-message-content markdown-rendered" use:markdownResourceNavigation={{ resolveResourceTitle, onNavigate, onOpenFile }}>{@html markdown()}</div>{:else}<p>{item.text || ""}</p>{/if}
     </div>
