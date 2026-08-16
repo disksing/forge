@@ -67,7 +67,35 @@ describe("resource conversation controller", () => {
     expect(latest.blocks[0].items).toBeUndefined();
     await value.loadTurn(summary.reference);
     expect(latest.blocks[0].items?.find((item) => item.kind === "message")?.text).toBe("detail turn-a");
-    expect(fetchImpl.mock.calls[0][0].toString()).toContain("/resources/task-a/history/turns?limit=20");
+    expect(fetchImpl.mock.calls[0][0].toString()).toContain("/resources/task-a/history/turns?limit=5");
+  });
+
+  it("serializes Turn detail requests instead of bursting them", async () => {
+    const first = turn(3, "turn-a", 1, 2);
+    const second = turn(3, "turn-b", 3, 4);
+    const slow = deferredResponse();
+    const detailOrder: string[] = [];
+    const fetchImpl = vi.fn<typeof fetch>(async (url) => {
+      const path = String(url);
+      if (path.includes("/history/turns/ref-3-turn-a")) { detailOrder.push("turn-a:start"); return slow.promise; }
+      if (path.includes("/history/turns/ref-3-turn-b")) { detailOrder.push("turn-b:start"); return response(detail(second)); }
+      return response({ resourceId: "task-a", segments: [{ generation: generation(3), turns: [first, second] }], page: { limit: 5, hasMore: false } });
+    });
+    const value = controller(fetchImpl);
+    let latest = {} as ChatContextSnapshot;
+    value.subscribe((snapshot) => { latest = snapshot; });
+    value.activate("workspace-a", "task-a", null);
+    await vi.waitFor(() => expect(latest.blocks).toHaveLength(2));
+    const one = value.loadTurn(first.reference);
+    const two = value.loadTurn(second.reference);
+    await vi.waitFor(() => expect(detailOrder).toEqual(["turn-a:start"]));
+    await Promise.resolve();
+    expect(detailOrder).toEqual(["turn-a:start"]);
+    slow.resolve(response(detail(first)));
+    await one;
+    await two;
+    expect(detailOrder).toEqual(["turn-a:start", "turn-b:start"]);
+    expect(latest.blocks.map((block) => block.items?.find((item) => item.kind === "message")?.text)).toEqual(["detail turn-a", "detail turn-b"]);
   });
 
   it("keeps generation boundaries and explicit gaps while paging older history", async () => {
