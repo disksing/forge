@@ -34,7 +34,6 @@ func toStoreRecord(record generationRecord) (generation.Record, error) {
 		UpdatedAt:           record.UpdatedAt,
 		Payload:             payload,
 		Retired:             record.Retired,
-		Legacy:              record.Legacy,
 		RetireReason:        record.RetireReason,
 	}, nil
 }
@@ -63,7 +62,6 @@ func fromStoreRecord(storeRecord generation.Record) (generationRecord, error) {
 		record.UpdatedAt = storeRecord.UpdatedAt
 	}
 	record.Retired = storeRecord.Retired
-	record.Legacy = storeRecord.Legacy
 	if strings.TrimSpace(storeRecord.RetireReason) != "" {
 		record.RetireReason = storeRecord.RetireReason
 	}

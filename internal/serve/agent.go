@@ -114,11 +114,10 @@ type generationRecord struct {
 	CompletionTurnID        string `json:"completionTurnId,omitempty"`
 	CompletionAt            string `json:"completionAt,omitempty"`
 	CompletionPending       bool   `json:"completionPending,omitempty"`
-	// Retired and Legacy are storage projection flags, not public runtime
-	// fields. Retired records are immutable history and must never enter the
+	// Retired is a storage projection flag, not a public runtime field.
+	// Retired records are immutable history and must never enter the
 	// lifecycle reconciler.
 	Retired      bool   `json:"-"`
-	Legacy       bool   `json:"-"`
 	RetireReason string `json:"retireReason,omitempty"`
 }
 
@@ -806,10 +805,9 @@ func loadCurrentGenerationRecords(workspacePath string) ([]generationRecord, err
 
 func saveGenerationRecord(workspacePath string, record generationRecord) error {
 	// New in-process callers always create generation-addressed records. Keep
-	// hand-built test/compatibility projections usable without allowing records
-	// loaded from an old file (which carry Legacy=true) to become a mutable
-	// current generation during migration.
-	if !record.Legacy && strings.TrimSpace(record.GenerationID) == "" && strings.TrimSpace(record.SourceExternalID) != "" && strings.TrimSpace(record.ID) != "" && isAgentHubGeneration(record) {
+	// hand-built test/compatibility projections usable by deriving an address
+	// for projections that predate explicit generation IDs.
+	if strings.TrimSpace(record.GenerationID) == "" && strings.TrimSpace(record.SourceExternalID) != "" && strings.TrimSpace(record.ID) != "" && isAgentHubGeneration(record) {
 		// Compatibility callers may hand us a projection that predates explicit
 		// generation IDs. Derive one from its stable record ID so a later projection
 		// update addresses the same current file instead of creating a new owner.

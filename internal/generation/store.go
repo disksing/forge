@@ -36,8 +36,9 @@ const (
 )
 
 var (
-	ErrCurrentConflict = errors.New("generation store current record conflict")
-	ErrImmutable       = errors.New("generation store retired manifest is immutable")
+	ErrCurrentConflict      = errors.New("generation store current record conflict")
+	ErrImmutable            = errors.New("generation store retired manifest is immutable")
+	ErrGenerationIDRequired = errors.New("generation store record requires a generation id")
 
 	workspaceMigrationLocks sync.Map
 	resourceLocks           sync.Map
@@ -57,7 +58,6 @@ type Record struct {
 	UpdatedAt           string
 	Payload             json.RawMessage
 	Retired             bool
-	Legacy              bool
 	RetireReason        string
 }
 
@@ -73,8 +73,9 @@ type marker struct {
 	Version             int    `json:"version"`
 	State               string `json:"state"`
 	WorkspaceInstanceID string `json:"workspaceInstanceId"`
-	StartedAt           string `json:"startedAt,omitempty"`
-	CompletedAt         string `json:"completedAt,omitempty"`
+	StartedAt                string `json:"startedAt,omitempty"`
+	CompletedAt              string `json:"completedAt,omitempty"`
+	LegacyCleanupCompletedAt string `json:"legacyCleanupCompletedAt,omitempty"`
 }
 
 type fileRecord struct {
@@ -158,16 +159,24 @@ func (s *Store) EnsureReady() error {
 	if err != nil {
 		return err
 	}
-	if current != nil && current.State == "ready" {
-		_ = os.RemoveAll(filepath.Join(s.runtimeRoot(), stagingDirName))
-		return nil
+	if current == nil || current.State != "ready" {
+		if err := s.initializeLocked(current); err != nil {
+			return err
+		}
+		if current, err = readMarker(s.workspaceRoot); err != nil {
+			return err
+		}
 	}
-	return s.initializeLocked(current)
+	_ = os.RemoveAll(filepath.Join(s.runtimeRoot(), stagingDirName))
+	if current != nil && strings.TrimSpace(current.LegacyCleanupCompletedAt) == "" {
+		return s.cleanupLegacyDirsLocked(current)
+	}
+	return nil
 }
 
-// List returns current, retired, and explicitly isolated legacy records. It
-// is intended for history and diagnostics; runtime reconciliation should use
-// ListCurrent so cold manifests are never mutated accidentally.
+// List returns current and retired records. It is intended for history and
+// diagnostics; runtime reconciliation should use ListCurrent so cold
+// manifests are never mutated accidentally.
 func (s *Store) List() ([]Record, error) {
 	if err := s.EnsureReady(); err != nil {
 		return nil, err
@@ -248,8 +257,8 @@ func (s *Store) SaveCurrent(record Record) error {
 	if err != nil {
 		return err
 	}
-	if record.Legacy || strings.TrimSpace(record.GenerationID) == "" {
-		return s.saveLegacy(record)
+	if strings.TrimSpace(record.GenerationID) == "" {
+		return fmt.Errorf("%w: resource %s", ErrGenerationIDRequired, record.ResourceID)
 	}
 	key, err := ResourceKey(s.instanceID, record.ResourceID)
 	if err != nil {
@@ -286,7 +295,7 @@ func (s *Store) SaveRetired(record Record, reason string) error {
 		return err
 	}
 	if strings.TrimSpace(record.GenerationID) == "" {
-		return s.saveLegacy(record)
+		return fmt.Errorf("%w: resource %s", ErrGenerationIDRequired, record.ResourceID)
 	}
 	key, err := ResourceKey(s.instanceID, record.ResourceID)
 	if err != nil {
@@ -310,7 +319,7 @@ func (s *Store) RetireCurrent(record Record, reason string) error {
 		return err
 	}
 	if strings.TrimSpace(record.GenerationID) == "" {
-		return s.saveLegacy(record)
+		return fmt.Errorf("%w: resource %s", ErrGenerationIDRequired, record.ResourceID)
 	}
 	key, err := ResourceKey(s.instanceID, record.ResourceID)
 	if err != nil {
@@ -362,30 +371,6 @@ func (s *Store) normalizeRecord(record Record) (Record, error) {
 		record.ID = "record-" + shortHash(record.Payload)
 	}
 	return record, nil
-}
-
-func (s *Store) saveLegacy(record Record) error {
-	key, err := ResourceKey(s.instanceID, record.ResourceID)
-	if err != nil {
-		return err
-	}
-	return withResourceLock(s.workspaceRoot, key, func() error {
-		legacyDir := filepath.Join(s.resourceDir(key), legacyDirName)
-		if err := os.MkdirAll(legacyDir, 0o700); err != nil {
-			return err
-		}
-		name := base64.RawURLEncoding.EncodeToString([]byte(record.ID))
-		if name == "" {
-			name = shortHash(record.Payload)
-		}
-		path := filepath.Join(legacyDir, name+".json")
-		return atomicWriteJSON(path, fileRecord{
-			Version: SchemaVersion, Kind: "legacy", WorkspaceInstanceID: s.instanceID,
-			ResourceID: record.ResourceID, ID: record.ID, Generation: record.Generation,
-			GenerationID: record.GenerationID, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
-			Record: append(json.RawMessage(nil), record.Payload...),
-		})
-	})
 }
 
 func (s *Store) currentForKey(key, resourceID string) (Record, bool, error) {
@@ -488,27 +473,6 @@ func (s *Store) readResourceRecords(key string, currentOnly bool) ([]Record, err
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	if currentOnly {
-		return result, nil
-	}
-	legacyDir := filepath.Join(resourceDir, legacyDirName)
-	if entries, err := os.ReadDir(legacyDir); err == nil {
-		for _, entry := range entries {
-			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-				continue
-			}
-			record, found, readErr := readFileRecord(filepath.Join(legacyDir, entry.Name()))
-			if readErr != nil {
-				return nil, readErr
-			}
-			if found {
-				record.Legacy = true
-				result = append(result, record)
-			}
-		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
-	}
 	return result, nil
 }
 
@@ -597,8 +561,9 @@ func (s *Store) runtimeRoot() string {
 
 // initializeLocked prepares the runtime store layout for a Workspace without
 // a ready marker. The historical legacy index migration was removed after all
-// supported Workspaces completed it; legacy/ record directories are live data
-// and are left untouched.
+// supported Workspaces completed it. The returned marker deliberately leaves
+// the legacy cleanup timestamp empty so EnsureReady still sweeps any pre-existing
+// legacy/ record directories before serving reads.
 func (s *Store) initializeLocked(existing *marker) error {
 	if existing != nil && existing.Version != 0 && existing.Version != SchemaVersion {
 		return fmt.Errorf("unsupported generation store marker version %d; expected %d", existing.Version, SchemaVersion)
@@ -633,7 +598,7 @@ func readFileRecord(path string) (Record, bool, error) {
 	if file.Version != SchemaVersion {
 		return Record{}, false, fmt.Errorf("unsupported generation record version %d; expected %d", file.Version, SchemaVersion)
 	}
-	if file.Kind != "current" && file.Kind != "retired" && file.Kind != "legacy" {
+	if file.Kind != "current" && file.Kind != "retired" {
 		return Record{}, false, fmt.Errorf("unsupported generation record kind %q", file.Kind)
 	}
 	if len(file.Record) == 0 || !json.Valid(file.Record) {
@@ -643,7 +608,7 @@ func readFileRecord(path string) (Record, bool, error) {
 		WorkspaceInstanceID: file.WorkspaceInstanceID, ResourceID: NormalizeResourceID(file.ResourceID),
 		ID: file.ID, Generation: file.Generation, GenerationID: file.GenerationID,
 		CreatedAt: file.CreatedAt, UpdatedAt: file.UpdatedAt,
-		Payload: append(json.RawMessage(nil), file.Record...), Retired: file.Kind == "retired", Legacy: file.Kind == "legacy",
+		Payload: append(json.RawMessage(nil), file.Record...), Retired: file.Kind == "retired",
 		RetireReason: file.RetireReason,
 	}, true, nil
 }
@@ -698,10 +663,7 @@ func sameGenerationIdentity(left, right Record) bool {
 }
 
 func recordIdentity(record Record) string {
-	if strings.TrimSpace(record.GenerationID) != "" {
-		return record.ResourceID + "\x00generation:" + record.GenerationID
-	}
-	return record.ResourceID + "\x00legacy:" + record.ID
+	return record.ResourceID + "\x00generation:" + record.GenerationID
 }
 
 func atomicWriteJSON(path string, value any) error {

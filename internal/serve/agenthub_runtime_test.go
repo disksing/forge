@@ -965,7 +965,7 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	now := time.Now().Format(time.RFC3339Nano)
-	record := generationRecord{ID: "gen-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
+	record := generationRecord{ID: "gen-disk-failure", GenerationID: "gen-run-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
 		PendingMessages: []resourceInboundMessage{{ID: "msg-kept", Text: "keep me"}}}
 	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)

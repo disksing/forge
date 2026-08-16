@@ -221,7 +221,7 @@ func TestAgentHubProxyEventsWithoutRuntimeLoadsGenerationFromDisk(t *testing.T) 
 	manager, workspace := newProxyTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339)
 	if err := saveGenerationRecord(workspace.Path, generationRecord{
-		ID: "gen-disk", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_disk",
+		ID: "gen-disk", GenerationID: "gen-run-disk", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_disk",
 		Title: "Disk", Cwd: workspace.Path, Status: "stopped", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
 		t.Fatal(err)

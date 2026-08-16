@@ -493,9 +493,9 @@ func TestAgentHubPollerMissingSessionMarksLiveGenerationRecovering(t *testing.T)
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := "2026-08-01T00:00:01Z"
 	for _, record := range []generationRecord{
-		{ID: "gen-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_gone_live", Status: "running", CreatedAt: now, UpdatedAt: now},
-		{ID: "gen-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_gone_stopped", Status: "stopped", AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now},
-		{ID: "gen-recovering", WorkspaceID: workspace.ID, ResourceID: app.SchedulerResourceID, AgentHubSessionID: "ses_gone_recovering", Status: "recovering", CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-live", GenerationID: "gen-run-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_gone_live", Status: "running", CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-stopped", GenerationID: "gen-run-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_gone_stopped", Status: "stopped", AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-recovering", GenerationID: "gen-run-recovering", WorkspaceID: workspace.ID, ResourceID: app.SchedulerResourceID, AgentHubSessionID: "ses_gone_recovering", Status: "recovering", CreatedAt: now, UpdatedAt: now},
 	} {
 		if err := saveGenerationRecord(workspace.Path, record); err != nil {
 			t.Fatal(err)
@@ -505,24 +505,37 @@ func TestAgentHubPollerMissingSessionMarksLiveGenerationRecovering(t *testing.T)
 	if err := manager.pollAgentHubSessions(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	// Generation IDs are required for lifecycle ownership. These legacy-shaped
-	// records have no generation ID and therefore remain cold, isolated history
-	// rather than being reconciled or recreated by the poller.
+	// Records with generation IDs are current lifecycle state: the poller
+	// reconciles live generations whose sessions are gone, while the stopped
+	// generation stays untouched.
 	current, err := loadCurrentGenerationRecords(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(current) != 0 {
-		t.Fatalf("records without generation IDs must stay out of current lifecycle state: %#v", current)
+	if len(current) != 3 {
+		t.Fatalf("generations with IDs must stay in current lifecycle state: %#v", current)
+	}
+	for _, recordID := range []string{"gen-live", "gen-recovering"} {
+		rt := manager.runtimeByID(recordID)
+		if rt == nil {
+			t.Fatalf("live generation %s was not reconciled by the poller", recordID)
+		}
+		record := pollerGenerationState(rt)
+		if record.AgentHubSessionID == "ses_gone_live" || record.AgentHubSessionID == "ses_gone_recovering" || record.AgentHubSessionID == "" {
+			t.Fatalf("generation %s kept its missing session: %#v", recordID, record)
+		}
+		if record.Status == "running" || record.Status == "recovering" {
+			t.Fatalf("generation %s was not projected to a reconciled state: %#v", recordID, record)
+		}
+	}
+	if stopped := manager.runtimeByID("gen-stopped"); stopped != nil {
+		if record := pollerGenerationState(stopped); record.Status != "stopped" {
+			t.Fatalf("stopped generation was resurrected: %#v", record)
+		}
 	}
 	all, err := loadGenerationRecords(workspace.Path)
 	if err != nil || len(all) != 3 {
-		t.Fatalf("legacy records were not retained as history: runs=%#v err=%v", all, err)
-	}
-	for _, recordID := range []string{"gen-live", "gen-stopped", "gen-recovering"} {
-		if manager.runtimeByID(recordID) != nil {
-			t.Fatalf("cold legacy run %s unexpectedly entered lifecycle reconciliation", recordID)
-		}
+		t.Fatalf("generation history was not retained: records=%#v err=%v", all, err)
 	}
 }
 
