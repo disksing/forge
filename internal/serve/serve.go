@@ -1473,36 +1473,36 @@ type resourceRuntimeSnapshot struct {
 }
 
 func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspaceTree) error {
-	runs, err := loadAgentRunsCurrent(workspacePath)
+	records, err := loadCurrentGenerationRecords(workspacePath)
 	if err != nil {
 		return fmt.Errorf("load resource generations for tree: %w", err)
 	}
-	byResourceID := make(map[string]agentRun)
-	for _, run := range runs {
-		if strings.TrimSpace(run.GenerationID) == "" || !isAgentHubRun(run) {
+	byResourceID := make(map[string]generationRecord)
+	for _, record := range records {
+		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) {
 			continue
 		}
-		resourceID := normalizedResourceID(run.ResourceID)
+		resourceID := normalizedResourceID(record.ResourceID)
 		if resourceID == "" {
 			resourceID = "workspace"
 		}
-		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeRunNewer(run, current) {
-			byResourceID[resourceID] = run
+		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeGenerationNewer(record, current) {
+			byResourceID[resourceID] = record
 		}
 	}
 	var attach func(*resourceSnapshot)
 	attach = func(item *resourceSnapshot) {
 		resourceID := normalizedResourceID(item.ID)
-		if run, ok := byResourceID[resourceID]; ok {
+		if record, ok := byResourceID[resourceID]; ok {
 			item.Runtime = &resourceRuntimeSnapshot{
-				Generation: run.Generation, GenerationID: run.GenerationID, Status: run.Status,
-				AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
-				CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
-				CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
-				Resumable:         (run.Status == "stopped" || run.Status == "idle-suspended") && run.AgentHubSessionID != "" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested,
-				IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),
-				ResumeUnavailable: run.SessionResumeUnavailable,
-				TurnNumber:        run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run), TurnStartedAt: run.TurnStartedAt,
+				Generation: record.Generation, GenerationID: record.GenerationID, Status: record.Status,
+				AgentName: record.AgentHubAgentName, UpdatedAt: record.UpdatedAt, LastOutputAt: record.LastOutputAt,
+				CompletionMarker: record.CompletionMarker, CompletionState: record.CompletionState, CompletionHasFinalReply: record.CompletionHasFinalReply,
+				CompletionAt: record.CompletionAt, ReplacementPending: record.ReplacementPending,
+				Resumable:         (record.Status == "stopped" || record.Status == "idle-suspended") && record.AgentHubSessionID != "" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested,
+				IdleSuspended:     record.Status == "idle-suspended" || (record.IdleSleepStopRequested && record.Status == "stopped"),
+				ResumeUnavailable: record.SessionResumeUnavailable,
+				TurnNumber:        record.TurnNumber, ActiveTurn: generationHasActiveTurn(record), TurnStartedAt: record.TurnStartedAt,
 			}
 		}
 		for i := range item.Children {
@@ -1516,7 +1516,7 @@ func (s *server) enrichTreeResourceRuntime(workspacePath string, tree *workspace
 	return nil
 }
 
-func resourceRuntimeRunNewer(left, right agentRun) bool {
+func resourceRuntimeGenerationNewer(left, right generationRecord) bool {
 	if left.Generation != right.Generation {
 		return left.Generation > right.Generation
 	}

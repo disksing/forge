@@ -135,8 +135,8 @@ func (m *agentManager) enqueueRuntimeOperation(rt *agentRuntime, fn func()) erro
 	if rt == nil {
 		return errors.New("resource runtime is nil")
 	}
-	run := rt.snapshotRun()
-	return m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+	record := rt.snapshotGeneration()
+	return m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
 		fn()
 		return nil
 	})

@@ -10,18 +10,18 @@ import (
 	"github.com/disksing/pua/internal/app"
 )
 
-func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {
+func TestLoadGenerationRecordsRejectsTrailingGarbage(t *testing.T) {
 	workspace := t.TempDir()
 	indexPath := agentIndexPath(workspace)
 	if err := os.MkdirAll(filepath.Dir(indexPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	corrupt := `[{"id":"run-one","workspaceId":"workspace-one","provider":"codex","title":"Old","cwd":"` +
+	corrupt := `[{"id":"gen-one","workspaceId":"workspace-one","provider":"codex","title":"Old","cwd":"` +
 		filepath.ToSlash(workspace) + `","status":"stopped","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}] trailing`
 	if err := os.WriteFile(indexPath, []byte(corrupt), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadAgentRuns(workspace); err == nil {
+	if _, err := loadGenerationRecords(workspace); err == nil {
 		t.Fatal("expected malformed run index to be rejected")
 	}
 	unchanged := mustReadFile(t, indexPath)
@@ -32,14 +32,14 @@ func TestLoadAgentRunsRejectsTrailingGarbage(t *testing.T) {
 
 func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 	workspace := t.TempDir()
-	run := agentRun{
-		ID: "run-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
+	record := generationRecord{
+		ID: "gen-one", WorkspaceID: "workspace-one", ResourceID: "project1.task1",
 		Generation: 1, GenerationID: "gen-one", AgentHubAgentName: "review-agent", AgentHubSessionID: "ses_one",
 		Title: "Run One", Cwd: workspace, Status: "running",
 		CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:01Z",
 		LastOutputAt: "2026-01-01T00:00:02Z",
 	}
-	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
 		t.Fatal(err)
 	}
 	tree := workspaceTree{Projects: []resourceSnapshot{{ID: "project1", Children: []resourceSnapshot{{ID: "project1.task1"}}}}}
@@ -47,13 +47,13 @@ func TestEnrichTreeResourceRuntimeUsesGenerationIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	runtime := tree.Projects[0].Children[0].Runtime
-	if runtime == nil || runtime.GenerationID != run.GenerationID || runtime.AgentName != run.AgentHubAgentName ||
-		runtime.Status != run.Status || runtime.LastOutputAt != run.LastOutputAt {
+	if runtime == nil || runtime.GenerationID != record.GenerationID || runtime.AgentName != record.AgentHubAgentName ||
+		runtime.Status != record.Status || runtime.LastOutputAt != record.LastOutputAt {
 		t.Fatalf("resource runtime was not enriched: %#v", runtime)
 	}
 }
 
-func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
+func TestGenerationCwdDefaultsToResourceDirectory(t *testing.T) {
 	workspace := t.TempDir()
 	puaWorkspace, err := app.Initialize(workspace, "en")
 	if err != nil {
@@ -67,7 +67,7 @@ func TestAgentRunCwdDefaultsToResourceDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := newAgentManager(&server{})
-	got, err := manager.agentRunCwd(context.Background(), serveWorkspace{Path: workspace}, "project1.task1", "")
+	got, err := manager.generationCwd(context.Background(), serveWorkspace{Path: workspace}, "project1.task1", "")
 	if err != nil {
 		t.Fatal(err)
 	}

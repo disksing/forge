@@ -21,62 +21,62 @@ func openTestPUAWorkspace(t *testing.T, path, language string) *app.Workspace {
 	return workspace
 }
 
-func rewriteTestAgentRuns(workspacePath string, runs []agentRun) error {
+func rewriteTestGenerationRecords(workspacePath string, records []generationRecord) error {
 	agentIndexMu.Lock()
 	defer agentIndexMu.Unlock()
-	byResource := make(map[string][]agentRun)
-	for _, run := range runs {
-		byResource[normalizedResourceID(run.ResourceID)] = append(byResource[normalizedResourceID(run.ResourceID)], run)
+	byResource := make(map[string][]generationRecord)
+	for _, record := range records {
+		byResource[normalizedResourceID(record.ResourceID)] = append(byResource[normalizedResourceID(record.ResourceID)], record)
 	}
-	for _, resourceRuns := range byResource {
-		sort.SliceStable(resourceRuns, func(i, j int) bool {
-			if resourceRuns[i].Generation != resourceRuns[j].Generation {
-				return resourceRuns[i].Generation < resourceRuns[j].Generation
+	for _, resourceRecords := range byResource {
+		sort.SliceStable(resourceRecords, func(i, j int) bool {
+			if resourceRecords[i].Generation != resourceRecords[j].Generation {
+				return resourceRecords[i].Generation < resourceRecords[j].Generation
 			}
-			return resourceRuns[i].ID < resourceRuns[j].ID
+			return resourceRecords[i].ID < resourceRecords[j].ID
 		})
-		for _, run := range resourceRuns[:len(resourceRuns)-1] {
-			record, err := agentRunToGenerationRecord(run)
+		for _, record := range resourceRecords[:len(resourceRecords)-1] {
+			storeRecord, err := toStoreRecord(record)
 			if err != nil {
 				return err
 			}
-			store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
+			store, err := openGenerationStore(workspacePath, record.SourceInstanceID)
 			if err != nil {
 				return err
 			}
-			if err := store.SaveRetired(record, "test_fixture"); err != nil {
+			if err := store.SaveRetired(storeRecord, "test_fixture"); err != nil {
 				return err
 			}
 		}
-		if err := saveAgentRun(workspacePath, resourceRuns[len(resourceRuns)-1]); err != nil {
+		if err := saveGenerationRecord(workspacePath, resourceRecords[len(resourceRecords)-1]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func saveRetiredAgentRunForTest(t *testing.T, workspacePath string, run agentRun, reason string) {
+func saveRetiredGenerationForTest(t *testing.T, workspacePath string, record generationRecord, reason string) {
 	t.Helper()
-	store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
+	store, err := openGenerationStore(workspacePath, record.SourceInstanceID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	record, err := agentRunToGenerationRecord(run)
+	storeRecord, err := toStoreRecord(record)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.SaveRetired(record, reason); err != nil {
+	if err := store.SaveRetired(storeRecord, reason); err != nil {
 		t.Fatal(err)
 	}
 }
 
 // newResourceMessage and enqueueResourceMessage reconstruct the retired
 // runtime enqueue helper for tests that exercise mailbox mutation,
-// serialization, and delivery retry without the removed run lifecycle.
+// serialization, and delivery retry without the removed run lifecycle handlers.
 func newResourceMessage(text, userName string) resourceInboundMessage {
 	role, sender := agentHubMessageProvenance(userName)
 	return resourceInboundMessage{
-		ID: "msg-" + newRunID(), Text: strings.TrimSpace(text), Role: role,
+		ID: "msg-" + newGenerationRecordID(), Text: strings.TrimSpace(text), Role: role,
 		Sender: sender, AcceptedAt: time.Now().Format(time.RFC3339Nano),
 	}
 }
@@ -85,7 +85,7 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 	if err := migrateLegacyResourceMailbox(rt.workspace.Path); err != nil {
 		return err
 	}
-	run := rt.snapshotRun()
+	record := rt.snapshotGeneration()
 	_, err := mutateResourceMailbox(rt.workspace.Path, func(mailbox *resourceMailbox) error {
 		for _, existing := range mailbox.Messages {
 			if existing.ID == message.ID {
@@ -102,7 +102,7 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 			acceptedAt = time.Now().Format(time.RFC3339Nano)
 		}
 		mailbox.Messages = append(mailbox.Messages, resourceMailboxMessage{
-			ID: message.ID, Sequence: mailbox.NextSequence, ResourceID: normalizedResourceID(run.ResourceID),
+			ID: message.ID, Sequence: mailbox.NextSequence, ResourceID: normalizedResourceID(record.ResourceID),
 			Text: message.Text, Role: message.Role, Sender: message.Sender,
 			RequestedMode: resourceMessageModeSteer, ActualMode: actual, ModeFrozen: message.Steer != nil, Status: resourceMessageQueued,
 			AcceptedAt: acceptedAt, UpdatedAt: acceptedAt,
@@ -112,18 +112,18 @@ func (rt *agentRuntime) enqueueResourceMessage(message resourceInboundMessage) e
 	return err
 }
 
-// closeRuntimeTestRun stops one generation's AgentHub session and marks the
-// run stopped on disk so cleanup assertions can converge without the removed
+// closeRuntimeTestGeneration stops one generation's AgentHub session and marks the
+// generation stopped on disk so cleanup assertions can converge without the removed
 // run lifecycle handlers.
-func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWorkspace, runID string) *httptest.ResponseRecorder {
+func closeRuntimeTestGeneration(t *testing.T, manager *agentManager, workspace serveWorkspace, recordID string) *httptest.ResponseRecorder {
 	t.Helper()
 	response := httptest.NewRecorder()
-	run, err := loadAgentRun(workspace.Path, runID)
+	record, err := loadGenerationRecord(workspace.Path, recordID)
 	if err != nil {
 		writeError(response, err, http.StatusNotFound)
 		return response
 	}
-	if sessionID := strings.TrimSpace(run.AgentHubSessionID); sessionID != "" {
+	if sessionID := strings.TrimSpace(record.AgentHubSessionID); sessionID != "" {
 		_, client, cfgErr := manager.agentHubRuntimeConfig()
 		if cfgErr != nil {
 			writeError(response, cfgErr, http.StatusServiceUnavailable)
@@ -134,10 +134,10 @@ func closeRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWor
 			return response
 		}
 	}
-	run.Status = "stopped"
-	run.AgentHubStoppedObserved = true
-	run.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	record.Status = "stopped"
+	record.AgentHubStoppedObserved = true
+	record.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		writeError(response, err, http.StatusInternalServerError)
 		return response
 	}

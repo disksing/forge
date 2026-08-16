@@ -18,34 +18,34 @@ type resourceEndGenerationResponse struct {
 	GenerationID string `json:"generationId,omitempty"`
 }
 
-func (m *agentManager) currentResourceRun(workspace serveWorkspace, resourceID string) (agentRun, error) {
+func (m *agentManager) currentResourceGenerationRecord(workspace serveWorkspace, resourceID string) (generationRecord, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
+	record, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	if !found || strings.TrimSpace(run.GenerationID) == "" || strings.TrimSpace(run.AgentHubSessionID) == "" {
-		return agentRun{}, &resourceAPIError{Code: "generation_unavailable", Message: "resource has no current AgentHub generation"}
+	if !found || strings.TrimSpace(record.GenerationID) == "" || strings.TrimSpace(record.AgentHubSessionID) == "" {
+		return generationRecord{}, &resourceAPIError{Code: "generation_unavailable", Message: "resource has no current AgentHub generation"}
 	}
-	return run, nil
+	return record, nil
 }
 
-func (m *agentManager) resolveResourceLiveTarget(workspaceID, resourceID, expectedGeneration string) (serveWorkspace, agentRun, error) {
+func (m *agentManager) resolveResourceLiveTarget(workspaceID, resourceID, expectedGeneration string) (serveWorkspace, generationRecord, error) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
-		return serveWorkspace{}, agentRun{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
+		return serveWorkspace{}, generationRecord{}, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}
 	}
-	run, err := m.currentResourceRun(workspace, resourceID)
+	record, err := m.currentResourceGenerationRecord(workspace, resourceID)
 	if err != nil {
-		return serveWorkspace{}, agentRun{}, err
+		return serveWorkspace{}, generationRecord{}, err
 	}
-	if expected := strings.TrimSpace(expectedGeneration); expected != "" && expected != run.GenerationID {
-		return serveWorkspace{}, agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
+	if expected := strings.TrimSpace(expectedGeneration); expected != "" && expected != record.GenerationID {
+		return serveWorkspace{}, generationRecord{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
 	}
-	return workspace, run, nil
+	return workspace, record, nil
 }
 
 func (m *agentManager) handleResourceEvents(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -58,21 +58,21 @@ func (m *agentManager) handleResourceEvents(w http.ResponseWriter, r *http.Reque
 		writeError(w, &resourceAPIError{Code: "workspace_not_owned", Message: err.Error()}, http.StatusNotFound)
 		return
 	}
-	var run agentRun
+	var record generationRecord
 	if generationID := strings.TrimSpace(r.URL.Query().Get("generationId")); generationID != "" {
 		// Events are read-only: any generation recorded in the resource History
 		// may be paged, so the History view can expand compact Turn ranges from
 		// older generations too.
-		run, err = resourceHistoryRunByGeneration(workspace, resourceID, generationID)
+		record, err = resourceHistoryGenerationByID(workspace, resourceID, generationID)
 	} else {
-		run, err = m.currentResourceRun(workspace, resourceID)
+		record, err = m.currentResourceGenerationRecord(workspace, resourceID)
 	}
 	if err != nil {
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	setGenerationIDHeaders(w, run.GenerationID)
-	m.proxyAgentHubEvents(w, r, workspaceID, run.ID)
+	setGenerationIDHeaders(w, record.GenerationID)
+	m.proxyAgentHubEvents(w, r, workspaceID, record.ID)
 }
 
 func (m *agentManager) handleResourceStream(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -80,31 +80,31 @@ func (m *agentManager) handleResourceStream(w http.ResponseWriter, r *http.Reque
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	_, run, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
+	_, record, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
 	if err != nil {
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	if !isResourceEventStreamable(run) {
+	if !isResourceEventStreamable(record) {
 		err := &resourceAPIError{Code: "generation_unavailable", Message: "resource current generation is not live"}
 		writeError(w, err, http.StatusConflict)
 		return
 	}
-	setGenerationIDHeaders(w, run.GenerationID)
-	m.proxyAgentHubStream(w, r, workspaceID, run.ID)
+	setGenerationIDHeaders(w, record.GenerationID)
+	m.proxyAgentHubStream(w, r, workspaceID, record.ID)
 }
 
 func setGenerationIDHeaders(w http.ResponseWriter, generationID string) {
 	w.Header().Set("X-PUA-Generation-ID", generationID)
 }
 
-func isResourceEventStreamable(run agentRun) bool {
-	if isLiveAgentStatus(run.Status) {
+func isResourceEventStreamable(record generationRecord) bool {
+	if isLiveAgentStatus(record.Status) {
 		return true
 	}
-	return (run.Status == "idle-suspended" || run.Status == "stopped") &&
-		strings.TrimSpace(run.AgentHubSessionID) != "" &&
-		!run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested
+	return (record.Status == "idle-suspended" || record.Status == "stopped") &&
+		strings.TrimSpace(record.AgentHubSessionID) != "" &&
+		!record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested
 }
 
 func (m *agentManager) handleResourceApproval(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -112,12 +112,12 @@ func (m *agentManager) handleResourceApproval(w http.ResponseWriter, r *http.Req
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	_, run, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
+	_, record, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
 	if err != nil {
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	m.resolveApproval(w, r, workspaceID, run.ID)
+	m.resolveApproval(w, r, workspaceID, record.ID)
 }
 
 func (m *agentManager) handleResourceEndTurn(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string) {
@@ -125,16 +125,16 @@ func (m *agentManager) handleResourceEndTurn(w http.ResponseWriter, r *http.Requ
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	_, run, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
+	_, record, err := m.resolveResourceLiveTarget(workspaceID, resourceID, r.URL.Query().Get("generationId"))
 	if err != nil {
 		writeError(w, err, resourceErrorStatus(err))
 		return
 	}
-	response, interruptErr := m.interruptRunWithPostAction(r.Context(), workspaceID, run.ID, func(workspace serveWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
+	response, interruptErr := m.interruptGenerationWithPostAction(r.Context(), workspaceID, record.ID, func(workspace serveWorkspace, targetResourceID string) (cancelledResourceMessages, error) {
 		return cancelPendingSteerMessages(workspace.Path, targetResourceID)
 	})
 	if interruptErr != nil {
-		writeInterruptRunError(w, interruptErr)
+		writeInterruptGenerationError(w, interruptErr)
 		return
 	}
 	writeJSON(w, response)
@@ -190,7 +190,7 @@ func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, w
 	if archived {
 		return resourceEndGenerationResponse{}, nil, &resourceAPIError{Code: "resource_archived", Message: fmt.Sprintf("resource %s is archived", resourceID)}
 	}
-	run, found, err := currentResourceGeneration(workspace.Path, resourceID)
+	record, found, err := currentResourceGeneration(workspace.Path, resourceID)
 	if err != nil {
 		return resourceEndGenerationResponse{}, nil, err
 	}
@@ -200,20 +200,20 @@ func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, w
 	if expectedGenerationID == "" {
 		return resourceEndGenerationResponse{}, nil, &resourceAPIError{Code: "generation_changed", Message: "current generation must be confirmed before ending it"}
 	}
-	if run.GenerationID != expectedGenerationID {
+	if record.GenerationID != expectedGenerationID {
 		return resourceEndGenerationResponse{}, nil, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status"}
 	}
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return resourceEndGenerationResponse{}, nil, err
 	}
-	rt := m.runtimeByID(run.ID)
+	rt := m.runtimeByID(record.ID)
 	if rt == nil {
-		rt = newAgentHubRuntime(m, workspace, run, client)
+		rt = newAgentHubRuntime(m, workspace, record, client)
 		m.registerRuntime(rt)
 	}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" {
-		updated, persistErr := rt.mutateRun(func(current *agentRun) {
+	if strings.TrimSpace(record.AgentHubSessionID) == "" {
+		updated, persistErr := rt.mutateGeneration(func(current *generationRecord) {
 			current.Status = "stopped"
 			current.AgentHubStoppedObserved = true
 			current.ReplacementPending = false
@@ -223,23 +223,23 @@ func (m *agentManager) requestEndResourceGenerationLocked(ctx context.Context, w
 		if persistErr != nil {
 			return resourceEndGenerationResponse{}, nil, persistErr
 		}
-		if err := retireStoredAgentRun(rt, updated, "manual_generation_stop"); err != nil {
+		if err := retireStoredGeneration(rt, updated, "manual_generation_stop"); err != nil {
 			return resourceEndGenerationResponse{}, nil, err
 		}
-		return resourceEndGenerationResponse{Status: "ended", GenerationID: run.GenerationID}, nil, nil
+		return resourceEndGenerationResponse{Status: "ended", GenerationID: record.GenerationID}, nil, nil
 	}
-	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	session, err := client.GetSession(ctx, record.AgentHubSessionID)
 	if err != nil {
 		return resourceEndGenerationResponse{}, nil, err
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, run, session) {
+	if !agentHubSessionExactlyMatchesGeneration(cfg, record, session) {
 		return resourceEndGenerationResponse{}, nil, &resourceAPIError{Code: "generation_changed", Message: "AgentHub Session no longer matches the current generation"}
 	}
 	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {
 		return resourceEndGenerationResponse{}, nil, &resourceAPIError{Code: "active_turn", Message: "end the active turn before ending its generation"}
 	}
-	updated, err := rt.mutateRun(func(current *agentRun) {
-		if current.GenerationID != run.GenerationID {
+	updated, err := rt.mutateGeneration(func(current *generationRecord) {
+		if current.GenerationID != record.GenerationID {
 			return
 		}
 		current.ReplacementPending = true

@@ -186,15 +186,15 @@ func resourceHistoryInstanceID(workspace serveWorkspace) (string, error) {
 	return configuration.InstanceID, nil
 }
 
-func resourceHistoryRuns(workspacePath, resourceID string) ([]agentRun, error) {
-	runs, err := loadAgentRuns(workspacePath)
+func resourceHistoryGenerations(workspacePath, resourceID string) ([]generationRecord, error) {
+	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
 		return nil, err
 	}
-	filtered := make([]agentRun, 0)
-	for _, run := range runs {
-		if agentRunMatchesResource(run, resourceID) && strings.TrimSpace(run.GenerationID) != "" {
-			filtered = append(filtered, run)
+	filtered := make([]generationRecord, 0)
+	for _, record := range records {
+		if generationMatchesResource(record, resourceID) && strings.TrimSpace(record.GenerationID) != "" {
+			filtered = append(filtered, record)
 		}
 	}
 	sort.SliceStable(filtered, func(i, j int) bool {
@@ -206,14 +206,14 @@ func resourceHistoryRuns(workspacePath, resourceID string) ([]agentRun, error) {
 	return filtered, nil
 }
 
-func historyGeneration(run agentRun) resourceHistoryGeneration {
+func historyGeneration(record generationRecord) resourceHistoryGeneration {
 	return resourceHistoryGeneration{
-		Generation: run.Generation, GenerationID: run.GenerationID, Title: run.Title,
-		Binding:         app.AgentBinding{Kind: run.BindingKind, Name: run.BindingName},
-		ResolvedProfile: run.ResolvedProfile, AgentName: run.AgentHubAgentName,
-		Provider: run.AgentHubProviderName, ProviderID: run.AgentHubProviderID, Model: run.AgentHubModel,
-		Status: run.Status, CreatedAt: run.CreatedAt, UpdatedAt: run.UpdatedAt,
-		AgentHubSessionID: run.AgentHubSessionID, ReplacementPending: run.ReplacementPending,
+		Generation: record.Generation, GenerationID: record.GenerationID, Title: record.Title,
+		Binding:         app.AgentBinding{Kind: record.BindingKind, Name: record.BindingName},
+		ResolvedProfile: record.ResolvedProfile, AgentName: record.AgentHubAgentName,
+		Provider: record.AgentHubProviderName, ProviderID: record.AgentHubProviderID, Model: record.AgentHubModel,
+		Status: record.Status, CreatedAt: record.CreatedAt, UpdatedAt: record.UpdatedAt,
+		AgentHubSessionID: record.AgentHubSessionID, ReplacementPending: record.ReplacementPending,
 	}
 }
 
@@ -237,18 +237,18 @@ func historyDeliveries(mailbox resourceMailbox, generationID, turnID string) []r
 	return result
 }
 
-func historyTurnSummary(instanceID, resourceID string, run agentRun, turn agentHubTurn, mailbox resourceMailbox) (resourceHistoryTurnSummary, error) {
+func historyTurnSummary(instanceID, resourceID string, record generationRecord, turn agentHubTurn, mailbox resourceMailbox) (resourceHistoryTurnSummary, error) {
 	turnID := strings.TrimSpace(turn.TurnID)
 	if turnID == "" {
 		turnID = strings.TrimSpace(turn.ID)
 	}
 	reference, err := encodeResourceHistoryReference(resourceHistoryReference{
-		Kind: "turn", InstanceID: instanceID, ResourceID: resourceID, GenerationID: run.GenerationID, TurnID: turnID,
+		Kind: "turn", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, TurnID: turnID,
 	})
 	if err != nil {
 		return resourceHistoryTurnSummary{}, err
 	}
-	deliveries := historyDeliveries(mailbox, run.GenerationID, turnID)
+	deliveries := historyDeliveries(mailbox, record.GenerationID, turnID)
 	var trigger *resourceHistoryDelivery
 	if len(deliveries) > 0 {
 		value := deliveries[0]
@@ -260,13 +260,13 @@ func historyTurnSummary(instanceID, resourceID string, run agentRun, turn agentH
 		TriggerPreview: turn.TriggerPreview, TriggerRole: turn.TriggerRole, TriggerSender: turn.TriggerSender,
 		FinalReplyPreview: turn.FinalReplyPreview, EventCount: turn.EventCount, ToolEventCount: turn.ToolEventCount,
 		StartEventID: turn.StartEventID, LastEventID: turn.LastEventID, EndEventID: turn.EndEventID,
-		TriggerDelivery: trigger, Generation: historyGeneration(run),
+		TriggerDelivery: trigger, Generation: historyGeneration(record),
 	}, nil
 }
 
-func historyGapFor(run agentRun, err error) *resourceHistoryGap {
+func historyGapFor(record generationRecord, err error) *resourceHistoryGap {
 	gap := &resourceHistoryGap{Code: "session_unreadable", Message: err.Error(), Retryable: true}
-	if strings.TrimSpace(run.AgentHubSessionID) == "" {
+	if strings.TrimSpace(record.AgentHubSessionID) == "" {
 		gap.Code, gap.Message, gap.Retryable = "session_missing", "generation has no AgentHub Session reference", false
 		return gap
 	}
@@ -317,13 +317,13 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 	if err != nil {
 		return resourceHistoryPage{}, err
 	}
-	runs, err := resourceHistoryRuns(workspace.Path, resourceID)
+	records, err := resourceHistoryGenerations(workspace.Path, resourceID)
 	if err != nil {
 		return resourceHistoryPage{}, &resourceAPIError{Code: "history_index_corrupt", Message: err.Error()}
 	}
 	page := resourceHistoryPage{ResourceID: resourceID, Segments: []resourceHistorySegment{}}
 	page.Page.Limit = limit
-	if len(runs) == 0 {
+	if len(records) == 0 {
 		return page, nil
 	}
 	start, before := 0, int64(0)
@@ -337,8 +337,8 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 		}
 		before = cursor.Before
 		found := false
-		for index := range runs {
-			if runs[index].GenerationID == cursor.GenerationID {
+		for index := range records {
+			if records[index].GenerationID == cursor.GenerationID {
 				start, found = index, true
 				break
 			}
@@ -356,9 +356,9 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 		return resourceHistoryPage{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
 	remaining := limit
-	setNext := func(run agentRun, nextBefore int64) error {
+	setNext := func(record generationRecord, nextBefore int64) error {
 		encoded, encodeErr := encodeResourceHistoryReference(resourceHistoryReference{
-			Kind: "cursor", InstanceID: instanceID, ResourceID: resourceID, GenerationID: run.GenerationID, Before: nextBefore,
+			Kind: "cursor", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, Before: nextBefore,
 		})
 		if encodeErr != nil {
 			return encodeErr
@@ -366,10 +366,10 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 		page.Page.NextCursor, page.Page.HasMore = encoded, true
 		return nil
 	}
-	for index := start; index < len(runs); index++ {
-		run := runs[index]
+	for index := start; index < len(records); index++ {
+		record := records[index]
 		if remaining == 0 {
-			if err := setNext(run, func() int64 {
+			if err := setNext(record, func() int64 {
 				if index == start {
 					return before
 				}
@@ -379,13 +379,13 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 			}
 			break
 		}
-		segment := resourceHistorySegment{Generation: historyGeneration(run), Turns: []resourceHistoryTurnSummary{}}
-		if strings.TrimSpace(run.AgentHubSessionID) == "" {
-			segment.Gap = historyGapFor(run, errors.New("generation has no AgentHub Session reference"))
+		segment := resourceHistorySegment{Generation: historyGeneration(record), Turns: []resourceHistoryTurnSummary{}}
+		if strings.TrimSpace(record.AgentHubSessionID) == "" {
+			segment.Gap = historyGapFor(record, errors.New("generation has no AgentHub Session reference"))
 			page.Segments = append(page.Segments, segment)
 			remaining--
-			if remaining == 0 && index+1 < len(runs) {
-				if err := setNext(runs[index+1], 0); err != nil {
+			if remaining == 0 && index+1 < len(records) {
+				if err := setNext(records[index+1], 0); err != nil {
 					return resourceHistoryPage{}, err
 				}
 				break
@@ -393,13 +393,13 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 			before = 0
 			continue
 		}
-		turnPage, fetchErr := client.SessionTurns(ctx, run.AgentHubSessionID, before, before == 0, remaining)
+		turnPage, fetchErr := client.SessionTurns(ctx, record.AgentHubSessionID, before, before == 0, remaining)
 		if fetchErr != nil {
-			segment.Gap = historyGapFor(run, fetchErr)
+			segment.Gap = historyGapFor(record, fetchErr)
 			page.Segments = append(page.Segments, segment)
 			remaining--
-			if remaining == 0 && index+1 < len(runs) {
-				if err := setNext(runs[index+1], 0); err != nil {
+			if remaining == 0 && index+1 < len(records) {
+				if err := setNext(records[index+1], 0); err != nil {
 					return resourceHistoryPage{}, err
 				}
 				break
@@ -408,7 +408,7 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 			continue
 		}
 		for _, turn := range turnPage.Turns {
-			summary, summaryErr := historyTurnSummary(instanceID, resourceID, run, turn, mailbox)
+			summary, summaryErr := historyTurnSummary(instanceID, resourceID, record, turn, mailbox)
 			if summaryErr != nil {
 				return resourceHistoryPage{}, summaryErr
 			}
@@ -420,14 +420,14 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 			if turnPage.Page.NextBefore <= 0 {
 				return resourceHistoryPage{}, &resourceAPIError{Code: "history_corrupt", Message: "AgentHub Turn page did not provide a backward cursor"}
 			}
-			if err := setNext(run, turnPage.Page.NextBefore); err != nil {
+			if err := setNext(record, turnPage.Page.NextBefore); err != nil {
 				return resourceHistoryPage{}, err
 			}
 			break
 		}
 		before = 0
-		if remaining == 0 && index+1 < len(runs) {
-			if err := setNext(runs[index+1], 0); err != nil {
+		if remaining == 0 && index+1 < len(records) {
+			if err := setNext(records[index+1], 0); err != nil {
 				return resourceHistoryPage{}, err
 			}
 			break
@@ -436,44 +436,44 @@ func (m *agentManager) resourceHistoryPage(ctx context.Context, workspace serveW
 	return page, nil
 }
 
-func resourceHistoryRunByReference(workspace serveWorkspace, resourceID string, reference resourceHistoryReference) (agentRun, error) {
-	runs, err := resourceHistoryRuns(workspace.Path, resourceID)
+func resourceHistoryGenerationByReference(workspace serveWorkspace, resourceID string, reference resourceHistoryReference) (generationRecord, error) {
+	records, err := resourceHistoryGenerations(workspace.Path, resourceID)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	for _, run := range runs {
-		if run.GenerationID == reference.GenerationID {
-			if strings.TrimSpace(run.AgentHubSessionID) == "" {
-				return agentRun{}, &resourceAPIError{Code: "session_missing", Message: "generation has no AgentHub Session reference"}
+	for _, record := range records {
+		if record.GenerationID == reference.GenerationID {
+			if strings.TrimSpace(record.AgentHubSessionID) == "" {
+				return generationRecord{}, &resourceAPIError{Code: "session_missing", Message: "generation has no AgentHub Session reference"}
 			}
-			return run, nil
+			return record, nil
 		}
 	}
-	return agentRun{}, &resourceAPIError{Code: "history_reference_not_found", Message: "history reference generation was not found"}
+	return generationRecord{}, &resourceAPIError{Code: "history_reference_not_found", Message: "history reference generation was not found"}
 }
 
-// resourceHistoryRunByGeneration resolves any generation recorded in the
+// resourceHistoryGenerationByID resolves any generation recorded in the
 // resource History, not just the current one, so read-only event paging can
 // expand compact Turn ranges from older generations. An unknown generation
 // keeps the generation_changed semantics live clients already handle.
-func resourceHistoryRunByGeneration(workspace serveWorkspace, resourceID, generationID string) (agentRun, error) {
+func resourceHistoryGenerationByID(workspace serveWorkspace, resourceID, generationID string) (generationRecord, error) {
 	resourceID = normalizedResourceID(resourceID)
 	if err := validateResourceHistoryTarget(workspace, resourceID); err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	runs, err := resourceHistoryRuns(workspace.Path, resourceID)
+	records, err := resourceHistoryGenerations(workspace.Path, resourceID)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	for _, run := range runs {
-		if run.GenerationID == generationID {
-			if strings.TrimSpace(run.AgentHubSessionID) == "" {
-				return agentRun{}, &resourceAPIError{Code: "session_missing", Message: "generation has no AgentHub Session reference"}
+	for _, record := range records {
+		if record.GenerationID == generationID {
+			if strings.TrimSpace(record.AgentHubSessionID) == "" {
+				return generationRecord{}, &resourceAPIError{Code: "session_missing", Message: "generation has no AgentHub Session reference"}
 			}
-			return run, nil
+			return record, nil
 		}
 	}
-	return agentRun{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
+	return generationRecord{}, &resourceAPIError{Code: "generation_changed", Message: "resource current generation changed; refresh resource status and history head"}
 }
 
 func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveWorkspace, resourceID, value string) (resourceHistoryTurnDetail, error) {
@@ -489,7 +489,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}
-	run, err := resourceHistoryRunByReference(workspace, resourceID, reference)
+	record, err := resourceHistoryGenerationByReference(workspace, resourceID, reference)
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}
@@ -497,7 +497,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	if err != nil {
 		return resourceHistoryTurnDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	turn, latestEventID, err := client.SessionTurn(ctx, run.AgentHubSessionID, reference.TurnID)
+	turn, latestEventID, err := client.SessionTurn(ctx, record.AgentHubSessionID, reference.TurnID)
 	if err != nil {
 		var upstream *agentHubAPIError
 		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
@@ -509,23 +509,23 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}
-	summary, err := historyTurnSummary(instanceID, resourceID, run, turn, mailbox)
+	summary, err := historyTurnSummary(instanceID, resourceID, record, turn, mailbox)
 	if err != nil {
 		return resourceHistoryTurnDetail{}, err
 	}
 	detail := resourceHistoryTurnDetail{
-		Turn: summary, Items: []resourceHistoryTurnItem{}, Deliveries: historyDeliveries(mailbox, run.GenerationID, summary.TurnID),
+		Turn: summary, Items: []resourceHistoryTurnItem{}, Deliveries: historyDeliveries(mailbox, record.GenerationID, summary.TurnID),
 		LatestEventID: latestEventID, TurnStartedEventID: turn.TurnStartedEventID, CompletedAt: turn.CompletedAt,
 	}
 	for _, item := range turn.Items {
 		startRef, encodeErr := encodeResourceHistoryReference(resourceHistoryReference{
-			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: run.GenerationID, EventID: item.StartEventID,
+			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, EventID: item.StartEventID,
 		})
 		if encodeErr != nil {
 			return resourceHistoryTurnDetail{}, encodeErr
 		}
 		endRef, encodeErr := encodeResourceHistoryReference(resourceHistoryReference{
-			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: run.GenerationID, EventID: item.EndEventID,
+			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, EventID: item.EndEventID,
 		})
 		if encodeErr != nil {
 			return resourceHistoryTurnDetail{}, encodeErr
@@ -538,7 +538,7 @@ func (m *agentManager) resourceHistoryTurn(ctx context.Context, workspace serveW
 	}
 	if latestEventID > 0 {
 		detail.LatestEventRef, _ = encodeResourceHistoryReference(resourceHistoryReference{
-			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: run.GenerationID, EventID: latestEventID,
+			Kind: "event", InstanceID: instanceID, ResourceID: resourceID, GenerationID: record.GenerationID, EventID: latestEventID,
 		})
 	}
 	return detail, nil
@@ -560,7 +560,7 @@ func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serve
 		}
 		return resourceHistoryEventDetail{}, err
 	}
-	run, err := resourceHistoryRunByReference(workspace, resourceID, reference)
+	record, err := resourceHistoryGenerationByReference(workspace, resourceID, reference)
 	if err != nil {
 		return resourceHistoryEventDetail{}, err
 	}
@@ -568,7 +568,7 @@ func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serve
 	if err != nil {
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	event, err := client.SessionEvent(ctx, run.AgentHubSessionID, reference.EventID)
+	event, err := client.SessionEvent(ctx, record.AgentHubSessionID, reference.EventID)
 	if err != nil {
 		var upstream *agentHubAPIError
 		if errors.As(err, &upstream) && upstream.StatusCode == http.StatusNotFound {
@@ -576,10 +576,10 @@ func (m *agentManager) resourceHistoryEvent(ctx context.Context, workspace serve
 		}
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_unavailable", Message: err.Error()}
 	}
-	if event.SessionID != "" && event.SessionID != run.AgentHubSessionID {
+	if event.SessionID != "" && event.SessionID != record.AgentHubSessionID {
 		return resourceHistoryEventDetail{}, &resourceAPIError{Code: "history_corrupt", Message: "AgentHub Event belongs to a different Session"}
 	}
-	return resourceHistoryEventDetail{Reference: value, Generation: historyGeneration(run), Event: event}, nil
+	return resourceHistoryEventDetail{Reference: value, Generation: historyGeneration(record), Event: event}, nil
 }
 
 func (m *agentManager) handleResourceHistory(w http.ResponseWriter, r *http.Request, workspaceID, resourceID string, parts []string) {

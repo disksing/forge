@@ -152,7 +152,7 @@ func schedulerTickTerminal(ctx context.Context, workspacePath string, message re
 	if strings.TrimSpace(message.TurnTerminalAt) != "" {
 		return agentHubTurn{TurnID: message.TurnID, Status: "completed", Closed: true, EndedAt: message.TurnTerminalAt}, true, nil
 	}
-	run, found, err := runByGenerationID(workspacePath, message.GenerationID)
+	record, found, err := generationRecordByID(workspacePath, message.GenerationID)
 	if err != nil {
 		return agentHubTurn{}, false, err
 	}
@@ -160,7 +160,7 @@ func schedulerTickTerminal(ctx context.Context, workspacePath string, message re
 		return agentHubTurn{}, true, nil
 	}
 	if strings.TrimSpace(message.TurnID) == "" {
-		turn, turnFound, turnErr := findSchedulerTickTurn(ctx, client, run.AgentHubSessionID, message)
+		turn, turnFound, turnErr := findSchedulerTickTurn(ctx, client, record.AgentHubSessionID, message)
 		if turnErr != nil {
 			return agentHubTurn{}, false, turnErr
 		}
@@ -173,27 +173,27 @@ func schedulerTickTerminal(ctx context.Context, workspacePath string, message re
 			}
 			return turn, turn.Closed, nil
 		}
-		if !isLiveAgentStatus(run.Status) {
-			terminal := agentHubTurn{Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+		if !isLiveAgentStatus(record.Status) {
+			terminal := agentHubTurn{Status: record.Status, Closed: true, EndedAt: record.UpdatedAt}
 			_ = markSchedulerTickTerminal(workspacePath, message, terminal)
 			return terminal, true, nil
 		}
 		return agentHubTurn{}, false, nil
 	}
-	turn, _, turnErr := client.SessionTurn(ctx, run.AgentHubSessionID, message.TurnID)
+	turn, _, turnErr := client.SessionTurn(ctx, record.AgentHubSessionID, message.TurnID)
 	if turnErr == nil {
 		if turn.Closed {
 			_ = markSchedulerTickTerminal(workspacePath, message, turn)
 		}
 		return turn, turn.Closed, nil
 	}
-	if run.CompletionMarker != "" && run.CompletionTurnID == message.TurnID {
-		terminal := agentHubTurn{TurnID: message.TurnID, Status: run.CompletionState, Closed: true, EndedAt: run.CompletionAt}
+	if record.CompletionMarker != "" && record.CompletionTurnID == message.TurnID {
+		terminal := agentHubTurn{TurnID: message.TurnID, Status: record.CompletionState, Closed: true, EndedAt: record.CompletionAt}
 		_ = markSchedulerTickTerminal(workspacePath, message, terminal)
 		return terminal, true, nil
 	}
-	if !isLiveAgentStatus(run.Status) {
-		terminal := agentHubTurn{TurnID: message.TurnID, Status: run.Status, Closed: true, EndedAt: run.UpdatedAt}
+	if !isLiveAgentStatus(record.Status) {
+		terminal := agentHubTurn{TurnID: message.TurnID, Status: record.Status, Closed: true, EndedAt: record.UpdatedAt}
 		_ = markSchedulerTickTerminal(workspacePath, message, terminal)
 		return terminal, true, nil
 	}

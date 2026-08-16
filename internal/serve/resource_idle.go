@@ -11,9 +11,9 @@ import (
 // replacement/archive Stop -> Archive operation is still in flight. Idle
 // sleep is intentionally absent: its stopped Session remains the current
 // generation and is the target of a later on-demand Resume.
-func resourceGenerationLifecyclePending(run agentRun) bool {
-	return (run.Status == "stopping" || run.Status == "stopped") &&
-		(run.ReplacementPending || run.ArchivedTaskStopRequested)
+func resourceGenerationLifecyclePending(record generationRecord) bool {
+	return (record.Status == "stopping" || record.Status == "stopped") &&
+		(record.ReplacementPending || record.ArchivedTaskStopRequested)
 }
 
 func (m *agentManager) resourceIdleSleepAfter() time.Duration {
@@ -30,21 +30,21 @@ func (m *agentManager) resourceNow() time.Time {
 	return time.Now()
 }
 
-func (m *agentManager) initializeResourceIdleDeadline(run *agentRun, session agentHubSession, boundary time.Time) bool {
-	if run == nil || run.IdleSleepStopRequested || strings.TrimSpace(run.IdleDeadlineAt) != "" {
+func (m *agentManager) initializeResourceIdleDeadline(record *generationRecord, session agentHubSession, boundary time.Time) bool {
+	if record == nil || record.IdleSleepStopRequested || strings.TrimSpace(record.IdleDeadlineAt) != "" {
 		return false
 	}
 	if boundary.IsZero() {
-		boundary = agentRunTime(session.UpdatedAt)
+		boundary = generationTime(session.UpdatedAt)
 	}
 	if boundary.IsZero() {
-		boundary = agentRunTime(session.CreatedAt)
+		boundary = generationTime(session.CreatedAt)
 	}
 	if boundary.IsZero() {
 		boundary = m.resourceNow()
 	}
-	run.IdleSinceAt = boundary.Format(time.RFC3339Nano)
-	run.IdleDeadlineAt = boundary.Add(m.resourceIdleSleepAfter()).Format(time.RFC3339Nano)
+	record.IdleSinceAt = boundary.Format(time.RFC3339Nano)
+	record.IdleDeadlineAt = boundary.Add(m.resourceIdleSleepAfter()).Format(time.RFC3339Nano)
 	return true
 }
 
@@ -52,46 +52,46 @@ func (m *agentManager) initializeResourceIdleDeadline(run *agentRun, session age
 // UpdatedAt field is used once for a generation's first ready observation;
 // subsequent polling cannot move an existing deadline. A completed Turn uses
 // its canonical terminal event time, populated by recordTurnCompletionHistory.
-func (m *agentManager) projectResourceIdleState(run *agentRun, session agentHubSession, previousState string, turnFinished bool) {
-	if run == nil {
+func (m *agentManager) projectResourceIdleState(record *generationRecord, session agentHubSession, previousState string, turnFinished bool) {
+	if record == nil {
 		return
 	}
-	resuming := run.LifecycleReceipt != nil && run.LifecycleReceipt.Operation == GenerationOperationResumeSession &&
-		run.LifecycleReceipt.State != GenerationReceiptTerminal
+	resuming := record.LifecycleReceipt != nil && record.LifecycleReceipt.Operation == GenerationOperationResumeSession &&
+		record.LifecycleReceipt.State != GenerationReceiptTerminal
 	switch session.State {
 	case "running", "waiting_approval":
-		run.IdleSinceAt = ""
-		run.IdleDeadlineAt = ""
+		record.IdleSinceAt = ""
+		record.IdleDeadlineAt = ""
 		// A new active Turn wins a race with a previously requested sleep. It
 		// is never interrupted by the automatic sleeper.
-		run.IdleSleepStopRequested = false
+		record.IdleSleepStopRequested = false
 	case "starting":
-		run.IdleSinceAt = ""
-		run.IdleDeadlineAt = ""
+		record.IdleSinceAt = ""
+		record.IdleDeadlineAt = ""
 		// Keep the idle marker until Resume reaches a ready/active boundary. A
 		// restart during starting must still describe this same sleeping
 		// generation rather than making it eligible for archival.
 		if !resuming {
-			run.IdleSleepStopRequested = false
+			record.IdleSleepStopRequested = false
 		}
 	case "ready":
-		if resuming && run.IdleSleepStopRequested {
-			run.IdleSleepStopRequested = false
+		if resuming && record.IdleSleepStopRequested {
+			record.IdleSleepStopRequested = false
 		}
-		if run.IdleSleepStopRequested || turnFinished || previousState == "running" || previousState == "waiting_approval" {
-			if run.IdleSleepStopRequested || run.ArchivedTaskStopRequested {
-				run.Status = "stopping"
+		if record.IdleSleepStopRequested || turnFinished || previousState == "running" || previousState == "waiting_approval" {
+			if record.IdleSleepStopRequested || record.ArchivedTaskStopRequested {
+				record.Status = "stopping"
 			}
 			return
 		}
-		boundary := agentRunTime(run.CompletionAt)
-		m.initializeResourceIdleDeadline(run, session, boundary)
-		run.Status = "idle"
+		boundary := generationTime(record.CompletionAt)
+		m.initializeResourceIdleDeadline(record, session, boundary)
+		record.Status = "idle"
 	case "stopping":
 		// Keep the durable Stop receipt while the idle Session converges.
 	case "stopped":
-		if run.IdleSleepStopRequested && !run.ReplacementPending && !run.ArchivedTaskStopRequested {
-			run.Status = "idle-suspended"
+		if record.IdleSleepStopRequested && !record.ReplacementPending && !record.ArchivedTaskStopRequested {
+			record.Status = "idle-suspended"
 		}
 	case "archived":
 		// Archived is terminal; the lifecycle planner retires it and never
@@ -99,12 +99,12 @@ func (m *agentManager) projectResourceIdleState(run *agentRun, session agentHubS
 	}
 }
 
-func (m *agentManager) idleDeadlineDue(run agentRun) bool {
-	deadline := agentRunTime(run.IdleDeadlineAt)
+func (m *agentManager) idleDeadlineDue(record generationRecord) bool {
+	deadline := generationTime(record.IdleDeadlineAt)
 	return !deadline.IsZero() && !m.resourceNow().Before(deadline)
 }
 
-func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace serveWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
+func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace serveWorkspace, observed generationRecord, observedSession agentHubSession, client *agentHubClient) error {
 	return m.withResourceController(ctx, workspace, observed.ResourceID, func() error {
 		return m.reconcileIdleGenerationLocked(ctx, workspace, observed, observedSession, client)
 	})
@@ -114,22 +114,22 @@ func (m *agentManager) reconcileIdleGeneration(ctx context.Context, workspace se
 // projection and under the resource controller. It re-reads the exact
 // generation and Session before persisting the Stop guard, so an old poll
 // response cannot stop a replacement generation.
-func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, workspace serveWorkspace, observed agentRun, observedSession agentHubSession, client *agentHubClient) error {
+func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, workspace serveWorkspace, observed generationRecord, observedSession agentHubSession, client *agentHubClient) error {
 	if strings.TrimSpace(observed.GenerationID) == "" || client == nil {
 		return nil
 	}
-	run, found, err := currentRunByGenerationID(workspace.Path, observed.GenerationID)
-	if err != nil || !found || run.ID != observed.ID || run.AgentHubSessionID != observed.AgentHubSessionID {
+	record, found, err := currentGenerationRecordByID(workspace.Path, observed.GenerationID)
+	if err != nil || !found || record.ID != observed.ID || record.AgentHubSessionID != observed.AgentHubSessionID {
 		return err
 	}
-	rt := m.ensureRuntime(workspace, run, client)
+	rt := m.ensureRuntime(workspace, record, client)
 	rt.mu.Lock()
 	stopInFlight := rt.lifecycleStopInFlight
 	rt.mu.Unlock()
 	if stopInFlight {
 		return nil
 	}
-	if !run.IdleSleepStopRequested && run.CompletionPending {
+	if !record.IdleSleepStopRequested && record.CompletionPending {
 		// A ready projection immediately after a Turn is not yet a reliable idle
 		// boundary. Wait for the canonical terminal event replay to persist its
 		// timestamp before starting the 30-minute clock.
@@ -139,39 +139,39 @@ func (m *agentManager) reconcileIdleGenerationLocked(ctx context.Context, worksp
 	// A durable request left by a previous poll/restart must resume the same
 	// generation's stop/archive convergence, but never while it has an active
 	// Turn or pending approval.
-	if run.IdleSleepStopRequested {
-		return m.startIdleRetirementLocked(ctx, workspace, run, rt, client)
+	if record.IdleSleepStopRequested {
+		return m.startIdleRetirementLocked(ctx, workspace, record, rt, client)
 	}
-	if run.ReplacementPending || run.ArchivedTaskStopRequested || run.Status != "idle" || observedSession.State != "ready" {
+	if record.ReplacementPending || record.ArchivedTaskStopRequested || record.Status != "idle" || observedSession.State != "ready" {
 		return nil
 	}
 
 	// A generation created before the idle fields existed gets one stable
 	// first-ready boundary. It is persisted before comparing the deadline so
 	// an overdue startup recovery converges immediately.
-	if strings.TrimSpace(run.IdleDeadlineAt) == "" {
-		_, err := rt.mutateRun(func(current *agentRun) {
-			m.initializeResourceIdleDeadline(current, observedSession, agentRunTime(current.CompletionAt))
+	if strings.TrimSpace(record.IdleDeadlineAt) == "" {
+		_, err := rt.mutateGeneration(func(current *generationRecord) {
+			m.initializeResourceIdleDeadline(current, observedSession, generationTime(current.CompletionAt))
 		})
 		if err != nil {
 			return err
 		}
-		run = rt.snapshotRun()
+		record = rt.snapshotGeneration()
 	}
-	if !m.idleDeadlineDue(run) {
+	if !m.idleDeadlineDue(record) {
 		return nil
 	}
-	return m.startIdleRetirementLocked(ctx, workspace, run, rt, client)
+	return m.startIdleRetirementLocked(ctx, workspace, record, rt, client)
 }
 
-func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace serveWorkspace, run agentRun, rt *agentRuntime, client *agentHubClient) error {
-	if rt == nil || client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
+func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace serveWorkspace, record generationRecord, rt *agentRuntime, client *agentHubClient) error {
+	if rt == nil || client == nil || strings.TrimSpace(record.AgentHubSessionID) == "" {
 		return nil
 	}
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
-	latest := rt.snapshotRun()
-	if latest.ID != run.ID || latest.GenerationID != run.GenerationID || latest.AgentHubSessionID != run.AgentHubSessionID {
+	latest := rt.snapshotGeneration()
+	if latest.ID != record.ID || latest.GenerationID != record.GenerationID || latest.AgentHubSessionID != record.AgentHubSessionID {
 		return nil
 	}
 	rt.mu.Lock()
@@ -189,7 +189,7 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 	if err != nil {
 		return fmt.Errorf("inspect idle resource generation: %w", err)
 	}
-	if !agentHubSessionExactlyMatchesRun(cfg, latest, session) {
+	if !agentHubSessionExactlyMatchesGeneration(cfg, latest, session) {
 		return fmt.Errorf("AgentHub Session %s does not match generation %s", session.ID, latest.GenerationID)
 	}
 	if session.State == "running" || session.State == "waiting_approval" || len(session.PendingApprovalIDs) > 0 {
@@ -212,7 +212,7 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 		return nil
 	}
 	lifecyclePlan := PlanGeneration(AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
-		Run: latest, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: latest.UpdatedAt,
+		Generation: latest, Session: &session, Mailbox: mailbox, Now: m.resourceNow(), Revision: latest.UpdatedAt,
 	}))
 	switch lifecyclePlan.Operation {
 	case GenerationOperationNone, GenerationOperationWaitForSession,
@@ -228,20 +228,20 @@ func (m *agentManager) startIdleRetirementLocked(ctx context.Context, workspace 
 			return
 		}
 		if lifecyclePlan.Operation == GenerationOperationStopSession {
-			ApplyLegacyLifecyclePlan(&runtime.run, lifecyclePlan)
+			ApplyLegacyLifecyclePlan(&runtime.record, lifecyclePlan)
 		}
-		if !runtime.run.IdleSleepStopRequested && lifecyclePlan.Intent == GenerationIntentIdle {
-			runtime.run.IdleSleepStopRequested = true
+		if !runtime.record.IdleSleepStopRequested && lifecyclePlan.Intent == GenerationIntentIdle {
+			runtime.record.IdleSleepStopRequested = true
 		}
-		runtime.run.Status = "stopping"
-		runtime.run.UpdatedAt = m.resourceNow().Format(time.RFC3339Nano)
+		runtime.record.Status = "stopping"
+		runtime.record.UpdatedAt = m.resourceNow().Format(time.RFC3339Nano)
 		runtime.lifecycleStopInFlight = true
 		started = true
 	})
 	if err != nil || !started {
 		return err
 	}
-	_ = m.enqueueResourceController(workspace, run.ResourceID, func() error {
+	_ = m.enqueueResourceController(workspace, record.ResourceID, func() error {
 		m.retireResourceGenerationLocked(context.WithoutCancel(ctx), rt)
 		return nil
 	})

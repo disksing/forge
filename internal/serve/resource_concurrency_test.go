@@ -161,10 +161,10 @@ func TestAcceptedMessageDoesNotBlockAnotherWorkspaceStatus(t *testing.T) {
 	manager, workspaceA, _ := newRuntimeTestManager(t, hub.URL)
 	workspaceB := addRuntimeTestWorkspace(t, manager, "workspace-other", "Other")
 
-	_, runA := startRuntimeTestRun(t, manager, workspaceA, `{"resourceId":"project1.task1","prompt":"initial A"}`)
-	_, runB := startRuntimeTestRun(t, manager, workspaceB, `{"resourceId":"project1.task1","prompt":"initial B"}`)
-	if runA.AgentHubSessionID == "" || runB.AgentHubSessionID == "" {
-		t.Fatalf("test generations did not start: A=%#v B=%#v", runA, runB)
+	_, recordA := startRuntimeTestGeneration(t, manager, workspaceA, `{"resourceId":"project1.task1","prompt":"initial A"}`)
+	_, recordB := startRuntimeTestGeneration(t, manager, workspaceB, `{"resourceId":"project1.task1","prompt":"initial B"}`)
+	if recordA.AgentHubSessionID == "" || recordB.AgentHubSessionID == "" {
+		t.Fatalf("test generations did not start: A=%#v B=%#v", recordA, recordB)
 	}
 	if err := manager.withResourceController(context.Background(), workspaceA, "project1.task1", func() error { return nil }); err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestAcceptedMessageDoesNotBlockAnotherWorkspaceStatus(t *testing.T) {
 	}
 
 	fake.mu.Lock()
-	for _, sessionID := range []string{runA.AgentHubSessionID, runB.AgentHubSessionID} {
+	for _, sessionID := range []string{recordA.AgentHubSessionID, recordB.AgentHubSessionID} {
 		session := fake.sessions[sessionID]
 		session.State = "ready"
 		session.CurrentTurnID = ""
@@ -183,7 +183,7 @@ func TestAcceptedMessageDoesNotBlockAnotherWorkspaceStatus(t *testing.T) {
 	messageStarted := make(chan struct{})
 	releaseMessage := make(chan struct{})
 	fake.messageHook = func(sessionID string, message agentHubInboundMessage) {
-		if sessionID != runA.AgentHubSessionID || message.Text != "blocked A" {
+		if sessionID != recordA.AgentHubSessionID || message.Text != "blocked A" {
 			return
 		}
 		close(messageStarted)

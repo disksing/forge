@@ -32,11 +32,11 @@ func (m *agentManager) agentHubRuntimeConfig() (config, *agentHubClient, error) 
 	return cfg, client, nil
 }
 
-// validateAgentHubRunAgent runs before PUA creates a session or changes the
+// validateAgentHubGenerationAgent runs before PUA creates a session or changes the
 // task. AgentHub may reject an unavailable configured target during session
 // creation, but validating against the catalog first prevents an unavailable
 // selection from leaving a PUA lock behind.
-func validateAgentHubRunAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
+func validateAgentHubGenerationAgent(ctx context.Context, client *agentHubClient, requested string) (string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested == "" {
 		return "", errors.New("no AgentHub agent is configured")
@@ -181,9 +181,9 @@ func duplicateAgentHubSourceError(source agentHubSource, sessions []agentHubSess
 		source.App, source.InstanceID, source.ExternalID, strings.Join(ids, ", "))
 }
 
-func newAgentHubRuntime(m *agentManager, workspace serveWorkspace, run agentRun, client *agentHubClient) *agentRuntime {
+func newAgentHubRuntime(m *agentManager, workspace serveWorkspace, record generationRecord, client *agentHubClient) *agentRuntime {
 	return &agentRuntime{
-		workspace: workspace, manager: m, run: run,
+		workspace: workspace, manager: m, record: record,
 		agentHub: client,
 	}
 }
@@ -212,11 +212,11 @@ func puaStatusForAgentHubState(state string) string {
 }
 
 func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
-	_, _ = rt.mutateRun(func(run *agentRun) {
-		if run.Status != "stopped" {
-			run.Status = "recovering"
+	_, _ = rt.mutateGeneration(func(record *generationRecord) {
+		if record.Status != "stopped" {
+			record.Status = "recovering"
 		}
-		run.UpdatedAt = time.Now().Format(time.RFC3339)
+		record.UpdatedAt = time.Now().Format(time.RFC3339)
 	})
 	if err != nil {
 		rt.addPUANotice(m, "error", "agenthub/recovery", err.Error())
@@ -225,7 +225,7 @@ func (rt *agentRuntime) setRecoveryError(m *agentManager, err error) {
 
 func (rt *agentRuntime) addPUANotice(m *agentManager, level, method, text string) {
 	rt.mu.Lock()
-	runID := rt.run.ID
+	recordID := rt.record.ID
 	rt.mu.Unlock()
 	notice := puaNotice{
 		Source: "pua",
@@ -237,10 +237,10 @@ func (rt *agentRuntime) addPUANotice(m *agentManager, level, method, text string
 			Text:   text,
 		},
 	}
-	m.publishNotice(runID, notice)
+	m.publishNotice(recordID, notice)
 }
 
-type interruptRunResponse struct {
+type interruptGenerationResponse struct {
 	Status                        string   `json:"status"`
 	PendingSteerPolicy            string   `json:"pendingSteerPolicy"`
 	CancelledPendingSteerCount    int      `json:"cancelledPendingSteerCount,omitempty"`
@@ -248,33 +248,33 @@ type interruptRunResponse struct {
 	PendingSteerCancellationError string   `json:"pendingSteerCancellationError,omitempty"`
 }
 
-type interruptRunPostAction func(serveWorkspace, string) (cancelledResourceMessages, error)
+type interruptGenerationPostAction func(serveWorkspace, string) (cancelledResourceMessages, error)
 
-func (m *agentManager) interruptRun(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	response, err := m.interruptRunWithPostAction(r.Context(), workspaceID, runID, nil)
+func (m *agentManager) interruptGeneration(w http.ResponseWriter, r *http.Request, workspaceID, recordID string) {
+	response, err := m.interruptGenerationWithPostAction(r.Context(), workspaceID, recordID, nil)
 	if err != nil {
-		writeInterruptRunError(w, err)
+		writeInterruptGenerationError(w, err)
 		return
 	}
 	writeJSON(w, response)
 }
 
-func (m *agentManager) interruptRunWithPostAction(ctx context.Context, workspaceID, runID string, postAction interruptRunPostAction) (interruptRunResponse, error) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
+func (m *agentManager) interruptGenerationWithPostAction(ctx context.Context, workspaceID, recordID string, postAction interruptGenerationPostAction) (interruptGenerationResponse, error) {
+	_, rt, err := m.workspaceRuntime(workspaceID, recordID)
 	if err != nil || rt == nil {
-		return interruptRunResponse{}, errors.New("run is not active")
+		return interruptGenerationResponse{}, errors.New("run is not active")
 	}
-	run := rt.snapshotRun()
-	var response interruptRunResponse
-	err = m.withResourceController(ctx, rt.workspace, run.ResourceID, func() error {
+	record := rt.snapshotGeneration()
+	var response interruptGenerationResponse
+	err = m.withResourceController(ctx, rt.workspace, record.ResourceID, func() error {
 		var err error
-		response, err = m.interruptRunLocked(ctx, workspaceID, rt)
+		response, err = m.interruptGenerationLocked(ctx, workspaceID, rt)
 		if err != nil {
 			return err
 		}
 		response.PendingSteerPolicy = "cancel"
 		if postAction != nil {
-			cancelled, actionErr := postAction(rt.workspace, run.ResourceID)
+			cancelled, actionErr := postAction(rt.workspace, record.ResourceID)
 			response.CancelledPendingSteerCount = cancelled.Count
 			response.CancelledPendingSteerIDs = cancelled.IDs
 			if actionErr != nil {
@@ -289,7 +289,7 @@ func (m *agentManager) interruptRunWithPostAction(ctx context.Context, workspace
 	return response, err
 }
 
-func writeInterruptRunError(w http.ResponseWriter, err error) {
+func writeInterruptGenerationError(w http.ResponseWriter, err error) {
 	status := http.StatusBadGateway
 	if strings.Contains(err.Error(), "run is not active") || strings.Contains(err.Error(), "run is not attached to AgentHub") {
 		status = http.StatusBadRequest
@@ -301,28 +301,28 @@ func writeInterruptRunError(w http.ResponseWriter, err error) {
 	writeError(w, err, status)
 }
 
-func (m *agentManager) interruptRunLocked(ctx context.Context, workspaceID string, rt *agentRuntime) (interruptRunResponse, error) {
+func (m *agentManager) interruptGenerationLocked(ctx context.Context, workspaceID string, rt *agentRuntime) (interruptGenerationResponse, error) {
 	// Serialize End Turn with dispatch and Close Session on this Session only;
 	// Task desired-state persistence must remain independent.
 	rt.turnActionMu.Lock()
 	defer rt.turnActionMu.Unlock()
 	rt.mu.Lock()
-	run, client := rt.run, rt.agentHub
+	record, client := rt.record, rt.agentHub
 	rt.mu.Unlock()
-	if run.WorkspaceID != workspaceID {
-		return interruptRunResponse{}, errors.New("run belongs to another workspace")
+	if record.WorkspaceID != workspaceID {
+		return interruptGenerationResponse{}, errors.New("run belongs to another workspace")
 	}
-	if client == nil || strings.TrimSpace(run.AgentHubSessionID) == "" {
-		return interruptRunResponse{}, errors.New("run is not attached to AgentHub")
+	if client == nil || strings.TrimSpace(record.AgentHubSessionID) == "" {
+		return interruptGenerationResponse{}, errors.New("run is not attached to AgentHub")
 	}
-	currentSession, err := m.interruptibleAgentHubSession(ctx, run, client)
+	currentSession, err := m.interruptibleAgentHubSession(ctx, record, client)
 	if err != nil {
 		// A failed read leaves the current turn unknown. Retain the PUA and
 		// AgentHub sessions and let reconciliation establish the next state;
 		// do not guess and send a non-idempotent interrupt.
 		recoveryErr := fmt.Errorf("AgentHub turn state could not be confirmed; interrupt was not sent: %w", err)
 		rt.setRecoveryError(m, recoveryErr)
-		return interruptRunResponse{}, recoveryErr
+		return interruptGenerationResponse{}, recoveryErr
 	}
 	session, err := client.Interrupt(ctx, currentSession.ID)
 	if err != nil {
@@ -331,10 +331,10 @@ func (m *agentManager) interruptRunLocked(ctx context.Context, workspaceID strin
 		// never retry the interrupt from this path.
 		recoveryErr := fmt.Errorf("AgentHub interrupt outcome may be unknown; it was not retried: %w", err)
 		rt.setRecoveryError(m, recoveryErr)
-		return interruptRunResponse{}, recoveryErr
+		return interruptGenerationResponse{}, recoveryErr
 	}
 	rt.applyAgentHubSessionState(m, session)
-	return interruptRunResponse{Status: "interrupted"}, nil
+	return interruptGenerationResponse{Status: "interrupted"}, nil
 }
 
 func isAgentHubTurnInterruptible(state string) bool {
@@ -356,23 +356,23 @@ func (e *agentHubTurnConflictError) Error() string {
 
 // interruptibleAgentHubSession re-reads the AgentHub projection immediately
 // before the non-idempotent interrupt. This closes the stale-page window and
-// refuses to act on a session that no longer belongs to this PUA run.
-func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run agentRun, client *agentHubClient) (agentHubSession, error) {
+// refuses to act on a session that no longer belongs to this PUA generation.
+func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, record generationRecord, client *agentHubClient) (agentHubSession, error) {
 	cfg, _, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return agentHubSession{}, err
 	}
-	session, err := client.GetSession(ctx, run.AgentHubSessionID)
+	session, err := client.GetSession(ctx, record.AgentHubSessionID)
 	if err != nil {
 		return agentHubSession{}, fmt.Errorf("read current AgentHub turn state: %w", err)
 	}
 	source := session.Source
-	expectedExternalID := strings.TrimSpace(run.SourceExternalID)
-	if source == nil || source.App != agentHubSourceApp || source.InstanceID != runSourceInstanceID(cfg, run) ||
+	expectedExternalID := strings.TrimSpace(record.SourceExternalID)
+	if source == nil || source.App != agentHubSourceApp || source.InstanceID != generationSourceInstanceID(cfg, record) ||
 		expectedExternalID == "" || source.ExternalID != expectedExternalID {
 		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session does not belong to the current PUA run"}
 	}
-	if strings.TrimSpace(session.ID) == "" || session.ID != strings.TrimSpace(run.AgentHubSessionID) {
+	if strings.TrimSpace(session.ID) == "" || session.ID != strings.TrimSpace(record.AgentHubSessionID) {
 		return agentHubSession{}, &agentHubTurnConflictError{message: "AgentHub session identity changed before interrupt"}
 	}
 	if !isAgentHubTurnInterruptible(session.State) {
@@ -382,8 +382,8 @@ func (m *agentManager) interruptibleAgentHubSession(ctx context.Context, run age
 }
 
 func (m *agentManager) resolveAgentHubApproval(w http.ResponseWriter, r *http.Request, rt *agentRuntime, req agentApprovalRequest) {
-	run := rt.snapshotRun()
-	if err := m.withResourceController(r.Context(), rt.workspace, run.ResourceID, func() error {
+	record := rt.snapshotGeneration()
+	if err := m.withResourceController(r.Context(), rt.workspace, record.ResourceID, func() error {
 		m.resolveAgentHubApprovalLocked(w, r, rt, req)
 		return nil
 	}); err != nil {
@@ -404,9 +404,9 @@ func (m *agentManager) resolveAgentHubApprovalLocked(w http.ResponseWriter, r *h
 		return
 	}
 	rt.mu.Lock()
-	run, client := rt.run, rt.agentHub
+	record, client := rt.record, rt.agentHub
 	rt.mu.Unlock()
-	session, err := client.Approval(r.Context(), run.AgentHubSessionID, req.RequestID, reply)
+	session, err := client.Approval(r.Context(), record.AgentHubSessionID, req.RequestID, reply)
 	if err != nil {
 		writeError(w, fmt.Errorf("AgentHub approval outcome may be unknown; it was not retried: %w", err), http.StatusBadGateway)
 		return
@@ -444,10 +444,10 @@ func normalizeAgentHubApprovalReply(req agentApprovalRequest) (agentHubApprovalR
 	return reply, nil
 }
 
-// recoverAgentHubRuns rebuilds lightweight runtime projections at startup from
-// one AgentHub session list and the local run indexes. It never reads event
+// recoverAgentHubGenerations rebuilds lightweight runtime projections at startup from
+// one AgentHub session list and the local generation indexes. It never reads event
 // history and never opens event streams.
-func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
+func (m *agentManager) recoverAgentHubGenerations(ctx context.Context) error {
 	cfg, client, err := m.agentHubRuntimeConfig()
 	if err != nil {
 		return err
@@ -472,23 +472,23 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 		if !m.server.ownsWorkspace(workspace.Path) {
 			continue
 		}
-		runs, loadErr := loadAgentRunsCurrent(workspace.Path)
+		records, loadErr := loadCurrentGenerationRecords(workspace.Path)
 		if loadErr != nil {
 			failures = append(failures, fmt.Sprintf("%s: %v", workspace.ID, loadErr))
 			continue
 		}
-		for _, run := range runs {
-			if !isAgentHubRun(run) {
+		for _, record := range records {
+			if !isAgentHubGeneration(record) {
 				continue
 			}
 			candidates := []agentHubSession{}
-			if session, ok := byExternalID[sourceLookupKey(runSourceInstanceID(cfg, run), run.SourceExternalID)]; ok {
+			if session, ok := byExternalID[sourceLookupKey(generationSourceInstanceID(cfg, record), record.SourceExternalID)]; ok {
 				candidates = []agentHubSession{session}
-			} else if session, ok := byID[strings.TrimSpace(run.AgentHubSessionID)]; ok {
+			} else if session, ok := byID[strings.TrimSpace(record.AgentHubSessionID)]; ok {
 				candidates = []agentHubSession{session}
 			}
-			if recoverErr := m.recoverAgentHubRun(ctx, cfg, client, workspace, run, candidates); recoverErr != nil {
-				failures = append(failures, fmt.Sprintf("%s/%s: %v", workspace.ID, run.ID, recoverErr))
+			if recoverErr := m.recoverAgentHubGeneration(ctx, cfg, client, workspace, record, candidates); recoverErr != nil {
+				failures = append(failures, fmt.Sprintf("%s/%s: %v", workspace.ID, record.ID, recoverErr))
 			}
 		}
 	}
@@ -506,50 +506,50 @@ func (m *agentManager) recoverAgentHubRuns(ctx context.Context) error {
 	return nil
 }
 
-// recoverAgentHubRun rebuilds the lightweight runtime projection for one run
-// without eagerly loading event history or opening an event stream. A persisted
+// recoverAgentHubGeneration rebuilds the lightweight runtime projection for one
+// generation without eagerly loading event history or opening an event stream. A persisted
 // active -> ready/stopped edge, or a pending completion inspection, may replay
 // the bounded durable history needed for the completion marker. candidates
 // carries the sessions found by the single instance-wide startup query.
-// Live runs may recreate a missing AgentHub session from the source tuple.
-func (m *agentManager) recoverAgentHubRun(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, run agentRun, candidates []agentHubSession) error {
-	return m.withResourceController(ctx, workspace, run.ResourceID, func() error {
-		return m.recoverAgentHubRunLocked(ctx, cfg, client, workspace, run, candidates)
+// Live generations may recreate a missing AgentHub session from the source tuple.
+func (m *agentManager) recoverAgentHubGeneration(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, record generationRecord, candidates []agentHubSession) error {
+	return m.withResourceController(ctx, workspace, record.ResourceID, func() error {
+		return m.recoverAgentHubGenerationLocked(ctx, cfg, client, workspace, record, candidates)
 	})
 }
 
-func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, run agentRun, candidates []agentHubSession) error {
-	source := agentHubSource{App: agentHubSourceApp, InstanceID: runSourceInstanceID(cfg, run), ExternalID: run.SourceExternalID}
-	live := isLiveAgentStatus(run.Status)
+func (m *agentManager) recoverAgentHubGenerationLocked(ctx context.Context, cfg config, client *agentHubClient, workspace serveWorkspace, record generationRecord, candidates []agentHubSession) error {
+	source := agentHubSource{App: agentHubSourceApp, InstanceID: generationSourceInstanceID(cfg, record), ExternalID: record.SourceExternalID}
+	live := isLiveAgentStatus(record.Status)
 	if len(candidates) == 0 && live {
 		request := agentHubCreateSessionRequest{
-			Title: run.Title, Cwd: run.Cwd, AgentName: run.AgentHubAgentName,
+			Title: record.Title, Cwd: record.Cwd, AgentName: record.AgentHubAgentName,
 			Source:         &source,
-			InitialMessage: agentHubInitialMessage(run.PendingInitialMessage, ""),
+			InitialMessage: agentHubInitialMessage(record.PendingInitialMessage, ""),
 		}
-		if run.GenerationID != "" {
+		if record.GenerationID != "" {
 			source.Metadata = map[string]string{
-				"workspaceInstanceId": run.SourceInstanceID, "resourceId": run.ResourceID,
-				"generation": strconv.Itoa(run.Generation), "generationId": run.GenerationID,
-				"bindingKind": run.BindingKind, "bindingName": run.BindingName,
-				"profileRevision": run.ProfileRevision,
+				"workspaceInstanceId": record.SourceInstanceID, "resourceId": record.ResourceID,
+				"generation": strconv.Itoa(record.Generation), "generationId": record.GenerationID,
+				"bindingKind": record.BindingKind, "bindingName": record.BindingName,
+				"profileRevision": record.ProfileRevision,
 			}
 			request.Source = &source
-			request.IdempotencyKey = run.GenerationID
+			request.IdempotencyKey = record.GenerationID
 			request.InitialMessage = nil
 		}
 		recovered, createErr := m.findOrCreateAgentHubSession(ctx, client, source, request)
 		if createErr != nil {
-			m.markAgentRunRecovering(workspace, run)
+			m.markGenerationRecovering(workspace, record)
 			return createErr
 		}
 		candidates = []agentHubSession{recovered}
 	}
 	if len(candidates) != 1 {
-		rt := newAgentHubRuntime(m, workspace, run, client)
+		rt := newAgentHubRuntime(m, workspace, record, client)
 		m.registerRuntime(rt)
 		if live {
-			m.markAgentRunRecovering(workspace, rt.snapshotRun())
+			m.markGenerationRecovering(workspace, rt.snapshotGeneration())
 		}
 		if len(candidates) > 1 {
 			return duplicateAgentHubSourceError(source, candidates)
@@ -557,35 +557,35 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 		return nil
 	}
 	session := candidates[0]
-	previousStatus := run.Status
-	run.AgentHubSessionID = session.ID
+	previousStatus := record.Status
+	record.AgentHubSessionID = session.ID
 	if strings.TrimSpace(session.AgentName) != "" {
-		run.AgentHubAgentName = session.AgentName
+		record.AgentHubAgentName = session.AgentName
 	}
-	if run.GenerationID == "" {
-		run.PendingInitialMessage = ""
+	if record.GenerationID == "" {
+		record.PendingInitialMessage = ""
 	}
-	rt := newAgentHubRuntime(m, workspace, run, client)
+	rt := newAgentHubRuntime(m, workspace, record, client)
 	// Let applyAgentHubSessionState compare the recovered state with the
 	// persisted projection. This preserves a running -> ready/stopped edge across
 	// a PUA restart instead of treating recovery as a fresh idle baseline.
 	rt.agentHubState = agentHubStateForPUAStatus(previousStatus)
 	m.registerRuntime(rt)
 	rt.applyAgentHubSessionState(m, session)
-	updated := rt.snapshotRun()
+	updated := rt.snapshotGeneration()
 	if updated.GenerationID != "" && (session.State == "ready" || (updated.IdleSleepStopRequested && (session.State == "stopping" || session.State == "stopped"))) {
 		if err := m.reconcileIdleGenerationLocked(ctx, workspace, updated, session, client); err != nil {
 			rt.addPUANotice(m, "warning", "resource/idle-sleep", err.Error())
 		}
 	}
-	if run.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
-		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
+	if record.ReplacementPending && (session.State == "ready" || session.State == "stopped") {
+		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
 			m.retireResourceGenerationLocked(context.Background(), rt)
 			return nil
 		})
-	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(run.PendingMessages) > 0 {
-		_ = m.enqueueResourceController(rt.workspace, run.ResourceID, func() error {
-			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, run.ResourceID); err != nil {
+	} else if (session.State == "ready" || session.State == "running" || session.State == "waiting_approval") && len(record.PendingMessages) > 0 {
+		_ = m.enqueueResourceController(rt.workspace, record.ResourceID, func() error {
+			if err := m.reconcileResourceMailboxLocked(context.Background(), rt.workspace, record.ResourceID); err != nil {
 				rt.addPUANotice(m, "warning", "resource/message", "Queued message recovery failed: "+err.Error())
 			}
 			return nil
@@ -603,15 +603,15 @@ func (m *agentManager) recoverAgentHubRunLocked(ctx context.Context, cfg config,
 	return nil
 }
 
-func (m *agentManager) markAgentRunRecovering(workspace serveWorkspace, run agentRun) {
-	run.Status = "recovering"
-	run.UpdatedAt = time.Now().Format(time.RFC3339)
-	if rt := m.runtimeByID(run.ID); rt != nil {
-		_, _ = rt.mutateRun(func(current *agentRun) {
-			current.Status = run.Status
-			current.UpdatedAt = run.UpdatedAt
+func (m *agentManager) markGenerationRecovering(workspace serveWorkspace, record generationRecord) {
+	record.Status = "recovering"
+	record.UpdatedAt = time.Now().Format(time.RFC3339)
+	if rt := m.runtimeByID(record.ID); rt != nil {
+		_, _ = rt.mutateGeneration(func(current *generationRecord) {
+			current.Status = record.Status
+			current.UpdatedAt = record.UpdatedAt
 		})
 		return
 	}
-	_ = saveAgentRun(workspace.Path, run)
+	_ = saveGenerationRecord(workspace.Path, record)
 }

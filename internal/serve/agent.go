@@ -24,9 +24,10 @@ import (
 	"github.com/disksing/pua/internal/workspacepath"
 )
 
-type agentRun struct {
-	// agentRun is the internal persisted generation record. ID is an
-	// implementation key only; resource APIs address records by GenerationID.
+// generationRecord is the internal persisted record of one resource
+// generation. ID is an implementation key only; resource APIs address
+// records by GenerationID.
+type generationRecord struct {
 	ID                 string `json:"id"`
 	WorkspaceID        string `json:"workspaceId"`
 	ResourceID         string `json:"resourceId,omitempty"`
@@ -180,7 +181,7 @@ type agentRuntime struct {
 	retirementMu          sync.Mutex
 	workspace             serveWorkspace
 	manager               *agentManager
-	run                   agentRun
+	record                generationRecord
 	agentHub              *agentHubClient
 	agentHubState         string
 	agentHubStopRequested bool
@@ -353,23 +354,23 @@ func createUniqueUpload(dir, name string) (string, string, *os.File, error) {
 	}
 }
 
-func isAgentHubRun(run agentRun) bool {
-	return strings.TrimSpace(run.AgentHubSessionID) != "" || strings.TrimSpace(run.SourceExternalID) != ""
+func isAgentHubGeneration(record generationRecord) bool {
+	return strings.TrimSpace(record.AgentHubSessionID) != "" || strings.TrimSpace(record.SourceExternalID) != ""
 }
 
-func agentRunMatchesResource(run agentRun, resourceID string) bool {
+func generationMatchesResource(record generationRecord, resourceID string) bool {
 	resourceID = strings.TrimSpace(resourceID)
 	if resourceID == "" {
 		return true
 	}
 	if resourceID == "workspace" {
-		stored := strings.TrimSpace(run.ResourceID)
+		stored := strings.TrimSpace(record.ResourceID)
 		return stored == "" || stored == "workspace"
 	}
-	return run.ResourceID == resourceID
+	return record.ResourceID == resourceID
 }
 
-func (m *agentManager) agentRunCwd(ctx context.Context, workspace serveWorkspace, resourceID, requested string) (string, error) {
+func (m *agentManager) generationCwd(ctx context.Context, workspace serveWorkspace, resourceID, requested string) (string, error) {
 	if strings.TrimSpace(requested) != "" {
 		return agentCwd(workspace.Path, requested)
 	}
@@ -406,17 +407,17 @@ func (m *agentManager) resourceDir(ctx context.Context, workspace serveWorkspace
 func (m *agentManager) registerRuntime(rt *agentRuntime) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.runtimes[rt.run.ID] = rt
+	m.runtimes[rt.record.ID] = rt
 }
 
-func (m *agentManager) removeRuntime(runID string) {
+func (m *agentManager) removeRuntime(recordID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.runtimes, runID)
+	delete(m.runtimes, recordID)
 }
 
-func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, runID string) {
-	_, rt, err := m.workspaceRuntime(workspaceID, runID)
+func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, workspaceID, recordID string) {
+	_, rt, err := m.workspaceRuntime(workspaceID, recordID)
 	if err != nil || rt == nil {
 		writeError(w, errors.New("run is not active"), http.StatusBadRequest)
 		return
@@ -427,7 +428,7 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 		return
 	}
 	rt.mu.Lock()
-	sessionID := strings.TrimSpace(rt.run.AgentHubSessionID)
+	sessionID := strings.TrimSpace(rt.record.AgentHubSessionID)
 	rt.mu.Unlock()
 	if sessionID == "" {
 		writeError(w, errors.New("run is not attached to AgentHub"), http.StatusBadRequest)
@@ -436,40 +437,40 @@ func (m *agentManager) resolveApproval(w http.ResponseWriter, r *http.Request, w
 	m.resolveAgentHubApproval(w, r, rt, req)
 }
 
-func (m *agentManager) workspaceRuntime(workspaceID, runID string) (serveWorkspace, *agentRuntime, error) {
+func (m *agentManager) workspaceRuntime(workspaceID, recordID string) (serveWorkspace, *agentRuntime, error) {
 	workspace, err := m.server.workspace(workspaceID)
 	if err != nil {
 		return serveWorkspace{}, nil, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	rt := m.runtimes[runID]
+	rt := m.runtimes[recordID]
 	if rt != nil && rt.workspace.ID != workspaceID {
 		return serveWorkspace{}, nil, errors.New("run belongs to another workspace")
 	}
 	return workspace, rt, nil
 }
 
-func (m *agentManager) subscribe(runID string, ch chan agentStreamMessage) {
+func (m *agentManager) subscribe(recordID string, ch chan agentStreamMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.subscribers[runID] == nil {
-		m.subscribers[runID] = make(map[chan agentStreamMessage]bool)
+	if m.subscribers[recordID] == nil {
+		m.subscribers[recordID] = make(map[chan agentStreamMessage]bool)
 	}
-	m.subscribers[runID][ch] = true
+	m.subscribers[recordID][ch] = true
 }
 
-func (m *agentManager) unsubscribe(runID string, ch chan agentStreamMessage) {
+func (m *agentManager) unsubscribe(recordID string, ch chan agentStreamMessage) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.subscribers[runID], ch)
+	delete(m.subscribers[recordID], ch)
 	close(ch)
 }
 
-func (m *agentManager) publishNotice(runID string, notice puaNotice) {
+func (m *agentManager) publishNotice(recordID string, notice puaNotice) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	for ch := range m.subscribers[runID] {
+	for ch := range m.subscribers[recordID] {
 		noticeCopy := notice
 		select {
 		case ch <- agentStreamMessage{Notice: &noticeCopy}:
@@ -478,10 +479,10 @@ func (m *agentManager) publishNotice(runID string, notice puaNotice) {
 	}
 }
 
-func (m *agentManager) runtimeByID(runID string) *agentRuntime {
+func (m *agentManager) runtimeByID(recordID string) *agentRuntime {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runtimes[runID]
+	return m.runtimes[recordID]
 }
 
 // handleTurnFinished records the durable terminal event through one idempotent
@@ -493,7 +494,7 @@ func (rt *agentRuntime) handleTurnFinished(m *agentManager, session agentHubSess
 }
 
 func (rt *agentRuntime) markTurnCompletionPending() {
-	_, _ = rt.mutateRun(func(run *agentRun) { run.CompletionPending = true })
+	_, _ = rt.mutateGeneration(func(record *generationRecord) { record.CompletionPending = true })
 }
 
 func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
@@ -501,23 +502,23 @@ func (rt *agentRuntime) prepareTurnCompletion(session agentHubSession) {
 	if sessionID == "" {
 		return
 	}
-	_, _ = rt.mutateRun(func(run *agentRun) {
-		if run.CompletionSessionID == sessionID {
+	_, _ = rt.mutateGeneration(func(record *generationRecord) {
+		if record.CompletionSessionID == sessionID {
 			return
 		}
 		// This path is entered only after an active -> ready/stopped edge, so
 		// inspect the new session from its beginning instead of baselining away
 		// the just-finished turn.
-		run.CompletionSessionID = sessionID
-		run.CompletionCursor = 0
-		run.CompletionEventID = 0
-		run.CompletionMarker = ""
-		run.CompletionState = ""
-		run.CompletionHasFinalReply = false
-		run.CompletionTurnID = ""
-		run.CompletionAt = ""
-		run.CompletionPending = false
-		run.AgentHubSessionID = sessionID
+		record.CompletionSessionID = sessionID
+		record.CompletionCursor = 0
+		record.CompletionEventID = 0
+		record.CompletionMarker = ""
+		record.CompletionState = ""
+		record.CompletionHasFinalReply = false
+		record.CompletionTurnID = ""
+		record.CompletionAt = ""
+		record.CompletionPending = false
+		record.AgentHubSessionID = sessionID
 	})
 }
 
@@ -528,40 +529,40 @@ func (rt *agentRuntime) recordTurnCompletion(session agentHubSession) {
 	}
 	rt.mu.Lock()
 	client := rt.agentHub
-	run := rt.run
+	record := rt.record
 	rt.mu.Unlock()
-	if client == nil || strings.TrimSpace(run.AgentHubSessionID) != sessionID {
+	if client == nil || strings.TrimSpace(record.AgentHubSessionID) != sessionID {
 		return
 	}
 
-	// A resumed run may be attached to a fresh AgentHub session whose event
+	// A resumed generation may be attached to a fresh AgentHub session whose event
 	// cursor starts at one again. The first observation is a baseline, never a
 	// historical notification.
-	if run.CompletionSessionID != sessionID {
-		_, _ = rt.mutateRun(func(run *agentRun) {
-			run.CompletionSessionID = sessionID
-			run.CompletionCursor = session.LastEventID
-			run.CompletionEventID = 0
-			run.CompletionMarker = ""
-			run.CompletionState = ""
-			run.CompletionHasFinalReply = false
-			run.CompletionTurnID = ""
-			run.CompletionAt = ""
-			run.CompletionPending = false
+	if record.CompletionSessionID != sessionID {
+		_, _ = rt.mutateGeneration(func(record *generationRecord) {
+			record.CompletionSessionID = sessionID
+			record.CompletionCursor = session.LastEventID
+			record.CompletionEventID = 0
+			record.CompletionMarker = ""
+			record.CompletionState = ""
+			record.CompletionHasFinalReply = false
+			record.CompletionTurnID = ""
+			record.CompletionAt = ""
+			record.CompletionPending = false
 		})
 		return
 	}
-	if session.LastEventID <= run.CompletionCursor {
+	if session.LastEventID <= record.CompletionCursor {
 		// The session projection already covers the durable event cursor. This
 		// keeps terminal/stopped recovery lightweight while still retrying a
 		// completion whose cursor advanced before a prior history read failed.
-		if run.CompletionPending {
-			_, _ = rt.mutateRun(func(run *agentRun) { run.CompletionPending = false })
+		if record.CompletionPending {
+			_, _ = rt.mutateGeneration(func(record *generationRecord) { record.CompletionPending = false })
 		}
 		return
 	}
 
-	cursor := run.CompletionCursor
+	cursor := record.CompletionCursor
 	history := make([]agentHubEvent, 0)
 	latestCursor := cursor
 	for {
@@ -612,21 +613,21 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 	if sessionID == "" {
 		return
 	}
-	_, _ = rt.mutateRun(func(run *agentRun) {
-		if strings.TrimSpace(run.AgentHubSessionID) != sessionID {
+	_, _ = rt.mutateGeneration(func(record *generationRecord) {
+		if strings.TrimSpace(record.AgentHubSessionID) != sessionID {
 			return
 		}
-		if run.CompletionSessionID != sessionID {
-			run.CompletionSessionID = sessionID
-			run.CompletionCursor = 0
-			run.CompletionEventID = 0
-			run.CompletionMarker = ""
-			run.CompletionState = ""
-			run.CompletionHasFinalReply = false
-			run.CompletionTurnID = ""
-			run.CompletionAt = ""
+		if record.CompletionSessionID != sessionID {
+			record.CompletionSessionID = sessionID
+			record.CompletionCursor = 0
+			record.CompletionEventID = 0
+			record.CompletionMarker = ""
+			record.CompletionState = ""
+			record.CompletionHasFinalReply = false
+			record.CompletionTurnID = ""
+			record.CompletionAt = ""
 		}
-		cursor := run.CompletionCursor
+		cursor := record.CompletionCursor
 		latestTerminal := agentHubEvent{}
 		finalReplyByTurn := make(map[string]bool)
 		for _, event := range history {
@@ -649,29 +650,29 @@ func (rt *agentRuntime) recordTurnCompletionHistory(session agentHubSession, his
 		if latestCursor > cursor {
 			cursor = latestCursor
 		}
-		run.CompletionCursor = cursor
-		if latestTerminal.ID > run.CompletionEventID {
-			run.CompletionEventID = latestTerminal.ID
-			run.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
-			run.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
-			run.CompletionHasFinalReply = finalReplyByTurn[latestTerminal.TurnID]
-			run.CompletionTurnID = latestTerminal.TurnID
-			run.CompletionAt = latestTerminal.Time
-			if session.State == "ready" && !run.IdleSleepStopRequested {
-				boundary := agentRunTime(latestTerminal.Time)
+		record.CompletionCursor = cursor
+		if latestTerminal.ID > record.CompletionEventID {
+			record.CompletionEventID = latestTerminal.ID
+			record.CompletionMarker = sessionID + ":" + strconv.FormatInt(latestTerminal.ID, 10)
+			record.CompletionState = strings.TrimPrefix(latestTerminal.Type, "turn.")
+			record.CompletionHasFinalReply = finalReplyByTurn[latestTerminal.TurnID]
+			record.CompletionTurnID = latestTerminal.TurnID
+			record.CompletionAt = latestTerminal.Time
+			if session.State == "ready" && !record.IdleSleepStopRequested {
+				boundary := generationTime(latestTerminal.Time)
 				if boundary.IsZero() {
-					boundary = agentRunTime(run.CompletionAt)
+					boundary = generationTime(record.CompletionAt)
 				}
 				if boundary.IsZero() {
-					boundary = agentRunTime(session.UpdatedAt)
+					boundary = generationTime(session.UpdatedAt)
 				}
 				if !boundary.IsZero() {
-					run.IdleSinceAt = boundary.Format(time.RFC3339Nano)
-					run.IdleDeadlineAt = boundary.Add(rt.manager.resourceIdleSleepAfter()).Format(time.RFC3339Nano)
+					record.IdleSinceAt = boundary.Format(time.RFC3339Nano)
+					record.IdleDeadlineAt = boundary.Add(rt.manager.resourceIdleSleepAfter()).Format(time.RFC3339Nano)
 				}
 			}
 		}
-		run.CompletionPending = false
+		record.CompletionPending = false
 	})
 }
 
@@ -682,7 +683,7 @@ func (rt *agentRuntime) completionHistoryPending(session agentHubSession) bool {
 	}
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return rt.run.CompletionPending && rt.run.CompletionSessionID == sessionID && session.LastEventID > rt.run.CompletionCursor
+	return rt.record.CompletionPending && rt.record.CompletionSessionID == sessionID && session.LastEventID > rt.record.CompletionCursor
 }
 
 func isAgentHubTurnTerminal(eventType string) bool {
@@ -694,29 +695,29 @@ func isAgentHubTurnTerminal(eventType string) bool {
 	}
 }
 
-// mutateRun is the single serialized persistence boundary for an existing
+// mutateGeneration is the single serialized persistence boundary for an existing
 // generation. The in-memory projection is published only after the complete
 // generation (including its mailbox) has been atomically replaced on disk;
 // a write failure restores the previous in-memory value so retry remains
 // possible after the process continues.
-func (rt *agentRuntime) mutateRun(mutate func(*agentRun)) (agentRun, error) {
-	return rt.mutateRuntime(func(runtime *agentRuntime) { mutate(&runtime.run) })
+func (rt *agentRuntime) mutateGeneration(mutate func(*generationRecord)) (generationRecord, error) {
+	return rt.mutateRuntime(func(runtime *agentRuntime) { mutate(&runtime.record) })
 }
 
-func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, error) {
+func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (generationRecord, error) {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	previous := cloneAgentRun(rt.run)
+	previous := cloneGenerationRecord(rt.record)
 	previousState := rt.agentHubState
 	previousStopRequested := rt.agentHubStopRequested
 	previousLifecycleStopInFlight := rt.lifecycleStopInFlight
 	mutate(rt)
-	updated := cloneAgentRun(rt.run)
+	updated := cloneGenerationRecord(rt.record)
 	if reflect.DeepEqual(previous, updated) {
 		return updated, nil
 	}
-	if err := saveAgentRun(rt.workspace.Path, updated); err != nil {
-		rt.run = previous
+	if err := saveGenerationRecord(rt.workspace.Path, updated); err != nil {
+		rt.record = previous
 		rt.agentHubState = previousState
 		rt.agentHubStopRequested = previousStopRequested
 		rt.lifecycleStopInFlight = previousLifecycleStopInFlight
@@ -725,13 +726,13 @@ func (rt *agentRuntime) mutateRuntime(mutate func(*agentRuntime)) (agentRun, err
 	return updated, nil
 }
 
-func cloneAgentRun(run agentRun) agentRun {
-	cloned := run
-	if run.LifecycleReceipt != nil {
-		receipt := *run.LifecycleReceipt
+func cloneGenerationRecord(record generationRecord) generationRecord {
+	cloned := record
+	if record.LifecycleReceipt != nil {
+		receipt := *record.LifecycleReceipt
 		cloned.LifecycleReceipt = &receipt
 	}
-	cloned.PendingMessages = append([]resourceInboundMessage(nil), run.PendingMessages...)
+	cloned.PendingMessages = append([]resourceInboundMessage(nil), record.PendingMessages...)
 	for index := range cloned.PendingMessages {
 		if cloned.PendingMessages[index].Sender != nil {
 			sender := *cloned.PendingMessages[index].Sender
@@ -750,14 +751,14 @@ func isLiveAgentStatus(status string) bool {
 		status == "idle" || status == "stopping" || status == "recovering"
 }
 
-func resourceRunHasActiveTurn(run agentRun) bool {
-	return run.Status == "running" || run.Status == "waiting_approval"
+func generationHasActiveTurn(record generationRecord) bool {
+	return record.Status == "running" || record.Status == "waiting_approval"
 }
 
-func (rt *agentRuntime) snapshotRun() agentRun {
+func (rt *agentRuntime) snapshotGeneration() generationRecord {
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	return rt.run
+	return rt.record
 }
 
 func agentStreamAfterID(r *http.Request) int64 {
@@ -769,96 +770,96 @@ func agentStreamAfterID(r *http.Request) int64 {
 	return afterID
 }
 
-func loadAgentRuns(workspacePath string) ([]agentRun, error) {
+func loadGenerationRecords(workspacePath string) ([]generationRecord, error) {
 	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
 		return nil, err
 	}
-	records, err := store.List()
+	storeRecords, err := store.List()
 	if err != nil {
 		return nil, err
 	}
-	runs, err := generationRecordsToAgentRuns(records)
+	records, err := fromStoreRecords(storeRecords)
 	if err != nil {
 		return nil, err
 	}
-	sortAgentRunsNewestFirst(runs)
-	return runs, nil
+	sortGenerationRecordsNewestFirst(records)
+	return records, nil
 }
 
-func loadAgentRunsCurrent(workspacePath string) ([]agentRun, error) {
+func loadCurrentGenerationRecords(workspacePath string) ([]generationRecord, error) {
 	store, err := openGenerationStore(workspacePath, "")
 	if err != nil {
 		return nil, err
 	}
-	records, err := store.ListCurrent()
+	storeRecords, err := store.ListCurrent()
 	if err != nil {
 		return nil, err
 	}
-	runs, err := generationRecordsToAgentRuns(records)
+	records, err := fromStoreRecords(storeRecords)
 	if err != nil {
 		return nil, err
 	}
-	sortAgentRunsNewestFirst(runs)
-	return runs, nil
+	sortGenerationRecordsNewestFirst(records)
+	return records, nil
 }
 
-func saveAgentRun(workspacePath string, run agentRun) error {
+func saveGenerationRecord(workspacePath string, record generationRecord) error {
 	// New in-process callers always create generation-addressed records. Keep
 	// hand-built test/compatibility projections usable without allowing records
 	// loaded from an old file (which carry Legacy=true) to become a mutable
 	// current generation during migration.
-	if !run.Legacy && strings.TrimSpace(run.GenerationID) == "" && strings.TrimSpace(run.SourceExternalID) != "" && strings.TrimSpace(run.ID) != "" && isAgentHubRun(run) {
+	if !record.Legacy && strings.TrimSpace(record.GenerationID) == "" && strings.TrimSpace(record.SourceExternalID) != "" && strings.TrimSpace(record.ID) != "" && isAgentHubGeneration(record) {
 		// Compatibility callers may hand us a projection that predates explicit
-		// generation IDs. Derive one from its stable run ID so a later projection
+		// generation IDs. Derive one from its stable record ID so a later projection
 		// update addresses the same current file instead of creating a new owner.
-		run.GenerationID = "gen-" + strings.TrimSpace(run.ID)
-		if run.Generation == 0 {
-			run.Generation = 1
+		record.GenerationID = "gen-" + strings.TrimSpace(record.ID)
+		if record.Generation == 0 {
+			record.Generation = 1
 		}
 	}
-	store, err := openGenerationStore(workspacePath, run.SourceInstanceID)
+	store, err := openGenerationStore(workspacePath, record.SourceInstanceID)
 	if err != nil {
 		return err
 	}
-	record, err := agentRunToGenerationRecord(run)
+	storeRecord, err := toStoreRecord(record)
 	if err != nil {
 		return err
 	}
-	if run.Retired {
-		return store.SaveRetired(record, run.RetireReason)
+	if storeRecord.Retired {
+		return store.SaveRetired(storeRecord, storeRecord.RetireReason)
 	}
-	return store.SaveCurrent(record)
+	return store.SaveCurrent(storeRecord)
 }
 
-func sortAgentRunsNewestFirst(runs []agentRun) {
-	sort.SliceStable(runs, func(i, j int) bool {
-		if normalizedResourceID(runs[i].ResourceID) == normalizedResourceID(runs[j].ResourceID) &&
-			runs[i].Generation > 0 && runs[j].Generation > 0 && runs[i].Generation != runs[j].Generation {
-			return runs[i].Generation > runs[j].Generation
+func sortGenerationRecordsNewestFirst(records []generationRecord) {
+	sort.SliceStable(records, func(i, j int) bool {
+		if normalizedResourceID(records[i].ResourceID) == normalizedResourceID(records[j].ResourceID) &&
+			records[i].Generation > 0 && records[j].Generation > 0 && records[i].Generation != records[j].Generation {
+			return records[i].Generation > records[j].Generation
 		}
-		left := agentRunRecency(runs[i])
-		right := agentRunRecency(runs[j])
+		left := generationRecordRecency(records[i])
+		right := generationRecordRecency(records[j])
 		if !left.Equal(right) {
 			return left.After(right)
 		}
-		leftCreated := agentRunTime(runs[i].CreatedAt)
-		rightCreated := agentRunTime(runs[j].CreatedAt)
+		leftCreated := generationTime(records[i].CreatedAt)
+		rightCreated := generationTime(records[j].CreatedAt)
 		if !leftCreated.Equal(rightCreated) {
 			return leftCreated.After(rightCreated)
 		}
-		return runs[i].ID > runs[j].ID
+		return records[i].ID > records[j].ID
 	})
 }
 
-func agentRunRecency(run agentRun) time.Time {
-	if parsed := agentRunTime(run.UpdatedAt); !parsed.IsZero() {
+func generationRecordRecency(record generationRecord) time.Time {
+	if parsed := generationTime(record.UpdatedAt); !parsed.IsZero() {
 		return parsed
 	}
-	return agentRunTime(run.CreatedAt)
+	return generationTime(record.CreatedAt)
 }
 
-func agentRunTime(value string) time.Time {
+func generationTime(value string) time.Time {
 	parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value))
 	if err != nil {
 		return time.Time{}
@@ -866,28 +867,28 @@ func agentRunTime(value string) time.Time {
 	return parsed
 }
 
-func writeAgentRunsIndexLocked(workspacePath string, runs []agentRun) error {
+func writeGenerationRecordsIndexLocked(workspacePath string, records []generationRecord) error {
 	// Kept as a test/migration compatibility helper. Each record is now written
 	// through the generation store; no legacy global array is regenerated.
-	for _, run := range runs {
-		if err := saveAgentRun(workspacePath, run); err != nil {
+	for _, record := range records {
+		if err := saveGenerationRecord(workspacePath, record); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func loadAgentRun(workspacePath, runID string) (agentRun, error) {
-	runs, err := loadAgentRuns(workspacePath)
+func loadGenerationRecord(workspacePath, recordID string) (generationRecord, error) {
+	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
-		return agentRun{}, err
+		return generationRecord{}, err
 	}
-	for _, item := range runs {
-		if item.ID == runID {
+	for _, item := range records {
+		if item.ID == recordID {
 			return item, nil
 		}
 	}
-	return agentRun{}, fmt.Errorf("run not found: %s", runID)
+	return generationRecord{}, fmt.Errorf("run not found: %s", recordID)
 }
 
 func ensureAgentDirs(workspacePath string) error {
@@ -920,7 +921,7 @@ func agentCwd(workspacePath, requested string) (string, error) {
 	return safeWorkspacePath(workspacePath, requested)
 }
 
-func newRunID() string {
+func newGenerationRecordID() string {
 	var b [8]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return fmt.Sprintf("run-%d", time.Now().UnixNano())

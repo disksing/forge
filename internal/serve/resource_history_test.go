@@ -118,8 +118,8 @@ func TestResourceHistoryPreservesCancelledTurnStatus(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	if err := saveAgentRun(workspace.Path, agentRun{
-		ID: "run-cancelled-history", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	if err := saveGenerationRecord(workspace.Path, generationRecord{
+		ID: "gen-cancelled-history", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		Generation: 1, GenerationID: "gen-cancelled-history", AgentHubSessionID: "ses-cancelled-history",
 		Status: "idle", CreatedAt: now, UpdatedAt: now,
 	}); err != nil {
@@ -154,16 +154,16 @@ func TestResourceHistoryPaginatesAcrossGenerationsWithGap(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 
 	now := time.Now().Format(time.RFC3339Nano)
-	runs := []agentRun{
-		{ID: "run-3", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 3, GenerationID: "gen-3", AgentHubSessionID: "ses-3", Title: "Task (gen #3)", BindingKind: "profile", BindingName: "default", AgentHubAgentName: "fake-agent", Status: "running", CreatedAt: now, UpdatedAt: now},
-		{ID: "run-2", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-2", AgentHubSessionID: "ses-missing", Title: "Task (gen #2)", BindingKind: "profile", BindingName: "default", AgentHubAgentName: "fake-agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
-		{ID: "run-1", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-1", AgentHubSessionID: "ses-1", Title: "Original title (gen #1)", BindingKind: "agent", BindingName: "Old agent", AgentHubAgentName: "Old agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
+	records := []generationRecord{
+		{ID: "gen-3", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 3, GenerationID: "gen-3", AgentHubSessionID: "ses-3", Title: "Task (gen #3)", BindingKind: "profile", BindingName: "default", AgentHubAgentName: "fake-agent", Status: "running", CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-2", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-2", AgentHubSessionID: "ses-missing", Title: "Task (gen #2)", BindingKind: "profile", BindingName: "default", AgentHubAgentName: "fake-agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-1", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-1", AgentHubSessionID: "ses-1", Title: "Original title (gen #1)", BindingKind: "agent", BindingName: "Old agent", AgentHubAgentName: "Old agent", Status: "archived", CreatedAt: now, UpdatedAt: now},
 	}
-	if err := saveAgentRun(workspace.Path, runs[0]); err != nil {
+	if err := saveGenerationRecord(workspace.Path, records[0]); err != nil {
 		t.Fatal(err)
 	}
-	for _, run := range runs[1:] {
-		saveRetiredAgentRunForTest(t, workspace.Path, run, "history_fixture")
+	for _, record := range records[1:] {
+		saveRetiredGenerationForTest(t, workspace.Path, record, "history_fixture")
 	}
 	fake.mu.Lock()
 	fake.turns["ses-3"] = []agentHubTurn{historyTestTurn("turn-a", 1, true), historyTestTurn("turn-b", 5, false)}
@@ -280,12 +280,12 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{
-		ID: "run-current", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	record := generationRecord{
+		ID: "gen-current", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		Generation: 1, GenerationID: "gen-current", AgentHubSessionID: "ses-current",
 		Status: "idle", CreatedAt: now, UpdatedAt: now,
 	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 	fake.base.mu.Lock()
@@ -307,12 +307,12 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 		t.Fatalf("stale generation response = %d %s", mismatch.Code, mismatch.Body.String())
 	}
 
-	oldRun := agentRun{
-		ID: "run-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	oldGeneration := generationRecord{
+		ID: "gen-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		Generation: 0, GenerationID: "gen-old", AgentHubSessionID: "ses-old",
 		Status: "stopped", CreatedAt: now, UpdatedAt: now,
 	}
-	saveRetiredAgentRunForTest(t, workspace.Path, oldRun, "history_fixture")
+	saveRetiredGenerationForTest(t, workspace.Path, oldGeneration, "history_fixture")
 	fake.base.mu.Lock()
 	fake.base.sessions["ses-old"] = agentHubSession{ID: "ses-old", State: "stopped"}
 	fake.base.events["ses-old"] = []agentHubEvent{{ID: 2, SessionID: "ses-old", Type: "message.input", Time: now, Data: json.RawMessage(`{"text":"archived"}`)}}
@@ -344,9 +344,9 @@ func TestResourceLiveRoutesBindCurrentGenerationAndUploadToResource(t *testing.T
 	if err != nil || string(data) != "resource attachment" {
 		t.Fatalf("resource attachment = %q err=%v", data, err)
 	}
-	runs, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(runs) != 2 {
-		t.Fatalf("upload created or removed a generation: runs=%#v err=%v", runs, err)
+	records, err := loadGenerationRecords(workspace.Path)
+	if err != nil || len(records) != 2 {
+		t.Fatalf("upload created or removed a generation: runs=%#v err=%v", records, err)
 	}
 }
 
@@ -356,18 +356,18 @@ func TestResourceStreamAllowsResumableSuspendedCurrentGeneration(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{
-		ID: "run-suspended", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	record := generationRecord{
+		ID: "gen-suspended", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		Generation: 1, GenerationID: "gen-suspended", AgentHubSessionID: "ses-suspended",
 		Status: "idle-suspended", IdleSleepStopRequested: true, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
 	fake.base.mu.Lock()
-	fake.base.sessions[run.AgentHubSessionID] = agentHubSession{ID: run.AgentHubSessionID, State: "stopped"}
-	fake.base.events[run.AgentHubSessionID] = []agentHubEvent{{
-		ID: 1, SessionID: run.AgentHubSessionID, Type: "session.state", Time: now,
+	fake.base.sessions[record.AgentHubSessionID] = agentHubSession{ID: record.AgentHubSessionID, State: "stopped"}
+	fake.base.events[record.AgentHubSessionID] = []agentHubEvent{{
+		ID: 1, SessionID: record.AgentHubSessionID, Type: "session.state", Time: now,
 		Data: json.RawMessage(`{"state":"stopped"}`),
 	}}
 	fake.base.mu.Unlock()
@@ -375,31 +375,31 @@ func TestResourceStreamAllowsResumableSuspendedCurrentGeneration(t *testing.T) {
 	stream := httptest.NewRecorder()
 	manager.server.handleWorkspace(stream, httptest.NewRequest(http.MethodGet,
 		"/api/workspaces/"+workspace.ID+"/resources/project1.task1/stream?generationId=gen-suspended", nil))
-	if stream.Code != http.StatusOK || stream.Header().Get("X-PUA-Generation-ID") != run.GenerationID || !strings.Contains(stream.Body.String(), `"state":"stopped"`) {
+	if stream.Code != http.StatusOK || stream.Header().Get("X-PUA-Generation-ID") != record.GenerationID || !strings.Contains(stream.Body.String(), `"state":"stopped"`) {
 		t.Fatalf("suspended resource stream response = %d headers=%v body=%s", stream.Code, stream.Header(), stream.Body.String())
 	}
 }
 
 func TestResourceEventStreamabilityFollowsGenerationLifecycle(t *testing.T) {
-	base := agentRun{Status: "stopped", AgentHubSessionID: "ses-current"}
+	base := generationRecord{Status: "stopped", AgentHubSessionID: "ses-current"}
 	tests := []struct {
-		name string
-		run  agentRun
-		want bool
+		name   string
+		record generationRecord
+		want   bool
 	}{
-		{name: "live idle", run: agentRun{Status: "idle"}, want: true},
-		{name: "idle suspended", run: agentRun{Status: "idle-suspended", AgentHubSessionID: "ses-current"}, want: true},
-		{name: "recoverable stopped", run: base, want: true},
-		{name: "missing session", run: agentRun{Status: "stopped"}, want: false},
-		{name: "resume unavailable", run: func() agentRun { value := base; value.SessionResumeUnavailable = true; return value }(), want: false},
-		{name: "replacement pending", run: func() agentRun { value := base; value.ReplacementPending = true; return value }(), want: false},
-		{name: "archive requested", run: func() agentRun { value := base; value.ArchivedTaskStopRequested = true; return value }(), want: false},
-		{name: "retired", run: agentRun{Status: "archived", AgentHubSessionID: "ses-current"}, want: false},
+		{name: "live idle", record: generationRecord{Status: "idle"}, want: true},
+		{name: "idle suspended", record: generationRecord{Status: "idle-suspended", AgentHubSessionID: "ses-current"}, want: true},
+		{name: "recoverable stopped", record: base, want: true},
+		{name: "missing session", record: generationRecord{Status: "stopped"}, want: false},
+		{name: "resume unavailable", record: func() generationRecord { value := base; value.SessionResumeUnavailable = true; return value }(), want: false},
+		{name: "replacement pending", record: func() generationRecord { value := base; value.ReplacementPending = true; return value }(), want: false},
+		{name: "archive requested", record: func() generationRecord { value := base; value.ArchivedTaskStopRequested = true; return value }(), want: false},
+		{name: "retired", record: generationRecord{Status: "archived", AgentHubSessionID: "ses-current"}, want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := isResourceEventStreamable(test.run); got != test.want {
-				t.Fatalf("isResourceEventStreamable(%#v) = %v, want %v", test.run, got, test.want)
+			if got := isResourceEventStreamable(test.record); got != test.want {
+				t.Fatalf("isResourceEventStreamable(%#v) = %v, want %v", test.record, got, test.want)
 			}
 		})
 	}
@@ -411,14 +411,14 @@ func TestResourceHistoryReferencesSurviveRestartAndResourceArchive(t *testing.T)
 	defer hub.Close()
 	manager, workspace, configPath := newRuntimeTestManager(t, hub.URL)
 	now := time.Now().Format(time.RFC3339Nano)
-	runs := []agentRun{
-		{ID: "run-new", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-new", AgentHubSessionID: "ses-new", Status: "idle", CreatedAt: now, UpdatedAt: now},
-		{ID: "run-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-old", AgentHubSessionID: "ses-old", Status: "archived", CreatedAt: now, UpdatedAt: now},
+	records := []generationRecord{
+		{ID: "gen-new", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 2, GenerationID: "gen-new", AgentHubSessionID: "ses-new", Status: "idle", CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-old", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-old", AgentHubSessionID: "ses-old", Status: "archived", CreatedAt: now, UpdatedAt: now},
 	}
-	if err := saveAgentRun(workspace.Path, runs[0]); err != nil {
+	if err := saveGenerationRecord(workspace.Path, records[0]); err != nil {
 		t.Fatal(err)
 	}
-	saveRetiredAgentRunForTest(t, workspace.Path, runs[1], "history_fixture")
+	saveRetiredGenerationForTest(t, workspace.Path, records[1], "history_fixture")
 	fake.mu.Lock()
 	fake.turns["ses-new"] = []agentHubTurn{historyTestTurn("same-turn-id", 10, true)}
 	fake.turns["ses-old"] = []agentHubTurn{historyTestTurn("same-turn-id", 1, true)}

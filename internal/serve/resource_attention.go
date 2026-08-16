@@ -154,14 +154,14 @@ func (s *server) allocateResourceTurnNumber(path, resourceID string) (int, error
 	resourceID = normalizedResourceID(resourceID)
 	attention := state.Attention[resourceID]
 	maximum := attention.TurnNumber
-	runs, err := loadAgentRuns(path)
+	records, err := loadGenerationRecords(path)
 	if err != nil {
 		return 0, err
 	}
-	for _, run := range runs {
-		candidateID := normalizedResourceID(run.ResourceID)
-		if candidateID == resourceID && run.TurnNumber > maximum {
-			maximum = run.TurnNumber
+	for _, record := range records {
+		candidateID := normalizedResourceID(record.ResourceID)
+		if candidateID == resourceID && record.TurnNumber > maximum {
+			maximum = record.TurnNumber
 		}
 	}
 	attention.TurnNumber = maximum + 1
@@ -274,47 +274,47 @@ func validateAttentionResource(path, resourceID string) error {
 	return nil
 }
 
-func selectLatestAgentHubResourceRuns(runs []agentRun) map[string]agentRun {
-	byResourceID := make(map[string]agentRun)
-	for _, run := range runs {
-		if strings.TrimSpace(run.GenerationID) == "" || !isAgentHubRun(run) {
+func selectLatestAgentHubResourceGenerations(records []generationRecord) map[string]generationRecord {
+	byResourceID := make(map[string]generationRecord)
+	for _, record := range records {
+		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) {
 			continue
 		}
-		resourceID := normalizedResourceID(run.ResourceID)
+		resourceID := normalizedResourceID(record.ResourceID)
 		if resourceID == "" {
 			resourceID = "workspace"
 		}
-		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeRunNewer(run, current) {
-			byResourceID[resourceID] = run
+		if current, ok := byResourceID[resourceID]; !ok || resourceRuntimeGenerationNewer(record, current) {
+			byResourceID[resourceID] = record
 		}
 	}
 	return byResourceID
 }
 
-func attentionAgentHubResourceRuns(workspacePath string) (map[string]agentRun, error) {
-	runs, err := loadAgentRunsCurrent(workspacePath)
+func attentionAgentHubResourceGenerations(workspacePath string) (map[string]generationRecord, error) {
+	records, err := loadCurrentGenerationRecords(workspacePath)
 	if err != nil {
 		return nil, fmt.Errorf("load resource generations for active attention turns: %w", err)
 	}
-	latest := selectLatestAgentHubResourceRuns(runs)
-	active := make(map[string]agentRun)
-	for _, run := range runs {
-		if strings.TrimSpace(run.GenerationID) == "" || !isAgentHubRun(run) || !resourceRunHasActiveTurn(run) {
+	latest := selectLatestAgentHubResourceGenerations(records)
+	active := make(map[string]generationRecord)
+	for _, record := range records {
+		if strings.TrimSpace(record.GenerationID) == "" || !isAgentHubGeneration(record) || !generationHasActiveTurn(record) {
 			continue
 		}
-		resourceID := normalizedResourceID(run.ResourceID)
-		if current, ok := active[resourceID]; !ok || resourceRuntimeRunNewer(run, current) {
-			active[resourceID] = run
+		resourceID := normalizedResourceID(record.ResourceID)
+		if current, ok := active[resourceID]; !ok || resourceRuntimeGenerationNewer(record, current) {
+			active[resourceID] = record
 		}
 	}
-	for resourceID, run := range active {
-		latest[resourceID] = run
+	for resourceID, record := range active {
+		latest[resourceID] = record
 	}
 	return latest, nil
 }
 
 func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (int, error) {
-	runs, err := loadAgentRuns(workspacePath)
+	records, err := loadGenerationRecords(workspacePath)
 	if err != nil {
 		return 0, err
 	}
@@ -324,24 +324,24 @@ func (s *server) currentResourceTurnNumber(workspacePath, resourceID string) (in
 	}
 	turnNumber := state[normalizedResourceID(resourceID)].TurnNumber
 	resourceID = normalizedResourceID(resourceID)
-	for _, run := range runs {
-		if normalizedResourceID(run.ResourceID) == resourceID && run.TurnNumber > turnNumber {
-			turnNumber = run.TurnNumber
+	for _, record := range records {
+		if normalizedResourceID(record.ResourceID) == resourceID && record.TurnNumber > turnNumber {
+			turnNumber = record.TurnNumber
 		}
 	}
 	return turnNumber, nil
 }
 
-func resourceRuntimeSnapshotForRun(run agentRun) *resourceRuntimeSnapshot {
+func resourceRuntimeSnapshotForGeneration(record generationRecord) *resourceRuntimeSnapshot {
 	return &resourceRuntimeSnapshot{
-		Generation: run.Generation, GenerationID: run.GenerationID, Status: run.Status,
-		AgentName: run.AgentHubAgentName, UpdatedAt: run.UpdatedAt, LastOutputAt: run.LastOutputAt,
-		CompletionMarker: run.CompletionMarker, CompletionState: run.CompletionState, CompletionHasFinalReply: run.CompletionHasFinalReply,
-		CompletionAt: run.CompletionAt, ReplacementPending: run.ReplacementPending,
-		Resumable:         (run.Status == "stopped" || run.Status == "idle-suspended") && run.AgentHubSessionID != "" && !run.SessionResumeUnavailable && !run.ReplacementPending && !run.ArchivedTaskStopRequested,
-		IdleSuspended:     run.Status == "idle-suspended" || (run.IdleSleepStopRequested && run.Status == "stopped"),
-		ResumeUnavailable: run.SessionResumeUnavailable,
-		TurnNumber:        run.TurnNumber, ActiveTurn: resourceRunHasActiveTurn(run), TurnStartedAt: run.TurnStartedAt,
+		Generation: record.Generation, GenerationID: record.GenerationID, Status: record.Status,
+		AgentName: record.AgentHubAgentName, UpdatedAt: record.UpdatedAt, LastOutputAt: record.LastOutputAt,
+		CompletionMarker: record.CompletionMarker, CompletionState: record.CompletionState, CompletionHasFinalReply: record.CompletionHasFinalReply,
+		CompletionAt: record.CompletionAt, ReplacementPending: record.ReplacementPending,
+		Resumable:         (record.Status == "stopped" || record.Status == "idle-suspended") && record.AgentHubSessionID != "" && !record.SessionResumeUnavailable && !record.ReplacementPending && !record.ArchivedTaskStopRequested,
+		IdleSuspended:     record.Status == "idle-suspended" || (record.IdleSleepStopRequested && record.Status == "stopped"),
+		ResumeUnavailable: record.SessionResumeUnavailable,
+		TurnNumber:        record.TurnNumber, ActiveTurn: generationHasActiveTurn(record), TurnStartedAt: record.TurnStartedAt,
 	}
 }
 
@@ -382,7 +382,7 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 	if err != nil {
 		return fmt.Errorf("load resource attention for tree: %w", err)
 	}
-	runs, err := attentionAgentHubResourceRuns(workspacePath)
+	records, err := attentionAgentHubResourceGenerations(workspacePath)
 	if err != nil {
 		return err
 	}
@@ -401,8 +401,8 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 	}
 	var applyRuntime func(*resourceSnapshot)
 	applyRuntime = func(item *resourceSnapshot) {
-		if run, ok := runs[normalizedResourceID(item.ID)]; ok {
-			item.Runtime = resourceRuntimeSnapshotForRun(run)
+		if record, ok := records[normalizedResourceID(item.ID)]; ok {
+			item.Runtime = resourceRuntimeSnapshotForGeneration(record)
 		}
 		for i := range item.Children {
 			applyRuntime(&item.Children[i])
@@ -414,8 +414,8 @@ func (s *server) enrichTreeResourceAttention(workspacePath string, tree *workspa
 	}
 
 	workspaceItem := resourceSnapshot{ID: "workspace", Type: "workspace", Title: workspaceName(workspacePath), Path: ".", AgentBinding: tree.AgentBinding}
-	if run, ok := runs["workspace"]; ok {
-		workspaceItem.Runtime = resourceRuntimeSnapshotForRun(run)
+	if record, ok := records["workspace"]; ok {
+		workspaceItem.Runtime = resourceRuntimeSnapshotForGeneration(record)
 	}
 	applyState(&workspaceItem)
 

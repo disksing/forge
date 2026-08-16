@@ -329,7 +329,7 @@ func TestGuardedLifecycleCommitDropsStaleResult(t *testing.T) {
 
 func TestAdaptLegacyGenerationFacts(t *testing.T) {
 	now := time.Date(2026, 8, 14, 4, 0, 0, 0, time.UTC)
-	run := agentRun{
+	record := generationRecord{
 		ResourceID:         "project1.task1",
 		Generation:         3,
 		GenerationID:       "gen-3",
@@ -349,7 +349,7 @@ func TestAdaptLegacyGenerationFacts(t *testing.T) {
 	}}}
 	session := &agentHubSession{ID: "ses-3", State: "ready", InputCapabilities: agentHubInputCapabilities{Steer: true}}
 	facts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{
-		Run: run, Session: session, Mailbox: mailbox, WorkspaceInstanceID: "ws-3", Now: now,
+		Generation: record, Session: session, Mailbox: mailbox, WorkspaceInstanceID: "ws-3", Now: now,
 		Revision: "store-rev-3", BindingChanged: true,
 	})
 	if facts.ResourceID != "project1.task1" || facts.GenerationID != "gen-3" || facts.GenerationNumber != 3 {
@@ -368,28 +368,28 @@ func TestAdaptLegacyGenerationFacts(t *testing.T) {
 	if plan.Operation != GenerationOperationStopSession || plan.Intent != GenerationIntentReplacement {
 		t.Fatalf("adapted facts produced %#v", plan)
 	}
-	stopped := run
+	stopped := record
 	stopped.ReplacementPending = false
 	stopped.Status = "stopped"
-	stoppedFacts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{Run: stopped, Session: &agentHubSession{ID: "ses-3", State: "stopped"}, Mailbox: mailbox, Now: now})
+	stoppedFacts := AdaptLegacyGenerationFacts(LegacyGenerationLifecycleInput{Generation: stopped, Session: &agentHubSession{ID: "ses-3", State: "stopped"}, Mailbox: mailbox, Now: now})
 	if !stoppedFacts.SessionResumable {
 		t.Fatalf("stopped Session should be marked resumable by the adapter: %#v", stoppedFacts)
 	}
 }
 
 func TestApplyLegacyLifecyclePlan(t *testing.T) {
-	run := &agentRun{Status: "idle"}
-	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Intent: GenerationIntentIdle, Operation: GenerationOperationStopSession})
-	if !run.IdleSleepStopRequested || run.Status != "stopping" || run.LifecycleReceipt == nil || run.LifecycleReceipt.Operation != GenerationOperationStopSession {
-		t.Fatalf("idle stop was not adapted: %#v", run)
+	record := &generationRecord{Status: "idle"}
+	ApplyLegacyLifecyclePlan(record, GenerationLifecyclePlan{Intent: GenerationIntentIdle, Operation: GenerationOperationStopSession})
+	if !record.IdleSleepStopRequested || record.Status != "stopping" || record.LifecycleReceipt == nil || record.LifecycleReceipt.Operation != GenerationOperationStopSession {
+		t.Fatalf("idle stop was not adapted: %#v", record)
 	}
-	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Operation: GenerationOperationResumeSession, OperationID: "resume-1"})
-	if run.Status != "starting" || run.LifecycleReceipt == nil || run.LifecycleReceipt.Operation != GenerationOperationResumeSession {
-		t.Fatalf("resume was not adapted: %#v", run)
+	ApplyLegacyLifecyclePlan(record, GenerationLifecyclePlan{Operation: GenerationOperationResumeSession, OperationID: "resume-1"})
+	if record.Status != "starting" || record.LifecycleReceipt == nil || record.LifecycleReceipt.Operation != GenerationOperationResumeSession {
+		t.Fatalf("resume was not adapted: %#v", record)
 	}
-	ApplyLegacyLifecyclePlan(run, GenerationLifecyclePlan{Intent: GenerationIntentArchive, Operation: GenerationOperationRetireGeneration})
-	if run.Status != "stopped" || run.IdleSleepStopRequested || run.ArchivedTaskStopRequested || !run.AgentHubStoppedObserved {
-		t.Fatalf("retirement was not adapted: %#v", run)
+	ApplyLegacyLifecyclePlan(record, GenerationLifecyclePlan{Intent: GenerationIntentArchive, Operation: GenerationOperationRetireGeneration})
+	if record.Status != "stopped" || record.IdleSleepStopRequested || record.ArchivedTaskStopRequested || !record.AgentHubStoppedObserved {
+		t.Fatalf("retirement was not adapted: %#v", record)
 	}
 }
 

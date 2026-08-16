@@ -41,12 +41,12 @@ func attentionRequest(t *testing.T, server *server, method, path, body string) *
 func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	run := agentRun{
-		ID: "run-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
+	record := generationRecord{
+		ID: "gen-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
 		Generation: 1, GenerationID: "gen-attention", AgentHubSessionID: "session-attention",
 		Status: "idle", TurnNumber: 3, Title: "Attention", Cwd: workspace, CreatedAt: now, UpdatedAt: now,
 	}
-	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -84,8 +84,8 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 		t.Fatalf("tree did not expose project attention state: %#v", tree.Projects[0].Attention)
 	}
 
-	run.TurnNumber = 4
-	if err := rewriteTestAgentRuns(workspace, []agentRun{run}); err != nil {
+	record.TurnNumber = 4
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{record}); err != nil {
 		t.Fatal(err)
 	}
 	tree, err = server.treeAt(context.Background(), workspace)
@@ -100,8 +100,8 @@ func TestResourceAttentionAPIDismissesUntilNextTurn(t *testing.T) {
 func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	if err := rewriteTestAgentRuns(workspace, []agentRun{{
-		ID: "run-active-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{{
+		ID: "gen-active-attention", WorkspaceID: "workspace-one", ResourceID: "project1",
 		Generation: 1, GenerationID: "gen-active-attention", AgentHubSessionID: "session-active-attention",
 		Status: "running", CurrentTurnID: "turn-active", TurnNumber: 2, Title: "Active", Cwd: workspace, CreatedAt: now, UpdatedAt: now,
 	}}); err != nil {
@@ -134,18 +134,18 @@ func TestResourceAttentionActiveTurnAlwaysVisibleAndUIStatePreservesIt(t *testin
 }
 
 func TestResourceActiveTurnIgnoresStaleTurnIDOnIdleGeneration(t *testing.T) {
-	run := agentRun{Status: "idle", CurrentTurnID: "turn-already-completed"}
-	if resourceRunHasActiveTurn(run) {
-		t.Fatalf("idle generation with a stale Turn ID must not remain active: %#v", run)
+	record := generationRecord{Status: "idle", CurrentTurnID: "turn-already-completed"}
+	if generationHasActiveTurn(record) {
+		t.Fatalf("idle generation with a stale Turn ID must not remain active: %#v", record)
 	}
 }
 
 func TestResourceAttentionPrefersAnActiveOlderGeneration(t *testing.T) {
 	server, workspace := attentionTestServer(t)
 	now := "2026-08-13T00:00:00Z"
-	if err := rewriteTestAgentRuns(workspace, []agentRun{
-		{ID: "run-old-active", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 1, GenerationID: "gen-old-active", AgentHubSessionID: "session-old-active", Status: "running", CurrentTurnID: "turn-old", TurnNumber: 4, Title: "Old", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
-		{ID: "run-new-idle", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 2, GenerationID: "gen-new-idle", AgentHubSessionID: "session-new-idle", Status: "idle", TurnNumber: 4, Title: "New", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
+	if err := rewriteTestGenerationRecords(workspace, []generationRecord{
+		{ID: "gen-old-active", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 1, GenerationID: "gen-old-active", AgentHubSessionID: "session-old-active", Status: "running", CurrentTurnID: "turn-old", TurnNumber: 4, Title: "Old", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
+		{ID: "gen-new-idle", WorkspaceID: "workspace-one", ResourceID: "project1", Generation: 2, GenerationID: "gen-new-idle", AgentHubSessionID: "session-new-idle", Status: "idle", TurnNumber: 4, Title: "New", Cwd: workspace, CreatedAt: now, UpdatedAt: now},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -179,13 +179,13 @@ func TestResourceAttentionSortsByTurnBoundariesInsteadOfRuntimeUpdates(t *testin
 			t.Fatal(err)
 		}
 	}
-	runs := []agentRun{
-		{ID: "run-running-newer", ResourceID: resourceIDs[0], Generation: 1, GenerationID: "gen-running-newer", AgentHubSessionID: "session-running-newer", Status: "running", CurrentTurnID: "turn-running-newer", TurnStartedAt: "2026-08-13T00:00:20Z", UpdatedAt: "2026-08-13T00:00:21Z"},
-		{ID: "run-running-older", ResourceID: resourceIDs[1], Generation: 1, GenerationID: "gen-running-older", AgentHubSessionID: "session-running-older", Status: "running", CurrentTurnID: "turn-running-older", TurnStartedAt: "2026-08-13T00:00:10Z", UpdatedAt: "2026-08-13T00:00:59Z"},
-		{ID: "run-idle-older", ResourceID: resourceIDs[2], Generation: 1, GenerationID: "gen-idle-older", AgentHubSessionID: "session-idle-older", Status: "idle", CompletionAt: "2026-08-13T00:00:30Z", UpdatedAt: "2026-08-13T00:01:00Z"},
-		{ID: "run-idle-newer", ResourceID: resourceIDs[3], Generation: 1, GenerationID: "gen-idle-newer", AgentHubSessionID: "session-idle-newer", Status: "idle", CompletionAt: "2026-08-13T00:00:40Z", UpdatedAt: "2026-08-13T00:00:41Z"},
+	records := []generationRecord{
+		{ID: "gen-running-newer", ResourceID: resourceIDs[0], Generation: 1, GenerationID: "gen-running-newer", AgentHubSessionID: "session-running-newer", Status: "running", CurrentTurnID: "turn-running-newer", TurnStartedAt: "2026-08-13T00:00:20Z", UpdatedAt: "2026-08-13T00:00:21Z"},
+		{ID: "gen-running-older", ResourceID: resourceIDs[1], Generation: 1, GenerationID: "gen-running-older", AgentHubSessionID: "session-running-older", Status: "running", CurrentTurnID: "turn-running-older", TurnStartedAt: "2026-08-13T00:00:10Z", UpdatedAt: "2026-08-13T00:00:59Z"},
+		{ID: "gen-idle-older", ResourceID: resourceIDs[2], Generation: 1, GenerationID: "gen-idle-older", AgentHubSessionID: "session-idle-older", Status: "idle", CompletionAt: "2026-08-13T00:00:30Z", UpdatedAt: "2026-08-13T00:01:00Z"},
+		{ID: "gen-idle-newer", ResourceID: resourceIDs[3], Generation: 1, GenerationID: "gen-idle-newer", AgentHubSessionID: "session-idle-newer", Status: "idle", CompletionAt: "2026-08-13T00:00:40Z", UpdatedAt: "2026-08-13T00:00:41Z"},
 	}
-	if err := rewriteTestAgentRuns(workspace, runs); err != nil {
+	if err := rewriteTestGenerationRecords(workspace, records); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,25 +276,25 @@ func TestTurnOrdinalChangesOnlyForNewAgentHubTurn(t *testing.T) {
 	runtime := &agentRuntime{
 		workspace: serveWorkspace{ID: "workspace-one", Path: workspace},
 		manager:   manager,
-		run:       agentRun{ID: "run-turn-ordinal", WorkspaceID: "workspace-one", ResourceID: "project1", GenerationID: "gen-turn-ordinal", Status: "idle"},
+		record:    generationRecord{ID: "gen-turn-ordinal", WorkspaceID: "workspace-one", ResourceID: "project1", GenerationID: "gen-turn-ordinal", Status: "idle"},
 	}
 	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "running", CurrentTurnID: "turn-one"})
-	if got := runtime.snapshotRun().TurnNumber; got != 1 {
+	if got := runtime.snapshotGeneration().TurnNumber; got != 1 {
 		t.Fatalf("first turn ordinal = %d, want 1", got)
 	}
 	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "running", CurrentTurnID: "turn-one"})
-	if got := runtime.snapshotRun().TurnNumber; got != 1 {
+	if got := runtime.snapshotGeneration().TurnNumber; got != 1 {
 		t.Fatalf("duplicate turn ordinal = %d, want 1", got)
 	}
 	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "ready", CurrentTurnID: "turn-one"})
-	if run := runtime.snapshotRun(); run.CurrentTurnID != "" || resourceRunHasActiveTurn(run) {
-		t.Fatalf("ready session retained stale active Turn state: %#v", run)
+	if record := runtime.snapshotGeneration(); record.CurrentTurnID != "" || generationHasActiveTurn(record) {
+		t.Fatalf("ready session retained stale active Turn state: %#v", record)
 	}
 	runtime.applyAgentHubSessionState(manager, agentHubSession{ID: "session-turns", State: "running", CurrentTurnID: "turn-two"})
-	if got := runtime.snapshotRun().TurnNumber; got != 2 {
+	if got := runtime.snapshotGeneration().TurnNumber; got != 2 {
 		t.Fatalf("second turn ordinal = %d, want 2", got)
 	}
-	stored, err := loadAgentRun(workspace, runtime.snapshotRun().ID)
+	stored, err := loadGenerationRecord(workspace, runtime.snapshotGeneration().ID)
 	if err != nil {
 		t.Fatal(err)
 	}

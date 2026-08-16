@@ -14,19 +14,19 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_live",
+	seedPollerGeneration(t, fake, workspace, generationRecord{
+		ID: "gen-live", WorkspaceID: workspace.ID, ResourceID: "project1", AgentHubSessionID: "ses_live",
 		SourceExternalID: workspace.ID + "/run-live",
 		Status:           "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_live", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
-	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_stopped",
+	seedPollerGeneration(t, fake, workspace, generationRecord{
+		ID: "gen-stopped", WorkspaceID: workspace.ID, ResourceID: "project1.task1", AgentHubSessionID: "ses_stopped",
 		SourceExternalID: workspace.ID + "/run-stopped", Status: "stopped",
 		AgentHubStoppedObserved: true,
 		CreatedAt:               "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_stopped", State: "stopped", UpdatedAt: "2026-08-01T00:00:11Z"})
 
-	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
@@ -46,46 +46,46 @@ func TestAgentHubRecoveryProjectsSessionsWithoutEventsOrStreams(t *testing.T) {
 		}
 	}
 	fake.mu.Unlock()
-	live := manager.runtimeByID("run-live")
+	live := manager.runtimeByID("gen-live")
 	if live == nil {
 		t.Fatal("live run was not recovered")
 	}
 	waitForRuntimeTest(t, func() bool {
-		run := pollerRunState(live)
-		return run.CompletionSessionID == "ses_live" && !run.CompletionPending
+		record := pollerGenerationState(live)
+		return record.CompletionSessionID == "ses_live" && !record.CompletionPending
 	})
 	live.mu.Lock()
-	liveRun, liveState := live.run, live.agentHubState
+	liveGeneration, liveState := live.record, live.agentHubState
 	live.mu.Unlock()
-	if liveRun.Status != "idle" || liveState != "ready" {
-		t.Fatalf("live run projection mismatch: %#v state=%q", liveRun, liveState)
+	if liveGeneration.Status != "idle" || liveState != "ready" {
+		t.Fatalf("live run projection mismatch: %#v state=%q", liveGeneration, liveState)
 	}
-	stopped := manager.runtimeByID("run-stopped")
+	stopped := manager.runtimeByID("gen-stopped")
 	if stopped == nil {
 		t.Fatal("stopped run was not recovered")
 	}
-	stoppedRun := pollerRunState(stopped)
-	if stoppedRun.Status != "stopped" || !stoppedRun.AgentHubStoppedObserved {
-		t.Fatalf("stopped run projection mismatch: %#v", stoppedRun)
+	stoppedGeneration := pollerGenerationState(stopped)
+	if stoppedGeneration.Status != "stopped" || !stoppedGeneration.AgentHubStoppedObserved {
+		t.Fatalf("stopped run projection mismatch: %#v", stoppedGeneration)
 	}
-	if response := closeRuntimeTestRun(t, manager, workspace, "run-live"); response.Code != http.StatusOK {
+	if response := closeRuntimeTestGeneration(t, manager, workspace, "gen-live"); response.Code != http.StatusOK {
 		t.Fatalf("test cleanup close failed: %d %s", response.Code, response.Body.String())
 	}
 }
 
-func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
+func TestAgentHubRecoverySingleListForManyStoppedGenerations(t *testing.T) {
 	fake := newRuntimeFakeAgentHub()
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 	now := "2026-08-01T00:00:01Z"
-	const stoppedRuns = 8
-	runs := make([]agentRun, 0, stoppedRuns)
+	const stoppedGenerations = 8
+	records := make([]generationRecord, 0, stoppedGenerations)
 	fake.mu.Lock()
-	for index := 0; index < stoppedRuns; index++ {
-		id := fmt.Sprintf("run-%03d", index)
+	for index := 0; index < stoppedGenerations; index++ {
+		id := fmt.Sprintf("gen-%03d", index)
 		sessionID := "ses_" + id
-		runs = append(runs, agentRun{
+		records = append(records, generationRecord{
 			ID: id, WorkspaceID: workspace.ID, ResourceID: fmt.Sprintf("project1.task%d", index+1), AgentHubSessionID: sessionID,
 			SourceExternalID: workspace.ID + "/" + id, Status: "stopped",
 			AgentHubStoppedObserved: true, CreatedAt: now, UpdatedAt: now,
@@ -96,23 +96,23 @@ func TestAgentHubRecoverySingleListForManyStoppedRuns(t *testing.T) {
 		}
 	}
 	fake.mu.Unlock()
-	if err := rewriteTestAgentRuns(workspace.Path, runs); err != nil {
+	if err := rewriteTestGenerationRecords(workspace.Path, records); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := manager.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := manager.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	fake.mu.Lock()
 	listCalls, eventsCalls, streamCalls := fake.listCalls, fake.eventsCalls, fake.streamCalls
 	fake.mu.Unlock()
 	if listCalls != 1 {
-		t.Fatalf("%d stopped runs must recover with exactly one session list, got %d", stoppedRuns, listCalls)
+		t.Fatalf("%d stopped runs must recover with exactly one session list, got %d", stoppedGenerations, listCalls)
 	}
 	if eventsCalls != 0 || streamCalls != 0 {
 		t.Fatalf("stopped runs must not read events or open streams: events=%d streams=%d", eventsCalls, streamCalls)
 	}
-	if rt := manager.runtimeByID("run-007"); rt == nil {
+	if rt := manager.runtimeByID("gen-007"); rt == nil {
 		t.Fatal("stopped runs were not registered as lightweight runtimes")
 	}
 }
@@ -122,26 +122,26 @@ func TestAgentHubRecoveryDoesNotReplayConfirmedActiveTurnAfterDaemonRestart(t *t
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	run := agentRun{
-		ID: "run-active-restart", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
+	record := generationRecord{
+		ID: "gen-active-restart", WorkspaceID: workspace.ID, ResourceID: "project1.task1",
 		AgentHubSessionID: "ses-active-restart", SourceExternalID: workspace.ID + "/run-active-restart",
 		Generation: 1, GenerationID: "gen-active-restart", AgentHubAgentName: "fake-agent",
 		Status: "running", LastTurnID: "turn-active-restart", CurrentTurnID: "turn-active-restart",
 		CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}
-	seedPollerRun(t, fake, workspace, run, agentHubSession{
-		ID: run.AgentHubSessionID, State: "stopped", StopReason: "daemon_recovery",
+	seedPollerGeneration(t, fake, workspace, record, agentHubSession{
+		ID: record.AgentHubSessionID, State: "stopped", StopReason: "daemon_recovery",
 		UpdatedAt: "2026-08-01T00:00:10Z",
 	})
 	fake.mu.Lock()
-	fake.appendLocked(run.AgentHubSessionID, "message.input", map[string]any{
+	fake.appendLocked(record.AgentHubSessionID, "message.input", map[string]any{
 		"messageId": "msg-confirmed-restart", "text": "already delivered", "role": "user",
 	})
-	fake.appendLocked(run.AgentHubSessionID, "turn.started", map[string]any{"text": "already delivered"})
-	terminal := fake.appendLocked(run.AgentHubSessionID, "turn.cancelled", map[string]any{"reason": "daemon_recovery"})
-	terminal.TurnID = run.LastTurnID
-	fake.events[run.AgentHubSessionID][len(fake.events[run.AgentHubSessionID])-1] = terminal
-	session := fake.sessions[run.AgentHubSessionID]
+	fake.appendLocked(record.AgentHubSessionID, "turn.started", map[string]any{"text": "already delivered"})
+	terminal := fake.appendLocked(record.AgentHubSessionID, "turn.cancelled", map[string]any{"reason": "daemon_recovery"})
+	terminal.TurnID = record.LastTurnID
+	fake.events[record.AgentHubSessionID][len(fake.events[record.AgentHubSessionID])-1] = terminal
+	session := fake.sessions[record.AgentHubSessionID]
 	session.State = "stopped"
 	session.StopReason = "daemon_recovery"
 	session.CurrentTurnID = ""
@@ -150,15 +150,15 @@ func TestAgentHubRecoveryDoesNotReplayConfirmedActiveTurnAfterDaemonRestart(t *t
 
 	restarted := newAgentManager(manager.server)
 	manager.server.agents = restarted
-	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := restarted.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	waitForRuntimeTest(t, func() bool {
-		rt := restarted.runtimeByID(run.ID)
+		rt := restarted.runtimeByID(record.ID)
 		if rt == nil {
 			return false
 		}
-		current := pollerRunState(rt)
+		current := pollerGenerationState(rt)
 		return current.Status == "stopped" && !current.CompletionPending
 	})
 	fake.mu.Lock()
@@ -187,8 +187,8 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	hub := httptest.NewServer(blocking)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	seedPollerRun(t, fake, workspace, agentRun{
-		ID: "run-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
+	seedPollerGeneration(t, fake, workspace, generationRecord{
+		ID: "gen-live", WorkspaceID: workspace.ID, AgentHubSessionID: "ses_live",
 		SourceExternalID: workspace.ID + "/run-live",
 		Status:           "running", CreatedAt: "2026-08-01T00:00:01Z", UpdatedAt: "2026-08-01T00:00:01Z",
 	}, agentHubSession{ID: "ses_live", State: "ready", UpdatedAt: "2026-08-01T00:00:10Z"})
@@ -202,13 +202,13 @@ func TestAgentHubRecoveryDoesNotBlockStartup(t *testing.T) {
 	}
 	close(gate)
 	waitForRuntimeTest(t, func() bool {
-		rt := manager.runtimeByID("run-live")
+		rt := manager.runtimeByID("gen-live")
 		if rt == nil {
 			return false
 		}
 		rt.mu.Lock()
 		defer rt.mu.Unlock()
-		return rt.run.Status == "idle"
+		return rt.record.Status == "idle"
 	})
 	// Let the background recovery pass finish projection saves before the
 	// deferred cancel and TempDir cleanup race it.

@@ -595,7 +595,7 @@ func TestCreateResourceGenerationPersistsAgentHubCatalogSnapshot(t *testing.T) {
 	if created.AgentHubProviderID != "codex" || created.AgentHubProviderName != "Codex Cloud" || created.AgentHubModel != "gpt-history" {
 		t.Fatalf("catalog snapshot was not persisted in the generation: %#v", created)
 	}
-	persisted, err := loadAgentRun(workspace.Path, created.ID)
+	persisted, err := loadGenerationRecord(workspace.Path, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -605,7 +605,7 @@ func TestCreateResourceGenerationPersistsAgentHubCatalogSnapshot(t *testing.T) {
 	}
 }
 
-func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWorkspace, body string) (*httptest.ResponseRecorder, agentRun) {
+func startRuntimeTestGeneration(t *testing.T, manager *agentManager, workspace serveWorkspace, body string) (*httptest.ResponseRecorder, generationRecord) {
 	t.Helper()
 	var request struct {
 		ResourceID string `json:"resourceId"`
@@ -626,19 +626,19 @@ func startRuntimeTestRun(t *testing.T, manager *agentManager, workspace serveWor
 	})
 	if err != nil {
 		writeError(recorder, err, resourceErrorStatus(err))
-		return recorder, agentRun{}
+		return recorder, generationRecord{}
 	}
 	writeJSON(recorder, map[string]any{"messageId": message.ID, "status": message.Status, "resourceId": message.ResourceID})
-	runs, err := loadAgentRuns(workspace.Path)
+	records, err := loadGenerationRecords(workspace.Path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, run := range runs {
-		if agentRunMatchesResource(run, resourceID) {
-			return recorder, run
+	for _, record := range records {
+		if generationMatchesResource(record, resourceID) {
+			return recorder, record
 		}
 	}
-	return recorder, agentRun{}
+	return recorder, generationRecord{}
 }
 
 func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
@@ -647,13 +647,13 @@ func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 
-	started, run := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"long running turn","userName":"Ada"}`)
-	if started.Code != http.StatusOK || run.GenerationID == "" {
-		t.Fatalf("failed to start resource turn: code=%d body=%s run=%#v", started.Code, started.Body.String(), run)
+	started, record := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"long running turn","userName":"Ada"}`)
+	if started.Code != http.StatusOK || record.GenerationID == "" {
+		t.Fatalf("failed to start resource turn: code=%d body=%s run=%#v", started.Code, started.Body.String(), record)
 	}
 
 	fake.mu.Lock()
-	session := fake.sessions[run.AgentHubSessionID]
+	session := fake.sessions[record.AgentHubSessionID]
 	session.State = "running"
 	session.CurrentTurnID = "turn-active"
 	session.InputCapabilities.Steer = true
@@ -668,12 +668,12 @@ func TestResourceEndTurnCancelsQueuedSteersBeforeNextTurn(t *testing.T) {
 	}
 
 	endRecorder := httptest.NewRecorder()
-	endRequest := httptest.NewRequest(http.MethodPost, "/resources/project1.task1/turn/end?generationId="+run.GenerationID, nil)
+	endRequest := httptest.NewRequest(http.MethodPost, "/resources/project1.task1/turn/end?generationId="+record.GenerationID, nil)
 	manager.handleResourceEndTurn(endRecorder, endRequest, workspace.ID, "project1.task1")
 	if endRecorder.Code != http.StatusOK {
 		t.Fatalf("end turn failed: %d %s", endRecorder.Code, endRecorder.Body.String())
 	}
-	var endResponse interruptRunResponse
+	var endResponse interruptGenerationResponse
 	if err := json.Unmarshal(endRecorder.Body.Bytes(), &endResponse); err != nil {
 		t.Fatal(err)
 	}
@@ -720,7 +720,7 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
 
-	firstRecorder, first := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"first","userName":"Ada"}`)
+	firstRecorder, first := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"first","userName":"Ada"}`)
 	if firstRecorder.Code != http.StatusOK {
 		t.Fatalf("first resource message failed: %d %s", firstRecorder.Code, firstRecorder.Body.String())
 	}
@@ -734,7 +734,7 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 		t.Fatalf("ready generation did not deliver first message: %#v", first.PendingMessages)
 	}
 
-	secondRecorder, second := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
+	secondRecorder, second := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","title":"Resource chat","prompt":"second","userName":"Ada"}`)
 	if secondRecorder.Code != http.StatusOK || second.ID != first.ID || len(second.PendingMessages) != 0 {
 		t.Fatalf("running non-steer generation did not use the Workspace mailbox: code=%d run=%#v", secondRecorder.Code, second)
 	}
@@ -761,7 +761,7 @@ func TestResourceGenerationCreatesLazilyAndRecoversQueuedMessage(t *testing.T) {
 
 	restarted := newAgentManager(manager.server)
 	manager.server.agents = restarted
-	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := restarted.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	var recovered resourceMailboxMessage
@@ -833,7 +833,7 @@ func TestResourceMessageRetryKeepsPersistedSteerAfterUnknownOutcomeAndRestart(t 
 
 	restarted := newAgentManager(manager.server)
 	manager.server.agents = restarted
-	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := restarted.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	recovered, found, err := mailboxMessageByID(workspace.Path, pending.ID)
@@ -904,7 +904,7 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 
 	restarted := newAgentManager(manager.server)
 	manager.server.agents = restarted
-	if err := restarted.recoverAgentHubRuns(context.Background()); err != nil {
+	if err := restarted.recoverAgentHubGenerations(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	recovered, found, err := mailboxMessageByID(workspace.Path, legacy.ID)
@@ -925,11 +925,11 @@ func TestLegacyResourceMessageRetryRepairsSteerFromCanonicalEvent(t *testing.T) 
 func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{ID: "run-atomic", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-atomic", Status: "idle", CreatedAt: now, UpdatedAt: now}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	record := generationRecord{ID: "gen-atomic", WorkspaceID: workspace.ID, ResourceID: "project1.task1", Generation: 1, GenerationID: "gen-atomic", Status: "idle", CreatedAt: now, UpdatedAt: now}
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
-	rt := newAgentHubRuntime(manager, workspace, run, nil)
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
 	manager.registerRuntime(rt)
 	const messages = 12
 	var group sync.WaitGroup
@@ -944,13 +944,13 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 		}()
 		go func() {
 			defer group.Done()
-			if _, err := rt.mutateRun(func(run *agentRun) { run.CompletionCursor++ }); err != nil {
+			if _, err := rt.mutateGeneration(func(record *generationRecord) { record.CompletionCursor++ }); err != nil {
 				t.Errorf("state update %d: %v", index, err)
 			}
 		}()
 	}
 	group.Wait()
-	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	persisted, err := loadGenerationRecord(workspace.Path, record.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -966,12 +966,12 @@ func TestGenerationMutationSerializesMailboxWithConcurrentStateUpdates(t *testin
 func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	manager, workspace, _ := newRuntimeTestManager(t, "http://127.0.0.1:1")
 	now := time.Now().Format(time.RFC3339Nano)
-	run := agentRun{ID: "run-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
+	record := generationRecord{ID: "gen-disk-failure", WorkspaceID: workspace.ID, Generation: 1, Status: "idle", CreatedAt: now, UpdatedAt: now,
 		PendingMessages: []resourceInboundMessage{{ID: "msg-kept", Text: "keep me"}}}
-	if err := saveAgentRun(workspace.Path, run); err != nil {
+	if err := saveGenerationRecord(workspace.Path, record); err != nil {
 		t.Fatal(err)
 	}
-	rt := newAgentHubRuntime(manager, workspace, run, nil)
+	rt := newAgentHubRuntime(manager, workspace, record, nil)
 	runtimeDir := agentRoot(workspace.Path)
 	backupDir := runtimeDir + "-backup"
 	if err := os.Rename(runtimeDir, backupDir); err != nil {
@@ -980,10 +980,10 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	if err := os.WriteFile(runtimeDir, []byte("blocks directory creation"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := rt.mutateRun(func(run *agentRun) { run.PendingMessages = nil }); err == nil {
+	if _, err := rt.mutateGeneration(func(record *generationRecord) { record.PendingMessages = nil }); err == nil {
 		t.Fatal("expected generation persistence failure")
 	}
-	if got := rt.snapshotRun().PendingMessages; len(got) != 1 || got[0].ID != "msg-kept" {
+	if got := rt.snapshotGeneration().PendingMessages; len(got) != 1 || got[0].ID != "msg-kept" {
 		t.Fatalf("failed write advanced in-memory mailbox: %#v", got)
 	}
 	if err := os.Remove(runtimeDir); err != nil {
@@ -992,27 +992,27 @@ func TestGenerationMutationRollsBackMailboxWhenDiskWriteFails(t *testing.T) {
 	if err := os.Rename(backupDir, runtimeDir); err != nil {
 		t.Fatal(err)
 	}
-	persisted, err := loadAgentRun(workspace.Path, run.ID)
+	persisted, err := loadGenerationRecord(workspace.Path, record.ID)
 	if err != nil || len(persisted.PendingMessages) != 1 {
 		t.Fatalf("failed write removed durable mailbox: %#v, %v", persisted.PendingMessages, err)
 	}
 }
 
-func TestAgentRunIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
+func TestGenerationIndexMigratesWithoutDeletingLegacyProjection(t *testing.T) {
 	workspacePath := t.TempDir()
 	legacyDir := filepath.Join(workspacePath, ".pua", "gui-agent")
 	if err := os.MkdirAll(legacyDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	legacy := []agentRun{{ID: "run-legacy", WorkspaceID: "workspace", Title: "Legacy", Status: "idle"}}
+	legacy := []generationRecord{{ID: "gen-legacy", WorkspaceID: "workspace", Title: "Legacy", Status: "idle"}}
 	data, _ := json.Marshal(legacy)
 	legacyPath := filepath.Join(legacyDir, "runs.json")
 	if err := os.WriteFile(legacyPath, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	runs, err := loadAgentRuns(workspacePath)
-	if err != nil || len(runs) != 1 || runs[0].ID != "run-legacy" {
-		t.Fatalf("migrated runs=%#v err=%v", runs, err)
+	records, err := loadGenerationRecords(workspacePath)
+	if err != nil || len(records) != 1 || records[0].ID != "gen-legacy" {
+		t.Fatalf("migrated runs=%#v err=%v", records, err)
 	}
 	if _, err := os.Stat(filepath.Join(workspacePath, ".pua", "runtime", "generation-store.json")); err != nil {
 		t.Fatalf("generation store marker missing: %v", err)
@@ -1035,7 +1035,7 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	firstRecorder, first := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"first"}`)
+	firstRecorder, first := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"first"}`)
 	if firstRecorder.Code != http.StatusOK {
 		t.Fatalf("first message failed: %d %s", firstRecorder.Code, firstRecorder.Body.String())
 	}
@@ -1050,7 +1050,7 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	if err := manager.resourceBindingChanged(context.Background(), workspace, "project1.task1", binding); err != nil {
 		t.Fatal(err)
 	}
-	queuedRecorder, queued := startRuntimeTestRun(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"after binding change"}`)
+	queuedRecorder, queued := startRuntimeTestGeneration(t, manager, workspace, `{"resourceId":"project1.task1","prompt":"after binding change"}`)
 	mailbox, mailboxErr := loadResourceMailbox(workspace.Path)
 	if queuedRecorder.Code != http.StatusOK || queued.ID != first.ID || len(queued.PendingMessages) != 0 || !queued.ReplacementPending ||
 		mailboxErr != nil || len(mailbox.Messages) != 2 || mailbox.Messages[1].Status != resourceMessageQueued ||
@@ -1068,26 +1068,26 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
-	var runs []agentRun
+	var records []generationRecord
 	var replacementMessage resourceMailboxMessage
 	var found bool
 	var messageErr error
 	for time.Now().Before(deadline) {
-		runs, err = loadAgentRuns(workspace.Path)
+		records, err = loadGenerationRecords(workspace.Path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		replacementMessage, found, messageErr = mailboxMessageByID(workspace.Path, replacementMessageID)
-		if messageErr == nil && found && replacementMessage.Status == resourceMessageDelivered && len(runs) >= 2 && runs[0].Generation == 2 {
+		if messageErr == nil && found && replacementMessage.Status == resourceMessageDelivered && len(records) >= 2 && records[0].Generation == 2 {
 			break
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if len(runs) < 2 || runs[0].Generation != 2 || runs[0].AgentHubAgentName != "replacement-agent" || len(runs[0].PendingMessages) != 0 {
-		t.Fatalf("replacement generation mismatch: %#v", runs)
+	if len(records) < 2 || records[0].Generation != 2 || records[0].AgentHubAgentName != "replacement-agent" || len(records[0].PendingMessages) != 0 {
+		t.Fatalf("replacement generation mismatch: %#v", records)
 	}
-	if len(runs[1].PendingMessages) != 0 || runs[1].Status != "stopped" {
-		t.Fatalf("old generation retained mailbox work: %#v", runs[1])
+	if len(records[1].PendingMessages) != 0 || records[1].Status != "stopped" {
+		t.Fatalf("old generation retained mailbox work: %#v", records[1])
 	}
 	if replacementMessage.ActualMode != resourceMessageModeEnqueue ||
 		replacementMessage.DowngradeReason != resourceMessageReasonGenerationReplacing {
@@ -1099,15 +1099,15 @@ func TestResourceBindingChangeWaitsForTurnBoundaryAndUsesWorkspaceMailbox(t *tes
 		t.Fatal(err)
 	}
 	if late.Code != http.StatusOK || lateResult.ResourceID != "project1.task1" || lateResult.Status != "accepted" {
-		t.Fatalf("late old-generation input was not redirected to the resource mailbox (runs=%#v): %d %s", runs, late.Code, late.Body.String())
+		t.Fatalf("late old-generation input was not redirected to the resource mailbox (runs=%#v): %d %s", records, late.Code, late.Body.String())
 	}
-	redirected, err := loadAgentRuns(workspace.Path)
+	redirected, err := loadGenerationRecords(workspace.Path)
 	newPending, oldPending := -1, -1
-	for _, run := range redirected {
-		if run.Generation == 2 {
-			newPending = len(run.PendingMessages)
-		} else if run.Generation == 1 {
-			oldPending = len(run.PendingMessages)
+	for _, record := range redirected {
+		if record.Generation == 2 {
+			newPending = len(record.PendingMessages)
+		} else if record.Generation == 1 {
+			oldPending = len(record.PendingMessages)
 		}
 	}
 	mailbox, mailboxErr = loadResourceMailbox(workspace.Path)
@@ -1185,7 +1185,7 @@ func TestAgentHubManualMessagesCarryBrowserUserProvenance(t *testing.T) {
 	hub := httptest.NewServer(fake)
 	defer hub.Close()
 	manager, workspace, _ := newRuntimeTestManager(t, hub.URL)
-	recorder, detail := startRuntimeTestRun(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"hello","userName":"  Ada Lovelace  "}`)
+	recorder, detail := startRuntimeTestGeneration(t, manager, workspace, `{"agentName":"fake-agent","resourceId":"project1.task1","prompt":"hello","userName":"  Ada Lovelace  "}`)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("start failed: %d %s", recorder.Code, recorder.Body.String())
 	}
@@ -1203,11 +1203,11 @@ func TestAgentHubManualMessagesCarryBrowserUserProvenance(t *testing.T) {
 	if initial.Type == "" || fakeEventRole(initial) != "user" || fakeEventSenderName(initial) != "Ada Lovelace" {
 		t.Fatalf("initial user provenance = role %q sender %q; events=%#v", fakeEventRole(initial), fakeEventSenderName(initial), initialEvents)
 	}
-	storedRuns, err := loadAgentRuns(workspace.Path)
-	if err != nil || len(storedRuns) != 1 {
-		t.Fatalf("load stored runs: runs=%#v err=%v", storedRuns, err)
+	storedRecords, err := loadGenerationRecords(workspace.Path)
+	if err != nil || len(storedRecords) != 1 {
+		t.Fatalf("load stored runs: runs=%#v err=%v", storedRecords, err)
 	}
-	storedJSON, err := json.Marshal(storedRuns[0])
+	storedJSON, err := json.Marshal(storedRecords[0])
 	if err != nil {
 		t.Fatal(err)
 	}
