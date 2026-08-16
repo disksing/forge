@@ -190,7 +190,7 @@ func runProject(args []string) error {
 		}
 		return applicationArchiveResource(projectID)
 	case "repo":
-		return errors.New("projects do not manage repositories or worktrees; use pua task repo <subcommand> [--project=<project>] [--task=<task>] ...")
+		return errors.New("projects do not manage repositories or worktrees; place Git worktrees under a Task's worktree/ directory")
 	default:
 		return fmt.Errorf("unknown project subcommand %q", args[0])
 	}
@@ -267,30 +267,8 @@ func runTask(args []string) error {
 		return applicationArchiveResource(taskID)
 	case "history":
 		return runTaskHistory(args[1:])
-	case "repo":
-		return runTaskRepo(args[1:])
 	default:
 		return fmt.Errorf("unknown task subcommand %q", args[0])
-	}
-}
-
-func runTaskRepo(args []string) error {
-	if len(args) > 0 && isHelpCommand(args[0]) {
-		printTaskRepoHelp()
-		return nil
-	}
-	if len(args) == 0 {
-		return errors.New("task repo requires a subcommand")
-	}
-	switch args[0] {
-	case "add":
-		return taskRepoAdd(args[1:])
-	case "list":
-		return taskRepoList(args[1:])
-	case "remove":
-		return taskRepoRemove(args[1:])
-	default:
-		return fmt.Errorf("unknown task repo subcommand %q", args[0])
 	}
 }
 
@@ -523,7 +501,6 @@ func printTaskHelp() {
   pua task archive [--project=<project>] [--task=<task>]
   pua task status [--project=<project>] [--task=<task>] [--server=<url>]
   pua task history [--project=<project>] [--task=<task>] [--cursor=<cursor>] [--limit=<n>] [--server=<url>] [--json]
-  pua task repo <command>
 
 Commands:
   pua task create [<title>] [--project=<project>] [--slug <slug>] [--detail <detail>|--task-markdown <markdown>|--template=<name>] [--field <name>=<value>...] [--fields <file>] [--title <title>] [--dry-run]
@@ -566,33 +543,6 @@ Commands:
     generation segments. Explicit gap segments identify missing, unavailable, or
     damaged AgentHub history without hiding older generations. The default
     output is formatted text; use --json for the complete structured response.
-
-  pua task repo <command>
-    Manage repositories recorded in a task's task.json. Subcommands: add, list,
-    remove.
-`)
-}
-
-func printTaskRepoHelp() {
-	fmt.Print(`Usage:
-  pua task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-  pua task repo list [--project=<project>] [--task=<task>]
-  pua task repo remove [--project=<project>] [--task=<task>] <repo-name>
-
-Commands:
-  pua task repo add [--project=<project>] [--task=<task>] <repo-name> [--worktree <path>] [--branch <branch>] [--target <branch>] [--base <branch>]
-    Add or update a repository entry in a task's task.json. By default, pua
-    records repos/<repo-name> and <task>/worktree/<repo-leaf>. Optional flags
-    let agents record the actual worktree path and branch metadata. Task
-    selection follows pua task show.
-
-  pua task repo list [--project=<project>] [--task=<task>]
-    List repositories recorded in a task's task.json. Task selection follows
-    pua task show.
-
-  pua task repo remove [--project=<project>] [--task=<task>] <repo-name>
-    Remove a repository entry from a task's task.json. Task selection follows
-    pua task show.
 `)
 }
 
@@ -671,7 +621,7 @@ Commands:
 
   pua workspace resource --id=<resource> --json
     Print detail JSON for one project or task, including common Markdown files,
-    artifacts, worktrees, and task repository metadata.
+    artifacts, worktrees, and task repository metadata discovered from Git.
 `)
 }
 

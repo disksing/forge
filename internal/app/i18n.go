@@ -234,7 +234,7 @@ Workspace 的长期知识保存在 wiki/。先读 wiki/index.md，再选择与�
 - repos/ 是共享源码目录，只用于查询和创建 worktree，不得直接修改；
 - 任何代码修改都必须在 Task 自己的 worktree/ 中进行；
 - 创建 worktree 时，目标使用当前 Task worktree/ 下的绝对路径；
-- 使用 pua task repo add/list/remove 登记 Task 使用的仓库和 worktree。
+- PUA 会直接根据 Task worktree/ 目录下的 worktree 识别仓库、分支和差异，无需登记。
 
 ### 其他资源
 
@@ -303,7 +303,7 @@ pua template show --project=<project> <name>
 pua task create --project=<project> --template=<name> --field <name>=<value>
 ~~~
 
-需要修改代码时，必须为 Task 创建专用 worktree，并用 pua task repo add 登记。不得直接修改 repos/ 中的共享源码目录。Project 本身不管理代码 worktree。
+需要修改代码时，必须在 Task 的 worktree/ 目录下创建专用 worktree。不得直接修改 repos/ 中的共享源码目录。Project 本身不管理代码 worktree。
 
 归档不是删除，但会结束资源的开放工作状态。归档前确认工作已经完成，必要的改动和产物已经保存。
 

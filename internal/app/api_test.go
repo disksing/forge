@@ -13,7 +13,10 @@ import (
 )
 
 func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	workspace, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
@@ -48,23 +51,36 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 	}
 
 	repoPath := filepath.Join(root, "repos", "example")
-	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
+	gitDir := filepath.Join(repoPath, ".git", "worktrees", "example")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := workspace.AddTaskRepo(app.TaskRepoInput{TaskID: task.ID, Name: "example", WorktreePath: taskResult.Path + "/worktree/example", Branch: "feature", TargetBranch: "main"})
-	if err != nil || len(updated.Repos) != 1 || updated.Repos[0].RepoPath != "repos/example" {
-		t.Fatalf("updated task repos = %#v, %v", updated.Repos, err)
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feature\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nested, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
 	detail, err := workspace.Resource(task.ID)
 	if err != nil || len(detail.Repos) != 1 {
 		t.Fatalf("resource detail = %#v, %v", detail, err)
 	}
+	if got := detail.Repos[0]; got.Name != "example" || got.RepoPath != "repos/example" || got.Branch != "feature" || got.WorktreePath != taskResult.Path+"/worktree/example" {
+		t.Fatalf("discovered repo = %#v", got)
+	}
 	tree, err := workspace.Tree()
 	if err != nil || len(tree.Projects) != 1 || len(tree.Projects[0].Children) != 1 {
 		t.Fatalf("Workspace tree = %#v, %v", tree, err)
 	}
-	if _, err := workspace.RemoveTaskRepo(task.ID, "example"); err != nil {
+	if err := os.RemoveAll(nested); err != nil {
 		t.Fatal(err)
+	}
+	detail, err = workspace.Resource(task.ID)
+	if err != nil || len(detail.Repos) != 0 {
+		t.Fatalf("resource detail after worktree removal = %#v, %v", detail, err)
 	}
 
 	archivedTask, err := workspace.ArchiveResource(task.ID)
@@ -86,7 +102,10 @@ func TestApplicationAPIProvidesTheResourceLifecycle(t *testing.T) {
 }
 
 func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T) {
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	workspace, err := app.Initialize(root, "en")
 	if err != nil {
 		t.Fatal(err)
@@ -104,17 +123,21 @@ func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T
 		t.Fatal(err)
 	}
 	repoPath := filepath.Join(root, "repos", "example")
-	if err := os.MkdirAll(filepath.Join(repoPath, ".git"), 0o755); err != nil {
+	gitDir := filepath.Join(repoPath, ".git", "worktrees", "example")
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "HEAD"), []byte("ref: refs/heads/feature\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	worktreePath := filepath.Join(root, filepath.FromSlash(first.Path), "worktree", "example")
 	if err := os.MkdirAll(worktreePath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := workspace.AddTaskRepo(app.TaskRepoInput{
-		TaskID: first.ID, Name: "example", WorktreePath: filepath.ToSlash(first.Path + "/worktree/example"),
-		Branch: "feature", TargetBranch: "main",
-	}); err != nil {
+	if err := os.WriteFile(filepath.Join(worktreePath, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	projectValue, err := workspace.ResourceValue(project.ID)
@@ -147,8 +170,12 @@ func TestProjectArchiveCascadesChildrenAndRepairsWorktreeReferences(t *testing.T
 	if err != nil || archivedFirst.Task == nil || !archivedFirst.Archived {
 		t.Fatalf("archived first child = %#v, %v", archivedFirst, err)
 	}
-	if got := archivedFirst.Task.Repos[0].WorktreePath; !strings.HasPrefix(got, "archive/") || !strings.Contains(got, "/"+firstDir+"/worktree/example") {
-		t.Fatalf("first child worktree path was not repaired: %q", got)
+	firstDetail, err := workspace.Resource(first.ID)
+	if err != nil || len(firstDetail.Repos) != 1 {
+		t.Fatalf("archived first child detail = %#v, %v", firstDetail, err)
+	}
+	if got := firstDetail.Repos[0].WorktreePath; !strings.HasPrefix(got, "archive/") || !strings.Contains(got, "/"+firstDir+"/worktree/example") {
+		t.Fatalf("first child worktree was not discovered after archive: %q", got)
 	}
 	archivedSecond, err := workspace.ResourceValue(second.ID)
 	if err != nil || archivedSecond.Task == nil || !archivedSecond.Archived {

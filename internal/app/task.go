@@ -56,7 +56,6 @@ func newTask(id, parent, title, description string) Task {
 		Parent:      parent,
 		Description: description,
 	}
-	task.Repos = []TaskRepo{}
 	return task
 }
 

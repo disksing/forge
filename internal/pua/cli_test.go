@@ -787,7 +787,6 @@ func TestTaskHelpVariants(t *testing.T) {
 			"pua task archive [--project=<project>] [--task=<task>]",
 			"pua task status [--project=<project>] [--task=<task>] [--server=<url>]",
 			"pua task history [--project=<project>] [--task=<task>]",
-			"pua task repo <command>",
 			"Print a task's task.json as formatted JSON",
 		} {
 			if !strings.Contains(out, marker) {
@@ -1035,20 +1034,22 @@ func TestTaskArchiveAllowsMergedRepoWorktree(t *testing.T) {
 		writeGitRepo(t, repoPath, "master")
 		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
 		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(archived, "project1/archive/task1") {
 			t.Fatalf("expected archive path, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
-		var archivedTask app.Task
-		if err := readJSON(filepath.Join(root, "project1", testArchiveDir, "task1", "task.json"), &archivedTask); err != nil {
+		gitdir := readFile(t, filepath.Join(repoPath, ".git", "worktrees", "pua", "gitdir"))
+		resolvedRoot, err := filepath.EvalSymlinks(root)
+		if err != nil {
 			t.Fatal(err)
 		}
-		if got := archivedTask.Repos[0].WorktreePath; got != "project1/archive/task1/worktree/pua" {
-			t.Fatalf("expected archived task worktree path to update, got %q", got)
+		wantGitdir := filepath.Join(resolvedRoot, "project1", testArchiveDir, "task1", "worktree", "pua", ".git")
+		if strings.TrimSpace(gitdir) != wantGitdir {
+			t.Fatalf("expected worktree gitdir to be repaired to %q, got %q", wantGitdir, gitdir)
 		}
+		runGit(t, filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "pua"), "status", "--porcelain")
 	})
 }
 
@@ -1066,7 +1067,6 @@ func TestTaskArchiveWarnsUnmergedRepoWorktree(t *testing.T) {
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "feature work")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/pua"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "feature work") {
@@ -1079,17 +1079,21 @@ func TestTaskArchiveWarnsUnmergedRepoWorktree(t *testing.T) {
 	})
 }
 
-func TestTaskArchiveAllowsMissingRepoWorktree(t *testing.T) {
+func TestTaskArchiveIgnoresNonGitWorktreeDir(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
 		run(t, "project", "create", "Archive without a checkout")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "pua"))
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
+		if err := os.MkdirAll(filepath.Join(root, "project1", "task1", "worktree", "scratch"), 0o755); err != nil {
+			t.Fatal(err)
+		}
 
 		archived := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(archived, "project1/archive/task1") || !strings.Contains(archived, "warning[worktree_unverifiable]") {
-			t.Fatalf("expected archive path and unverifiable worktree warning, got:\n%s", archived)
+		if !strings.Contains(archived, "project1/archive/task1") {
+			t.Fatalf("expected archive path, got:\n%s", archived)
+		}
+		if strings.Contains(archived, "warning[") {
+			t.Fatalf("expected no worktree warnings for a non-Git directory, got:\n%s", archived)
 		}
 		assertDir(t, filepath.Join(root, "project1", testArchiveDir, "task1"))
 	})
@@ -1107,11 +1111,11 @@ func TestTaskArchiveWarnsDirtyWorktreeAndMissingTarget(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(worktreePath, "uncommitted.txt"), []byte("preserve me\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "missing-target")
+		runGit(t, repoPath, "update-ref", "-d", "refs/heads/master")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
-		if !strings.Contains(out, "warning[dirty_worktree]") || !strings.Contains(out, "warning[target_branch_unverifiable]") {
-			t.Fatalf("expected dirty and unverifiable-target warnings, got stdout:\n%s", out)
+		if !strings.Contains(out, "warning[dirty_worktree]") || !strings.Contains(out, "warning[target_branch_missing]") {
+			t.Fatalf("expected dirty and missing-target warnings, got stdout:\n%s", out)
 		}
 		archivedWorktree := filepath.Join(root, "project1", testArchiveDir, "task1", "worktree", "pua", "uncommitted.txt")
 		if got := readFile(t, archivedWorktree); got != "preserve me\n" {
@@ -1406,7 +1410,6 @@ func TestTaskArchiveWarnsUnmergedSubtaskRepoWorktree(t *testing.T) {
 		}
 		runGit(t, worktreePath, "add", "feature.txt")
 		runGit(t, worktreePath, "-c", "user.name=PUA Test", "-c", "user.email=pua@example.com", "commit", "-m", "child feature work")
-		run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/pua", "--branch", "agent/project1.task1", "--target", "master")
 
 		out := run(t, "task", "archive", "--project=project1", "--task=task1")
 		if !strings.Contains(out, `warning[unmerged_commits]`) || !strings.Contains(out, `repo "disksing/pua"`) || !strings.Contains(out, `not merged into target branch "master"`) || !strings.Contains(out, "child feature work") {
@@ -1467,12 +1470,15 @@ func TestRepoListFindsRepositories(t *testing.T) {
 	})
 }
 
-func TestTaskRepoLifecycle(t *testing.T) {
+func TestTaskRepoDiscoveryFromWorktree(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "project", "create", "Wire repo metadata into task json")
+		run(t, "project", "create", "Derive repo metadata from worktree")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeRepo(t, filepath.Join(root, testReposDir, "disksing", "pua"))
+		repoPath := filepath.Join(root, testReposDir, "disksing", "pua")
+		writeGitRepo(t, repoPath, "master")
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
+		runGit(t, repoPath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 
 		out, err := runErr(t, "project", "repo", "add", "project1", "disksing/pua")
 		if err == nil {
@@ -1482,76 +1488,58 @@ func TestTaskRepoLifecycle(t *testing.T) {
 			t.Fatalf("expected project repo rejection, got: %v\nstdout:\n%s", err, out)
 		}
 
-		out, err = runErr(t, "task", "repo", "add", "disksing/pua")
+		out, err = runErr(t, "task", "repo", "list", "--project=project1", "--task=task1")
 		if err == nil {
-			t.Fatalf("expected task repo add without task context to fail, got stdout:\n%s", out)
+			t.Fatalf("expected removed task repo command to fail, got stdout:\n%s", out)
 		}
-		if !strings.Contains(err.Error(), "could not infer current task") {
-			t.Fatalf("expected missing task context error, got: %v\nstdout:\n%s", err, out)
-		}
-
-		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--branch", "agent/project1.task1", "--target", "master", "--base", "master")
-		if !strings.Contains(added, `"name": "disksing/pua"`) {
-			t.Fatalf("expected task JSON to include repo, got:\n%s", added)
-		}
-		if !strings.Contains(added, `"repoPath": "repos/disksing/pua"`) {
-			t.Fatalf("expected task JSON to include repo path, got:\n%s", added)
-		}
-		if !strings.Contains(added, `"worktreePath": "project1/task1/worktree/pua"`) {
-			t.Fatalf("expected default worktree path, got:\n%s", added)
+		if !strings.Contains(err.Error(), `unknown task subcommand "repo"`) {
+			t.Fatalf("expected unknown subcommand error, got: %v\nstdout:\n%s", err, out)
 		}
 
-		listed := run(t, "task", "repo", "list", "--project=project1", "--task=task1")
-		if !strings.Contains(listed, "disksing/pua\trepos/disksing/pua\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster\tmaster") {
-			t.Fatalf("expected repo list to include metadata, got:\n%s", listed)
+		detail := run(t, "workspace", "resource", "--id=project1.task1", "--json")
+		for _, want := range []string{
+			`"name": "disksing/pua"`,
+			`"repoPath": "repos/disksing/pua"`,
+			`"worktreePath": "project1/task1/worktree/pua"`,
+			`"branch": "agent/project1.task1"`,
+			`"targetBranch": "master"`,
+		} {
+			if !strings.Contains(detail, want) {
+				t.Fatalf("expected resource detail to contain %s, got:\n%s", want, detail)
+			}
 		}
 
-		if err := os.Chdir(filepath.Join(root, "project1", "task1")); err != nil {
+		var taskMetadata map[string]any
+		if err := readJSON(filepath.Join(root, "project1", "task1", "task.json"), &taskMetadata); err != nil {
 			t.Fatal(err)
 		}
-		inferredList := run(t, "task", "repo", "list")
-		if !strings.Contains(inferredList, "disksing/pua\trepos/disksing/pua\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster\tmaster") {
-			t.Fatalf("expected repo list to infer current task, got:\n%s", inferredList)
-		}
-		if err := os.Chdir(root); err != nil {
-			t.Fatal(err)
-		}
-
-		updated := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--worktree", "project1/task1/worktree/custom", "--branch", "agent/updated", "--target", "main")
-		if strings.Count(updated, `"name": "disksing/pua"`) != 1 {
-			t.Fatalf("expected repo add to update existing entry, got:\n%s", updated)
-		}
-		if !strings.Contains(updated, `"worktreePath": "project1/task1/worktree/custom"`) {
-			t.Fatalf("expected updated worktree path, got:\n%s", updated)
-		}
-		if !strings.Contains(updated, `"branch": "agent/updated"`) {
-			t.Fatalf("expected updated branch, got:\n%s", updated)
-		}
-
-		removed := run(t, "task", "repo", "remove", "--project=project1", "--task=task1", "disksing/pua")
-		if strings.Contains(removed, `"name": "disksing/pua"`) {
-			t.Fatalf("expected repo to be removed, got:\n%s", removed)
+		if _, ok := taskMetadata["repos"]; ok {
+			t.Fatalf("task.json should not persist repo metadata, got:\n%v", taskMetadata)
 		}
 	})
 }
 
-func TestTaskRepoLifecycleSupportsLegacyBareRepos(t *testing.T) {
+func TestTaskRepoDiscoverySupportsLegacyBareRepos(t *testing.T) {
 	withTempCwd(t, func(root string) {
 		run(t, "init")
-		run(t, "project", "create", "Wire legacy bare repo metadata into task json")
+		run(t, "project", "create", "Derive legacy bare repo metadata from worktree")
 		run(t, "task", "create", "--project=project1", "Code task")
-		writeFakeBareRepo(t, filepath.Join(root, testReposDir, "disksing", "pua.git"), "master")
+		barePath := filepath.Join(root, testReposDir, "disksing", "pua.git")
+		sourcePath := filepath.Join(root, "source")
+		writeGitRepo(t, sourcePath, "master")
+		runGit(t, root, "clone", "--bare", sourcePath, barePath)
+		worktreePath := filepath.Join(root, "project1", "task1", "worktree", "pua")
+		runGit(t, barePath, "worktree", "add", "-b", "agent/project1.task1", worktreePath, "master")
 
-		added := run(t, "task", "repo", "add", "--project=project1", "--task=task1", "disksing/pua", "--branch", "agent/project1.task1")
-		if !strings.Contains(added, `"barePath": "repos/disksing/pua.git"`) {
-			t.Fatalf("expected task JSON to include legacy bare path, got:\n%s", added)
+		detail := run(t, "workspace", "resource", "--id=project1.task1", "--json")
+		if !strings.Contains(detail, `"barePath": "repos/disksing/pua.git"`) {
+			t.Fatalf("expected derived legacy bare path, got:\n%s", detail)
 		}
-		if strings.Contains(added, `"repoPath"`) {
-			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", added)
+		if strings.Contains(detail, `"repoPath"`) {
+			t.Fatalf("legacy bare repo should not also set repoPath, got:\n%s", detail)
 		}
-		listed := run(t, "task", "repo", "list", "--project=project1", "--task=task1")
-		if !strings.Contains(listed, "disksing/pua\trepos/disksing/pua.git\tproject1/task1/worktree/pua\tagent/project1.task1\tmaster") {
-			t.Fatalf("expected legacy bare repo metadata, got:\n%s", listed)
+		if !strings.Contains(detail, `"name": "disksing/pua"`) || !strings.Contains(detail, `"targetBranch": "master"`) {
+			t.Fatalf("expected derived name and target branch, got:\n%s", detail)
 		}
 	})
 }

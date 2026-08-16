@@ -166,60 +166,6 @@ func applicationRepoAdd(name, url string, bare bool) error {
 	return err
 }
 
-func applicationTaskRepoAdd(input app.TaskRepoInput) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.AddTaskRepo(input)
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
-func appTaskRepoInput(options taskRepoAddOptions) app.TaskRepoInput {
-	return app.TaskRepoInput{
-		TaskID: options.taskID, Name: options.name, WorktreePath: options.worktreePath,
-		Branch: options.branch, TargetBranch: options.targetBranch, BaseBranch: options.baseBranch,
-	}
-}
-
-func applicationTaskRepoList(taskID string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	entries, err := workspace.TaskRepos(taskID)
-	if err != nil {
-		return err
-	}
-	for _, repo := range entries {
-		storagePath := repo.RepoPath
-		if storagePath == "" {
-			storagePath = repo.BarePath
-		}
-		fmt.Printf("%s\t%s\t%s\t%s\t%s", repo.Name, storagePath, repo.WorktreePath, repo.Branch, repo.TargetBranch)
-		if repo.BaseBranch != "" {
-			fmt.Printf("\t%s", repo.BaseBranch)
-		}
-		fmt.Println()
-	}
-	return nil
-}
-
-func applicationTaskRepoRemove(taskID, name string) error {
-	workspace, err := openApplicationWorkspace()
-	if err != nil {
-		return err
-	}
-	task, err := workspace.RemoveTaskRepo(taskID, name)
-	if err != nil {
-		return err
-	}
-	return printJSON(task)
-}
-
 func applicationInit(language string) error {
 	root, err := os.Getwd()
 	if err != nil {

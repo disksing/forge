@@ -196,7 +196,7 @@ func buildResourceDetailAt(root string, entry resourceEntry) (ResourceDetailView
 		}
 	case *Task:
 		detail.Description = typed.Description
-		detail.Repos = append([]TaskRepo(nil), typed.Repos...)
+		detail.Repos = discoverTaskRepos(root, entry.Path)
 		detail.Template = typed.Template
 		detail.Worktrees = readFileTree(root, filepath.Join(entry.Path, "worktree"))
 	}

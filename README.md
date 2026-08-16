@@ -162,7 +162,7 @@ Each running serve instance exclusively locks its configuration file, and every 
 
 ## Task Worktrees
 
-PUA records worktree metadata but leaves Git operations explicit. A typical coding task looks like this:
+PUA discovers worktree metadata from Git but leaves Git operations explicit. A typical coding task looks like this:
 
 ```bash
 repo="$PWD/repos/pua"
@@ -172,18 +172,9 @@ git -C "$repo" worktree add \
   -b task1-first-change \
   "$task/worktree/pua" \
   master
-
-pua task repo add \
-  --project=project1 \
-  --task=task1 \
-  --worktree "$task/worktree/pua" \
-  --branch task1-first-change \
-  --target master \
-  --base master \
-  pua
 ```
 
-Use an absolute destination with `git worktree add`, especially when combining it with `git -C`; otherwise Git may resolve the destination relative to the shared checkout.
+Use an absolute destination with `git worktree add`, especially when combining it with `git -C`; otherwise Git may resolve the destination relative to the shared checkout. PUA derives the task's repositories, branches, and diffs directly from the worktrees under the task's `worktree/` directory; nothing needs to be recorded in task.json.
 
 ## Interactive Agent Sessions
 
@@ -334,7 +325,6 @@ pua task create [<title>] [--project=<project>] [--slug <slug>]
                   [--field <name>=<value>...] [--fields <file>] [--dry-run] [--json]
 pua task list [--project=<project>] [--all]
 pua task show|archive ...
-pua task repo add|list|remove ...
 
 pua workspace tree --json
 pua workspace resource --id=<resource> --json

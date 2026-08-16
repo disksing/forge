@@ -45,10 +45,7 @@ func TestLegacyTaskExecutionMetadataIsIgnoredAndDroppedOnWrite(t *testing.T) {
 	if _, err := workspace.Resource(task.ID); err != nil {
 		t.Fatalf("legacy metadata made the task unreadable: %v", err)
 	}
-	if err := os.MkdirAll(filepath.Join(root, "repos", "demo", ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := workspace.AddTaskRepo(app.TaskRepoInput{TaskID: task.ID, Name: "demo"}); err != nil {
+	if _, err := workspace.SetResourceAgentBinding(task.ID, app.AgentBinding{Kind: "agent", Name: "demo"}); err != nil {
 		t.Fatal(err)
 	}
 	rewritten, err := os.ReadFile(metadataPath)

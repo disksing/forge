@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 )
 
 // ArchiveWarning records a non-blocking condition observed while archiving.
@@ -67,14 +66,14 @@ func collectProjectArchiveTasks(root, projectPath string, project Project) ([]ar
 			warning.Path = relPath(root, entry.Path)
 			warnings = append(warnings, warning)
 		}
-		warnings = append(warnings, inspectTaskRepoWorktrees(root, entry.Task)...)
+		warnings = append(warnings, inspectTaskRepoWorktrees(root, entry.Path, entry.Task)...)
 	}
 	return refs, warnings
 }
 
-func inspectTaskRepoWorktrees(root string, task Task) []ArchiveWarning {
+func inspectTaskRepoWorktrees(root, taskPath string, task Task) []ArchiveWarning {
 	warnings := make([]ArchiveWarning, 0)
-	for _, repo := range task.Repos {
+	for _, repo := range discoverTaskRepos(root, taskPath) {
 		warningBase := func(code, message string) ArchiveWarning {
 			warning := archiveWarning(code, message)
 			warning.ResourceID = task.ID
@@ -85,10 +84,6 @@ func inspectTaskRepoWorktrees(root string, task Task) []ArchiveWarning {
 			return warning
 		}
 
-		if strings.TrimSpace(repo.WorktreePath) == "" {
-			warnings = append(warnings, warningBase("worktree_unverifiable", fmt.Sprintf("Task %s repo %q has no recorded worktree path; Git state and merge status could not be checked", task.ID, repo.Name)))
-			continue
-		}
 		worktreePath := repo.WorktreePath
 		if !filepath.IsAbs(worktreePath) {
 			worktreePath = filepath.Join(root, filepath.FromSlash(worktreePath))
@@ -96,7 +91,7 @@ func inspectTaskRepoWorktrees(root string, task Task) []ArchiveWarning {
 		worktreePath = filepath.Clean(worktreePath)
 		warningPath := relPath(root, worktreePath)
 		if info, err := os.Stat(worktreePath); err != nil {
-			warnings = append(warnings, warningBase("worktree_unverifiable", fmt.Sprintf("Task %s repo %q worktree %s could not be inspected: %v; archive preserves the recorded path", task.ID, repo.Name, warningPath, err)))
+			warnings = append(warnings, warningBase("worktree_unverifiable", fmt.Sprintf("Task %s repo %q worktree %s could not be inspected: %v; archive preserves the worktree as is", task.ID, repo.Name, warningPath, err)))
 			continue
 		} else if !info.IsDir() {
 			warnings = append(warnings, warningBase("worktree_unverifiable", fmt.Sprintf("Task %s repo %q worktree %s is not a directory; Git state could not be checked", task.ID, repo.Name, warningPath)))
@@ -122,7 +117,7 @@ func inspectTaskRepoWorktrees(root string, task Task) []ArchiveWarning {
 
 		target := strings.TrimSpace(repo.TargetBranch)
 		if target == "" {
-			warnings = append(warnings, warningBase("target_branch_missing", fmt.Sprintf("Task %s repo %q worktree %s has no target branch recorded; merge status could not be checked", task.ID, repo.Name, warningPath)))
+			warnings = append(warnings, warningBase("target_branch_missing", fmt.Sprintf("Task %s repo %q worktree %s target branch could not be determined; merge status could not be checked", task.ID, repo.Name, warningPath)))
 			continue
 		}
 		if output, verifyErr := runGit(worktreePath, "rev-parse", "--verify", target+"^{commit}"); verifyErr != nil {
@@ -173,28 +168,13 @@ func compactGitOutput(value string) string {
 	return value
 }
 
-func rewriteArchivedTaskReferences(root, taskPath string, task Task, oldRel, newRel string) []ArchiveWarning {
+// repairArchivedTaskWorktrees fixes the Git metadata of worktrees that moved
+// together with an archived Task. Worktrees are discovered from their new
+// location; the source repository under repos/ does not move, so the
+// worktree .git file still resolves the repository needed for the repair.
+func repairArchivedTaskWorktrees(root, taskPath string, task Task) []ArchiveWarning {
 	warnings := make([]ArchiveWarning, 0)
-	changed := false
-	for i := range task.Repos {
-		before := task.Repos[i]
-		task.Repos[i].WorktreePath = migratePathReference(root, task.Repos[i].WorktreePath, oldRel, newRel)
-		task.Repos[i].RepoPath = migratePathReference(root, task.Repos[i].RepoPath, oldRel, newRel)
-		task.Repos[i].BarePath = migratePathReference(root, task.Repos[i].BarePath, oldRel, newRel)
-		if task.Repos[i] != before {
-			changed = true
-		}
-	}
-	if changed {
-		task.UpdatedAt = time.Now().Format(time.RFC3339)
-		if err := writeResourceMetadata(taskPath, &task); err != nil {
-			warning := archiveWarning("metadata_rewrite_failed", fmt.Sprintf("archived Task %s moved to %s but its repository paths could not be rewritten: %v", task.ID, relPath(root, taskPath), err))
-			warning.ResourceID = task.ID
-			warning.Path = relPath(root, taskPath)
-			warnings = append(warnings, warning)
-		}
-	}
-	for _, repo := range task.Repos {
+	for _, repo := range discoverTaskRepos(root, taskPath) {
 		if err := repairRepoWorktree(root, repo); err != nil {
 			warning := archiveWarning("worktree_repair_failed", fmt.Sprintf("archived Task %s repo %q moved to %s but Git worktree repair failed: %v; the archive is complete and can be repaired later", task.ID, repo.Name, relPath(root, taskPath), err))
 			warning.ResourceID = task.ID
@@ -217,13 +197,7 @@ func archiveTaskReferencesAfterMove(root, sourcePath, destinationPath string, re
 			continue
 		}
 		newTaskPath := filepath.Join(destinationPath, relative)
-		warnings = append(warnings, rewriteArchivedTaskReferences(
-			root,
-			newTaskPath,
-			ref.Task,
-			relPath(root, ref.OldPath),
-			relPath(root, newTaskPath),
-		)...)
+		warnings = append(warnings, repairArchivedTaskWorktrees(root, newTaskPath, ref.Task)...)
 	}
 	return warnings
 }
